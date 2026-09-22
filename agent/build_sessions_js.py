@@ -82,6 +82,14 @@ TITLES = {
                  "Dedupe, normalize 4 date formats, fix casing chaos, write the clean table, reconcile against source with zero deltas."),
     "s3-forecast": ("Forecast + risk brief",
                     "Monthly history is thin, so the agent adapts to daily scale, backtests, and honestly reports the naive baseline won."),
+    "s4-nyc311-ops": ("NYC 311 operations brief (22.5M rows)",
+                      "Workload, complaint mix, agency resolution times (NYPD 53-min median vs HPD 4.7 days), and a 12-month forecast that beats naive."),
+    "s5-rdw-fleet": ("Dutch fleet electrification (16.9M vehicles)",
+                     "Fuel mix, APK cohorts, and the 77x EV gap between new and old registrations — the flow-vs-stock story."),
+    "s6-census-econ": ("US census economics (5M weighted records)",
+                       "Survey-weighted medians: who earns what in America, housing burden, and the education ladder."),
+    "s7-chicago-crime": ("Chicago crime trend brief (8.6M rows)",
+                         "A falling decade, narcotics as an enforcement signal, +226% motor-vehicle-theft spike, and the bankable summer curve."),
 }
 
 def main():

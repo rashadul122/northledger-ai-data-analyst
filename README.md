@@ -2,15 +2,15 @@
 
 **Portfolio of Rashadul Islam Roman** — data analytics, automation, and AI-agent engineering. Toronto.
 
-- **Portfolio site:** https://rashadul122.github.io/northledger-insights/
-- **AI-agent demo:** https://rashadul122.github.io/northledger-insights/agent-demo.html
+- **Portfolio site:** https://rashadul122.github.io/northledger-ai-data-analyst/
+- **AI-agent demo:** https://rashadul122.github.io/northledger-ai-data-analyst/agent-demo.html
 
 ## What this is
 
 Three layers, built to be consumed in 30 seconds, 3 minutes, or a full review:
 
 1. **The site (`index.html`)** — the dual-door portfolio: employers see the flagship plan and a live federal-data forecast (real FRED series, honest 80% bands, seasonal-naive baseline); business owners see the productized service ladder (Data Health Audit → Automated Insights Build → Insights Retainer).
-2. **The AI-agent demo (`agent-demo.html`)** — a self-contained chatbox replaying **three real sessions** of an AI data analyst with full database access. It profiles a deliberately messy 20,488-row legacy export, cleans and reconciles it with zero deltas against source, and forecasts 12 months with honest uncertainty. Every report (PDF / Excel / Word) was generated *by the agent, in-session*, and downloads from the page.
+2. **The AI-agent demo (`agent-demo.html`)** — a self-contained chatbox replaying **seven real sessions** of an AI data analyst against a **74.8M-row scale database** (8 tables: 22.5M NYC 311 requests, 16.9M Dutch vehicles + 17.0M fuel records, 8.6M Chicago crimes, 5.0M US census records, 4.8M Amazon reviews). Sessions run the full analyst loop — profile, clean + reconcile with zero deltas, forecast with baselines and backtests, and write the deliverable reports (PDF / Excel / Word), which download from the page. Real findings included: NYPD closes half its cases in ~53 minutes while HPD's P90 is 41.8 days; the Dutch fleet shows a 77x EV gap between new and old cohorts; half of American renters are cost-burdened; Chicago's narcotics counts are an enforcement signal, not a crime signal.
 3. **The source (`agent/`)** — the actual engineering: a tool-calling agent loop (SQL, profiling, Python, forecasting, report generation) against a real 60,000-row NYC collision database, plus the reproducible build pipeline for the demo page.
 
 ## The case study in 60 seconds
@@ -32,6 +32,8 @@ Three layers, built to be consumed in 30 seconds, 3 minutes, or a full review:
 index.html                  <- portfolio site (start here)
 agent-demo.html             <- AI-agent demo: 3 real sessions + embedded reports
 Senior-Data-Analytics-Portfolio-Blueprint.pdf   <- 34-page evidence-backed plan
+DATA-SOURCES.md             <- every dataset's official source page + direct download link
+DATA-MANAGEMENT.md          <- the 6-step Google / 8-phase CRISP-DM process, mapped to this project
 reports/                    <- the agent's generated deliverables
   legacy-export-data-health-audit.pdf
   cleaning-validation.xlsx

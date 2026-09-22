@@ -60,6 +60,10 @@ def _con():
 def tool_run_sql(sql):
     """Read-only SELECT against the client database. Returns rows as JSON (cap 100)."""
     s = (sql or "").strip().rstrip(";")
+    if not s:
+        return {"error": ("the 'sql' parameter was EMPTY. Re-issue the call with the full SQL text "
+                          "in the 'sql' parameter, e.g. {\"sql\": \"SELECT COUNT(*) FROM nyc_311\"}. "
+                          "Multi-statement strings are not allowed; one SELECT per call.")}
     if not re.match(r"(?is)^(select|with|pragma\s+table_info|explain\s+query\s+plan)\b", s):
         return {"error": "read-only: only SELECT/WITH/PRAGMA table_info allowed"}
     bad = re.search(r"(?i)\b(insert|update|delete|drop|alter|attach|create)\b", s)
@@ -392,15 +396,17 @@ def _pdf_clean(s):
     }
     for k, v in repl.items():
         s = s.replace(k, v)
-    # drop anything still outside latin-1 printable
+    # drop anything outside latin-1 printable (helvetica core font has no
+    # Greek/CJK/emoji glyphs — even letters crash fpdf2)
     out = []
     for ch in s:
         o = ord(ch)
-        if o < 256 or ch == "\n":
+        if 32 <= o <= 126 or o in (10,):
             out.append(ch)
-        elif ch.isalpha() or ch.isdigit():
-            out.append(ch)  # allow letters from other scripts if any slip through
-        # else: drop
+        elif o in (233, 246, 252, 228, 252):  # common latin-1 accented chars helvetica does have
+            out.append(ch)
+        else:
+            out.append("?")
     return _strip_md("".join(out))
 
 
@@ -459,13 +465,29 @@ Keep tool calls purposeful. Finish with a concise, human answer - never just 'do
 
 # ---------------------------------------------------------------- loop
 def chat(messages, tools=TOOLS):
-    r = requests.post(f"{BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-        json={"model": MODEL, "messages": messages, "tools": tools, "tool_choice": "auto"},
-        timeout=300)
-    if r.status_code != 200:
-        raise RuntimeError(f"LLM {r.status_code}: {r.text[:300]}")
-    return r.json()
+    import time as _time
+    last_err = None
+    for attempt in range(5):
+        try:
+            r = requests.post(f"{BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                json={"model": MODEL, "messages": messages, "tools": tools, "tool_choice": "auto"},
+                timeout=300)
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 500 and attempt < 4:
+                wait = 8 * (attempt + 1)
+                print(f"LLM 500 (attempt {attempt+1}), retrying in {wait}s...", flush=True)
+                _time.sleep(wait)
+                continue
+            raise RuntimeError(f"LLM {r.status_code}: {r.text[:300]}")
+        except requests.RequestException as e:
+            last_err = e
+            if attempt < 4:
+                _time.sleep(8 * (attempt + 1))
+                continue
+            raise RuntimeError(f"LLM request failed after retries: {e}")
+    raise RuntimeError(f"LLM failed after retries: {last_err}")
 
 
 def dispatch(name, args):
@@ -519,6 +541,12 @@ def run_session(db_path, session, goal, transcript_path):
                 args = json.loads(c["function"]["arguments"] or "{}")
             except json.JSONDecodeError:
                 args = {}
+            # tolerate alternate parameter names the model may use
+            if name == "run_sql" and "sql" not in args:
+                for alt in ("query", "statement", "sql_query", "q"):
+                    if alt in args and args[alt]:
+                        args["sql"] = args[alt]
+                        break
             result = dispatch(name, args)
             entry["tool_calls"].append({"name": name, "args": args, "result": result})
             msgs.append({"role": "tool", "tool_call_id": c.get("id", "x"),

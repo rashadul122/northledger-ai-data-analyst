@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NorthLedger Insights: RentSafeTO Building Health</title>
 <meta name="description" content="Rashadul Islam Roman, data analyst in Toronto. A RentSafeTO building-health scorecard built from City of Toronto open data, with checked findings, honest forecasts and the receipts behind every number.">
-<script>try{var t=localStorage.getItem('nl-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
 <style>
 :root {
   color-scheme: light;
@@ -164,7 +164,7 @@ ul.limits li { color: var(--muted); font-size: 14px; margin: 3px 0; }
 /* ---------- top bar ---------- */
 .topbar { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline); }
 .bar { display: flex; align-items: center; gap: 16px; min-height: 58px; }
-.wordmark { font-weight: 800; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; font-size: 16px; white-space: nowrap; }
+.wordmark { font-weight: 800; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; font-size: 16px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* shrinks before the header can overflow: a desktop scrollbar takes 15 px of the viewport */
 .wordmark small { display: block; font-weight: 600; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
 .nav { margin-left: auto; }
 .nav-links { display: flex; gap: 18px; list-style: none; margin: 0; padding: 0; }
@@ -611,7 +611,7 @@ pre.snip { background: var(--bg); border: 1px solid var(--hairline); border-radi
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-23 12:22:35 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">41</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-23 13:10:41 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">41</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -1223,7 +1223,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-23 12:22:35 UTC</span>; <span data-fact="site_build:display.build_checks_passed">41</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-23 13:10:41 UTC</span>; <span data-fact="site_build:display.build_checks_passed">41</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">599</span> tests in <span data-fact="site_build:display.tests_suites">39</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-23 12:12:28 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">6dae24adf9b3</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>

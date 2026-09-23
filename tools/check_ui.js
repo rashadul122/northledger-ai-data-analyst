@@ -792,6 +792,67 @@ check('replay-text-has-side-margins-on-phone', PHONE, async (ctx) => {
   ok(!r.length, r.length + ' text blocks touch the edge, e.g. "' + (r[0] || {}).t + '" (left ' + Math.round((r[0] || {}).l) + ' px, right ' + Math.round((r[0] || {}).r) + ' px)');
 }, { mobile: true });
 
+// the header fits in narrow desktop windows too, where a classic scrollbar takes 15 px of the viewport
+// (live preview, 23 Sep 2026: at 384 px "Book audit" poked 7 px past the edge; phones use overlay scrollbars)
+check('header-fits-beside-a-classic-scrollbar', DESK, async (ctx) => {
+  const p = await open(ctx);
+  // headless Chrome hides scrollbars, so simulate one: media queries still see the full viewport while the
+  // page lays out 15 px narrower, exactly what a classic scrollbar does
+  await p.addStyleTag({ content: 'html { width: calc(100% - 15px) !important; }' });
+  const bad = [];
+  for (let w = 330; w <= 440; w += 2) {
+    await p.setViewportSize({ width: w, height: 800 });
+    await p.waitForTimeout(40);
+    const r = await p.evaluate(() => { const W = Math.round(document.documentElement.getBoundingClientRect().width), c = document.querySelector('.topbar .cta').getBoundingClientRect();
+      return { W, sw: Math.max(document.body.scrollWidth, document.querySelector('.topbar').scrollWidth), right: Math.round(c.right) }; });
+    if (r.sw > r.W || r.right > r.W) bad.push(w + ' px (content ' + r.W + ', button ends ' + r.right + ')');
+  }
+  ok(!bad.length, 'the header overflows at ' + bad.length + ' widths, e.g. ' + bad.slice(0, 3).join('; '));
+});
+
+// both pages open light (white) even on a computer set to dark mode; dark only when the visitor picks it
+// (owner's request, 23 Sep 2026), and the choice carries between the main page and the replay page
+async function themeOf(p) {
+  return p.evaluate(() => { const bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number);
+    return { theme: document.documentElement.getAttribute('data-theme'), light: (bg[0] + bg[1] + bg[2]) / 3 > 200 }; });
+}
+check('pages-open-light-on-a-dark-computer', DESK, async (ctx) => {
+  const p = await open(ctx);
+  const a = await themeOf(p);
+  ok(a.theme === 'light' && a.light, 'the main page opens ' + a.theme + ' (light background: ' + a.light + ') on a dark-mode computer');
+  const d = await openDemo(ctx);
+  const b = await themeOf(d);
+  ok(b.theme === 'light' && b.light, 'the replay page opens ' + b.theme + ' (light background: ' + b.light + ') on a dark-mode computer');
+}, { colorScheme: 'dark' });
+check('theme-choice-carries-between-pages', DESK, async (ctx) => {
+  const p = await open(ctx);
+  await p.click('#theme-btn');
+  const a = await themeOf(p);
+  ok(a.theme === 'dark' && !a.light, 'the main page toggle did not switch to dark');
+  const d = await openDemo(ctx);
+  const b = await themeOf(d);
+  ok(b.theme === 'dark' && !b.light, 'the replay page ignores the choice made on the main page (' + b.theme + ')');
+  ok(await d.$('#theme-toggle'), 'the replay page has no theme toggle');
+  await d.click('#theme-toggle');
+  const c = await themeOf(d);
+  ok(c.theme === 'light' && c.light, 'the replay page toggle did not switch back to light');
+  await p.reload(); await p.waitForTimeout(150);
+  const e = await themeOf(p);
+  ok(e.theme === 'light', 'the main page did not pick up the choice made on the replay page (' + e.theme + ')');
+}, { colorScheme: 'dark' });
+
+// the replay page's header keeps everything inside it on a phone, theme toggle included
+check('replay-header-fits-on-phone', PHONE, async (ctx) => {
+  const p = await openDemo(ctx);
+  const r = await p.evaluate(() => { const h = document.querySelector('header.hd').getBoundingClientRect(), W = document.documentElement.clientWidth;
+    return Array.from(document.querySelectorAll('header.hd *')).filter((e) => e.offsetParent !== null)
+      .map((e) => ({ t: (e.textContent || e.className || e.tagName).trim().slice(0, 30), b: e.getBoundingClientRect() }))
+      .filter((x) => x.b.width && (x.b.bottom > h.bottom + 0.5 || x.b.right > W + 0.5 || x.b.top < h.top - 0.5))
+      .map((x) => x.t + ' (bottom ' + Math.round(x.b.bottom) + ' vs header ' + Math.round(h.bottom) + ')'); });
+  ok(!r.length, 'header content spills out: ' + r.slice(0, 2).join('; '));
+  ok(await p.$('#theme-toggle'), 'no theme toggle in the replay header');
+}, { mobile: true });
+
 /* ------------------------------------------------------------ runner */
 (async () => {
   const browser = await playwright.chromium.launch({ executablePath: CHROME, headless: true });
@@ -799,7 +860,7 @@ check('replay-text-has-side-margins-on-phone', PHONE, async (ctx) => {
   for (const c of checks) {
     if (ONLY.size && !ONLY.has(c.name)) continue;
     ran++;
-    const ctx = await browser.newContext({ viewport: c.viewport, isMobile: !!c.opts.mobile, hasTouch: !!c.opts.mobile, reducedMotion: 'reduce' });
+    const ctx = await browser.newContext({ viewport: c.viewport, isMobile: !!c.opts.mobile, hasTouch: !!c.opts.mobile, reducedMotion: 'reduce', colorScheme: c.opts.colorScheme || 'light' });
     try {
       await c.fn(ctx);
       console.log('UI PASS ' + c.name);

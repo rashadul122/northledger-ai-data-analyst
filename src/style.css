@@ -36,7 +36,7 @@ ul.limits li { color: var(--muted); font-size: 14px; margin: 3px 0; }
 /* ---------- top bar ---------- */
 .topbar { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline); }
 .bar { display: flex; align-items: center; gap: 16px; min-height: 58px; }
-.wordmark { font-weight: 800; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; font-size: 16px; white-space: nowrap; }
+.wordmark { font-weight: 800; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; font-size: 16px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* shrinks before the header can overflow: a desktop scrollbar takes 15 px of the viewport */
 .wordmark small { display: block; font-weight: 600; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
 .nav { margin-left: auto; }
 .nav-links { display: flex; gap: 18px; list-style: none; margin: 0; padding: 0; }

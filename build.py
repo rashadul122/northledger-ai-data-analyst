@@ -1522,7 +1522,7 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NorthLedger Insights: RentSafeTO Building Health</title>
 <meta name="description" content="Rashadul Islam Roman, data analyst in Toronto. A RentSafeTO building-health scorecard built from City of Toronto open data, with checked findings, honest forecasts and the receipts behind every number.">
-<script>try{var t=localStorage.getItem('nl-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
 <style>
 %s
 </style>
@@ -1591,7 +1591,7 @@ CASE_PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Case study: RentSafeTO Building Health | NorthLedger Insights</title>
 <meta name="description" content="A RentSafeTO case study on City of Toronto open data: what the audit found and what it means for a building operator. Every figure is filled in from the site's data files.">
-<script>try{var t=localStorage.getItem('nl-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
 <style>
 %s
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }

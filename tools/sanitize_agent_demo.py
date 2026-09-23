@@ -350,7 +350,40 @@ h2.sec { color: var(--ink); font-size: 26px; line-height: 1.15; letter-spacing: 
 .session-card:focus-visible, .btn-replay:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .session-anchors { height: 0; overflow: hidden; }
 .session-anchors span { display: block; height: 0; scroll-margin-top: 12px; }
+/* light by default, dark only when chosen (the same saved choice as the main page: localStorage nl-theme) */
+:root { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+.theme-btn { flex: none; width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface); cursor: pointer; display: grid; place-items: center; }
+.theme-btn .ti { width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(90deg, var(--ink) 50%, transparent 50%); border: 2px solid var(--ink); }
+.theme-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* on phones the tagline wrapped to four lines and spilled out of the header once the toggle joined it;
+   the hero below says the same thing */
+@media (max-width: 600px) { .hd .live { display: none; } .hd .theme-btn { margin-left: auto; } }
 """
+# runs in <head>, before the page paints: light unless the visitor chose dark on either page
+THEME_BOOT = ("<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}"
+              "document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>")
+THEME_BTN = ('<button type="button" class="theme-btn" id="theme-toggle" aria-label="Switch between light and dark theme">'
+             '<span class="ti" aria-hidden="true"></span></button>')
+THEME_JS = ("<script>(function(){var b=document.getElementById('theme-toggle'),r=document.documentElement;if(!b)return;"
+            "b.addEventListener('click',function(){var n=r.getAttribute('data-theme')==='dark'?'light':'dark';"
+            "r.setAttribute('data-theme',n);try{localStorage.setItem('nl-theme',n);}catch(e){}});})();</script>")
+
+
+def theme_css(text):
+    """The upstream page follows the OS dark setting with no way to override it; scope its dark rules to
+    data-theme="dark" so the page opens light and the toggle decides."""
+    text, n = re.subn(r"@media \(prefers-color-scheme: dark\) \{\s*:root \{(.*?)\}\s*\}",
+                      lambda m: ':root[data-theme="dark"] {' + m.group(1) + "}", text, count=1, flags=re.S)
+    if n != 1:
+        raise Missing("expected part of the page not found: dark palette")
+    text = replace_once(text, "@media (prefers-color-scheme: dark) { .chat-head .agent-dot { color: #062521; } }",
+                        ':root[data-theme="dark"] .chat-head .agent-dot { color: #062521; }', "dark agent dot")
+    text = replace_once(text, "@media (prefers-color-scheme: dark) { .dl-btn { color: #062521 !important; } }",
+                        ':root[data-theme="dark"] .dl-btn { color: #062521 !important; }', "dark download button")
+    if "prefers-color-scheme: dark" in text:
+        raise SystemExit("sanitize: a dark-mode rule still follows the OS setting")
+    return text
 ARCHIVE_JS = """<script>
 /* added by tools/sanitize_agent_demo.py: archive divider for sessions kept out of the showcase */
 (function () {
@@ -510,12 +543,17 @@ def build(src_html, ev, fix5):
                         r'(?=<p class="foot-note">Honesty notes:)', sources_html(ev), "data sources block")
     out = sub_once(out, r'<p class="foot-note">Honesty notes:.*?</p>', HONESTY, "honesty notes")
     out = replace_once(out, "</style>", EXTRA_CSS + "</style>", "style end")
+    out = theme_css(out)
+    out = replace_once(out, "</head>", THEME_BOOT + "\n</head>", "head end")
+    out, n = re.subn(r'(<div class="live">.*?</div>)', lambda m: m.group(1) + "\n    " + THEME_BTN, out, count=1, flags=re.S)
+    if n != 1:
+        raise Missing("expected part of the page not found: theme button")
     out = replace_once(out, "</header>", "</header>\n<main id=\"main\">", "header end")
     out = replace_once(out, '<footer class="wrap">', '</main>\n<footer class="wrap">', "footer start")
     out = patch_app(out)
     manifest = ('<script type="application/json" id="demo-manifest">%s</script>\n'
                 % json.dumps(man, ensure_ascii=False, sort_keys=True).replace("</", "<\\/"))
-    out = replace_once(out, "</body>", ARCHIVE_JS + "\n" + manifest + "</body>", "body end")
+    out = replace_once(out, "</body>", ARCHIVE_JS + "\n" + THEME_JS + "\n" + manifest + "</body>", "body end")
     return out, man
 
 

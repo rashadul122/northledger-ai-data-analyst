@@ -1,7 +1,7 @@
 {
  "schema": "site_build/1",
  "what": "Figures the page shows that are derived from other files (a share turned into a percentage, a count of sessions, a file size). Written by build.py; each key names its source.",
- "built_at": "2026-09-23T12:22:35Z",
+ "built_at": "2026-09-23T13:10:41Z",
  "display": {
   "fixture_lost": "0",
   "fixture_quarantine_pct": "4.0%",
@@ -304,7 +304,7 @@
   "pbip_last": "2026-09-21",
   "pbip_mean": "88.9",
   "build_checks_passed": "41",
-  "built_at_label": "2026-09-23 12:22:35 UTC"
+  "built_at_label": "2026-09-23 13:10:41 UTC"
  },
  "derived_from": {
   "fixture_lost": "engine_scorecard fixture.rows - after.clean - after.quarantined",

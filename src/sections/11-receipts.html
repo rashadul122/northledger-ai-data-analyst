@@ -1,0 +1,53 @@
+<section class="rc-sec" id="receipts" aria-labelledby="rc-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">Receipts</p>
+      <h2 id="rc-h">Sources, build and errata</h2>
+      <p class="lede">Every tile and claim above links here. Nothing on this site runs on a schedule or fetches data when you visit: each dataset is a download someone made on purpose, recorded with its address, time, size and checksum.</p>
+    </div>
+    <h3 id="r-sources">Data sources and licences</h3>
+    <div class="tscroll" tabindex="0" role="region" aria-label="Sources table, scrolls sideways" data-fact-scope>{{r sources_table}}</div>
+    <div class="two" data-fact-scope>
+      <div>
+        <p><strong>City of Toronto data.</strong> {{f rentsafe_meta:meta.licence.required_attribution_text}} (<a href="{{r ogl_url}}" rel="noopener">the licence</a>). This is independent analysis by NorthLedger Insights; it is not produced by, affiliated with or endorsed by the City of Toronto or RentSafeTO. The sign bands (green, yellow, red) are the City's own, from <a href="{{r bands_url}}" rel="noopener">its page on the colour-coded signs</a>; whether signs issued for older evaluations used the same cut-offs was not checked for this build. The ward boundaries come from the City Wards package, whose catalogue entry names no licence; the portal-wide licence is assumed there.</p>
+        <p><strong>Retail sales.</strong> {{d fred0_agency}}. Series RSAFSNA and RSAFS. FRED's terms for redistributing derived charts were not re-read for this build.</p>
+        <p><strong>Design credit.</strong> The scorecard's layout is inspired by the WEF Travel and Tourism Development Index table; no TTDI data is reproduced.</p>
+      </div>
+      <div>
+        <h3 id="r-tests">Build and tests</h3>
+        <ul class="plain">
+          <li>This page: built {{d built_at_label}}; {{d build_checks_passed}} build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>Engine tests: {{d tests_total}} tests in {{d tests_suites}} suites, {{d tests_state}}, run {{d tests_ran_at}} on engine code <code>{{d tests_snapshot}}</code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
+          <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
+          <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; {{f forecast_lab:display.backtest_forecasts}} scored forecasts from {{f forecast_lab:display.backtest_origins}} origins, {{f forecast_lab:display.backtest_first_origin}} to {{f forecast_lab:display.backtest_last_origin}}.</li>
+          <li>Scorecard and analyses: <a href="data/rentsafe_scorecard.json">scorecard</a>, <a href="data/rentsafe_cube.json">cube</a>, <a href="data/rentsafe_meta.json">metadata and data health</a>, analyses <a href="data/rentsafe_analysis_a_points_per_fix.json">A</a>, <a href="data/rentsafe_analysis_b_risk.json">B</a>, <a href="data/rentsafe_analysis_d_archetypes.json">D</a>.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="two" data-fact-scope>
+      <div>
+        <h3>Errata, published rather than fixed silently</h3>
+        <ul class="plain">
+          <li>The first version of this page mislabelled its retail series and showed an in-sample error as accuracy; its forecast lost to a naive guess out of sample. See the correction in <a href="#an-c">Analysis C</a>.</li>
+          <li>A replayed AI session stated {{d s5_stated}} where its own parts add to {{d s5_correct}}.</li>
+          <li>The engine's cleaner once kept {{f engine_scorecard:fixture.before.clean|int}} of {{f engine_scorecard:fixture.rows|int}} rows of a messy file; fixed, with the test that caught it.</li>
+          <li>An earlier traceability figure for the replays was withdrawn; the measured figure is {{d replay_trace_pct}}.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Accessibility and privacy</h3>
+        <p>Target: <span data-fact-exempt="the name of a standard">WCAG 2.2 AA</span>. Every chart has a text name and a table view, every focusable chart mark has a spoken name, tooltips open on keyboard focus and close with Esc, the scorecard is a real table on every screen size, and text contrast is checked at build (worst pair {{d contrast_worst}}). Behaviour is checked in a headless browser at build time (tools/check_ui.js). Known gaps: the charts need JavaScript (their figures are in the text and in the data files without it), and the page has not been tested with a screen reader by a person.</p>
+        <p>No trackers, no analytics, no third-party requests: the page is one file with its data inside it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="foot">
+  <div class="wrap foot-grid">
+    <a class="wordmark" href="#top">NorthLedger Insights<small>Rashadul Islam Roman, Toronto</small></a>
+    <p class="fnote">Hand-built by Rashadul: the PL-300 project. Generated by the NorthLedger engine (AI-built): the audits, briefs and Power BI export. Written with AI assistance (Hermes Agent with GLM, and Claude): this site, the analyses and the engine. Not investment advice.</p>
+    <p class="fnote"><a href="agent-demo.html">AI analyst replays</a> &middot; <a href="case-study.html">Case study</a> &middot; <a href="#receipts">Receipts</a> &middot; <a href="#top">Back to top</a></p>
+  </div>
+</footer>
+<div class="tip" id="tip" role="tooltip" hidden></div>

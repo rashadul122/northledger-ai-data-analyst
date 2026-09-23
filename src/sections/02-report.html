@@ -1,0 +1,125 @@
+<section class="report-sec" id="report" aria-labelledby="report-h">
+  <div class="wrap">
+    <div class="sec-head" data-fact-scope>
+      <p class="kicker">The report</p>
+      <h2 id="report-h">RentSafeTO Building Health, as an interactive report</h2>
+      <p class="lede">A Power BI-style report built in the browser from City of Toronto open data, with evaluations to {{f rentsafe_meta:meta.data_as_of}}. Use the slicers: the cards, the Portfolio pulse and Pillars pages and the scorecard below filter together; Points per fix and the risk chart follow the district and ward only, and the trend chart follows a single ward. Tap or click a ward bar or map area to filter to it; tap another to switch. Clear a filter with the &times; on its chip or with Reset filters. With a keyboard, Ctrl or Cmd adds more wards and Esc clears the last filter. Public view is ward and district level only: no landlord, firm or address is ranked, and a view of fewer than five buildings shows no values.</p>
+      <noscript><p class="note">The charts, slicers and table views need JavaScript. Without it, the figures are still in the text of this page and in the data files linked under Receipts.</p></noscript>
+      <p class="indep">Independent analysis by NorthLedger Insights of the City's open data. It is not produced by, affiliated with or endorsed by the City of Toronto or RentSafeTO.</p>
+    </div>
+
+    <div class="pbi" id="pbi">
+      <div class="pbi-head">
+        <div class="pbi-title"><strong>RentSafeTO Building Health</strong><span class="muted" data-fact-scope>City of Toronto open data to {{f rentsafe_meta:meta.data_as_of}} (latest evaluation in the file)</span></div>
+        <div class="pbi-actions">
+          <button type="button" class="tb" data-drawer="measures" aria-expanded="false" aria-controls="drawer">Measures</button>
+          <button type="button" class="tb" data-drawer="model" aria-expanded="false" aria-controls="drawer">Model</button>
+          <button type="button" class="tb" data-drawer="practice" aria-expanded="false" aria-controls="drawer">Best practice</button>
+          <button type="button" class="tb" id="btn-csv">Download this view (CSV)</button>
+          <button type="button" class="tb" id="btn-reset">Reset filters</button>
+        </div>
+      </div>
+      <div class="slicers" data-fact-exempt="slicer choices are the cube's own values">{{r slicers}}</div>
+      <div class="chips" id="chips" aria-live="polite" data-fact-exempt="active filters, echoed from the slicers"></div>
+
+      <div class="tabs" role="tablist" aria-label="Report pages">
+        <button type="button" role="tab" id="tab-pulse" aria-controls="pg-pulse" aria-selected="true">Portfolio pulse</button>
+        <button type="button" role="tab" id="tab-pillars" aria-controls="pg-pillars" aria-selected="false" tabindex="-1">Pillars</button>
+        <button type="button" role="tab" id="tab-fix" aria-controls="pg-fix" aria-selected="false" tabindex="-1">Points per fix</button>
+        <button type="button" role="tab" id="tab-trend" aria-controls="pg-trend" aria-selected="false" tabindex="-1">Trend and risk</button>
+        <button type="button" role="tab" id="tab-health" aria-controls="pg-health" aria-selected="false" tabindex="-1">Data health</button>
+      </div>
+
+      <div class="page" role="tabpanel" id="pg-pulse" aria-labelledby="tab-pulse" data-fact-scope>
+        <div class="kpis" id="kpis">{{r kpis}}</div>
+        <p class="note">Two cards are citywide and do not follow the slicers. {{r audit_note}} Past the two-year mark means: {{r due_note}}.</p>
+        <div class="vgrid">
+          <figure class="visual" data-table="1"><figcaption>Average City score by ward, highest first</figcaption><div class="viz" id="v-wards" data-fact-exempt="drawn in the browser from data/rentsafe_cube.json"></div></figure>
+          <figure class="visual" data-table="1"><figcaption>Ward map, shaded by average City score</figcaption><div class="viz" id="v-map" data-fact-exempt="drawn in the browser from data/rentsafe_cube.json and the City ward boundaries"></div></figure>
+          <figure class="visual" data-table="1"><figcaption>Sign bands by property type</figcaption><div class="viz" id="v-ptype" data-fact-exempt="drawn in the browser from data/rentsafe_cube.json"></div></figure>
+          <div class="visual narrative"><h3>What this view says</h3><div id="v-story" data-fact-exempt="written in the browser from the same measures as the cards"></div></div>
+        </div>
+      </div>
+
+      <div class="page" role="tabpanel" id="pg-pillars" aria-labelledby="tab-pillars" hidden data-fact-scope>
+        <div class="seg" role="group" aria-label="How an item scored zero is counted">
+          <button type="button" class="sg" data-basis="flag" aria-pressed="true">Zero as a separate refusal flag</button>
+          <button type="button" class="sg" data-basis="city" aria-pressed="false">City basis: zero counts as zero</button>
+        </div>
+        <div class="vgrid">
+          <figure class="visual" data-table="1"><figcaption>Pillar scores for this view, with the City average marked</figcaption><div class="viz" id="v-pillars" data-fact-exempt="drawn in the browser from data/rentsafe_cube.json"></div></figure>
+          <figure class="visual" data-table="0"><figcaption>District by pillar, with data bars</figcaption><div class="viz" id="v-matrix" data-fact-exempt="drawn in the browser from data/rentsafe_cube.json"></div></figure>
+        </div>
+        <p class="note">The full ward-by-pillar table is the <a href="#scorecard">scorecard</a> below; it follows these slicers too. The district rows here average buildings; the scorecard's district rows average their wards, so the two differ.</p>
+      </div>
+
+      <div class="page" role="tabpanel" id="pg-fix" aria-labelledby="tab-fix" hidden data-fact-scope>
+        <div class="signals">
+          <article class="signal"><h3>A refused or blocked area scores zero</h3><p>On the {{d a_zero_rows}} evaluations with an item scored zero, counting it as zero points reproduces {{d a_zero_rows_share}} of the City's published scores exactly; treating it as not applicable reproduces {{d a_missing_rows_share}}.</p><p class="act">Book access to every area before evaluation day.</p><p class="verdict"><span class="badge b-recommend"><svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg>RECOMMEND</span> reproduces the City's own numbers</p></article>
+          <article class="signal"><h3>Paperwork items fail more often</h3><p>{{d a_paperwork_scored1}} of paperwork and tenant-communication items scored the lowest mark, against {{d a_highrisk_scored1}} of high-risk items. Logs and plans are usually quicker to fix than a building element.</p><p class="verdict"><span class="badge b-watch"><svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>WATCH</span> a count, not a cost model</p></article>
+          <article class="signal"><h3>A high-risk item weighs {{d a_ratio_published}} times a cosmetic one</h3><p>That is the City's published tier weighting, and it reproduces {{d a_zero_all_share}} of all scores exactly. A free straight-line fit gives a ratio of {{d a_ratio_recovered}}, but the same fit on scores made by the City's exact formula gives {{f rentsafe_analysis_a_points_per_fix:unconstrained.ratio_on_formula_scores|fixed:2}} too: the gap is the fit, not the weights.</p><p class="verdict"><span class="badge b-recommend"><svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg>RECOMMEND</span> fix high-risk items first</p></article>
+          <article class="signal"><h3>Lowest-scoring items</h3><p>Average score, out of three: {{d a_low_items}}.</p><p class="verdict"><span class="badge b-watch"><svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>WATCH</span> citywide, latest evaluation of each building</p></article>
+        </div>
+        <figure class="visual" data-table="1"><figcaption>Points left on the table per building, by pillar, for the chosen area (district or wards)</figcaption><div class="viz" id="v-fixward" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_a_points_per_fix.json"></div></figure>
+        <details class="more"><summary>All {{d n_items}} items, ranked (sortable)</summary><p class="note">{{r ppf_basis}}</p><div class="tscroll" tabindex="0" role="region" aria-label="Items table, scrolls sideways">{{r ppf_table}}</div></details>
+      </div>
+
+      <div class="page" role="tabpanel" id="pg-trend" aria-labelledby="tab-trend" hidden data-fact-scope>
+        <div class="vgrid">
+          <figure class="visual" data-table="1"><figcaption>Average proactive City score by year (the score before reactive deductions); the scoring method changed in the middle of the series</figcaption><div class="viz" id="v-trend" data-fact-exempt="drawn in the browser from data/rentsafe_trend.json"></div></figure>
+          <figure class="visual" data-table="1"><figcaption>Risk of falling below green at the next evaluation, by ward: model, persistence and what happened</figcaption><div class="viz" id="v-risk" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_b_risk.json"></div></figure>
+        </div>
+        <p class="note">{{f rentsafe_trend:method_break}} Pick a ward to see its within-year rank against other evaluated buildings.</p>
+        <div class="two">
+          <div><h3>Did the model beat persistence?</h3>{{r b_metrics}}<p class="verdict-line">{{f rentsafe_analysis_b_risk:gate.verdict_text}} The method is in <a href="#an-b">Analysis B</a>.</p></div>
+          <div><h3>How signs move between evaluations</h3>{{r b_transitions}}</div>
+        </div>
+        <ul class="limits">{{r trend_limits}}</ul>
+      </div>
+
+      <div class="page" role="tabpanel" id="pg-health" aria-labelledby="tab-health" hidden data-fact-scope>
+        <p class="lede-sm">The NorthLedger engine audited and cleaned all three City files first; the build then applied its own domain rules. Rows are reconciled at every step: nothing is dropped without a reason.</p>
+        <div class="tscroll" tabindex="0" role="region" aria-label="Reconciliation table, scrolls sideways">{{r health_recon}}</div>
+        <div class="two">
+          <div><h3>The build's own quarantine</h3><ul class="plain">{{r health_build}}</ul><h3>Why rows were set aside</h3><ul class="plain">{{r health_quarantine}}</ul></div>
+          <div><h3>Flags, kept and counted</h3><ul class="plain">{{r health_flags}}</ul><p class="note">{{r grid_note}}</p></div>
+        </div>
+        <div class="fresh-watch"><span class="badge b-watch"><svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>WATCH</span> Freshness: {{r reg_fresh}}</div>
+        <h3>Decisions log</h3>
+        <ul class="decisions">{{r health_decisions}}</ul>
+      </div>
+    </div>
+
+    <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-h" tabindex="-1">
+      <div class="drawer-head"><h3 id="drawer-h">Measures</h3><button type="button" class="tb" id="drawer-close">Close</button></div>
+      <div class="dpanel" data-panel="measures">
+        <p class="note">Each measure the report runs, in plain words, with the formula the browser actually computes. These are written for this RentSafeTO data; none of them comes from the owner's separate PL-300 project.</p>
+        <dl class="measures">
+          <dt>Buildings</dt><dd>Count of buildings in view, each at its latest City evaluation. <code>sum(n)</code></dd>
+          <dt>Units covered</dt><dd>Confirmed units in those buildings. <code>sum(units)</code></dd>
+          <dt>Average City score</dt><dd>Mean of the City's current building score over the buildings in view; each building counts once. <code>sum(score_sum) / sum(n)</code></dd>
+          <dt>Average City score, unit-weighted</dt><dd>The same mean, weighted by units, so it reads as the score the average tenant lives with. <code>sum(score_usum) / sum(units)</code></dd>
+          <dt>Green, yellow and red share</dt><dd>Share of buildings whose City score falls in each lobby-sign band. <code>sum(green) / sum(n)</code></dd>
+          <dt>Evaluations with a refusal, per hundred</dt><dd>Evaluations with at least one area scored zero (refused or blocked), per hundred evaluations. <code>sum(refused_evals) / sum(n) * 100</code></dd>
+          <dt>Pillar score</dt><dd>For one building: the weighted share of full marks over the pillar's items, using the City's published tier weights, with not-applicable items left out and, on the default basis, refused or blocked items (scored 0) also left out and counted separately as refusals; the City basis counts them as zero points. For a view: the mean over buildings. <code>sum(p_sum) / sum(p_n)</code>; City basis <code>sum(p_csum) / sum(p_cn)</code></dd>
+          <dt>Proactive score (change and trend)</dt><dd>The hero's "What changed", the trend chart, Analysis B and the control chart use the City's proactive building score, not the current score the cards use: reactive deductions are recorded only on each building's latest evaluation, so only the proactive score compares one evaluation with the next.</dd>
+          <dt>Points per fix</dt><dd>City points gained by raising one item to full marks, averaged over every building, from the City's own formula. Read from Analysis A's ward table; it follows the district and ward filters, not the year or property-type filters.</dd>
+          <dt>District and City rows</dt><dd>The simple average of the member ward cells, each ward counted once, like a regional row in a league table.</dd>
+        </dl>
+        <h4>What the engine wrote into the Power BI export</h4>
+        <p class="note">Engine-generated (AI-built), not hand-written. These are the measures the NorthLedger exporter put into the RentSafeTO project; they are generic averages, which is part of why the report above is built by the site's own code.</p>
+        <ul class="dax">{{r engine_dax}}</ul>
+      </div>
+      <div class="dpanel" data-panel="model" hidden>
+        <p class="note">The tables actually exported to Power BI for this data, read from the TMDL files at build. {{r model_note}}</p>
+        <div class="model-wrap">{{r model_svg}}</div>
+        <h4>Target model (roadmap, not built)</h4>
+        <p class="note">One fact of evaluations and one of item scores (evaluation by item), with dimensions for building (from the registration file), item (pillar, tier, weight), ward to district, and a marked date table; single-direction one-to-many relationships.</p>
+      </div>
+      <div class="dpanel" data-panel="practice" hidden>
+        <p class="note">Checked at build from the exported project and this page. Evidence, not ticks; what is not met says so.</p>
+        {{r best_practice}}
+      </div>
+    </aside>
+  </div>
+</section>

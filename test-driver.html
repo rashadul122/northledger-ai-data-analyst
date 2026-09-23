@@ -1,0 +1,65 @@
+<script>
+/* QA driver, injected by verify.sh into a COPY of the built page (never into index.html).
+   It only reports what the page rendered; verify.sh compares that with the JSON the page
+   was built from, so no expected figure is typed here. */
+window.__errs = [];
+window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @' + l + ':' + c); };
+(function () {
+  function txt(sel) { var e = document.querySelector(sel); return e ? e.textContent.replace(/\s+/g, ' ').trim() : null; }
+  function all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function run() {
+    var out = {};
+    try {
+      /* ---- checks for any layout ---- */
+      out.profile = (document.getElementById('mb-fit') && window.DATA) ? 'v1' : 'generic';
+      out.hScroll = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+      out.hasMain = !!document.querySelector('main');
+      out.emDash = (document.body.innerText || '').indexOf(String.fromCharCode(8212)) > -1;  /* visible text only */
+      out.factCount = all('[data-fact]').length;
+      out.svgUnlabelled = all('svg').filter(function (s) {
+        if (s.getAttribute('aria-hidden') === 'true') return false;
+        if (s.closest('[aria-hidden="true"]')) return false;
+        var named = s.getAttribute('aria-label') || s.getAttribute('aria-labelledby') || s.querySelector('title');
+        return !(s.getAttribute('role') === 'img' && named);
+      }).map(function (s) { var p = s.parentElement; return (p && p.id) ? '#' + p.id : (p ? String(p.className) : '?'); });
+
+      /* ---- v1 layout: raw rendered text, compared with demo-data.json by verify.sh ---- */
+      if (out.profile === 'v1') {
+        var v = {};
+        v.bcDate = txt('#bc-date'); v.bcP1 = txt('#bc-p1'); v.bcP2 = txt('#bc-p2'); v.bcP3 = txt('#bc-p3');
+        v.kpiValues = all('#kpis .kpi .k-value').map(function (e) { return e.textContent.trim(); });
+        v.memo1 = txt('#m-p1'); v.memo2 = txt('#m-p2'); v.memo3 = txt('#m-p3');
+        v.modelFit = txt('#mb-fit'); v.modelDisc = txt('#mb-disc');
+        v.stats = all('#stats-grid .stat').length; v.kpis = all('#kpis .kpi').length;
+        v.chartPaths = all('#chart-mount svg path').length;
+        v.legend = all('#chart-legend span').length;
+        v.offers = all('.offer').length; v.loopSteps = all('.loop .step').length; v.chips = all('.chip').length;
+        v.archSvg = !!document.querySelector('#arch-mount svg');
+        v.footNote = txt('#foot-note');
+        var band = document.querySelector('#chart-mount .band'), naive = document.querySelector('#chart-mount .naive');
+        var tb = document.querySelector('#tg-band'), tn = document.querySelector('#tg-naive');
+        v.bandVisible = !!band && band.style.display !== 'none';
+        v.naiveVisible = !!naive && naive.style.display !== 'none';
+        if (tb && tn && band && naive) {
+          tb.checked = false; tb.dispatchEvent(new Event('change'));
+          tn.checked = false; tn.dispatchEvent(new Event('change'));
+          v.bandHiddenAfterToggle = band.style.display === 'none';
+          v.naiveHiddenAfterToggle = naive.style.display === 'none';
+          tb.checked = true; tb.dispatchEvent(new Event('change'));
+          tn.checked = true; tn.dispatchEvent(new Event('change'));
+          v.bandRestored = band.style.display !== 'none';
+          v.naiveRestored = naive.style.display !== 'none';
+        }
+        out.v1 = v;
+      }
+    } catch (err) { out.THROWN = String(err); }
+    out.errors = window.__errs;
+    var pre = document.createElement('pre');
+    pre.id = 'TESTOUT';
+    pre.textContent = JSON.stringify(out, null, 1);
+    document.body.appendChild(pre);
+  }
+  /* after the page's own 900 ms force-reveal */
+  window.addEventListener('load', function () { setTimeout(run, 1200); });
+})();
+</script>

@@ -1,0 +1,15 @@
+<section class="rp-sec" id="replays" aria-labelledby="rp-h" data-fact-scope>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">The AI analyst, replayed</p>
+      <h2 id="rp-h">Recorded sessions, played back as they happened</h2>
+      <p class="lede">{{d replay_sessions}} recorded sessions of an AI data analyst working on public data: {{d replay_featured}} featured, {{d replay_archived}} archived. These recorded sessions send query results to a remote model ({{d replay_model}}). The Data Health Audit offered below is a different tool: the NorthLedger engine runs it, and its runs recorded on this page made no AI model calls.</p>
+    </div>
+    <ul class="rp-grid">
+      <li class="rp-card"><h3>{{d rp0_title}}</h3><p class="muted">{{d rp0_db}}</p><p>{{d rp0_turns}}; report: {{d rp0_reports}}</p><a href="{{r rp0_href}}">Open the replays</a></li>
+      <li class="rp-card"><h3>{{d rp1_title}}</h3><p class="muted">{{d rp1_db}}</p><p>{{d rp1_turns}}; report: {{d rp1_reports}}</p><a href="{{r rp1_href}}">Open the replays</a></li>
+      <li class="rp-card"><h3>{{d rp2_title}}</h3><p class="muted">{{d rp2_db}}</p><p>{{d rp2_turns}}; report: {{d rp2_reports}}</p><a href="{{r rp2_href}}">Open the replays</a></li>
+    </ul>
+    <p class="note" id="r-replay">Replay audit: every recorded query was re-run on the same data, and {{d replay_q_reproduced}} of {{d replay_q_checked}} reproduced (same query, same data; that proves reproducibility, not that each query asked the right question). {{d replay_traced}} of {{d replay_stated}} numbers stated in the sessions matched a query result exactly ({{d replay_trace_pct}}). Editor's notes on the replay page are marked as added after the session.</p>
+  </div>
+</section>

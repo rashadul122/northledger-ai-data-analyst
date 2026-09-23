@@ -1,0 +1,103 @@
+<section class="an-sec" id="analysis" aria-labelledby="an-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">Analysis gallery</p>
+      <h2 id="an-h">Four deep-dives, each with its limits</h2>
+      <p class="lede">The kind of monthly deep-dive the retainer includes. Each card runs Question, Method, Chart, Finding, Limits and how to reproduce it. All of it is numpy and pandas code in this repository, written with AI assistance; it uses no model library and calls no AI model when it runs.</p>
+    </div>
+
+    <article class="acard" id="an-a" aria-labelledby="an-a-h" data-fact-scope>
+      <header><p class="kicker">Analysis A</p><h3 id="an-a-h">Points per fix: rebuilding the City's score</h3></header>
+      <dl class="qm">
+        <dt>Question</dt><dd>{{f rentsafe_analysis_a_points_per_fix:question}}</dd>
+        <dt>Method</dt><dd>{{f rentsafe_analysis_a_points_per_fix:method}} {{f rentsafe_analysis_a_points_per_fix:rounding_rule}}</dd>
+      </dl>
+      <figure class="illus" data-fact-exempt="illustration; the constants are the City's published scale and tier weights">
+        <div class="illus-scroll" tabindex="0" role="region" aria-label="Diagram; scrolls sideways on narrow screens"><svg viewBox="0 0 640 150" role="img" aria-labelledby="il-a-t"><title id="il-a-t">How a pillar score is built: each item's score out of three times its tier weight, summed, divided by the weights of the items that apply</title>
+          <g class="il">
+            <rect x="10" y="20" width="224" height="46" rx="8"/><text x="24" y="40">Item score</text><text x="24" y="58" class="ils">1, 2 or 3 (0 = refused)</text>
+            <rect x="10" y="86" width="224" height="46" rx="8"/><text x="24" y="106">Tier weight</text><text x="24" y="124" class="ils">High 3, Moderate 2, Cosmetic 0.5</text>
+            <path d="M234 43 H248 M234 109 H248 M248 43 V109 M248 76 H262" class="ila"/>
+            <rect x="262" y="52" width="170" height="48" rx="8"/><text x="276" y="72">weight x score / 3</text><text x="276" y="90" class="ils">summed over items</text>
+            <path d="M432 76 H472" class="ila"/>
+            <rect x="472" y="52" width="158" height="48" rx="8" class="ilk"/><text x="486" y="72">divided by weights</text><text x="486" y="90" class="ils">of items that apply</text>
+          </g></svg></div>
+        <figcaption>N/A items leave both the top and the bottom of the fraction; a refused item stays in the bottom, which is why it costs full marks.</figcaption>
+      </figure>
+      <figure class="visual" data-table="1"><figcaption>Expected City points per building from bringing an item to full marks, top items</figcaption><div class="viz" id="v-a-items" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_a_points_per_fix.json"></div></figure>
+      <dl class="qm">
+        <dt>Finding</dt><dd>The City's published weights reproduce {{d a_exact}} scores exactly ({{d a_zero_all_share}}). On rows with a refused item, counting it as zero reproduces {{d a_zero_rows_share}}; leaving it out reproduces {{d a_missing_rows_share}}, so the City counts a refused area as zero points. A free least-squares fit tested on the latest evaluations scores R squared {{d a_ols_test_r2}} with a mean error of {{d a_ols_test_mae}} points, against {{d a_formula_test_mae}} for the published formula, and gives a high-to-cosmetic ratio of {{d a_ratio_recovered}} against the published {{d a_ratio_published}}. The same fit on scores produced by the City's exact formula also gives {{f rentsafe_analysis_a_points_per_fix:unconstrained.ratio_on_formula_scores|fixed:2}}, so the gap is the straight-line fit's approximation, not a sign that the published weights are wrong. {{d a_unexplained}} evaluations stay unexplained.</dd>
+        <dt>Limits</dt><dd><ul class="limits">{{r a_limits}}</ul></dd>
+        <dt>Reproduce</dt><dd>Download the {{d n_city_files}} City files listed under <a href="#r-sources">Receipts</a> into one folder, then run <code>python build_rentsafe.py --check --input-dir &lt;folder&gt;</code> (<a href="build_rentsafe.py">script</a>). It rebuilds the scorecard, the cube, the trend, the ward map and Analyses A, B and D from those raw files in a temporary folder and runs their invariant checks; the data-health counts come from the engine-cleaned run and are not rebuilt by it. Their checksums are in the same table.</dd>
+      </dl>
+    </article>
+
+    <article class="acard" id="an-b" aria-labelledby="an-b-h" data-fact-scope>
+      <header><p class="kicker">Analysis B</p><h3 id="an-b-h">Will a building lose its green sign? A model against persistence</h3></header>
+      <dl class="qm">
+        <dt>Question</dt><dd>{{f rentsafe_analysis_b_risk:question}}</dd>
+        <dt>Method</dt><dd>{{f rentsafe_analysis_b_risk:model.logistic}}; next-score model: {{f rentsafe_analysis_b_risk:model.score_model}}. Pairs of consecutive evaluations of the same building: {{f rentsafe_analysis_b_risk:pairs.total|int}}, split in time ({{f rentsafe_analysis_b_risk:pairs.split}}), {{f rentsafe_analysis_b_risk:pairs.train|int}} to train and {{f rentsafe_analysis_b_risk:pairs.test|int}} to test. Baseline: {{f rentsafe_analysis_b_risk:baselines.persistence_band_rate}}. {{f rentsafe_analysis_b_risk:gate.rule}}</dd>
+      </dl>
+      <figure class="visual" data-table="1"><figcaption>Reliability on the test set: predicted chance against what happened, model and persistence</figcaption><div class="viz" id="v-b-rel" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_b_risk.json"></div></figure>
+      {{r b_metrics}}
+      <dl class="qm">
+        <dt>Finding</dt><dd><strong>{{f rentsafe_analysis_b_risk:gate.verdict_text}}</strong> A persistence baseline that adds the usual change for the building's band nearly matches the model on the score itself ({{f rentsafe_analysis_b_risk:test_metrics.mae_score_persistence_plus_band_mean_change|fixed:2}} points). The model's own range for the next score held {{d b_coverage}} of the time (Wilson interval {{d b_coverage_ci}}) when it should hold about four in five. So the page offers no per-building prediction; for a rough expectation, the last score plus the usual change for its band is the practical guide.</dd>
+        <dt>Limits</dt><dd><ul class="limits">{{r b_limits}}</ul></dd>
+        <dt>Reproduce</dt><dd>The same command as <a href="#an-a">Analysis A</a>: <code>python build_rentsafe.py --check --input-dir &lt;folder&gt;</code>, with the {{d n_city_files}} City files from <a href="#r-sources">Receipts</a> in that folder.</dd>
+      </dl>
+    </article>
+
+    <article class="acard lab" id="an-c" aria-labelledby="an-c-h" data-fact-scope>
+      <header><p class="kicker">Analysis C, the Forecast Lab</p><h3 id="an-c-h">{{f forecast_lab:display.series_label}}: which forecast holds up?</h3></header>
+      <div class="lab-kpis">
+        <div class="kpi"><div class="k-lab">Latest month, seasonally adjusted, {{f forecast_lab:display.kpi_month}}</div><div class="k-val">{{f forecast_lab:display.kpi_sa_value}}</div><div class="k-sub">month on month {{f forecast_lab:display.kpi_sa_mom}}, year on year {{f forecast_lab:display.kpi_sa_yoy}}</div></div>
+        <div class="kpi"><div class="k-lab">Winner out of sample</div><div class="k-val kv-sm">{{f forecast_lab:display.champion_name}}</div><div class="k-sub">a {{f forecast_lab:display.champion_kind}}; average miss {{f forecast_lab:display.champion_mape}} of the actual (MAPE); MASE {{f forecast_lab:display.champion_mase}}, its miss as a share of the seasonal-naive miss. Picked on the same origins it is scored on: re-picked at each origin from only the errors known then, the forecasts missed by {{f forecast_lab:display.realtime_selection_mape}}, {{f forecast_lab:display.selection_effect}} more</div></div>
+        <div class="kpi"><div class="k-lab">Band check, {{d fl_band_nominal}} band</div><div class="k-val">{{f forecast_lab:display.coverage_pct}}</div><div class="k-sub">held {{f forecast_lab:display.coverage_k_of_n}} times (Wilson interval {{f forecast_lab:display.coverage_ci}}; allowing for overlapping forecasts, {{f forecast_lab:display.coverage_ci_cluster}})</div></div>
+        <div class="kpi"><div class="k-lab">Next month, {{f forecast_lab:display.forecast_first_month}}, not seasonally adjusted</div><div class="k-val">{{f forecast_lab:display.forecast_first_value}}</div><div class="k-sub">{{f forecast_lab:display.kpi_month}} on the same basis {{f forecast_lab:display.kpi_nsa_value}}; step {{f forecast_lab:display.first_step_nsa}} (the usual seasonal move), {{f forecast_lab:display.first_step_sa}} after seasonal adjustment; band {{f forecast_lab:display.forecast_first_lo80}} to {{f forecast_lab:display.forecast_first_hi80}}; backtest verdict {{f forecast_lab:display.gate_verdict}}: {{f forecast_lab:display.gate_reason}}</div></div>
+      </div>
+      <div class="lab-controls" data-fact-exempt="controls; their read-outs are computed in the browser">
+        <label class="slicer"><span>Method shown</span><select id="fl-model">{{r fl_models}}</select></label>
+        <label class="slicer range" for="fl-h"><span>Months ahead: <output id="fl-h-out" for="fl-h">12</output></span><input type="range" id="fl-h" min="1" max="12" value="12"></label>
+        <label class="slicer range" for="fl-o"><span>Replay a past forecast from: <output id="fl-o-out" for="fl-o">latest</output></span><input type="range" id="fl-o" min="0" max="24" value="24"></label>
+      </div>
+      <figure class="visual" data-table="1"><figcaption id="fl-cap">Forecast from the latest month with its band, against history</figcaption><div class="viz" id="v-fan" data-fact-exempt="drawn in the browser from data/forecast_lab.json"></div></figure>
+      <figure class="illus" data-fact-exempt="illustration of the backtest design">
+        <div class="illus-scroll" tabindex="0" role="region" aria-label="Diagram; scrolls sideways on narrow screens"><svg viewBox="0 0 640 132" role="img" aria-labelledby="il-c-t"><title id="il-c-t">How a rolling-origin backtest works: at each past month the method sees only the data up to that month, forecasts the next months, and is scored against what was later reported; then the origin moves forward one month</title>
+          <g class="il">
+            <text x="10" y="18" class="ils">history the method may see</text><text x="420" y="18" class="ils">forecast, scored later</text>
+            <rect x="10" y="28" width="380" height="16" rx="4"/><rect x="392" y="28" width="150" height="16" rx="4" class="ilk"/>
+            <rect x="10" y="56" width="400" height="16" rx="4"/><rect x="412" y="56" width="150" height="16" rx="4" class="ilk"/>
+            <rect x="10" y="84" width="420" height="16" rx="4"/><rect x="432" y="84" width="150" height="16" rx="4" class="ilk"/>
+            <text x="10" y="124" class="ils">each row is one origin; the origin steps forward a month at a time, and no forecast sees its own future</text>
+          </g></svg></div>
+      </figure>
+      <div class="tscroll" tabindex="0" role="region" aria-label="Backtest table">{{r fl_table}}</div>
+      <dl class="qm">
+        <dt>Method</dt><dd><ul>{{r fl_method}}</ul></dd>
+        <dt>Finding</dt><dd>A simple baseline won, so the page uses it and says so. Its first step from {{f forecast_lab:display.kpi_month}} is {{f forecast_lab:display.first_step_nsa}} before seasonal adjustment, in line with the usual seasonal drop, and {{f forecast_lab:display.first_step_sa}} after it, so there is no cliff. Seasonal pattern: {{f forecast_lab:display.seasonal_peak}} and {{f forecast_lab:display.seasonal_trough}} against trend, within {{f forecast_lab:display.seasonal_max_gap_vs_census}} of Census's own factors.</dd>
+        <dt>Correction to the first version of this page</dt><dd class="erratum">{{r fl_erratum}}</dd>
+        <dt>Limits</dt><dd><ul class="limits">{{r fl_limits}}</ul></dd>
+        <dt>Reproduce</dt><dd><code>python tools/fetch_fred.py</code>, then <code>python build_forecast.py --check</code> (<a href="build_forecast.py">script</a>).</dd>
+      </dl>
+      <figure class="visual" data-table="1"><figcaption>Seasonal factors by month: ours against those implied by Census's adjustment</figcaption><div class="viz" id="v-season" data-fact-exempt="drawn in the browser from data/forecast_lab.json"></div></figure>
+    </article>
+
+    <article class="acard" id="an-d" aria-labelledby="an-d-h" data-fact-scope>
+      <header><p class="kicker">Analysis D</p><h3 id="an-d-h">Maintenance archetypes and a control chart</h3></header>
+      <dl class="qm">
+        <dt>Question</dt><dd>{{f rentsafe_analysis_d_archetypes:archetypes.question}} {{f rentsafe_analysis_d_archetypes:control_chart.question}}</dd>
+        <dt>Method</dt><dd>{{f rentsafe_analysis_d_archetypes:archetypes.method}} {{f rentsafe_analysis_d_archetypes:archetypes.shape_variant.method}} {{f rentsafe_analysis_d_archetypes:control_chart.method}}</dd>
+      </dl>
+      <div class="vgrid">
+        <figure class="visual" data-table="1"><figcaption>Cluster profiles: each pillar minus the building's own average (shape clusters)</figcaption><div class="viz" id="v-d-shape" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_d_archetypes.json"></div></figure>
+        <figure class="visual" data-table="1"><figcaption>Citywide average score by month, with robust control limits</figcaption><div class="viz" id="v-d-control" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_d_archetypes.json"></div></figure>
+      </div>
+      <figure class="visual" data-table="0"><figcaption>How pillar scores move together (correlation across buildings)</figcaption><div class="viz" id="v-d-corr" data-fact-exempt="drawn in the browser from data/rentsafe_analysis_d_archetypes.json"></div></figure>
+      <dl class="qm">
+        <dt>Finding</dt><dd>No distinct archetypes. On raw levels the silhouette picks {{d d_k_level}} clusters, which only separates buildings that are good everywhere from buildings that are weak everywhere. The shape variant finds a group of {{d d_lag_n}} buildings whose {{d d_lag_pillar}} pillar sits {{d d_lag_gap}} points below their own average; {{d d_lag_green}} of them hold a green sign (silhouette {{d d_lag_silhouette}}, against {{f rentsafe_analysis_d_archetypes:archetypes.shape_variant.null_silhouette.shape|fixed:2}} for the same data with each pillar shuffled). A one-line rule, {{f rentsafe_analysis_d_archetypes:archetypes.shape_variant.one_line_rule.rule}}, agrees with that group on {{d d_rule_agreement}} of buildings, so it is a single weak pillar, not a type of building. The control chart flags {{d d_flags}} of {{d d_months}} eligible months (months with enough evaluations to judge). Survival analysis (time from green to first yellow) was not run for this version.</dd>
+        <dt>Limits</dt><dd><ul class="limits">{{r d_limits}}</ul></dd>
+        <dt>Reproduce</dt><dd>The same command as <a href="#an-a">Analysis A</a>: <code>python build_rentsafe.py --check --input-dir &lt;folder&gt;</code>, with the {{d n_city_files}} City files from <a href="#r-sources">Receipts</a> in that folder.</dd>
+      </dl>
+    </article>
+  </div>
+</section>

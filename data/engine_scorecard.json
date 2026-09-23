@@ -1,0 +1,786 @@
+{
+ "schema": "engine_scorecard/1",
+ "built_at": "2026-09-23T12:12:16Z",
+ "built_by": "engagements/rentsafe/build_engine_scorecard.py",
+ "engine": {
+  "kind": "sha256 of northledger/*.py (no git commit available)",
+  "id": "6dae24adf9b3f83b16869a6095fec99178e913af83ed0f591a85f966f07854bc",
+  "files": 23
+ },
+ "machine": {
+  "platform": "macOS-26.5.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "processor": "arm",
+  "python": "3.9.6",
+  "cpu_count": 10,
+  "memory_gb": 16.0,
+  "numpy": "2.0.2",
+  "pandas": "2.3.3"
+ },
+ "verdict": {
+  "question": "Can the workflow go from messy data to insightful storytelling with prediction?",
+  "short": "Mechanically yes, insightful not yet. On the messy reviews file the engine now goes from 48,384 messy rows to a cleaned table, a checked story and a backtested forecast in 55.1 s (before the engine work it kept 41 rows). On the RentSafeTO files everything it printed reproduced, but the brief is not one a landlord could use: the landlord answers (ward and pillar scorecard, points per fix, risk of losing green) still come from the site's own build script, not from the engine.",
+  "today": "messy file -> verified audit -> gated brief -> backtested forecast (generic measures only)",
+  "not_yet": [
+   "domain measures (a weighted score, a band share, a ward x pillar table)",
+   "panel-aware comparisons (same building, two evaluations)",
+   "source-defined sentinels (a '0' that means refused) and structural N/A (no pool, no elevator)",
+   "a plain-language bottom line that ranks, not lists",
+   "charts",
+   "a slot that fetches and date-stamps Toronto open data"
+  ]
+ },
+ "stages": [
+  {
+   "stage": "Land and personal-data intake",
+   "fixture_before": {
+    "status": "works",
+    "seconds": 7.67
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 7.104
+   },
+   "rentsafe": {
+    "status": "works",
+    "seconds": 1.513,
+    "evidence": "3 files, 22,052 rows landed; 12 columns flagged across the three, 5 of them holding no personal data (item scores named 'contact' or 'tenant', a text band, a parking description; see decisions.json)"
+   }
+  },
+  {
+   "stage": "Human decisions (personal data)",
+   "fixture_before": {
+    "status": "works"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 0.739
+   },
+   "rentsafe": {
+    "status": "works",
+    "evidence": "every flagged column decided with the decide command and a written note; the rationale is in decisions.json"
+   }
+  },
+  {
+   "stage": "Source-defined sentinel decision (the RentSafeTO '0' = refused)",
+   "fixture_before": {
+    "status": "missing"
+   },
+   "fixture_after": {
+    "status": "missing"
+   },
+   "rentsafe": {
+    "status": "missing",
+    "evidence": "the engine has no step for it yet: the raw run averages 0 as a score (the City basis); the separate-flag decision had to be applied upstream in prepare_view.py"
+   }
+  },
+  {
+   "stage": "Profile / Data Health",
+   "fixture_before": {
+    "status": "partial",
+    "evidence": "Y/N booleans and pre-today typo dates missed"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 10.915,
+    "evidence": "Health 92.7/100; profiling is still the slowest analysis sub-stage"
+   },
+   "rentsafe": {
+    "status": "partial",
+    "seconds": 9.976,
+    "evidence": "Health 88.2/100 on the post-2023 file, but structural 'N/A' (no pool, no elevator) is scored as missing data: 'the pools column is 93.4% null-like' is a RECOMMEND (the engine has no structural N/A step yet)"
+   }
+  },
+  {
+   "stage": "Clean + quarantine",
+   "fixture_before": {
+    "status": "broken",
+    "evidence": "41 of 48,384 rows clean, 99.915% quarantined, gated RECOMMEND"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 2.681,
+    "evidence": "46,455 clean + 1,929 quarantined (3.987%), gated WATCH; monthly counts a median -2.82% from the uncorrupted source over the last 24 months (before: -99.76%)"
+   },
+   "rentsafe": {
+    "status": "partial",
+    "evidence": "post-2023: 0 quarantined, 300 cells trimmed; pre-2023: 1 quarantined (a series-end rule caught one row dated after the archive tails off); the domain defects (6 more '** CREATED IN ERROR **' rows, 2 duplicate RSN + date rows, the '202510' year label, 29 post-2023 year labels that differ from the completion date) are caught only by build_rentsafe.py"
+   }
+  },
+  {
+   "stage": "Latest row per building (panel collapse)",
+   "fixture_before": {
+    "status": "missing"
+   },
+   "fixture_after": {
+    "status": "partial"
+   },
+   "rentsafe": {
+    "status": "partial",
+    "evidence": "clean_table(latest_per_key=RSN) keeps 3,588 rows, the same rows as the site build (identical); the CLI has no option to ask for it"
+   }
+  },
+  {
+   "stage": "Facts, gate, verify",
+   "fixture_before": {
+    "status": "works",
+    "evidence": "21 of 21 SQL facts reproduced; the 20 cleaning facts were not re-runnable"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 1.62,
+    "evidence": "53 of 53 analysis facts reproduced on re-run or refit"
+   },
+   "rentsafe": {
+    "status": "works",
+    "evidence": "371 of 371 analysis facts reproduced (raw file); 114 of 114 (view)"
+   }
+  },
+  {
+   "stage": "Business measures",
+   "fixture_before": {
+    "status": "missing"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 1.903,
+    "evidence": "volume -32.4% (uncorrupted source -32.8%), star rating +0.146 (source +0.140)"
+   },
+   "rentsafe": {
+    "status": "partial",
+    "evidence": "on the raw file 56 columns were measured and 12 left out, each with its stated reason: id (an identifier, not a measure); rsn, ward (a code or key, not a quantity); year_registered, year_built, year_evaluated (a year label, not a quantity); site_address (personal data decision at intake); grid (free text or too many distinct values to be a category); latitude, longitude, x, y (a map coordinate, not a measure); the engine's 12-month comparison is not panel-aware: its windows compare mostly different buildings (268 of 2,043 in both), so the engine's +0.77-point score change hides a same-building change of +3.64 points"
+   }
+  },
+  {
+   "stage": "Forecast with backtest",
+   "fixture_before": {
+    "status": "missing",
+    "evidence": "prototype only: naive MAPE 19.1%, 80% band held 0.67"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 0.035,
+    "evidence": "champion holt_damped_log, INSUFFICIENT; replayed 24 months, month-ahead band held 16 of 24"
+   },
+   "rentsafe": {
+    "status": "works (honestly declines)",
+    "evidence": "monthly evaluations forecast gated INSUFFICIENT: only 7 replay months in 39 months of history, and 98.9% of evaluations fall June to November, so most months are empty by design; on RSAFSNA the engine's champion is seasonal_naive (baseline won) while the Forecast Lab's is snaive_drift"
+   }
+  },
+  {
+   "stage": "Story: what happened / why / what's next / what to do",
+   "fixture_before": {
+    "status": "missing",
+    "evidence": "the brief told the client to fix 99.92% quarantined rows"
+   },
+   "fixture_after": {
+    "status": "partial",
+    "seconds": 0.0,
+    "evidence": "numbers are cited facts, but 'Why' is empty (the end of collection after 2023-08 is not named as a cause) and 'What to do' recommends acting on helpful_votes"
+   },
+   "rentsafe": {
+    "status": "partial",
+    "evidence": "the raw bottom line lists 57 changes in one sentence, unranked (it opens with average abandoned_equip_derelict_veh, average accessory_buildings, average balcony_guards), and its 'Do now' tells a landlord to act on current_reactive_score, confirmed_units, confirmed_storeys, which move with which buildings happened to be due (units, storeys) or are a snapshot kept on each building's latest row only (495 of 495 non-zero reactive rows are latest rows), not with how buildings are kept; on the view a +2.29 paperwork change with p = 0.0001 did not clear the confidence gate because it is under the 5% materiality bar, and the brief now gives that reason; no charts; no ward or pillar comparison"
+   }
+  },
+  {
+   "stage": "Power BI export (PBIP)",
+   "fixture_before": {
+    "status": "partial",
+    "seconds": 15.36,
+    "evidence": "41 rows, empty page, SUM-of-ratings measures"
+   },
+   "fixture_after": {
+    "status": "works",
+    "seconds": 14.089,
+    "evidence": "lint clean; Forecast and Backtest tables"
+   },
+   "rentsafe": {
+    "status": "works (not opened in Desktop)",
+    "seconds": 8.923,
+    "evidence": "pbip_lint clean; Microsoft TMDL parser loaded 6 tables and 1 relationship (raw) and 6 tables (view); never opened in Power BI Desktop"
+   }
+  },
+  {
+   "stage": "Toronto open-data enrichment slot",
+   "fixture_before": {
+    "status": "missing"
+   },
+   "fixture_after": {
+    "status": "missing"
+   },
+   "rentsafe": {
+    "status": "missing",
+    "evidence": "files were downloaded once by hand (SOURCES.json); the engine cannot fetch or date-stamp them"
+   }
+  }
+ ],
+ "fixture": {
+  "input": {
+   "file": "store_reviews_export.csv",
+   "bytes": 28992024,
+   "sha256": "faed80e93a1c5191fd4d3f375408d94f7c0cbeba1805cdc8f3539e626806d033"
+  },
+  "rows": 48384,
+  "before": {
+   "clean": 41,
+   "quarantined": 48343,
+   "quarantine_rate_pct": 99.915,
+   "quarantine_verdict": "RECOMMEND",
+   "quarantine_reason_printed": "It affects 99% of the table, measured across 48,384 rows from a source scoring 0 out of 100 on quality. Widespread enough to act on.",
+   "monthly_gap_vs_truth_last24_median_pct": -99.76,
+   "audit": {
+    "health": 92.7,
+    "rows_in": 48384,
+    "clean": 41,
+    "quarantined": 48343,
+    "facts": 41,
+    "recommend": 11,
+    "watch": 12,
+    "insufficient": 0,
+    "rerun": 21,
+    "reproduced": 21,
+    "not_reproduced": 0
+   },
+   "seconds": {
+    "land": 7.67,
+    "audit": 16.68,
+    "export": 15.36
+   },
+   "business_measures": null,
+   "forecast": null,
+   "evidence": [
+    "engagements/rentsafe/bench/fixture_before/run1.log",
+    "engagements/rentsafe/bench/fixture_before/run2.log",
+    "engagements/rentsafe/bench/fixture_before/export.log",
+    "engagements/rentsafe/bench/fixture_before/regression_before.json"
+   ]
+  },
+  "after": {
+   "clean": 46455,
+   "quarantined": 1929,
+   "quarantine_rate_pct": 3.987,
+   "quarantine_verdict": "WATCH",
+   "monthly_gap_vs_truth_last24_median_pct": -2.82,
+   "audit": {
+    "health": 92.7,
+    "rows_in": 48384,
+    "clean": 46455,
+    "quarantined": 1929,
+    "facts": 45,
+    "recommend": 7,
+    "watch": 18,
+    "insufficient": 0,
+    "rerun": 21,
+    "reproduced": 21,
+    "not_reproduced": 0
+   },
+   "analysis": {},
+   "seconds": {
+    "land": 7.104,
+    "decide": 0.739,
+    "audit": 15.822,
+    "analyze": 17.353,
+    "export": 14.089,
+    "analyze.profile": 10.915,
+    "analyze.clean": 2.681,
+    "analyze.measure": 1.903,
+    "analyze.forecast": 0.035,
+    "analyze.gate_verify": 1.62,
+    "analyze.narrate": 0.0
+   },
+   "total_seconds": 55.11,
+   "peak_rss_mb": 498.5,
+   "business_measures": {
+    "volume_change_pct": -32.43070362473348,
+    "volume_p": 0.0022,
+    "star_rating_change": 0.1456021823531768,
+    "star_rating_p": 0.0001,
+    "window": {
+     "start": "2013-12",
+     "end": "2023-08",
+     "months": 117,
+     "cut_reason": "",
+     "rows_after_end": 0
+    }
+   },
+   "forecast": {
+    "champion": "holt_damped_log",
+    "baseline_won": false,
+    "verdict": "INSUFFICIENT",
+    "replayed_months": 24,
+    "coverage": {
+     "hits": 16,
+     "n": 24,
+     "rate": 0.6666666666666666,
+     "wilson_lo": 0.46706316684738447,
+     "wilson_hi": 0.8202780976355061,
+     "all_hits": 153,
+     "all_n": 222,
+     "all_rate": 0.6891891891891891
+    },
+    "mape_all": 52.87006242870407,
+    "mape_h1": 18.818383960689424,
+    "naive_mape": 53.1256767729709,
+    "seasonal_naive_mape": 85.27410870339371
+   },
+   "truth_check": {
+    "window_end": "2023-08",
+    "monthly_gap_vs_truth_last24_median_pct": -2.82,
+    "truth_volume_last12": 3252,
+    "truth_volume_prior12": 4837,
+    "truth_volume_change_pct": -32.77,
+    "truth_rating_last12": 4.0886,
+    "truth_rating_prior12": 3.9483,
+    "truth_rating_change": 0.1402,
+    "method": "uncorrupted source rows (truth_monthly_source.json, written by build_messy.py) against the engine's cleaned analysis table, same 12-month windows as the engine's"
+   },
+   "evidence": [
+    "engagements/rentsafe/bench/fixture_after/timings.json",
+    "engagements/rentsafe/bench/fixture_after/truth_check.json",
+    "engagements/rentsafe/bench/fixture_before/regression_after.json"
+   ]
+  }
+ },
+ "rentsafe": {
+  "cli_run": {
+   "total_seconds": 82.111,
+   "seconds_by_engagement": {
+    "eval-2023": 51.785,
+    "eval-pre2023": 9.971,
+    "registration": 5.505,
+    "view-2023": 14.698
+   },
+   "audits": {
+    "eval-2023": {
+     "health": 88.2,
+     "rows_in": 6681,
+     "clean": 6681,
+     "quarantined": 0,
+     "facts": 153,
+     "recommend": 4,
+     "watch": 64,
+     "insufficient": 0,
+     "rerun": 74,
+     "reproduced": 74,
+     "not_reproduced": 0
+    },
+    "eval-pre2023": {
+     "health": 69.9,
+     "rows_in": 11760,
+     "clean": 11759,
+     "quarantined": 1,
+     "facts": 58,
+     "recommend": 3,
+     "watch": 5,
+     "insufficient": 0,
+     "rerun": 10,
+     "reproduced": 10,
+     "not_reproduced": 0
+    },
+    "registration": {
+     "health": 89.8,
+     "rows_in": 3611,
+     "clean": 3611,
+     "quarantined": 0,
+     "facts": 54,
+     "recommend": 8,
+     "watch": 15,
+     "insufficient": 0,
+     "rerun": 28,
+     "reproduced": 28,
+     "not_reproduced": 0
+    },
+    "view-2023": {
+     "health": 93.9,
+     "rows_in": 6681,
+     "clean": 6681,
+     "quarantined": 0,
+     "facts": 31,
+     "recommend": 0,
+     "watch": 3,
+     "insufficient": 0,
+     "rerun": 9,
+     "reproduced": 9,
+     "not_reproduced": 0
+    }
+   },
+   "analyses": {
+    "eval-2023": {
+     "health": 88.2,
+     "rows_in": 6681,
+     "clean": 6681,
+     "quarantined": 0,
+     "facts": 371,
+     "recommend": 4,
+     "watch": 53,
+     "insufficient": 1,
+     "rerun": 371,
+     "reproduced": 371,
+     "not_reproduced": 0,
+     "date_role": "evaluation_completed_on",
+     "dimensions": [
+      "property_type",
+      "wardname"
+     ],
+     "forecast_series": "monthly_rows",
+     "champion": "holt_damped_log",
+     "baseline_won": false,
+     "replay_months": 7,
+     "band_hits": 6,
+     "band_n": 7,
+     "n_measures": 56
+    },
+    "view-2023": {
+     "health": 93.9,
+     "rows_in": 6681,
+     "clean": 6681,
+     "quarantined": 0,
+     "facts": 114,
+     "recommend": 0,
+     "watch": 12,
+     "insufficient": 1,
+     "rerun": 114,
+     "reproduced": 114,
+     "not_reproduced": 0,
+     "date_role": "evaluation_date",
+     "measures": [
+      "proactive_score",
+      "current_score",
+      "envelope_score",
+      "grounds_score",
+      "entry_score",
+      "systems_score",
+      "stairs_score",
+      "interiors_score",
+      "waste_score",
+      "paperwork_score",
+      "refused_items"
+     ],
+     "dimensions": [
+      "ward_name",
+      "district",
+      "property_type",
+      "decade_built",
+      "storeys_band"
+     ],
+     "forecast_series": "monthly_rows",
+     "champion": "holt_damped_log",
+     "baseline_won": false,
+     "replay_months": 7,
+     "band_hits": 6,
+     "band_n": 7
+    }
+   },
+   "exports": {
+    "eval-2023": {
+     "tmdl_tool": "powerbi-modeling-mcp 0.5.0.0",
+     "tmdl_tables": 6,
+     "tmdl_relationships": 1,
+     "pbip_lint": "clean",
+     "pbip_quarantined_rows": 0,
+     "pbip_rows": 6681
+    },
+    "view-2023": {
+     "tmdl_tool": "powerbi-modeling-mcp 0.5.0.0",
+     "tmdl_tables": 6,
+     "tmdl_relationships": 1,
+     "pbip_lint": "clean",
+     "pbip_quarantined_rows": 0,
+     "pbip_rows": 6681
+    }
+   }
+  },
+  "northledger_clean_vs_pandas_prototype": {
+   "engine_step": [
+    {
+     "source_file": "apartment-building-evaluations-2023-current.csv",
+     "rows_in": 6681,
+     "clean": 6681,
+     "quarantined": 0,
+     "quarantine_reasons": {},
+     "cells_changed_total": 300
+    },
+    {
+     "source_file": "pre-2023-apartment-building-evaluations.csv",
+     "rows_in": 11760,
+     "clean": 11759,
+     "quarantined": 1,
+     "quarantine_reasons": {
+      "column 'evaluation_completed_on': dated 2023-05, after the series ends: from 2023-03 every month holds under 10% of the ": 1
+     },
+     "cells_changed_total": 4
+    },
+    {
+     "source_file": "apartment-building-registration-data.csv",
+     "rows_in": 3611,
+     "clean": 3611,
+     "quarantined": 0,
+     "quarantine_reasons": {},
+     "cells_changed_total": 8069
+    }
+   ],
+   "differences_in_analysis_outputs": {
+    "rentsafe_analysis_a_points_per_fix.json": 0,
+    "rentsafe_analysis_b_risk.json": 0,
+    "rentsafe_analysis_d_archetypes.json": 0,
+    "rentsafe_cube.json": 0,
+    "rentsafe_scorecard.json": 0,
+    "rentsafe_trend.json": 0,
+    "rentsafe_wards_map.json": 0
+   },
+   "differences_in_meta": [
+    [
+     "/health/flags/year_label_blank/pre2023",
+     2009,
+     2008
+    ],
+    [
+     "/health/grid_rule/grid_chars_2_3_equal_ward",
+     18441,
+     18440
+    ],
+    [
+     "/health/grid_rule/rows_checked",
+     18441,
+     18440
+    ],
+    [
+     "/health/item_code_counts_pre2023/5",
+     36432,
+     36412
+    ],
+    [
+     "/health/pre2023_score_rule/exact_matches",
+     11722,
+     11721
+    ],
+    [
+     "/health/pre2023_score_rule/rows",
+     11760,
+     11759
+    ],
+    [
+     "/health/quarantine_reasons/address marked '** CREATED IN ERROR **'",
+     7,
+     6
+    ],
+    [
+     "/health/reconciliation/pre2023/quarantined",
+     9,
+     8
+    ],
+    [
+     "/health/reconciliation/pre2023/rows_in",
+     11760,
+     11759
+    ],
+    [
+     "/health/rows_in/pre2023",
+     11760,
+     11759
+    ],
+    [
+     "/health/whitespace_item_cells_repaired/post2023",
+     300,
+     0
+    ]
+   ],
+   "why": "The engine's cleaning only trimmed whitespace (the prototype already stripped it), normalised text case and spacing in registration columns the analyses do not use, and quarantined one pre-2023 row (dated 2023-05, after the archive tails off) that the prototype also sets aside as '** CREATED IN ERROR **'. So every scorecard, cube and analysis number is unchanged; only the data-health tallies moved. The domain rules stay in build_rentsafe.py.",
+   "evidence": [
+    "engagements/rentsafe/nl_clean/NL_CLEAN.json",
+    "engagements/rentsafe/stage1_prelim_json"
+   ]
+  },
+  "forecast_crosscheck": {
+   "same_file": true,
+   "same_models_agree_exactly": true,
+   "lab_champion": "snaive_drift",
+   "lab_gate": {
+    "verdict": "RECOMMEND",
+    "reason": "champion chosen out of sample; its 80% band has not been shown to be off",
+    "champion_beats_seasonal_naive": true,
+    "champion_beats_naive": true,
+    "coverage_in_range": true,
+    "coverage_range": [
+     0.65,
+     0.95
+    ],
+    "champion_is_baseline": true
+   },
+   "engine_champion": "seasonal_naive",
+   "engine_baseline_won": true,
+   "engine_native_mape": {
+    "naive": 6.759,
+    "seasonal_naive": 4.1699,
+    "drift": 6.373,
+    "holt_damped_log": 5.1726,
+    "loglinear_season": 4.83
+   },
+   "engine_models_on_lab_design": {
+    "naive": {
+     "engine_model": "naive",
+     "n": 288,
+     "engine_mape": 6.3465,
+     "engine_mape_h1": 5.7853,
+     "lab_mape": 6.3465,
+     "lab_n": 288,
+     "abs_gap_pts": 0.0
+    },
+    "snaive": {
+     "engine_model": "seasonal_naive",
+     "n": 288,
+     "engine_mape": 3.4809,
+     "engine_mape_h1": 3.3481,
+     "lab_mape": 3.4809,
+     "lab_n": 288,
+     "abs_gap_pts": 0.0
+    },
+    "drift": {
+     "engine_model": "drift",
+     "n": 288,
+     "engine_mape": 6.0406,
+     "engine_mape_h1": 5.7785,
+     "lab_mape": 6.0031,
+     "lab_n": 288,
+     "abs_gap_pts": 0.0375
+    },
+    "holt": {
+     "engine_model": "holt_damped_log",
+     "n": 288,
+     "engine_mape": 5.1409,
+     "engine_mape_h1": 4.7956,
+     "lab_mape": 1.6511,
+     "lab_n": 288,
+     "abs_gap_pts": 3.4898
+    },
+    "loglinear": {
+     "engine_model": "loglinear_season",
+     "n": 288,
+     "engine_mape": 7.2342,
+     "engine_mape_h1": 5.7949,
+     "lab_mape": 1.815,
+     "lab_n": 288,
+     "abs_gap_pts": 5.4192
+    }
+   },
+   "explained_differences": [
+    "Model set: the lab's champion, seasonal naive with drift ('snaive_drift'), does not exist in the engine, whose five models are naive, seasonal naive, drift, damped Holt on logs and log-linear + season.",
+    "Holt: the lab fits damped Holt on the deseasonalised log series; the engine's Holt has no seasonal term, so on a strongly seasonal, not-seasonally-adjusted series it cannot track December and February.",
+    "Pandemic window: the lab treats Mar 2020 - Jun 2021 as missing when it estimates drift, seasonality, Holt and the log-linear model; the engine fits through it (its log-linear window is the last 60 months, which at the lab's first origins still contains 2020-21).",
+    "Backtest design: the lab scores 24 origins (Sep 2023 - Aug 2025) x all 12 horizons = 288 forecasts per model; the engine's 24 origins end at the last month, so later origins score fewer horizons (a triangle weighted towards short horizons), and it uses only the last 120 months.",
+    "Error scale: MASE uses a different denominator in each code (the lab: 120-month seasonal-naive MAE before each origin, pandemic pairs excluded; the engine: seasonal-naive MAE before the first scored origin), so only MAPE is compared across codes."
+   ],
+   "evidence": "engagements/rentsafe/forecast_crosscheck.json"
+  },
+  "panel_vs_window": {
+   "pairs": 3093,
+   "mean_change_same_building": 3.636,
+   "median_change_same_building": 3.0,
+   "share_improved": 0.6547,
+   "share_worse": 0.2848,
+   "window_last12_buildings": 2043,
+   "window_prior12_buildings": 1228,
+   "buildings_in_both_windows": 268,
+   "evaluations_by_calendar_month": {
+    "5": 1,
+    "6": 756,
+    "7": 1659,
+    "8": 1656,
+    "9": 1436,
+    "10": 675,
+    "11": 426,
+    "12": 72
+   },
+   "reactive_nonzero_rows": 495,
+   "reactive_nonzero_rows_that_are_latest": 495,
+   "share_of_evaluations_jun_to_nov": 0.9891,
+   "by_start_band": [
+    {
+     "band": "under 70",
+     "first_score_from": null,
+     "first_score_below": 70,
+     "n": 126,
+     "mean_change": 22.452,
+     "share_improved": 0.9603,
+     "share_worse": 0.0317
+    },
+    {
+     "band": "70 to 84",
+     "first_score_from": 70,
+     "first_score_below": 85,
+     "n": 831,
+     "mean_change": 8.225,
+     "share_improved": 0.8387,
+     "share_worse": 0.1432
+    },
+    {
+     "band": "85 to 94",
+     "first_score_from": 85,
+     "first_score_below": 95,
+     "n": 1540,
+     "mean_change": 1.727,
+     "share_improved": 0.6591,
+     "share_worse": 0.2831
+    },
+    {
+     "band": "95 and over",
+     "first_score_from": 95,
+     "first_score_below": null,
+     "n": 596,
+     "mean_change": -1.805,
+     "share_improved": 0.3221,
+     "share_worse": 0.5403
+    }
+   ],
+   "by_start_band_note": "Split by each pair's first score: buildings that started under 70 moved +22.5 points on average (126 pairs, 96.0% higher), and those that started at 95 or over moved -1.8 (596 pairs, 32.2% higher). Low starters rising while high starters fall is the pattern regression toward the middle produces (the 100-point cap also limits high starters), so part of the +3.6-point average may not be repair.",
+   "method": "each building's evaluations in completion order (ties by _id); change = proactive score minus the same building's previous score; the windows are the engine's last 12 and prior 12 complete months ending 2026-08"
+  },
+  "brief_first_screen": {
+   "raw_file_analysis": [
+    "# How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
+    "**Bottom line:** Volume +66.4% on the year before; average abandoned_equip_derelict_veh -0.005; average accessory_buildings -0.106; average balcony_guards +0.006; average building_cleanliness +0.003; average building_exterior +0.011; average catch_basins_storm_drainage -0.021; average chute_rooms_maintenance -0.045; average cleaning_log +0.050; average clothing_drop_boxes -0.027; average common_area_pests +0.026; average common_area_ventilation -0.056; average confirmed_storeys -0.514; average confirmed_units -9.907; average current_building_eval_score +0.655; average current_reactive_score -0.125; average electrical_safety_plan +0.104; average electrical_services_outlets +0.008; average ele [...]",
+    "_4 recommendations cleared the confidence gate, 3 listed on this page. 53 signals on watch, 1 question the data cannot answer._",
+    "## What happened",
+    "- Row volume changed by +66.4% in the latest year (2,044 rows) against the year before (1,228 rows). A permutation test puts the chance of a gap this large arising from ordinary variation at p = 0.369. This did not clear the confidence gate because a gap this size could still be ordinary variation: watch it, do not act on it yet. [fact: measure.volume.change_pct, measure.volume.last12, measure.volume.prior12, measure.volume.change_pct.p]",
+    "- Average abandoned_equip_derelict_veh moved from 2.904 in the year before to 2.899 in the latest year, a change of -0.005. A permutation test puts the chance of a gap this large arising from ordinary variation at p = 0.761. This did not clear the confidence gate because a gap this size could still be ordinary variation: watch it, do not act on it yet. [fact: measure.abandoned_equip_derelict_veh.change, measure.abandoned_equip_derelict_veh.prior12_mean, measure.abandoned_equip_derelict_veh.last12_mean, measure.abandoned_equip_derelict_veh.change.p]"
+   ],
+   "view_analysis": [
+    "# How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
+    "**Bottom line:** Volume +66.4% on the year before; average current_score +0.655; average entry_score +0.030; average envelope_score -0.212; average grounds_score +1.191; average interiors_score +0.786; average paperwork_score +2.285; average proactive_score +0.770; average refused_items +0.002; average stairs_score +1.973; average systems_score +0.108; average waste_score +1.249. [fact: measure.volume.change_pct, measure.current_score.change, measure.entry_score.change, measure.envelope_score.change, measure.grounds_score.change, measure.interiors_score.change, measure.paperwork_score.change, measure.proactive_score.change, measure.refused_items.change, measure.stairs_score.change, measure.s [...]",
+    "_No finding in this run cleared the confidence gate, so this brief recommends no action. 12 signals on watch, 1 question the data cannot answer._",
+    "## What happened",
+    "- Row volume changed by +66.4% in the latest year (2,044 rows) against the year before (1,228 rows). A permutation test puts the chance of a gap this large arising from ordinary variation at p = 0.369. This did not clear the confidence gate because a gap this size could still be ordinary variation: watch it, do not act on it yet. [fact: measure.volume.change_pct, measure.volume.last12, measure.volume.prior12, measure.volume.change_pct.p]",
+    "- Average current_score moved from 89.6 in the year before to 90.2 in the latest year, a change of +0.655. A permutation test puts the chance of a gap this large arising from ordinary variation at p = 0.021. This did not clear the confidence gate because the gap is statistically clear, but the change is smaller than the size we require before recommending action: watch it, do not act on it yet. [fact: measure.current_score.change, measure.current_score.prior12_mean, measure.current_score.last12_mean, measure.current_score.change.p]",
+    "- Average entry_score moved from 94.8 in the year before to 94.8 in the latest year, a change of +0.030. A permutation test puts the chance of a gap this large arising from ordinary variation at p = 0.922. This did not clear the confidence gate because a gap this size could still be ordinary variation: watch it, do not act on it yet. [fact: measure.entry_score.change, measure.entry_score.prior12_mean, measure.entry_score.last12_mean, measure.entry_score.change.p]",
+    "- Average envelope_score moved from 86.2 in the year before to 85.9 in the latest year, a change of -0.212. A permutation test puts the chance of a gap this large arising from ordinary variation at p = 0.638. This did not clear the confidence gate because a gap this size could still be ordinary variation: watch it, do not act on it yet. [fact: measure.envelope_score.change, measure.envelope_score.prior12_mean, measure.envelope_score.last12_mean, measure.envelope_score.change.p]"
+   ],
+   "raw_file_audit": [
+    "# How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
+    "**Bottom line:** 4 recommendations cleared the confidence gate, 3 listed on this page. 64 signals on watch, 0 questions the data cannot answer.",
+    "## Do now",
+    "- Act on: 93.4% of the pools column of apartment-building-evaluations-2023-current.csv is null-like. Support: 6,681 rows scanned, effect size 0.93. [fact: health.col.pools.null_like_pct]",
+    "- Act on: 92.1% of the clothing_drop_boxes column of apartment-building-evaluations-2023-current.csv is null-like. Support: 6,681 rows scanned, effect size 0.92. [fact: health.col.clothing_drop_boxes.null_like_pct]",
+    "- Act on: 88.2% of the accessory_buildings column of apartment-building-evaluations-2023-current.csv is null-like. Support: 6,681 rows scanned, effect size 0.88. [fact: health.col.accessory_buildings.null_like_pct]"
+   ],
+   "raw_file_analysis_do_now": [
+    "- Act on: Change in average current_reactive_score, latest 12 months against the 12 before. Basis: -0.13 current_reactive_score. Support: held across 8 periods, 3,272 rows scanned, effect size -1.37. [fact: measure.current_reactive_score.change]",
+    "- Act on: Change in average confirmed_units, latest 12 months against the 12 before. Basis: -9.91 confirmed_units. Support: held across 5 periods, 3,272 rows scanned, effect size -0.1. [fact: measure.confirmed_units.change]",
+    "- Act on: Change in average confirmed_storeys, latest 12 months against the 12 before. Basis: -0.51 confirmed_storeys. Support: held across 5 periods, 3,272 rows scanned, effect size -0.06. [fact: measure.confirmed_storeys.change]",
+    "- Plus 1 further recommendation that cleared the confidence gate; the 3 most material are shown above, and the full brief carries all 4."
+   ],
+   "raw_file_analysis_whats_next": [
+    "- A forecast of monthly rows in apartment-building-evaluations-2023-current.csv was fitted but is not offered: it could only be checked against 7 replayed months of 39 months of history, too few to trust. [fact: forecast.monthly_rows.next, forecast.monthly_rows.backtest.months, forecast.monthly_rows.history.months]"
+   ],
+   "view_analysis_whats_next": [
+    "- A forecast of monthly rows in RentSafeTO-evaluation-view.csv was fitted but is not offered: it could only be checked against 7 replayed months of 39 months of history, too few to trust. [fact: forecast.monthly_rows.next, forecast.monthly_rows.backtest.months, forecast.monthly_rows.history.months]"
+   ]
+  }
+ },
+ "limits": [
+  "Every timing is one recorded run on one machine (see machine); other work was running on the same machine.",
+  "The status words are judgments; the evidence beside each is computed from the named files.",
+  "The PBIP files have never been opened in Power BI Desktop; only pbip_lint and Microsoft's TMDL parser checked them.",
+  "The messy fixture is built from Amazon Reviews'23 rows whose licence is not declared; it is used as a test input only and none of its rows are published."
+ ]
+}

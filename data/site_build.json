@@ -1,0 +1,1382 @@
+{
+ "schema": "site_build/1",
+ "what": "Figures the page shows that are derived from other files (a share turned into a percentage, a count of sessions, a file size). Written by build.py; each key names its source.",
+ "built_at": "2026-09-23T12:22:35Z",
+ "display": {
+  "fixture_lost": "0",
+  "fixture_quarantine_pct": "4.0%",
+  "fixture_before_quarantine_pct": "99.9%",
+  "fixture_rating_change": "+0.146",
+  "fixture_volume_change": "-32.4%",
+  "fixture_truth_volume": "-32.8%",
+  "fixture_truth_rating": "+0.140",
+  "fixture_band_hits": "16 of 24",
+  "fixture_mape_h1": "18.8%",
+  "fixture_mape_all": "52.9%",
+  "nl_rows_in": "22,052",
+  "nl_clean": "22,051",
+  "nl_quarantined": "1",
+  "a_zero_rows_share": "99.4%",
+  "a_missing_rows_share": "5.0%",
+  "a_zero_all_share": "99.8%",
+  "a_zero_rows": "360",
+  "a_exact": "6,666 of 6,681",
+  "n_items": "50",
+  "n_pillars": "8",
+  "a_top_item": "Building Exterior",
+  "a_top_points": "0.97",
+  "a_low_items": "Parking Areas 2.16; Building Exterior 2.22; Interior Hallway - Walls and Ceiling 2.29",
+  "a_paperwork_scored1": "9.4%",
+  "a_highrisk_scored1": "5.6%",
+  "a_ratio_published": "6",
+  "a_ratio_recovered": "4.18",
+  "a_ols_test_r2": "0.980",
+  "a_ols_test_mae": "0.76",
+  "a_formula_test_mae": "0.01",
+  "a_unexplained": "15",
+  "panel_mean_change": "+3.6",
+  "panel_share_improved": "65.5%",
+  "panel_share_jun_nov": "98.9%",
+  "band_lo_name": "under 70",
+  "band_lo_change": "+22.5",
+  "band_lo_n": "126",
+  "band_lo_improved": "96.0%",
+  "band_hi_name": "95 and over",
+  "band_hi_change": "-1.8",
+  "band_hi_n": "596",
+  "band_hi_improved": "32.2%",
+  "b_coverage": "71.7%",
+  "b_coverage_ci": "69.3% to 74.0%",
+  "b_pos_rate": "15.8%",
+  "b_champion": "persistence",
+  "d_lag_n": "431",
+  "d_lag_pillar": "paperwork",
+  "d_lag_gap": "27.6",
+  "d_lag_green": "56.1%",
+  "d_lag_silhouette": "0.37",
+  "d_k_level": "2",
+  "d_flags": "9",
+  "d_months": "21",
+  "d_rule_agreement": "99.7%",
+  "fl_band_nominal": "80%",
+  "replay_sessions": "7",
+  "replay_featured": "6",
+  "replay_archived": "1",
+  "replay_q_reproduced": "92",
+  "replay_q_checked": "92",
+  "replay_traced": "679",
+  "replay_stated": "931",
+  "replay_trace_pct": "72.9%",
+  "replay_model": "glm-5.3",
+  "s5_stated": "2,564,854",
+  "s5_correct": "2,565,854",
+  "s5_parts": "892,313 + 964 + 1,672,577",
+  "rp0_title": "AI-agent data-quality session (messy legacy export)",
+  "rp0_turns": "17 turns, 29 tool calls",
+  "rp0_reports": "PDF",
+  "rp0_db": "client_data.db (demo database)",
+  "rp0_id": "s1-audit",
+  "rp1_title": "Forecast + risk brief",
+  "rp1_turns": "25 turns, 37 tool calls",
+  "rp1_reports": "DOCX",
+  "rp1_db": "client_data.db (demo database)",
+  "rp1_id": "s3-forecast",
+  "rp2_title": "Dutch fleet electrification (16.9M vehicles)",
+  "rp2_turns": "9 turns, 28 tool calls",
+  "rp2_reports": "PDF",
+  "rp2_db": "big_data.db (scale tier)",
+  "rp2_id": "s5-rdw-fleet",
+  "tests_total": "599",
+  "tests_suites": "39",
+  "tests_ran_at": "2026-09-23 12:12:28 UTC",
+  "tests_state": "all green",
+  "tests_snapshot": "6dae24adf9b3",
+  "engine_now": "6dae24adf9b3",
+  "engine_timed": "6dae24adf9b3",
+  "engine_same": "the same code",
+  "run_total": "82.1 s",
+  "run_stage_sum": "82.0 s",
+  "run_stage_count": "17",
+  "run_date": "2026-09-23 12:08:38 UTC",
+  "run_peak": "240 MB",
+  "machine": "arm64, 10 CPU cores, 16 GB memory, Python 3.9.6",
+  "st0_sec": "0.53 s",
+  "st0_rows": "6,681",
+  "st0_mem": "94 MB",
+  "st0_exit": "ok",
+  "st1_sec": "0.15 s",
+  "st1_rows": "0",
+  "st1_mem": "15 MB",
+  "st1_exit": "ok",
+  "st2_sec": "9.98 s",
+  "st2_rows": "6,681",
+  "st2_mem": "147 MB",
+  "st2_exit": "ok",
+  "st3_sec": "32.21 s",
+  "st3_rows": "6,681",
+  "st3_mem": "240 MB",
+  "st3_exit": "ok",
+  "st4_sec": "8.92 s",
+  "st4_rows": "6,681",
+  "st4_mem": "129 MB",
+  "st4_exit": "ok",
+  "st5_sec": "0.54 s",
+  "st5_rows": "11,760",
+  "st5_mem": "94 MB",
+  "st5_exit": "ok",
+  "st6_sec": "0.07 s",
+  "st6_rows": "0",
+  "st6_mem": "15 MB",
+  "st6_exit": "ok",
+  "st7_sec": "9.36 s",
+  "st7_rows": "11,760",
+  "st7_mem": "147 MB",
+  "st7_exit": "ok",
+  "st8_sec": "0.45 s",
+  "st8_rows": "3,611",
+  "st8_mem": "84 MB",
+  "st8_exit": "ok",
+  "st9_sec": "0.22 s",
+  "st9_rows": "0",
+  "st9_mem": "15 MB",
+  "st9_exit": "ok",
+  "st10_sec": "4.84 s",
+  "st10_rows": "3,611",
+  "st10_mem": "134 MB",
+  "st10_exit": "ok",
+  "st11_sec": "0.68 s",
+  "st11_rows": "6,681",
+  "st11_mem": "126 MB",
+  "st11_exit": "ok",
+  "st12_sec": "0.31 s",
+  "st12_rows": "6,681",
+  "st12_mem": "72 MB",
+  "st12_exit": "ok",
+  "st13_sec": "0.04 s",
+  "st13_rows": "0",
+  "st13_mem": "15 MB",
+  "st13_exit": "ok",
+  "st14_sec": "2.69 s",
+  "st14_rows": "6,681",
+  "st14_mem": "114 MB",
+  "st14_exit": "ok",
+  "st15_sec": "8.05 s",
+  "st15_rows": "6,681",
+  "st15_mem": "174 MB",
+  "st15_exit": "ok",
+  "st16_sec": "2.93 s",
+  "st16_rows": "6,681",
+  "st16_mem": "124 MB",
+  "st16_exit": "ok",
+  "es0_fixture_before_sec": "7.67 s",
+  "es0_fixture_after_sec": "7.10 s",
+  "es0_rentsafe_sec": "1.51 s",
+  "es1_fixture_before_sec": "",
+  "es1_fixture_after_sec": "0.74 s",
+  "es1_rentsafe_sec": "",
+  "es2_fixture_before_sec": "",
+  "es2_fixture_after_sec": "",
+  "es2_rentsafe_sec": "",
+  "es3_fixture_before_sec": "",
+  "es3_fixture_after_sec": "10.91 s",
+  "es3_rentsafe_sec": "9.98 s",
+  "es4_fixture_before_sec": "",
+  "es4_fixture_after_sec": "2.68 s",
+  "es4_rentsafe_sec": "",
+  "es5_fixture_before_sec": "",
+  "es5_fixture_after_sec": "",
+  "es5_rentsafe_sec": "",
+  "es6_fixture_before_sec": "",
+  "es6_fixture_after_sec": "1.62 s",
+  "es6_rentsafe_sec": "",
+  "es7_fixture_before_sec": "",
+  "es7_fixture_after_sec": "1.90 s",
+  "es7_rentsafe_sec": "",
+  "es8_fixture_before_sec": "",
+  "es8_fixture_after_sec": "0.04 s",
+  "es8_rentsafe_sec": "",
+  "es9_fixture_before_sec": "",
+  "es9_fixture_after_sec": "0.00 s",
+  "es9_rentsafe_sec": "",
+  "es10_fixture_before_sec": "15.36 s",
+  "es10_fixture_after_sec": "14.09 s",
+  "es10_rentsafe_sec": "8.92 s",
+  "es11_fixture_before_sec": "",
+  "es11_fixture_after_sec": "",
+  "es11_rentsafe_sec": "",
+  "n_city_files": "4",
+  "src0_bytes": "1.8 MB",
+  "src0_sha": "db9feec11327ca41",
+  "src0_at": "2026-09-23 06:40:59 UTC",
+  "src1_bytes": "2.8 MB",
+  "src1_sha": "9ddfb28db7d35453",
+  "src1_at": "2026-09-23 06:40:59 UTC",
+  "src2_bytes": "1.6 MB",
+  "src2_sha": "9ca50a07cd567d68",
+  "src2_at": "2026-09-23 06:40:59 UTC",
+  "src3_bytes": "1.1 MB",
+  "src3_sha": "a35851f39c83e492",
+  "src3_at": "2026-09-23 06:41:00 UTC",
+  "fred0_bytes": "8 KB",
+  "fred0_sha": "2bbe15d2fc830b6b",
+  "fred0_at": "2026-09-23 06:47:06 UTC",
+  "fred0_updated": "Wed, 16 Sep 2026 12:39:52 GMT",
+  "fred0_label": "U.S. retail trade and food services",
+  "fred0_agency": "U.S. Census Bureau, via FRED (Federal Reserve Bank of St. Louis)",
+  "fred1_bytes": "8 KB",
+  "fred1_sha": "c57685eed78fe9d2",
+  "fred1_at": "2026-09-23 06:47:06 UTC",
+  "fred1_updated": "Wed, 16 Sep 2026 12:39:53 GMT",
+  "fred1_label": "U.S. retail trade and food services, seasonally adjusted",
+  "fred1_agency": "U.S. Census Bureau, via FRED (Federal Reserve Bank of St. Louis)",
+  "pbip_zip_size": "161 KB",
+  "pbip_zip_sha": "bd6e69c16f84df9a",
+  "brief_pdf_size": "7 KB",
+  "brief_pdf_sha": "18a5c8c934774dde",
+  "brief_full_size": "19 KB",
+  "brief_full_sha": "2150737c8757e5eb",
+  "evidence_xlsx_size": "20 KB",
+  "evidence_xlsx_sha": "192075d675228695",
+  "pbip_tables": "6",
+  "pbip_measures": "26",
+  "pbip_measures_desc": "24",
+  "pbip_measures_fmt": "26",
+  "pbip_rels": "1",
+  "pbip_bidir": "0",
+  "pbip_files": "26",
+  "pf0_size": "45 B",
+  "pf1_size": "3 KB",
+  "pf2_size": "292 B",
+  "pf3_size": "310 B",
+  "pf4_size": "252 B",
+  "pf5_size": "144 B",
+  "pf6_size": "150 B",
+  "pf7_size": "219 B",
+  "pf8_size": "248 B",
+  "pf9_size": "317 B",
+  "pf10_size": "167 B",
+  "pf11_size": "35 B",
+  "pf12_size": "275 B",
+  "pf13_size": "313 B",
+  "pf14_size": "134 B",
+  "pf15_size": "2 KB",
+  "pf16_size": "2 KB",
+  "pf17_size": "2 KB",
+  "pf18_size": "3 KB",
+  "pf19_size": "3 KB",
+  "pf20_size": "6 KB",
+  "pf21_size": "790 B",
+  "pf22_size": "964 KB",
+  "pf23_size": "38 KB",
+  "pf24_size": "1 KB",
+  "pf25_size": "264 B",
+  "contrast_worst": "4.76:1",
+  "contrast_pairs": "86",
+  "ex0_raw": "\"202510\"",
+  "ex0_after": "evaluation year 2025, taken from EVALUATION COMPLETED ON (2025-10-22); the label is flagged, not dropped",
+  "ex0_col": "YEAR EVALUATED",
+  "ex0_file": "evaluations 2023 to now",
+  "ex1_raw": "\" 2\"",
+  "ex1_after": "\"2\": whitespace trimmed, and the engine counted the repair",
+  "ex1_col": "EXTERIOR GROUNDS",
+  "ex1_file": "evaluations 2023 to now",
+  "ex2_raw": "\"0\"",
+  "ex2_after": "refused or blocked: kept as a separate flag in pillar cells (provisional); the City's own score counts it as zero points",
+  "ex2_col": "ELECTRICAL SAFETY PLAN",
+  "ex2_file": "evaluations 2023 to now",
+  "ex3_raw": "\"N/A\"",
+  "ex3_after": "not applicable by design (the building has none): left out of the score, not counted as missing",
+  "ex3_col": "RETAINING WALLS",
+  "ex3_file": "evaluations 2023 to now",
+  "ex4_raw": "\"\" / \"321187.241\"",
+  "ex4_after": "kept: the ward code places the building; projected X/Y are not converted",
+  "ex4_col": "LATITUDE / X",
+  "ex4_file": "evaluations 2023 to now",
+  "ex5_raw": "\"** CREATED IN ERROR ** [street address withheld here]\"",
+  "ex5_after": "quarantined with its reason, never silently dropped",
+  "ex5_col": "SITE_ADDRESS",
+  "ex5_file": "evaluations before 2023",
+  "n_examples": "6",
+  "audit_ai_calls": "none",
+  "reg_fresh_gap": "78",
+  "pbip_rows": "6,681",
+  "pbip_first": "2023-06-05",
+  "pbip_last": "2026-09-21",
+  "pbip_mean": "88.9",
+  "build_checks_passed": "41",
+  "built_at_label": "2026-09-23 12:22:35 UTC"
+ },
+ "derived_from": {
+  "fixture_lost": "engine_scorecard fixture.rows - after.clean - after.quarantined",
+  "fixture_quarantine_pct": "engine_scorecard fixture.after.quarantine_rate_pct",
+  "fixture_before_quarantine_pct": "engine_scorecard fixture.before.quarantine_rate_pct",
+  "fixture_rating_change": "engine_scorecard fixture.after.business_measures.star_rating_change",
+  "fixture_volume_change": "engine_scorecard fixture.after.business_measures.volume_change_pct",
+  "fixture_truth_volume": "engine_scorecard fixture.after.truth_check",
+  "fixture_truth_rating": "engine_scorecard fixture.after.truth_check",
+  "fixture_band_hits": "engine_scorecard fixture.after.forecast.coverage",
+  "fixture_mape_h1": "engine_scorecard fixture.after.forecast.mape_h1",
+  "fixture_mape_all": "engine_scorecard fixture.after.forecast.mape_all",
+  "nl_rows_in": "rentsafe_meta meta.northledger_clean.files[].rows_in summed",
+  "nl_clean": "rentsafe_meta meta.northledger_clean.files[].clean summed",
+  "nl_quarantined": "rentsafe_meta meta.northledger_clean.files[].quarantined summed",
+  "a_zero_rows_share": "analysis_a constrained_tests[zero].rows_with_a_0_exact_share",
+  "a_missing_rows_share": "analysis_a constrained_tests[missing].rows_with_a_0_exact_share",
+  "a_zero_all_share": "analysis_a constrained_tests[zero].exact_share",
+  "a_zero_rows": "analysis_a constrained_tests[zero].rows_with_a_0",
+  "a_exact": "analysis_a constrained_tests[zero]",
+  "n_items": "analysis_a points_per_fix.items",
+  "n_pillars": "rentsafe_scorecard columns that are pillars",
+  "a_top_item": "analysis_a points_per_fix.items rank 1",
+  "a_top_points": "analysis_a points_per_fix.items rank 1",
+  "a_low_items": "analysis_a points_per_fix.items, the three lowest avg_score_1_to_3",
+  "a_paperwork_scored1": "analysis_a paperwork_vs_high_risk.paperwork_share_scored_1",
+  "a_highrisk_scored1": "analysis_a paperwork_vs_high_risk.high_risk_share_scored_1",
+  "a_ratio_published": "analysis_a unconstrained.high_to_cosmetic_ratio_published",
+  "a_ratio_recovered": "analysis_a unconstrained.high_to_cosmetic_ratio_recovered",
+  "a_ols_test_r2": "analysis_a unconstrained.test_r2",
+  "a_ols_test_mae": "analysis_a unconstrained.test_mae_points",
+  "a_formula_test_mae": "analysis_a unconstrained.constrained_same_test_rows_mae_points",
+  "a_unexplained": "analysis_a unexplained_rows.count",
+  "panel_mean_change": "engine_scorecard rentsafe.panel_vs_window.mean_change_same_building",
+  "panel_share_improved": "engine_scorecard rentsafe.panel_vs_window.share_improved",
+  "panel_share_jun_nov": "engine_scorecard rentsafe.panel_vs_window.share_of_evaluations_jun_to_nov",
+  "band_lo_name": "engine_scorecard rentsafe.panel_vs_window.by_start_band[0].band",
+  "band_lo_change": "same band, mean_change",
+  "band_lo_n": "same band, n",
+  "band_lo_improved": "same band, share_improved",
+  "band_hi_name": "engine_scorecard rentsafe.panel_vs_window.by_start_band[-1].band",
+  "band_hi_change": "same band, mean_change",
+  "band_hi_n": "same band, n",
+  "band_hi_improved": "same band, share_improved",
+  "b_coverage": "analysis_b test_metrics.interval80_model.coverage_test",
+  "b_coverage_ci": "analysis_b interval80_model.wilson95",
+  "b_pos_rate": "analysis_b pairs.test_positive_rate",
+  "b_champion": "analysis_b gate.champion",
+  "d_lag_n": "analysis_d shape_variant: the cluster with the deepest lagging pillar",
+  "d_lag_pillar": "same cluster, lagging_pillar",
+  "d_lag_gap": "same cluster, deviation_from_own_mean, as a distance below the building's own average",
+  "d_lag_green": "same cluster, pct_green",
+  "d_lag_silhouette": "analysis_d shape_variant.k_search at k_chosen",
+  "d_k_level": "analysis_d archetypes.k_chosen",
+  "d_flags": "analysis_d control_chart.points with a flag other than low n",
+  "d_months": "analysis_d control_chart.eligible_months (months with enough evaluations to be flagged)",
+  "d_rule_agreement": "analysis_d shape_variant.one_line_rule.agreement",
+  "fl_band_nominal": "forecast_lab backtest.coverage.nominal",
+  "replay_sessions": "agent-demo.html demo-manifest counts.sessions",
+  "replay_featured": "demo-manifest counts.featured",
+  "replay_archived": "demo-manifest counts.archived",
+  "replay_q_reproduced": "demo-manifest evidence.audit_queries_reproduced",
+  "replay_q_checked": "demo-manifest evidence.audit_queries_checked",
+  "replay_traced": "demo-manifest evidence.audit_numbers_traced",
+  "replay_stated": "demo-manifest evidence.audit_numbers_stated",
+  "replay_trace_pct": "demo-manifest evidence.audit_traceability",
+  "replay_model": "demo-manifest models",
+  "s5_stated": "demo-manifest s5_correction.stated",
+  "s5_correct": "demo-manifest s5_correction.correct",
+  "s5_parts": "demo-manifest s5_correction.parts",
+  "rp0_title": "demo-manifest sessions[s1-audit].title",
+  "rp0_turns": "demo-manifest sessions[s1-audit]",
+  "rp0_reports": "demo-manifest sessions[s1-audit].report_files",
+  "rp0_db": "demo-manifest sessions[s1-audit].database",
+  "rp0_id": "demo-manifest sessions[s1-audit].id (the replay link opens this session)",
+  "rp1_title": "demo-manifest sessions[s3-forecast].title",
+  "rp1_turns": "demo-manifest sessions[s3-forecast]",
+  "rp1_reports": "demo-manifest sessions[s3-forecast].report_files",
+  "rp1_db": "demo-manifest sessions[s3-forecast].database",
+  "rp1_id": "demo-manifest sessions[s3-forecast].id (the replay link opens this session)",
+  "rp2_title": "demo-manifest sessions[s5-rdw-fleet].title",
+  "rp2_turns": "demo-manifest sessions[s5-rdw-fleet]",
+  "rp2_reports": "demo-manifest sessions[s5-rdw-fleet].report_files",
+  "rp2_db": "demo-manifest sessions[s5-rdw-fleet].database",
+  "rp2_id": "demo-manifest sessions[s5-rdw-fleet].id (the replay link opens this session)",
+  "tests_total": "data/engine_tests.json tests",
+  "tests_suites": "data/engine_tests.json suites",
+  "tests_ran_at": "data/engine_tests.json ran_at",
+  "tests_state": "data/engine_tests.json green",
+  "tests_snapshot": "data/engine_tests.json engine_snapshot.id",
+  "engine_now": "sha256 of ../northledger-core/northledger/*.py at build time",
+  "engine_timed": "timings.json engine.id",
+  "engine_same": "comparison of the two ids above",
+  "run_total": "timings runs.rentsafe_cli.total_seconds (wall clock)",
+  "run_stage_sum": "timings runs.rentsafe_cli.stages[].seconds summed (the replay clock's total)",
+  "run_stage_count": "timings runs.rentsafe_cli.stages",
+  "run_date": "timings runs.rentsafe_cli.date",
+  "run_peak": "timings runs.rentsafe_cli.peak_rss_mb",
+  "machine": "timings machine",
+  "st0_sec": "timings runs.rentsafe_cli.stages[0].seconds",
+  "st0_rows": "timings stages[0].rows",
+  "st0_mem": "timings stages[0].peak_rss_mb",
+  "st0_exit": "timings stages[0].exit_code",
+  "st1_sec": "timings runs.rentsafe_cli.stages[1].seconds",
+  "st1_rows": "timings stages[1].rows",
+  "st1_mem": "timings stages[1].peak_rss_mb",
+  "st1_exit": "timings stages[1].exit_code",
+  "st2_sec": "timings runs.rentsafe_cli.stages[2].seconds",
+  "st2_rows": "timings stages[2].rows",
+  "st2_mem": "timings stages[2].peak_rss_mb",
+  "st2_exit": "timings stages[2].exit_code",
+  "st3_sec": "timings runs.rentsafe_cli.stages[3].seconds",
+  "st3_rows": "timings stages[3].rows",
+  "st3_mem": "timings stages[3].peak_rss_mb",
+  "st3_exit": "timings stages[3].exit_code",
+  "st4_sec": "timings runs.rentsafe_cli.stages[4].seconds",
+  "st4_rows": "timings stages[4].rows",
+  "st4_mem": "timings stages[4].peak_rss_mb",
+  "st4_exit": "timings stages[4].exit_code",
+  "st5_sec": "timings runs.rentsafe_cli.stages[5].seconds",
+  "st5_rows": "timings stages[5].rows",
+  "st5_mem": "timings stages[5].peak_rss_mb",
+  "st5_exit": "timings stages[5].exit_code",
+  "st6_sec": "timings runs.rentsafe_cli.stages[6].seconds",
+  "st6_rows": "timings stages[6].rows",
+  "st6_mem": "timings stages[6].peak_rss_mb",
+  "st6_exit": "timings stages[6].exit_code",
+  "st7_sec": "timings runs.rentsafe_cli.stages[7].seconds",
+  "st7_rows": "timings stages[7].rows",
+  "st7_mem": "timings stages[7].peak_rss_mb",
+  "st7_exit": "timings stages[7].exit_code",
+  "st8_sec": "timings runs.rentsafe_cli.stages[8].seconds",
+  "st8_rows": "timings stages[8].rows",
+  "st8_mem": "timings stages[8].peak_rss_mb",
+  "st8_exit": "timings stages[8].exit_code",
+  "st9_sec": "timings runs.rentsafe_cli.stages[9].seconds",
+  "st9_rows": "timings stages[9].rows",
+  "st9_mem": "timings stages[9].peak_rss_mb",
+  "st9_exit": "timings stages[9].exit_code",
+  "st10_sec": "timings runs.rentsafe_cli.stages[10].seconds",
+  "st10_rows": "timings stages[10].rows",
+  "st10_mem": "timings stages[10].peak_rss_mb",
+  "st10_exit": "timings stages[10].exit_code",
+  "st11_sec": "timings runs.rentsafe_cli.stages[11].seconds",
+  "st11_rows": "timings stages[11].rows",
+  "st11_mem": "timings stages[11].peak_rss_mb",
+  "st11_exit": "timings stages[11].exit_code",
+  "st12_sec": "timings runs.rentsafe_cli.stages[12].seconds",
+  "st12_rows": "timings stages[12].rows",
+  "st12_mem": "timings stages[12].peak_rss_mb",
+  "st12_exit": "timings stages[12].exit_code",
+  "st13_sec": "timings runs.rentsafe_cli.stages[13].seconds",
+  "st13_rows": "timings stages[13].rows",
+  "st13_mem": "timings stages[13].peak_rss_mb",
+  "st13_exit": "timings stages[13].exit_code",
+  "st14_sec": "timings runs.rentsafe_cli.stages[14].seconds",
+  "st14_rows": "timings stages[14].rows",
+  "st14_mem": "timings stages[14].peak_rss_mb",
+  "st14_exit": "timings stages[14].exit_code",
+  "st15_sec": "timings runs.rentsafe_cli.stages[15].seconds",
+  "st15_rows": "timings stages[15].rows",
+  "st15_mem": "timings stages[15].peak_rss_mb",
+  "st15_exit": "timings stages[15].exit_code",
+  "st16_sec": "timings runs.rentsafe_cli.stages[16].seconds",
+  "st16_rows": "timings stages[16].rows",
+  "st16_mem": "timings stages[16].peak_rss_mb",
+  "st16_exit": "timings stages[16].exit_code",
+  "es0_fixture_before_sec": "engine_scorecard stages[0].fixture_before.seconds",
+  "es0_fixture_after_sec": "engine_scorecard stages[0].fixture_after.seconds",
+  "es0_rentsafe_sec": "engine_scorecard stages[0].rentsafe.seconds",
+  "es1_fixture_before_sec": "engine_scorecard stages[1].fixture_before.seconds",
+  "es1_fixture_after_sec": "engine_scorecard stages[1].fixture_after.seconds",
+  "es1_rentsafe_sec": "engine_scorecard stages[1].rentsafe.seconds",
+  "es2_fixture_before_sec": "engine_scorecard stages[2].fixture_before.seconds",
+  "es2_fixture_after_sec": "engine_scorecard stages[2].fixture_after.seconds",
+  "es2_rentsafe_sec": "engine_scorecard stages[2].rentsafe.seconds",
+  "es3_fixture_before_sec": "engine_scorecard stages[3].fixture_before.seconds",
+  "es3_fixture_after_sec": "engine_scorecard stages[3].fixture_after.seconds",
+  "es3_rentsafe_sec": "engine_scorecard stages[3].rentsafe.seconds",
+  "es4_fixture_before_sec": "engine_scorecard stages[4].fixture_before.seconds",
+  "es4_fixture_after_sec": "engine_scorecard stages[4].fixture_after.seconds",
+  "es4_rentsafe_sec": "engine_scorecard stages[4].rentsafe.seconds",
+  "es5_fixture_before_sec": "engine_scorecard stages[5].fixture_before.seconds",
+  "es5_fixture_after_sec": "engine_scorecard stages[5].fixture_after.seconds",
+  "es5_rentsafe_sec": "engine_scorecard stages[5].rentsafe.seconds",
+  "es6_fixture_before_sec": "engine_scorecard stages[6].fixture_before.seconds",
+  "es6_fixture_after_sec": "engine_scorecard stages[6].fixture_after.seconds",
+  "es6_rentsafe_sec": "engine_scorecard stages[6].rentsafe.seconds",
+  "es7_fixture_before_sec": "engine_scorecard stages[7].fixture_before.seconds",
+  "es7_fixture_after_sec": "engine_scorecard stages[7].fixture_after.seconds",
+  "es7_rentsafe_sec": "engine_scorecard stages[7].rentsafe.seconds",
+  "es8_fixture_before_sec": "engine_scorecard stages[8].fixture_before.seconds",
+  "es8_fixture_after_sec": "engine_scorecard stages[8].fixture_after.seconds",
+  "es8_rentsafe_sec": "engine_scorecard stages[8].rentsafe.seconds",
+  "es9_fixture_before_sec": "engine_scorecard stages[9].fixture_before.seconds",
+  "es9_fixture_after_sec": "engine_scorecard stages[9].fixture_after.seconds",
+  "es9_rentsafe_sec": "engine_scorecard stages[9].rentsafe.seconds",
+  "es10_fixture_before_sec": "engine_scorecard stages[10].fixture_before.seconds",
+  "es10_fixture_after_sec": "engine_scorecard stages[10].fixture_after.seconds",
+  "es10_rentsafe_sec": "engine_scorecard stages[10].rentsafe.seconds",
+  "es11_fixture_before_sec": "engine_scorecard stages[11].fixture_before.seconds",
+  "es11_fixture_after_sec": "engine_scorecard stages[11].fixture_after.seconds",
+  "es11_rentsafe_sec": "engine_scorecard stages[11].rentsafe.seconds",
+  "n_city_files": "rentsafe_meta meta.sources (the City files build_rentsafe.py reads)",
+  "src0_bytes": "rentsafe_meta meta.sources[0].bytes",
+  "src0_sha": "rentsafe_meta meta.sources[0].sha256, first 16",
+  "src0_at": "rentsafe_meta meta.sources[0].retrieved_at",
+  "src1_bytes": "rentsafe_meta meta.sources[1].bytes",
+  "src1_sha": "rentsafe_meta meta.sources[1].sha256, first 16",
+  "src1_at": "rentsafe_meta meta.sources[1].retrieved_at",
+  "src2_bytes": "rentsafe_meta meta.sources[2].bytes",
+  "src2_sha": "rentsafe_meta meta.sources[2].sha256, first 16",
+  "src2_at": "rentsafe_meta meta.sources[2].retrieved_at",
+  "src3_bytes": "rentsafe_meta meta.sources[3].bytes",
+  "src3_sha": "rentsafe_meta meta.sources[3].sha256, first 16",
+  "src3_at": "rentsafe_meta meta.sources[3].retrieved_at",
+  "fred0_bytes": "data/fred/SOURCES.json series.RSAFSNA.bytes",
+  "fred0_sha": "data/fred/SOURCES.json series.RSAFSNA.sha256, first 16",
+  "fred0_at": "data/fred/SOURCES.json series.RSAFSNA.completed_at",
+  "fred0_updated": "data/fred/SOURCES.json series.RSAFSNA.last_modified_header",
+  "fred0_label": "data/fred/SOURCES.json series.RSAFSNA.label",
+  "fred0_agency": "data/fred/SOURCES.json series.RSAFSNA.source_agency",
+  "fred1_bytes": "data/fred/SOURCES.json series.RSAFS.bytes",
+  "fred1_sha": "data/fred/SOURCES.json series.RSAFS.sha256, first 16",
+  "fred1_at": "data/fred/SOURCES.json series.RSAFS.completed_at",
+  "fred1_updated": "data/fred/SOURCES.json series.RSAFS.last_modified_header",
+  "fred1_label": "data/fred/SOURCES.json series.RSAFS.label",
+  "fred1_agency": "data/fred/SOURCES.json series.RSAFS.source_agency",
+  "pbip_zip_size": "downloads/rentsafe-scorecard-view-pbip.zip file size",
+  "pbip_zip_sha": "downloads/rentsafe-scorecard-view-pbip.zip sha256, first 16",
+  "brief_pdf_size": "downloads/rentsafe-engine-brief-exec.pdf file size",
+  "brief_pdf_sha": "downloads/rentsafe-engine-brief-exec.pdf sha256, first 16",
+  "brief_full_size": "downloads/rentsafe-engine-brief-full.pdf file size",
+  "brief_full_sha": "downloads/rentsafe-engine-brief-full.pdf sha256, first 16",
+  "evidence_xlsx_size": "downloads/rentsafe-engine-evidence.xlsx file size",
+  "evidence_xlsx_sha": "downloads/rentsafe-engine-evidence.xlsx sha256, first 16",
+  "pbip_tables": "TMDL tables in the exported PBIP",
+  "pbip_measures": "measures in the exported TMDL",
+  "pbip_measures_desc": "measures carrying a /// description",
+  "pbip_measures_fmt": "measures carrying a formatString",
+  "pbip_rels": "relationships.tmdl",
+  "pbip_bidir": "relationships with bothDirections",
+  "pbip_files": "files in the PBIP folder",
+  "pf0_size": "PBIP file size",
+  "pf1_size": "PBIP file size",
+  "pf2_size": "PBIP file size",
+  "pf3_size": "PBIP file size",
+  "pf4_size": "PBIP file size",
+  "pf5_size": "PBIP file size",
+  "pf6_size": "PBIP file size",
+  "pf7_size": "PBIP file size",
+  "pf8_size": "PBIP file size",
+  "pf9_size": "PBIP file size",
+  "pf10_size": "PBIP file size",
+  "pf11_size": "PBIP file size",
+  "pf12_size": "PBIP file size",
+  "pf13_size": "PBIP file size",
+  "pf14_size": "PBIP file size",
+  "pf15_size": "PBIP file size",
+  "pf16_size": "PBIP file size",
+  "pf17_size": "PBIP file size",
+  "pf18_size": "PBIP file size",
+  "pf19_size": "PBIP file size",
+  "pf20_size": "PBIP file size",
+  "pf21_size": "PBIP file size",
+  "pf22_size": "PBIP file size",
+  "pf23_size": "PBIP file size",
+  "pf24_size": "PBIP file size",
+  "pf25_size": "PBIP file size",
+  "contrast_worst": "computed at build from the colour tokens (WCAG 2.x)",
+  "contrast_pairs": "text/surface pairs checked at build",
+  "ex0_raw": "raw City file, column YEAR EVALUATED",
+  "ex0_after": "rule year_label",
+  "ex0_col": "column name",
+  "ex0_file": "file",
+  "ex1_raw": "raw City file, column EXTERIOR GROUNDS",
+  "ex1_after": "rule trim",
+  "ex1_col": "column name",
+  "ex1_file": "file",
+  "ex2_raw": "raw City file, column ELECTRICAL SAFETY PLAN",
+  "ex2_after": "rule zero_sentinel",
+  "ex2_col": "column name",
+  "ex2_file": "file",
+  "ex3_raw": "raw City file, column RETAINING WALLS",
+  "ex3_after": "rule not_applicable",
+  "ex3_col": "column name",
+  "ex3_file": "file",
+  "ex4_raw": "raw City file, column LATITUDE / X",
+  "ex4_after": "rule no_lat_long",
+  "ex4_col": "column name",
+  "ex4_file": "file",
+  "ex5_raw": "raw City file, column SITE_ADDRESS",
+  "ex5_after": "rule created_in_error",
+  "ex5_col": "column name",
+  "ex5_file": "file",
+  "n_examples": "messy examples found in the raw files",
+  "audit_ai_calls": "timings.json ai_model_called",
+  "reg_fresh_gap": "days from rentsafe_meta health.registration.ckan_last_refreshed to meta.data_as_of",
+  "pbip_rows": "rows in the exported PBIP data/clean.csv",
+  "pbip_first": "earliest evaluation_date in the exported PBIP data/clean.csv",
+  "pbip_last": "latest evaluation_date in the exported PBIP data/clean.csv",
+  "pbip_mean": "mean current_score over the exported PBIP data/clean.csv",
+  "build_checks_passed": "count of build.py checks, every one of which must pass",
+  "built_at_label": "clock at build time"
+ },
+ "checks": [
+  {
+   "check": "PBIP download holds no local path or secret",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "engine brief PDF holds no local path or secret",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "engine full brief PDF holds no local path or secret",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "engine evidence ledger holds no local path or secret",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "all four downloads exist next to the page",
+   "ok": true,
+   "detail": "downloads/rentsafe-scorecard-view-pbip.zip, downloads/rentsafe-engine-brief-exec.pdf, downloads/rentsafe-engine-brief-full.pdf, downloads/rentsafe-engine-evidence.xlsx"
+  },
+  {
+   "check": "six messy examples found in the raw City files",
+   "ok": true,
+   "detail": "6 found"
+  },
+  {
+   "check": "cube buildings = KPI buildings",
+   "ok": true,
+   "detail": "3588 vs 3588"
+  },
+  {
+   "check": "cube units = KPI units",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "cube mean score = KPI mean",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "cube unit-weighted score = KPI",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "cube % green = KPI",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "cube refusals per 100 = KPI",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "cube re-adds to every ward cell of the scorecard",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "City row = simple average of the ward cells",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "messy fixture: rows in = clean + quarantined",
+   "ok": true,
+   "detail": "lost 0"
+  },
+  {
+   "check": "NorthLedger cleaning of the three City files reconciles",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "build quarantine reconciles",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "hero RECOMMEND on the zero rule follows its own rule (at least 99% exact on rows with a 0)",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "hero RECOMMEND on points per fix follows its own rule (the formula reproduces at least 99% of scores)",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "the same-building change is split by starting band, and the bands hold every pair",
+   "ok": true,
+   "detail": "4 bands, 3093 pairs of 3093"
+  },
+  {
+   "check": "analysis B gate verdict follows from its metrics",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "hero 'What is next' badge follows analysis B's gate (RECOMMEND only when the model beat both baselines)",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "the control chart's flags fall only on months it can judge",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "forecast champion is the top of its own ranking",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "the Forecast Lab measures its selection effect (re-picked at each origin from errors known then)",
+   "ok": true,
+   "detail": "realtime_selection 1.5102, display 1.51%"
+  },
+  {
+   "check": "replay manifest present in agent-demo.html",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "the NYC 311 session is archived and not featured",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "featured count matches the session list",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "three featured replays found for the teaser",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "the engine test receipt (engine_tests.json) is for the engine code on disk",
+   "ok": true,
+   "detail": "tests on 6dae24adf9b3, engine now 6dae24adf9b3: run python3 build.py --tests"
+  },
+  {
+   "check": "the timed run (timings.json) is for the engine code on disk",
+   "ok": true,
+   "detail": "timed on 6dae24adf9b3, engine now 6dae24adf9b3: re-run the recorded engagement"
+  },
+  {
+   "check": "the stages of the recorded run fit inside its wall clock",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "every stage of the timed RentSafeTO run exited cleanly",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "no NYC 311 measure names in the RentSafeTO export",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "every text colour reaches 4.5:1 on its surface in both themes",
+   "ok": true,
+   "detail": "worst 4.76"
+  },
+  {
+   "check": "the PBIP export holds its evaluation rows",
+   "ok": true,
+   "detail": "PBIP data/clean.csv"
+  },
+  {
+   "check": "the PL-300 status file carries no measured numbers (no numeric values, no digits in status, milestones or reconcile)",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "site.config.json lists the three offers",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "no internal plan code or Markdown backtick in reader-facing text (index.html, case-study.html)",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "every scorecard cell prints its value rounded half-up and takes its band from that printed value",
+   "ok": true,
+   "detail": "270 cells"
+  },
+  {
+   "check": "every bound figure on index.html and case-study.html equals its JSON",
+   "ok": true,
+   "detail": "1504 bound figure(s) checked against 15 JSON source(s)"
+  }
+ ],
+ "contrast": [
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "bg",
+   "ratio": 14.79
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "bg",
+   "ratio": 9.57
+  },
+  {
+   "mode": "light",
+   "text": "muted",
+   "on": "bg",
+   "ratio": 5.64
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "surface",
+   "ratio": 15.98
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "surface",
+   "ratio": 10.34
+  },
+  {
+   "mode": "light",
+   "text": "muted",
+   "on": "surface",
+   "ratio": 6.09
+  },
+  {
+   "mode": "light",
+   "text": "accent-ink",
+   "on": "surface",
+   "ratio": 7.88
+  },
+  {
+   "mode": "light",
+   "text": "accent-ink",
+   "on": "bg",
+   "ratio": 7.29
+  },
+  {
+   "mode": "light",
+   "text": "on-accent",
+   "on": "accent",
+   "ratio": 5.74
+  },
+  {
+   "mode": "light",
+   "text": "series-3",
+   "on": "surface",
+   "ratio": 5.95
+  },
+  {
+   "mode": "light",
+   "text": "series-3",
+   "on": "bg",
+   "ratio": 5.51
+  },
+  {
+   "mode": "light",
+   "text": "series",
+   "on": "surface",
+   "ratio": 10.45
+  },
+  {
+   "mode": "light",
+   "text": "focus",
+   "on": "surface",
+   "ratio": 6.09
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-green-1",
+   "ratio": 12.5
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-green-1",
+   "ratio": 8.09
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-green-2",
+   "ratio": 10.38
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-green-2",
+   "ratio": 6.72
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-green-3",
+   "ratio": 8.31
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-green-3",
+   "ratio": 5.38
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-yellow-1",
+   "ratio": 13.62
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-yellow-1",
+   "ratio": 8.82
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-yellow-2",
+   "ratio": 12.15
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-yellow-2",
+   "ratio": 7.87
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-yellow-3",
+   "ratio": 10.68
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-yellow-3",
+   "ratio": 6.92
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-red-1",
+   "ratio": 12.27
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-red-1",
+   "ratio": 7.94
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-red-2",
+   "ratio": 10.11
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-red-2",
+   "ratio": 6.54
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "heat-red-3",
+   "ratio": 8.02
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "heat-red-3",
+   "ratio": 5.19
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-neg-1",
+   "ratio": 12.74
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-neg-1",
+   "ratio": 8.24
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-pos-1",
+   "ratio": 12.59
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-pos-1",
+   "ratio": 8.15
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-neg-2",
+   "ratio": 10.2
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-neg-2",
+   "ratio": 6.6
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-pos-2",
+   "ratio": 10.01
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-pos-2",
+   "ratio": 6.48
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-neg-3",
+   "ratio": 8.1
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-neg-3",
+   "ratio": 5.24
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-pos-3",
+   "ratio": 7.85
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-pos-3",
+   "ratio": 5.08
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "bg",
+   "ratio": 15.88
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "bg",
+   "ratio": 11.6
+  },
+  {
+   "mode": "dark",
+   "text": "muted",
+   "on": "bg",
+   "ratio": 7.85
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "surface",
+   "ratio": 14.6
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "surface",
+   "ratio": 10.67
+  },
+  {
+   "mode": "dark",
+   "text": "muted",
+   "on": "surface",
+   "ratio": 7.22
+  },
+  {
+   "mode": "dark",
+   "text": "accent-ink",
+   "on": "surface",
+   "ratio": 9.67
+  },
+  {
+   "mode": "dark",
+   "text": "accent-ink",
+   "on": "bg",
+   "ratio": 10.52
+  },
+  {
+   "mode": "dark",
+   "text": "on-accent",
+   "on": "accent",
+   "ratio": 6.37
+  },
+  {
+   "mode": "dark",
+   "text": "series-3",
+   "on": "surface",
+   "ratio": 7.77
+  },
+  {
+   "mode": "dark",
+   "text": "series-3",
+   "on": "bg",
+   "ratio": 8.45
+  },
+  {
+   "mode": "dark",
+   "text": "series",
+   "on": "surface",
+   "ratio": 10.37
+  },
+  {
+   "mode": "dark",
+   "text": "focus",
+   "on": "surface",
+   "ratio": 8.43
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-green-1",
+   "ratio": 10.29
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-green-1",
+   "ratio": 7.52
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-green-2",
+   "ratio": 8.42
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-green-2",
+   "ratio": 6.15
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-green-3",
+   "ratio": 6.76
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-green-3",
+   "ratio": 4.94
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-yellow-1",
+   "ratio": 10.16
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-yellow-1",
+   "ratio": 7.42
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-yellow-2",
+   "ratio": 8.18
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-yellow-2",
+   "ratio": 5.98
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-yellow-3",
+   "ratio": 6.52
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-yellow-3",
+   "ratio": 4.76
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-red-1",
+   "ratio": 11.05
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-red-1",
+   "ratio": 8.07
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-red-2",
+   "ratio": 9.18
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-red-2",
+   "ratio": 6.7
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "heat-red-3",
+   "ratio": 7.52
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "heat-red-3",
+   "ratio": 5.49
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-neg-1",
+   "ratio": 11.51
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-neg-1",
+   "ratio": 8.41
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-pos-1",
+   "ratio": 11.65
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-pos-1",
+   "ratio": 8.51
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-neg-2",
+   "ratio": 8.93
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-neg-2",
+   "ratio": 6.52
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-pos-2",
+   "ratio": 9.03
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-pos-2",
+   "ratio": 6.6
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-neg-3",
+   "ratio": 6.83
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-neg-3",
+   "ratio": 4.99
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-pos-3",
+   "ratio": 6.92
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-pos-3",
+   "ratio": 5.05
+  }
+ ],
+ "examples": [
+  {
+   "file": "evaluations 2023 to now",
+   "column": "YEAR EVALUATED",
+   "raw": "\"202510\"",
+   "after": "evaluation year 2025, taken from EVALUATION COMPLETED ON (2025-10-22); the label is flagged, not dropped",
+   "rule": "year_label"
+  },
+  {
+   "file": "evaluations 2023 to now",
+   "column": "EXTERIOR GROUNDS",
+   "raw": "\" 2\"",
+   "after": "\"2\": whitespace trimmed, and the engine counted the repair",
+   "rule": "trim"
+  },
+  {
+   "file": "evaluations 2023 to now",
+   "column": "ELECTRICAL SAFETY PLAN",
+   "raw": "\"0\"",
+   "after": "refused or blocked: kept as a separate flag in pillar cells (provisional); the City's own score counts it as zero points",
+   "rule": "zero_sentinel"
+  },
+  {
+   "file": "evaluations 2023 to now",
+   "column": "RETAINING WALLS",
+   "raw": "\"N/A\"",
+   "after": "not applicable by design (the building has none): left out of the score, not counted as missing",
+   "rule": "not_applicable"
+  },
+  {
+   "file": "evaluations 2023 to now",
+   "column": "LATITUDE / X",
+   "raw": "\"\" / \"321187.241\"",
+   "after": "kept: the ward code places the building; projected X/Y are not converted",
+   "rule": "no_lat_long"
+  },
+  {
+   "file": "evaluations before 2023",
+   "column": "SITE_ADDRESS",
+   "raw": "\"** CREATED IN ERROR ** [street address withheld here]\"",
+   "after": "quarantined with its reason, never silently dropped",
+   "rule": "created_in_error"
+  }
+ ]
+}

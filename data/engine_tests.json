@@ -1,0 +1,16 @@
+{
+ "what": "One run of northledger-core/run_tests.sh, recorded by build.py --tests. Not a schedule.",
+ "ran_at": "2026-09-23T12:12:28Z",
+ "command": "cd northledger-core && ./run_tests.sh",
+ "exit_code": 0,
+ "green": true,
+ "tests": 599,
+ "suites": 39,
+ "suites_failed": [],
+ "engine_snapshot": {
+  "kind": "sha256 of northledger/*.py (no git commit available)",
+  "id": "6dae24adf9b3f83b16869a6095fec99178e913af83ed0f591a85f966f07854bc",
+  "unchanged_during_run": true
+ },
+ "summary_line": "ALL SUITES GREEN — 599 tests"
+}

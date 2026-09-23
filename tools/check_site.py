@@ -1,0 +1,810 @@
+#!/usr/bin/env python3
+"""Honesty and shipping checks for the portfolio site. Standard library only.
+
+    python tools/check_site.py                       # every check on the site root
+    python tools/check_site.py banned links          # some checks
+    python tools/check_site.py --dom index.html=/tmp/index.dom.html   # add a rendered DOM
+
+Checks
+  banned    The words "live", "real-time", "every morning" and "daily" may not appear in page
+            copy unless a scheduled rebuild exists AND has run: a .github/workflows file with a
+            `schedule:` cron, plus data/refresh_stamp.json written by that job. Even then
+            "real-time" is never allowed, and "daily" / "every morning" only for a daily cron.
+            Quoted third-party text can be exempted with data-honesty-exempt="<reason>".
+            The same check fails an em dash in a page's editorial text (the site's style has
+            none), and reads the replay page's session data (window.SESSIONS): card titles,
+            blurbs, archive notes and editor's notes are editorial and are held to both rules;
+            the recorded prompts and answers are quoted as recorded and are not.
+  figures   Every element carrying data-fact="<json>:<path>" must show exactly the value at
+            that path in data/<json>.json (or demo-data.json for "demo-data"). A string value
+            is compared as is; a number needs data-fmt (see FORMATS). Inside an element marked
+            data-fact-scope, any digit outside a data-fact element is a hand-typed figure and
+            fails (data-fact-exempt="<reason>" opts a node out). index.html must bind at least
+            one figure.
+  shipped   No local filesystem paths (/Users/<name>, /home/<name>, /var/folders, /private/tmp,
+            C:\\Users, file://), no ".env", and no token-shaped secrets in anything the site
+            serves, including files embedded as base64 (PDF streams and zip members are opened).
+  links     Every href/src resolves when the site is served from a GitHub Pages project
+            subpath: no root-absolute links, nothing that climbs above the site root, the
+            target file exists, #fragments exist, .md links only with a .nojekyll file,
+            mailto: addresses are real. External links are listed, not fetched.
+  contact   site.config.json must hold a real contact route (email, booking_url or
+            form_endpoint) and index.html must link to it.
+  stray     Nothing that is not part of the site sits in its folder unlisted in .gitignore (the
+            publish step is `git add .`): no qa/ output folder, no PDF at the root, no test-*.html
+            page other than the verify harness, no retired demo-data.json.
+The banned-word check also reads the Markdown files a static host serves from the root
+(README.md is exempt: it documents the rule and quotes the words).
+
+Exit code 1 when any check fails. Nothing here writes to the site.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import decimal
+import fnmatch
+import glob
+import html
+import io
+import json
+import os
+import posixpath
+import re
+import sys
+import zipfile
+import zlib
+from html.parser import HTMLParser
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHECKS = ("banned", "figures", "shipped", "links", "contact", "stray")
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+        "track", "wbr"}
+SKIP_TEXT = {"script", "style", "template"}
+SKIP_DIRS = {"qa", "tools", "tests", ".git", "node_modules", "__pycache__"}
+TEXT_ATTRS = ("title", "alt", "aria-label", "placeholder", "aria-description")
+
+
+# ----------------------------------------------------------------------------- tiny DOM
+class Node:
+    __slots__ = ("tag", "attrs", "children", "parent", "line")
+
+    def __init__(self, tag, attrs=None, parent=None, line=0):
+        self.tag, self.attrs, self.children, self.parent, self.line = tag, attrs or {}, [], parent, line
+
+    def iter(self):
+        yield self
+        for c in self.children:
+            if isinstance(c, Node):
+                yield from c.iter()
+
+    def text(self, skip=lambda n: False):
+        out = []
+        for c in self.children:
+            if isinstance(c, str):
+                out.append(c)
+            elif c.tag not in SKIP_TEXT and not skip(c):
+                out.append(c.text(skip))
+        return "".join(out)
+
+    def ancestors(self):
+        n = self
+        while n is not None:
+            yield n
+            n = n.parent
+
+
+class _Builder(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = Node("#root")
+        self.cur = self.root
+
+    def handle_starttag(self, tag, attrs):
+        n = Node(tag, {k: (v if v is not None else "") for k, v in attrs}, self.cur, self.getpos()[0])
+        self.cur.children.append(n)
+        if tag not in VOID:
+            self.cur = n
+
+    def handle_startendtag(self, tag, attrs):
+        n = Node(tag, {k: (v if v is not None else "") for k, v in attrs}, self.cur, self.getpos()[0])
+        self.cur.children.append(n)
+
+    def handle_endtag(self, tag):
+        n = self.cur
+        while n is not None and n.tag != tag:
+            n = n.parent
+        if n is not None and n.parent is not None:
+            self.cur = n.parent
+
+    def handle_data(self, data):
+        self.cur.children.append(data)
+
+
+def parse_html(text: str) -> Node:
+    b = _Builder()
+    b.feed(text)
+    b.close()
+    return b.root
+
+
+def norm_ws(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def snippet(s: str, i: int, j: int, pad: int = 45) -> str:
+    return norm_ws(s[max(0, i - pad): j + pad])
+
+
+# ----------------------------------------------------------------------------- site model
+class Site:
+    def __init__(self, root: str, doms=None):
+        self.root = os.path.abspath(root)
+        self.doms = dict(doms or {})           # page name -> rendered DOM path
+        self._html = {}
+        self._tree = {}
+
+    def pages(self):
+        """Shipped HTML pages: *.html in the root, except test harnesses."""
+        out = []
+        for p in sorted(glob.glob(os.path.join(self.root, "*.html"))):
+            b = os.path.basename(p)
+            if b.startswith("test-") or b.startswith("test_"):
+                continue
+            out.append(b)
+        return out
+
+    def read(self, rel):
+        if rel not in self._html:
+            with open(os.path.join(self.root, rel), encoding="utf-8", errors="replace") as f:
+                self._html[rel] = f.read()
+        return self._html[rel]
+
+    def tree(self, rel):
+        if rel not in self._tree:
+            self._tree[rel] = parse_html(self.read(rel))
+        return self._tree[rel]
+
+    def views(self, page):
+        """(label, tree) for the built HTML and, when given, its rendered DOM."""
+        out = [("built", self.tree(page))]
+        if page in self.doms and os.path.exists(self.doms[page]):
+            with open(self.doms[page], encoding="utf-8", errors="replace") as f:
+                out.append(("rendered", parse_html(f.read())))
+        return out
+
+    def _walk(self):
+        for dp, dns, fns in os.walk(self.root):
+            rel_dir = os.path.relpath(dp, self.root)
+            parts = [] if rel_dir == "." else rel_dir.split(os.sep)
+            if parts and (parts[0] in SKIP_DIRS or parts[0].startswith(".")):
+                dns[:] = []
+                continue
+            dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
+            for fn in sorted(fns):
+                if fn.startswith("test-") or fn.startswith("."):
+                    continue
+                yield os.path.normpath(os.path.join(rel_dir, fn))
+
+    def served_files(self):
+        """Every text file a static host would serve that the text checks should read."""
+        exts = (".html", ".htm", ".json", ".csv", ".md", ".txt", ".js", ".css", ".xml", ".svg", ".webmanifest")
+        return sorted(rel for rel in self._walk() if rel.lower().endswith(exts))
+
+    def served_documents(self):
+        """PDF and Office files a static host would serve (opened and scanned like embedded files)."""
+        return sorted(rel for rel in self._walk() if rel.lower().endswith((".pdf", ".docx", ".xlsx", ".pptx")))
+
+
+class Result:
+    def __init__(self, name):
+        self.name, self.failures, self.notes = name, [], []
+
+    def fail(self, msg):
+        self.failures.append(msg)
+
+    def note(self, msg):
+        self.notes.append(msg)
+
+    @property
+    def ok(self):
+        return not self.failures
+
+
+# ----------------------------------------------------------------------------- banned words
+BANNED = {
+    "live": re.compile(r"\blive\b", re.I),
+    "real-time": re.compile(r"\breal[\s-]?time\b", re.I),
+    "every morning": re.compile(r"\bevery\s+morning\b", re.I),
+    "daily": re.compile(r"\bdaily\b", re.I),
+}
+
+
+def schedule_status(root: str):
+    """(has_schedule, is_daily, has_run_stamp, detail). A schedule counts only when a workflow
+    declares a cron AND data/refresh_stamp.json records a completed run of it."""
+    crons = []
+    for wf in sorted(glob.glob(os.path.join(root, ".github", "workflows", "*.y*ml"))):
+        txt = open(wf, encoding="utf-8", errors="replace").read()
+        if re.search(r"^\s*schedule\s*:", txt, re.M):
+            crons += re.findall(r"cron\s*:\s*['\"]([^'\"]+)['\"]", txt)
+    stamp_path = os.path.join(root, "data", "refresh_stamp.json")
+    stamp = None
+    if os.path.exists(stamp_path):
+        try:
+            stamp = json.load(open(stamp_path))
+        except ValueError:
+            stamp = None
+    has_run = bool(stamp and stamp.get("run_id") and stamp.get("completed_at") and stamp.get("workflow"))
+    daily = any(len(c.split()) == 5 and c.split()[2] == "*" and c.split()[4] == "*" and c.split()[3] == "*"
+                for c in crons)
+    return bool(crons), daily, has_run, {"crons": crons, "stamp": stamp}
+
+
+def _exempt_reason(n: Node):
+    for a in n.ancestors():
+        if "data-honesty-exempt" in a.attrs:
+            return a.attrs["data-honesty-exempt"].strip() or ""
+    return None
+
+
+EM_DASH = re.compile("\u2014")
+EDITORIAL_SESSION_FIELDS = ("title", "blurb", "archive_reason")
+
+
+def _session_texts(page_html: str):
+    """(where, text) for the editorial parts of window.SESSIONS on a replay page: what the page
+    writes about a session, not what the agent or the user said in it."""
+    m = re.search(r"window\.SESSIONS\s*=\s*", page_html)
+    if not m:
+        return []
+    try:
+        data, _ = json.JSONDecoder().raw_decode(page_html, m.end())
+    except ValueError:
+        return [("window.SESSIONS", "")]
+    out = []
+    for s in (data.get("sessions") or []) if isinstance(data, dict) else []:
+        name = s.get("name", "?")
+        for k in EDITORIAL_SESSION_FIELDS:
+            if isinstance(s.get(k), str):
+                out.append(("session %s %s" % (name, k), s[k]))
+        for i, c in enumerate(s.get("chat") or []):
+            if isinstance(c, dict) and c.get("who") == "note" and isinstance(c.get("text"), str):
+                out.append(("session %s editor's note %d" % (name, i + 1), c["text"]))
+    return out
+
+
+def check_banned(site: Site) -> Result:
+    r = Result("banned")
+    has_sched, daily, has_run, detail = schedule_status(site.root)
+    allowed = set()
+    if has_sched and has_run:
+        allowed.add("live")
+        if daily:
+            allowed |= {"daily", "every morning"}
+        r.note("scheduled rebuild found (%s) with a run stamp; allowed: %s"
+               % (", ".join(detail["crons"]), ", ".join(sorted(allowed))))
+    else:
+        r.note("no scheduled rebuild with a recorded run: every banned word is blocked")
+    for page in site.pages():
+        for label, tree in site.views(page):
+            for n in tree.iter():
+                if "data-honesty-exempt" in n.attrs and not n.attrs["data-honesty-exempt"].strip():
+                    r.fail("%s (%s) line %d: <%s data-honesty-exempt> needs a reason" % (page, label, n.line, n.tag))
+            chunks = []
+
+            def skip(n):
+                return _exempt_reason(n) not in (None, "")
+
+            for n in tree.iter():
+                if n.tag in SKIP_TEXT or skip(n):
+                    continue
+                own = "".join(c for c in n.children if isinstance(c, str))
+                if n.tag not in SKIP_TEXT and own.strip() and not any(a.tag in SKIP_TEXT for a in n.ancestors()):
+                    chunks.append(("text <%s> line %d" % (n.tag, n.line), own))
+                for a in TEXT_ATTRS:
+                    if a in n.attrs:
+                        chunks.append(("%s attribute of <%s> line %d" % (a, n.tag, n.line), n.attrs[a]))
+                if n.tag == "meta" and n.attrs.get("content") and (
+                        n.attrs.get("name", "").lower() in ("description", "twitter:title", "twitter:description")
+                        or n.attrs.get("property", "").lower().startswith("og:")):
+                    chunks.append(("meta %s" % (n.attrs.get("name") or n.attrs.get("property")), n.attrs["content"]))
+            if label == "built":
+                chunks += _session_texts(site.read(page))
+            seen = set()
+            for where, s in chunks:
+                for m in EM_DASH.finditer(s):
+                    key = ("em dash", snippet(s, m.start(), m.end()))
+                    if key not in seen:
+                        seen.add(key)
+                        r.fail('%s (%s) %s: em dash in editorial text "...%s..."' % (page, label, where, key[1]))
+                for word, rx in BANNED.items():
+                    if word in allowed:
+                        continue
+                    for m in rx.finditer(s):
+                        key = (word, snippet(s, m.start(), m.end()))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        r.fail('%s (%s) %s: "%s" in "...%s..."' % (page, label, where, m.group(0), key[1]))
+    # Markdown served from the root is read by visitors too
+    for md in sorted(glob.glob(os.path.join(site.root, "*.md"))):
+        name = os.path.basename(md)
+        if name in MD_EXEMPT:
+            r.note("%s not scanned: %s" % (name, MD_EXEMPT[name]))
+            continue
+        text = open(md, encoding="utf-8", errors="replace").read()
+        for word, rx in BANNED.items():
+            if word in allowed:
+                continue
+            for m in rx.finditer(text):
+                r.fail('%s line %d: "%s" in "...%s..."' % (name, text.count("\n", 0, m.start()) + 1, m.group(0),
+                                                          snippet(text, m.start(), m.end())))
+    return r
+
+
+MD_EXEMPT = {"README.md": "it documents the banned-word rule, so it quotes the words"}
+
+
+# ----------------------------------------------------------------------------- stray files
+STRAY_ALLOWED_TEST_PAGES = {"test-driver.html"}      # verify.sh injects it into a copy of the page
+
+
+def _gitignore(root):
+    pats = []
+    p = os.path.join(root, ".gitignore")
+    if os.path.exists(p):
+        for line in open(p, encoding="utf-8", errors="replace"):
+            line = line.strip()
+            if line and not line.startswith("#"):
+                pats.append(line.lstrip("/"))
+    return pats
+
+
+def _ignored(name, is_dir, pats):
+    for pat in pats:
+        if pat.endswith("/"):
+            if is_dir and fnmatch.fnmatch(name, pat[:-1]):
+                return True
+        elif fnmatch.fnmatch(name, pat):
+            return True
+    return False
+
+
+def check_stray(site: Site) -> Result:
+    r = Result("stray")
+    pats = _gitignore(site.root)
+    found = 0
+    for name in sorted(os.listdir(site.root)):
+        if name.startswith("."):
+            continue
+        full = os.path.join(site.root, name)
+        is_dir = os.path.isdir(full)
+        why = None
+        if is_dir and name == "qa":
+            why = "verify.sh output (screenshots, a print PDF), not part of the site"
+        elif not is_dir and name.lower().endswith(".pdf"):
+            why = "a PDF at the site root; downloads the page offers live in downloads/"
+        elif (not is_dir and name.startswith(("test-", "test_")) and name.endswith(".html")
+              and name not in STRAY_ALLOWED_TEST_PAGES):
+            why = "a test page, not part of the site"
+        elif not is_dir and name == "demo-data.json":
+            why = "the retired v1 page's data"
+        if why is None:
+            continue
+        found += 1
+        if _ignored(name, is_dir, pats):
+            r.note("%s%s is listed in .gitignore (%s)" % (name, "/" if is_dir else "", why))
+        else:
+            r.fail("%s%s would be published with the site: %s. Move it out of the folder or list it in .gitignore"
+                   % (name, "/" if is_dir else "", why))
+    r.note("%d stray candidate(s) at the site root" % found)
+    return r
+
+
+# ----------------------------------------------------------------------------- figures
+def fmt_value(v, fmt):
+    if fmt in (None, "", "raw"):
+        return str(v)
+    name, _, arg = fmt.partition(":")
+    dp = int(arg) if arg else 0
+    if name == "int":
+        return format(int(round(v)), ",")
+    if name == "fixed":
+        return format(v, ",.%df" % dp)
+    if name == "half":                      # decimal half-up, binary noise removed first (the page's U.half)
+        q = decimal.Decimal(1).scaleb(-dp)
+        return format(decimal.Decimal(format(v, ".12g")).quantize(q, rounding=decimal.ROUND_HALF_UP), ",")
+    if name == "pct":
+        return format(v, ",.%df" % dp) + "%"
+    if name == "spct":
+        s = format(v, ",.%df" % dp) + "%"
+        return "+" + s if v >= 0 else s
+    if name == "usd_b":                     # value in US$ millions
+        return "$" + format(v / 1000.0, ",.%df" % dp) + "B"
+    if name == "usd_m":
+        return "$" + format(v, ",.%df" % dp) + "M"
+    if name == "usd":
+        return "$" + format(v, ",.%df" % dp)
+    raise ValueError("unknown data-fmt %r" % fmt)
+
+
+FORMATS = "raw, int, fixed:N, half:N (decimal half-up), pct:N, spct:N (signed), usd:N, usd_m:N, usd_b:N (value in US$ millions)"
+
+
+def load_sources(root: str):
+    src = {}
+    for p in sorted(glob.glob(os.path.join(root, "data", "*.json"))):
+        try:
+            src[os.path.splitext(os.path.basename(p))[0]] = json.load(open(p))
+        except ValueError as e:
+            src[os.path.splitext(os.path.basename(p))[0]] = e
+    dd = os.path.join(root, "demo-data.json")
+    if os.path.exists(dd):
+        try:
+            src["demo-data"] = json.load(open(dd))
+        except ValueError as e:
+            src["demo-data"] = e
+    return src
+
+
+def resolve(obj, path: str):
+    cur = obj
+    for tok in [t for t in path.split(".") if t != ""]:
+        if isinstance(cur, list):
+            cur = cur[int(tok)]
+        elif isinstance(cur, dict):
+            cur = cur[tok]
+        else:
+            raise KeyError(tok)
+    return cur
+
+
+def check_figures(site: Site) -> Result:
+    r = Result("figures")
+    sources = load_sources(site.root)
+    total = 0
+    for page in site.pages():
+        page_bound = 0
+        for label, tree in site.views(page):
+            for n in tree.iter():
+                if "data-fact" not in n.attrs:
+                    continue
+                total += 1
+                page_bound += 1
+                ref = n.attrs["data-fact"]
+                shown = norm_ws(n.text())
+                where = "%s (%s) line %d data-fact=%r" % (page, label, n.line, ref)
+                src, _, path = ref.partition(":")
+                if src not in sources:
+                    r.fail("%s: no data/%s.json" % (where, src))
+                    continue
+                if isinstance(sources[src], Exception):
+                    r.fail("%s: data/%s.json does not parse" % (where, src))
+                    continue
+                try:
+                    v = resolve(sources[src], path)
+                except (KeyError, IndexError, ValueError):
+                    r.fail("%s: path %r not found in %s" % (where, path, src))
+                    continue
+                if isinstance(v, (dict, list)) or v is None:
+                    r.fail("%s: %r is not a single value" % (where, path))
+                    continue
+                fmt = n.attrs.get("data-fmt")
+                if isinstance(v, (int, float)) and not isinstance(v, bool) and not fmt:
+                    if shown != str(v):
+                        r.fail("%s: a number needs data-fmt (%s); shows %r, value %r" % (where, FORMATS, shown, v))
+                    continue
+                try:
+                    want = fmt_value(v, fmt) if not isinstance(v, str) else v
+                except (ValueError, TypeError) as e:
+                    r.fail("%s: %s" % (where, e))
+                    continue
+                if shown == "" and label == "built":
+                    r.fail("%s: empty in the built HTML (reads blank with JavaScript off); expected %r" % (where, want))
+                elif shown != norm_ws(want):
+                    r.fail("%s: shows %r but the JSON says %r" % (where, shown, want))
+            # hand-typed digits inside a figure scope
+            for n in tree.iter():
+                if "data-fact-scope" not in n.attrs:
+                    continue
+                for m in n.iter():
+                    if m.tag in SKIP_TEXT:
+                        continue
+                    own = "".join(c for c in m.children if isinstance(c, str))
+                    if not re.search(r"\d", own):
+                        continue
+                    anc = list(m.ancestors())
+                    if any("data-fact" in a.attrs for a in anc) or any(a.tag in SKIP_TEXT for a in anc):
+                        continue
+                    ex = [a for a in anc if "data-fact-exempt" in a.attrs]
+                    if ex and ex[0].attrs["data-fact-exempt"].strip():
+                        continue
+                    r.fail("%s (%s) line %d: figure %r inside data-fact-scope is not bound to JSON"
+                           % (page, label, m.line, norm_ws(own)[:80]))
+        if page == "index.html" and page_bound == 0:
+            r.fail("index.html binds no figure to JSON: mark each figure with data-fact=\"<json>:<path>\" "
+                   "(see tools/check_site.py) so this check can prove it equals its source")
+    r.note("%d bound figure(s) checked against %d JSON source(s)" % (total, len(sources)))
+    return r
+
+
+# ----------------------------------------------------------------------------- shipped content
+PATH_PATTERNS = [
+    ("home directory path", re.compile(r"/Users/[A-Za-z0-9._-]+")),
+    ("home directory path", re.compile(r"/home/[a-z_][a-z0-9_-]*/")),
+    ("Windows user path", re.compile(r"[A-Za-z]:\\\\?Users\\\\?", re.I)),
+    ("temp path", re.compile(r"/private/(?:var|tmp)/|/var/folders/")),
+    ("file:// URL", re.compile(r"file://", re.I)),
+    (".env file", re.compile(r"(?<![A-Za-z0-9_$.])\.env(?![A-Za-z0-9_])")),
+    ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}")),
+    ("API key", re.compile(r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}")),
+    ("AWS key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("Slack token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+]
+B64_RX = [re.compile(r'"b64"\s*:\s*"([A-Za-z0-9+/=\\n]{64,})"'),
+          re.compile(r"data:[^;,\"'\s]*;base64,([A-Za-z0-9+/=]{64,})")]
+
+
+def _scan_text(text: str, where: str, r: Result):
+    for label, rx in PATH_PATTERNS:
+        for m in rx.finditer(text):
+            r.fail('%s: %s "%s" in "...%s..."' % (where, label, m.group(0), snippet(text, m.start(), m.end(), 30)))
+
+
+def _embedded_texts(blob: bytes):
+    """Readable text inside an embedded file: zip members, PDF streams (inflated), or raw."""
+    out = []
+    if blob[:4] == b"PK\x03\x04":
+        try:
+            with zipfile.ZipFile(io.BytesIO(blob)) as z:
+                for info in z.infolist():
+                    out.append(("zip member %s" % info.filename, z.read(info).decode("utf-8", "replace")))
+        except zipfile.BadZipFile:
+            out.append(("raw", blob.decode("latin-1")))
+    elif blob[:5] == b"%PDF-":
+        out.append(("pdf raw", blob.decode("latin-1")))
+        for i, m in enumerate(re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", blob, re.S)):
+            try:
+                out.append(("pdf stream %d" % i, zlib.decompress(m.group(1)).decode("latin-1")))
+            except zlib.error:
+                pass
+    else:
+        out.append(("raw", blob.decode("latin-1")))
+    return out
+
+
+def check_shipped(site: Site) -> Result:
+    r = Result("shipped")
+    files = site.served_files()
+    embedded = 0
+    for rel in files:
+        text = open(os.path.join(site.root, rel), encoding="utf-8", errors="replace").read()
+        _scan_text(text, rel, r)
+        for rx in B64_RX:
+            for k, m in enumerate(rx.finditer(text)):
+                raw = m.group(1).replace("\\n", "")
+                try:
+                    blob = base64.b64decode(raw + "=" * (-len(raw) % 4), validate=False)
+                except (binascii.Error, ValueError):
+                    continue
+                embedded += 1
+                for part, t in _embedded_texts(blob):
+                    _scan_text(t, "%s embedded file #%d (%s)" % (rel, k + 1, part), r)
+    docs = site.served_documents()
+    for rel in docs:
+        blob = open(os.path.join(site.root, rel), "rb").read()
+        for part, t in _embedded_texts(blob):
+            _scan_text(t, "%s (%s)" % (rel, part), r)
+    r.note("%d served file(s), %d served document(s) and %d embedded file(s) scanned" % (len(files), len(docs), embedded))
+    return r
+
+
+# ----------------------------------------------------------------------------- links
+LINK_ATTRS = {"a": "href", "link": "href", "area": "href", "script": "src", "img": "src", "iframe": "src",
+              "source": "src", "video": "src", "audio": "src", "embed": "src", "form": "action"}
+PLACEHOLDER = re.compile(r"example\.(?:com|org|net)|\byour[-_.@]|@your|\bname@|changeme|\btodo\b|\btbd\b|xxx|"
+                         r"placeholder|localhost|127\.0\.0\.1|\btest@", re.I)
+EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
+def _ids(tree: Node):
+    out = set()
+    for n in tree.iter():
+        if n.attrs.get("id"):
+            out.add(n.attrs["id"])
+        if n.tag == "a" and n.attrs.get("name"):
+            out.add(n.attrs["name"])
+    return out
+
+
+def check_links(site: Site, project: str = "northledger-ai-data-analyst") -> Result:
+    r = Result("links")
+    base = "/%s/" % project
+    external = set()
+    checked = 0
+    nojekyll = os.path.exists(os.path.join(site.root, ".nojekyll"))
+    id_cache = {}
+
+    def ids_of(rel):
+        if rel not in id_cache:
+            ids = set()
+            for _label, t in site.views(rel):
+                ids |= _ids(t)
+            id_cache[rel] = ids
+        return id_cache[rel]
+
+    for page in site.pages():
+        for label, tree in site.views(page):
+            for n in tree.iter():
+                attr = LINK_ATTRS.get(n.tag)
+                if not attr or attr not in n.attrs:
+                    continue
+                url = html.unescape(n.attrs[attr]).strip()
+                where = "%s (%s) line %d <%s %s=%r>" % (page, label, n.line, n.tag, attr, url[:120])
+                checked += 1
+                low = url.lower()
+                if url == "":
+                    if n.tag == "a":
+                        r.fail("%s: empty link" % where)
+                    continue
+                if low.startswith("data:") or low.startswith("blob:"):
+                    continue
+                if low.startswith("javascript:"):
+                    r.fail("%s: javascript: link" % where)
+                    continue
+                if low.startswith("mailto:"):
+                    addr = url[7:].split("?")[0]
+                    if not EMAIL.match(addr) or PLACEHOLDER.search(addr):
+                        r.fail("%s: mailto address %r is not a real address" % (where, addr))
+                    continue
+                if low.startswith("tel:"):
+                    continue
+                if re.match(r"^[a-z][a-z0-9+.-]*:", low) or low.startswith("//"):
+                    if not (low.startswith("https://") or low.startswith("http://") or low.startswith("//")):
+                        r.fail("%s: unsupported scheme" % where)
+                    elif PLACEHOLDER.search(url):
+                        r.fail("%s: placeholder URL" % where)
+                    else:
+                        external.add(url)
+                    continue
+                path, _, frag = url.partition("#")
+                path = path.split("?")[0]
+                if path == "":
+                    if frag and frag not in ids_of(page):
+                        r.fail("%s: no element with id %r on this page" % (where, frag))
+                    continue
+                if path.startswith("/"):
+                    r.fail("%s: root-absolute link breaks under a project URL (%s...)" % (where, base))
+                    continue
+                served = posixpath.normpath(posixpath.join(base, posixpath.dirname(page), path))
+                if not (served + "/").startswith(base):
+                    r.fail("%s: climbs above the site root; served from %s it resolves to %s" % (where, base, served))
+                    continue
+                rel = served[len(base):]
+                local = os.path.join(site.root, *rel.split("/"))
+                if os.path.isdir(local):
+                    local = os.path.join(local, "index.html")
+                    rel = posixpath.join(rel, "index.html")
+                if not os.path.exists(local):
+                    r.fail("%s: %s does not exist" % (where, rel))
+                    continue
+                if rel.lower().endswith(".md") and not nojekyll:
+                    r.fail("%s: links a Markdown file; without a .nojekyll file GitHub Pages converts it and "
+                           "this URL can 404 (add .nojekyll or link a rendered page)" % where)
+                if frag and rel.lower().endswith((".html", ".htm")) and frag not in ids_of(rel):
+                    r.fail("%s: %s has no element with id %r" % (where, rel, frag))
+    r.note("%d link(s) checked as served from %s; %d external link(s) not fetched" % (checked, base, len(external)))
+    return r
+
+
+# ----------------------------------------------------------------------------- contact
+def _get(d, *paths):
+    for p in paths:
+        cur = d
+        ok = True
+        for k in p.split("."):
+            if isinstance(cur, dict) and k in cur:
+                cur = cur[k]
+            else:
+                ok = False
+                break
+        if ok and isinstance(cur, str) and cur.strip():
+            return cur.strip()
+    return None
+
+
+def check_contact(site: Site) -> Result:
+    r = Result("contact")
+    p = os.path.join(site.root, "site.config.json")
+    if not os.path.exists(p):
+        r.fail("site.config.json not found. Add a contact route the page can use: \"contact\": {\"email\": ..., "
+               "\"booking_url\": ..., \"form_endpoint\": ...}. The owner creates any booking or form account; "
+               "this check will not pass on a placeholder.")
+        return r
+    try:
+        cfg = json.load(open(p))
+    except ValueError as e:
+        r.fail("site.config.json does not parse: %s" % e)
+        return r
+    email = _get(cfg, "contact.email", "contact_email", "email")
+    booking = _get(cfg, "contact.booking_url", "booking_url", "contact.booking")
+    form = _get(cfg, "contact.form_endpoint", "form_endpoint", "contact.form_action")
+    routes = []
+    if email:
+        if EMAIL.match(email) and not PLACEHOLDER.search(email):
+            routes.append(("email", email, "mailto:" + email))
+        else:
+            r.fail("site.config.json contact email %r is not a real address" % email)
+    for kind, url in (("booking_url", booking), ("form_endpoint", form)):
+        if url:
+            if url.startswith("https://") and not PLACEHOLDER.search(url):
+                routes.append((kind, url, url))
+            else:
+                r.fail("site.config.json %s %r is not a real https URL" % (kind, url))
+    if not routes:
+        if not r.failures:
+            r.fail("site.config.json has no contact route: fill contact_email and/or booking_url (https) in "
+                   "site.config.json, then run build.py (the owner creates any booking account)")
+        return r
+    if "index.html" not in site.pages():
+        r.fail("index.html not found")
+        return r
+    targets = set()
+    for _label, tree in site.views("index.html"):
+        for n in tree.iter():
+            for a in ("href", "action"):
+                if n.attrs.get(a):
+                    targets.add(html.unescape(n.attrs[a]).strip())
+    linked = [k for k, _v, t in routes if any(x == t or x.split("?")[0] == t for x in targets)]
+    if not linked:
+        r.fail("site.config.json has a contact route (%s) but index.html links none of them"
+               % ", ".join(k for k, _v, _t in routes))
+    else:
+        r.note("contact route(s) configured and linked: %s" % ", ".join(linked))
+    return r
+
+
+# ----------------------------------------------------------------------------- main
+RUNNERS = {"banned": check_banned, "figures": check_figures, "shipped": check_shipped, "links": check_links,
+           "contact": check_contact, "stray": check_stray}
+
+
+def run(root, checks=CHECKS, doms=None):
+    site = Site(root, doms)
+    return [RUNNERS[c](site) for c in checks]
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Honesty and shipping checks for the portfolio site.")
+    ap.add_argument("checks", nargs="*", default=list(CHECKS), help="subset of: " + ", ".join(CHECKS))
+    ap.add_argument("--root", default=ROOT)
+    ap.add_argument("--dom", action="append", default=[], metavar="PAGE=PATH",
+                    help="rendered DOM of a page (e.g. from Chrome --dump-dom)")
+    ap.add_argument("--json", help="also write the results here")
+    ap.add_argument("--max", type=int, default=25, help="failures printed per check")
+    a = ap.parse_args(argv)
+    bad = [c for c in a.checks if c not in RUNNERS]
+    if bad:
+        ap.error("unknown check(s): %s" % ", ".join(bad))
+    doms = dict(d.split("=", 1) for d in a.dom)
+    results = run(a.root, a.checks, doms)
+    for res in results:
+        print("CHECK %-8s %s%s" % (res.name, "PASS" if res.ok else "FAIL",
+                                   "" if res.ok else " (%d problem%s)" % (len(res.failures), "" if len(res.failures) == 1 else "s")))
+        for nte in res.notes:
+            print("    note: " + nte)
+        for f in res.failures[: a.max]:
+            print("    - " + f)
+        if len(res.failures) > a.max:
+            print("    ... and %d more" % (len(res.failures) - a.max))
+    if a.json:
+        with open(a.json, "w") as f:
+            json.dump([{"check": x.name, "ok": x.ok, "failures": x.failures, "notes": x.notes} for x in results], f, indent=1)
+    return 0 if all(x.ok for x in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,21 @@
+{
+  "_about": "Edited only by the owner. The site reads it and claims nothing it does not say. Agents write no numbers here.",
+  "project": "PL-300 practice project: NYC 311 Service Requests",
+  "status": "in progress, hand-built by the owner",
+  "authorship": "Hand-built by Rashadul in the Power BI service: model, Power Query, DAX and report.",
+  "route": "Power BI Desktop runs only on Windows, so I build in the browser: the Power BI service, with the project kept in Git through Fabric Git integration.",
+  "method": "I build the model, Power Query, DAX and report by hand. The values I reconcile against come from an independent Python twin (AI-assisted) whose code is checked to contain no DAX.",
+  "data_source": {
+    "name": "NYC 311 Service Requests from 2010 to Present (NYC Open Data)",
+    "url": "https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9"
+  },
+  "milestones": [
+    {"name": "Data model and Power Query", "state": "not yet marked"},
+    {"name": "Measures (DAX)", "state": "not yet marked"},
+    {"name": "Report pages", "state": "not yet marked"},
+    {"name": "Reconcile against the Python twin", "state": "not yet marked"},
+    {"name": "Publish to web (screenshot or embed)", "state": "not yet marked"}
+  ],
+  "reconcile": null,
+  "updated_by_owner_at": null
+}

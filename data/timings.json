@@ -1,7 +1,7 @@
 {
  "schema": "northledger_timings/2",
  "what": "Recorded runs of the NorthLedger engine. Each is ONE run on ONE machine, not an average; nothing here runs on a schedule.",
- "built_at": "2026-09-23T12:12:16Z",
+ "built_at": "2026-09-24T21:10:53Z",
  "built_by": "engagements/rentsafe/build_engine_scorecard.py",
  "machine": {
   "platform": "macOS-26.5.1-arm64-arm-64bit",
@@ -15,14 +15,25 @@
  },
  "engine": {
   "kind": "sha256 of northledger/*.py (no git commit available)",
-  "id": "6dae24adf9b3f83b16869a6095fec99178e913af83ed0f591a85f966f07854bc",
-  "files": 23
+  "id": "82a6be7b4b336e355e704fdb21dd2748d40e1647594303134f4f212dd5a28fd6",
+  "files": 25,
+  "environment": {
+   "python": "3.9.6",
+   "python_implementation": "CPython",
+   "sqlite": "3.51.0",
+   "platform": "macOS-26.5.1-arm64-arm-64bit",
+   "machine": "arm64",
+   "numpy_pinned": "2.0",
+   "numpy": "2.0.2",
+   "pandas": "2.3.3",
+   "pyodide": null
+  }
  },
  "ai_model_called": false,
  "runs": {
   "rentsafe_cli": {
    "what": "The real CLI on the three RentSafeTO files: each file landed (public data), decided and audited; the post-2023 file also analysed and exported to Power BI; then the tidy evaluation view (decisions applied upstream) through the same stages.",
-   "date": "2026-09-23T12:08:38Z",
+   "date": "2026-09-24T21:07:33Z",
    "as_of": "2026-09-23",
    "inputs": [
     {
@@ -67,21 +78,21 @@
      "engagement": "eval-2023",
      "stage": "land",
      "command": "-m northledger land engagements/rentsafe/eval-2023 data/rentsafe/apartment-building-evaluations-2023-current.csv --public-data",
-     "seconds": 0.532,
+     "seconds": 0.538,
      "rows": 6681,
-     "rows_per_s": 12565.9,
-     "peak_rss_mb": 94.4,
+     "rows_per_s": 12421.8,
+     "peak_rss_mb": 94.5,
      "exit_code": 0,
      "log": "logs/eval-2023.land.log"
     },
     {
      "engagement": "eval-2023",
      "stage": "decide",
-     "command": "4 x decide",
-     "seconds": 0.146,
+     "command": "2 x decide",
+     "seconds": 0.075,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 15.0,
+     "peak_rss_mb": 15.1,
      "exit_code": 0,
      "decisions": [
       {
@@ -91,31 +102,21 @@
       {
        "column": "emergency_contact_sign",
        "decision": "keep"
-      },
-      {
-       "column": "tenant_notification_board",
-       "decision": "keep"
-      },
-      {
-       "column": "tenant_service_request_log",
-       "decision": "keep"
       }
      ],
      "log": [
       "logs/eval-2023.decide.site_address.log",
-      "logs/eval-2023.decide.emergency_contact_sign.log",
-      "logs/eval-2023.decide.tenant_notification_board.log",
-      "logs/eval-2023.decide.tenant_service_request_log.log"
+      "logs/eval-2023.decide.emergency_contact_sign.log"
      ]
     },
     {
      "engagement": "eval-2023",
      "stage": "audit",
      "command": "-m northledger audit engagements/rentsafe/eval-2023 --objective How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
-     "seconds": 9.976,
+     "seconds": 11.753,
      "rows": 6681,
-     "rows_per_s": 669.7,
-     "peak_rss_mb": 147.4,
+     "rows_per_s": 568.5,
+     "peak_rss_mb": 148.4,
      "exit_code": 0,
      "log": "logs/eval-2023.audit.log"
     },
@@ -123,10 +124,10 @@
      "engagement": "eval-2023",
      "stage": "analyze",
      "command": "-m northledger analyze engagements/rentsafe/eval-2023 --as-of 2026-09-23 --objective How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
-     "seconds": 32.208,
+     "seconds": 13.154,
      "rows": 6681,
-     "rows_per_s": 207.4,
-     "peak_rss_mb": 239.7,
+     "rows_per_s": 507.9,
+     "peak_rss_mb": 157.0,
      "exit_code": 0,
      "log": "logs/eval-2023.analyze.log"
     },
@@ -134,10 +135,10 @@
      "engagement": "eval-2023",
      "stage": "export",
      "command": "-m northledger export engagements/rentsafe/eval-2023 --name RentSafeTO Evaluations Raw",
-     "seconds": 8.923,
+     "seconds": 10.469,
      "rows": 6681,
-     "rows_per_s": 748.8,
-     "peak_rss_mb": 129.0,
+     "rows_per_s": 638.2,
+     "peak_rss_mb": 130.3,
      "exit_code": 0,
      "log": "logs/eval-2023.export.log"
     },
@@ -145,10 +146,10 @@
      "engagement": "eval-pre2023",
      "stage": "land",
      "command": "-m northledger land engagements/rentsafe/eval-pre2023 data/rentsafe/pre-2023-apartment-building-evaluations.csv --public-data",
-     "seconds": 0.536,
+     "seconds": 0.621,
      "rows": 11760,
-     "rows_per_s": 21941.4,
-     "peak_rss_mb": 94.0,
+     "rows_per_s": 18926.2,
+     "peak_rss_mb": 93.5,
      "exit_code": 0,
      "log": "logs/eval-pre2023.land.log"
     },
@@ -156,10 +157,10 @@
      "engagement": "eval-pre2023",
      "stage": "decide",
      "command": "2 x decide",
-     "seconds": 0.074,
+     "seconds": 0.075,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 15.0,
+     "peak_rss_mb": 15.1,
      "exit_code": 0,
      "decisions": [
       {
@@ -180,10 +181,10 @@
      "engagement": "eval-pre2023",
      "stage": "audit",
      "command": "-m northledger audit engagements/rentsafe/eval-pre2023 --objective How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
-     "seconds": 9.361,
+     "seconds": 11.221,
      "rows": 11760,
-     "rows_per_s": 1256.3,
-     "peak_rss_mb": 146.6,
+     "rows_per_s": 1048.0,
+     "peak_rss_mb": 147.5,
      "exit_code": 0,
      "log": "logs/eval-pre2023.audit.log"
     },
@@ -191,10 +192,10 @@
      "engagement": "registration",
      "stage": "land",
      "command": "-m northledger land engagements/rentsafe/registration data/rentsafe/apartment-building-registration-data.csv --public-data",
-     "seconds": 0.445,
+     "seconds": 0.447,
      "rows": 3611,
-     "rows_per_s": 8116.8,
-     "peak_rss_mb": 84.5,
+     "rows_per_s": 8084.2,
+     "peak_rss_mb": 84.3,
      "exit_code": 0,
      "log": "logs/registration.land.log"
     },
@@ -202,10 +203,10 @@
      "engagement": "registration",
      "stage": "decide",
      "command": "6 x decide",
-     "seconds": 0.222,
+     "seconds": 0.221,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 15.0,
+     "peak_rss_mb": 15.1,
      "exit_code": 0,
      "decisions": [
       {
@@ -246,10 +247,10 @@
      "engagement": "registration",
      "stage": "audit",
      "command": "-m northledger audit engagements/rentsafe/registration --objective How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
-     "seconds": 4.838,
+     "seconds": 5.91,
      "rows": 3611,
-     "rows_per_s": 746.4,
-     "peak_rss_mb": 134.4,
+     "rows_per_s": 611.0,
+     "peak_rss_mb": 132.2,
      "exit_code": 0,
      "log": "logs/registration.audit.log"
     },
@@ -257,10 +258,10 @@
      "engagement": "view-2023",
      "stage": "prepare",
      "command": "engagements/rentsafe/prepare_view.py engagements/rentsafe/inputs/RentSafeTO-evaluation-view.csv",
-     "seconds": 0.676,
+     "seconds": 0.692,
      "rows": 6681,
-     "rows_per_s": 9887.0,
-     "peak_rss_mb": 126.3,
+     "rows_per_s": 9650.0,
+     "peak_rss_mb": 126.4,
      "exit_code": 0,
      "log": "logs/view-2023.prepare.log"
     },
@@ -268,10 +269,10 @@
      "engagement": "view-2023",
      "stage": "land",
      "command": "-m northledger land engagements/rentsafe/view-2023 engagements/rentsafe/inputs/RentSafeTO-evaluation-view.csv --public-data",
-     "seconds": 0.312,
+     "seconds": 0.341,
      "rows": 6681,
-     "rows_per_s": 21384.3,
-     "peak_rss_mb": 71.7,
+     "rows_per_s": 19565.8,
+     "peak_rss_mb": 71.6,
      "exit_code": 0,
      "log": "logs/view-2023.land.log"
     },
@@ -279,10 +280,10 @@
      "engagement": "view-2023",
      "stage": "decide",
      "command": "1 x decide",
-     "seconds": 0.037,
+     "seconds": 0.044,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 14.8,
+     "peak_rss_mb": 15.1,
      "exit_code": 0,
      "decisions": [
       {
@@ -298,10 +299,10 @@
      "engagement": "view-2023",
      "stage": "audit",
      "command": "-m northledger audit engagements/rentsafe/view-2023 --objective How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
-     "seconds": 2.689,
+     "seconds": 3.014,
      "rows": 6681,
-     "rows_per_s": 2484.3,
-     "peak_rss_mb": 114.5,
+     "rows_per_s": 2217.0,
+     "peak_rss_mb": 115.6,
      "exit_code": 0,
      "log": "logs/view-2023.audit.log"
     },
@@ -309,10 +310,10 @@
      "engagement": "view-2023",
      "stage": "analyze",
      "command": "-m northledger analyze engagements/rentsafe/view-2023 --as-of 2026-09-23 --objective How are Toronto rental apartment buildings scoring on RentSafeTO evaluations, which parts of the building are losing points, and what is likely to come next?",
-     "seconds": 8.054,
+     "seconds": 3.761,
      "rows": 6681,
-     "rows_per_s": 829.5,
-     "peak_rss_mb": 173.7,
+     "rows_per_s": 1776.3,
+     "peak_rss_mb": 119.0,
      "exit_code": 0,
      "log": "logs/view-2023.analyze.log"
     },
@@ -320,24 +321,24 @@
      "engagement": "view-2023",
      "stage": "export",
      "command": "-m northledger export engagements/rentsafe/view-2023 --name RentSafeTO Scorecard View",
-     "seconds": 2.93,
+     "seconds": 3.361,
      "rows": 6681,
-     "rows_per_s": 2279.9,
-     "peak_rss_mb": 124.5,
+     "rows_per_s": 1987.7,
+     "peak_rss_mb": 124.8,
      "exit_code": 0,
      "log": "logs/view-2023.export.log"
     }
    ],
    "seconds_by_engagement": {
-    "eval-2023": 51.785,
-    "eval-pre2023": 9.971,
-    "registration": 5.505,
-    "view-2023": 14.698
+    "eval-2023": 35.989,
+    "eval-pre2023": 11.917,
+    "registration": 6.578,
+    "view-2023": 11.213
    },
-   "total_seconds": 82.111,
-   "peak_rss_mb": 239.7,
+   "total_seconds": 65.74,
+   "peak_rss_mb": 157.0,
    "rows_in_three_files": 22052,
-   "three_file_intake_seconds": 26.13,
+   "three_file_intake_seconds": 30.861,
    "three_file_intake_stages": [
     "land",
     "decide",
@@ -356,7 +357,7 @@
     "numpy": "2.0.2",
     "pandas": "2.3.3"
    },
-   "date": "2026-09-23T08:10:56",
+   "date": "2026-09-24T17:09:41",
    "input": {
     "file": "apartment-building-evaluations-2023-current.csv",
     "bytes": 1835699,
@@ -364,17 +365,28 @@
    },
    "engine": {
     "kind": "sha256 of northledger/*.py (no git commit available)",
-    "id": "6dae24adf9b3f83b16869a6095fec99178e913af83ed0f591a85f966f07854bc",
-    "files": 23
+    "id": "82a6be7b4b336e355e704fdb21dd2748d40e1647594303134f4f212dd5a28fd6",
+    "files": 25,
+    "environment": {
+     "python": "3.9.6",
+     "python_implementation": "CPython",
+     "sqlite": "3.51.0",
+     "platform": "macOS-26.5.1-arm64-arm-64bit",
+     "machine": "arm64",
+     "numpy_pinned": "2.0",
+     "numpy": "2.0.2",
+     "pandas": "2.3.3",
+     "pyodide": null
+    }
    },
    "ai_model_called": false,
    "stages": [
     {
      "stage": "land",
-     "seconds": 0.33,
+     "seconds": 0.346,
      "rows": 6681,
-     "rows_per_s": 20245.5,
-     "peak_rss_mb": 96.0,
+     "rows_per_s": 19309.2,
+     "peak_rss_mb": 96.6,
      "ok": true
     },
     {
@@ -382,94 +394,94 @@
      "seconds": 0.0,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 96.0,
+     "peak_rss_mb": 96.6,
      "ok": true
     },
     {
      "stage": "audit",
-     "seconds": 9.77,
+     "seconds": 11.522,
      "rows": 6681,
-     "rows_per_s": 683.8,
-     "peak_rss_mb": 164.9,
+     "rows_per_s": 579.8,
+     "peak_rss_mb": 163.6,
      "ok": true
     },
     {
      "stage": "analyze",
-     "seconds": 32.084,
+     "seconds": 14.224,
      "rows": 6681,
-     "rows_per_s": 208.2,
-     "peak_rss_mb": 266.8,
+     "rows_per_s": 469.7,
+     "peak_rss_mb": 191.2,
      "ok": true
     },
     {
      "stage": "analyze.profile",
-     "seconds": 6.418,
+     "seconds": 7.793,
      "rows": 6681,
-     "rows_per_s": 1041.0,
-     "peak_rss_mb": 169.3,
+     "rows_per_s": 857.3,
+     "peak_rss_mb": 170.1,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.clean",
-     "seconds": 1.88,
+     "seconds": 2.039,
      "rows": 6681,
-     "rows_per_s": 3554.4,
-     "peak_rss_mb": 194.5,
+     "rows_per_s": 3276.8,
+     "peak_rss_mb": 191.2,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.measure",
-     "seconds": 11.273,
+     "seconds": 1.425,
      "rows": 6681,
-     "rows_per_s": 592.7,
-     "peak_rss_mb": 266.7,
+     "rows_per_s": 4688.9,
+     "peak_rss_mb": 191.2,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.forecast",
-     "seconds": 0.006,
+     "seconds": 0.02,
      "rows": 6681,
-     "rows_per_s": 1189407.4,
-     "peak_rss_mb": 266.7,
+     "rows_per_s": 335418.2,
+     "peak_rss_mb": 191.2,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.gate_verify",
-     "seconds": 10.881,
+     "seconds": 0.414,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 266.8,
+     "peak_rss_mb": 191.2,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.narrate",
-     "seconds": 0.003,
+     "seconds": 0.004,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 266.8,
+     "peak_rss_mb": 191.2,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.write",
-     "seconds": 0.022,
+     "seconds": 0.048,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 266.8,
+     "peak_rss_mb": 191.2,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "export",
-     "seconds": 8.073,
+     "seconds": 10.713,
      "rows": 6681,
-     "rows_per_s": 827.6,
-     "peak_rss_mb": 266.8,
+     "rows_per_s": 623.6,
+     "peak_rss_mb": 194.5,
      "ok": true
     }
    ],
@@ -477,21 +489,26 @@
    "error": "",
    "export_lint_problems": 0,
    "analysis": {
-    "facts": 371,
-    "reproduced": 371,
-    "checked": 371,
+    "facts": 422,
+    "reproduced": 422,
+    "checked": 422,
     "forecasts": {
      "monthly_rows": {
       "champion": "holt_damped_log",
       "baseline_won": false,
-      "holdout_months": 7
+      "holdout_months": 6
+     },
+     "total_confirmed_units": {
+      "champion": "holt_damped_log",
+      "baseline_won": false,
+      "holdout_months": 6
      }
     }
    },
    "rows": 6681,
-   "total_seconds": 50.258,
-   "end_to_end_rows_per_s": 132.9,
-   "peak_rss_mb": 266.8
+   "total_seconds": 36.808,
+   "end_to_end_rows_per_s": 181.5,
+   "peak_rss_mb": 194.5
   },
   "fixture_bench": {
    "what": "NorthLedger timings receipt: one recorded run, not an average",
@@ -505,7 +522,7 @@
     "numpy": "2.0.2",
     "pandas": "2.3.3"
    },
-   "date": "2026-09-23T08:10:01",
+   "date": "2026-09-24T17:08:39",
    "input": {
     "file": "store_reviews_export.csv",
     "bytes": 28992024,
@@ -513,112 +530,123 @@
    },
    "engine": {
     "kind": "sha256 of northledger/*.py (no git commit available)",
-    "id": "6dae24adf9b3f83b16869a6095fec99178e913af83ed0f591a85f966f07854bc",
-    "files": 23
+    "id": "82a6be7b4b336e355e704fdb21dd2748d40e1647594303134f4f212dd5a28fd6",
+    "files": 25,
+    "environment": {
+     "python": "3.9.6",
+     "python_implementation": "CPython",
+     "sqlite": "3.51.0",
+     "platform": "macOS-26.5.1-arm64-arm-64bit",
+     "machine": "arm64",
+     "numpy_pinned": "2.0",
+     "numpy": "2.0.2",
+     "pandas": "2.3.3",
+     "pyodide": null
+    }
    },
    "ai_model_called": false,
    "stages": [
     {
      "stage": "land",
-     "seconds": 7.104,
+     "seconds": 7.413,
      "rows": 48384,
-     "rows_per_s": 6810.8,
-     "peak_rss_mb": 229.6,
+     "rows_per_s": 6526.9,
+     "peak_rss_mb": 213.2,
      "ok": true
     },
     {
      "stage": "decide",
-     "seconds": 0.739,
+     "seconds": 0.975,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 229.6,
+     "peak_rss_mb": 213.2,
      "ok": true
     },
     {
      "stage": "audit",
-     "seconds": 15.822,
+     "seconds": 18.87,
      "rows": 48384,
-     "rows_per_s": 3058.0,
-     "peak_rss_mb": 276.0,
+     "rows_per_s": 2564.1,
+     "peak_rss_mb": 273.1,
      "ok": true
     },
     {
      "stage": "analyze",
-     "seconds": 17.353,
+     "seconds": 17.372,
      "rows": 48384,
-     "rows_per_s": 2788.3,
-     "peak_rss_mb": 373.2,
+     "rows_per_s": 2785.2,
+     "peak_rss_mb": 335.7,
      "ok": true
     },
     {
      "stage": "analyze.profile",
-     "seconds": 10.915,
+     "seconds": 13.331,
      "rows": 48384,
-     "rows_per_s": 4432.8,
-     "peak_rss_mb": 340.5,
+     "rows_per_s": 3629.4,
+     "peak_rss_mb": 333.7,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.clean",
-     "seconds": 2.681,
+     "seconds": 2.841,
      "rows": 48384,
-     "rows_per_s": 18044.3,
-     "peak_rss_mb": 340.5,
+     "rows_per_s": 17029.4,
+     "peak_rss_mb": 333.7,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.measure",
-     "seconds": 1.903,
-     "rows": 46455,
-     "rows_per_s": 24411.5,
-     "peak_rss_mb": 373.1,
+     "seconds": 0.535,
+     "rows": 47158,
+     "rows_per_s": 88095.5,
+     "peak_rss_mb": 333.7,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.forecast",
-     "seconds": 0.035,
-     "rows": 46455,
-     "rows_per_s": 1340455.7,
-     "peak_rss_mb": 373.1,
+     "seconds": 0.056,
+     "rows": 47158,
+     "rows_per_s": 847458.6,
+     "peak_rss_mb": 333.7,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.gate_verify",
-     "seconds": 1.62,
+     "seconds": 0.267,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 373.2,
+     "peak_rss_mb": 333.9,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.narrate",
-     "seconds": 0.0,
+     "seconds": 0.001,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 373.2,
+     "peak_rss_mb": 333.9,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "analyze.write",
-     "seconds": 0.006,
+     "seconds": 0.012,
      "rows": 0,
      "rows_per_s": null,
-     "peak_rss_mb": 373.2,
+     "peak_rss_mb": 333.9,
      "ok": true,
      "part_of": "analyze"
     },
     {
      "stage": "export",
-     "seconds": 14.089,
+     "seconds": 16.927,
      "rows": 48384,
-     "rows_per_s": 3434.2,
-     "peak_rss_mb": 498.5,
+     "rows_per_s": 2858.4,
+     "peak_rss_mb": 422.9,
      "ok": true
     }
    ],
@@ -626,9 +654,9 @@
    "error": "",
    "export_lint_problems": 0,
    "analysis": {
-    "facts": 53,
-    "reproduced": 53,
-    "checked": 53,
+    "facts": 80,
+    "reproduced": 80,
+    "checked": 80,
     "forecasts": {
      "monthly_rows": {
       "champion": "holt_damped_log",
@@ -638,9 +666,9 @@
     }
    },
    "rows": 48384,
-   "total_seconds": 55.11,
-   "end_to_end_rows_per_s": 878.0,
-   "peak_rss_mb": 498.5
+   "total_seconds": 61.56,
+   "end_to_end_rows_per_s": 786.0,
+   "peak_rss_mb": 422.9
   },
   "fixture_before": {
    "what": "The first end-to-end test of the same fixture, before the engine work (logs of /usr/bin/time -l around each CLI call)",
@@ -668,8 +696,8 @@
   }
  },
  "display": {
-  "rentsafe_three_file_intake": "22,052 rows in 3 files landed, decided and audited in 26.1 s",
-  "rentsafe_eval_analyze": "the post-2023 file was then analysed (371 facts, 371 refit or re-run, 371 reproduced) in 32.2 s and exported to Power BI in 8.9 s; the tidy evaluation view ran through the same stages in 14.7 s",
-  "fixture_end_to_end": "48,384 messy rows: land to Power BI export, analysis included, in 55.1 s"
+  "rentsafe_three_file_intake": "22,052 rows in 3 files landed, decided and audited in 30.9 s",
+  "rentsafe_eval_analyze": "the post-2023 file was then analysed (422 facts, 422 refit or re-run, 422 reproduced) in 13.2 s and exported to Power BI in 10.5 s; the tidy evaluation view ran through the same stages in 11.2 s",
+  "fixture_end_to_end": "48,384 messy rows: land to Power BI export, analysis included, in 61.6 s"
  }
 }

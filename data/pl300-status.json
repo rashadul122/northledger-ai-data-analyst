@@ -1,20 +1,35 @@
 {
-  "_about": "Edited only by the owner. The site reads it and claims nothing it does not say. Agents write no numbers here.",
-  "project": "PL-300 practice project: NYC 311 Service Requests",
-  "status": "in progress, hand-built by the owner",
-  "authorship": "Hand-built by Rashadul in the Power BI service: model, Power Query, DAX and report.",
-  "route": "Power BI Desktop runs only on Windows, so I build in the browser: the Power BI service, with the project kept in Git through Fabric Git integration.",
-  "method": "I build the model, Power Query, DAX and report by hand. The values I reconcile against come from an independent Python twin (AI-assisted) whose code is checked to contain no DAX.",
+  "_about": "The site reads this file and claims nothing it does not say. Numbers appear only after Power BI has run the model and the reconciliation has passed.",
+  "project": "Power BI project: NYC 311 Service Requests (PL-300 skill areas)",
+  "status": "written, not yet run in Power BI",
+  "authorship": "AI-built, owner-directed: the Power Query, model, measures, RLS and report were written by AI (Claude) from a specification Rashadul directed.",
+  "route": "It is built for the Power BI service in the browser (Fabric), with the project kept in Git through Fabric Git integration. The workspace is not set up yet.",
+  "method": "The numbers are checked against an independent Python twin with the reconcile CLI. Until Power BI has refreshed the model and the check queries have run, no number from the model is claimed.",
   "data_source": {
     "name": "NYC 311 Service Requests from 2010 to Present (NYC Open Data)",
     "url": "https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9"
   },
   "milestones": [
-    {"name": "Data model and Power Query", "state": "not yet marked"},
-    {"name": "Measures (DAX)", "state": "not yet marked"},
-    {"name": "Report pages", "state": "not yet marked"},
-    {"name": "Reconcile against the Python twin", "state": "not yet marked"},
-    {"name": "Publish to web (screenshot or embed)", "state": "not yet marked"}
+    {
+      "name": "Data model and Power Query",
+      "state": "written, parser-checked"
+    },
+    {
+      "name": "Measures (DAX)",
+      "state": "written, not run"
+    },
+    {
+      "name": "Report pages",
+      "state": "written, not rendered"
+    },
+    {
+      "name": "Reconcile against the Python twin",
+      "state": "not yet run"
+    },
+    {
+      "name": "Publish to web (screenshot or embed)",
+      "state": "not yet"
+    }
   ],
   "reconcile": null,
   "updated_by_owner_at": null

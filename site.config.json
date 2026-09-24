@@ -2,6 +2,8 @@
   "_about": "The only file on this site where a person types values. The owner fills contact_email and booking_url; until both are real, the page shows 'contact details coming' and verify.sh's contact check fails on purpose. Prices are the owner's own offers from v1.",
   "contact_email": "rashadallislam@gmail.com",
   "booking_url": "",
+  "_ai_proxy_about": "ai_proxy_url: the https address of the owner's own Cloudflare Worker that words the demo's story with DeepSeek. Empty means the page offers no AI option at all. The key lives only in the Worker (npx wrangler secret put DEEPSEEK_API_KEY), never here.",
+  "ai_proxy_url": "https://northledger-insight-proxy.r-mdrashad97.workers.dev",
   "owner": {
     "name": "Rashadul Islam Roman",
     "business": "NorthLedger Insights",

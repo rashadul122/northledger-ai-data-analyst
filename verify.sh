@@ -17,11 +17,18 @@
 #   4 honesty    tools/check_site.py: banned freshness words (pages and served Markdown), every
 #                data-fact figure equals its JSON, no local paths or .env in anything served,
 #                every link resolves under a GitHub Pages project path, a real contact route is
-#                configured, no stray file (qa/, a root PDF, a test page) unlisted in .gitignore
+#                configured, no stray file (qa/, a root PDF, a test page) unlisted in .gitignore,
+#                the demo's outside requests only as encoded, and no sentence the page once made
+#                that is false now ("no third-party requests", "dropped before analysis")
 #   5 sweep      no TODO/lorem, no em dash, wordmark present
-#   6 ui         tools/check_ui.js drives the page in headless Chrome (filters, Esc, drill, phone
-#                layouts at 320 to 390 px, dark theme, accessible names); needs Node and
-#                Playwright (PLAYWRIGHT_MODULE=/path/to/node_modules/playwright), else SKIP
+#   6 guard      tools/check_try_guard.js: the demo's AI number guard reads numbers exactly as the
+#                owner's proxy does (../insight-proxy when present) and its payload is only
+#                {objective, findings, story} inside the proxy's limits; needs Node, no browser
+#     ui         tools/check_ui.js drives the page in headless Chrome (filters, Esc, drill, phone
+#                layouts at 320 to 390 px, dark theme, accessible names, the "Try it" demo's
+#                refusals, report, AI consent flow and a real engine run of the sample, which
+#                prints SKIP with the reason when cdn.jsdelivr.net cannot be reached); needs Node
+#                and Playwright (PLAYWRIGHT_MODULE=/path/to/node_modules/playwright), else SKIP
 #   7 visual     full-page and narrow screenshots plus a print PDF into $QA_OUT
 #   8 print      tools/check_print.py reads that PDF page by page (poppler tools, else SKIP): the
 #                hero on page 1, no near-empty page, no chart caption left at the foot of a page
@@ -114,7 +121,7 @@ fi
 
 # 4) honesty and shipping checks (built HTML plus rendered DOMs)
 if "$PY" "$DIR/tools/check_site.py" --root "$DIR" ${DOMS[@]+"${DOMS[@]}"} --json "$TMPD/check_site.json"; then
-  record honesty PASS "banned words, figures, shipped paths, links, contact"
+  record honesty PASS "banned words, figures, shipped paths, links, contact, outside requests, no false promises"
 else
   record honesty FAIL "see the CHECK lines above ($TMPD/check_site.json)"
 fi
@@ -135,7 +142,15 @@ EOF
 then record sweep PASS "no TODO/lorem, no em dash, wordmark present"
 else record sweep FAIL "see the lines above"; fi
 
-# 6) behaviour in a real browser engine (Playwright), when Node and Playwright are available
+# 6) the demo's AI number guard and payload (Node only, no browser, no network)
+if command -v node >/dev/null 2>&1; then
+  if node "$DIR/tools/check_try_guard.js"; then record guard PASS "the demo's AI number guard matches the proxy's; the payload is only the allowed fields, within the proxy's limits"
+  else record guard FAIL "see the GUARD FAIL lines above"; fi
+else
+  record guard SKIP "node not found"
+fi
+
+# 6b) behaviour in a real browser engine (Playwright), when Node and Playwright are available
 if command -v node >/dev/null 2>&1; then
   CHROME="$CHROME" node "$DIR/tools/check_ui.js" "$DIR/index.html"
   rc=$?

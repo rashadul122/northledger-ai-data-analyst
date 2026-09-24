@@ -42,7 +42,7 @@
     /* ---- two doors: a short tour, remembered per viewer ---- */
     var TOURS = {
       owner: [['#report', 'The report'], ['#services', 'Offers and prices'], ['#book', 'Book an audit']],
-      hiring: [['#northledger', 'The engine run'], ['#pl300', 'Hand-built Power BI'], ['#receipts', 'Receipts']]
+      hiring: [['#northledger', 'The engine run'], ['#pl300', 'The Power BI project'], ['#receipts', 'Receipts']]
     };
     var tour = U.$('#tour');
     function setDoor(k) {

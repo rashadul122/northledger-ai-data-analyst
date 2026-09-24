@@ -1,0 +1,178 @@
+{
+ "what": "The NorthLedger engine packed for the in-browser demo: the modules the adapter's path uses, copied unmodified, plus the adapter and its stubs.",
+ "engine_snapshot": "82a6be7b4b33",
+ "engine_snapshot_full": "82a6be7b4b336e355e704fdb21dd2748d40e1647594303134f4f212dd5a28fd6",
+ "engine_version": "0.1.0",
+ "decision_code_snapshot": "88372dbe63e8989c761ac931bee3b8dbdbb1ad577faea63a5fdcf791fa060c9e",
+ "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
+ "zip": {
+  "file": "northledger-browser.zip",
+  "sha256": "d318d8a67fc723a5b975966b4fc3b722ead6734c105cb4a543e29f5348393f50",
+  "bytes": 332533
+ },
+ "files": [
+  {
+   "path": "northledger/__init__.py",
+   "sha256": "34095cf4cbcb27663813fc91603b244edcbe68b5dc021ddfcdd43bbdff5329b1",
+   "bytes": 193,
+   "source": "northledger-core/northledger/__init__.py"
+  },
+  {
+   "path": "northledger/_sqlite.py",
+   "sha256": "bfa1f8dbb3b9a268f678fd2b2b64d249dc9ef702925c01af156e6eeaf5211766",
+   "bytes": 616,
+   "source": "northledger-core/northledger/_sqlite.py"
+  },
+  {
+   "path": "northledger/benchmark.py",
+   "sha256": "8a1d07a23c6dc2f15a671d55702c2005745e53f43ac4f57aadcbbca7a1e7d474",
+   "bytes": 70575,
+   "source": "northledger-core/northledger/benchmark.py"
+  },
+  {
+   "path": "northledger/clean.py",
+   "sha256": "6fb971267ce62d0660d49e30a6959eff269b1bd9e3e66144c50616af8489f62b",
+   "bytes": 96365,
+   "source": "northledger-core/northledger/clean.py"
+  },
+  {
+   "path": "northledger/engagement.py",
+   "sha256": "55996cf2272d21fbebe2feb83d2a59deaf5a16f91ec0b5d236d314f45b7e169c",
+   "bytes": 19569,
+   "source": "northledger-core/northledger/engagement.py"
+  },
+  {
+   "path": "northledger/facts.py",
+   "sha256": "1324c6ba870d3f5521656b863b62ad0d3dcccb34e5e0a746857fb1ed94f0e287",
+   "bytes": 22861,
+   "source": "northledger-core/northledger/facts.py"
+  },
+  {
+   "path": "northledger/forecast.py",
+   "sha256": "866cf37a11e7e3180c71fc598c1380c913a9c777329e24bebe1e1e02f5ed3077",
+   "bytes": 111485,
+   "source": "northledger-core/northledger/forecast.py"
+  },
+  {
+   "path": "northledger/gate.py",
+   "sha256": "0167daed690684a02363625ca058eb106df9da86ac9e6db4a499e7401d1c3357",
+   "bytes": 114217,
+   "source": "northledger-core/northledger/gate.py"
+  },
+  {
+   "path": "northledger/health.py",
+   "sha256": "6c73b292a2a00977a5a4b91b5db7d336c7ed2c1a24f39689698116a002f4560c",
+   "bytes": 68082,
+   "source": "northledger-core/northledger/health.py"
+  },
+  {
+   "path": "northledger/intake.py",
+   "sha256": "6e3bbd61e03ba042f8713f59902ff27e8bd163506f28ecaf805e1dc93fb938e5",
+   "bytes": 61801,
+   "source": "northledger-core/northledger/intake.py"
+  },
+  {
+   "path": "northledger/loop.py",
+   "sha256": "2b42de0d035816c25c692e84d2bd5f23209a9b2d2295998c2c916244dafa4074",
+   "bytes": 36198,
+   "source": "northledger-core/northledger/loop.py"
+  },
+  {
+   "path": "northledger/measure.py",
+   "sha256": "3cc518af8b20e171101667a820af3b953346b9af0af3ca66b82eb8c378c545d6",
+   "bytes": 122631,
+   "source": "northledger-core/northledger/measure.py"
+  },
+  {
+   "path": "northledger/narrate.py",
+   "sha256": "ddabdcae5663684e25651a7c0439b65430e6a65cc5cb63481c3d9f2fa6f355f1",
+   "bytes": 87827,
+   "source": "northledger-core/northledger/narrate.py"
+  },
+  {
+   "path": "northledger/stats.py",
+   "sha256": "0c0aed441bbc83f05188fc1b4bc3e7fc18f244ca33ebc19c9502d61b634a97f6",
+   "bytes": 59891,
+   "source": "northledger-core/northledger/stats.py"
+  },
+  {
+   "path": "northledger/vocab.py",
+   "sha256": "de5b3d99cf44fff66eaee237c5cbb162c2608065d0a0e9a94a1712ecd20772c7",
+   "bytes": 8054,
+   "source": "northledger-core/northledger/vocab.py"
+  },
+  {
+   "path": "northledger/benchmark_receipt.json",
+   "sha256": "dc85c9cf1e0ffb0fb8c0af26d19db3dec07b53f47e95a55ac0bf861f58f17bcb",
+   "bytes": 53100,
+   "source": "northledger-core/northledger/benchmark_receipt.json"
+  },
+  {
+   "path": "benchmark/engine_benchmark.json",
+   "sha256": "043c4b92836b3f713c24827c2fc1a3cfd690ccde5fb88561538e2141d297de08",
+   "bytes": 104594,
+   "source": "northledger-core/benchmark/engine_benchmark.json"
+  },
+  {
+   "path": "nl_browser.py",
+   "sha256": "740f2d902d2aa3adedf46b60873ce612bd007d97b2babbb1bf5bcd5287f673ec",
+   "bytes": 174777,
+   "source": "portfolio-website/engine/nl_browser.py"
+  },
+  {
+   "path": "nl_stubs/__init__.py",
+   "sha256": "d7c00d1c79d8c86952bd282821596a5a098e836c1a9205462b1b2b7d12e96678",
+   "bytes": 226,
+   "source": "portfolio-website/engine/nl_stubs/__init__.py"
+  },
+  {
+   "path": "nl_stubs/resource.py",
+   "sha256": "0a1eccf6e96d72081a2412da5e6cd281b6ceb599a2649eaadfb8faa1a0da4eca",
+   "bytes": 828,
+   "source": "portfolio-website/engine/nl_stubs/resource.py"
+  }
+ ],
+ "not_packed": [
+  "__main__",
+  "analyst",
+  "enrich",
+  "evaluate",
+  "extract_audit",
+  "pbi",
+  "pbip_lint",
+  "powerbi",
+  "report",
+  "tmdl_check"
+ ],
+ "runtime": {
+  "pyodide_packages": [
+   "numpy",
+   "pandas",
+   "sqlite3"
+  ],
+  "entry": "import nl_browser; nl_browser.run_json(data, name, objective, decisions_json, as_of)",
+  "stubs": {
+   "resource": "nl_stubs/resource.py, installed only if the real module is missing"
+  }
+ },
+ "sample": {
+  "file": "sample-messy.csv",
+  "as_of": "2026-09-15",
+  "generator": "tools/make_sample_messy.py",
+  "sha256": "d339fc88cf26fc1b94122ee9beeae0866e28ce8f82b5e45d00219c9473c95c69",
+  "bytes": 268634
+ },
+ "limits": {
+  "max_bytes": 25000000,
+  "max_rows": 200000
+ },
+ "contract": {
+  "version": 2,
+  "spec": "engine/CONTRACT-v2.md"
+ },
+ "thresholds": {
+  "forecast_min_history_months": 36,
+  "recommend_min_rows": 1000
+ },
+ "rebuild": "python3 tools/pack_engine.py (and --check to verify)"
+}

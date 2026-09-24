@@ -1,7 +1,12 @@
 # NorthLedger Insights: portfolio website
 
-A static site: `index.html` (single file, no dependencies, works offline) and `agent-demo.html`
-(replays of recorded AI-analyst sessions), with the data behind them in `data/`.
+A static site: `index.html` (one file with its data inside it) and `agent-demo.html` (replays of
+recorded AI-analyst sessions), with the data behind them in `data/`. The page makes no outside
+request while someone reads it. The one exception starts when a visitor starts the "Try it on
+your own file" demo: its worker (`engine/worker.js`) fetches Pyodide from cdn.jsdelivr.net and the
+packed engine (`engine/northledger-browser.zip`) from this site, so the demo does not work
+offline. With `ai_proxy_url` set, the page also sends the findings and the story to the owner's
+AI proxy, only after the visitor ticks consent. `tools/check_site.py` encodes both exceptions.
 
 Nothing on this site runs on a schedule, fetches data when someone visits, or updates itself.
 Every dataset is a snapshot someone downloaded on purpose, and each download is recorded with

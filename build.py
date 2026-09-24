@@ -20,8 +20,15 @@ What it does
   5. Inlines the colour tokens, src/style.css, the JSON the browser needs and src/js/*.js into
      index.html, and renders case-study.html (styled like the page, both themes; the page links
      here) and case-study.md from src/case-study.template.md, the one source for both.
+  6. The "Try it on your own file" demo (src/sections/05b-try.html, src/js/50-try.js,
+     engine/worker.js): runs tools/pack_engine.py (the engine adapter's packer) and then its
+     --check, so engine/northledger-browser.zip is rebuilt on every build and a stale pack
+     fails it (skipped, with a notice, while that script is absent); passes the demo's limits
+     (TRY_MAX_BYTES, TRY_MAX_ROWS), the sample's pinned date from engine/pack.json and
+     site.config.json ai_proxy_url (empty: no AI option on the page) to window.NL.try.
 
-No network access. Nothing here publishes anything.
+No network access. Nothing here publishes anything. (The demo page itself loads Pyodide from
+cdn.jsdelivr.net in the visitor's browser, only when they start it; tools/check_site.py encodes that.)
 """
 from __future__ import annotations
 
@@ -56,6 +63,14 @@ BRIEF_OUT = "downloads/rentsafe-engine-brief-exec.pdf"
 BRIEF_FULL_OUT = "downloads/rentsafe-engine-brief-full.pdf"
 EVIDENCE_OUT = "downloads/rentsafe-engine-evidence.xlsx"
 DOWNLOAD_KEY = {PBIP_ZIP: "pbip_zip", BRIEF_OUT: "brief_pdf", BRIEF_FULL_OUT: "brief_full", EVIDENCE_OUT: "evidence_xlsx"}
+# "Try it on your own file": the engine runs in the visitor's browser (engine/worker.js loads
+# Pyodide). The limits are set here once; the page text binds them and src/js/50-try.js reads
+# them from window.NL.try, so the words and the refusal can never disagree.
+TRY_MAX_BYTES = 25_000_000
+TRY_MAX_ROWS = 200_000
+TRY_WORKER = "engine/worker.js"
+TRY_SAMPLE = "engine/sample-messy.csv"
+PACK_ENGINE = os.path.join(ROOT, "tools", "pack_engine.py")
 
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import check_site  # noqa: E402  (shared formatting, path resolution and leak scanning)
@@ -807,6 +822,8 @@ GLYPH = {"green": "●", "yellow": "◐", "red": "○"}
 BADGE_ICON = {
     "RECOMMEND": '<svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
     "WATCH": '<svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>',
+    # the third verdict appears only in the demo's report (the RentSafeTO brief has none)
+    "INSUFFICIENT": '<svg class="bi" aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2.2"/><path d="M5.5 8h5" stroke="currentColor" stroke-width="1.8"/></svg>',
 }
 
 
@@ -1258,6 +1275,21 @@ def blocks(I, R, D, pbip, examples):
                           ('<p class="noai">AI model calls in the audit runs recorded on this page: %s.</p>' % dd("audit_ai_calls")) if o.get("no_ai") else ""))
     B["offers"] = "".join(offers)
 
+    # ---------------- the demo's AI wording note (only when the owner has set ai_proxy_url)
+    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> After the report, you can ask for the story to be reworded by an AI model (DeepSeek) through the owner's "
+                        "proxy: only if you tick consent, and it receives your question, the findings and the story, never your "
+                        "rows. AI wording with a figure the engine did not state (in digits or in words), or with a figure's unit or "
+                        "direction changed, is set aside.</span>"
+                        if try_proxy(I["config"])[0] else "")
+    # ---------------- the receipts' privacy sentence: what the page fetches, and when
+    B["receipts_requests"] = (
+        "No trackers and no analytics. While you read, the page makes no request to another address. The one "
+        "exception starts only when you start the Try-it demo: it fetches the engine's Python runtime (Pyodide) from "
+        "cdn.jsdelivr.net, and the engine itself from this site" +
+        (", and, only if you tick consent after a report, it sends the findings and the story (never your rows) to "
+         "the owner's AI proxy, which passes them to DeepSeek" if try_proxy(I["config"])[0] else "") +
+        ". Your file itself is never sent anywhere.")
+
     # ---------------- contact (empty until the owner fills site.config.json)
     cfg = I["config"]
     # the same keys tools/check_site.py accepts: top-level contact_email / booking_url, or a "contact" block
@@ -1357,9 +1389,71 @@ def data_sources_md(I, built_at):
         for key, name, what, page, dl, lic_ in SCALE_SOURCES:
             if key in t:
                 out.append("| %s | %s | %s | %s | %s | %s |" % (name, format(t[key], ","), what, page, dl, lic_))
-        out += ["", "The NYC 311 session is archived on the replay page and kept apart from the owner's hand-built PL-300",
-                "Power BI project, which uses the same dataset."]
+        out += ["", "The NYC 311 session is archived on the replay page and kept apart from the PL-300 Power BI",
+                "project (AI-built, owner-directed), which uses the same dataset."]
     return "\n".join(out) + "\n"
+
+
+# ----------------------------------------------------------------------------- "Try it on your own file"
+def try_labels():
+    """The demo's limits as the page prints them ("25 MB", "200,000")."""
+    mb = TRY_MAX_BYTES / 1_000_000.0
+    return {"try_max_mb": (format(int(mb), ",") if mb == int(mb) else format(mb, ",.1f")) + " MB",
+            "try_max_rows": format(TRY_MAX_ROWS, ",")}
+
+
+def try_proxy(cfg):
+    """(url, problem): site.config.json ai_proxy_url. Empty means the AI wording option is not on
+    the page at all; otherwise it must be a real https address (the owner's Cloudflare Worker)."""
+    v = cfg.get("ai_proxy_url", None)
+    if v is None:
+        return "", "site.config.json has no ai_proxy_url key (add \"ai_proxy_url\": \"\")"
+    if not isinstance(v, str):
+        return "", "ai_proxy_url is not a string"
+    v = v.strip()
+    if not v:
+        return "", None
+    if not re.match(r"^https://[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+(:\d+)?(/[^\s\"'<>`]*)?$", v) or check_site.PLACEHOLDER.search(v):
+        return "", "ai_proxy_url %r is not a real https address" % v
+    return v, None
+
+
+def pack_engine(write):
+    """Rebuild engine/northledger-browser.zip with tools/pack_engine.py (written by the engine
+    adapter), then require its --check. (ok, detail); detail None means the script is not here yet."""
+    if not os.path.exists(PACK_ENGINE):
+        print("engine pack: skipped, tools/pack_engine.py is not here yet, so engine/northledger-browser.zip "
+              "is not rebuilt (the demo cannot run until it exists)")
+        return True, None
+    steps = ([[]] if write else []) + [["--check"]]
+    for extra in steps:
+        p = subprocess.run([sys.executable, PACK_ENGINE] + extra, cwd=ROOT, capture_output=True, text=True, timeout=600)
+        tail = (p.stdout + p.stderr).strip().splitlines()[-3:]
+        if p.returncode != 0:
+            return False, "tools/pack_engine.py %s exited %d: %s" % (" ".join(extra) or "(pack)", p.returncode, " | ".join(tail))
+    return True, "tools/pack_engine.py --check passed"     # the same words in --check mode, so the receipt reproduces
+
+
+def pack_manifest():
+    """engine/pack.json, written by tools/pack_engine.py next to the zip ({} until it exists)."""
+    try:
+        with open(os.path.join(ROOT, "engine", "pack.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def try_payload(I):
+    cfg = I["config"]
+    sample = pack_manifest().get("sample") or {}
+    nested = cfg.get("contact") if isinstance(cfg.get("contact"), dict) else {}
+    lab = try_labels()
+    return {"max_bytes": TRY_MAX_BYTES, "max_rows": TRY_MAX_ROWS, "max_label": lab["try_max_mb"], "rows_label": lab["try_max_rows"],
+            "worker": TRY_WORKER, "sample": TRY_SAMPLE, "sample_as_of": str(sample.get("as_of") or ""),
+            "ai_proxy_url": try_proxy(cfg)[0],
+            "contact_email": (cfg.get("contact_email") or nested.get("email") or "").strip(),
+            "booking_url": (cfg.get("booking_url") or nested.get("booking_url") or "").strip(),
+            "badges": BADGE_ICON}
 
 
 # ----------------------------------------------------------------------------- browser payload
@@ -1383,6 +1477,7 @@ def payload(I):
                "forecast": FL["forecast"], "decomp": decomp, "factors": FL["decomposition"]["factors"], "covid": FL["covid_window"]},
         "run": [{"e": s["engagement"], "s": s["stage"], "t": s["seconds"]} for s in I["timings"]["runs"]["rentsafe_cli"]["stages"]],
         "map": I["rentsafe_wards_map"]["features"],
+        "try": try_payload(I),
     }
 
 
@@ -1411,6 +1506,28 @@ def build(write=True, run_tests=False):
       not re.search(r"\d", json.dumps([pl.get("status"), pl.get("milestones"), pl.get("reconcile"), pl.get("method"), pl.get("route")]))
       and not re.search(r":\s*-?\d", json.dumps(pl)))
     C("site.config.json lists the three offers", len(I["config"].get("offers", [])) == 3)
+    # the "Try it on your own file" demo
+    proxy, proxy_problem = try_proxy(I["config"])
+    C("site.config.json ai_proxy_url is empty (no AI option on the page) or a real https address",
+      proxy_problem is None, proxy_problem or ("set: the AI wording option is offered" if proxy else "empty: no AI option"))
+    C("the demo's engine worker ships (%s)" % TRY_WORKER, os.path.exists(os.path.join(ROOT, *TRY_WORKER.split("/"))))
+    packed, pack_detail = pack_engine(write)
+    if pack_detail is not None:
+        C("the demo's engine pack reproduces (tools/pack_engine.py --check)", packed, pack_detail)
+    lim = pack_manifest().get("limits") or {}
+    C("the page's demo limits equal the packed adapter's (engine/pack.json limits)",
+      not lim or (lim.get("max_bytes") == TRY_MAX_BYTES and lim.get("max_rows") == TRY_MAX_ROWS),
+      "page %s bytes / %s rows, adapter %s bytes / %s rows" % (TRY_MAX_BYTES, TRY_MAX_ROWS, lim.get("max_bytes"), lim.get("max_rows")))
+    for k, v in try_labels().items():
+        D[k] = v
+        SRC_OF[k] = "TRY_MAX_BYTES / TRY_MAX_ROWS in build.py, the limits src/js/50-try.js enforces (window.NL.try)"
+    th = pack_manifest().get("thresholds") or {}
+    C("engine/pack.json states the engine's forecast and RECOMMEND thresholds the demo quotes",
+      isinstance(th.get("forecast_min_history_months"), int) and isinstance(th.get("recommend_min_rows"), int), json.dumps(th))
+    D["try_fc_months"] = format(int(th.get("forecast_min_history_months") or 0), ",")
+    D["try_rec_rows"] = format(int(th.get("recommend_min_rows") or 0), ",")
+    SRC_OF["try_fc_months"] = "engine/pack.json thresholds.forecast_min_history_months, read by tools/pack_engine.py from northledger/forecast.py ForecastPolicy"
+    SRC_OF["try_rec_rows"] = "engine/pack.json thresholds.recommend_min_rows, read by tools/pack_engine.py from northledger/gate.py GatePolicy"
 
     built_at = _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     n_checks = len(C.items) + len(POST_CHECKS)     # + the checks on the rendered pages below
@@ -1521,6 +1638,8 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NorthLedger Insights: RentSafeTO Building Health</title>
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="description" content="Rashadul Islam Roman, data analyst in Toronto. A RentSafeTO building-health scorecard built from City of Toronto open data, with checked findings, honest forecasts and the receipts behind every number.">
 <script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
 <style>
@@ -1590,6 +1709,8 @@ CASE_PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Case study: RentSafeTO Building Health | NorthLedger Insights</title>
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="description" content="A RentSafeTO case study on City of Toronto open data: what the audit found and what it means for a building operator. Every figure is filled in from the site's data files.">
 <script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
 <style>

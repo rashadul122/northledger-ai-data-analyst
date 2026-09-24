@@ -1,7 +1,7 @@
 <section class="pl-sec" id="pl300" aria-labelledby="pl-h">
   <div class="wrap">
     <div class="sec-head">
-      <p class="kicker">Hand-built Power BI</p>
+      <p class="kicker">Power BI, AI-built and owner-directed</p>
       <h2 id="pl-h">{{f pl300-status:project}}</h2>
     </div>
     <div class="pl-card">
@@ -11,7 +11,7 @@
       <p>{{f pl300-status:route}}</p>
       <h3>Milestones</h3>
       <ul class="milestones">{{r pl_milestones}}</ul>
-      <p class="note">{{r pl_reconcile}} This card reads only <a href="data/pl300-status.json">pl300-status.json</a>, which the owner edits; it claims nothing the owner has not marked. It never shows expected values or any AI-written DAX for this project, and nothing in the AI-built parts of this page reuses its measures.</p>
+      <p class="note">{{r pl_reconcile}} This card reads only <a href="data/pl300-status.json">pl300-status.json</a> and claims nothing that has not been run: no number from this model appears until Power BI has refreshed it and the reconciliation against the independent Python twin has passed.</p>
       <p class="note">Data: <a href="{{r pl_url}}" rel="noopener">{{f pl300-status:data_source.name}}</a>.</p>
     </div>
   </div>

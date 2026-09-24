@@ -15,7 +15,7 @@ reproducible and idempotent). What changes:
     model" (in-sample fit compared with a holdout error), and the Dutch fleet total that the
     self-audit found wrong (corrected from the query result itself);
   * the NYC 311 session is moved to an archive below the showcase and flagged
-    featured: false in the page's manifest, because the owner's hand-built PL-300 model uses
+    featured: false in the page's manifest, because the PL-300 Power BI project (AI-built, owner-directed) uses
     the same dataset;
   * the hero, facts and data-source copy are regenerated from evidence files (database
     profile, the demo database itself, the audit's replay and trace reports), so no count is
@@ -58,7 +58,7 @@ CARD_WORDING = {"adapts to daily scale": "switches to day-level data",
 # card text written for the page (not the recorded prompt): the site's style has no em dash
 EDITORIAL_FIELDS = ("title", "blurb")
 ARCHIVE = {"s4-nyc311-ops": "Archived, not part of the showcase: it uses the same NYC 311 dataset as "
-                            "Rashadul's hand-built PL-300 Power BI model, so the two are kept apart."}
+                            "the PL-300 Power BI project (AI-built, owner-directed), so the two are kept apart."}
 
 PATH_RX = [re.compile(r"(?:/Users|/home)/[^\s\"'<>\\]+"), re.compile(r"/private/(?:var|tmp)/[^\s\"'<>\\]+"),
            re.compile(r"(?<![\w.])/tmp/[^\s\"'<>\\]+"),
@@ -363,6 +363,9 @@ h2.sec { color: var(--ink); font-size: 26px; line-height: 1.15; letter-spacing: 
 # runs in <head>, before the page paints: light unless the visitor chose dark on either page
 THEME_BOOT = ("<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}"
               "document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>")
+# the site's favicon (tools/make_favicon.py), as the main page and the case study link it
+FAVICON = ('<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">\n'
+           '<link rel="icon" href="favicon.svg" type="image/svg+xml">')
 THEME_BTN = ('<button type="button" class="theme-btn" id="theme-toggle" aria-label="Switch between light and dark theme">'
              '<span class="ti" aria-hidden="true"></span></button>')
 THEME_JS = ("<script>(function(){var b=document.getElementById('theme-toggle'),r=document.documentElement;if(!b)return;"
@@ -544,7 +547,7 @@ def build(src_html, ev, fix5):
     out = sub_once(out, r'<p class="foot-note">Honesty notes:.*?</p>', HONESTY, "honesty notes")
     out = replace_once(out, "</style>", EXTRA_CSS + "</style>", "style end")
     out = theme_css(out)
-    out = replace_once(out, "</head>", THEME_BOOT + "\n</head>", "head end")
+    out = replace_once(out, "</head>", THEME_BOOT + "\n" + FAVICON + "\n</head>", "head end")
     out, n = re.subn(r'(<div class="live">.*?</div>)', lambda m: m.group(1) + "\n    " + THEME_BTN, out, count=1, flags=re.S)
     if n != 1:
         raise Missing("expected part of the page not found: theme button")

@@ -7,7 +7,7 @@ downloaded once, on purpose, and recorded; nothing on this site refreshes itself
 
 This file is written by `build.py` from `data/rentsafe_meta.json`, `data/fred/SOURCES.json` and the
 replay manifest inside `agent-demo.html`, so its counts and checksums are the ones the page uses.
-Built 2026-09-23 13:10:41 UTC.
+Built 2026-09-24 21:39:47 UTC.
 
 ## The main page: RentSafeTO report, scorecard and analyses
 
@@ -47,5 +47,5 @@ Scale-tier database, row counts as ingested (profiled 2026-09-22; 74,809,573 row
 | RDW registered vehicles (Netherlands) | 16,852,477 | every registered vehicle: brand, model, colour, inspection dates | https://opendata.rdw.nl/Voertuigen/Open-Data-RDW-Gekentekende-voertuigen/m9d7-ebf2 | https://opendata.rdw.nl/api/views/m9d7-ebf2/rows.csv?accessType=DOWNLOAD | CC0 |
 | RDW registered vehicles, fuel records (Netherlands) | 16,983,510 | fuel records that pair with the vehicle registry | https://opendata.rdw.nl/Voertuigen/Open-Data-RDW-Gekentekende-voertuigen/m9d7-ebf2 (same RDW open-data portal) | not recorded in this project | CC0 |
 
-The NYC 311 session is archived on the replay page and kept apart from the owner's hand-built PL-300
-Power BI project, which uses the same dataset.
+The NYC 311 session is archived on the replay page and kept apart from the PL-300 Power BI
+project (AI-built, owner-directed), which uses the same dataset.

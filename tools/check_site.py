@@ -23,7 +23,8 @@ Checks
             one figure.
   shipped   No local filesystem paths (/Users/<name>, /home/<name>, /var/folders, /private/tmp,
             C:\\Users, file://), no ".env", and no token-shaped secrets in anything the site
-            serves, including files embedded as base64 (PDF streams and zip members are opened).
+            serves, including files embedded as base64 (PDF streams and zip members are opened),
+            served zips (the demo's packed engine) and served source files (.py and the like).
   links     Every href/src resolves when the site is served from a GitHub Pages project
             subpath: no root-absolute links, nothing that climbs above the site root, the
             target file exists, #fragments exist, .md links only with a .nojekyll file,
@@ -33,6 +34,24 @@ Checks
   stray     Nothing that is not part of the site sits in its folder unlisted in .gitignore (the
             publish step is `git add .`): no qa/ output folder, no PDF at the root, no test-*.html
             page other than the verify harness, no retired demo-data.json.
+  requests  The site makes no request to another origin while someone reads it: no external
+            script, stylesheet, image, frame or media in any page (built or rendered), and no
+            outside address in any script or style it serves. Two exceptions, each encoded here
+            and nowhere else: (1) the "Try it on your own file" demo's worker, engine/worker.js,
+            may load Pyodide from https://cdn.jsdelivr.net/pyodide/ (and only from there); the
+            page starts that worker only after a visitor starts the demo; (2) index.html may
+            carry the owner's AI proxy address exactly as site.config.json "ai_proxy_url" states
+            it, and only while that key is non-empty (the page calls it only after the visitor
+            ticks consent). Links a reader clicks (a href) and form actions are navigation, not
+            requests; the "links" check reads them.
+  promises  Sentences an earlier page made that are false now may not come back, in any page
+            (its text and its inline scripts) or in README.md: while the requests check allows
+            the demo's outside origin, nothing may say "no third-party requests" or that the site
+            "works offline" or has "no dependencies"; and the demo may not say a withheld column
+            is dropped "before any analysis", that it is left out of "the story", or that coding a
+            column keeps "counts" working (the data-health check still counts a withheld column's
+            blanks and the story's data-health lines name it, and a coded column is left out of
+            the analysis).
 The banned-word check also reads the Markdown files a static host serves from the root
 (README.md is exempt: it documents the rule and quotes the words).
 
@@ -58,7 +77,7 @@ import zlib
 from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECKS = ("banned", "figures", "shipped", "links", "contact", "stray")
+CHECKS = ("banned", "figures", "shipped", "links", "contact", "stray", "requests", "promises")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
         "track", "wbr"}
 SKIP_TEXT = {"script", "style", "template"}
@@ -193,8 +212,14 @@ class Site:
         return sorted(rel for rel in self._walk() if rel.lower().endswith(exts))
 
     def served_documents(self):
-        """PDF and Office files a static host would serve (opened and scanned like embedded files)."""
-        return sorted(rel for rel in self._walk() if rel.lower().endswith((".pdf", ".docx", ".xlsx", ".pptx")))
+        """PDF, Office and zip files a static host would serve (opened and scanned like embedded
+        files; a zip's members are each read, so the demo's packed engine is scanned too)."""
+        return sorted(rel for rel in self._walk() if rel.lower().endswith((".pdf", ".docx", ".xlsx", ".pptx", ".zip")))
+
+    def served_code(self):
+        """Source files a static host would serve as plain downloads (the demo's engine adapter and
+        its stubs). Only the shipped-paths check reads them: code is not page text."""
+        return sorted(rel for rel in self._walk() if rel.lower().endswith((".py", ".pyi", ".mjs", ".cjs", ".toml")))
 
 
 class Result:
@@ -593,12 +618,16 @@ def check_shipped(site: Site) -> Result:
                 embedded += 1
                 for part, t in _embedded_texts(blob):
                     _scan_text(t, "%s embedded file #%d (%s)" % (rel, k + 1, part), r)
+    code = site.served_code()
+    for rel in code:
+        _scan_text(open(os.path.join(site.root, rel), encoding="utf-8", errors="replace").read(), rel, r)
     docs = site.served_documents()
     for rel in docs:
         blob = open(os.path.join(site.root, rel), "rb").read()
         for part, t in _embedded_texts(blob):
             _scan_text(t, "%s (%s)" % (rel, part), r)
-    r.note("%d served file(s), %d served document(s) and %d embedded file(s) scanned" % (len(files), len(docs), embedded))
+    r.note("%d served file(s), %d served code file(s), %d served document(s) or zip(s) and %d embedded file(s) scanned"
+           % (len(files), len(code), len(docs), embedded))
     return r
 
 
@@ -767,9 +796,144 @@ def check_contact(site: Site) -> Result:
     return r
 
 
+# ----------------------------------------------------------------------------- runtime requests
+# The one outside origin the site may load at runtime, and the only file allowed to load it.
+DEMO_WORKER = "engine/worker.js"
+DEMO_RUNTIME_PREFIX = "https://cdn.jsdelivr.net/pyodide/"
+# XML namespace names look like URLs but are never fetched
+NAMESPACES = ("http://www.w3.org/2000/svg", "http://www.w3.org/1999/xhtml", "http://www.w3.org/1999/xlink",
+              "http://www.w3.org/XML/1998/namespace", "http://www.w3.org/2000/xmlns/")
+ABS_URL = re.compile(r"(?i)\b(?:https?|wss?)://[^\s'\"`)<>\\,;]+")
+PROTO_REL = re.compile(r"""['"`(]\s*(//[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+[^\s'"`)<>\\]*)""")
+CSS_URL = re.compile(r"""(?i)(?:url\(\s*['"]?|@import\s+['"])\s*((?:[a-z][a-z0-9+.-]*:)?//[^'")\s]+)""")
+# attributes that make the browser fetch something as the page loads (a href and form action
+# are navigation, started by the reader)
+REQUEST_ATTRS = {"script": ("src",), "link": ("href",), "img": ("src", "srcset"), "iframe": ("src",),
+                 "source": ("src", "srcset"), "video": ("src", "poster"), "audio": ("src",), "embed": ("src",),
+                 "object": ("data",), "track": ("src",), "image": ("href", "xlink:href"), "use": ("href", "xlink:href"),
+                 "input": ("src",), "frame": ("src",)}
+
+
+def _proxy_url(root):
+    try:
+        cfg = json.load(open(os.path.join(root, "site.config.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    v = cfg.get("ai_proxy_url") if isinstance(cfg, dict) else ""
+    return v.strip() if isinstance(v, str) else ""
+
+
+def _urls_in_code(text):
+    """Every outside address written in script or style text: absolute (http, https, ws, wss),
+    protocol-relative inside a string or url(), and CSS url()/@import targets."""
+    out = [m.group(0).rstrip(".") for m in ABS_URL.finditer(text)]
+    out += [m.group(1) for m in PROTO_REL.finditer(text)]
+    out += [m.group(1) for m in CSS_URL.finditer(text) if not ABS_URL.match(m.group(1))]
+    return out
+
+
+def _is_outside(url):
+    low = url.strip().lower()
+    return bool(re.match(r"^(?:https?:|wss?:)?//", low)) and not any(low.startswith(ns.lower()) for ns in NAMESPACES)
+
+
+def check_requests(site: Site) -> Result:
+    r = Result("requests")
+    proxy = _proxy_url(site.root)
+    seen = set()
+    used = {"runtime": 0, "proxy": 0}
+
+    def judge(where, rel, url, in_script):
+        if not _is_outside(url):
+            return
+        if rel == DEMO_WORKER and url.startswith(DEMO_RUNTIME_PREFIX):
+            used["runtime"] += 1
+            return
+        if rel == "index.html" and in_script and proxy and url == proxy:
+            used["proxy"] += 1
+            return
+        why = ""
+        if url.startswith(DEMO_RUNTIME_PREFIX) or "cdn.jsdelivr.net" in url:
+            why = " (Pyodide from cdn.jsdelivr.net/pyodide/ is allowed in %s only)" % DEMO_WORKER
+        elif proxy and url == proxy:
+            why = " (the AI proxy is called from index.html, not from %s)" % rel
+        elif not proxy and "workers.dev" in url:
+            why = " (site.config.json ai_proxy_url is empty, so no proxy address may ship)"
+        key = (where, url)
+        if key not in seen:
+            seen.add(key)
+            r.fail("%s: request to another origin %r%s" % (where, url[:120], why))
+
+    for rel in site.served_files():
+        low = rel.lower()
+        if not low.endswith((".js", ".css")):
+            continue
+        text = open(os.path.join(site.root, rel), encoding="utf-8", errors="replace").read()
+        for u in _urls_in_code(text):
+            judge(rel.replace(os.sep, "/"), rel.replace(os.sep, "/"), u, low.endswith(".js"))
+    for page in site.pages():
+        for label, tree in site.views(page):
+            for n in tree.iter():
+                where = "%s (%s) line %d <%s>" % (page, label, n.line, n.tag)
+                for attr in REQUEST_ATTRS.get(n.tag, ()):
+                    v = html.unescape(n.attrs.get(attr, "")).strip()
+                    if n.tag == "link" and n.attrs.get("rel", "").lower() in ("canonical", "alternate", "author", "license"):
+                        continue
+                    for part in ([x.strip().split(" ")[0] for x in v.split(",")] if attr == "srcset" else [v]):
+                        if part:
+                            judge(where + " " + attr, page, part, False)
+                if "style" in n.attrs:
+                    for u in _urls_in_code(n.attrs["style"]):
+                        judge(where + " style attribute", page, u, False)
+                if n.tag in ("script", "style") and "src" not in n.attrs:
+                    code = "".join(c for c in n.children if isinstance(c, str))
+                    for u in _urls_in_code(code):
+                        judge(where, page, u, n.tag == "script")
+    r.note("allowed outside origin: %s in %s only (%d reference(s))" % (DEMO_RUNTIME_PREFIX, DEMO_WORKER, used["runtime"]))
+    r.note("AI proxy: %s" % (("%s, in index.html only (%d reference(s))" % (proxy, used["proxy"])) if proxy
+                             else "not configured (site.config.json ai_proxy_url is empty), so none may ship"))
+    return r
+
+
+# ----------------------------------------------------------------------------- promises
+# (phrase, why it is false, whether it depends on the demo's outside origin being allowed)
+FALSE_PROMISES = (
+    (r"no third[- ]party requests", "the Try-it demo fetches Pyodide from cdn.jsdelivr.net (the requests check allows it)", True),
+    (r"works offline", "the Try-it demo needs cdn.jsdelivr.net and the packed engine", True),
+    (r"no dependencies", "the Try-it demo depends on Pyodide from cdn.jsdelivr.net", True),
+    (r"before any analysis", "a withheld column is still profiled by the data-health check (counts, never values)", False),
+    (r"dropped before analysis", "a withheld column is still profiled by the data-health check (counts, never values)", False),
+    (r"counts still work", "a coded column is left out of the analysis like a withheld one", False),
+    (r"left out of the business analysis, the story", "the story's data-health lines name a withheld column "
+     "(its blanks and spellings, never a value); only the AI payload leaves out every line that names it", False),
+)
+
+
+def check_promises(site: Site) -> Result:
+    r = Result("promises")
+    demo = os.path.exists(os.path.join(site.root, *DEMO_WORKER.split("/")))
+    rules = [(re.compile(p, re.I), why) for p, why, needs_demo in FALSE_PROMISES if demo or not needs_demo]
+    sources = [(page, site.read(page)) for page in site.pages()]
+    for label, path in sorted((site.doms or {}).items()):
+        try:
+            sources.append(("%s (rendered)" % label, open(path, encoding="utf-8", errors="replace").read()))
+        except OSError:
+            pass
+    readme = os.path.join(site.root, "README.md")
+    if os.path.exists(readme):
+        sources.append(("README.md", open(readme, encoding="utf-8", errors="replace").read()))
+    for where, raw in sources:
+        text = " ".join(html.unescape(raw).split())
+        for rx, why in rules:
+            for m in rx.finditer(text):
+                r.fail('%s: "...%s..." is no longer true: %s' % (where, snippet(text, m.start(), m.end()), why))
+    r.note("demo worker %s: %s" % (DEMO_WORKER, "present, so the outside-request promises are checked" if demo else "absent"))
+    return r
+
+
 # ----------------------------------------------------------------------------- main
 RUNNERS = {"banned": check_banned, "figures": check_figures, "shipped": check_shipped, "links": check_links,
-           "contact": check_contact, "stray": check_stray}
+           "contact": check_contact, "stray": check_stray, "requests": check_requests, "promises": check_promises}
 
 
 def run(root, checks=CHECKS, doms=None):

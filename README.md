@@ -165,3 +165,11 @@ gh repo create rashadul122/northledger-ai-data-analyst --public --source=. --pus
 - Every dataset, with its download record and licence: `DATA-SOURCES.md` (written by `build.py`).
   The handling process: `DATA-MANAGEMENT.md`.
 - This site and its tooling were built with AI assistance (Hermes Agent with GLM, and Claude).
+
+## Agent Sessions — the AI data analyst at scale
+
+Eight real, unedited sessions of a tool-calling AI data analyst (DeepSeek / Ollama brains)
+against a 74.8M-row public-data tier — profile-first auditing, quarantine-not-drop cleaning,
+honest forecasts that lose to baselines when they should, charts and world maps, and reports
+written in-session: [agent-sessions/](agent-sessions/) · [replay the sessions](agent-sessions/agent-demo.html)
+

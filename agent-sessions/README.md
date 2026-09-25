@@ -1,0 +1,44 @@
+# Agent Sessions — the AI data analyst in operation
+
+Eight real, unedited sessions of an AI agent with database access, replayable in the
+browser: [agent-sessions/agent-demo.html](agent-demo.html) (self-contained, 8 reports
+downloadable, charts and maps rendered inline).
+
+## The engine
+
+A tool-calling agent (the same architecture as [Hermes Agent](https://github.com/NousResearch/hermes-agent))
+with **two interchangeable brains** — Ollama Cloud (glm-5.3) or **DeepSeek** (`deepseek-chat`)
+via `AGENT_PROVIDER=deepseek` — and seven tools:
+
+`run_sql` (read-only enforced) · `profile_table` · `run_python` · `forecast` (OLS trend
++ seasonality, 80% bands, seasonal-naive baseline always) · `make_chart` (line/bar/grouped) ·
+`make_map` (world choropleth, Natural Earth) · `make_report` (PDF/Excel/Word; validates
+non-empty bodies; embeds charts)
+
+## The sessions
+
+| Session | Rows | The story it found |
+|---|---|---|
+| s1 Data-health audit | 20,488 messy | 100% of rows defective; duplicates inflate injuries +2.6%; "NULL" was a top borough |
+| s2 Clean + reconcile | 20,488 → 14,104 | Zero deltas vs source; 6,384 quarantined, nothing dropped silently |
+| s3 Forecast + risk | 60,000 | Naive baseline WON (4.95% vs 7.07% MAPE) — reported honestly |
+| s4 NYC 311 operations | 22,542,090 | NYPD median closure 53 minutes vs HPD 41.8 days at P90; 1.48M timestamp defects |
+| s5 Dutch fleet | 16,852,477 | 77× EV gap between new and old cohorts; flow-vs-stock story |
+| s6 US census economics | 5,026,099 | Survey-weighted: $76.2K typical household; half of renters cost-burdened |
+| s7 Chicago crime | 8,643,513 | Narcotics = enforcement signal (99.3% arrest); +226% vehicle-theft spike; July +33.2% |
+| s8 Canada trade story (DeepSeek) | 1,818 | Quarter-century arc; **caught the UK gold-settlement artifact**; honest losing forecast |
+
+Scale tier: **74.8M rows** across 8 tables — see [big-data-profile.json](big-data-profile.json)
+and [DATA-SOURCES.md](../DATA-SOURCES.md) at repo root (all public, licensed, traceable).
+
+## Reproduce
+
+```bash
+cd agent
+python3 -m venv venv && venv/bin/pip install requests pandas numpy openpyxl python-docx fpdf2 matplotlib
+venv/bin/python build_database.py                                    # demo DB
+AGENT_PROVIDER=deepseek venv/bin/python agent.py --db big_data.db \
+  --session mysession --goal "Analyze can_trade and forecast exports"
+```
+
+DeepSeek needs `DEEPSEEK_API_KEY`; Ollama Cloud needs `OLLAMA_API_KEY` (in `~/.hermes/.env`).

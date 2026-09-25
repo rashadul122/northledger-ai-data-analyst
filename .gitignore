@@ -1,6 +1,0 @@
-big-data/
-*.db
-venv/
-__pycache__/
-.DS_Store
-sessions/

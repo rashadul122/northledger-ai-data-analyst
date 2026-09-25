@@ -1,0 +1,76 @@
+{
+  "_about": "The site reads this file and claims nothing it does not say. The state below is the one the public repository records (README status and docs/evidence, commit 4da5ffbc); the model's figures are not copied here, so the reconcile block stays empty until the owner records a result himself. The repository and release addresses, and the state words, are also encoded in tools/check_site.py (pl300), which fails if they drift.",
+  "project": "Power BI project: NYC 311 Service Requests (PL-300 skill areas)",
+  "status": "dev profile refreshed and reconciled in the Power BI service; full profile, RLS and report pages not yet run",
+  "authorship": "AI-built, owner-directed: the Power Query, model, measures, RLS and report were written by AI (Claude) from a specification Rashadul directed.",
+  "route": "It runs in the Power BI service in the browser: Fabric Git integration syncs the project from GitHub into a Premium Per User trial workspace, where the dev profile, a sample of the data, has been refreshed.",
+  "method": "The numbers are checked against an independent Python twin with the reconcile CLI. On the dev profile every default check matched the twin cell for cell. The full profile has not been refreshed, so no figure from it is claimed.",
+  "next_step": "Next, on the owner's side: refresh the full profile and reconcile it, test the RLS roles with Test as role, and review the report pages and add real screenshots.",
+  "repo": {
+    "name": "rashadul122/pl300-nyc311",
+    "url": "https://github.com/rashadul122/pl300-nyc311",
+    "what": "the model, report, check queries, reconcile CLI and specification, and the dev profile's check results and reconcile record"
+  },
+  "release": {
+    "tag": "data-v1",
+    "url": "https://github.com/rashadul122/pl300-nyc311/releases/tag/data-v1",
+    "what": "the full data extract the model reads, published as a release because it is too large for the repository"
+  },
+  "evidence": {
+    "url": "https://github.com/rashadul122/pl300-nyc311/blob/4da5ffbc2e2c9d4aa9ad9f756c08dea1aad4fbea/docs/evidence/refresh-3-dev.md",
+    "what": "the dev refresh and reconciliation record"
+  },
+  "data_source": {
+    "name": "NYC 311 Service Requests from 2010 to Present (NYC Open Data)",
+    "url": "https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9"
+  },
+  "milestones": [
+    {
+      "name": "Data model and Power Query",
+      "state": "refreshed, dev profile",
+      "tone": "done"
+    },
+    {
+      "name": "Measures (DAX)",
+      "state": "checked on the dev profile",
+      "tone": "partial"
+    },
+    {
+      "name": "Project files and full data extract, public on GitHub",
+      "state": "published",
+      "tone": "done"
+    },
+    {
+      "name": "Power BI workspace (Premium Per User trial), synced by Fabric Git",
+      "state": "set up",
+      "tone": "done"
+    },
+    {
+      "name": "Refresh and reconcile against the Python twin, dev profile",
+      "state": "passed",
+      "tone": "done"
+    },
+    {
+      "name": "Refresh and reconcile, full profile",
+      "state": "not yet run",
+      "tone": "next"
+    },
+    {
+      "name": "Row-level security, tested with Test as role",
+      "state": "not yet run",
+      "tone": "todo"
+    },
+    {
+      "name": "Report pages reviewed, with real screenshots",
+      "state": "not yet",
+      "tone": "todo"
+    },
+    {
+      "name": "Publish to web (screenshot or embed)",
+      "state": "not yet",
+      "tone": "todo"
+    }
+  ],
+  "reconcile": null,
+  "updated_by_owner_at": null
+}

@@ -1,0 +1,46 @@
+<section class="score-sec" id="scorecard" aria-labelledby="score-h">
+  <div class="wrap">
+    <div class="sec-head" data-fact-scope>
+      <p class="kicker">Scorecard</p>
+      <h2 id="score-h">Every ward, every pillar, one table</h2>
+      <p class="lede">{{f rentsafe_scorecard:city.n_wards|int}} wards by {{d n_pillars}} building-health pillars, then the City's own overall score, the share of buildings holding a green sign, refusals and rank. District and City rows sit underneath. Cells use the City's lobby-sign bands (<a href="{{r bands_url}}" rel="noopener">source: the City's sign page</a>) and always print the number and a band symbol, so colour is never the only signal. Inspired by the World Economic Forum's Travel and Tourism Development Index table layout; none of its data is reproduced.</p>
+    </div>
+    <div class="hm-controls" data-fact-exempt="controls and live notes computed in the browser">
+      <div class="seg" role="group" aria-label="Colour cells by">
+        <span class="seg-lab">Colour by</span>
+        <button type="button" class="sg" data-color="bands" aria-pressed="true">City sign bands</button>
+        <button type="button" class="sg" data-color="city" aria-pressed="false">Versus the City row</button>
+      </div>
+      <div class="seg" role="group" aria-label="Count an item scored zero as">
+        <span class="seg-lab">Zero means</span>
+        <button type="button" class="sg" data-hbasis="flag" aria-pressed="true">Refusal flag</button>
+        <button type="button" class="sg" data-hbasis="city" aria-pressed="false">Zero points</button>
+      </div>
+      <details class="weights" id="weights">
+        <summary>What if a pillar counted more? Weight sliders</summary>
+        <p class="note">Ranks a weighted average of the eight pillar cells. The City's overall score is not changed; this shows how sensitive a ward's position is to what you care about.</p>
+        <div class="wgrid" id="wgrid"></div>
+        <p class="movers" id="movers" aria-live="polite"></p>
+        <button type="button" class="tb" id="w-reset">Equal weights</button>
+      </details>
+    </div>
+    <div class="legend" data-fact-scope>{{r heat_legend}}<span class="lg lg-div" hidden id="lg-div">Blue below the City row, orange above; plain is within half a point. Each cell still prints its number and band.</span></div>
+    <p class="filter-note" id="hm-filter-note" hidden aria-live="polite" data-fact-exempt="filter echo"></p>
+    <div class="hm-scroll" tabindex="0" role="region" aria-label="Scorecard table; scrolls sideways on narrow screens" data-fact-scope>
+      {{r heatmap_table}}
+    </div>
+    <p class="city-note" data-fact-scope>{{r city_note}}</p>
+    <details class="hm-strip" id="hm-strip" data-fact-exempt="the same cells, one pillar at a time, drawn in the browser">
+      <summary>Ranked list, one pillar at a time</summary>
+      <label class="slicer"><span>Pillar</span><select id="strip-pillar"></select></label>
+      <div class="viz" id="v-strip"></div>
+    </details>
+    <div class="drill" id="drill" role="dialog" aria-modal="false" aria-labelledby="drill-h" hidden tabindex="-1" data-fact-exempt="ward detail computed in the browser from the scorecard and Analysis A">
+      <div class="drill-head"><h3 id="drill-h">Ward</h3><button type="button" class="tb" id="drill-close">Close</button></div>
+      <div id="drill-body"></div>
+    </div>
+    <details class="more" data-fact-scope><summary>How each cell is built, and the limits</summary><ul>{{r heat_method}}</ul><ul class="limits">{{r heat_limits}}</ul>
+      <p class="note">Source: City of Toronto, Apartment Building Evaluation, via the CKAN portal; see <a href="#receipts">receipts</a> for the download time and checksum.</p></details>
+    <p class="op-band">Run rental buildings? <a href="#services">See what an audit of your own buildings covers, and the prices</a>.</p>
+  </div>
+</section>

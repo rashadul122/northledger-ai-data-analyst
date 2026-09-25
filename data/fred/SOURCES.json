@@ -1,0 +1,99 @@
+{
+ "note": "FRED fredgraph.csv downloads (no API key). Written by tools/fetch_fred.py. Nothing refreshes these files on a schedule.",
+ "series": {
+  "RSAFSNA": {
+   "series": "RSAFSNA",
+   "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=RSAFSNA",
+   "requested_at": "2026-09-23T06:47:06Z",
+   "title": "Advance Retail Sales: Retail Trade and Food Services",
+   "label": "U.S. retail trade and food services",
+   "units": "Millions of Dollars",
+   "seasonal_adjustment": "Not Seasonally Adjusted",
+   "frequency": "Monthly",
+   "page": "https://fred.stlouisfed.org/series/RSAFSNA",
+   "source_agency": "U.S. Census Bureau, via FRED (Federal Reserve Bank of St. Louis)",
+   "http_status": 200,
+   "last_modified_header": "Wed, 16 Sep 2026 12:39:52 GMT",
+   "completed_at": "2026-09-23T06:47:06Z",
+   "bytes": 7513,
+   "sha256": "2bbe15d2fc830b6bd4f69184734d4373a6d94ec3840a7621570e43e221a8a4bf",
+   "rows": 416,
+   "first": {
+    "month": "1992-01",
+    "value": 142051.0
+   },
+   "last": {
+    "month": "2026-08",
+    "value": 784846.0
+   },
+   "outcome": "downloaded"
+  },
+  "RSAFS": {
+   "series": "RSAFS",
+   "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=RSAFS",
+   "requested_at": "2026-09-23T06:47:06Z",
+   "title": "Advance Retail Sales: Retail Trade and Food Services",
+   "label": "U.S. retail trade and food services, seasonally adjusted",
+   "units": "Millions of Dollars",
+   "seasonal_adjustment": "Seasonally Adjusted",
+   "frequency": "Monthly",
+   "page": "https://fred.stlouisfed.org/series/RSAFS",
+   "source_agency": "U.S. Census Bureau, via FRED (Federal Reserve Bank of St. Louis)",
+   "http_status": 200,
+   "last_modified_header": "Wed, 16 Sep 2026 12:39:53 GMT",
+   "completed_at": "2026-09-23T06:47:06Z",
+   "bytes": 7511,
+   "sha256": "c57685eed78fe9d2c961e7ed540c88c2c0161bc356672f0ebf8cf2b83cb9ed88",
+   "rows": 416,
+   "first": {
+    "month": "1992-01",
+    "value": 159177.0
+   },
+   "last": {
+    "month": "2026-08",
+    "value": 773947.0
+   },
+   "outcome": "downloaded"
+  }
+ },
+ "history": [
+  {
+   "series": "RSAFSNA",
+   "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=RSAFSNA",
+   "requested_at": "2026-09-23T06:45:52Z",
+   "completed_at": "2026-09-23T06:46:10Z",
+   "outcome": "fetch_failed_no_copy",
+   "error": "TimeoutError: [Errno 60] Operation timed out"
+  },
+  {
+   "series": "RSAFS",
+   "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=RSAFS",
+   "requested_at": "2026-09-23T06:46:10Z",
+   "completed_at": "2026-09-23T06:46:29Z",
+   "outcome": "fetch_failed_no_copy",
+   "error": "TimeoutError: [Errno 60] Operation timed out"
+  },
+  {
+   "series": "RSAFSNA",
+   "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=RSAFSNA",
+   "requested_at": "2026-09-23T06:47:06Z",
+   "completed_at": "2026-09-23T06:47:06Z",
+   "http_status": 200,
+   "bytes": 7513,
+   "sha256": "2bbe15d2fc830b6bd4f69184734d4373a6d94ec3840a7621570e43e221a8a4bf",
+   "rows": 416,
+   "outcome": "downloaded"
+  },
+  {
+   "series": "RSAFS",
+   "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=RSAFS",
+   "requested_at": "2026-09-23T06:47:06Z",
+   "completed_at": "2026-09-23T06:47:06Z",
+   "http_status": 200,
+   "bytes": 7511,
+   "sha256": "c57685eed78fe9d2c961e7ed540c88c2c0161bc356672f0ebf8cf2b83cb9ed88",
+   "rows": 416,
+   "outcome": "downloaded"
+  }
+ ]
+}

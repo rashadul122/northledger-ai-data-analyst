@@ -1,0 +1,45 @@
+<section class="try-sec" id="try" aria-labelledby="try-h" data-fact-scope>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">Try it on your own file</p>
+      <h2 id="try-h">Your messy CSV, through the same engine, inside your browser</h2>
+      <p class="lede">Drop a spreadsheet export and the NorthLedger engine from the run above works on it here, on your computer. It cleans the file with stated rules and counts every fix, sets aside the rows it cannot trust and says why, grades each finding (CONFIRMED, WATCH or NOT ENOUGH DATA), backtests a forecast when the file has a date column, and writes the story. You can download the cleaned file and the evidence afterwards.</p>
+      <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs at least {{d try_fc_months}} months of monthly history, so that the last {{d try_fc_replay}} can be replayed to test it, and a finding must rest on {{d try_rec_rows}} rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
+    </div>
+    <div class="try-app" id="try-app">
+      <div class="try-q-wrap" id="try-q-wrap" hidden>
+        <label class="try-q-lab" for="try-q">What do you want to know? <span class="muted">Optional, and used only if you choose AI summaries after the report</span></label>
+        <textarea id="try-q" rows="2" maxlength="300" placeholder="For example: which units pay late most often, and what will rent look like next?"></textarea>
+        <p class="note">The engine checks the same things whatever you type here. If you later ask for AI summaries, your question is sent with the findings exactly as you typed it, so leave out names and addresses.</p>
+      </div>
+      <div class="try-start" id="try-start">
+        <div class="try-drop" id="try-drop">
+          <svg class="try-drop-ic" aria-hidden="true" viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M25 36V22m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <p class="try-drop-t"><strong>Drop a CSV or TSV file here</strong></p>
+          <p class="try-drop-or">or</p>
+          <button type="button" class="btn btn-primary" id="try-pick">Choose a file</button>
+          <input type="file" id="try-file" class="sr" tabindex="-1" aria-label="Choose a CSV or TSV file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain">
+          <p class="note try-limits">Up to {{d try_max_mb}} and {{d try_max_rows}} rows. A larger file is refused, never sampled.</p>
+        </div>
+        <div class="try-side">
+          <p class="try-side-t"><strong>No file to hand?</strong></p>
+          <button type="button" class="btn btn-ghost" id="try-sample">Try the sample file</button>
+          <p class="note">The sample is a deliberately messy rent and expense ledger for five invented Toronto buildings, made for this demo: no real people or accounts in it.</p>
+        </div>
+      </div>
+      <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.{{r try_ai_note}}</span></p>
+      <div class="try-msg" id="try-msg" role="alert" hidden data-fact-exempt="written in your browser from your own file and the engine's answer"></div>
+      <div class="try-pd" id="try-pd" hidden data-fact-exempt="column names from your own file"></div>
+      <div class="try-run" id="try-run" hidden data-fact-exempt="elapsed seconds measured in your browser">
+        <div class="try-run-head">
+          <h3 id="try-run-h">Working on <span id="try-run-name"></span></h3>
+          <button type="button" class="btn btn-ghost btn-sm" id="try-cancel">Stop</button>
+        </div>
+        <ol class="try-stages" id="try-stages" aria-labelledby="try-run-h"></ol>
+        <p class="note" id="try-run-note" aria-live="polite"></p>
+      </div>
+      <div class="try-report" id="try-report" hidden tabindex="-1" role="region" aria-label="Your report" data-fact-exempt="every figure here is computed in your browser by the engine, from your own file"></div>
+    </div>
+    <noscript><p class="note">This demo needs JavaScript: the engine runs in your browser, so without it nothing can run.</p></noscript>
+  </div>
+</section>

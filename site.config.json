@@ -1,0 +1,55 @@
+{
+  "_about": "The only file on this site where a person types values. The owner fills contact_email and booking_url; until both are real, the page shows 'contact details coming' and verify.sh's contact check fails on purpose. Prices are the owner's own offers from v1.",
+  "contact_email": "contact@halosyncs.com",
+  "booking_url": "",
+  "_ai_proxy_about": "ai_proxy_url: the https address of the owner's own Cloudflare Worker that words the demo's story with DeepSeek. Empty means the page offers no AI option at all. The key lives only in the Worker (npx wrangler secret put DEEPSEEK_API_KEY), never here.",
+  "ai_proxy_url": "https://northledger-insight-proxy.r-mdrashad97.workers.dev",
+  "owner": {
+    "name": "Rashadul Islam Roman",
+    "business": "NorthLedger Insights",
+    "city": "Toronto"
+  },
+  "offers": [
+    {
+      "id": "audit",
+      "tag": "Entry",
+      "name": "Data Health Audit",
+      "price": "From $500 CAD, fixed",
+      "timing": "1 to 2 weeks. Delivered as a scored report and a 30-minute call.",
+      "pitch": "A fixed-scope diagnosis of what you have: what is broken, what can be automated, and the three changes that pay for themselves first. You get a written verdict whether or not we continue.",
+      "no_ai": true
+    },
+    {
+      "id": "build",
+      "tag": "The build",
+      "name": "Automated Insights Build",
+      "price": "From $4,000 CAD, setup",
+      "timing": "4 to 8 weeks, scaled to source count. Two training sessions included.",
+      "pitch": "The full loop on your data: sources connected, cleaned and modelled against your objectives, then a report, a written brief and a backtested forecast. Fixed scope, handover runbook included."
+    },
+    {
+      "id": "retainer",
+      "tag": "Operate",
+      "name": "Insights Retainer",
+      "price": "From $800 CAD / month",
+      "timing": "Ongoing. Your data person on call, without the payroll line.",
+      "pitch": "The system keeps working: monitoring, monthly summaries, forecast refreshes, one deep-dive analysis a month (like the gallery cards on this page), and small enhancements as the business changes."
+    }
+  ],
+  "collaboration": {
+    "_about": "The research collaboration invitation. Its button emails collaboration.email (the owner's university address; contact_email when it is empty) with this subject, and this greeting and these prompts as the prefilled body. build.py writes the link; tools/check_site.py (collab) and tools/check_ui.js check it. Keep the body short.",
+    "email": "roman4@uwindsor.ca",
+    "subject": "Research collaboration invitation",
+    "body_greeting": "Hello Rashadul,",
+    "body_prompts": [
+      "Project:",
+      "Role you have in mind for me:",
+      "Timeline:",
+      "Data involved (kind and size; please do not attach data yet):",
+      "Links (project page, repository, paper or dataset):"
+    ]
+  },
+  "links": {
+    "github_profile": "https://github.com/rashadul122"
+  }
+}

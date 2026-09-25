@@ -1,0 +1,19 @@
+# What must never be published with the site. The publish step is `git add .`, so anything a
+# static host would serve but that is not part of the site belongs here. tools/check_site.py
+# ("stray" check) fails when one of these kinds of file sits in the folder unlisted.
+
+# verify.sh output (screenshots, print PDF): it defaults to a temp folder outside the site now
+qa/
+
+# the owner's private planning document; publishing it is the owner's call, not a build step
+Senior-Data-Analytics-Portfolio-Blueprint.pdf
+
+# the retired v1 page's data (mislabelled series, in-sample error); kept only for the v1 driver
+# profile in tools/check_driver.py
+demo-data.json
+
+# local clutter
+.DS_Store
+__pycache__/
+*.pyc
+node_modules/

@@ -11,9 +11,10 @@ with **two interchangeable brains** — Ollama Cloud (glm-5.3) or **DeepSeek** (
 via `AGENT_PROVIDER=deepseek` — and seven tools:
 
 `run_sql` (read-only enforced) · `profile_table` · `run_python` · `forecast` (OLS trend
-+ seasonality, 80% bands, seasonal-naive baseline always) · `make_chart` (line/bar/grouped) ·
-`make_map` (world choropleth, Natural Earth) · `make_report` (PDF/Excel/Word; validates
-non-empty bodies; embeds charts)
++ seasonality, 80% bands, seasonal-naive baseline always) · `web_search` (Serper/Google —
+for context, verification, and citations; unknown-dataset bootstrap) · `make_chart`
+(line/bar/grouped) · `make_map` (world choropleth, Natural Earth) · `make_report`
+(PDF/Excel/Word; validates non-empty bodies; embeds charts)
 
 ## The sessions
 
@@ -27,6 +28,7 @@ non-empty bodies; embeds charts)
 | s6 US census economics | 5,026,099 | Survey-weighted: $76.2K typical household; half of renters cost-burdened |
 | s7 Chicago crime | 8,643,513 | Narcotics = enforcement signal (99.3% arrest); +226% vehicle-theft spike; July +33.2% |
 | s8 Canada trade story (DeepSeek) | 1,818 | Quarter-century arc; **caught the UK gold-settlement artifact**; honest losing forecast |
+| s9 Canada trade: VERIFIED edition | 1,818 | Same arc + **web-verified with cited sources** — gold anomaly confirmed (StatCan/Global Affairs/LBMA), every dip cited |
 
 Scale tier: **74.8M rows** across 8 tables — see [big-data-profile.json](big-data-profile.json)
 and [DATA-SOURCES.md](../DATA-SOURCES.md) at repo root (all public, licensed, traceable).

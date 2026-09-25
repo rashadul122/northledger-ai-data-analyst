@@ -210,6 +210,51 @@ def _save_chart_png(fig_or_ax, title):
     return path
 
 
+
+def tool_web_search(query, num=5):
+    """Search the web via Serper.dev. Returns top organic results with title/link/snippet
+    (+ answer box + knowledge graph when present) for context gathering and citations."""
+    import requests as _rq
+    key = ENV.get("SERPER_API_KEY") or os.environ.get("SERPER_API_KEY", "")
+    if not key:
+        # fallback: StyleCast env file
+        try:
+            for line in open(os.path.expanduser("~/StyleCast/env")):
+                if line.startswith("SERPER_API_KEY="):
+                    key = line.split("=", 1)[1].strip()
+        except OSError:
+            pass
+    if not key:
+        return {"error": "SERPER_API_KEY not configured (set it in the environment)"}
+    try:
+        r = _rq.post("https://google.serper.dev/search",
+                     headers={"X-API-KEY": key, "Content-Type": "application/json"},
+                     json={"q": query, "num": int(min(max(num, 1), 10))}, timeout=30)
+        if r.status_code != 200:
+            return {"error": f"serper {r.status_code}: {r.text[:150]}"}
+        d = r.json()
+    except _rq.RequestException as e:
+        return {"error": f"search request failed: {e}"}
+    out = []
+    for item in d.get("organic", [])[:int(num)]:
+        out.append({"title": item.get("title", ""),
+                    "link": item.get("link", ""),
+                    "snippet": item.get("snippet", "")[:300],
+                    "date": item.get("date", "")})
+    result = {"query": query, "results": out}
+    if d.get("answerBox"):
+        ab = d["answerBox"]
+        result["answer_box"] = {"title": ab.get("title", ""),
+                                "answer": ab.get("answer") or ab.get("snippet", ""),
+                                "link": ab.get("link", "")}
+    if d.get("knowledgeGraph"):
+        kg = d["knowledgeGraph"]
+        result["knowledge_graph"] = {"title": kg.get("title", ""),
+                                     "type": kg.get("type", ""),
+                                     "description": kg.get("description", "")[:300]}
+    return result
+
+
 def tool_make_chart(spec_json):
     """Generate a chart PNG from a spec: {"type": "line"|"bar"|"grouped_bar",
     "title": str, "x": [...], "series": {"name": [...]}, "ylabel": str}
@@ -624,6 +669,8 @@ TOOLS = [
      "parameters": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["pdf", "xlsx", "docx"]},
         "title": {"type": "string"}, "summary_md": {"type": "string"}, "body_md": {"type": "string"}},
         "required": ["kind", "title", "summary_md", "body_md"]}},
+    {"name": "web_search", "description": "Search the web (Google via Serper) for external context, explanations, news, or verification. Use when the data alone cannot explain a finding, when you need current events (post-training-cutoff), or to verify/attribute a real-world cause. ALWAYS cite: title + link. Every web-sourced claim in the report must carry its source link.",
+     "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "num": {"type": "integer", "default": 5}}, "required": ["query"]}},
     {"name": "make_chart", "description": "Generate a chart PNG. spec_json: {\"type\": \"line\"|\"bar\"|\"grouped_bar\", \"title\": str, \"x\": [...labels], \"series\": {\"SeriesName\": [values aligned with x]}, \"ylabel\": str}. Returns artifact path; embed into a report with an image line in body_md.",
      "parameters": {"type": "object", "properties": {"spec_json": {"type": "string"}}, "required": ["spec_json"]}},
     {"name": "make_map", "description": "Generate a choropleth WORLD MAP PNG. spec_json: {\"title\": str, \"values\": {\"Country\": number}, \"label\": str}. Aliases handled (US/USA->United States, UK->United Kingdom, European Union->its members). Returns artifact path for report embedding.",
@@ -642,10 +689,21 @@ Rules (from the NorthLedger rigor standard):
 5. Uncertainty is mandatory: give bands or ranges for any forward-looking number. Never claim precision the data does not support.
 6. When done, call make_report to produce the deliverable file(s) the user asked for, then give a final answer structured as: What changed / What it means / What to do (numbers first, plain language, one short paragraph each).
 7. Disclose limitations honestly in the report (small samples, unmodeled factors, data quality gaps).
-8. Budget discipline: you have plenty of tool calls, but do NOT explore endlessly. Aim to finish
+8. UNKNOWN-DATASET BOOTSTRAP: if the goal references a table you do not know (user-supplied
+   data), start by (a) profile_table + a sample of rows to learn columns/content, then
+   (b) ONE web_search to identify the dataset/domain ("what is this data: <key column names,
+   distinct values, date range>"), then plan with that context. Users bring ANY dataset -
+   sales, IoT, health, logistics - your job is to recognize it, understand it, then analyze.
+9. Web search discipline: use web_search ONLY when (a) the data shows a pattern you cannot
+   explain from your own knowledge, (b) the question involves events after your training
+   cutoff, or (c) you are about to attribute a real-world cause in the report and want to
+   verify + cite it. In the report: every externally-sourced claim gets an inline citation
+   "[Source: title - link]"; claims you could not verify stay labeled as inference.
+   Data-sourced facts need no citation - they come from the queries you ran.
+10. Budget discipline: you have plenty of tool calls, but do NOT explore endlessly. Aim to finish
    the investigation within ~15 rounds and RESERVE the final rounds for make_report. The requested
    deliverable file is a hard requirement — a session that ends without it is a failed session.
-9. Never create files in the working directory; every artifact goes through make_report. If you
+11. Never create files in the working directory; every artifact goes through make_report. If you
    must store intermediate state, keep it in memory (Python variables), never on disk.
 
 Keep tool calls purposeful. Finish with a concise, human answer - never just 'done'."""
@@ -690,6 +748,8 @@ def dispatch(name, args):
         return tool_run_python(args.get("code", ""))
     if name == "forecast":
         return tool_forecast(args.get("series_json", "[]"), int(args.get("periods", 12)))
+    if name == "web_search":
+        return tool_web_search(args.get("query", ""), int(args.get("num", 5)))
     if name == "make_chart":
         return tool_make_chart(args.get("spec_json", "{}"))
     if name == "make_map":

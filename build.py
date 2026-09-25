@@ -44,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1259,12 +1260,22 @@ def blocks(I, R, D, pbip, examples):
 
     # ---------------- PL-300 milestones (owner-edited file)
     pl = I["pl300-status"]
-    B["pl_milestones"] = "".join('<li><span>%s</span> <span class="status s-roadmap">%s</span></li>' % (
-        f("pl300-status:milestones.%d.name" % i), f("pl300-status:milestones.%d.state" % i)) for i in range(len(pl["milestones"])))
+    tone = {"done": "s-built", "partial": "s-partial", "next": "s-public", "todo": "s-roadmap"}
+    B["pl_milestones"] = "".join('<li><span>%s</span> <span class="status %s">%s</span></li>' % (
+        f("pl300-status:milestones.%d.name" % i), tone.get(m.get("tone"), "s-roadmap"), f("pl300-status:milestones.%d.state" % i))
+        for i, m in enumerate(pl["milestones"]))
     B["ogl_url"] = esc(meta["meta"]["licence"]["url"])
     B["pl_url"] = esc(pl["data_source"]["url"])
-    B["pl_reconcile"] = ("No reconcile result has been recorded by the owner yet." if not pl.get("reconcile")
-                         else f("pl300-status:reconcile.summary"))
+    # the public project and its data release (addresses also encoded in tools/check_site.py, pl300)
+    B["pl_repo_url"] = esc((pl.get("repo") or {}).get("url", ""))
+    B["pl_release_url"] = esc((pl.get("release") or {}).get("url", ""))
+    # the owner copies a reconcile result here himself; until then the card points at the record the
+    # public repository keeps (evidence.url, inside the repository, checked by tools/check_site.py pl300)
+    ev = pl.get("evidence") or {}
+    B["pl_reconcile"] = (f("pl300-status:reconcile.summary") if pl.get("reconcile") else
+                         ('The reconcile record is kept in the project itself: <a href="%s" rel="noopener">%s</a>. '
+                          'This page does not copy its figures.' % (esc(ev.get("url", "")), f("pl300-status:evidence.what")))
+                         if ev.get("url") else "")
 
     # ---------------- offers (typed by the owner in site.config.json)
     offers = []
@@ -1290,8 +1301,22 @@ def blocks(I, R, D, pbip, examples):
          "the owner's AI proxy, which passes them to DeepSeek" if try_proxy(I["config"])[0] else "") +
         ". Your file itself is never sent anywhere.")
 
-    # ---------------- contact (empty until the owner fills site.config.json)
+    # ---------------- research collaboration: the invitation emails contact_email (site.config.json)
     cfg = I["config"]
+    co = cfg.get("collaboration") if isinstance(cfg.get("collaboration"), dict) else {}
+    co_email = (cfg.get("contact_email") or (cfg.get("contact") or {}).get("email") or "").strip()
+    if co_email and co.get("subject"):
+        co_body = "\n".join([co.get("body_greeting", "")] + [""] + list(co.get("body_prompts") or []) + [""]).lstrip("\n")
+        co_href = "mailto:%s?subject=%s&body=%s" % (co_email, urllib.parse.quote(co["subject"]), urllib.parse.quote(co_body))
+        B["collab_invite"] = ('<div class="contact-live"><a class="btn btn-primary" href="%s">Invite me to a project</a> '
+                              '<button type="button" class="btn btn-ghost" data-copy="%s">Copy the address</button></div>'
+                              '<p class="note">The button opens an email to %s with the subject line and a few short prompts filled in: the project, the role, the timeline, the data involved and links. '
+                              'Please don\'t attach data to a first message.</p>' % (esc(co_href), esc(co_email), esc(co_email)))
+    else:
+        B["collab_invite"] = ('<div class="contact-empty" role="status"><strong>Contact details coming.</strong> The owner has not added an '
+                              'email address yet, so this page does not offer one.</div>')
+
+    # ---------------- contact (empty until the owner fills site.config.json)
     # the same keys tools/check_site.py accepts: top-level contact_email / booking_url, or a "contact" block
     nested = cfg.get("contact") if isinstance(cfg.get("contact"), dict) else {}
     email = (cfg.get("contact_email") or nested.get("email") or "").strip()
@@ -1503,9 +1528,13 @@ def build(write=True, run_tests=False):
     D, SRC_OF = compute(I, C, downloads, pbip, examples, tests, crow)
     pl = I["pl300-status"]
     C("the PL-300 status file carries no measured numbers (no numeric values, no digits in status, milestones or reconcile)",
-      not re.search(r"\d", json.dumps([pl.get("status"), pl.get("milestones"), pl.get("reconcile"), pl.get("method"), pl.get("route")]))
+      not re.search(r"\d", json.dumps([pl.get("status"), pl.get("milestones"), pl.get("reconcile"), pl.get("method"), pl.get("route"), pl.get("next_step")]))
       and not re.search(r":\s*-?\d", json.dumps(pl)))
     C("site.config.json lists the three offers", len(I["config"].get("offers", [])) == 3)
+    co = I["config"].get("collaboration") or {}
+    C("site.config.json collaboration block: the invitation's subject and a short prefilled body",
+      co.get("subject") == "Research collaboration invitation" and 1 <= len(co.get("body_prompts") or []) <= 6
+      and len("\n".join([co.get("body_greeting", "")] + list(co.get("body_prompts") or []))) <= 400)
     # the "Try it on your own file" demo
     proxy, proxy_problem = try_proxy(I["config"])
     C("site.config.json ai_proxy_url is empty (no AI option on the page) or a real https address",
@@ -1523,10 +1552,19 @@ def build(write=True, run_tests=False):
         SRC_OF[k] = "TRY_MAX_BYTES / TRY_MAX_ROWS in build.py, the limits src/js/50-try.js enforces (window.NL.try)"
     th = pack_manifest().get("thresholds") or {}
     C("engine/pack.json states the engine's forecast and RECOMMEND thresholds the demo quotes",
-      isinstance(th.get("forecast_min_history_months"), int) and isinstance(th.get("recommend_min_rows"), int), json.dumps(th))
-    D["try_fc_months"] = format(int(th.get("forecast_min_history_months") or 0), ",")
+      all(isinstance(th.get(k), int) for k in ("forecast_min_history_months", "forecast_min_checkable_months",
+                                               "forecast_replay_months", "recommend_min_rows"))
+      and th["forecast_replay_months"] < th["forecast_min_checkable_months"]
+      and th["forecast_min_checkable_months"] >= th["forecast_min_history_months"], json.dumps(th))
+    # the months a forecast can be checked on at all, not only the gate's history floor (review,
+    # 25 Sep 2026: "about 36 months" was quoted and a 38-month file got no forecast)
+    D["try_fc_months"] = format(int(th.get("forecast_min_checkable_months") or 0), ",")
+    D["try_fc_replay"] = format(int(th.get("forecast_replay_months") or 0), ",")
     D["try_rec_rows"] = format(int(th.get("recommend_min_rows") or 0), ",")
-    SRC_OF["try_fc_months"] = "engine/pack.json thresholds.forecast_min_history_months, read by tools/pack_engine.py from northledger/forecast.py ForecastPolicy"
+    SRC_OF["try_fc_months"] = ("engine/pack.json thresholds.forecast_min_checkable_months, read by tools/pack_engine.py from "
+                               "northledger/forecast.py DEFAULT_CONFIG (min_train + the errors a first range needs + min_holdout); "
+                               "tools/test_nl_browser.py checks it equals forecast.min_history_months()")
+    SRC_OF["try_fc_replay"] = "engine/pack.json thresholds.forecast_replay_months, read by tools/pack_engine.py from northledger/forecast.py ForecastPolicy.min_holdout"
     SRC_OF["try_rec_rows"] = "engine/pack.json thresholds.recommend_min_rows, read by tools/pack_engine.py from northledger/gate.py GatePolicy"
 
     built_at = _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"

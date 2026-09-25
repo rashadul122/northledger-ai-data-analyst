@@ -153,7 +153,33 @@ def engine_thresholds(src: str = ENGINE_SRC) -> dict:
                     if isinstance(st, ast.AnnAssign) and getattr(st.target, "id", "") == name:
                         return ast.literal_eval(st.value)
         raise SystemExit("pack: %s.%s not found in northledger/%s" % (cls, name, module))
+    def config(key: str):
+        """A value of forecast.DEFAULT_CONFIG, the settings every run uses."""
+        with open(os.path.join(src, "forecast.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        for node in tree.body:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Dict):
+                tgt = node.target if isinstance(node, ast.AnnAssign) else node.targets[0]
+                if getattr(tgt, "id", "") == "DEFAULT_CONFIG":
+                    for k, v in zip(node.value.keys, node.value.values):
+                        if isinstance(k, ast.Constant) and k.value == key:
+                            return ast.literal_eval(v)
+        raise SystemExit("pack: DEFAULT_CONFIG[%r] not found in northledger/forecast.py" % key)
+
+    def conformal_min(level: float) -> int:
+        """forecast.conformal_min_errors: the fewest errors a range at `level` can be drawn from,
+        2/(1 - level) - 1 rounded up (9 for 80%). tools/test_nl_browser.py checks the sum below
+        against forecast.min_history_months() itself."""
+        return int(-(-(2.0 / (1.0 - level) - 1.0 - 1e-9) // 1))
+    # The months a forecast can be checked on at all (forecast.min_history_months): the months
+    # a model learns from before its first replayed forecast, the errors a first range needs,
+    # and the replayed months the gate requires (review, 25 Sep 2026: the page quoted only the
+    # 36-month floor, and a 38-month file got no forecast because only 5 months could be replayed).
+    replay = int(config("min_holdout"))
+    checkable = int(config("min_train")) + max(int(config("min_band_errors")), conformal_min(float(config("band")))) + replay
     return {"forecast_min_history_months": field("forecast.py", "ForecastPolicy", "min_history_months"),
+            "forecast_min_checkable_months": max(checkable, field("forecast.py", "ForecastPolicy", "min_history_months")),
+            "forecast_replay_months": field("forecast.py", "ForecastPolicy", "min_holdout"),
             "recommend_min_rows": field("gate.py", "GatePolicy", "min_rows_recommend")}
 
 

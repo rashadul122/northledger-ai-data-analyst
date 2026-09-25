@@ -374,6 +374,8 @@
     var h = '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
+    // the optional AI summaries (50-try.js) sit right under the bottom line, where the visitor reads and asks
+    h += (parts && parts.ai) || '';
     if (K) h += '<div class="nl2-kpis" data-chart="kpi" data-findings="' + esc(K.finding_ids.join(' ')) + '" role="list" aria-label="' + esc(K.title) + '">' + tiles(r, K).replace(/<div class="nl2-tile"/g, '<div role="listitem" class="nl2-tile"') + '</div>';
     h += '<article class="tr-card nl2-trustcard"><p class="nl2-trust-line"><b>Can I trust it?</b> ' + esc(trustLine(r)) + '</p>' +
       '<details class="nl2-trust-more"><summary>How much to trust it, layer by layer</summary><ul class="nl2-trust">' + trustLayers(r).map(function (x) { return '<li data-layer="' + x[0] + '">' + x[1] + '</li>'; }).join('') + '</ul></details></article>';
@@ -560,7 +562,8 @@
   }
 
   /* ------------------------------------------------------------ the page */
-  // parts: { story, rolesPriv, cleaning } HTML the demo page already writes for v1 (50-try.js)
+  // parts: { story, rolesPriv, cleaning } HTML the demo page already writes for v1 (50-try.js), and ai: the
+  // manager view's AI summaries card ('' when the page offers none)
   N.html = function (r, parts) {
     var CH = chartMap(r);
     return '<div class="nl2" data-contract="2">' +

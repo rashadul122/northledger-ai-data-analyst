@@ -10,7 +10,10 @@
    (one shared block, tools/check_try_guard.js checks the copies match) on each part, and the page
    itself fills every figure and grade from the engine's findings. Each part is judged on its own:
    a part that passes is shown, labelled; a part that does not is named with the reason in plain
-   words (NLTry.partNote). The engine's story stays on screen. */
+   words (NLTry.partNote). The engine's story stays on screen. The findings go in the report's own
+   order of priority (NLTry.aiOrder), which the proxy's prompt follows. In report v2 the offer and the
+   executive summary sit in the manager view, right under the bottom line (#try-ai-m), and the
+   technical summary in the analyst view's summary section, each view saying where the other is. */
 (function () {
   'use strict';
   var U = window.NLU || {}, NL = window.NL || {};
@@ -898,21 +901,48 @@
       return new RegExp('(^|[^A-Za-z0-9_])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9])', 'i').test(t);
     });
   };
+  // The findings in the report's own order of priority, which is the order the model reads them in
+  // (F1, F2...) and the order the proxy's prompt tells it to follow: the primary claim, then the
+  // claims of the bottom line in its order (report v2 summary.lines: what moved and why, what to act
+  // on, the planning number), then the other business claims and forecasts, then the ledger's own
+  // monitoring counts (summary.monitoring), and the file's data-health findings last. Within a group
+  // the engine's order stands. (The live sample's executive summary opened with the row volume.)
+  T.aiOrder = function (rep) {
+    var F = (rep && rep.findings) || [], sm = (rep && rep.summary) || {}, pm = rep && rep.primary_metric && rep.primary_metric.finding_id;
+    var bl = [];
+    (Array.isArray(sm.lines) ? sm.lines : []).forEach(function (l) { ((l && l.finding_ids) || []).forEach(function (id) { if (bl.indexOf(id) < 0) bl.push(id); }); });
+    var mon = Array.isArray(sm.monitoring) ? sm.monitoring : [];
+    var rank = function (f) {
+      if (f.id === pm) return 0;
+      if (bl.indexOf(f.id) >= 0) return 1 + bl.indexOf(f.id) / (bl.length + 1);
+      if (f.kind !== 'business' && f.kind !== 'forecast') return 4;
+      return mon.indexOf(f.id) >= 0 ? 3 : 2;
+    };
+    return F.map(function (f, i) { return [f, i]; }).filter(function (x) { return x[0] && typeof x[0] === 'object'; })
+      .sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (x) { return x[0]; });
+  };
   T.aiPayload = function (rep, objective, keepValues) {
     var red = keepValues ? [] : T.aiRedactions(rep), w = function (x) { return redact(x, red); };
     var terms = T.aiWithheldTerms(rep), named = function (x) { return T.namesWithheld(x, terms); };
     var L = AI_LIMITS, s = rep.story || {}, story = { headline: named(s.headline) ? '' : cut(w(s.headline), L.line) };
-    STORY_KEYS.forEach(function (k) { story[k[0]] = (s[k[0]] || []).filter(function (x) { return !named(x); }).slice(0, L.lines).map(function (x) { return cut(w(x), L.line); }); });
+    // "why" goes sentence by sentence (each its own line): its first sentence says what the file covers,
+    // short enough for an executive summary to give whole; the full line runs past a thousand characters
+    var lines = function (k) {
+      var v = (s[k] || []).filter(function (x) { return !named(x); }).map(w);   // split after the values are swapped: a value may hold a full stop
+      if (k === 'why') v = [].concat.apply([], v.map(function (x) { return x.split(/(?<=[.!?])\s+(?=[A-Z'"‘“(\[])/); })).filter(function (x) { return x.trim(); });
+      return v.slice(0, L.lines).map(function (x) { return cut(x, L.line); });
+    };
+    STORY_KEYS.forEach(function (k) { story[k[0]] = lines(k[0]); });
     var body = {
       objective: cut(objective, L.objective),
-      findings: (rep.findings || []).filter(function (f) { return f && typeof f.id === 'string' && f.id && f.id.length <= L.id && VERDICTS.indexOf(f.verdict) >= 0 && !named(f.id) && !named(f.claim); })
+      findings: T.aiOrder(rep).filter(function (f) { return typeof f.id === 'string' && f.id && f.id.length <= L.id && VERDICTS.indexOf(f.verdict) >= 0 && !named(f.id) && !named(f.claim); })
         .slice(0, L.findings).map(function (f) {
           return { id: f.id, claim: cut(w(f.claim), L.claim), verdict: f.verdict, value: (typeof f.value === 'number' && isFinite(f.value)) ? f.value : null };
         }),
       story: story
     };
     var size = function () { return new TextEncoder().encode(JSON.stringify(body)).length; };
-    while (size() > L.bytes && body.findings.length) body.findings.pop();          // the least certain go first
+    while (size() > L.bytes && body.findings.length) body.findings.pop();          // the lowest in priority go first
     STORY_KEYS.slice().reverse().forEach(function (k) { while (size() > L.bytes && story[k[0]].length) story[k[0]].pop(); });
     return body;
   };
@@ -1548,7 +1578,8 @@
     function drawReport2(r) {
       var gated = T.gateTripped(r);
       el.report.innerHTML = headHtml(r, false, !gated) + (gated ? gateCard(r) : '') +
-        window.NL2.html(r, { story: '<article class="tr-card tr-story" id="try-story"></article>', rolesPriv: privRolesHtml(r, gated), cleaning: cleaningHtml(r) }) + tailHtml(r);
+        window.NL2.html(r, { story: '<article class="tr-card tr-story" id="try-story"></article>', rolesPriv: privRolesHtml(r, gated), cleaning: cleaningHtml(r),
+          ai: CFG.ai_proxy_url ? '<article class="tr-card nl2-aicard" id="try-ai-m" aria-label="AI summaries"></article>' : '' }) + tailHtml(r);
       drawStory();
       window.NL2.mount(el.report.querySelector('.nl2'), r);
     }
@@ -1641,40 +1672,78 @@
       });
       return parts.length ? parts.join('') : '<p class="muted">The engine wrote no story sections for this file.</p>';
     }
+    // the AI summaries: a label, the caveat, and one part (shown, or set aside with its reason)
+    var AI_LABEL = 'AI-reworded summaries (DeepSeek); every figure and grade put in by the engine';
+    function aiLabel() { return '<p class="tr-ai-label">' + esc(AI_LABEL) + '</p>'; }
+    function aiLimit(where) {
+      return '<p class="tr-ai-limit">The model wrote only the words. Each figure, grade and quoted value ' + (where === 'above' ? 'below' : 'here') + ' was filled in by this page from the engine\'s findings, and a summary that wrote a number, a grade, a cause, size or confidence wording of its own, used words its finding does not use, or set a figure or a grade beside another finding\'s words, was refused. The check cannot prove that a sentence means what the finding means: the findings and the story ' + where + ' are the record. Grades use the evidence names: CONFIRMED is the engine\'s RECOMMEND, NOT ENOUGH DATA its INSUFFICIENT.</p>';
+    }
+    function aiPart(part, where) {
+      // a part that did not pass is named, with the reason in plain words; its text is never shown
+      if (S.ai.chk[part] === null) return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><p class="tr-ai-aside note" role="status" data-aside="' + part + '">' +
+        esc(T.partNote(S.ai.chk, part)) + ' The engine\'s findings and story ' + where + ' are the record.</p>';
+      return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai.chk[part], S.ai.body, part, S.aiRed) + '</div>';
+    }
+    // the offer: what is sent, the consent and the button (drawn where the visitor acts). In the manager
+    // view (inCard) it is short, under the bottom line: the essentials in one paragraph, the list of
+    // placeholders, the preview and the fine print one click away, and the consent and button in view.
+    function aiOffer(r, inCard) {
+      var red = T.aiRedactions(r), payload = JSON.stringify(T.aiPayload(r, S.objective, S.aiRaw), null, 2), MAXL = 12;
+      var swap = red.length ? '<div class="tr-ai-swap"><p>' + (S.aiRaw ? 'You chose to send these as they are:' : 'These are sent as placeholders; the summaries are shown here with them put back, in this browser only:') + '</p><ul>' +
+        red.slice(0, MAXL).map(function (x) { return '<li>' + esc(x.label) + ' <code>' + esc(x.value) + '</code>' + (S.aiRaw ? '' : ' as <code>' + esc(x.placeholder) + '</code>') + '</li>'; }).join('') +
+        (red.length > MAXL ? '<li>and ' + num(red.length - MAXL, 0) + ' more, listed in the preview</li>' : '') + '</ul>' +
+        '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-raw"' + (S.aiRaw ? ' checked' : '') + '> Send them as they are instead</label></div>' : '';
+      var scan = '<p class="note">The personal-data scan reads column names and the shape of values, so a name under a neutral heading can be missed: read the preview before you agree. DeepSeek is run from China and handles what it receives under its own privacy policy, published on deepseek.com.</p>';
+      var preview = '<details class="more"><summary>Exactly what is sent</summary><pre class="snip" id="try-ai-preview">' + esc(payload) + '</pre></details>';
+      var rule = '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and this page says which one and why. Each summary is judged on its own: one that passes is shown even when the other is set aside, and the engine\'s story always stays.</p>';
+      var go = '<div class="tr-ai-go"><button type="button" class="btn btn-ghost" id="try-ai-go" disabled>Write the AI summaries</button><span class="note" id="try-ai-status" role="status"></span></div>';
+      var what = (S.objective ? 'your question exactly as you typed it, ' : '') + 'each finding\'s id, claim, verdict and value, and the engine\'s story';
+      if (inCard) {
+        return '<div class="tr-ai" style="margin-top:0;padding-top:0;border-top:0"><h4>Optional: AI summaries of this report</h4>' +
+          '<p>An AI model (DeepSeek, run from China), through the site owner\'s proxy, can word this report as a short executive summary, shown here, and a technical summary, shown in the Analyst view. It writes only the words: every figure and grade is put in by this page from the engine\'s findings. It receives ' + what +
+          ', which name your column headings; never your rows or your file' + (red.length && !S.aiRaw ? ', and the values quoted from your data go as placeholders' : '') + '.</p>' +
+          '<details class="more tr-ai-fine"><summary>What is sent, and where it goes: read before you agree</summary>' +
+            '<p>It receives exactly what “Exactly what is sent” shows, and nothing else. The proxy adds its instructions and a list of markers for the figures in that text.</p>' + swap + scan + preview + rule + '</details>' +
+          '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send what “What is sent” lists to the AI model</label>' + go + '</div>';
+      }
+      return '<div class="tr-ai"><h4>Optional: AI summaries</h4>' +
+        '<p>An AI model (DeepSeek), through the site owner\'s proxy, can write a short executive summary and a technical summary of these findings. It receives exactly what “Exactly what is sent” shows, and nothing else: ' +
+        what + '. Those name your column headings; your rows and your file are not sent. The proxy adds its instructions and a list of markers for the figures in that text.</p>' +
+        swap + scan + preview + '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send the data above to the AI model</label>' + go + rule + '</div>';
+    }
+    // report v2: the AI summaries are asked for and read in the manager view, right under the bottom line
+    // (#try-ai-m): the executive summary there, the technical one in the analyst view's summary section
+    // (#try-story), each view saying where the other part is. v1 keeps both under the engine's story.
+    function drawAIManager(host) {
+      var h = '';
+      if (S.aiNote) h += '<p class="tr-ai-fallback" role="status">' + esc(S.aiNote) + '</p>';
+      if (S.ai) {
+        var techShown = S.ai.chk.technical !== null;
+        h += '<div class="tr-ai-sum" role="region" aria-label="AI executive summary"><p class="tr-ai-label">' + esc(AI_LABEL) + '</p>' + aiPart('executive', 'in this report') +
+          '<p class="note tr-ai-more">' + (techShown ? 'The technical summary is in the Analyst view, in its first section.' : esc(T.partNote(S.ai.chk, 'technical')) + ' The Analyst view says so too.') +
+          ' <button type="button" class="btn btn-ghost btn-sm" data-act="ai-analyst">' + (techShown ? 'Read the technical summary' : 'Open the Analyst view') + '</button></p>' +
+          aiLimit('in this report') + '</div>';
+      } else h += aiOffer(S.report, true);
+      host.innerHTML = h;
+    }
     function drawStory() {
       var box = document.getElementById('try-story');
       if (!box) return;
-      var r = S.report, gated = T.gateTripped(r), h = '<div class="tr-story-head"><h3>The story</h3></div>';
-      if (S.aiNote) h += '<p class="tr-ai-fallback" role="status">' + esc(S.aiNote) + '</p>';
+      var r = S.report, gated = T.gateTripped(r), mgr = document.getElementById('try-ai-m'), h = '<div class="tr-story-head"><h3>The story</h3></div>';
+      if (S.aiNote && !mgr) h += '<p class="tr-ai-fallback" role="status">' + esc(S.aiNote) + '</p>';
       // the engine's story is the record and always stays; AI summaries are shown under it, labelled
       h += '<p class="tr-ai-label tr-engine-label">Written by the engine from its checked facts</p>' + (gated ? '' : '<p class="tr-lead">' + esc(r.story.headline) + '</p>') + '<div class="tr-sgrid">' + storyBody(r.story) + '</div>';
-      if (S.ai) {
-        h += '<div class="tr-ai-sum" role="region" aria-label="AI summaries">' +
-          '<p class="tr-ai-label">AI-reworded summaries (DeepSeek); every figure and grade put in by the engine</p>' +
-          '<p class="tr-ai-limit">The model wrote only the words. Each figure, grade and quoted value below was filled in by this page from the engine\'s findings, and a summary that wrote a number, a grade, a cause, size or confidence wording of its own, used words its finding does not use, or set a figure or a grade beside another finding\'s words, was refused. The check cannot prove that a sentence means what the finding means: the findings and the story above are the record. Grades use the evidence names: CONFIRMED is the engine\'s RECOMMEND, NOT ENOUGH DATA its INSUFFICIENT.</p>' +
-          T.SUMMARY_PARTS.map(function (part) {
-            // a part that did not pass is named, with the reason in plain words; its text is never shown
-            if (S.ai.chk[part] === null) return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><p class="tr-ai-aside note" role="status" data-aside="' + part + '">' +
-              esc(T.partNote(S.ai.chk, part)) + ' The engine\'s findings and story above are the record.</p>';
-            return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai.chk[part], S.ai.body, part, S.aiRed) + '</div>';
-          }).join('') + '</div>';
-      }
-      if (CFG.ai_proxy_url && !S.ai) {
-        var red = T.aiRedactions(r), payload = JSON.stringify(T.aiPayload(r, S.objective, S.aiRaw), null, 2), MAXL = 12;
-        h += '<div class="tr-ai"><h4>Optional: AI summaries</h4>' +
-          '<p>An AI model (DeepSeek), through the site owner\'s proxy, can write a short executive summary and a technical summary of these findings. It receives exactly what “Exactly what is sent” shows, and nothing else: ' +
-          (S.objective ? 'your question exactly as you typed it, ' : '') + 'each finding\'s id, claim, verdict and value, and the engine\'s story. Those name your column headings; your rows and your file are not sent. The proxy adds its instructions and a list of markers for the figures in that text.</p>' +
-          (red.length ? '<div class="tr-ai-swap"><p>' + (S.aiRaw ? 'You chose to send these as they are:' : 'These are sent as placeholders; the summaries are shown here with them put back, in this browser only:') + '</p><ul>' +
-            red.slice(0, MAXL).map(function (x) { return '<li>' + esc(x.label) + ' <code>' + esc(x.value) + '</code>' + (S.aiRaw ? '' : ' as <code>' + esc(x.placeholder) + '</code>') + '</li>'; }).join('') +
-            (red.length > MAXL ? '<li>and ' + num(red.length - MAXL, 0) + ' more, listed in the preview</li>' : '') + '</ul>' +
-            '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-raw"' + (S.aiRaw ? ' checked' : '') + '> Send them as they are instead</label></div>' : '') +
-          '<p class="note">The personal-data scan reads column names and the shape of values, so a name under a neutral heading can be missed: read the preview before you agree. DeepSeek is run from China and handles what it receives under its own privacy policy, published on deepseek.com.</p>' +
-          '<details class="more"><summary>Exactly what is sent</summary><pre class="snip" id="try-ai-preview">' + esc(payload) + '</pre></details>' +
-          '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send the data above to the AI model</label>' +
-          '<div class="tr-ai-go"><button type="button" class="btn btn-ghost" id="try-ai-go" disabled>Write the AI summaries</button><span class="note" id="try-ai-status" role="status"></span></div>' +
-          '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and this page says which one and why. Each summary is judged on its own: one that passes is shown even when the other is set aside, and the engine\'s story always stays.</p></div>';
-      }
+      if (S.ai && mgr) {
+        h += '<div class="tr-ai-sum" role="region" aria-label="AI technical summary">' + aiLabel() + aiLimit('above') + aiPart('technical', 'above') +
+          '<p class="note">The AI executive summary is in the Manager view, under the bottom line.</p></div>';
+      } else if (S.ai) {
+        h += '<div class="tr-ai-sum" role="region" aria-label="AI summaries">' + aiLabel() + aiLimit('above') +
+          T.SUMMARY_PARTS.map(function (part) { return aiPart(part, 'above'); }).join('') + '</div>';
+      } else if (CFG.ai_proxy_url && mgr) {
+        h += '<p class="note tr-ai-where">Optional AI summaries of this report are offered in the Manager view, under the bottom line. <button type="button" class="btn btn-ghost btn-sm" data-act="ai-manager">Go to the offer</button></p>';
+      } else if (CFG.ai_proxy_url) h += aiOffer(r, false);
       box.innerHTML = h;
+      if (mgr) drawAIManager(mgr);
       var ok = document.getElementById('try-ai-ok'), go = document.getElementById('try-ai-go'), raw = document.getElementById('try-ai-raw');
       if (ok && go) {
         ok.addEventListener('change', function () { go.disabled = !ok.checked; });
@@ -1682,10 +1751,19 @@
       }
       if (raw) raw.addEventListener('change', function () {
         S.aiRaw = raw.checked;
+        var fold = raw.closest('details'), open = !!(fold && fold.open);   // the manager view keeps it in the fine print
         drawStory();
         var again = document.getElementById('try-ai-raw');
+        if (again && open && again.closest('details')) again.closest('details').open = true;
         if (again) again.focus();
       });
+    }
+    // from one view to the other part of the AI summaries (report v2)
+    function aiSwitch(view) {
+      var tab = document.getElementById(view === 'analyst' ? 'nl2-tab-a' : 'nl2-tab-m');
+      if (tab) tab.click();
+      var to = view === 'analyst' ? (document.querySelector('#try-story .tr-ai-sum') || document.getElementById('nl2-s-summary')) : document.getElementById('try-ai-m');
+      if (to) { to.setAttribute('tabindex', '-1'); goTo(to, true); }
     }
     function askAI(go) {
       var st = document.getElementById('try-ai-status');
@@ -1713,6 +1791,9 @@
             S.ai = null;
           } else { S.ai = { chk: chk, body: body }; S.aiRed = red; S.aiNote = ''; }
           drawStory();
+          // the summary appears where the button was: move the reader's focus there, not the page
+          var sum = document.querySelector('#try-ai-m .tr-ai-sum');
+          if (sum) { sum.setAttribute('tabindex', '-1'); try { sum.focus({ preventScroll: true }); } catch (e3) { sum.focus(); } }
         })
         .catch(function (e) {
           clearTimeout(timer);
@@ -1734,6 +1815,8 @@
     function printReport() {
       var undo = [], v2 = el.report.querySelector('.nl2');
       if (v2 && window.NL2) undo.push(window.NL2.preparePrint(v2));
+      var aiCard = document.getElementById('try-ai-m');
+      if (aiCard && !S.ai && !aiCard.hidden) { aiCard.hidden = true; undo.push(function () { aiCard.hidden = false; }); }
       Array.prototype.forEach.call(el.report.querySelectorAll('.tr-flist li[hidden]'), function (li) { li.hidden = false; undo.push(function () { li.hidden = true; }); });
       Array.prototype.forEach.call(el.report.querySelectorAll('details:not([open])'), function (d) { d.open = true; undo.push(function () { d.open = false; }); });
       var done = false, restore = function () {
@@ -1763,6 +1846,8 @@
         setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
       } else if (act === 'print') {
         printReport();
+      } else if (act === 'ai-analyst' || act === 'ai-manager') {
+        aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
       } else if (act === 'again') {
         el.report.hidden = true; clearMsg();
         goTo(el.start);

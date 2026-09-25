@@ -212,13 +212,35 @@ const GOOD = {
     ok(t2.indexOf('&#39;North 12&#39;') >= 0 && t2.indexOf('[value A]') < 0, 'the value was not put back inside the engine\'s claim: ' + t2);
   });
 
-  check('aiPayload sends exactly the allowed fields', () => {
+  check('aiPayload sends exactly the allowed fields, in the report\'s own order of priority', () => {
     const p = T.aiPayload(REPORT, 'Which region grows?');
     eq(Object.keys(p), ['objective', 'findings', 'story'], 'top keys');
     p.findings.forEach((f) => eq(Object.keys(f), ['id', 'claim', 'verdict', 'value'], 'finding keys'));
     eq(Object.keys(p.story), ['headline', 'what_happened', 'why', 'what_to_do', 'whats_next', 'cannot_answer'], 'story keys');
-    eq(p.findings[1], { id: 'rev.total', claim: REPORT.findings[1].claim, verdict: 'WATCH', value: 1412380.25 }, 'finding copied');
+    eq(p.findings.filter((f) => f.id === 'rev.total')[0], { id: 'rev.total', claim: REPORT.findings[1].claim, verdict: 'WATCH', value: 1412380.25 }, 'finding copied');
     ok(JSON.stringify(p.findings).indexOf('data_quality') < 0 && JSON.stringify(p.findings).indexOf('"why"') < 0, 'a finding\'s kind or why was sent');
+    // the model reads the findings in the order it is sent them (F1, F2...): the business before the file's health
+    eq(p.findings.map((f) => f.id), ['rev.total', 'units.growth_2025', 'health.score'], 'a v1 report: the business findings do not come first');
+    // report v2: the primary claim, then the bottom line's claims in its order, the other business claims, the
+    // ledger's own monitoring counts, and the data-health findings last (the live sample opened with row volume)
+    const f = (id, kind, verdict) => ({ id, claim: 'Claim of ' + id + ' is 1.5.', verdict: verdict || 'WATCH', why: 'x', kind, value: 1.5 });
+    const v2 = { contract_version: 2, primary_metric: { finding_id: 'measure.rent.total.change' },
+      summary: { lines: [{ kind: 'moved', text: 'x', finding_ids: ['measure.rent.total.change', 'measure.rent.like_for_like.change'] }, { kind: 'act', text: 'x', finding_ids: [] },
+        { kind: 'plan', text: 'x', finding_ids: ['forecast.rent.next', 'forecast.rent.next.lo80'] }], monitoring: ['measure.volume.change_pct', 'forecast.monthly_rows.next'] },
+      findings: [f('health.duplicate_rows', 'data_quality', 'RECOMMEND'), f('measure.volume.change_pct', 'business'), f('measure.rent.like_for_like.change', 'business'),
+        f('measure.other.change', 'business'), f('measure.rent.total.change', 'business'), f('forecast.rent.next', 'forecast'), f('forecast.monthly_rows.next', 'forecast'),
+        f('clean.rows_quarantined', 'data_quality')],
+      story: { headline: 'Rent +1.5%, graded WATCH; volume +1.5%, graded WATCH.', what_happened: [], why: [], what_to_do: [], whats_next: [], cannot_answer: [] } };
+    eq(T.aiPayload(v2, '').findings.map((x) => x.id), ['measure.rent.total.change', 'measure.rent.like_for_like.change', 'forecast.rent.next', 'measure.other.change',
+      'measure.volume.change_pct', 'forecast.monthly_rows.next', 'health.duplicate_rows', 'clean.rows_quarantined'], 'a v2 report is not sent in the order of its bottom line');
+    // the story's "why" goes sentence by sentence: its first sentence (what the file covers) is short
+    // enough for an executive summary to give whole, the full line is not (the sample's is 1,044 characters)
+    const why = "Part of the change is in what the file covers, not in the business: in property, 'Pape' first appears in 2024-07; 'Low-Rise' first appears in 2025-03. " +
+      "The monthly total of amount steps up by +87.4% in 2025-03, when 'Low-Rise' first appears: with those steps allowed for, no drift remains. " + 'Row volume steps up by +70.2% in 2025-03. '.repeat(14).trim();
+    const wy = T.aiPayload(Object.assign({}, v2, { story: Object.assign({}, v2.story, { why: [why] }) }), '', true).story.why;
+    eq(wy.slice(0, 2), ["Part of the change is in what the file covers, not in the business: in property, 'Pape' first appears in 2024-07; 'Low-Rise' first appears in 2025-03.",
+      "The monthly total of amount steps up by +87.4% in 2025-03, when 'Low-Rise' first appears: with those steps allowed for, no drift remains."], 'the why line is not sent sentence by sentence');
+    ok(wy.length === 16 && wy.every((x) => x.length <= 600 && !/…$/.test(x)), 'the why sentences were cut or dropped: ' + JSON.stringify(wy.map((x) => x.length)));
   });
 
   check('aiPayload fits the proxy\'s limits, cutting only at a word boundary', () => {
@@ -274,7 +296,7 @@ const GOOD = {
       .concat(...p.findings.map((f) => [f.id, f.claim]));
     const leaks = sent.filter(names);
     ok(!leaks.length, 'the payload names a withheld column: ' + JSON.stringify(leaks.slice(0, 3)));
-    eq(p.findings.map((f) => f.id), ['clean.quarantined.amount_numeric_value_is_not_a_number', 'measure.volume.change_pct', 'health.col.email.null_like_pct'], 'the findings kept');
+    eq(p.findings.map((f) => f.id), ['measure.volume.change_pct', 'clean.quarantined.amount_numeric_value_is_not_a_number', 'health.col.email.null_like_pct'], 'the findings kept');
     eq(p.story.what_to_do, ['Fix the 3 rows set aside by amount_numeric.'], 'story lines kept');
     ok(p.story.cannot_answer.length === 1 && p.story.what_happened.length === 1 && p.story.headline === '', 'a line that names no withheld column was dropped, or the headline was sent: ' + JSON.stringify(p.story));
     if (proxy) { const v = proxy.validatePayload(JSON.parse(JSON.stringify(p))); ok(v.ok, 'the proxy would refuse it: ' + v.detail); }

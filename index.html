@@ -418,7 +418,9 @@ ul.deliver li { margin-bottom: 10px; }
 .rp-card h3 { margin: 0 0 4px; }
 .pl-card { border: 1.5px dashed var(--axis); border-radius: 14px; padding: 16px 18px; background: var(--surface); max-width: 860px; }
 .milestones { list-style: none; padding: 0; }
-.milestones li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
+.milestones li { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
+/* the badge keeps its one-line height when the milestone name wraps (review, 25 Sep 2026: 50 to 74 px boxes at 390 px) */
+.milestones .status { flex: none; align-self: flex-start; margin-top: 2px; }
 .status-line { font-size: 15px; max-width: 900px; }
 .ftree { list-style: none; padding: 0; font-size: 13.5px; }
 .ftree li { padding: 2px 0; }
@@ -1029,6 +1031,48 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
   body.print-try .nl2-grade, body.print-try .nl2 svg, body.print-try .nl2-tag, body.print-try .nl2-champ > * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 
+/* ---------- research collaboration (src/sections/10b-collab.html; buttons in the header, hero and Book area) ---------- */
+.collab-door { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0 0; max-width: 620px; font-size: 14.5px; color: var(--body); }
+.collab-door .btn { padding: 9px 18px; font-size: 14.5px; }
+.collab-also { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0 0; font-size: 15px; }
+.collab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.collab-grid > * { min-width: 0; }
+.collab-grid h3 { margin-top: 0; }
+.collab-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.collab-list li { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.collab-list b { display: block; color: var(--ink); }
+.collab-list span { display: block; font-size: 14px; margin-top: 2px; }
+.collab-sec > .wrap > h3 { margin-top: 26px; }
+.collab-rules { padding-left: 20px; max-width: 860px; margin: 0; }
+.collab-rules li { margin: 6px 0; }
+.collab-cta { margin-top: 18px; max-width: 860px; }
+.pl-links { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 860px) {
+  .collab-grid { grid-template-columns: 1fr; gap: 18px; }
+  .collab-door .btn, .collab-also .btn, .collab-cta .btn, .pl-links .btn { min-height: 44px; display: inline-flex; align-items: center; }
+}
+@media print {
+  .collab-door, .collab-also, .collab-cta .btn { display: none !important; }
+  .collab-list li { break-inside: avoid; }
+}
+.pl-status .status { white-space: normal; }
+/* the "Collaborate" link makes the header one link longer again: up to 1000 px the links sit in the
+   menu (as on phones), and up to 1120 px they tighten, so none wraps onto a second line */
+@media (min-width: 861px) and (max-width: 1000px) {
+  .menu-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; font-weight: 650; min-height: 40px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .mb-icon { width: 14px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  .mb-icon::after { content: ""; position: absolute; left: 0; right: 0; top: 2px; border-top: 2px solid currentColor; }
+  .nav-links { display: none; position: absolute; left: 0; right: 0; top: 100%; flex-direction: column; gap: 0; background: var(--surface); border-bottom: 1px solid var(--hairline); padding: 6px 24px 12px; }
+  .nav-links.open { display: flex; }
+  .nav-links a { display: block; padding: 10px 0; font-size: 16px; }
+  .wordmark small { letter-spacing: 0.12em; }
+}
+@media (min-width: 1001px) and (max-width: 1120px) {
+  .nav-links { gap: 12px; }
+  .nav-links a { font-size: 13.5px; }
+  .bar { gap: 12px; }
+}
+
 </style>
 </head>
 <body>
@@ -1046,13 +1090,14 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
         <li><a href="#try">Try it</a></li>
         <li><a href="#powerbi">Power BI</a></li>
         <li><a href="#services">Services</a></li>
+        <li><a href="#collaborate">Collaborate</a></li>
       </ul>
     </nav>
     <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button>
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-25 00:11:53 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">46</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-25 06:04:22 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -1066,6 +1111,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
         <button class="door" type="button" data-door="hiring" aria-pressed="false"><strong>I'm hiring</strong><span>See the engine, the Power BI work and the receipts</span></button>
       </div>
       <ol class="tour" id="tour" hidden aria-live="polite" data-fact-exempt="tour links: section names only"></ol>
+      <p class="collab-door"><a class="btn btn-ghost" href="#collaborate">Research collaboration</a><span>For researchers, labs and data teams.</span></p>
       <p class="try-door"><a href="#try"><span class="td-ic" aria-hidden="true"></span><span><strong>Try it on your own file</strong> Drop a messy CSV and get a checked report like this one, made inside your browser.</span></a></p>
     </div>
     <aside class="brief-card" aria-labelledby="bc-title">
@@ -1089,7 +1135,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
         <span class="t-lab">recorded AI-analyst queries re-run and reproduced (same query, same data)</span>
         <span class="t-src">receipt: replay audit</span></a></li>
       <li><a class="tile" href="#r-tests" title="From data/engine_tests.json, written by build.py --tests">
-        <span class="t-num"><span data-fact="site_build:display.tests_total">777</span></span>
+        <span class="t-num"><span data-fact="site_build:display.tests_total">779</span></span>
         <span class="t-lab">automated engine tests, <span data-fact="site_build:display.tests_state">all green</span> on the recorded run</span>
         <span class="t-src">receipt: test run</span></a></li>
       <li><a class="tile" href="#r-forecast" title="From data/forecast_lab.json, written by build_forecast.py">
@@ -1455,7 +1501,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
       <p class="kicker">Try it on your own file</p>
       <h2 id="try-h">Your messy CSV, through the same engine, inside your browser</h2>
       <p class="lede">Drop a spreadsheet export and the NorthLedger engine from the run above works on it here, on your computer. It cleans the file with stated rules and counts every fix, sets aside the rows it cannot trust and says why, grades each finding (CONFIRMED, WATCH or NOT ENOUGH DATA), backtests a forecast when the file has a date column, and writes the story. You can download the cleaned file and the evidence afterwards.</p>
-      <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs about <span data-fact="site_build:display.try_fc_months">36</span> months of monthly history, and a finding must rest on <span data-fact="site_build:display.try_rec_rows">1,000</span> rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
+      <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs at least <span data-fact="site_build:display.try_fc_months">45</span> months of monthly history, so that the last <span data-fact="site_build:display.try_fc_replay">12</span> can be replayed to test it, and a finding must rest on <span data-fact="site_build:display.try_rec_rows">1,000</span> rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
     </div>
     <div class="try-app" id="try-app">
       <div class="try-q-wrap" id="try-q-wrap" hidden>
@@ -1518,13 +1564,16 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
       <h2 id="pl-h"><span data-fact="pl300-status:project">Power BI project: NYC 311 Service Requests (PL-300 skill areas)</span></h2>
     </div>
     <div class="pl-card">
-      <p class="pl-status"><span class="status s-partial"><span data-fact="pl300-status:status">written, not yet run in Power BI</span></span></p>
+      <p class="pl-status"><span class="status s-partial"><span data-fact="pl300-status:status">dev profile refreshed and reconciled in the Power BI service; full profile, RLS and report pages not yet run</span></span></p>
       <p><strong><span data-fact="pl300-status:authorship">AI-built, owner-directed: the Power Query, model, measures, RLS and report were written by AI (Claude) from a specification Rashadul directed.</span></strong></p>
-      <p><span data-fact="pl300-status:method">The numbers are checked against an independent Python twin with the reconcile CLI. Until Power BI has refreshed the model and the check queries have run, no number from the model is claimed.</span></p>
-      <p><span data-fact="pl300-status:route">It is built for the Power BI service in the browser (Fabric), with the project kept in Git through Fabric Git integration. The workspace is not set up yet.</span></p>
+      <p><span data-fact="pl300-status:method">The numbers are checked against an independent Python twin with the reconcile CLI. On the dev profile every default check matched the twin cell for cell. The full profile has not been refreshed, so no figure from it is claimed.</span></p>
+      <p><span data-fact="pl300-status:route">It runs in the Power BI service in the browser: Fabric Git integration syncs the project from GitHub into a Premium Per User trial workspace, where the dev profile, a sample of the data, has been refreshed.</span></p>
+      <p class="pl-next"><strong><span data-fact="pl300-status:next_step">Next, on the owner&#x27;s side: refresh the full profile and reconcile it, test the RLS roles with Test as role, and review the report pages and add real screenshots.</span></strong></p>
+      <p class="pl-links"><a class="btn btn-ghost btn-sm" href="https://github.com/rashadul122/pl300-nyc311" rel="noopener">The project on GitHub</a> <a class="btn btn-ghost btn-sm" href="https://github.com/rashadul122/pl300-nyc311/releases/tag/data-v1" rel="noopener">The data release (<span data-fact="pl300-status:release.tag">data-v1</span>)</a></p>
+      <p class="note">The repository holds <span data-fact="pl300-status:repo.what">the model, report, check queries, reconcile CLI and specification, and the dev profile&#x27;s check results and reconcile record</span>; the release holds <span data-fact="pl300-status:release.what">the full data extract the model reads, published as a release because it is too large for the repository</span>. Both are public.</p>
       <h3>Milestones</h3>
-      <ul class="milestones"><li><span><span data-fact="pl300-status:milestones.0.name">Data model and Power Query</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.0.state">written, parser-checked</span></span></li><li><span><span data-fact="pl300-status:milestones.1.name">Measures (DAX)</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.1.state">written, not run</span></span></li><li><span><span data-fact="pl300-status:milestones.2.name">Report pages</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.2.state">written, not rendered</span></span></li><li><span><span data-fact="pl300-status:milestones.3.name">Reconcile against the Python twin</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.3.state">not yet run</span></span></li><li><span><span data-fact="pl300-status:milestones.4.name">Publish to web (screenshot or embed)</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.4.state">not yet</span></span></li></ul>
-      <p class="note">No reconcile result has been recorded by the owner yet. This card reads only <a href="data/pl300-status.json">pl300-status.json</a> and claims nothing that has not been run: no number from this model appears until Power BI has refreshed it and the reconciliation against the independent Python twin has passed.</p>
+      <ul class="milestones"><li><span><span data-fact="pl300-status:milestones.0.name">Data model and Power Query</span></span> <span class="status s-built"><span data-fact="pl300-status:milestones.0.state">refreshed, dev profile</span></span></li><li><span><span data-fact="pl300-status:milestones.1.name">Measures (DAX)</span></span> <span class="status s-partial"><span data-fact="pl300-status:milestones.1.state">checked on the dev profile</span></span></li><li><span><span data-fact="pl300-status:milestones.2.name">Project files and full data extract, public on GitHub</span></span> <span class="status s-built"><span data-fact="pl300-status:milestones.2.state">published</span></span></li><li><span><span data-fact="pl300-status:milestones.3.name">Power BI workspace (Premium Per User trial), synced by Fabric Git</span></span> <span class="status s-built"><span data-fact="pl300-status:milestones.3.state">set up</span></span></li><li><span><span data-fact="pl300-status:milestones.4.name">Refresh and reconcile against the Python twin, dev profile</span></span> <span class="status s-built"><span data-fact="pl300-status:milestones.4.state">passed</span></span></li><li><span><span data-fact="pl300-status:milestones.5.name">Refresh and reconcile, full profile</span></span> <span class="status s-public"><span data-fact="pl300-status:milestones.5.state">not yet run</span></span></li><li><span><span data-fact="pl300-status:milestones.6.name">Row-level security, tested with Test as role</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.6.state">not yet run</span></span></li><li><span><span data-fact="pl300-status:milestones.7.name">Report pages reviewed, with real screenshots</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.7.state">not yet</span></span></li><li><span><span data-fact="pl300-status:milestones.8.name">Publish to web (screenshot or embed)</span></span> <span class="status s-roadmap"><span data-fact="pl300-status:milestones.8.state">not yet</span></span></li></ul>
+      <p class="note">The reconcile record is kept in the project itself: <a href="https://github.com/rashadul122/pl300-nyc311/blob/4da5ffbc2e2c9d4aa9ad9f756c08dea1aad4fbea/docs/evidence/refresh-3-dev.md" rel="noopener"><span data-fact="pl300-status:evidence.what">the dev refresh and reconciliation record</span></a>. This page does not copy its figures. This card reads only <a href="data/pl300-status.json">pl300-status.json</a> and claims nothing that has not been run: no figure from this model appears here until the owner records one.</p>
       <p class="note">Data: <a href="https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9" rel="noopener"><span data-fact="pl300-status:data_source.name">NYC 311 Service Requests from 2010 to Present (NYC Open Data)</span></a>.</p>
     </div>
   </div>
@@ -1667,6 +1716,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <p class="lede">One call about your messiest spreadsheet, and you leave with a verdict: what is broken, what can be automated, and what it pays back.</p>
       <div class="contact-live"><a class="btn btn-primary" href="mailto:rashadallislam@gmail.com?subject=Data%20audit%20enquiry&amp;body=What%20do%20you%20want%20to%20know?%0AWhich%20tools%20hold%20your%20data?%0ARough%20row%20count?%0A">Email rashadallislam@gmail.com</a> <button type="button" class="btn btn-ghost" data-copy="rashadallislam@gmail.com">Copy the address</button></div>
       <p class="note">Please don't attach data to a first message. After a short call I send a private upload link.</p>
+      <p class="collab-also"><span>Running a research, open-source or data-team project instead?</span> <a class="btn btn-ghost btn-sm" href="#collaborate">Research collaboration</a></p>
     </div>
     <ol class="next-steps" aria-label="What happens next">
       <li><b>Call</b><span>What you want to know, and which tools hold the data.</span></li>
@@ -1693,6 +1743,47 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   </div>
 </section>
 
+<section class="collab-sec" id="collaborate" aria-labelledby="co-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">Research collaboration</p>
+      <h2 id="co-h">Invite me to a project</h2>
+      <p class="lede">I contribute to research and data projects as an independent analyst. If your project needs careful data work, with a written record of how every number was made, send a short invitation and I will reply with whether and how I can help.</p>
+    </div>
+    <div class="collab-grid">
+      <div>
+        <h3>Who it is for</h3>
+        <ul class="collab-list">
+          <li><b>Researchers and labs</b><span>Data cleaning, analysis and reproducible pipelines for a study, a report or a working paper.</span></li>
+          <li><b>Open-source and data teams</b><span>Data engineering, tests and documentation on shared code and public datasets.</span></li>
+          <li><b>Businesses</b><span>A scoped analysis or forecast, worked alongside your own team, with its method written down.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3>What I contribute</h3>
+        <ul class="collab-list">
+          <li><b>Data engineering and cleaning</b><span>Messy exports turned into tested, documented tables; rows that fail a rule are set aside with the reason, never dropped silently.</span></li>
+          <li><b>Statistical analysis and forecasting</b><span>Tests reported with effect sizes and intervals; forecasts backtested out of sample, with the measured error rate stated beside a simple baseline.</span></li>
+          <li><b>Power BI and dashboards</b><span>Semantic models, measures and reports, reconciled against an independent calculation before a number is claimed.</span></li>
+          <li><b>Automation</b><span>Scripts and pipelines that rebuild a result from its inputs with one command.</span></li>
+        </ul>
+      </div>
+    </div>
+    <h3>How the engine's trust rules apply to shared work</h3>
+    <ul class="collab-rules">
+      <li>Every number is computed by code kept with the project, so anyone on the team can regenerate it.</li>
+      <li>Each claim carries a verdict: a result not yet tested against chance is labelled as such, not reported as a finding.</li>
+      <li>Rows that fail a check are quarantined with the reason and counted, never deleted quietly.</li>
+      <li>Personal data stays withheld unless the question needs it; your data agreement and any ethics approval set the terms.</li>
+      <li>AI-assisted work is labelled as AI-assisted, as it is on this page.</li>
+    </ul>
+    <div class="collab-cta">
+      <div class="contact-live"><a class="btn btn-primary" href="mailto:rashadallislam@gmail.com?subject=Research%20collaboration%20invitation&amp;body=Hello%20Rashadul%2C%0A%0AProject%3A%0ARole%20you%20have%20in%20mind%20for%20me%3A%0ATimeline%3A%0AData%20involved%20%28kind%20and%20size%3B%20please%20do%20not%20attach%20data%20yet%29%3A%0ALinks%20%28project%20page%2C%20repository%2C%20paper%20or%20dataset%29%3A%0A">Invite me to a project</a> <button type="button" class="btn btn-ghost" data-copy="rashadallislam@gmail.com">Copy the address</button></div><p class="note">The button opens an email to rashadallislam@gmail.com with the subject line and a few short prompts filled in: the project, the role, the timeline, the data involved and links. Please don't attach data to a first message.</p>
+      <p class="fnote">No institutional affiliation is claimed or implied: I work as an independent analyst in Toronto. What I can show is on this page, with its <a href="#receipts">receipts</a>.</p>
+    </div>
+  </div>
+</section>
+
 <section class="rc-sec" id="receipts" aria-labelledby="rc-h">
   <div class="wrap">
     <div class="sec-head">
@@ -1711,8 +1802,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-25 00:11:53 UTC</span>; <span data-fact="site_build:display.build_checks_passed">46</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
-          <li>Engine tests: <span data-fact="site_build:display.tests_total">777</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-24 21:10:59 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">82a6be7b4b33</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-25 06:04:22 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-25 05:54:36 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">82a6be7b4b33</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
           <li>Scorecard and analyses: <a href="data/rentsafe_scorecard.json">scorecard</a>, <a href="data/rentsafe_cube.json">cube</a>, <a href="data/rentsafe_meta.json">metadata and data health</a>, analyses <a href="data/rentsafe_analysis_a_points_per_fix.json">A</a>, <a href="data/rentsafe_analysis_b_risk.json">B</a>, <a href="data/rentsafe_analysis_d_archetypes.json">D</a>.</li>
@@ -1742,7 +1833,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   <div class="wrap foot-grid">
     <a class="wordmark" href="#top">NorthLedger Insights<small>Rashadul Islam Roman, Toronto</small></a>
     <p class="fnote">Directed by Rashadul and written by AI (Claude): the PL-300 Power BI project. Generated by the NorthLedger engine (AI-built): the audits, briefs and Power BI export. Written with AI assistance (Hermes Agent with GLM, and Claude): this site, the analyses and the engine. Not investment advice.</p>
-    <p class="fnote"><a href="agent-demo.html">AI analyst replays</a> &middot; <a href="case-study.html">Case study</a> &middot; <a href="#receipts">Receipts</a> &middot; <a href="#top">Back to top</a></p>
+    <p class="fnote"><a href="agent-demo.html">AI analyst replays</a> &middot; <a href="case-study.html">Case study</a> &middot; <a href="#collaborate">Research collaboration</a> &middot; <a href="#receipts">Receipts</a> &middot; <a href="#top">Back to top</a></p>
   </div>
 </footer>
 <div class="tip" id="tip" role="tooltip" hidden></div>
@@ -3294,7 +3385,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
    (one shared block, tools/check_try_guard.js checks the copies match) on each part, and the page
    itself fills every figure and grade from the engine's findings. Each part is judged on its own:
    a part that passes is shown, labelled; a part that does not is named with the reason in plain
-   words (NLTry.partNote). The engine's story stays on screen. */
+   words (NLTry.partNote). The engine's story stays on screen. The findings go in the report's own
+   order of priority (NLTry.aiOrder), which the proxy's prompt follows. In report v2 the offer and the
+   executive summary sit in the manager view, right under the bottom line (#try-ai-m), and the
+   technical summary in the analyst view's summary section, each view saying where the other is. */
 (function () {
   'use strict';
   var U = window.NLU || {}, NL = window.NL || {};
@@ -4182,21 +4276,48 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       return new RegExp('(^|[^A-Za-z0-9_])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9])', 'i').test(t);
     });
   };
+  // The findings in the report's own order of priority, which is the order the model reads them in
+  // (F1, F2...) and the order the proxy's prompt tells it to follow: the primary claim, then the
+  // claims of the bottom line in its order (report v2 summary.lines: what moved and why, what to act
+  // on, the planning number), then the other business claims and forecasts, then the ledger's own
+  // monitoring counts (summary.monitoring), and the file's data-health findings last. Within a group
+  // the engine's order stands. (The live sample's executive summary opened with the row volume.)
+  T.aiOrder = function (rep) {
+    var F = (rep && rep.findings) || [], sm = (rep && rep.summary) || {}, pm = rep && rep.primary_metric && rep.primary_metric.finding_id;
+    var bl = [];
+    (Array.isArray(sm.lines) ? sm.lines : []).forEach(function (l) { ((l && l.finding_ids) || []).forEach(function (id) { if (bl.indexOf(id) < 0) bl.push(id); }); });
+    var mon = Array.isArray(sm.monitoring) ? sm.monitoring : [];
+    var rank = function (f) {
+      if (f.id === pm) return 0;
+      if (bl.indexOf(f.id) >= 0) return 1 + bl.indexOf(f.id) / (bl.length + 1);
+      if (f.kind !== 'business' && f.kind !== 'forecast') return 4;
+      return mon.indexOf(f.id) >= 0 ? 3 : 2;
+    };
+    return F.map(function (f, i) { return [f, i]; }).filter(function (x) { return x[0] && typeof x[0] === 'object'; })
+      .sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (x) { return x[0]; });
+  };
   T.aiPayload = function (rep, objective, keepValues) {
     var red = keepValues ? [] : T.aiRedactions(rep), w = function (x) { return redact(x, red); };
     var terms = T.aiWithheldTerms(rep), named = function (x) { return T.namesWithheld(x, terms); };
     var L = AI_LIMITS, s = rep.story || {}, story = { headline: named(s.headline) ? '' : cut(w(s.headline), L.line) };
-    STORY_KEYS.forEach(function (k) { story[k[0]] = (s[k[0]] || []).filter(function (x) { return !named(x); }).slice(0, L.lines).map(function (x) { return cut(w(x), L.line); }); });
+    // "why" goes sentence by sentence (each its own line): its first sentence says what the file covers,
+    // short enough for an executive summary to give whole; the full line runs past a thousand characters
+    var lines = function (k) {
+      var v = (s[k] || []).filter(function (x) { return !named(x); }).map(w);   // split after the values are swapped: a value may hold a full stop
+      if (k === 'why') v = [].concat.apply([], v.map(function (x) { return x.split(/(?<=[.!?])\s+(?=[A-Z'"‘“(\[])/); })).filter(function (x) { return x.trim(); });
+      return v.slice(0, L.lines).map(function (x) { return cut(x, L.line); });
+    };
+    STORY_KEYS.forEach(function (k) { story[k[0]] = lines(k[0]); });
     var body = {
       objective: cut(objective, L.objective),
-      findings: (rep.findings || []).filter(function (f) { return f && typeof f.id === 'string' && f.id && f.id.length <= L.id && VERDICTS.indexOf(f.verdict) >= 0 && !named(f.id) && !named(f.claim); })
+      findings: T.aiOrder(rep).filter(function (f) { return typeof f.id === 'string' && f.id && f.id.length <= L.id && VERDICTS.indexOf(f.verdict) >= 0 && !named(f.id) && !named(f.claim); })
         .slice(0, L.findings).map(function (f) {
           return { id: f.id, claim: cut(w(f.claim), L.claim), verdict: f.verdict, value: (typeof f.value === 'number' && isFinite(f.value)) ? f.value : null };
         }),
       story: story
     };
     var size = function () { return new TextEncoder().encode(JSON.stringify(body)).length; };
-    while (size() > L.bytes && body.findings.length) body.findings.pop();          // the least certain go first
+    while (size() > L.bytes && body.findings.length) body.findings.pop();          // the lowest in priority go first
     STORY_KEYS.slice().reverse().forEach(function (k) { while (size() > L.bytes && story[k[0]].length) story[k[0]].pop(); });
     return body;
   };
@@ -4832,7 +4953,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     function drawReport2(r) {
       var gated = T.gateTripped(r);
       el.report.innerHTML = headHtml(r, false, !gated) + (gated ? gateCard(r) : '') +
-        window.NL2.html(r, { story: '<article class="tr-card tr-story" id="try-story"></article>', rolesPriv: privRolesHtml(r, gated), cleaning: cleaningHtml(r) }) + tailHtml(r);
+        window.NL2.html(r, { story: '<article class="tr-card tr-story" id="try-story"></article>', rolesPriv: privRolesHtml(r, gated), cleaning: cleaningHtml(r),
+          ai: CFG.ai_proxy_url ? '<article class="tr-card nl2-aicard" id="try-ai-m" aria-label="AI summaries"></article>' : '' }) + tailHtml(r);
       drawStory();
       window.NL2.mount(el.report.querySelector('.nl2'), r);
     }
@@ -4925,40 +5047,78 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       });
       return parts.length ? parts.join('') : '<p class="muted">The engine wrote no story sections for this file.</p>';
     }
+    // the AI summaries: a label, the caveat, and one part (shown, or set aside with its reason)
+    var AI_LABEL = 'AI-reworded summaries (DeepSeek); every figure and grade put in by the engine';
+    function aiLabel() { return '<p class="tr-ai-label">' + esc(AI_LABEL) + '</p>'; }
+    function aiLimit(where) {
+      return '<p class="tr-ai-limit">The model wrote only the words. Each figure, grade and quoted value ' + (where === 'above' ? 'below' : 'here') + ' was filled in by this page from the engine\'s findings, and a summary that wrote a number, a grade, a cause, size or confidence wording of its own, used words its finding does not use, or set a figure or a grade beside another finding\'s words, was refused. The check cannot prove that a sentence means what the finding means: the findings and the story ' + where + ' are the record. Grades use the evidence names: CONFIRMED is the engine\'s RECOMMEND, NOT ENOUGH DATA its INSUFFICIENT.</p>';
+    }
+    function aiPart(part, where) {
+      // a part that did not pass is named, with the reason in plain words; its text is never shown
+      if (S.ai.chk[part] === null) return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><p class="tr-ai-aside note" role="status" data-aside="' + part + '">' +
+        esc(T.partNote(S.ai.chk, part)) + ' The engine\'s findings and story ' + where + ' are the record.</p>';
+      return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai.chk[part], S.ai.body, part, S.aiRed) + '</div>';
+    }
+    // the offer: what is sent, the consent and the button (drawn where the visitor acts). In the manager
+    // view (inCard) it is short, under the bottom line: the essentials in one paragraph, the list of
+    // placeholders, the preview and the fine print one click away, and the consent and button in view.
+    function aiOffer(r, inCard) {
+      var red = T.aiRedactions(r), payload = JSON.stringify(T.aiPayload(r, S.objective, S.aiRaw), null, 2), MAXL = 12;
+      var swap = red.length ? '<div class="tr-ai-swap"><p>' + (S.aiRaw ? 'You chose to send these as they are:' : 'These are sent as placeholders; the summaries are shown here with them put back, in this browser only:') + '</p><ul>' +
+        red.slice(0, MAXL).map(function (x) { return '<li>' + esc(x.label) + ' <code>' + esc(x.value) + '</code>' + (S.aiRaw ? '' : ' as <code>' + esc(x.placeholder) + '</code>') + '</li>'; }).join('') +
+        (red.length > MAXL ? '<li>and ' + num(red.length - MAXL, 0) + ' more, listed in the preview</li>' : '') + '</ul>' +
+        '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-raw"' + (S.aiRaw ? ' checked' : '') + '> Send them as they are instead</label></div>' : '';
+      var scan = '<p class="note">The personal-data scan reads column names and the shape of values, so a name under a neutral heading can be missed: read the preview before you agree. DeepSeek is run from China and handles what it receives under its own privacy policy, published on deepseek.com.</p>';
+      var preview = '<details class="more"><summary>Exactly what is sent</summary><pre class="snip" id="try-ai-preview">' + esc(payload) + '</pre></details>';
+      var rule = '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and this page says which one and why. Each summary is judged on its own: one that passes is shown even when the other is set aside, and the engine\'s story always stays.</p>';
+      var go = '<div class="tr-ai-go"><button type="button" class="btn btn-ghost" id="try-ai-go" disabled>Write the AI summaries</button><span class="note" id="try-ai-status" role="status"></span></div>';
+      var what = (S.objective ? 'your question exactly as you typed it, ' : '') + 'each finding\'s id, claim, verdict and value, and the engine\'s story';
+      if (inCard) {
+        return '<div class="tr-ai" style="margin-top:0;padding-top:0;border-top:0"><h4>Optional: AI summaries of this report</h4>' +
+          '<p>An AI model (DeepSeek, run from China), through the site owner\'s proxy, can word this report as a short executive summary, shown here, and a technical summary, shown in the Analyst view. It writes only the words: every figure and grade is put in by this page from the engine\'s findings. It receives ' + what +
+          ', which name your column headings; never your rows or your file' + (red.length && !S.aiRaw ? ', and the values quoted from your data go as placeholders' : '') + '.</p>' +
+          '<details class="more tr-ai-fine"><summary>What is sent, and where it goes: read before you agree</summary>' +
+            '<p>It receives exactly what “Exactly what is sent” shows, and nothing else. The proxy adds its instructions and a list of markers for the figures in that text.</p>' + swap + scan + preview + rule + '</details>' +
+          '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send what “What is sent” lists to the AI model</label>' + go + '</div>';
+      }
+      return '<div class="tr-ai"><h4>Optional: AI summaries</h4>' +
+        '<p>An AI model (DeepSeek), through the site owner\'s proxy, can write a short executive summary and a technical summary of these findings. It receives exactly what “Exactly what is sent” shows, and nothing else: ' +
+        what + '. Those name your column headings; your rows and your file are not sent. The proxy adds its instructions and a list of markers for the figures in that text.</p>' +
+        swap + scan + preview + '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send the data above to the AI model</label>' + go + rule + '</div>';
+    }
+    // report v2: the AI summaries are asked for and read in the manager view, right under the bottom line
+    // (#try-ai-m): the executive summary there, the technical one in the analyst view's summary section
+    // (#try-story), each view saying where the other part is. v1 keeps both under the engine's story.
+    function drawAIManager(host) {
+      var h = '';
+      if (S.aiNote) h += '<p class="tr-ai-fallback" role="status">' + esc(S.aiNote) + '</p>';
+      if (S.ai) {
+        var techShown = S.ai.chk.technical !== null;
+        h += '<div class="tr-ai-sum" role="region" aria-label="AI executive summary"><p class="tr-ai-label">' + esc(AI_LABEL) + '</p>' + aiPart('executive', 'in this report') +
+          '<p class="note tr-ai-more">' + (techShown ? 'The technical summary is in the Analyst view, in its first section.' : esc(T.partNote(S.ai.chk, 'technical')) + ' The Analyst view says so too.') +
+          ' <button type="button" class="btn btn-ghost btn-sm" data-act="ai-analyst">' + (techShown ? 'Read the technical summary' : 'Open the Analyst view') + '</button></p>' +
+          aiLimit('in this report') + '</div>';
+      } else h += aiOffer(S.report, true);
+      host.innerHTML = h;
+    }
     function drawStory() {
       var box = document.getElementById('try-story');
       if (!box) return;
-      var r = S.report, gated = T.gateTripped(r), h = '<div class="tr-story-head"><h3>The story</h3></div>';
-      if (S.aiNote) h += '<p class="tr-ai-fallback" role="status">' + esc(S.aiNote) + '</p>';
+      var r = S.report, gated = T.gateTripped(r), mgr = document.getElementById('try-ai-m'), h = '<div class="tr-story-head"><h3>The story</h3></div>';
+      if (S.aiNote && !mgr) h += '<p class="tr-ai-fallback" role="status">' + esc(S.aiNote) + '</p>';
       // the engine's story is the record and always stays; AI summaries are shown under it, labelled
       h += '<p class="tr-ai-label tr-engine-label">Written by the engine from its checked facts</p>' + (gated ? '' : '<p class="tr-lead">' + esc(r.story.headline) + '</p>') + '<div class="tr-sgrid">' + storyBody(r.story) + '</div>';
-      if (S.ai) {
-        h += '<div class="tr-ai-sum" role="region" aria-label="AI summaries">' +
-          '<p class="tr-ai-label">AI-reworded summaries (DeepSeek); every figure and grade put in by the engine</p>' +
-          '<p class="tr-ai-limit">The model wrote only the words. Each figure, grade and quoted value below was filled in by this page from the engine\'s findings, and a summary that wrote a number, a grade, a cause, size or confidence wording of its own, used words its finding does not use, or set a figure or a grade beside another finding\'s words, was refused. The check cannot prove that a sentence means what the finding means: the findings and the story above are the record. Grades use the evidence names: CONFIRMED is the engine\'s RECOMMEND, NOT ENOUGH DATA its INSUFFICIENT.</p>' +
-          T.SUMMARY_PARTS.map(function (part) {
-            // a part that did not pass is named, with the reason in plain words; its text is never shown
-            if (S.ai.chk[part] === null) return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><p class="tr-ai-aside note" role="status" data-aside="' + part + '">' +
-              esc(T.partNote(S.ai.chk, part)) + ' The engine\'s findings and story above are the record.</p>';
-            return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai.chk[part], S.ai.body, part, S.aiRed) + '</div>';
-          }).join('') + '</div>';
-      }
-      if (CFG.ai_proxy_url && !S.ai) {
-        var red = T.aiRedactions(r), payload = JSON.stringify(T.aiPayload(r, S.objective, S.aiRaw), null, 2), MAXL = 12;
-        h += '<div class="tr-ai"><h4>Optional: AI summaries</h4>' +
-          '<p>An AI model (DeepSeek), through the site owner\'s proxy, can write a short executive summary and a technical summary of these findings. It receives exactly what “Exactly what is sent” shows, and nothing else: ' +
-          (S.objective ? 'your question exactly as you typed it, ' : '') + 'each finding\'s id, claim, verdict and value, and the engine\'s story. Those name your column headings; your rows and your file are not sent. The proxy adds its instructions and a list of markers for the figures in that text.</p>' +
-          (red.length ? '<div class="tr-ai-swap"><p>' + (S.aiRaw ? 'You chose to send these as they are:' : 'These are sent as placeholders; the summaries are shown here with them put back, in this browser only:') + '</p><ul>' +
-            red.slice(0, MAXL).map(function (x) { return '<li>' + esc(x.label) + ' <code>' + esc(x.value) + '</code>' + (S.aiRaw ? '' : ' as <code>' + esc(x.placeholder) + '</code>') + '</li>'; }).join('') +
-            (red.length > MAXL ? '<li>and ' + num(red.length - MAXL, 0) + ' more, listed in the preview</li>' : '') + '</ul>' +
-            '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-raw"' + (S.aiRaw ? ' checked' : '') + '> Send them as they are instead</label></div>' : '') +
-          '<p class="note">The personal-data scan reads column names and the shape of values, so a name under a neutral heading can be missed: read the preview before you agree. DeepSeek is run from China and handles what it receives under its own privacy policy, published on deepseek.com.</p>' +
-          '<details class="more"><summary>Exactly what is sent</summary><pre class="snip" id="try-ai-preview">' + esc(payload) + '</pre></details>' +
-          '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send the data above to the AI model</label>' +
-          '<div class="tr-ai-go"><button type="button" class="btn btn-ghost" id="try-ai-go" disabled>Write the AI summaries</button><span class="note" id="try-ai-status" role="status"></span></div>' +
-          '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and this page says which one and why. Each summary is judged on its own: one that passes is shown even when the other is set aside, and the engine\'s story always stays.</p></div>';
-      }
+      if (S.ai && mgr) {
+        h += '<div class="tr-ai-sum" role="region" aria-label="AI technical summary">' + aiLabel() + aiLimit('above') + aiPart('technical', 'above') +
+          '<p class="note">The AI executive summary is in the Manager view, under the bottom line.</p></div>';
+      } else if (S.ai) {
+        h += '<div class="tr-ai-sum" role="region" aria-label="AI summaries">' + aiLabel() + aiLimit('above') +
+          T.SUMMARY_PARTS.map(function (part) { return aiPart(part, 'above'); }).join('') + '</div>';
+      } else if (CFG.ai_proxy_url && mgr) {
+        h += '<p class="note tr-ai-where">Optional AI summaries of this report are offered in the Manager view, under the bottom line. <button type="button" class="btn btn-ghost btn-sm" data-act="ai-manager">Go to the offer</button></p>';
+      } else if (CFG.ai_proxy_url) h += aiOffer(r, false);
       box.innerHTML = h;
+      if (mgr) drawAIManager(mgr);
       var ok = document.getElementById('try-ai-ok'), go = document.getElementById('try-ai-go'), raw = document.getElementById('try-ai-raw');
       if (ok && go) {
         ok.addEventListener('change', function () { go.disabled = !ok.checked; });
@@ -4966,10 +5126,19 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       }
       if (raw) raw.addEventListener('change', function () {
         S.aiRaw = raw.checked;
+        var fold = raw.closest('details'), open = !!(fold && fold.open);   // the manager view keeps it in the fine print
         drawStory();
         var again = document.getElementById('try-ai-raw');
+        if (again && open && again.closest('details')) again.closest('details').open = true;
         if (again) again.focus();
       });
+    }
+    // from one view to the other part of the AI summaries (report v2)
+    function aiSwitch(view) {
+      var tab = document.getElementById(view === 'analyst' ? 'nl2-tab-a' : 'nl2-tab-m');
+      if (tab) tab.click();
+      var to = view === 'analyst' ? (document.querySelector('#try-story .tr-ai-sum') || document.getElementById('nl2-s-summary')) : document.getElementById('try-ai-m');
+      if (to) { to.setAttribute('tabindex', '-1'); goTo(to, true); }
     }
     function askAI(go) {
       var st = document.getElementById('try-ai-status');
@@ -4997,6 +5166,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             S.ai = null;
           } else { S.ai = { chk: chk, body: body }; S.aiRed = red; S.aiNote = ''; }
           drawStory();
+          // the summary appears where the button was: move the reader's focus there, not the page
+          var sum = document.querySelector('#try-ai-m .tr-ai-sum');
+          if (sum) { sum.setAttribute('tabindex', '-1'); try { sum.focus({ preventScroll: true }); } catch (e3) { sum.focus(); } }
         })
         .catch(function (e) {
           clearTimeout(timer);
@@ -5018,6 +5190,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     function printReport() {
       var undo = [], v2 = el.report.querySelector('.nl2');
       if (v2 && window.NL2) undo.push(window.NL2.preparePrint(v2));
+      var aiCard = document.getElementById('try-ai-m');
+      if (aiCard && !S.ai && !aiCard.hidden) { aiCard.hidden = true; undo.push(function () { aiCard.hidden = false; }); }
       Array.prototype.forEach.call(el.report.querySelectorAll('.tr-flist li[hidden]'), function (li) { li.hidden = false; undo.push(function () { li.hidden = true; }); });
       Array.prototype.forEach.call(el.report.querySelectorAll('details:not([open])'), function (d) { d.open = true; undo.push(function () { d.open = false; }); });
       var done = false, restore = function () {
@@ -5047,6 +5221,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
       } else if (act === 'print') {
         printReport();
+      } else if (act === 'ai-analyst' || act === 'ai-manager') {
+        aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
       } else if (act === 'again') {
         el.report.hidden = true; clearMsg();
         goTo(el.start);
@@ -6090,6 +6266,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var h = '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
+    // the optional AI summaries (50-try.js) sit right under the bottom line, where the visitor reads and asks
+    h += (parts && parts.ai) || '';
     if (K) h += '<div class="nl2-kpis" data-chart="kpi" data-findings="' + esc(K.finding_ids.join(' ')) + '" role="list" aria-label="' + esc(K.title) + '">' + tiles(r, K).replace(/<div class="nl2-tile"/g, '<div role="listitem" class="nl2-tile"') + '</div>';
     h += '<article class="tr-card nl2-trustcard"><p class="nl2-trust-line"><b>Can I trust it?</b> ' + esc(trustLine(r)) + '</p>' +
       '<details class="nl2-trust-more"><summary>How much to trust it, layer by layer</summary><ul class="nl2-trust">' + trustLayers(r).map(function (x) { return '<li data-layer="' + x[0] + '">' + x[1] + '</li>'; }).join('') + '</ul></details></article>';
@@ -6276,7 +6454,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   }
 
   /* ------------------------------------------------------------ the page */
-  // parts: { story, rolesPriv, cleaning } HTML the demo page already writes for v1 (50-try.js)
+  // parts: { story, rolesPriv, cleaning } HTML the demo page already writes for v1 (50-try.js), and ai: the
+  // manager view's AI summaries card ('' when the page offers none)
   N.html = function (r, parts) {
     var CH = chartMap(r);
     return '<div class="nl2" data-contract="2">' +

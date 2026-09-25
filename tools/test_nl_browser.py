@@ -908,10 +908,60 @@ def test_business_findings_come_first_within_each_verdict():
 def test_pack_states_the_engine_thresholds_the_page_quotes():
     with open(os.path.join(SITE, "engine", "pack.json"), encoding="utf-8") as fh:
         pack = json.load(fh)
-    from northledger.forecast import ForecastPolicy
+    from northledger.forecast import ForecastPolicy, min_history_months
     from northledger.gate import GatePolicy
     assert pack.get("thresholds") == {"forecast_min_history_months": ForecastPolicy().min_history_months,
+                                      "forecast_min_checkable_months": min_history_months(),
+                                      "forecast_replay_months": ForecastPolicy().min_holdout,
                                       "recommend_min_rows": GatePolicy().min_rows_recommend}, pack.get("thresholds")
+
+
+def _monthly_sales(months: int, lift_at=(), seed: int = 7) -> bytes:
+    """`months` whole months of about 300 sales a month, ending Aug 2026 (the month before
+    V2_AS_OF), flat apart from a 18% lift in the months at `lift_at` (counted from the start)."""
+    import random as _random
+    rng = _random.Random(seed)
+    rows = []
+    for k in range(months):
+        idx = 2026 * 12 + 7 - (months - 1) + k           # month index, Aug 2026 last
+        y, m = idx // 12, idx % 12 + 1
+        lift = 1.18 if k in lift_at else 1.0
+        for _ in range(int(round(300 * math.exp(rng.gauss(0, 0.02))))):
+            rows.append(["%04d-%02d-%02d" % (y, m, rng.randint(1, 28)), rng.choice(["King St", "Queen St"]),
+                         "%.2f" % (24.0 * lift * rng.uniform(0.7, 1.3))])
+    return _csv(rows, ["sold_on", "shop", "net_sales"])
+
+
+def test_v2_the_page_promises_the_months_a_forecast_really_needs():
+    """Review, 25 Sep 2026: the page said a forecast needs about 36 months, and a 38-month file got
+    none (only 5 months could be replayed). The page now quotes forecast.min_history_months(): the
+    training months, the errors a first range needs and the 12 replayed months. One month short of
+    it the engine declines for the replay; at it, the replay is long enough."""
+    from northledger.forecast import min_history_months
+    need = min_history_months()
+    short = _run(_monthly_sales(need - 1), "short.csv", "", None, V2_AS_OF)
+    enough = _run(_monthly_sales(need), "enough.csv", "", None, V2_AS_OF)
+    f_short = _find(short, "forecast.total_net_sales.next")
+    f_enough = _find(enough, "forecast.total_net_sales.next")
+    assert f_short["grade"] == "NOT_ENOUGH_DATA" and "replayed over" in (f_short.get("why") or ""), f_short.get("why")
+    assert "replayed over" not in (f_enough.get("why") or "") and "months of history" not in (f_enough.get("why") or ""), \
+        f_enough.get("why")
+    with open(os.path.join(SITE, "index.html"), encoding="utf-8") as fh:
+        page = re.sub(r"<[^>]+>", "", fh.read())
+    m = re.search(r"a forecast needs at least ([\d,]+) months of monthly history", page)
+    assert m and int(m.group(1).replace(",", "")) == need, (m and m.group(0), need)
+
+
+def test_v2_a_peak_in_the_bottom_line_says_it_was_found_by_looking():
+    """Review, 25 Sep 2026: a flat cafe file's Manager bottom line said 'it peaked in the 3 months
+    to Jan 2026 and is down 10.6% since' with no label, while the Analyst view called the same
+    figure a description found by looking. The Manager line carries the same qualifier."""
+    rep = _run(_monthly_sales(38, lift_at=range(26, 30)), "peak.csv", "", None, V2_AS_OF)
+    moved = [l for l in rep["summary"]["lines"] if l["kind"] == "moved"]
+    assert moved, rep["summary"]["lines"]
+    t = moved[0]["text"]
+    assert "measure.net_sales.total.from_peak" in moved[0]["finding_ids"] and "peaked in the 3 months to" in t, t
+    assert "found by looking, not a tested change" in t, t
 
 
 # ======================================================================== contract v2

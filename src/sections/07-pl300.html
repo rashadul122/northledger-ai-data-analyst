@@ -9,9 +9,12 @@
       <p><strong>{{f pl300-status:authorship}}</strong></p>
       <p>{{f pl300-status:method}}</p>
       <p>{{f pl300-status:route}}</p>
+      <p class="pl-next"><strong>{{f pl300-status:next_step}}</strong></p>
+      <p class="pl-links"><a class="btn btn-ghost btn-sm" href="{{r pl_repo_url}}" rel="noopener">The project on GitHub</a> <a class="btn btn-ghost btn-sm" href="{{r pl_release_url}}" rel="noopener">The data release ({{f pl300-status:release.tag}})</a></p>
+      <p class="note">The repository holds {{f pl300-status:repo.what}}; the release holds {{f pl300-status:release.what}}. Both are public.</p>
       <h3>Milestones</h3>
       <ul class="milestones">{{r pl_milestones}}</ul>
-      <p class="note">{{r pl_reconcile}} This card reads only <a href="data/pl300-status.json">pl300-status.json</a> and claims nothing that has not been run: no number from this model appears until Power BI has refreshed it and the reconciliation against the independent Python twin has passed.</p>
+      <p class="note">{{r pl_reconcile}} This card reads only <a href="data/pl300-status.json">pl300-status.json</a> and claims nothing that has not been run: no figure from this model appears here until the owner records one.</p>
       <p class="note">Data: <a href="{{r pl_url}}" rel="noopener">{{f pl300-status:data_source.name}}</a>.</p>
     </div>
   </div>

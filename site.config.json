@@ -36,6 +36,18 @@
       "pitch": "The system keeps working: monitoring, monthly summaries, forecast refreshes, one deep-dive analysis a month (like the gallery cards on this page), and small enhancements as the business changes."
     }
   ],
+  "collaboration": {
+    "_about": "The research collaboration invitation. Its button emails contact_email (above) with this subject, and this greeting and these prompts as the prefilled body. build.py writes the link; tools/check_site.py (collab) and tools/check_ui.js check it. Keep the body short.",
+    "subject": "Research collaboration invitation",
+    "body_greeting": "Hello Rashadul,",
+    "body_prompts": [
+      "Project:",
+      "Role you have in mind for me:",
+      "Timeline:",
+      "Data involved (kind and size; please do not attach data yet):",
+      "Links (project page, repository, paper or dataset):"
+    ]
+  },
   "links": {
     "github_profile": "https://github.com/rashadul122"
   }

@@ -1,7 +1,7 @@
 {
  "schema": "site_build/1",
  "what": "Figures the page shows that are derived from other files (a share turned into a percentage, a count of sessions, a file size). Written by build.py; each key names its source.",
- "built_at": "2026-09-25T00:11:53Z",
+ "built_at": "2026-09-25T06:04:22Z",
  "display": {
   "fixture_lost": "0",
   "fixture_quarantine_pct": "4.0%",
@@ -86,9 +86,9 @@
   "rp2_reports": "PDF",
   "rp2_db": "big_data.db (scale tier)",
   "rp2_id": "s5-rdw-fleet",
-  "tests_total": "777",
+  "tests_total": "779",
   "tests_suites": "54",
-  "tests_ran_at": "2026-09-24 21:10:59 UTC",
+  "tests_ran_at": "2026-09-25 05:54:36 UTC",
   "tests_state": "all green",
   "tests_snapshot": "82a6be7b4b33",
   "engine_now": "82a6be7b4b33",
@@ -305,10 +305,11 @@
   "pbip_mean": "88.9",
   "try_max_mb": "25 MB",
   "try_max_rows": "200,000",
-  "try_fc_months": "36",
+  "try_fc_months": "45",
+  "try_fc_replay": "12",
   "try_rec_rows": "1,000",
-  "build_checks_passed": "46",
-  "built_at_label": "2026-09-25 00:11:53 UTC"
+  "build_checks_passed": "47",
+  "built_at_label": "2026-09-25 06:04:22 UTC"
  },
  "derived_from": {
   "fixture_lost": "engine_scorecard fixture.rows - after.clean - after.quarantined",
@@ -613,7 +614,8 @@
   "pbip_mean": "mean current_score over the exported PBIP data/clean.csv",
   "try_max_mb": "TRY_MAX_BYTES / TRY_MAX_ROWS in build.py, the limits src/js/50-try.js enforces (window.NL.try)",
   "try_max_rows": "TRY_MAX_BYTES / TRY_MAX_ROWS in build.py, the limits src/js/50-try.js enforces (window.NL.try)",
-  "try_fc_months": "engine/pack.json thresholds.forecast_min_history_months, read by tools/pack_engine.py from northledger/forecast.py ForecastPolicy",
+  "try_fc_months": "engine/pack.json thresholds.forecast_min_checkable_months, read by tools/pack_engine.py from northledger/forecast.py DEFAULT_CONFIG (min_train + the errors a first range needs + min_holdout); tools/test_nl_browser.py checks it equals forecast.min_history_months()",
+  "try_fc_replay": "engine/pack.json thresholds.forecast_replay_months, read by tools/pack_engine.py from northledger/forecast.py ForecastPolicy.min_holdout",
   "try_rec_rows": "engine/pack.json thresholds.recommend_min_rows, read by tools/pack_engine.py from northledger/gate.py GatePolicy",
   "build_checks_passed": "count of build.py checks, every one of which must pass",
   "built_at_label": "clock at build time"
@@ -810,6 +812,11 @@
    "detail": ""
   },
   {
+   "check": "site.config.json collaboration block: the invitation's subject and a short prefilled body",
+   "ok": true,
+   "detail": ""
+  },
+  {
    "check": "site.config.json ai_proxy_url is empty (no AI option on the page) or a real https address",
    "ok": true,
    "detail": "set: the AI wording option is offered"
@@ -832,7 +839,7 @@
   {
    "check": "engine/pack.json states the engine's forecast and RECOMMEND thresholds the demo quotes",
    "ok": true,
-   "detail": "{\"forecast_min_history_months\": 36, \"recommend_min_rows\": 1000}"
+   "detail": "{\"forecast_min_history_months\": 36, \"forecast_min_checkable_months\": 45, \"forecast_replay_months\": 12, \"recommend_min_rows\": 1000}"
   },
   {
    "check": "no internal plan code or Markdown backtick in reader-facing text (index.html, case-study.html)",
@@ -847,7 +854,7 @@
   {
    "check": "every bound figure on index.html and case-study.html equals its JSON",
    "ok": true,
-   "detail": "1508 bound figure(s) checked against 15 JSON source(s)"
+   "detail": "1522 bound figure(s) checked against 15 JSON source(s)"
   }
  ],
  "contrast": [

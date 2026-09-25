@@ -418,7 +418,9 @@ ul.deliver li { margin-bottom: 10px; }
 .rp-card h3 { margin: 0 0 4px; }
 .pl-card { border: 1.5px dashed var(--axis); border-radius: 14px; padding: 16px 18px; background: var(--surface); max-width: 860px; }
 .milestones { list-style: none; padding: 0; }
-.milestones li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
+.milestones li { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
+/* the badge keeps its one-line height when the milestone name wraps (review, 25 Sep 2026: 50 to 74 px boxes at 390 px) */
+.milestones .status { flex: none; align-self: flex-start; margin-top: 2px; }
 .status-line { font-size: 15px; max-width: 900px; }
 .ftree { list-style: none; padding: 0; font-size: 13.5px; }
 .ftree li { padding: 2px 0; }
@@ -1029,6 +1031,48 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
   body.print-try .nl2-grade, body.print-try .nl2 svg, body.print-try .nl2-tag, body.print-try .nl2-champ > * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 
+/* ---------- research collaboration (src/sections/10b-collab.html; buttons in the header, hero and Book area) ---------- */
+.collab-door { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0 0; max-width: 620px; font-size: 14.5px; color: var(--body); }
+.collab-door .btn { padding: 9px 18px; font-size: 14.5px; }
+.collab-also { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0 0; font-size: 15px; }
+.collab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.collab-grid > * { min-width: 0; }
+.collab-grid h3 { margin-top: 0; }
+.collab-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.collab-list li { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.collab-list b { display: block; color: var(--ink); }
+.collab-list span { display: block; font-size: 14px; margin-top: 2px; }
+.collab-sec > .wrap > h3 { margin-top: 26px; }
+.collab-rules { padding-left: 20px; max-width: 860px; margin: 0; }
+.collab-rules li { margin: 6px 0; }
+.collab-cta { margin-top: 18px; max-width: 860px; }
+.pl-links { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 860px) {
+  .collab-grid { grid-template-columns: 1fr; gap: 18px; }
+  .collab-door .btn, .collab-also .btn, .collab-cta .btn, .pl-links .btn { min-height: 44px; display: inline-flex; align-items: center; }
+}
+@media print {
+  .collab-door, .collab-also, .collab-cta .btn { display: none !important; }
+  .collab-list li { break-inside: avoid; }
+}
+.pl-status .status { white-space: normal; }
+/* the "Collaborate" link makes the header one link longer again: up to 1000 px the links sit in the
+   menu (as on phones), and up to 1120 px they tighten, so none wraps onto a second line */
+@media (min-width: 861px) and (max-width: 1000px) {
+  .menu-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; font-weight: 650; min-height: 40px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .mb-icon { width: 14px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  .mb-icon::after { content: ""; position: absolute; left: 0; right: 0; top: 2px; border-top: 2px solid currentColor; }
+  .nav-links { display: none; position: absolute; left: 0; right: 0; top: 100%; flex-direction: column; gap: 0; background: var(--surface); border-bottom: 1px solid var(--hairline); padding: 6px 24px 12px; }
+  .nav-links.open { display: flex; }
+  .nav-links a { display: block; padding: 10px 0; font-size: 16px; }
+  .wordmark small { letter-spacing: 0.12em; }
+}
+@media (min-width: 1001px) and (max-width: 1120px) {
+  .nav-links { gap: 12px; }
+  .nav-links a { font-size: 13.5px; }
+  .bar { gap: 12px; }
+}
+
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
 .cs h2 { font-size: 20px; margin: 28px 0 8px; color: var(--ink); }
@@ -1045,7 +1089,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-25 00:11:53 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-25 06:04:22 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

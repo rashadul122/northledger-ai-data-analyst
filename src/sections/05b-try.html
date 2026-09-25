@@ -4,7 +4,7 @@
       <p class="kicker">Try it on your own file</p>
       <h2 id="try-h">Your messy CSV, through the same engine, inside your browser</h2>
       <p class="lede">Drop a spreadsheet export and the NorthLedger engine from the run above works on it here, on your computer. It cleans the file with stated rules and counts every fix, sets aside the rows it cannot trust and says why, grades each finding (CONFIRMED, WATCH or NOT ENOUGH DATA), backtests a forecast when the file has a date column, and writes the story. You can download the cleaned file and the evidence afterwards.</p>
-      <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs about {{d try_fc_months}} months of monthly history, and a finding must rest on {{d try_rec_rows}} rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
+      <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs at least {{d try_fc_months}} months of monthly history, so that the last {{d try_fc_replay}} can be replayed to test it, and a finding must rest on {{d try_rec_rows}} rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
     </div>
     <div class="try-app" id="try-app">
       <div class="try-q-wrap" id="try-q-wrap" hidden>

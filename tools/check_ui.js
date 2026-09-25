@@ -595,6 +595,182 @@ check('phone-touch-targets-44px', PHONE, async (ctx) => {
   ok(!r.length, r.length + ' controls under 44 px tall: ' + r.slice(0, 5).join('; '));
 }, { mobile: true });
 
+/* ------------------------------------------------------------ research collaboration
+   A button in the header (nav, or the phone menu), right below the hero doors and in the Book/About
+   area; each leads to #collaborate, whose primary button emails site.config.json contact_email with the
+   subject "Research collaboration invitation" (owner's request, 24 Sep 2026). */
+const COLLAB_SUBJECT = 'Research collaboration invitation';
+function siteConfig() { return JSON.parse(fs.readFileSync(path.join(path.dirname(path.resolve(pageArg)), 'site.config.json'), 'utf8')); }
+async function collabReach(p) {
+  // what a reader can see and press: each button's box, and whether it is the top element at its centre
+  return p.evaluate(() => {
+    const one = (sel) => {
+      const e = Array.from(document.querySelectorAll(sel)).find((x) => x.getBoundingClientRect().width > 0);
+      if (!e) return { found: false };
+      e.scrollIntoView({ block: 'center', behavior: 'instant' });
+      const W = document.documentElement.clientWidth, b = e.getBoundingClientRect(), top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { found: true, name: e.textContent.replace(/\s+/g, ' ').trim(), left: b.left, right: b.right, W, onTop: !!top && (top === e || e.contains(top)) };
+    };
+    const l = document.getElementById('nav-links');
+    return { hero: one('#top a[href="#collaborate"]'), book: one('#book a[href="#collaborate"], #about a[href="#collaborate"]'),
+      navShown: !!l && getComputedStyle(l).display !== 'none' };
+  });
+}
+check('collab-button-on-every-width', DESK, async (ctx) => {
+  const p = await open(ctx);
+  const bad = [];
+  for (const w of [320, 360, 375, 390, 430, 600, 768, 861, 900, 1024, 1280, 1440]) {
+    await p.setViewportSize({ width: w, height: 800 });
+    await p.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await p.waitForTimeout(60);
+    const r = await collabReach(p);
+    for (const k of ['hero', 'book']) {
+      const x = r[k];
+      if (!x.found) { bad.push(w + ' px: no ' + k + ' button'); continue; }
+      if (!/research collaboration/i.test(x.name)) bad.push(w + ' px: the ' + k + ' button reads "' + x.name + '"');
+      if (x.left < 0 || x.right > x.W + 0.5) bad.push(w + ' px: the ' + k + ' button runs off screen (' + Math.round(x.left) + ' to ' + Math.round(x.right) + ' of ' + x.W + ')');
+      if (!x.onTop) bad.push(w + ' px: the ' + k + ' button is covered');
+    }
+    // the header: the nav link on a wide window, the phone menu's link on a narrow one
+    await p.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await p.waitForTimeout(30);
+    if (!r.navShown) { await p.click('.menu-btn'); await p.waitForTimeout(40); }
+    const h = await p.evaluate(() => {
+      const a = document.querySelector('#topbar a[href="#collaborate"]'); if (!a) return null;
+      const b = a.getBoundingClientRect(), W = document.documentElement.clientWidth, top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      const l = document.getElementById('nav-links'), bar = document.querySelector('.topbar .bar').getBoundingClientRect();
+      return { w: b.width, left: b.left, right: b.right, W, onTop: !!top && (top === a || a.contains(top)), name: a.textContent.trim(),
+        wraps: getComputedStyle(l).position !== 'absolute' && b.bottom > bar.bottom + 0.5 };
+    });
+    if (!h || !h.w) bad.push(w + ' px: no collaboration link in the header' + (r.navShown ? '' : ' menu'));
+    else {
+      if (h.left < 0 || h.right > h.W + 0.5 || !h.onTop) bad.push(w + ' px: the header link is off screen or covered');
+      if (h.wraps) bad.push(w + ' px: the header links wrap below the bar');
+      if (!/collaborat/i.test(h.name)) bad.push(w + ' px: the header link reads "' + h.name + '"');
+    }
+    if (!r.navShown) { await p.keyboard.press('Escape'); await p.waitForTimeout(20); }
+  }
+  ok(!bad.length, bad.length + ' problems: ' + bad.slice(0, 4).join('; '));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the header's links never wrap onto a second line and the wordmark is never cut, at any desktop width
+// (the "Collaborate" link made "Try it" and "Power BI" wrap between 861 and 1056 px, 24 Sep 2026)
+check('header-links-stay-on-one-line', DESK, async (ctx) => {
+  const p = await open(ctx);
+  const bad = [];
+  for (let w = 861; w <= 1440; w += 3) {
+    await p.setViewportSize({ width: w, height: 800 });
+    await p.waitForTimeout(15);
+    const r = await p.evaluate(() => {
+      const l = document.getElementById('nav-links'), wm = document.querySelector('.topbar .wordmark');
+      if (getComputedStyle(l).position === 'absolute') return { menu: true, wrapped: [], cut: wm.scrollWidth > wm.clientWidth + 1 };
+      return { wrapped: Array.from(l.querySelectorAll('a')).filter((a) => a.getClientRects().length > 1).map((a) => a.textContent), cut: wm.scrollWidth > wm.clientWidth + 1 };
+    });
+    if (r.wrapped.length) bad.push(w + ' px: ' + r.wrapped.join(', ') + ' wrap');
+    if (r.cut) bad.push(w + ' px: the wordmark is cut');
+  }
+  ok(!bad.length, bad.length + ' widths fail, e.g. ' + bad.slice(0, 4).join('; '));
+});
+
+check('collab-invite-emails-the-owner-with-the-subject', DESK, async (ctx) => {
+  const p = await open(ctx);
+  const email = (siteConfig().contact_email || '').trim();
+  ok(email, 'site.config.json has no contact_email');
+  ok(await p.$('#top a[href="#collaborate"]'), 'no research collaboration button below the hero doors');
+  await p.click('#top a[href="#collaborate"]');
+  await p.waitForTimeout(150);
+  const r = await p.evaluate(() => {
+    const s = document.getElementById('collaborate'), b = s.getBoundingClientRect();
+    const inv = Array.from(s.querySelectorAll('a.btn-primary')).find((a) => /invite me to a project/i.test(a.textContent));
+    return { top: b.top, vh: innerHeight, hash: location.hash, href: inv ? inv.getAttribute('href') : null };
+  });
+  ok(r.hash === '#collaborate' && r.top < r.vh * 0.5, 'the hero button does not bring the section into view: ' + JSON.stringify(r));
+  ok(r.href, 'no primary "Invite me to a project" button in the section');
+  const u = new URL(r.href);
+  ok(u.protocol === 'mailto:' && decodeURIComponent(u.pathname) === email, 'the invitation goes to ' + u.pathname + ', not ' + email);
+  ok(u.searchParams.get('subject') === COLLAB_SUBJECT, 'the subject is "' + u.searchParams.get('subject') + '"');
+  const body = (u.searchParams.get('body') || '').toLowerCase();
+  const miss = ['project', 'role', 'timeline', 'data', 'links'].filter((w) => body.indexOf(w) < 0);
+  ok(!miss.length && body.length <= 400, 'the prefilled body misses ' + miss.join(', ') + ' or is long (' + body.length + ' characters)');
+  // keyboard: Tab from the section heading reaches the invitation, with a visible focus ring
+  await p.evaluate(() => { const h = document.querySelector('#collaborate h2'); h.setAttribute('tabindex', '-1'); h.focus(); });
+  let reached = null;
+  for (let i = 0; i < 12 && !reached; i++) {
+    await p.keyboard.press('Tab');
+    reached = await p.evaluate(() => { const a = document.activeElement; return a && /invite me to a project/i.test(a.textContent) ?
+      { outline: getComputedStyle(a).outlineStyle, w: parseFloat(getComputedStyle(a).outlineWidth) } : null; });
+  }
+  ok(reached && reached.outline !== 'none' && reached.w >= 2, 'Tab does not reach the invitation with a visible focus ring: ' + JSON.stringify(reached));
+});
+
+for (const scheme of ['light', 'dark']) {
+  check('collab-section-reads-at-390-in-' + scheme, PHONE, async (ctx) => {
+    await ctx.addInitScript((t) => { try { localStorage.setItem('nl-theme', t); } catch (e) { /* the check below fails */ } }, scheme);
+    const p = await open(ctx);
+    ok(await p.$('#collaborate'), 'no #collaborate section');
+    const r = await p.evaluate(() => {
+      const rgb = (s) => { const m = /rgba?\(([^)]+)\)/.exec(s); if (!m) return null; const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return v.length > 3 && v[3] === 0 ? null : v.slice(0, 3); };
+      const lum = (c) => { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+      const bgOf = (e) => { for (let x = e; x; x = x.parentElement) { const c = rgb(getComputedStyle(x).backgroundColor); if (c) return c; } return rgb(getComputedStyle(document.body).backgroundColor) || [255, 255, 255]; };
+      const s = document.getElementById('collaborate'), W = document.documentElement.clientWidth;
+      let worst = 99, where = '';
+      const small = [], edge = [];
+      s.querySelectorAll('*').forEach((e) => {
+        const own = Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim());
+        const b = e.getBoundingClientRect(); if (!own || !b.width) return;
+        const cs = getComputedStyle(e), a = rgb(cs.color), bg = bgOf(e);
+        if (!a) return;
+        const L1 = lum(a), L2 = lum(bg), cr = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+        if (cr < worst) { worst = cr; where = e.tagName + ' "' + e.textContent.trim().slice(0, 30) + '"'; }
+        if (parseFloat(cs.fontSize) < 12) small.push(e.tagName + ' ' + cs.fontSize);
+        if (b.left < 12 || W - b.right < 12) edge.push(e.tagName + ' "' + e.textContent.trim().slice(0, 20) + '" ' + Math.round(b.left) + '/' + Math.round(W - b.right));
+      });
+      const inv = Array.from(s.querySelectorAll('a.btn-primary')).find((a) => /invite me to a project/i.test(a.textContent));
+      return { theme: document.documentElement.getAttribute('data-theme'), worst: +worst.toFixed(2), where, small, edge, sw: document.documentElement.scrollWidth, W,
+        btnH: inv ? inv.getBoundingClientRect().height : 0 };
+    });
+    ok(r.theme === scheme, 'the page is not in the ' + scheme + ' theme');
+    ok(r.worst >= 4.5, 'text contrast in the collaboration section is ' + r.worst + ':1 at ' + r.where);
+    ok(!r.small.length, 'text under 12 px (the site\'s smallest, its kickers): ' + r.small.slice(0, 3).join('; '));
+    ok(!r.edge.length, 'text touches the screen edge: ' + r.edge.slice(0, 3).join('; '));
+    ok(r.sw <= r.W, 'the page is ' + r.sw + ' px wide in a ' + r.W + ' px window');
+    ok(r.btnH >= 44, 'the invitation button is ' + r.btnH + ' px tall on a phone');
+  }, { mobile: true });
+}
+
+// the PL-300 card: the public repository and its data release, as links a reader can follow
+check('pl300-card-links-the-public-repo-and-release', PHONE, async (ctx) => {
+  const p = await open(ctx);
+  const r = await p.evaluate(() => Array.from(document.querySelectorAll('#pl300 a')).filter((a) => a.getBoundingClientRect().width > 0).map((a) => a.getAttribute('href')));
+  const repo = 'https://github.com/rashadul122/pl300-nyc311';
+  ok(r.indexOf(repo) >= 0, 'the card does not link ' + repo + ': ' + r.join(', '));
+  ok(r.indexOf(repo + '/releases/tag/data-v1') >= 0, 'the card does not link the data-v1 release: ' + r.join(', '));
+  const t = (await p.textContent('#pl300')).replace(/\s+/g, ' ');
+  // the state the public repository records (README, 25 Sep 2026): dev reconciled, the rest not yet run
+  ok(/AI-built, owner-directed/.test(t) && /dev profile/.test(t) && /reconciled/.test(t) && /full profile/.test(t) && /not yet run/.test(t),
+    'the card drops "AI-built, owner-directed" or what the repository records (dev profile reconciled; full profile not yet run)');
+  ok(!/not yet run in Power BI|workspace is not set up|Microsoft work account/i.test(t), 'the card still says what the repository now contradicts: ' +
+    ((/not yet run in Power BI|workspace is not set up|Microsoft work account/i.exec(t) || [''])[0]));
+}, { mobile: true });
+
+// the milestone badges: one line each, never stretched to the height of a wrapped milestone name
+// (review, 25 Sep 2026: 50 to 74 px tall boxes at 390 px, 25 px at 1280)
+for (const w of [320, 360, 390, 1280]) {
+  check('pl300-milestone-badges-stay-one-line-at-' + w, { width: w, height: 844 }, async (ctx) => {
+    const p = await open(ctx);
+    const r = await p.evaluate(() => Array.from(document.querySelectorAll('#pl300 .milestones .status')).map((e) => {
+      const b = e.getBoundingClientRect(), li = e.closest('li').getBoundingClientRect();
+      return { t: e.textContent.trim(), h: Math.round(b.height), right: Math.round(li.right - b.right), inRow: b.top >= li.top - 0.5 && b.bottom <= li.bottom + 0.5 };
+    }));
+    ok(r.length >= 5, 'fewer than five milestone badges: ' + r.length);
+    const tall = r.filter((x) => x.h > 30);
+    ok(!tall.length, 'milestone badges taller than one line: ' + tall.map((x) => x.t + ' ' + x.h + ' px').join('; '));
+    ok(r.every((x) => x.inRow && x.right >= -0.5), 'a milestone badge leaves its row: ' + JSON.stringify(r.filter((x) => !x.inRow || x.right < -0.5)));
+    ok(await p.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'the page scrolls sideways');
+  }, { mobile: w < 768 });
+}
+
 /* ------------------------------------------------------------ the replay page */
 const DEMO = FILE.replace(/index\.html$/, 'agent-demo.html');
 async function openDemo(ctx, hash) {
@@ -1069,14 +1245,15 @@ check('try-report-shows-exactly-the-engine-report-and-no-ai-when-unset', DESK, a
 check('try-ai-summaries-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
   const rep = stubReport();
   let mode = 'invented';
-  // what the model writes: words around slots; the page fills every figure and grade (§6 of the plan)
+  // what the model writes: words around slots; the page fills every figure and grade (§6 of the plan). The page
+  // sends the findings business first, the forecast next, data health last: F1 amount, F2 forecast, F3 and F4 data health
   const good = {
-    executive: "Average amount rose {F1.n1} on the year before, to {F1.n2}; this finding is {F1.grade} [F1]. Exact duplicates account for {F2.n1} of {F2.n2} rows: {F2.grade} [F2]. The most common region is '[value A]', with {F3.n1} of rows: {F3.grade} [F3].",
-    technical: 'The average amount rose {F1.n1} against the prior year, to {F1.n2} (grade {F1.grade}) [F1]. Exact duplicates: {F2.n1} of {F2.n2} rows (grade {F2.grade}) [F2]. The next-month value for monthly rows, {F4.n1}, is graded {F4.grade} [F4].'
+    executive: "Average amount rose {F1.n1} on the year before, to {F1.n2}; this finding is {F1.grade} [F1]. Exact duplicates account for {F3.n1} of {F3.n2} rows: {F3.grade} [F3]. The most common region is '[value A]', with {F4.n1} of rows: {F4.grade} [F4].",
+    technical: 'The average amount rose {F1.n1} against the prior year, to {F1.n2} (grade {F1.grade}) [F1]. Exact duplicates: {F3.n1} of {F3.n2} rows (grade {F3.grade}) [F3]. The next-month value for monthly rows, {F2.n1}, is graded {F2.grade} [F2].'
   };
   const shown = {
-    executive: "Average amount rose 12.5% on the year before, to 1,234.5; this finding is confirmed [F1]. Exact duplicates account for 12 of 1250 rows: keep watching [F2]. The most common region is 'East', with 40% of rows: keep watching [F3].",
-    technical: 'The average amount rose 12.5% against the prior year, to 1,234.5 (grade CONFIRMED) [F1]. Exact duplicates: 12 of 1250 rows (grade WATCH) [F2]. The next-month value for monthly rows, 190, is graded NOT ENOUGH DATA [F4].'
+    executive: "Average amount rose 12.5% on the year before, to 1,234.5; this finding is confirmed [F1]. Exact duplicates account for 12 of 1250 rows: keep watching [F3]. The most common region is 'East', with 40% of rows: keep watching [F4].",
+    technical: 'The average amount rose 12.5% against the prior year, to 1,234.5 (grade CONFIRMED) [F1]. Exact duplicates: 12 of 1250 rows (grade WATCH) [F3]. The next-month value for monthly rows, 190, is graded NOT ENOUGH DATA [F2].'
   };
   const replies = {
     // the old proxy's shape: both parts as text; the page's own guard sets the executive part aside
@@ -1566,6 +1743,59 @@ check('try-v2-bottom-line-is-decision-ready', DESK, async (ctx) => {
   ok(mon.length, 'the sample has no ledger-line claims marked as monitoring');
   ok(!d.tiles.some((x) => mon.indexOf(x) >= 0), 'a ledger-line claim takes a first-screen tile: ' + JSON.stringify(d.tiles));
   ok(!d.lines.slice(0, 3).some((x) => mon.indexOf(x) >= 0), 'a ledger-line claim takes a first-screen decision line: ' + JSON.stringify(d.lines.slice(0, 3)));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+// Live bug (24 Sep 2026): after consent and "Write the AI summaries" both summaries passed the guard but were
+// drawn inside the hidden analyst view, so a visitor on the manager view saw nothing. The offer sits under the
+// bottom line; the executive summary appears there, the technical one in the analyst view's summary section.
+check('try-v2-ai-summaries-show-in-the-view-where-the-visitor-asks', DESK, async (ctx) => {
+  const rep = fixture('sample');
+  let reply = { status: 503, json: { error: 'not_configured' } };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: () => reply });
+  await runReport(p);
+  ok(await p.isVisible('#nl2-manager') && !(await p.isVisible('#nl2-analyst')), 'the report does not open on the manager view');
+  const where = await p.evaluate(() => {
+    const M = document.getElementById('nl2-manager'), go = document.getElementById('try-ai-go');
+    const card = go && Array.from(M.children).filter((c) => c.contains(go))[0], prev = card && card.previousElementSibling;
+    return { inManager: !!go && M.contains(go), afterBottom: !!prev && prev.classList.contains('nl2-bottomcard') };
+  });
+  ok(where.inManager && where.afterBottom, 'the AI offer is not in the manager view right under the bottom line: ' + JSON.stringify(where));
+  ok(await p.isVisible('#try-ai-ok') && await p.isVisible('#try-ai-go'), 'the consent box is not visible in the manager view');
+  ok(!ctx.__ai.length, 'something was sent before consent');
+  // templates the page's own guard passes for this payload: the words do not matter here, where they show does
+  const body = JSON.parse(await p.textContent('#try-ai-preview'));
+  const tpl = await p.evaluate((b) => {
+    const pick = (reg, from) => { for (let i = from; i <= b.findings.length; i++) { const t = '{F' + i + '.claim}; {F' + i + '.grade} [F' + i + '].'; if (!window.NLTry.checkTemplate(t, b, reg).length) return t; } return null; };
+    return { executive: pick('executive', 1), technical: pick('technical', 2) };
+  }, body);
+  ok(tpl.executive && tpl.technical, 'no whole-claim template passes for the sample payload');
+  // a refusal is told where the visitor pressed, and the offer stays there to try again
+  reply = { status: 429, json: { error: 'upstream_busy' } };
+  await p.check('#try-ai-ok');
+  await p.click('#try-ai-go');
+  await p.waitForFunction(() => /429/.test((document.querySelector('#nl2-manager .tr-ai-fallback') || {}).textContent || ''), null, { timeout: 20000 });
+  ok(await p.isVisible('#nl2-manager .tr-ai-fallback') && await p.isVisible('#nl2-manager #try-ai-go'), 'a refusal is not shown in the manager view, beside the offer');
+  reply = { status: 200, json: { executive: tpl.executive, technical: tpl.technical, model: 'check', rejected: {}, unavailable: {} } };
+  await p.check('#try-ai-ok');
+  await p.click('#try-ai-go');
+  await tryUntil(p, '#nl2-manager [data-part="executive"]', 20000);
+  ok(await p.isVisible('#nl2-manager [data-part="executive"]'), 'the executive summary is not visible in the manager view');
+  const want = await p.evaluate(([t, b, r]) => ({ executive: window.NLTry.restore(window.NLTry.fillTemplate(t.executive, b, 'executive', { cite: 'keep' }), window.NLTry.aiRedactions(r)),
+    technical: window.NLTry.restore(window.NLTry.fillTemplate(t.technical, b, 'technical', { cite: 'keep' }), window.NLTry.aiRedactions(r)) }), [tpl, body, rep]);
+  const d = await p.evaluate(() => {
+    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : '';
+    const M = document.getElementById('nl2-manager'), A = document.getElementById('nl2-analyst');
+    return { exec: t(M.querySelector('[data-part="executive"]')), techInManager: !!M.querySelector('[data-part="technical"]'), pointer: t(M.querySelector('.tr-ai-more')),
+      tech: t(A.querySelector('#nl2-s-summary [data-part="technical"]')), execInAnalyst: !!A.querySelector('[data-part="executive"]'), consentLeft: !!document.getElementById('try-ai-go') };
+  });
+  ok(d.exec === squash(want.executive), 'the executive summary on screen is not the engine-filled template: ' + d.exec + ' | want ' + squash(want.executive));
+  ok(!d.techInManager && d.tech === squash(want.technical) && !d.execInAnalyst, 'the technical summary is not in the analyst view\'s summary section alone: ' + JSON.stringify(d).slice(0, 300));
+  ok(/Analyst view/.test(d.pointer) && await p.isVisible('#nl2-manager .tr-ai-more'), 'the manager view does not point to the technical summary: ' + d.pointer);
+  ok(!d.consentLeft, 'the consent box is still offered beside the summaries');
+  await p.click('#nl2-manager .tr-ai-more button');
+  await p.waitForTimeout(200);
+  ok(await p.isVisible('#nl2-analyst #nl2-s-summary [data-part="technical"]'), 'the pointer does not open the technical summary in the analyst view');
+  ok(ctx.__ai.length === 2, ctx.__ai.length + ' proxy requests for two presses');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 check('try-v2-a-routed-claim-is-described-by-its-own-rule', DESK, async (ctx) => {

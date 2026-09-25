@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "d318d8a67fc723a5b975966b4fc3b722ead6734c105cb4a543e29f5348393f50",
-  "bytes": 332533
+  "sha256": "fb005fc50cb316109f7ec6b6f1a07b5e60cae072fa6a49c6a40a39c66bde98d7",
+  "bytes": 334290
  },
  "files": [
   {
@@ -103,20 +103,20 @@
   },
   {
    "path": "northledger/benchmark_receipt.json",
-   "sha256": "dc85c9cf1e0ffb0fb8c0af26d19db3dec07b53f47e95a55ac0bf861f58f17bcb",
-   "bytes": 53100,
+   "sha256": "6efb3d41005da290291915c7005dab2aa2e55d0ef705d6db2829a6580f597ccb",
+   "bytes": 52788,
    "source": "northledger-core/northledger/benchmark_receipt.json"
   },
   {
    "path": "benchmark/engine_benchmark.json",
-   "sha256": "043c4b92836b3f713c24827c2fc1a3cfd690ccde5fb88561538e2141d297de08",
-   "bytes": 104594,
+   "sha256": "f81bbef8988a7a19081aa7ae7bed8cc317479a430dc2c1d3dded4b1a26ef55e4",
+   "bytes": 105401,
    "source": "northledger-core/benchmark/engine_benchmark.json"
   },
   {
    "path": "nl_browser.py",
-   "sha256": "740f2d902d2aa3adedf46b60873ce612bd007d97b2babbb1bf5bcd5287f673ec",
-   "bytes": 174777,
+   "sha256": "71a6b5bbb8c20100cf6edfe1116b4b35247816a035d61cf0fdab92c02cff1b6e",
+   "bytes": 175049,
    "source": "portfolio-website/engine/nl_browser.py"
   },
   {
@@ -172,6 +172,8 @@
  },
  "thresholds": {
   "forecast_min_history_months": 36,
+  "forecast_min_checkable_months": 45,
+  "forecast_replay_months": 12,
   "recommend_min_rows": 1000
  },
  "rebuild": "python3 tools/pack_engine.py (and --check to verify)"

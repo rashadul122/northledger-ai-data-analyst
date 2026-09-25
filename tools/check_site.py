@@ -31,6 +31,20 @@ Checks
             mailto: addresses are real. External links are listed, not fetched.
   contact   site.config.json must hold a real contact route (email, booking_url or
             form_endpoint) and index.html must link to it.
+  collab    The research collaboration route: a "collaboration" block in site.config.json, a
+            <section id="collaborate">, a button to it in the header, the hero (below the doors)
+            and the Book/About area, and one primary "Invite me to a project" mailto to the
+            configured contact_email with the subject "Research collaboration invitation" and a
+            short prefilled body (project, role, timeline, data, links).
+  pl300     The PL-300 card links the public repository and its data release exactly as encoded
+            here (PL300_REPO, PL300_RELEASE_TAG), and nothing else on GitHub outside that
+            repository; its status and milestones stay digit-free and keep "AI-built,
+            owner-directed". It states the state the repository itself records (PL300_STATE,
+            README of 25 Sep 2026): the dev profile refreshed and reconciled in the Power BI
+            service, the full profile, RLS and report pages not yet run. Sentences the repository
+            now contradicts (PL300_STALE: "not yet run in Power BI", "the workspace is not set up",
+            the Microsoft account and Fabric trial as the next step) may not come back.
+            Addresses are checked as written, not fetched.
   stray     Nothing that is not part of the site sits in its folder unlisted in .gitignore (the
             publish step is `git add .`): no qa/ output folder, no PDF at the root, no test-*.html
             page other than the verify harness, no retired demo-data.json.
@@ -77,7 +91,7 @@ import zlib
 from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECKS = ("banned", "figures", "shipped", "links", "contact", "stray", "requests", "promises")
+CHECKS = ("banned", "figures", "shipped", "links", "contact", "collab", "pl300", "stray", "requests", "promises")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
         "track", "wbr"}
 SKIP_TEXT = {"script", "style", "template"}
@@ -796,6 +810,152 @@ def check_contact(site: Site) -> Result:
     return r
 
 
+# ----------------------------------------------------------------------------- research collaboration
+# The invitation's subject line, and the places a reader finds the button (header nav, the hero right
+# below the doors, the Book/About area), encoded here and nowhere else.
+COLLAB_SECTION = "collaborate"
+COLLAB_SUBJECT = "Research collaboration invitation"
+COLLAB_PLACES = (("header", "topbar"), ("hero", "top"), ("book or about", ("book", "about")))
+COLLAB_BODY_WORDS = ("project", "role", "timeline", "data", "links")
+
+
+def _query(url):
+    from urllib.parse import parse_qs, unquote, urlsplit
+    q = urlsplit(url).query
+    return unquote(url[7:].split("?")[0]), {k: v[0] for k, v in parse_qs(q, keep_blank_values=True).items()}
+
+
+def check_collab(site: Site) -> Result:
+    r = Result("collab")
+    try:
+        cfg = json.load(open(os.path.join(site.root, "site.config.json"), encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        r.fail("site.config.json cannot be read: %s" % e)
+        return r
+    email = _get(cfg, "contact.email", "contact_email", "email")
+    block = cfg.get("collaboration") if isinstance(cfg.get("collaboration"), dict) else None
+    if not block:
+        r.fail('site.config.json has no "collaboration" block (the invitation\'s subject and prompts live there)')
+    elif (block.get("subject") or "").strip() != COLLAB_SUBJECT:
+        r.fail("site.config.json collaboration.subject is %r, not %r" % (block.get("subject"), COLLAB_SUBJECT))
+    if not email or not EMAIL.match(email):
+        r.fail("site.config.json has no contact_email for the invitation to go to")
+    if "index.html" not in site.pages():
+        r.fail("index.html not found")
+        return r
+    for label, tree in site.views("index.html"):
+        by_id = {n.attrs["id"]: n for n in tree.iter() if n.attrs.get("id")}
+        sec = by_id.get(COLLAB_SECTION)
+        if sec is None or sec.tag != "section":
+            r.fail("index.html (%s): no <section id=%r> for research collaboration" % (label, COLLAB_SECTION))
+            continue
+        # the button in each place: a link to the section whose own words say research collaboration
+        for place, ids in COLLAB_PLACES:
+            ids = ids if isinstance(ids, tuple) else (ids,)
+            hits = [a for i in ids if i in by_id for a in by_id[i].iter()
+                    if a.tag == "a" and a.attrs.get("href") == "#" + COLLAB_SECTION]
+            named = [a for a in hits if re.search(r"research collaboration|collaborat", norm_ws(a.text()), re.I)]
+            if not named:
+                r.fail("index.html (%s): no research collaboration button in the %s (a link to #%s inside #%s)"
+                       % (label, place, COLLAB_SECTION, " or #".join(ids)))
+        # the invitation: one mailto, to the configured address, with the subject and a short prefilled body
+        mails = [a for a in sec.iter() if a.tag == "a" and html.unescape(a.attrs.get("href", "")).lower().startswith("mailto:")]
+        invite = [a for a in mails if re.search(r"invite me to a project", norm_ws(a.text()), re.I)]
+        if not invite:
+            r.fail('index.html (%s): the collaboration section has no "Invite me to a project" email button' % label)
+            continue
+        for a in mails:
+            addr, q = _query(html.unescape(a.attrs["href"]))
+            where = "index.html (%s) line %d" % (label, a.line)
+            if email and addr != email:
+                r.fail("%s: the invitation goes to %r, not to site.config.json contact_email %r" % (where, addr, email))
+            if q.get("subject") != COLLAB_SUBJECT:
+                r.fail("%s: the invitation's subject is %r, not %r" % (where, q.get("subject"), COLLAB_SUBJECT))
+            body = (q.get("body") or "").lower()
+            missing = [w for w in COLLAB_BODY_WORDS if w not in body]
+            if missing:
+                r.fail("%s: the prefilled body does not ask for %s" % (where, ", ".join(missing)))
+            if len(body) > 400:
+                r.fail("%s: the prefilled body is %d characters; keep it short" % (where, len(body)))
+        if "btn-primary" not in invite[0].attrs.get("class", ""):
+            r.fail("index.html (%s): the invitation button is not the section's primary button" % label)
+    if not r.failures:
+        r.note("collaboration buttons in the header, hero and book/about area; invitation to %s, subject %r" % (email, COLLAB_SUBJECT))
+    return r
+
+
+# ----------------------------------------------------------------------------- PL-300 card
+PL300_REPO = "https://github.com/rashadul122/pl300-nyc311"
+PL300_RELEASE_TAG = "data-v1"
+PL300_RELEASE = PL300_REPO + "/releases/tag/" + PL300_RELEASE_TAG
+# What the public repository records (README "Status (25 Sep 2026)" and docs/evidence/refresh-3-dev.md
+# at commit 4da5ffbc): the dev profile refreshed and reconciled in the Power BI service; the full
+# profile, RLS and the report pages are still [unrun]. The card must say both halves.
+PL300_STATE = ("dev profile", "reconciled", "power bi service", "full profile", "rls", "report pages", "not yet run")
+# Sentences the card made before that run, which the repository now contradicts.
+PL300_STALE = (r"not yet run in power bi\b", r"workspace is not set up", r"microsoft work account",
+               r"no reconcile result has been recorded")
+
+
+def check_pl300(site: Site) -> Result:
+    r = Result("pl300")
+    try:
+        pl = json.load(open(os.path.join(site.root, "data", "pl300-status.json"), encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        r.fail("data/pl300-status.json cannot be read: %s" % e)
+        return r
+    repo = ((pl.get("repo") or {}).get("url") or "").strip()
+    rel = pl.get("release") or {}
+    if repo != PL300_REPO:
+        r.fail("pl300-status.json repo.url is %r, not the public project %r" % (repo, PL300_REPO))
+    if (rel.get("tag") or "") != PL300_RELEASE_TAG or (rel.get("url") or "").strip() != PL300_RELEASE:
+        r.fail("pl300-status.json release is %r / %r, not %r / %r" % (rel.get("tag"), rel.get("url"), PL300_RELEASE_TAG, PL300_RELEASE))
+    # the state words stay digit-free, say what has run and what has not
+    words = [pl.get("status") or ""] + [m.get("state", "") + " " + m.get("name", "") for m in pl.get("milestones") or []]
+    if any(re.search(r"\d", w) for w in words):
+        r.fail("pl300-status.json status or milestones carry a digit: %s" % [w for w in words if re.search(r"\d", w)][:3])
+    st = (pl.get("status") or "").lower()
+    missing = [w for w in PL300_STATE if w not in st]
+    if missing:
+        r.fail("pl300-status.json status %r does not state what the repository records (missing %s)" % (pl.get("status"), missing))
+    if "ai-built, owner-directed" not in (pl.get("authorship") or "").lower():
+        r.fail('pl300-status.json authorship does not say "AI-built, owner-directed"')
+    nxt = (pl.get("next_step") or "").lower()
+    if not ("full profile" in nxt and "rls" in nxt):
+        r.fail("pl300-status.json next_step %r does not name the remaining runs (full profile, RLS)" % pl.get("next_step"))
+    stale_json = " ".join(str(pl.get(k) or "") for k in ("status", "route", "method", "next_step")) + " " + \
+        " ".join(m.get("state", "") + " " + m.get("name", "") for m in pl.get("milestones") or [])
+    for pat in PL300_STALE:
+        if re.search(pat, stale_json, re.I):
+            r.fail("pl300-status.json still says %r, which the repository now contradicts" % pat)
+    if "index.html" not in site.pages():
+        r.fail("index.html not found")
+        return r
+    for label, tree in site.views("index.html"):
+        card = next((n for n in tree.iter() if n.attrs.get("id") == "pl300"), None)
+        if card is None:
+            r.fail("index.html (%s): no #pl300 section" % label)
+            continue
+        hrefs = {html.unescape(a.attrs.get("href", "")).strip() for a in card.iter() if a.tag == "a"}
+        for want, what in ((PL300_REPO, "the public repository"), (PL300_RELEASE, "the %s release" % PL300_RELEASE_TAG)):
+            if want not in hrefs:
+                r.fail("index.html (%s): the PL-300 card does not link %s (%s)" % (label, what, want))
+        bad = sorted(h for h in hrefs if "github.com" in h and not (h == PL300_REPO or h.startswith(PL300_REPO + "/")))
+        if bad:
+            r.fail("index.html (%s): the PL-300 card links another GitHub address: %s" % (label, ", ".join(bad)))
+        text = norm_ws(card.text()).lower()
+        for must in ("ai-built, owner-directed",) + PL300_STATE:
+            if must not in text:
+                r.fail("index.html (%s): the PL-300 card does not say %r" % (label, must))
+        for pat in PL300_STALE:
+            m = re.search(pat, text, re.I)
+            if m:
+                r.fail("index.html (%s): the PL-300 card still says %r, which the repository now contradicts" % (label, m.group(0)))
+    if not r.failures:
+        r.note("the PL-300 card links %s and %s (addresses checked here, not fetched)" % (PL300_REPO, PL300_RELEASE))
+    return r
+
+
 # ----------------------------------------------------------------------------- runtime requests
 # The one outside origin the site may load at runtime, and the only file allowed to load it.
 DEMO_WORKER = "engine/worker.js"
@@ -933,7 +1093,7 @@ def check_promises(site: Site) -> Result:
 
 # ----------------------------------------------------------------------------- main
 RUNNERS = {"banned": check_banned, "figures": check_figures, "shipped": check_shipped, "links": check_links,
-           "contact": check_contact, "stray": check_stray, "requests": check_requests, "promises": check_promises}
+           "contact": check_contact, "collab": check_collab, "pl300": check_pl300, "stray": check_stray, "requests": check_requests, "promises": check_promises}
 
 
 def run(root, checks=CHECKS, doms=None):

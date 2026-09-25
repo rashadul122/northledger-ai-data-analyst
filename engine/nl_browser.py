@@ -2544,7 +2544,10 @@ class _V2:
             fp = self.gated.get(base + ".from_peak") if base else None
             if fp is not None and fp.fact.value is not None and fp.fact.verified is not False:
                 pmo = fp.fact.claim.split("(the 3 months to ", 1)[-1].split(")", 1)[0]
-                text += ("; it peaked in the 3 months to %s and is %s %s since"
+                # the same label the Analyst view gives it (review, 25 Sep 2026): the peak is chosen
+                # after looking at the series, so the fall since it is never tested or graded
+                text += ("; it peaked in the 3 months to %s and is %s %s since, a pattern found by looking, "
+                         "not a tested change"
                          % (_mon(pmo), "down" if float(fp.fact.value) < 0 else "up", SN(abs(float(fp.fact.value)), "pct")))
                 ids.append(fp.fact.id)
             # what was screened before the money was added up (the engine's currency and status screens)

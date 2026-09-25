@@ -2143,6 +2143,59 @@ def test_v2_currencies_and_refunds_are_screened_before_money_is_added():
     assert rep["summary"]["labels"].get("measure.amount.total.usd.change") == "Amount in USD, monthly total", rep["summary"]["labels"]
 
 
+def _long_table(weekend_zeros=True):
+    """A small StatCan-layout table: 3 live series in two units, one discontinued, metadata columns."""
+    import datetime as dt
+    rows = ['"REF_DATE","GEO","DGUID","Type of currency","UOM","UOM_ID","SCALAR_FACTOR","SCALAR_ID","VECTOR",'
+            '"COORDINATE","VALUE","STATUS","SYMBOL","TERMINATED","DECIMALS"']
+    series = [("Old index, daily", "Index, 1992=100", 100.0, "2015-01-01", "2019-12-31"),
+              ("U.S. dollar, daily average", "Dollars", 1.30, "2020-01-01", "2026-08-31"),
+              ("European euro, daily average", "Dollars", 1.45, "2020-01-01", "2026-08-31"),
+              ("Japanese yen, daily average", "Dollars", 0.0095, "2020-01-01", "2026-08-31")]
+    for i, (name, uom, base, a, b) in enumerate(series):
+        d, end, k = dt.date.fromisoformat(a), dt.date.fromisoformat(b), 0
+        while d <= end:
+            wk = d.weekday() >= 5
+            v = 0.0 if wk else base * (1 + 0.0002 * k + 0.01 * ((k % 7) - 3) / 3)
+            if not wk or weekend_zeros:
+                rows.append('"%s","Canada","2021A000011124","%s","%s","81","units","0","v%d","1.%d","%.8f","","","","4"'
+                            % (d.isoformat(), name, uom, 1000 + i, i + 1, v))
+            d += dt.timedelta(days=1)
+            k += 1
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
+def test_a_long_statistical_table_is_read_one_series_per_column():
+    # a visitor's StatCan table 33-10-0036 (25 Sep 2026): read as it stood, 28 exchange rates in two units
+    # were averaged together, COORDINATE and DECIMALS became measures and the currency names were withheld
+    rep = NB.run(_long_table(), "fx.csv", "", None, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    lay = rep["input"].get("layout") or {}
+    assert lay.get("series") == 4 and lay.get("kept") == 3, lay
+    assert lay.get("set_aside") == {"discontinued": ["Old index, daily"]}, lay
+    assert {"COORDINATE", "DECIMALS", "VECTOR", "UOM"} <= set(lay.get("metadata_set_aside") or []), lay
+    assert lay.get("zeros_as_empty", 0) > 0, "weekend placeholder zeros must be read as empty"
+    measures = rep["roles"]["measures"]
+    assert not any(m in ("coordinate", "decimals", "value") for m in measures), measures
+    assert any("dollar" in m for m in measures) and any("yen" in m for m in measures), measures
+    assert rep["privacy"]["flagged"] == [], rep["privacy"]
+    assert rep["primary_metric"] and rep["primary_metric"]["claim_key"] != "volume", rep["primary_metric"]
+    assert any(l["kind"] == "data" and "long statistical table" in l["text"] for l in rep["limitations"])
+    assert any(f["rule"] == "closed_day_zeros" for f in rep["cleaning"]["fixes"]), rep["cleaning"]["fixes"]
+
+
+def test_the_question_picks_the_series_a_long_table_leads_with():
+    rep = NB.run(_long_table(), "fx.csv", "How has the Japanese yen moved?", None, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    assert rep["primary_metric"]["claim_key"] == "japanese_yen_daily_average", rep["primary_metric"]
+    assert rep["input"]["layout"]["lead_why"] == "your question names it"
+
+
+def test_an_ordinary_file_is_not_reshaped():
+    rep = NB.run(open(SAMPLE, "rb").read(), "sample-messy.csv", "", None, SAMPLE_AS_OF)
+    assert rep["ok"] and "layout" not in rep["input"], rep["input"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

@@ -2784,6 +2784,167 @@ def _build_v2(rep: Dict[str, Any], audit: Any, ana: Any, th: Any, cr: Any, db_pa
 
 
 # --------------------------------------------------------------------------- run
+# ----------------------------------------------------------------------------- long statistical tables
+# Official statistics come as one long table (Statistics Canada, Eurostat, OECD, ECB, ...): a date,
+# one VALUE column, one or more columns naming the series, and the agency's metadata columns (units,
+# vector ids, coordinates, status flags, decimals). Read as it stands, every series lands in one
+# column: 28 exchange rates in different units averaged together (a visitor's StatCan table 33-10-0036,
+# 25 Sep 2026: "+10,847%", the codes COORDINATE and DECIMALS read as business measures, the currency
+# names withheld as free text). Such a table is turned into one column per series before the engine
+# reads it, so each series is analysed on its own with the engine's own methods; the metadata columns
+# are set aside, and exact zeros that stand for closed days (weekend placeholders in a series that is
+# otherwise always positive) become empty. The report says so, with the counts.
+_PANEL_META = frozenset((
+    "dguid", "uom", "uomid", "scalarfactor", "scalarid", "vector", "coordinate", "status", "symbol",
+    "terminated", "decimals", "obsstatus", "obsflag", "obsconf", "unitmult", "unitmultiplier",
+    "confstatus", "unitmeasure", "unit", "units", "flag", "flags", "footnote", "footnotes",
+    "timeformat", "freq", "frequency", "lastupdate", "dataflow", "structure", "structureid", "action"))
+_PANEL_DATE = ("refdate", "timeperiod", "date", "period", "time", "referenceperiod")
+_PANEL_VALUE = ("value", "obsvalue")
+PANEL_MAX_SERIES = 60
+
+
+def _pnorm(c: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(c).lower())
+
+
+def _reshape_long_panel(data: bytes) -> Tuple[bytes, Optional[Dict[str, Any]]]:
+    """A long statistical table as one column per series, or (data, None) when it is not one."""
+    import pandas as pd
+    try:
+        df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    except Exception:  # noqa: BLE001 - not our layout; the engine reads the file as it stands
+        return data, None
+    norm = {c: _pnorm(c) for c in df.columns}
+    date = next((c for k in _PANEL_DATE for c in df.columns if norm[c] == k), None)
+    value = next((c for k in _PANEL_VALUE for c in df.columns if norm[c] == k), None)
+    meta = [c for c in df.columns if norm[c] in _PANEL_META and c not in (date, value)]
+    if not date or not value or len(meta) < 3 or len(df) < 50:
+        return data, None
+    dims = [c for c in df.columns if c not in meta and c not in (date, value)]
+    varying = [c for c in dims if df[c].nunique() > 1]
+    constant = [c for c in dims if c not in varying]
+    if varying:
+        key = df[varying[0]].str.strip()
+        for c in varying[1:]:
+            key = key + " | " + df[c].str.strip()
+    else:
+        key = pd.Series([str(df[constant[0]].iloc[0]).strip() if constant else str(value)] * len(df), index=df.index)
+    n_series = int(key.nunique())
+    if n_series > PANEL_MAX_SERIES or pd.Series(list(zip(df[date], key))).duplicated().mean() > 0.01:
+        return data, None
+    dt = pd.to_datetime(df[date], errors="coerce")
+    v = pd.to_numeric(df[value].str.replace(",", "", regex=False), errors="coerce")
+    if dt.notna().mean() < 0.95 or v.notna().sum() < 50:
+        return data, None
+    # zeros that stand for closed days: a series that is otherwise always positive, whose zeros fall
+    # on Saturdays and Sundays (at least 90% of them)
+    zeroed = 0
+    for lv in key.unique():
+        m = key == lv
+        z = m & (v == 0)
+        nz = v[m & v.notna() & (v != 0)]
+        if z.sum() and len(nz) and (nz > 0).all() and dt[z].dt.dayofweek.isin([5, 6]).mean() >= 0.9:
+            v = v.mask(z)
+            zeroed += int(z.sum())
+    long = pd.DataFrame({"_d": dt, "_key": key, "_v": v}).dropna(subset=["_v"])
+    # compare series where they exist: the active ones (a value in the file's last 90 days) that run at
+    # least three years set the start; discontinued, too recent or too sparse series are set aside and named
+    span = long.groupby("_key")["_d"].agg(["min", "max", "count"])
+    last = long["_d"].max()
+    active = span[span["max"] >= last - pd.Timedelta(days=90)]
+    lasting = active[active["max"] - active["min"] >= pd.Timedelta(days=3 * 365)]
+    if lasting.empty:
+        return data, None
+    start = lasting["min"].max()
+    inwin = long[long["_d"] >= start]
+    n_dates = inwin["_d"].nunique()
+    cover = inwin.groupby("_key")["_d"].nunique() / float(max(n_dates, 1))
+    kept = [k for k in lasting.index if cover.get(k, 0) >= 0.5]
+    if not kept:
+        return data, None
+    dropped = {"discontinued": sorted(k for k in span.index if k not in active.index),
+               "too recent": sorted(k for k in active.index if k not in lasting.index),
+               "too sparse": sorted(k for k in lasting.index if k not in kept)}
+    inwin = inwin[inwin["_key"].isin(kept)]
+    wide = inwin.groupby([inwin["_d"].dt.strftime("%Y-%m-%d").rename("_date"), "_key"], sort=True)["_v"].mean().unstack("_key")
+    wide = wide.dropna(how="all")
+    first_seen = {k: i for i, k in enumerate(pd.unique(key))}
+    counts = inwin.groupby("_key")["_v"].count()
+    order = sorted(kept, key=lambda k: (-int(counts.get(k, 0)), first_seen.get(k, 0)))
+    wide = wide[[c for c in order if c in wide.columns]].reset_index().rename(columns={"_date": str(date)})
+    units = {}
+    for c in meta:
+        if norm[c] in ("uom", "unit", "units", "unitmeasure"):
+            units = {str(k): str(u) for k, u in df.groupby(key)[c].agg(lambda x: x.mode().iat[0] if len(x.mode()) else "").items()}
+            break
+    out = wide.to_csv(index=False).encode("utf-8")
+    return out, {
+        "layout": "long statistical table", "rows_in": int(len(df)), "rows_out": int(len(wide)),
+        "series_column": " | ".join(varying) if varying else None, "series": n_series, "kept": len(kept),
+        "set_aside": {k: v for k, v in dropped.items() if v}, "start": start.strftime("%Y-%m-%d"),
+        "order": [str(c) for c in order if c in wide.columns],
+        "value_column": str(value), "metadata_set_aside": [str(c) for c in meta],
+        "constant_set_aside": [str(c) for c in constant], "zeros_as_empty": zeroed,
+        "units": sorted(set(u for u in units.values() if u)),
+    }
+
+
+def _slug(name: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")
+
+
+def _lead_series(lay: Dict[str, Any], objective: str) -> Tuple[str, str]:
+    """The series a long table's report leads with, and why: the one the visitor's question names
+    (every word of its name, apart from words all the series share), else the file's first."""
+    order = lay.get("order") or []
+    if not order:
+        return "", ""
+    toks = [set(re.findall(r"[a-z0-9]+", str(k).lower().replace(".", ""))) for k in order]
+    common = set.intersection(*toks) if toks else set()
+    asked = set(re.findall(r"[a-z0-9]+", str(objective or "").lower().replace(".", "")))
+    for k, t in zip(order, toks):
+        core = t - common
+        if core and core <= asked:
+            return k, "your question names it"
+    return order[0], "it comes first in the file; name another series in the question box to lead with it"
+
+
+def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
+    """Say in the report how a long statistical table was read (limitations and cleaning)."""
+    n = lay["series"]
+    unit_note = (" The series come in %d units (%s), so they are never added or averaged together."
+                 % (len(lay["units"]), ", ".join(lay["units"][:4])) if len(lay["units"]) > 1 else "")
+    parts = [
+        "This file is a long statistical table: %s rows, one row per date and series, all values in the "
+        "column %s, %d series%s." % (format(lay["rows_in"], ","), lay["value_column"], n,
+                                    (" named by %s" % lay["series_column"]) if lay["series_column"] else ""),
+        "It was read as one column per series, one row per date with a value (%s dates from %s), so every "
+        "series is analysed on its own.%s" % (format(lay["rows_out"], ","), lay["start"], unit_note),
+    ]
+    parts += ["Set aside as %s: %s." % (why, ", ".join(ks)) for why, ks in lay["set_aside"].items()]
+    parts.append("The agency's metadata columns (%s) were set aside: they describe the series, they are not "
+                 "measures." % ", ".join(lay["metadata_set_aside"]))
+    if lay["constant_set_aside"]:
+        parts.append("Columns with one value throughout (%s) were set aside as well."
+                     % ", ".join(lay["constant_set_aside"]))
+    if lay.get("lead"):
+        parts.append("The report leads with %s: %s." % (lay["lead"], lay["lead_why"]))
+    parts.append("The forecast in this release counts dates a month; a forecast of each series' own level "
+                 "is not in this release.")
+    rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": " ".join(parts)})
+    fixes = rep.setdefault("cleaning", {}).setdefault("fixes", [])
+    fixes.insert(0, {"rule": "long_to_wide", "column": lay["series_column"] or lay["value_column"],
+                     "count": lay["rows_in"], "what": "A long table of %d series turned into one column per series, "
+                     "one row per date (%s rows in, %s dates out; %d series compared from %s)"
+                     % (n, format(lay["rows_in"], ","), format(lay["rows_out"], ","), lay["kept"], lay["start"])})
+    if lay["zeros_as_empty"]:
+        fixes.insert(1, {"rule": "closed_day_zeros", "column": lay["value_column"], "count": lay["zeros_as_empty"],
+                         "what": "Exact zeros on Saturdays and Sundays in series that are otherwise always positive "
+                                 "read as empty: they mark days with no value, not a value of zero"})
+    rep.setdefault("input", {})["layout"] = lay
+
+
 def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict[str, Any]] = None,
         as_of: Optional[str] = None) -> Dict[str, Any]:
     """The engine's end-to-end path on one file, as THE REPORT CONTRACT. Never raises.
@@ -2828,6 +2989,14 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "one or two cells and the rows below it have many. Delete the rows above "
                           "the column names (and any blank row under them), save as CSV and try "
                           "again. Nothing was read.")
+
+        layout = None
+        try:
+            reshaped, layout = _reshape_long_panel(data)
+            if layout:
+                data = reshaped
+        except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
+            layout = None
 
         _install_stubs()
         _import_engine()
@@ -2891,7 +3060,14 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             t_audit = time.perf_counter() - t0
             # -- the business analysis: measures, forecast, story
             try:
-                r = _loop.run_analyze(eng.db_path, table, objective,
+                pol = None
+                if layout:
+                    import dataclasses as _dc
+                    from northledger import gate as _gate
+                    layout["lead"], layout["lead_why"] = _lead_series(layout, objective)
+                    if layout["lead"]:
+                        pol = _dc.replace(_gate.DEFAULT_POLICY, primary_metric=_slug(layout["lead"]))
+                r = _loop.run_analyze(eng.db_path, table, objective, policy=pol,
                                       out_dir=os.path.join(tmp, "analysis"), as_of=as_of_eff,
                                       display_name=name, timer=timer,
                                       landing=E.landing_stamp(eng.meta(), table))
@@ -3012,6 +3188,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _build_v2(rep, audit, r if (r is not None and not date_withheld) else None, th, cr, eng.db_path,
                   flagged, withheld, pub, as_of_eff, objective, reasons, rules)
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
+        if layout:
+            _layout_notes(rep, layout)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)

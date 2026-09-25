@@ -1079,13 +1079,18 @@ check('try-ai-summaries-consent-payload-guard-and-fallbacks', DESK, async (ctx) 
     technical: 'The average amount rose 12.5% against the prior year, to 1,234.5 (grade CONFIRMED) [F1]. Exact duplicates: 12 of 1250 rows (grade WATCH) [F2]. The next-month value for monthly rows, 190, is graded NOT ENOUGH DATA [F4].'
   };
   const replies = {
+    // the old proxy's shape: both parts as text; the page's own guard sets the executive part aside
     invented: { status: 200, json: { executive: good.executive + ' Expect 47.3 more next year [F1].', technical: good.technical, model: 'check' } },
+    // the per-part proxy: one part passed, the other refused (reason codes) or not written (an error code)
+    partial: { status: 200, json: { executive: good.executive, technical: null, model: 'check', rejected: { technical: ['grade_word', 'confidence'] }, unavailable: {} } },
+    unavail: { status: 200, json: { executive: null, technical: good.technical, model: 'check', rejected: {}, unavailable: { executive: 'upstream_timeout' } } },
     rejected: { status: 502, json: { error: 'rejected_wording', part: 'technical', reasons: ['grade_word', 'confidence'] } },
+    rejected2: { status: 502, json: { error: 'rejected_wording', part: 'executive', reasons: ['digit'], rejected: { executive: ['digit'], technical: ['grade_word'] }, unavailable: {} } },
     busy: { status: 429, json: { error: 'upstream_busy' } },
     down: { status: 502, json: { error: 'upstream_error', upstream_status: 503 } },
-    good: { status: 200, json: { executive: good.executive, technical: good.technical, model: 'check' } }
+    good: { status: 200, json: { executive: good.executive, technical: good.technical, model: 'check', rejected: {}, unavailable: {} } }
   };
-  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: () => replies[mode] });
+  let p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: () => replies[mode] });
   ok((await p.evaluate(() => window.NL.try.ai_proxy_url)) === PROXY_URL, 'the page did not pick up ai_proxy_url');
   await runStub(p);
   let pre = JSON.parse(await p.textContent('#try-ai-preview'));
@@ -1107,42 +1112,76 @@ check('try-ai-summaries-consent-payload-guard-and-fallbacks', DESK, async (ctx) 
     await p.waitForFunction((src) => new RegExp(src).test((document.querySelector('.tr-ai-fallback') || {}).textContent || ''), re.source, { timeout: 20000 });
     return p.textContent('.tr-ai-fallback');
   };
-  await send();
-  let fb = await note(/set aside/);
+  // what is on screen once some part came back: the label, each part shown or its note
+  const shownParts = () => p.evaluate(() => {
+    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null;
+    const box = document.querySelector('#try-story .tr-ai-sum');
+    if (!box) return null;
+    return { label: t(box.querySelector('.tr-ai-label')), limit: t(box.querySelector('.tr-ai-limit')), heads: Array.from(box.querySelectorAll('h4')).map(t),
+      executive: t(box.querySelector('[data-part="executive"]')), technical: t(box.querySelector('[data-part="technical"]')),
+      asideExecutive: t(box.querySelector('[data-aside="executive"]')), asideTechnical: t(box.querySelector('[data-aside="technical"]')),
+      cite: (box.querySelector('sup.tr-cite') || {}).title, lead: t(document.querySelector('#try-story .tr-lead')), engine: !!document.querySelector('#try-story .tr-engine-label'),
+      slotsLeft: /\{[FS]\d|NONE_CONFIRMED/.test(box.textContent), toggle: !!document.querySelector('#try-story [data-wording]'), all: document.getElementById('try').innerText };
+  });
+  const again = async () => {   // a fresh run of the same report (once a part is shown, the page does not ask again)
+    await p.reload();
+    await p.waitForFunction(() => window.NLTry && document.getElementById('try-sample'));
+    await runStub(p);
+  };
+  // 1. every part refused or failed: only the engine's story, and a note that says why
+  mode = 'rejected'; await send();
+  let fb = await note(/502/);
   const sent = JSON.parse(ctx.__ai[0]);
   ok(JSON.stringify(Object.keys(sent)) === '["objective","findings","story"]' && sent.findings.every((f) => JSON.stringify(Object.keys(f)) === '["id","claim","verdict","value"]'),
     'the proxy got more than {objective, findings[id, claim, verdict, value], story}: ' + JSON.stringify(Object.keys(sent)));
   ok(JSON.stringify(sent) === JSON.stringify(JSON.parse(await p.textContent('#try-ai-preview'))), 'what was sent differs from the "Exactly what is sent" preview');
   ok(ctx.__ai[0].indexOf(rep.input.sha256) < 0 && ctx.__ai[0].indexOf(rep.downloads.clean_csv.split('\n')[1]) < 0, 'the file fingerprint or a row went to the proxy');
-  ok(/executive summary wrote a number of its own/.test(fb) && /engine's story is shown/.test(fb) && !/47\.3/.test(fb), 'a number the model wrote was not refused, or its text was echoed: ' + fb);
+  ok(/technical summary wrote a grade of its own; used confidence wording/.test(fb) && /engine's story is shown/.test(fb), 'the proxy\'s refusal reasons are not given: ' + fb);
   ok(await p.isVisible('#try-story .tr-engine-label') && !(await p.$('#try-story .tr-ai-sum')), 'a refused summary is on screen');
-  mode = 'rejected'; await send();
-  fb = await note(/502/);
-  ok(/technical summary wrote a grade of its own; used confidence wording/.test(fb), 'the proxy\'s refusal reasons are not given: ' + fb);
+  mode = 'rejected2'; await send();
+  fb = await note(/executive summary was set aside: it wrote a number of its own/);
+  ok(/technical summary was set aside: it wrote a grade of its own/.test(fb) && /engine's story is shown/.test(fb), 'a refusal of both parts does not name each part and its reason: ' + fb);
   mode = 'busy'; await send();
   fb = await note(/429/);
   ok(/busy/.test(fb) && /engine's story is shown/.test(fb), 'a DeepSeek 429 does not fall back to the engine story: ' + fb);
   mode = 'down'; await send();
   fb = await note(/not available right now \(the proxy answered 502\)/);
+  // 2. one part passed: it is shown, labelled; the other part says plainly that it was set aside, and why
+  mode = 'invented'; await send();
+  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
+  let d = await shownParts();
+  ok(d.technical === shown.technical && d.executive === null, 'the part that passed is not shown alone: ' + JSON.stringify([d.executive, d.technical]));
+  ok(/set aside/.test(d.asideExecutive) && /wrote a number of its own/.test(d.asideExecutive), 'the executive part does not say it was set aside and why: ' + d.asideExecutive);
+  ok(!/47\.3/.test(d.all), 'the refused text reached the screen');
+  ok(JSON.stringify(d.heads) === '["Executive summary","Technical summary"]', 'each part is not labelled: ' + JSON.stringify(d.heads));
+  await again();
+  mode = 'partial'; await send();
+  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
+  d = await shownParts();
+  ok(d.executive === shown.executive && d.technical === null, 'the executive part is not shown alone: ' + JSON.stringify([d.executive, d.technical]));
+  ok(/set aside/.test(d.asideTechnical) && /wrote a grade of its own; used confidence wording/.test(d.asideTechnical), 'the technical part does not give the proxy\'s reasons in plain words: ' + d.asideTechnical);
+  ok(!(await p.$('.tr-ai-fallback')), 'a partial answer is reported as a failure');
+  await again();
+  mode = 'unavail'; await send();
+  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
+  d = await shownParts();
+  ok(d.technical === shown.technical && d.executive === null && /could not be written/.test(d.asideExecutive) && /did not answer in time/.test(d.asideExecutive),
+    'a part the model did not write in time is not named: ' + JSON.stringify([d.asideExecutive, d.technical]));
+  // 3. both parts passed
+  await again();
   mode = 'good'; await send();
   await tryUntil(p, '#try-story .tr-ai-sum', 20000);
-  const d = await p.evaluate(() => {
-    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null;
-    const box = document.querySelector('#try-story .tr-ai-sum');
-    return { label: t(box.querySelector('.tr-ai-label')), limit: t(box.querySelector('.tr-ai-limit')), heads: Array.from(box.querySelectorAll('h4')).map(t),
-      executive: t(box.querySelector('[data-part="executive"]')), technical: t(box.querySelector('[data-part="technical"]')),
-      cite: (box.querySelector('sup.tr-cite') || {}).title, lead: t(document.querySelector('#try-story .tr-lead')), engine: !!document.querySelector('#try-story .tr-engine-label'),
-      slotsLeft: /\{[FS]\d|NONE_CONFIRMED/.test(box.textContent), toggle: !!document.querySelector('#try-story [data-wording]') };
-  });
+  d = await shownParts();
   ok(d.label === 'AI-reworded summaries (DeepSeek); every figure and grade put in by the engine', 'the AI label is wrong: ' + d.label);
   ok(/wrote only the words/.test(d.limit) && /cannot prove that a sentence means what the finding means/.test(d.limit), 'the caveat does not say what the check cannot see: ' + d.limit);
   ok(JSON.stringify(d.heads) === '["Executive summary","Technical summary"]', 'the two parts are not both shown: ' + JSON.stringify(d.heads));
   ok(d.executive === shown.executive, 'the executive summary on screen is wrong: ' + d.executive);
   ok(d.technical === shown.technical, 'the technical summary on screen is wrong: ' + d.technical);
+  ok(!d.asideExecutive && !d.asideTechnical, 'a set-aside note is shown beside two good parts');
   ok(d.cite === rep.findings[0].claim, 'a citation does not carry the engine\'s claim: ' + d.cite);
   ok(!d.slotsLeft, 'a slot was left on screen');
   ok(d.engine && d.lead === squash(rep.story.headline) && !d.toggle, 'the AI summaries replaced the engine story instead of sitting under it');
-  ok(ctx.__ai.length === 5, ctx.__ai.length + ' proxy requests for 5 presses of Send');
+  ok(ctx.__ai.length === 8, ctx.__ai.length + ' proxy requests for 8 presses of Send');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 

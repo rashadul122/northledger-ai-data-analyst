@@ -11,9 +11,10 @@
      same as the proxy; generated templates get the same reasons and the same filling on both sides.
      The model writes words around slots ({F1.n1}, {F1.grade}); every figure and grade on screen is
      put in by the page from the engine's findings.
-   - T.checkSummaries takes the proxy's {executive, technical} and refuses the pair when either part
-     fails, naming the part and the reasons; T.summaryHtml fills, escapes, cites and puts quoted
-     values back in this browser only.
+   - T.checkSummaries takes the proxy's {executive, technical, rejected, unavailable} and judges each
+     part on its own (the page's guard again, on what it sent): a part that passes is shown, any other
+     is set aside and T.partsNote says which and why, in plain words; T.summaryHtml fills, escapes,
+     cites and puts quoted values back in this browser only.
    - T.numbersIn reads numbers exactly as the proxy does (insight-proxy/test/number-vectors.json).
    - T.aiPayload sends exactly {objective, findings: [{id, claim, verdict, value}], story} inside
      the proxy's limits (40 findings, 300-character claims, 600-character story lines, 20 lines a
@@ -154,22 +155,42 @@ const GOOD = {
     codes.forEach((c) => ok(T.reasonText([c]) !== 'did not pass the check', 'no words for the reason ' + c));
   });
 
-  check('the review\'s attacks are refused on the page too: grade transplant, wrong-finding figure, uncited sentence', () => {
+  check('the review\'s attacks are refused on the page too: grade transplant, wrong-finding figure, uncited sentence, a placeholder used as a figure', () => {
     const v = JSON.parse(fs.readFileSync(tf, 'utf8'));
     const main = v.payloads.main, real = v.payloads.real;
     [[main, 'Rent collected rose {F1.n1}; {F1.grade} [F1]. Seasonality: {F1.grade} [F1].'],
       [main, 'Unit {F2.n1} paid late in {F2.n2} of {F2.n3} months: {F1.grade} [F1][F2].'],
       [real, 'Monthly revenue rose {F1.n1}; {F1.grade} [F1]. The order data is clean enough to plan on.'],
-      [real, 'Monthly revenue rose {F1.n1} and average order value fell {F2.n1}; each is {F1.grade} [F1] [F2].']
+      [real, 'Monthly revenue rose {F1.n1} and average order value fell {F2.n1}; each is {F1.grade} [F1] [F2].'],
+      // a quoted value stands only where its own finding puts it (review, 24 Sep 2026)
+      [BODY, 'Average amount rose [value A] to {F1.n2}; {F1.grade} [F1].'],
+      [BODY, 'Average amount in [value A] rose {F1.n1}; {F1.grade} [F1] [F2].'],
+      [BODY, 'Average amount rose {F1.n1}{F2.n1}; {F1.grade} [F1].'],
+      [BODY, 'Average amount rose {F1.n1} after the region share of {F2.n1}; {F1.grade} [F1] [F2].']
     ].forEach((x) => ok(arr(T.checkTemplate(x[1], x[0], 'executive')).length > 0, 'passed: ' + x[1]));
   });
 
-  check('checkSummaries accepts a good pair and refuses a pair with any failing or missing part', () => {
+  check('checkSummaries judges each part on its own: a passing part is kept, a failing or missing one is set aside with its reasons in plain words', () => {
     const good = T.checkSummaries({ executive: GOOD.executive, technical: GOOD.technical, model: 'm' }, BODY);
-    ok(good.ok, 'a good pair was refused: ' + JSON.stringify(good));
+    ok(good.ok && good.executive === GOOD.executive && good.technical === GOOD.technical, 'a good pair was refused: ' + JSON.stringify(good));
+    eq(good.rejected, {}, 'a good pair has no rejected part'); eq(good.unavailable, {}, 'a good pair has no unavailable part');
+    // the page's own guard sets aside a part the proxy passed
     const bad = T.checkSummaries({ executive: GOOD.executive, technical: GOOD.technical + ' Revenue will rise 47.3% [F1].' }, BODY);
-    ok(!bad.ok && bad.part === 'technical' && arr(bad.reasons).indexOf('digit') >= 0, JSON.stringify(bad));
-    ok(!T.checkSummaries({ executive: GOOD.executive }, BODY).ok, 'a missing technical part passed');
+    ok(bad.ok && bad.executive === GOOD.executive && bad.technical === null && arr(bad.rejected.technical).indexOf('digit') >= 0, JSON.stringify(bad));
+    // the proxy's per-part answer: one part and the other's reason codes (unknown codes are dropped, never shown)
+    const part = T.checkSummaries({ executive: GOOD.executive, technical: null, model: 'm', rejected: { technical: ['grade_word', 'confidence', '<b>x</b>'] }, unavailable: {} }, BODY);
+    ok(part.ok && part.executive === GOOD.executive && part.technical === null, JSON.stringify(part));
+    eq(arr(part.rejected.technical), ['grade_word', 'confidence'], 'the proxy\'s reasons for the technical part');
+    const un = T.checkSummaries({ executive: null, technical: GOOD.technical, rejected: {}, unavailable: { executive: 'upstream_timeout' } }, BODY);
+    ok(un.ok && un.executive === null && un.unavailable.executive === 'upstream_timeout', JSON.stringify(un));
+    ok(T.checkSummaries({ executive: null, technical: GOOD.technical, unavailable: { executive: '<img src=x>' } }, BODY).unavailable.executive === 'unknown', 'an unknown error code was kept');
+    const note = T.partsNote(part), unNote = T.partsNote(un);
+    ok(/technical summary was set aside/.test(note) && /wrote a grade of its own; used confidence wording/.test(note) && !/<b>/.test(note), 'the note does not say which part was set aside and why: ' + note);
+    ok(/executive summary could not be written/.test(unNote) && /did not answer in time/.test(unNote), 'the note does not say why a part is missing: ' + unNote);
+    eq(T.partsNote(good), '', 'a note for a good pair');
+    // a missing part with no reason, the old {text} shape, nothing at all: nothing passes that should not
+    const miss = T.checkSummaries({ executive: GOOD.executive }, BODY);
+    ok(miss.ok && miss.technical === null && arr(miss.rejected.technical).indexOf('empty') >= 0, 'a missing technical part: ' + JSON.stringify(miss));
     ok(!T.checkSummaries({ text: 'Revenue rose.' }, BODY).ok, 'the old {text} shape passed');
     ok(!T.checkSummaries(null, BODY).ok && !T.checkSummaries({ executive: ' ', technical: ' ' }, BODY).ok, 'an empty answer passed');
   });
@@ -183,6 +204,12 @@ const GOOD = {
     const t = T.summaryHtml(GOOD.technical, BODY, 'technical', RED);
     ok(t.indexOf('orders &lt;b&gt;.csv') >= 0 && t.indexOf('<b>') < 0, 'the restored file name was not escaped: ' + t);
     ok((t.match(/<p>/g) || []).length === 2 && t.indexOf('CONFIRMED') >= 0 && t.indexOf('WATCH') >= 0, 'paragraphs or technical grades are wrong: ' + t);
+    // a quoted value that holds a digit is put back inside the engine's own text, never in the model's words
+    const red2 = [{ label: 'a value quoted from your data', value: 'North 12', placeholder: '[value A]' }];
+    const h2 = T.summaryHtml(GOOD.executive, BODY, 'executive', red2), t2 = T.summaryHtml(GOOD.technical, BODY, 'technical', red2);
+    const words2 = h2.replace(/ title="[^"]*"/g, '');   // the citation's title is the engine's claim: put back there
+    ok(words2.indexOf('North 12') < 0 && words2.indexOf('&#39;[value A]&#39;') >= 0 && /title="[^"]*North 12/.test(h2), 'a model-placed value with a digit was put back: ' + h2);
+    ok(t2.indexOf('&#39;North 12&#39;') >= 0 && t2.indexOf('[value A]') < 0, 'the value was not put back inside the engine\'s claim: ' + t2);
   });
 
   check('aiPayload sends exactly the allowed fields', () => {

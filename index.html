@@ -1052,7 +1052,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-24 21:39:47 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">46</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-25 00:11:53 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">46</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -1711,7 +1711,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-24 21:39:47 UTC</span>; <span data-fact="site_build:display.build_checks_passed">46</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-25 00:11:53 UTC</span>; <span data-fact="site_build:display.build_checks_passed">46</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">777</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-24 21:10:59 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">82a6be7b4b33</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -3291,8 +3291,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
    the page sends NLTry.aiPayload (question, findings' id/claim/verdict/value, story) after the
    visitor ticks consent. The model writes an executive and a technical summary as words around
    slots ({F1.n1}, {F1.grade}); NLTry.checkSummaries runs the same template guard as the proxy
-   (one shared block, tools/check_try_guard.js checks the copies match) and the page itself fills
-   every figure and grade from the engine's findings. The engine's story stays on screen. */
+   (one shared block, tools/check_try_guard.js checks the copies match) on each part, and the page
+   itself fills every figure and grade from the engine's findings. Each part is judged on its own:
+   a part that passes is shown, labelled; a part that does not is named with the reason in plain
+   words (NLTry.partNote). The engine's story stays on screen. */
 (function () {
   'use strict';
   var U = window.NLU || {}, NL = window.NL || {};
@@ -3343,7 +3345,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     };
     var CODES = ['empty', 'length', 'format', 'unknown_marker', 'digit', 'percent', 'currency', 'number_word', 'grade_word',
       'confidence', 'cause', 'intensity', 'prediction', 'advice', 'register', 'echo', 'negation', 'vocabulary', 'citation',
-      'binding', 'grade_swap', 'grade_missing', 'inferential', 'direction', 'unit', 'none_confirmed'];
+      'binding', 'grade_swap', 'grade_missing', 'inferential', 'direction', 'unit', 'none_confirmed', 'no_figure'];
     var STORY_PARTS = ['headline', 'what_happened', 'why', 'what_to_do', 'whats_next', 'cannot_answer'];
     var MAX_CHARS = 6000;
 
@@ -3385,7 +3387,18 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var CAUSE_PHRASES = ['due to', 'led to', 'lead to', 'leads to', 'leading to', 'as a result', 'resulted in', 'results in',
       'result of', 'thanks to', 'stems from', 'stemmed from', 'on account of', 'responsible for', 'contributed to',
       'contributes to', 'effect of', 'impact of', 'on the back of', 'in line with', 'as a consequence', 'in response to',
-      'linked to', 'tied to', 'because of', 'weighed on', 'associated with'];
+      'linked to', 'tied to', 'because of', 'weighed on', 'associated with', 'comes from', 'come from', 'came from',
+      'coming from', 'based on', 'owing to', 'on the basis of',
+      'compared with', 'compared to', 'relative to', 'as opposed to', 'in contrast'];
+    // a comparison or an order between what the text states ("refunds rose versus revenue", "fell after
+    // refunds rose"): in a sentence that speaks of more than one finding or line, refused unless the
+    // cited text uses the same word, like a cause ("rose against the prior year" of one finding is its own)
+    var ORDER_WORDS = setOf(words('after before afterwards versus vs compared comparison relative against than while whereas ' +
+      'whilst unlike when whenever following then until once as'));
+    // "made revenue fall": a make word with a direction word close after it is a cause
+    var MAKE_WORDS = setOf(words('make makes made making'));
+    // "accounted for the fall": a cause, unless a figure follows ("duplicates account for {F3.n1} of rows")
+    var ACCOUNT_WORDS = setOf(words('account accounts accounted accounting'));
     var INTENSITY_WORDS = setOf(words('surge surged surging plunge plunged plunging soar soared soaring sharp sharply dramatic ' +
       'dramatically significant significantly substantial substantially massive massively huge enormous tremendous steep ' +
       'steeply spike spiked spikes skyrocketed skyrocketing collapse collapsed crashed tumbled slumped remarkable remarkably ' +
@@ -3458,7 +3471,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var NOT_ROMAN = setOf(['CI', 'CV', 'CD', 'DC', 'MD', 'MM', 'CC', 'CL', 'DL', 'ML', 'LI', 'MI', 'DI', 'IV', 'XL', 'MIX',
       'MIC', 'DIV', 'CIV', 'MIL', 'LCD']);
     var NUM_EXPR = /(?:[$€£¥]\s?)?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?:[-/–]\d+(?:\.\d+)?)*(?:\s?%|\s(?:percentage points?|percent|per cent|pct|pp)\b|(?:k|m|b|mn|bn|tn)(?![A-Za-z])|\s(?:thousand|million|billion|trillion)\b)?/g;
-    var TOKEN = /\{([FS])(\d{1,3})\.([a-z]+\d{0,3})\}|\{NONE_CONFIRMED\}|\[([FS])(\d{1,3})\]|\[(?:value [A-Z]{1,3}|your file)\]/g;
+    // a slot may hold up to two plain spaces inside each brace ("{ F1.claim }": the model wrote it so)
+    var TOKEN = /\{ {0,2}([FS])(\d{1,3})\.([a-z]+\d{0,3}) {0,2}\}|\{ {0,2}NONE_CONFIRMED {0,2}\}|\[([FS])(\d{1,3})\]|\[(?:value [A-Z]{1,3}|your file)\]/g;
     // a name with an underscore (a column such as confirmed_units), read as one opaque word when the
     // engine's text holds it exactly; any other underscore is refused as formatting. Found as whole
     // runs of letters, digits and underscores (one linear pass, no lookbehind for older browsers).
@@ -3550,7 +3564,43 @@ table &#x27;RentSafeTO Evaluation View&#x27;
 
     // One finding or story line: its figures as written, with the direction and unit word the
     // engine gave each, and the words the guard compares the model's words with.
-    function source(ref, raw, grade) {
+    // a finding whose claim names its measure but holds no value of it ("Change in the average month's
+    // row volume, latest 12 months against the 12 before"): its value is a number, no figure in the
+    // claim is that value (at the claim's own precision, or as a percentage), and the claim's figures are
+    // only whole numbers and dates (no percentage, currency, decimal or sign: those are measured values)
+    function namesOnly(nums, value) {
+      if (typeof value !== 'number' || !isFinite(value) || valueAt(nums, value) >= 0) return false;
+      for (var i = 0; i < nums.length; i++) if (!/^\d+(?:[-\/–]\d+)*$/.test(nums[i].fill)) return false;
+      return true;
+    }
+    // the first figure in a text that is the value, at the figure's own precision or as a percentage (-1: none)
+    function valueAt(nums, value) {
+      if (typeof value !== 'number' || !isFinite(value)) return -1;
+      var a = Math.abs(value);
+      for (var i = 0; i < nums.length; i++) {
+        var d = nums[i].fill.replace(/[^\d.]/g, ''), x = Number(d), dec = (d.split('.')[1] || '').length;
+        if (!d || !isFinite(x) || dec > 12) continue;
+        if (Math.abs(x - Number(a.toFixed(dec))) < 1e-9 || Math.abs(x - Number((a * 100).toFixed(dec))) < 1e-9) return i;
+      }
+      return -1;
+    }
+    // for each place a placeholder ([value A], [your file]) stands in the engine's text, what stands
+    // right before it: the word (lower case), the placeholder before it, '#' after a figure, '' at the start
+    function phBefore(raw, ph) {
+      var out = [], t = nfkc(raw), at = t.indexOf(ph);
+      while (at >= 0) {
+        var b = t.slice(0, at).replace(/[^A-Za-z0-9\]]+$/, ''), m = /\[(?:value [A-Z]{1,3}|your file)\]$/.exec(b);
+        out.push(m ? m[0] : /[0-9]$/.test(b) ? '#' : (fold(b).toLowerCase().match(/[a-z]*$/) || [''])[0]);
+        at = t.indexOf(ph, at + ph.length);
+      }
+      return out;
+    }
+    // a finding whose claim names its measure, and a story line that states its value
+    function measurePair(a, b) {
+      if (b.label) { var c = a; a = b; b = c; }
+      return !!(a.label && b.kind === 'S' && valueAt(b.nums, a.value) >= 0);
+    }
+    function source(ref, raw, grade, value) {
       var t = nfkc(raw), nums = [], m, prevEnd = 0, list = [];
       NUM_EXPR.lastIndex = 0;
       while ((m = NUM_EXPR.exec(t)) !== null) list.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
@@ -3578,13 +3628,14 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       }
       for (var k = 0; k < nums.length; k++) if (nums[k].dir && /^[+\-−]/.test(nums[k].fill)) dirs[nums[k].dir] = true;
       return { ref: ref, kind: ref.charAt(0), grade: grade, raw: String(raw), lower: t.toLowerCase(), words: setOf(ws),
-        vocab: st, stems: stems(ws), dirs: dirs, nums: nums, idents: setOf(namesIn(t)) };
+        vocab: st, stems: stems(ws), dirs: dirs, nums: nums, idents: setOf(namesIn(t)),
+        label: ref.charAt(0) === 'F' && namesOnly(nums, value), value: ref.charAt(0) === 'F' ? value : null };
     }
     function sources(p) {
       var out = [], fs = (p && Array.isArray(p.findings)) ? p.findings : [], st = (p && p.story) || {}, k = 0;
       for (var i = 0; i < fs.length; i++) {
         var f = fs[i] || {};
-        out.push(source('F' + (i + 1), typeof f.claim === 'string' ? f.claim : '', has(GRADES, f.verdict) ? GRADES[f.verdict] : null));
+        out.push(source('F' + (i + 1), typeof f.claim === 'string' ? f.claim : '', has(GRADES, f.verdict) ? GRADES[f.verdict] : null, f.value));
       }
       for (var j = 0; j < STORY_PARTS.length; j++) {
         var part = STORY_PARTS[j], v = part === 'headline' ? [st.headline] : (Array.isArray(st[part]) ? st[part] : []);
@@ -3595,10 +3646,39 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       return out;
     }
 
-    // the tokens in normalised text, each resolved against the sources (bad: not a real slot)
-    function tokens(t, byRef) {
-      var out = [], m, known = Object.create(null);
-      for (var r in byRef) for (var id in byRef[r].idents) known[id] = true;
+    // One payload read once: its sources, by ref, the figures they hold and the engine's names. The
+    // last payload read is kept (keyed by its JSON, so a changed payload is read again): the proxy
+    // checks many short sentences against one payload while it builds the data message, and a
+    // Cloudflare Worker has little CPU time per request. Nothing reads these objects to change them.
+    var LAST = { key: null };
+    function prepared(p) {
+      var key = null;
+      try { key = JSON.stringify(p === undefined ? null : p); } catch (e) { key = null; }
+      if (key !== null && key === LAST.key) return LAST;
+      var srcs = sources(p), byRef = Object.create(null), figures = Object.create(null), ids = Object.create(null), phs = placeholders(srcs);
+      for (var i = 0; i < srcs.length; i++) {
+        byRef[srcs[i].ref] = srcs[i];
+        numbersIn(srcs[i].raw).forEach(function (n) { figures[n] = true; });
+        for (var id in srcs[i].idents) ids[id] = true;
+      }
+      var out = { key: key, srcs: srcs, byRef: byRef, figures: figures, ids: ids, phs: phs };
+      if (key !== null) LAST = out;
+      return out;
+    }
+
+    // the placeholders ([value A], [your file]) the engine's text holds
+    var PH = /\[(?:value [A-Z]{1,3}|your file)\]/g;
+    function placeholders(srcs) {
+      var o = Object.create(null);
+      for (var i = 0; i < srcs.length; i++) (nfkc(srcs[i].raw).match(PH) || []).forEach(function (x) { o[x] = true; });
+      return o;
+    }
+    // the tokens in normalised text, each resolved against the sources (bad: not a real slot, or a
+    // placeholder the engine's text does not hold)
+    function tokens(t, byRef, known, phs) {
+      var out = [], m;
+      if (!known) { known = Object.create(null); for (var r in byRef) for (var id in byRef[r].idents) known[id] = true; }
+      if (!phs) { var all = []; for (var q in byRef) all.push(byRef[q]); phs = placeholders(all); }
       TOKEN.lastIndex = 0;
       while ((m = TOKEN.exec(t)) !== null) {
         var tok = { start: m.index, end: m.index + m[0].length, text: m[0], bad: false };
@@ -3611,8 +3691,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         } else if (m[4]) {
           tok.type = 'cite'; tok.ref = m[4] + m[5]; tok.src = has(byRef, tok.ref) ? byRef[tok.ref] : null;
           if (!tok.src || /^0/.test(m[5])) tok.bad = true;
-        } else if (m[0] === '{NONE_CONFIRMED}') tok.type = 'none';
-        else tok.type = 'ph';
+        } else if (m[0].charAt(0) === '{') tok.type = 'none';
+        else { tok.type = 'ph'; if (!phs[m[0]]) tok.bad = true; }
         out.push(tok);
       }
       // the engine's own names, outside the tokens above; any other name stays plain text
@@ -3656,57 +3736,63 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       return res;
     }
 
-    function check(text, payload, register) {
+    // notes (optional): an array that gets {code, detail} for each problem found (the proxy's guided retry)
+    function check(text, payload, register, notes) { return checkP(prepared(payload), text, register, notes); }
+    // many texts against one payload, read once (the proxy's data message probes each engine sentence)
+    function checkMany(texts, payload, register) {
+      var P = prepared(payload);
+      return texts.map(function (x) { return checkP(P, x, register); });
+    }
+    function checkP(P, text, register, notes) {
       var R = has(REGISTERS, register) ? REGISTERS[register] : REGISTERS.executive;
       var raw = String(text === null || text === undefined ? '' : text), bad = Object.create(null);
-      var add = function (c) { bad[c] = true; };
+      var add = function (c, d) { bad[c] = true; if (Array.isArray(notes) && notes.length < 80) notes.push({ code: c, detail: d === undefined ? null : d }); };
       var result = function () { return CODES.filter(function (c) { return bad[c]; }); };
       if (!raw.trim()) return ['empty'];
       if (raw.length > MAX_CHARS) { add('length'); return result(); }
-      if (countWords(raw) > R.hardMaxWords) add('length');
-      var t = nfkc(raw), srcs = sources(payload), byRef = Object.create(null), i;
-      for (i = 0; i < srcs.length; i++) byRef[srcs[i].ref] = srcs[i];
+      if (countWords(raw) > R.hardMaxWords) add('length', { words: countWords(raw), max: R.maxWords });
+      var t = nfkc(raw), srcs = P.srcs, byRef = P.byRef, i;
       var findings = srcs.filter(function (s) { return s.kind === 'F'; });
-      var toks = tokens(t, byRef), masked = '', last = 0;
+      var toks = tokens(t, byRef, P.ids, P.phs), masked = '', last = 0;
       for (i = 0; i < toks.length; i++) {
         masked += t.slice(last, toks[i].start) + String.fromCharCode(PUA + i);
         last = toks[i].end;
-        if (toks[i].bad) add('unknown_marker');
+        if (toks[i].bad) add('unknown_marker', { marker: toks[i].text });
       }
       masked += t.slice(last);
       var isTok = function (c) { return c >= PUA && c < PUA + toks.length; };
       var plain = masked.replace(PUA_ALL, ' '), lower = fold(plain).toLowerCase(), ws = modelWords(plain);
 
       // what the model may never write itself
-      if (/[{}[\]]/.test(plain)) add('unknown_marker');
+      if (/[{}[\]]/.test(plain)) add('unknown_marker', { stray: (plain.match(/[{}[\]]/) || [''])[0] });
       if (/[*#`<>|~_!?]/.test(plain) || /^\s*[-•·]\s/m.test(plain) || /https?:|www\./i.test(plain) ||
-        /(^|[^A-Za-z0-9])[A-Za-z0-9-]+\.(?:com|org|net|io|ai|co|uk|ca|example)(?![A-Za-z])/i.test(plain)) add('format');
+        /(^|[^A-Za-z0-9])[A-Za-z0-9-]+\.(?:com|org|net|io|ai|co|uk|ca|example)(?![A-Za-z])/i.test(plain)) add('format', { chars: (plain.match(/[*#`<>|~_!?]/g) || []).slice(0, 4).join('') });
       // invisible characters, private-use characters, and letters outside plain Latin (a Cyrillic
       // "с" in "сonfirmed") would let a word slip past the lists below
       if (/[\p{Cf}\p{Co}]/u.test(t) || /(?![A-Za-z])\p{L}/u.test(fold(plain))) add('format');
-      if (/\p{N}/u.test(plain)) add('digit');
+      if (/\p{N}/u.test(plain)) add('digit', { figures: (plain.match(/\p{N}[\p{N},.:%-]*/gu) || []).slice(0, 6) });
       var caps = plain.match(/\b[IVXLCDM]{2,}\b/g) || [];
-      for (i = 0; i < caps.length; i++) if (ROMAN.test(caps[i]) && !NOT_ROMAN[caps[i]]) add('digit');
-      if (/(^|[^A-Za-z])(?=[lIO]*[lO])[lIO]{2,}(?![A-Za-z])/.test(plain)) add('digit');   // "lO" for 10
-      if (/[%‰]/.test(plain)) add('percent');
-      PERCENT_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('percent'); });
-      if (/\p{Sc}/u.test(plain)) add('currency');
+      for (i = 0; i < caps.length; i++) if (ROMAN.test(caps[i]) && !NOT_ROMAN[caps[i]]) add('digit', { figures: [caps[i]] });
+      if (/(^|[^A-Za-z])(?=[lIO]*[lO])[lIO]{2,}(?![A-Za-z])/.test(plain)) add('digit', { figures: ['lO'] });   // "lO" for 10
+      if (/[%‰]/.test(plain)) add('percent', { word: '%' });
+      PERCENT_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('percent', { word: ph }); });
+      if (/\p{Sc}/u.test(plain)) add('currency', { word: (plain.match(/\p{Sc}/u) || [''])[0] });
       for (i = 0; i < ws.length; i++) {
         var w = ws[i];
-        if (NUMBER_WORDS[w] || (w.length > 4 && /fold$/.test(w))) add('number_word');
-        if (PERCENT_WORDS[w]) add('percent');
-        if (GRADE_WORDS[w]) add('grade_word');
-        if (CONFIDENCE_WORDS[w]) add('confidence');
-        if (REGISTER_WORDS[w]) add('register');
-        if (ECHO_WORDS[w]) add('echo');
-        if (NEGATORS[w]) add('negation');
+        if (NUMBER_WORDS[w] || (w.length > 4 && /fold$/.test(w))) add('number_word', { word: w });
+        if (PERCENT_WORDS[w]) add('percent', { word: w });
+        if (GRADE_WORDS[w]) add('grade_word', { word: w });
+        if (CONFIDENCE_WORDS[w]) add('confidence', { word: w });
+        if (REGISTER_WORDS[w]) add('register', { word: w });
+        if (ECHO_WORDS[w]) add('echo', { word: w });
+        if (NEGATORS[w]) add('negation', { word: w });
       }
-      if (/n['’]t(?![A-Za-z])/i.test(plain)) add('negation');
-      GRADE_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('grade_word'); });
-      REGISTER_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('register'); });
-      ECHO_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('echo'); });
-      CONFIDENCE_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('confidence'); });
-      if (PERSON.test(fold(plain)) || /<<<|>>>/.test(t)) add('echo');
+      if (/n['’]t(?![A-Za-z])/i.test(plain)) add('negation', { word: "n't" });
+      GRADE_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('grade_word', { word: ph }); });
+      REGISTER_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('register', { word: ph }); });
+      ECHO_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('echo', { word: ph }); });
+      CONFIDENCE_PHRASES.forEach(function (ph) { if (phraseIn(lower, ph)) add('confidence', { word: ph }); });
+      if (PERSON.test(fold(plain)) || /<<<|>>>/.test(t)) add('echo', { person: true });
 
       // sentence by sentence: citations and slots, the words used, grades, binding, direction, units
       var sents = sentences(masked, toks), anyCite = false, nones = 0, mentioned = Object.create(null), graded = Object.create(null);
@@ -3726,7 +3812,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         flush();
         // every sentence cites what it speaks of and holds one of its slots; "{NONE_CONFIRMED}." stands alone
         var bare = s.replace(PUA_ALL, function (c) { return toks[c.charCodeAt(0) - PUA].type === 'none' ? '' : c; }).replace(/[\s.,;:]/g, '');
-        if (!(noneHere && !bare) && (!nCited || !nSlots)) add('citation');
+        if (!(noneHere && !bare) && (!nCited || !nSlots)) add('citation', { sentence: si + 1, cites: nCited > 0, slots: nSlots > 0 });
         var scope = srcs.filter(function (x) { return cited[x.ref]; });
         var scopeWords = Object.create(null), scopeVocab = Object.create(null), scopeLower = '', scopeDirs = { up: false, down: false };
         scope.forEach(function (x) {
@@ -3736,25 +3822,29 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var sw = modelWords(s.replace(PUA_ALL, ' '));
         for (i = 0; i < sw.length; i++) {
           var v = sw[i];
-          if (CAUSE_WORDS[v] && !scopeWords[v]) add('cause');
-          if (INTENSITY_WORDS[v] && !scopeWords[v]) add('intensity');
-          if (PREDICT_WORDS[v] && !scopeWords[v]) add('prediction');
-          if (ADVICE_WORDS[v] && !scopeWords[v]) add('advice');
-          if (SOFT_CONFIDENCE[v] && !scopeWords[v]) add('confidence');
-          if (CURRENCY_WORDS[v] && !scopeWords[v]) add('currency');
+          if (CAUSE_WORDS[v] && !scopeWords[v]) add('cause', { word: v });
+          if (INTENSITY_WORDS[v] && !scopeWords[v]) add('intensity', { word: v });
+          if (PREDICT_WORDS[v] && !scopeWords[v]) add('prediction', { word: v });
+          if (ADVICE_WORDS[v] && !scopeWords[v]) add('advice', { word: v });
+          if (SOFT_CONFIDENCE[v] && !scopeWords[v]) add('confidence', { word: v });
+          if (CURRENCY_WORDS[v] && !scopeWords[v]) add('currency', { word: v });
+          if (MAKE_WORDS[v] && !scopeWords[v]) {
+            for (var mk = i + 1; mk < sw.length && mk <= i + 4; mk++) if (!LOOSE_MOVES[sw[mk]] && (UP_WORDS[sw[mk]] || DOWN_WORDS[sw[mk]])) { add('cause', { word: v + ' ' + sw[mk] }); break; }
+          }
         }
         var slower = wordsOf(fold(s.replace(PUA_ALL, ' '))).join(' ');
-        CAUSE_PHRASES.forEach(function (ph) { if (phraseIn(slower, ph) && !phraseIn(scopeLower, ph)) add('cause'); });
-        PREDICT_PHRASES.forEach(function (ph) { if (phraseIn(slower, ph) && !phraseIn(scopeLower, ph)) add('prediction'); });
+        CAUSE_PHRASES.forEach(function (ph) { if (phraseIn(slower, ph) && !phraseIn(scopeLower, ph)) add('cause', { word: ph }); });
+        PREDICT_PHRASES.forEach(function (ph) { if (phraseIn(slower, ph) && !phraseIn(scopeLower, ph)) add('prediction', { word: ph }); });
+        var citedRefs = Object.keys(cited);
         // an engine name (confirmed_units) must be one the cited text holds
         for (i = 0; i < items.length; i++) {
-          if (items[i].tok && items[i].tok.type === 'ident' && !scope.some(function (x) { return x.idents[items[i].tok.text]; })) add('vocabulary');
+          if (items[i].tok && items[i].tok.type === 'ident' && !scope.some(function (x) { return x.idents[items[i].tok.text]; })) add('vocabulary', { word: items[i].tok.text, cites: citedRefs });
         }
         // each word from the cited text (by its stem) or the short list of linking words
         if (nCited) {
           for (i = 0; i < items.length; i++) {
             var iw = items[i].w;
-            if (iw && !FREE[iw] && !NEUTRAL_MOVES[iw] && !scopeWords[iw] && !scopeVocab[stem(iw)]) add('vocabulary');
+            if (iw && !FREE[iw] && !NEUTRAL_MOVES[iw] && !scopeWords[iw] && !scopeVocab[stem(iw)]) add('vocabulary', { word: iw, cites: citedRefs });
           }
         }
 
@@ -3775,7 +3865,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         // a grade slot never serves a finding of another grade, unless that finding's own grade slot is here too
         gradeSlots.forEach(function (g) {
           involved.forEach(function (x) {
-            if (x.kind === 'F' && x.grade !== g.grade && gradeSlots.indexOf(x) < 0) add('grade_swap');
+            if (x.kind === 'F' && x.grade !== g.grade && gradeSlots.indexOf(x) < 0) add('grade_swap', { grade_of: g.ref, finding: x.ref });
           });
         });
         // the source a slot speaks of: the nearest word, before it (else after it), that only one
@@ -3792,16 +3882,52 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           }
           return null;
         };
+        for (i = 1; i + 1 < items.length; i++) {
+          var nx = items[i + 1].tok;
+          if (items[i].w === 'for' && ACCOUNT_WORDS[items[i - 1].w] && !phraseIn(scopeLower, items[i - 1].w + ' for') &&
+            !(nx && !nx.bad && nx.type === 'slot' && nx.field === 'n')) add('cause', { word: items[i - 1].w + ' for' });
+        }
+        if (involved.length > 1) for (i = 0; i < sw.length; i++) if (ORDER_WORDS[sw[i]] && !scopeWords[sw[i]]) add('cause', { word: sw[i] });
+        // a placeholder the model wrote stands where the cited text puts it: that text holds it, with
+        // the same word (or placeholder) right before it, and its nearest words are that text's own
+        for (i = 0; i < items.length; i++) {
+          var pt = items[i].tok;
+          if (!pt || pt.type !== 'ph' || pt.bad) continue;
+          var holders = scope.filter(function (x) { return x.raw.indexOf(pt.text) >= 0; }), pv = i ? items[i - 1] : null;
+          var want = !pv ? '' : pv.w ? pv.w : pv.tok.type === 'ph' ? pv.tok.text : pv.tok.type === 'ident' ? (pv.tok.text.toLowerCase().match(/[a-z]*$/) || [''])[0] : null;
+          if (want === null || !holders.some(function (x) { return phBefore(x.raw, pt.text).indexOf(want) >= 0; })) add('binding', { ph: pt.text });
+          else if (involved.length > 1) { var pown = ownerAt(i); if (pown && pown.raw.indexOf(pt.text) < 0) add('binding', { ph: pt.text }); }
+        }
+        // two figures (slots or placeholders) with no word between them run together or read as one
+        // ("{F4.n2}{F4.n3}" -> 36, "{F1.n1} {F1.n2}", "{F5.n1}, {F5.n2}"); quotes, a semicolon or brackets part them
+        var valueTok = function (x) { return x && !x.bad && ((x.type === 'slot' && x.field === 'n') || x.type === 'ph'); };
+        for (i = 1; i < items.length; i++) {
+          if (valueTok(items[i].tok) && valueTok(items[i - 1].tok) && /^[^A-Za-z'"‘’“”;:()]*$/.test(s.slice(items[i - 1].at + 1, items[i].at))) add('digit', { joined: true });
+        }
+        // a finding whose claim names its measure but not its value is stated with that value, from a
+        // story line that gives it (its number slot, or the whole line), never by its name alone and
+        // never with some other figure of a line
+        involved.forEach(function (x) {
+          if (x.label && !items.some(function (it) {
+            var k = it.tok;
+            return k && k.type === 'slot' && !k.bad && k.src.kind === 'S' &&
+              ((k.field === 'n' && valueAt([k.num], x.value) === 0) || (k.field === 'text' && valueAt(k.src.nums, x.value) >= 0));
+          })) add('no_figure', { finding: x.ref });
+        });
         var nSlotsAt = [];
         for (var q = 0; q < slotItems.length; q++) {
           var qi = slotItems[q], sl = items[qi].tok, at = items[qi].at;
-          if (!cited[sl.ref]) add('citation');
+          if (!cited[sl.ref]) add('citation', { slot: sl.text, cite: sl.ref });
           if (sl.field !== 'n' && sl.field !== 'grade') continue;
           if (involved.length > 1) {
             var owner = ownerAt(qi);
             if (owner && owner !== sl.src) {
-              if (sl.field === 'grade') { if (owner.kind === 'F' && owner.grade !== sl.src.grade) add('grade_swap'); }
-              else if (!owner.nums.some(function (n) { return n.fill === sl.num.fill && n.unit === sl.num.unit; })) add('binding');
+              if (sl.field === 'grade') { if (owner.kind === 'F' && owner.grade !== sl.src.grade) add('grade_swap', { grade_of: sl.ref, finding: owner.ref }); }
+              // (a finding whose claim names its measure and the story line that states its value speak of
+              // one measure: "Change in the monthly total of cost, latest {F2.n1} months ...: the monthly
+              // total of cost moved from {S2.n1} ... a change of {S2.n3}")
+              else if (!owner.nums.some(function (n) { return n.fill === sl.num.fill && n.unit === sl.num.unit; }) &&
+                !measurePair(owner, sl.src)) add('binding', { slot: sl.text, words_of: owner.ref });
             }
           }
           if (sl.field !== 'n') continue;
@@ -3813,17 +3939,17 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           while (next < s.length && !isTok(s.charCodeAt(next))) next++;
           var btext = s.slice(prev + 1, at), atext = s.slice(at + 1, next);
           var bseg = btext.split(/[.;:!?]/), aseg = atext.split(/[.;:!?,]/)[0], aw = wordsOf(aseg);
-          if (DASHES.test(btext)) add('direction');   // a sign the model put on the engine's figure
-          if (/[A-Za-z0-9]$/.test(btext)) add('digit');   // letters or digits glued before the figure
-          if (atext && !/^[\s.,;:)\]'"’”]/.test(atext)) add('digit');   // "{F1.n1}k", "{F1.n1}OO", "{F1.n1}x"
-          if (/^\s/.test(atext) && MAGNITUDES[wordsOf(atext)[0]] && /^\s+[A-Za-z]+(?![A-Za-z])/.test(atext)) add('number_word');
+          if (DASHES.test(btext)) add('direction', { slot: sl.text, sign: true });   // a sign the model put on the engine's figure
+          if (/[A-Za-z0-9]$/.test(btext)) add('digit', { glued: sl.text });   // letters or digits glued before the figure
+          if (atext && !/^[\s.,;:)\]'"’”]/.test(atext)) add('digit', { glued: sl.text });   // "{F1.n1}k", "{F1.n1}OO", "{F1.n1}x"
+          if (/^\s/.test(atext) && MAGNITUDES[wordsOf(atext)[0]] && /^\s+[A-Za-z]+(?![A-Za-z])/.test(atext)) add('number_word', { word: wordsOf(atext)[0] });
           var md = moveBeside(wordsOf(bseg[bseg.length - 1]), aw);
           if (md) {
-            if (sl.num.dir ? sl.num.dir !== md : (!sl.src.dirs[md] || (sl.src.dirs.up && sl.src.dirs.down))) add('direction');
+            if (sl.num.dir ? sl.num.dir !== md : (!sl.src.dirs[md] || (sl.src.dirs.up && sl.src.dirs.down))) add('direction', { slot: sl.text });
           }
           var mu = unitIn(aw);
-          if (mu && sl.num.unit && mu !== sl.num.unit) add('unit');   // "3 of 6 years" where the engine wrote months
-          if ((sl.num.infer || inferKind(btext)) && sl.num.infer !== inferKind(btext)) add('inferential');
+          if (mu && sl.num.unit && mu !== sl.num.unit) add('unit', { slot: sl.text });   // "3 of 6 years" where the engine wrote months
+          if ((sl.num.infer || inferKind(btext)) && sl.num.infer !== inferKind(btext)) add('inferential', { slot: sl.text });
         }
         // each direction word belongs to the figure nearest it; with no figure, to the cited text
         for (i = 0; i < items.length; i++) {
@@ -3835,34 +3961,36 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           }
           if (best >= 0) {
             var bn = items[best].tok;
-            if (bn.num.dir ? bn.num.dir !== want : !bn.src.dirs[want]) add('direction');
-          } else if (!scopeDirs[want]) add('direction');
+            if (bn.num.dir ? bn.num.dir !== want : !bn.src.dirs[want]) add('direction', { word: dw, slot: bn.text });
+          } else if (!scopeDirs[want]) add('direction', { word: dw });
         }
       }
-      if (findings.length && !anyCite) add('citation');
+      if (findings.length && !anyCite) add('citation', { none: true });
       // every finding the text states carries its grade (its own slot, or one shared with a finding of the same grade)
-      for (var mref in mentioned) if (!graded[mref]) add('grade_missing');
+      for (var mref in mentioned) if (!graded[mref]) add('grade_missing', { finding: mref });
       // the filled text may hold no figure the engine did not write: two slots run together
       // ("{F2.n1}{F2.n2}" -> 73) or glued by a point ("48,200.7") make a new one
       if (!bad.unknown_marker) {
-        var known = Object.create(null);
-        srcs.forEach(function (x) { numbersIn(x.raw).forEach(function (n) { known[n] = true; }); });
-        var filled = numbersIn(fill(raw, payload, register));
-        for (i = 0; i < filled.length; i++) if (!known[filled[i]]) add('digit');
+        var filledText = fillP(P, raw, register), filled = numbersIn(filledText);
+        for (i = 0; i < filled.length; i++) if (!P.figures[filled[i]]) add('digit', { joined: true });
+        // the word limit holds for the text the reader sees: each whole-text slot counts as all its words
+        var fw = countWords(filledText);
+        if (fw > R.maxWords) add('length', { words: fw, max: R.maxWords, filled: true });
       }
       var hasConfirmed = findings.some(function (f) { return f.grade === 'CONFIRMED'; });
-      if (hasConfirmed ? nones > 0 : nones === 0) add('none_confirmed');
+      if (hasConfirmed ? nones > 0 : nones === 0) add('none_confirmed', { written: nones > 0 });
       return result();
     }
 
     // the text with each slot replaced by the engine's own words, as parts:
-    // {text} or {cite: 'F2', claim: the cited text}. Citations are for the reader to trace.
-    function parts(text, payload, register) {
+    // {text}, {text, ph: true} (a placeholder the model wrote, outside any slot) or {cite: 'F2', claim:
+    // the cited text}. Citations are for the reader to trace.
+    function parts(text, payload, register) { return partsP(prepared(payload), text, register); }
+    function partsP(P, text, register) {
       var R = has(REGISTERS, register) ? REGISTERS[register] : REGISTERS.executive;
-      var t = nfkc(text), srcs = sources(payload), byRef = Object.create(null), out = [], last = 0;
-      srcs.forEach(function (s) { byRef[s.ref] = s; });
-      var toks = tokens(t, byRef);
-      var push = function (x) { if (x) { if (out.length && out[out.length - 1].text !== undefined) out[out.length - 1].text += x; else out.push({ text: x }); } };
+      var t = nfkc(text), byRef = P.byRef, out = [], last = 0;
+      var toks = tokens(t, byRef, P.ids, P.phs);
+      var push = function (x) { if (x) { if (out.length && out[out.length - 1].text !== undefined && !out[out.length - 1].ph) out[out.length - 1].text += x; else out.push({ text: x }); } };
       toks.forEach(function (k, i) {
         push(t.slice(last, k.start));
         last = k.end;
@@ -3871,7 +3999,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var after = t.slice(k.end).replace(/^(?:\s*\[[FS]\d{1,3}\])+/, ''), nx = toks[i + 1];
         if (k.type === 'cite') out.push({ cite: k.ref, claim: k.src.raw });
         else if (k.type === 'none') push(R.none + (/^\s*(?:$|[.!?])/.test(after) ? '' : '.'));   // always a sentence of its own
-        else if (k.type === 'ph' || k.type === 'ident') push(k.text);
+        else if (k.type === 'ph') out.push({ text: k.text, ph: true });   // a placeholder the model wrote itself
+        else if (k.type === 'ident') push(k.text);
         else if (k.field === 'n') push(k.num.fill);
         else if (k.field === 'grade') push(R.grade[k.src.grade] || '');
         else {
@@ -3886,14 +4015,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       push(t.slice(last));
       return out;
     }
-    function fill(text, payload, register, opts) {
+    function fill(text, payload, register, opts) { return fillP(prepared(payload), text, register, opts); }
+    function fillP(P, text, register, opts) {
       var keep = !!(opts && opts.cite === 'keep');
-      return parts(text, payload, register).map(function (p) { return p.cite ? (keep ? '[' + p.cite + ']' : '') : p.text; }).join('')
+      return partsP(P, text, register).map(function (p) { return p.cite ? (keep ? '[' + p.cite + ']' : '') : p.text; }).join('')
         .replace(/[ \t]+([.,;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
     }
 
-    return { GRADES: GRADES, REGISTERS: REGISTERS, CODES: CODES, sources: sources, check: check, parts: parts, fill: fill,
-      countWords: countWords, numbersIn: numbersIn };
+    return { GRADES: GRADES, REGISTERS: REGISTERS, CODES: CODES, sources: sources, check: check, checkMany: checkMany, parts: parts, fill: fill,
+      countWords: countWords, numbersIn: numbersIn, valueAt: valueAt };
   })();
   /* ==== END TEMPLATE GUARD ==== */
   T.numbersIn = TG.numbersIn;          // how the proxy reads numbers (the payload cut check uses it)
@@ -3901,22 +4031,54 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   T.fillTemplate = TG.fill;            // the summary with the engine's figures, grades and text in
   T.reasonCodes = TG.CODES;            // every reason code checkTemplate can return
   T.SUMMARY_PARTS = ['executive', 'technical'];
-  // the proxy's answer {executive, technical, model}: both parts must pass, or neither is shown
+  // the proxy's answer {executive, technical, model, rejected, unavailable}: each part is judged on
+  // its own. A part is shown only when it came back as text and passes this page's guard too; any
+  // other part is set aside with the proxy's reason codes (rejected), the guard's own, or the proxy's
+  // error code (unavailable). Only known codes are kept: nothing the proxy sends is shown as text.
+  // ok: at least one part is shown. (An older proxy sent both parts as text, or an error.)
+  var UPSTREAM_CODES = ['upstream_timeout', 'upstream_busy', 'upstream_error', 'upstream_unreachable', 'upstream_bad_response', 'upstream_incomplete'];
   T.checkSummaries = function (ans, body) {
-    if (!ans || typeof ans !== 'object') return { ok: false, part: null, reasons: ['empty'] };
-    for (var i = 0; i < T.SUMMARY_PARTS.length; i++) {
-      var part = T.SUMMARY_PARTS[i], text = ans[part];
-      if (typeof text !== 'string' || !text.trim()) return { ok: false, part: part, reasons: ['empty'] };
-      var reasons = TG.check(text, body, part);
-      if (reasons.length) return { ok: false, part: part, reasons: reasons };
-    }
-    return { ok: true, executive: ans.executive.trim(), technical: ans.technical.trim() };
+    var out = { ok: false, executive: null, technical: null, rejected: {}, unavailable: {} };
+    if (!ans || typeof ans !== 'object') return out;
+    var rej = (ans.rejected && typeof ans.rejected === 'object') ? ans.rejected : {}, una = (ans.unavailable && typeof ans.unavailable === 'object') ? ans.unavailable : {};
+    var own = Object.prototype.hasOwnProperty;
+    T.SUMMARY_PARTS.forEach(function (part) {
+      var text = ans[part];
+      if (typeof text === 'string' && text.trim()) {
+        var reasons = TG.check(text, body, part);
+        if (reasons.length) out.rejected[part] = reasons; else { out[part] = text.trim(); out.ok = true; }
+      } else if (own.call(rej, part) && Array.isArray(rej[part])) {
+        var known = rej[part].filter(function (c) { return TG.CODES.indexOf(c) >= 0; });
+        out.rejected[part] = known.length ? known : ['empty'];
+      } else if (own.call(una, part)) out.unavailable[part] = UPSTREAM_CODES.indexOf(una[part]) >= 0 ? una[part] : 'unknown';
+      else out.rejected[part] = ['empty'];
+    });
+    return out;
+  };
+  // why a part could not be written, in plain words (the proxy's error codes)
+  var UNAVAILABLE_TEXT = { upstream_timeout: 'the AI model did not answer in time', upstream_busy: 'the AI model was busy',
+    upstream_error: 'the AI model answered with an error', upstream_unreachable: 'the AI model could not be reached',
+    upstream_bad_response: 'the AI model gave no usable answer', upstream_incomplete: 'the AI model stopped before it finished', unknown: 'no usable answer came back' };
+  // the plain-words note for one part that is not shown ('' when it is shown)
+  T.partNote = function (chk, part) {
+    var name = TG.REGISTERS[part].name;
+    if (chk.rejected[part]) return 'The ' + name + ' was set aside: it ' + T.reasonText(chk.rejected[part]) + '.';
+    if (chk.unavailable[part]) return 'The ' + name + ' could not be written: ' + (UNAVAILABLE_TEXT[chk.unavailable[part]] || UNAVAILABLE_TEXT.unknown) + '.';
+    return '';
+  };
+  // every part not shown, one sentence each ('' when both are shown)
+  T.partsNote = function (chk) {
+    return T.SUMMARY_PARTS.map(function (part) { return T.partNote(chk, part); }).filter(Boolean).join(' ');
   };
   // one summary as HTML: the engine's words in the slots, each citation a superscript that carries
-  // the claim it points to, quoted values put back (in this browser only), everything escaped
+  // the claim it points to, quoted values put back (in this browser only), everything escaped.
+  // A placeholder the model wrote in its own words (not inside a slot) is put back only when its value
+  // holds no digit: the guard lets one stand only where its own finding puts it, and even if that
+  // check failed, a model-placed value could never read as a figure here.
   T.summaryHtml = function (text, body, register, red) {
     var html = TG.parts(text, body, register).map(function (p) {
       if (p.cite) return '<sup class="tr-cite" title="' + esc(T.restore(p.claim, red)) + '">[' + esc(p.cite) + ']</sup>';
+      if (p.ph) { var back = T.restore(p.text, red); return esc(/\p{N}/u.test(back) ? p.text : back); }
       return esc(T.restore(p.text, red));
     }).join('');
     return html.trim().split(/\n{2,}/).map(function (x) { return '<p>' + x.replace(/\s*\n\s*/g, ' ').trim() + '</p>'; }).join('');
@@ -3933,13 +4095,14 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   var REASON_TEXT = { empty: 'came back empty', length: 'was over its word limit', format: 'used formatting or characters that plain prose does not need',
     unknown_marker: 'used a marker that is not in the findings', digit: 'wrote a number of its own', percent: 'wrote a percentage of its own',
     currency: 'wrote a currency of its own', number_word: 'wrote a number in words', grade_word: 'wrote a grade of its own',
-    confidence: 'used confidence wording', cause: 'added a cause the engine did not state', intensity: 'added size wording the engine did not use',
+    confidence: 'used confidence wording', cause: 'added a cause, comparison or order the engine did not state', intensity: 'added size wording the engine did not use',
     prediction: 'added a prediction the engine did not make', advice: 'added advice the engine did not give', register: 'used promotional wording',
     echo: 'echoed instructions, spoke as itself or addressed the reader', negation: 'turned a finding round with a negation',
     vocabulary: 'used words that are not in the finding it cites', citation: 'wrote a sentence that does not cite and use the finding it speaks of',
     binding: 'put a figure next to another finding\'s words', grade_swap: 'gave a finding another finding\'s grade',
     grade_missing: 'stated a finding without its grade', inferential: 'moved a p-value or a coverage figure away from what it measures',
-    direction: 'changed a direction', unit: 'changed a unit', none_confirmed: 'misstated whether anything is confirmed' };
+    direction: 'changed a direction', unit: 'changed a unit', none_confirmed: 'misstated whether anything is confirmed',
+    no_figure: 'named a measure without its figure' };
   T.reasonText = function (reasons) {
     var out = [];
     (reasons || []).forEach(function (r) { if (Object.prototype.hasOwnProperty.call(REASON_TEXT, r) && out.indexOf(REASON_TEXT[r]) < 0) out.push(REASON_TEXT[r]); });
@@ -4774,7 +4937,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           '<p class="tr-ai-label">AI-reworded summaries (DeepSeek); every figure and grade put in by the engine</p>' +
           '<p class="tr-ai-limit">The model wrote only the words. Each figure, grade and quoted value below was filled in by this page from the engine\'s findings, and a summary that wrote a number, a grade, a cause, size or confidence wording of its own, used words its finding does not use, or set a figure or a grade beside another finding\'s words, was refused. The check cannot prove that a sentence means what the finding means: the findings and the story above are the record. Grades use the evidence names: CONFIRMED is the engine\'s RECOMMEND, NOT ENOUGH DATA its INSUFFICIENT.</p>' +
           T.SUMMARY_PARTS.map(function (part) {
-            return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai[part], S.ai.body, part, S.aiRed) + '</div>';
+            // a part that did not pass is named, with the reason in plain words; its text is never shown
+            if (S.ai.chk[part] === null) return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><p class="tr-ai-aside note" role="status" data-aside="' + part + '">' +
+              esc(T.partNote(S.ai.chk, part)) + ' The engine\'s findings and story above are the record.</p>';
+            return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai.chk[part], S.ai.body, part, S.aiRed) + '</div>';
           }).join('') + '</div>';
       }
       if (CFG.ai_proxy_url && !S.ai) {
@@ -4790,7 +4956,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           '<details class="more"><summary>Exactly what is sent</summary><pre class="snip" id="try-ai-preview">' + esc(payload) + '</pre></details>' +
           '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send the data above to the AI model</label>' +
           '<div class="tr-ai-go"><button type="button" class="btn btn-ghost" id="try-ai-go" disabled>Write the AI summaries</button><span class="note" id="try-ai-status" role="status"></span></div>' +
-          '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and only the engine\'s story is shown.</p></div>';
+          '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and this page says which one and why. Each summary is judged on its own: one that passes is shown even when the other is set aside, and the engine\'s story always stays.</p></div>';
       }
       box.innerHTML = h;
       var ok = document.getElementById('try-ai-ok'), go = document.getElementById('try-ai-go'), raw = document.getElementById('try-ai-raw');
@@ -4825,18 +4991,22 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         })
         .then(function (ans) {
           clearTimeout(timer);
-          var chk = T.checkSummaries(ans, body);      // the same guard as the proxy, on what this page sent
+          var chk = T.checkSummaries(ans, body);      // the same guard as the proxy, part by part, on what this page sent
           if (!chk.ok) {
-            S.aiNote = 'The AI summaries were set aside: the ' + (chk.part || 'returned') + ' summary ' + T.reasonText(chk.reasons) + '.' + FALLBACK;
+            S.aiNote = 'The AI summaries were set aside. ' + (T.partsNote(chk) || 'Nothing usable came back.') + FALLBACK;
             S.ai = null;
-          } else { S.ai = { executive: chk.executive, technical: chk.technical, body: body }; S.aiRed = red; S.aiNote = ''; }
+          } else { S.ai = { chk: chk, body: body }; S.aiRed = red; S.aiNote = ''; }
           drawStory();
         })
         .catch(function (e) {
           clearTimeout(timer);
           var a = (e && e.ans) || {};
           if (e && e.status === 429) S.aiNote = 'The AI model is busy right now (the proxy answered 429), so no summaries were written. Try again in a minute.' + FALLBACK;
-          else if (a.error === 'rejected_wording' && (a.part === 'executive' || a.part === 'technical')) {
+          else if (a.error === 'rejected_wording' && a.rejected && typeof a.rejected === 'object') {
+            // the per-part proxy: every part refused (or not written), each named with its reasons
+            var none = T.checkSummaries({ rejected: a.rejected, unavailable: a.unavailable }, body);
+            S.aiNote = 'The AI summaries were set aside (the proxy answered ' + e.status + '). ' + T.partsNote(none) + FALLBACK;
+          } else if (a.error === 'rejected_wording' && (a.part === 'executive' || a.part === 'technical')) {
             S.aiNote = 'The AI summaries were set aside (the proxy answered ' + e.status + '): the ' + a.part + ' summary ' + T.reasonText(Array.isArray(a.reasons) ? a.reasons : []) + '.' + FALLBACK;
           } else S.aiNote = 'The AI summaries are not available right now (' + (e && e.name === 'AbortError' ? 'no answer in time' : (e && e.message || 'no answer')) + ').' + FALLBACK;
           drawStory();

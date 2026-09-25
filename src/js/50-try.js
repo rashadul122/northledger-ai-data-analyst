@@ -1770,9 +1770,11 @@
       var body = T.aiPayload(S.report, S.objective, S.aiRaw), red = S.aiRaw ? [] : T.aiRedactions(S.report);
       var FALLBACK = ' Only the engine\'s story is shown.';
       go.disabled = true;
-      if (st) st.textContent = 'Asking the AI model…';
+      if (st) st.textContent = 'Asking the AI model (it thinks before it writes, so this takes about a minute)…';
       var ctrl = window.AbortController ? new AbortController() : null;
-      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 45000);
+      // the proxy runs DeepSeek in thinking mode at its highest effort (25 Sep 2026): measured ~59 s a request,
+      // with PART_DEADLINE_MS 100 s in the proxy, so the page waits longer than that
+      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 120000);
       fetch(CFG.ai_proxy_url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
         .then(function (res) {

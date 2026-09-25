@@ -11,8 +11,8 @@ with **two interchangeable brains** — Ollama Cloud (glm-5.3) or **DeepSeek** (
 via `AGENT_PROVIDER=deepseek` — and seven tools:
 
 `run_sql` (read-only enforced) · `profile_table` · `run_python` · `forecast` (OLS trend
-+ seasonality, 80% bands, seasonal-naive baseline always) · `web_search` (Serper/Google —
-for context, verification, and citations; unknown-dataset bootstrap) · `make_chart`
++ seasonality, 80% bands, seasonal-naive baseline always) · `web_search` (Serper/Google — context, verification, citations) · `web_read` (fetch +
+read any URL — the browser's READ half; search + read = the full browse loop) · `make_chart`
 (line/bar/grouped) · `make_map` (world choropleth, Natural Earth) · `make_report`
 (PDF/Excel/Word; validates non-empty bodies; embeds charts)
 
@@ -29,6 +29,7 @@ for context, verification, and citations; unknown-dataset bootstrap) · `make_ch
 | s7 Chicago crime | 8,643,513 | Narcotics = enforcement signal (99.3% arrest); +226% vehicle-theft spike; July +33.2% |
 | s8 Canada trade story (DeepSeek) | 1,818 | Quarter-century arc; **caught the UK gold-settlement artifact**; honest losing forecast |
 | s9 Canada trade: VERIFIED edition | 1,818 | Same arc + **web-verified with cited sources** — gold anomaly confirmed (StatCan/Global Affairs/LBMA), every dip cited |
+| s10 Mystery dataset bootstrap | 147 | **Unknown table, no hints**: profiled → hypothesized → browsed (3 searches, 4 pages read) → identified as NASA GISTEMP via fingerprint match → analyzed as climate data with cited causes |
 
 Scale tier: **74.8M rows** across 8 tables — see [big-data-profile.json](big-data-profile.json)
 and [DATA-SOURCES.md](../DATA-SOURCES.md) at repo root (all public, licensed, traceable).

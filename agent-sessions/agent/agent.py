@@ -163,15 +163,22 @@ def tool_forecast(series_json, periods=12, freq="MS"):
     n = len(vals)
     if n < 25:
         return {"error": f"need >=25 points, got {n}"}
-    # parse dates -> periods since start
+    # parse dates -> periods since start (accepts 'YYYY-MM' strings or YYYY ints)
     def pnum(s):
+        s = str(s)
         s = s[:7]
-        y, m = int(s[:4]), int(s[5:7])
+        y, m = int(s[:4]), int(s[5:7] or 1)
         return (y * 12 + m)
-    t0 = pnum(dates[0])
-    t = np.array([pnum(d) - t0 for d in dates], dtype=float)
-    mo = np.array([int(d[5:7]) for d in dates])
-    X = np.column_stack([np.ones(n), t] + [(mo == m).astype(float) for m in range(2, 13)])
+    t_all = [pnum(d) for d in dates]
+    t_mid = sorted(t_all)[len(t_all) // 2]  # center time to avoid overflow on long spans
+    t = np.array([x - t_mid for x in t_all], dtype=float)
+    months = [int(str(d)[5:7]) if len(str(d)) >= 7 and str(d)[5:7].isdigit() else None for d in dates]
+    annual = all(m is None for m in months)
+    mo = np.array([m or 1 for m in months])
+    if annual:
+        X = np.column_stack([np.ones(n), t])
+    else:
+        X = np.column_stack([np.ones(n), t] + [(mo == m).astype(float) for m in range(2, 13)])
     beta, *_ = np.linalg.lstsq(X, vals, rcond=None)
     pred = X @ beta
     resid = vals - pred
@@ -179,20 +186,31 @@ def tool_forecast(series_json, periods=12, freq="MS"):
     mape = float((abs(resid) / np.abs(vals)).mean() * 100)
     fut_t, out = [], []
     last_t = t[-1]
-    cur_y, cur_m = int(dates[-1][:4]), int(dates[-1][5:7])
+    _last = str(dates[-1])
+    cur_y, cur_m = int(_last[:4]), int(_last[5:7] or 1)
     for h in range(1, periods + 1):
-        cur_m += 1
-        if cur_m == 13:
-            cur_m = 1; cur_y += 1
-        tt = last_t + h
-        row = [1.0, tt] + [1.0 if cur_m == m else 0.0 for m in range(2, 13)]
-        mu = float(np.dot(row, beta))
-        band = 1.2816 * sigma * (h ** 0.5)
-        naive = vals[n - 12 + (h - 1) % 12] if n >= 12 + ((h - 1) % 12) + 1 else None
-        out.append({"date": f"{cur_y:04d}-{cur_m:02d}", "forecast": round(mu, 2),
-                    "lo80": round(mu - band, 2), "hi80": round(mu + band, 2),
-                    "seasonal_naive": round(float(naive), 2) if naive is not None else None})
-    return {"model": "OLS trend + monthly seasonality", "n_history": n,
+        if annual:
+            cur_y += 1
+            row = [1.0, last_t + 12 * h]
+            mu = float(np.dot(row, beta))
+            band = 1.2816 * sigma * (h ** 0.5)
+            naive = vals[n - 1] if n >= 1 else None
+            out.append({"date": str(cur_y), "forecast": round(mu, 2),
+                        "lo80": round(mu - band, 2), "hi80": round(mu + band, 2),
+                        "seasonal_naive": round(float(naive), 2) if naive is not None else None})
+        else:
+            cur_m += 1
+            if cur_m == 13:
+                cur_m = 1; cur_y += 1
+            tt = last_t + h
+            row = [1.0, tt] + [1.0 if cur_m == m else 0.0 for m in range(2, 13)]
+            mu = float(np.dot(row, beta))
+            band = 1.2816 * sigma * (h ** 0.5)
+            naive = vals[n - 12 + (h - 1) % 12] if n >= 12 + ((h - 1) % 12) + 1 else None
+            out.append({"date": f"{cur_y:04d}-{cur_m:02d}", "forecast": round(mu, 2),
+                        "lo80": round(mu - band, 2), "hi80": round(mu + band, 2),
+                        "seasonal_naive": round(float(naive), 2) if naive is not None else None})
+    return {"model": ("OLS trend (annual series)" if annual else "OLS trend + monthly seasonality"), "n_history": n,
             "mape_fit_pct": round(mape, 2), "sigma": round(sigma, 2), "forecast": out}
 
 
@@ -253,6 +271,34 @@ def tool_web_search(query, num=5):
                                      "type": kg.get("type", ""),
                                      "description": kg.get("description", "")[:300]}
     return result
+
+
+
+def tool_web_read(url):
+    """Fetch a URL and return readable text (title + content, scripts/styles stripped).
+    The READ half of the browser: call after web_search to actually read a source page.
+    Use for dataset identification, methodology notes, and citation verification."""
+    import html as _html
+    import requests as _rq
+    if not url.startswith("http"):
+        return {"error": "url must start with http(s)://"}
+    try:
+        r = _rq.get(url, timeout=25, headers={"User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) data-analyst-agent/1.0"})
+        if r.status_code != 200:
+            return {"error": f"HTTP {r.status_code} fetching {url}"}
+        page = r.text
+    except _rq.RequestException as e:
+        return {"error": f"fetch failed: {e}"}
+    m = re.search(r"<title[^>]*>(.*?)</title>", page, re.S | re.I)
+    title = _html.unescape(m.group(1).strip()) if m else url
+    # strip scripts/styles, then tags
+    body = re.sub(r"(?is)<(script|style|noscript|header|footer|nav)[^>]*>.*?</\1>", " ", page)
+    body = re.sub(r"(?s)<[^>]+>", " ", body)
+    body = _html.unescape(body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return {"url": url, "title": title[:200], "content": body[:6000],
+            "note": "first ~6000 chars of readable text; cite as title - url"}
 
 
 def tool_make_chart(spec_json):
@@ -671,6 +717,8 @@ TOOLS = [
         "required": ["kind", "title", "summary_md", "body_md"]}},
     {"name": "web_search", "description": "Search the web (Google via Serper) for external context, explanations, news, or verification. Use when the data alone cannot explain a finding, when you need current events (post-training-cutoff), or to verify/attribute a real-world cause. ALWAYS cite: title + link. Every web-sourced claim in the report must carry its source link.",
      "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "num": {"type": "integer", "default": 5}}, "required": ["query"]}},
+    {"name": "web_read", "description": "Open a URL and read its readable text (the READ half of the browser). Use right after web_search: pick the most promising result link and read the page for full context, methodology, or verification. Cite as title - url.",
+     "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
     {"name": "make_chart", "description": "Generate a chart PNG. spec_json: {\"type\": \"line\"|\"bar\"|\"grouped_bar\", \"title\": str, \"x\": [...labels], \"series\": {\"SeriesName\": [values aligned with x]}, \"ylabel\": str}. Returns artifact path; embed into a report with an image line in body_md.",
      "parameters": {"type": "object", "properties": {"spec_json": {"type": "string"}}, "required": ["spec_json"]}},
     {"name": "make_map", "description": "Generate a choropleth WORLD MAP PNG. spec_json: {\"title\": str, \"values\": {\"Country\": number}, \"label\": str}. Aliases handled (US/USA->United States, UK->United Kingdom, European Union->its members). Returns artifact path for report embedding.",
@@ -694,12 +742,14 @@ Rules (from the NorthLedger rigor standard):
    (b) ONE web_search to identify the dataset/domain ("what is this data: <key column names,
    distinct values, date range>"), then plan with that context. Users bring ANY dataset -
    sales, IoT, health, logistics - your job is to recognize it, understand it, then analyze.
-9. Web search discipline: use web_search ONLY when (a) the data shows a pattern you cannot
-   explain from your own knowledge, (b) the question involves events after your training
-   cutoff, or (c) you are about to attribute a real-world cause in the report and want to
-   verify + cite it. In the report: every externally-sourced claim gets an inline citation
-   "[Source: title - link]"; claims you could not verify stay labeled as inference.
-   Data-sourced facts need no citation - they come from the queries you ran.
+9. Web search discipline: web_search + web_read together are your BROWSER. Use them when
+   (a) the data shows a pattern you cannot explain from your own knowledge, (b) the question
+   involves events after your training cutoff, or (c) you are about to attribute a real-world
+   cause in the report. The browse loop: SEARCH -> pick the best 1-2 links -> web_read them ->
+   if still unclear, refine the query and search again (max ~3 searches + ~3 reads per topic).
+   In the report: every externally-sourced claim gets an inline citation "[Source: title - link]";
+   claims you could not verify stay labeled as inference. Data-sourced facts need no citation -
+   they come from the queries you ran.
 10. Budget discipline: you have plenty of tool calls, but do NOT explore endlessly. Aim to finish
    the investigation within ~15 rounds and RESERVE the final rounds for make_report. The requested
    deliverable file is a hard requirement — a session that ends without it is a failed session.
@@ -750,6 +800,8 @@ def dispatch(name, args):
         return tool_forecast(args.get("series_json", "[]"), int(args.get("periods", 12)))
     if name == "web_search":
         return tool_web_search(args.get("query", ""), int(args.get("num", 5)))
+    if name == "web_read":
+        return tool_web_read(args.get("url", ""))
     if name == "make_chart":
         return tool_make_chart(args.get("spec_json", "{}"))
     if name == "make_map":

@@ -30,6 +30,7 @@ read any URL — the browser's READ half; search + read = the full browse loop) 
 | s8 Canada trade story (DeepSeek) | 1,818 | Quarter-century arc; **caught the UK gold-settlement artifact**; honest losing forecast |
 | s9 Canada trade: VERIFIED edition | 1,818 | Same arc + **web-verified with cited sources** — gold anomaly confirmed (StatCan/Global Affairs/LBMA), every dip cited |
 | s10 Mystery dataset bootstrap | 147 | **Unknown table, no hints**: profiled → hypothesized → browsed (3 searches, 4 pages read) → identified as NASA GISTEMP via fingerprint match → analyzed as climate data with cited causes |
+| s11 Canada trade: CONTEXT edition | 1,818 | **The benchmark report**: Three-Question Test in action — the 2025-Q2 export break connected to the US tariff timeline (CUSMA review, 50% tariffs Aug 2026, C$27.6bn counter-tariffs), forecast benchmarked vs Bank of Canada & EDC, 7 pages read, 8 primary sources |
 
 Scale tier: **74.8M rows** across 8 tables — see [big-data-profile.json](big-data-profile.json)
 and [DATA-SOURCES.md](../DATA-SOURCES.md) at repo root (all public, licensed, traceable).

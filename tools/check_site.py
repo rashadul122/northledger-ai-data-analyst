@@ -832,14 +832,15 @@ def check_collab(site: Site) -> Result:
     except (OSError, ValueError) as e:
         r.fail("site.config.json cannot be read: %s" % e)
         return r
-    email = _get(cfg, "contact.email", "contact_email", "email")
     block = cfg.get("collaboration") if isinstance(cfg.get("collaboration"), dict) else None
+    # the invitation goes to collaboration.email (the owner's university address) when set, else contact_email
+    email = ((block or {}).get("email") or "").strip() or _get(cfg, "contact.email", "contact_email", "email")
     if not block:
         r.fail('site.config.json has no "collaboration" block (the invitation\'s subject and prompts live there)')
     elif (block.get("subject") or "").strip() != COLLAB_SUBJECT:
         r.fail("site.config.json collaboration.subject is %r, not %r" % (block.get("subject"), COLLAB_SUBJECT))
     if not email or not EMAIL.match(email):
-        r.fail("site.config.json has no contact_email for the invitation to go to")
+        r.fail("site.config.json has no collaboration.email or contact_email for the invitation to go to")
     if "index.html" not in site.pages():
         r.fail("index.html not found")
         return r
@@ -868,7 +869,7 @@ def check_collab(site: Site) -> Result:
             addr, q = _query(html.unescape(a.attrs["href"]))
             where = "index.html (%s) line %d" % (label, a.line)
             if email and addr != email:
-                r.fail("%s: the invitation goes to %r, not to site.config.json contact_email %r" % (where, addr, email))
+                r.fail("%s: the invitation goes to %r, not to site.config.json collaboration.email / contact_email %r" % (where, addr, email))
             if q.get("subject") != COLLAB_SUBJECT:
                 r.fail("%s: the invitation's subject is %r, not %r" % (where, q.get("subject"), COLLAB_SUBJECT))
             body = (q.get("body") or "").lower()

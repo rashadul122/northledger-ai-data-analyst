@@ -675,8 +675,9 @@ check('header-links-stay-on-one-line', DESK, async (ctx) => {
 
 check('collab-invite-emails-the-owner-with-the-subject', DESK, async (ctx) => {
   const p = await open(ctx);
-  const email = (siteConfig().contact_email || '').trim();
-  ok(email, 'site.config.json has no contact_email');
+  const cfg = siteConfig();
+  const email = ((cfg.collaboration && cfg.collaboration.email) || cfg.contact_email || '').trim();
+  ok(email, 'site.config.json has no collaboration.email or contact_email');
   ok(await p.$('#top a[href="#collaborate"]'), 'no research collaboration button below the hero doors');
   await p.click('#top a[href="#collaborate"]');
   await p.waitForTimeout(150);

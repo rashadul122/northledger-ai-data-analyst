@@ -1,6 +1,6 @@
 {
   "_about": "The only file on this site where a person types values. The owner fills contact_email and booking_url; until both are real, the page shows 'contact details coming' and verify.sh's contact check fails on purpose. Prices are the owner's own offers from v1.",
-  "contact_email": "rashadallislam@gmail.com",
+  "contact_email": "contact@halosyncs.com",
   "booking_url": "",
   "_ai_proxy_about": "ai_proxy_url: the https address of the owner's own Cloudflare Worker that words the demo's story with DeepSeek. Empty means the page offers no AI option at all. The key lives only in the Worker (npx wrangler secret put DEEPSEEK_API_KEY), never here.",
   "ai_proxy_url": "https://northledger-insight-proxy.r-mdrashad97.workers.dev",
@@ -37,7 +37,8 @@
     }
   ],
   "collaboration": {
-    "_about": "The research collaboration invitation. Its button emails contact_email (above) with this subject, and this greeting and these prompts as the prefilled body. build.py writes the link; tools/check_site.py (collab) and tools/check_ui.js check it. Keep the body short.",
+    "_about": "The research collaboration invitation. Its button emails collaboration.email (the owner's university address; contact_email when it is empty) with this subject, and this greeting and these prompts as the prefilled body. build.py writes the link; tools/check_site.py (collab) and tools/check_ui.js check it. Keep the body short.",
+    "email": "roman4@uwindsor.ca",
     "subject": "Research collaboration invitation",
     "body_greeting": "Hello Rashadul,",
     "body_prompts": [

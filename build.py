@@ -1304,14 +1304,18 @@ def blocks(I, R, D, pbip, examples):
     # ---------------- research collaboration: the invitation emails contact_email (site.config.json)
     cfg = I["config"]
     co = cfg.get("collaboration") if isinstance(cfg.get("collaboration"), dict) else {}
-    co_email = (cfg.get("contact_email") or (cfg.get("contact") or {}).get("email") or "").strip()
+    main_email = (cfg.get("contact_email") or (cfg.get("contact") or {}).get("email") or "").strip()
+    co_email = (co.get("email") or "").strip() or main_email
     if co_email and co.get("subject"):
         co_body = "\n".join([co.get("body_greeting", "")] + [""] + list(co.get("body_prompts") or []) + [""]).lstrip("\n")
         co_href = "mailto:%s?subject=%s&body=%s" % (co_email, urllib.parse.quote(co["subject"]), urllib.parse.quote(co_body))
         B["collab_invite"] = ('<div class="contact-live"><a class="btn btn-primary" href="%s">Invite me to a project</a> '
                               '<button type="button" class="btn btn-ghost" data-copy="%s">Copy the address</button></div>'
                               '<p class="note">The button opens an email to %s with the subject line and a few short prompts filled in: the project, the role, the timeline, the data involved and links. '
-                              'Please don\'t attach data to a first message.</p>' % (esc(co_href), esc(co_email), esc(co_email)))
+                              'Please don\'t attach data to a first message.%s</p>' % (
+                                  esc(co_href), esc(co_email), esc(co_email),
+                                  (' For business enquiries, write to %s.' % esc(main_email)
+                                   if main_email and main_email != co_email else "")))
     else:
         B["collab_invite"] = ('<div class="contact-empty" role="status"><strong>Contact details coming.</strong> The owner has not added an '
                               'email address yet, so this page does not offer one.</div>')
@@ -1330,7 +1334,10 @@ def blocks(I, R, D, pbip, examples):
                              esc(email), body_.replace(" ", "%20"), esc(email), esc(email)))
         if booking:
             parts.append('<a class="btn btn-ghost" href="%s" rel="noopener">Book a call</a>' % esc(booking))
-        B["contact"] = '<div class="contact-live">%s</div>' % " ".join(parts)
+        academic = ((cfg.get("collaboration") or {}).get("email") or "").strip() if isinstance(cfg.get("collaboration"), dict) else ""
+        note = ('<p class="note">Research and academic collaboration: <a href="mailto:%s">%s</a>.</p>' % (esc(academic), esc(academic))
+                if academic and academic != email else "")
+        B["contact"] = '<div class="contact-live">%s</div>%s' % (" ".join(parts), note)
     else:
         B["contact"] = ('<div class="contact-empty" role="status"><strong>Contact details coming.</strong> The owner has not added an email '
                         'address or a booking link yet, so this page does not offer one, and nothing here collects your details in the meantime.</div>')

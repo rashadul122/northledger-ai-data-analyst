@@ -71,6 +71,10 @@ def tool_detail(name, args, result):
     if name == "make_report":
         r = result or {}
         return {"artifact": r.get("artifact"), "type": r.get("type"), "title": r.get("title")}
+    if name in ("make_chart", "make_map"):
+        r = result or {}
+        return {"artifact": r.get("artifact"), "type": r.get("type"),
+                "chart_title": r.get("title", ""), "warning": r.get("warning")}
     return {"detail": "…"}
 
 
@@ -90,6 +94,8 @@ TITLES = {
                        "Survey-weighted medians: who earns what in America, housing burden, and the education ladder."),
     "s7-chicago-crime": ("Chicago crime trend brief (8.6M rows)",
                          "A falling decade, narcotics as an enforcement signal, +226% motor-vehicle-theft spike, and the bankable summer curve."),
+    "s8-canada-trade": ("Canada trade story (DeepSeek engine)",
+                         "Quarter-century of shifting partners: charts, a world map, the UK gold-settlement anomaly caught, and an honest forecast."),
 }
 
 def main():
@@ -106,6 +112,7 @@ def main():
         chat = [{"who": "user", "text": t["goal"]}]
         n_tool = 0
         artifacts = []
+        arts = []
         failed_streak = 0
         for turn in t["turns"]:
             calls = turn.get("tool_calls") or []
@@ -128,6 +135,11 @@ def main():
             else:
                 if turn.get("content"):
                     chat.append({"who": "agent", "text": turn["content"].strip(), "kind": "final"})
+        # bundle chart/map PNGs produced in-session
+        for turn in t["turns"]:
+            for c in turn.get("tool_calls", []):
+                if c["name"] in ("make_chart", "make_map") and (c.get("result") or {}).get("artifact"):
+                    arts.append(c["result"])
         # bundle artifact files
         downloads = []
         for a in artifacts:
@@ -141,7 +153,13 @@ def main():
                 downloads.append({"name": os.path.basename(rel),
                                   "b64": b64, "size": os.path.getsize(fp),
                                   "type": a.get("type"), "title": a.get("title")})
+        images = {}
+        for a in arts:
+            fp = os.path.join(tdir, a["artifact"])
+            if os.path.exists(fp) and os.path.getsize(fp) < 1_500_000:
+                images[a["artifact"]] = base64.b64encode(open(fp, "rb").read()).decode()
         out["sessions"].append({
+            "images": images,
             "name": name,
             "title": (TITLES.get(name, (name, ""))[0]),
             "blurb": (TITLES.get(name, ("", t["goal"][:120]))[1]),

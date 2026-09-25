@@ -44,6 +44,11 @@ ENV = load_env()
 API_KEY = ENV.get("OLLAMA_API_KEY") or os.environ.get("OLLAMA_API_KEY", "")
 BASE_URL = (ENV.get("OLLAMA_BASE_URL") or "https://ollama.com/v1").rstrip("/")
 MODEL = os.environ.get("AGENT_MODEL", "glm-5.3")
+AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "ollama").strip().lower()
+if AGENT_PROVIDER == "deepseek":
+    API_KEY = ENV.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
+    BASE_URL = "https://api.deepseek.com/v1"
+    MODEL = os.environ.get("AGENT_MODEL", "deepseek-chat")
 MAX_TURNS = 40
 MAX_TOOL_ROUNDS = 30
 
@@ -191,6 +196,163 @@ def tool_forecast(series_json, periods=12, freq="MS"):
             "mape_fit_pct": round(mape, 2), "sigma": round(sigma, 2), "forecast": out}
 
 
+def _save_chart_png(fig_or_ax, title):
+    """Save a matplotlib fig to the session artifacts dir; return path."""
+    import matplotlib
+    matplotlib.use("Agg")
+    os.makedirs(os.path.join(SESSION_DIR, "artifacts"), exist_ok=True)
+    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    slug = re.sub(r"[^a-z0-9]+", "-", (title or "chart").lower()).strip("-")[:50]
+    path = os.path.join(SESSION_DIR, "artifacts", f"{ts}-{slug}.png")
+    fig = fig_or_ax
+    fig.savefig(path, dpi=140, bbox_inches="tight")
+    matplotlib.pyplot.close(fig)
+    return path
+
+
+def tool_make_chart(spec_json):
+    """Generate a chart PNG from a spec: {"type": "line"|"bar"|"grouped_bar",
+    "title": str, "x": [...], "series": {"name": [...]}, "ylabel": str}
+    Saves PNG; use make_report to embed it (pass artifact path)."""
+    import json as _json
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    try:
+        spec = _json.loads(spec_json) if isinstance(spec_json, str) else spec_json
+    except _json.JSONDecodeError as e:
+        return {"error": f"bad chart spec JSON: {e}"}
+    t = spec.get("type", "line")
+    title = spec.get("title", "Chart")
+    x = [str(v) for v in spec.get("x", [])]
+    series = spec.get("series", {})
+    # sanitize: numeric-coerce; None/NaN -> 0 so matplotlib never gets None
+    def _num(v):
+        try:
+            import math
+            f = float(v)
+            return f if math.isfinite(f) else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+    series = {name: [_num(v) for v in ys] for name, ys in series.items()}
+    # align lengths: trim x and all series to the shortest
+    if series:
+        n_min = min(min(len(ys) for ys in series.values()), len(x))
+        if len(x) != n_min or any(len(ys) != n_min for ys in series.values()):
+            x = x[:n_min]
+            series = {name: ys[:n_min] for name, ys in series.items()}
+    if not x or not series:
+        return {"error": "chart spec needs 'x' (list) and 'series' ({name: values})"}
+    aligned_note = ""
+    if series and len(x) != len(next(iter(series.values()))):
+        pass  # handled above; kept for safety
+    fig, ax = plt.subplots(figsize=(10, 5.2))
+    if t == "line":
+        for name, ys in series.items():
+            ax.plot(range(len(x)), ys, marker="o", markersize=3, linewidth=1.8, label=name)
+    elif t == "bar":
+        for name, ys in series.items():
+            ax.bar(range(len(x)), ys, label=name)
+    elif t == "grouped_bar":
+        import numpy as _np
+        n = len(series)
+        w = 0.8 / max(n, 1)
+        for i, (name, ys) in enumerate(series.items()):
+            ax.bar([j + (i - n / 2 + 0.5) * w for j in range(len(x))], ys, width=w, label=name)
+    else:
+        return {"error": f"chart type must be line/bar/grouped_bar, got {t!r}"}
+    ax.set_xticks(range(len(x)))
+    ax.set_xticklabels(x, rotation=60 if len(x) > 8 else 0, fontsize=8)
+    ax.set_ylabel(spec.get("ylabel", ""))
+    ax.set_title(title, fontsize=13)
+    ax.grid(alpha=0.25)
+    if len(series) > 1:
+        ax.legend(fontsize=9)
+    fig.tight_layout()
+    path = _save_chart_png(fig, title)
+    return {"artifact": os.path.relpath(path, SESSION_DIR), "type": "png",
+            "title": title, "note": "PNG saved; embed it via make_report body_md image line: ![](artifact-path)"}
+
+
+def tool_make_map(spec_json):
+    """Choropleth WORLD MAP PNG. spec: {"title": str, "values": {"Country": number}, "label": str}.
+    Aliases: US/USA->United States of America, UK->United Kingdom, European Union->members."""
+    import json as _json
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    try:
+        spec = _json.loads(spec_json) if isinstance(spec_json, str) else spec_json
+    except _json.JSONDecodeError as e:
+        return {"error": f"bad map spec JSON: {e}"}
+    values = spec.get("values", {})
+    if not values:
+        return {"error": "map spec needs 'values': {country: number}"}
+    alias = {"United States": "United States of America", "USA": "United States of America",
+             "US": "United States of America", "UK": "United Kingdom"}
+    eu_members = ["Germany", "France", "Italy", "Spain", "Netherlands", "Poland", "Sweden",
+                  "Belgium", "Austria", "Ireland", "Denmark", "Finland", "Portugal", "Greece"]
+    geo = _json.load(open(os.path.join(HERE, "assets", "world.geojson")))
+
+    def rings_of(geom):
+        """Yield [x,y] rings for Polygon/MultiPolygon, robustly."""
+        t = geom["type"]
+        if t == "Polygon":
+            for ring in geom["coordinates"]:
+                yield ring
+        elif t == "MultiPolygon":
+            for poly in geom["coordinates"]:
+                for ring in poly:
+                    yield ring
+
+    fig, ax = plt.subplots(figsize=(12.5, 6.4))
+    vals = [v for v in values.values() if isinstance(v, (int, float))]
+    vmin, vmax = (min(vals), max(vals)) if vals else (0, 1)
+    rng = (vmax - vmin) or 1
+    matched = set()
+    values = {k: v for k, v in values.items() if isinstance(v, (int, float))}
+    for f in geo["features"]:
+        nm = f["properties"].get("NAME", "")
+        geom = f.get("geometry")
+        if not geom:
+            continue
+        v = None
+        for src_name, val in values.items():
+            tgt = alias.get(src_name, src_name)
+            if nm == tgt:
+                v = val; matched.add(src_name); break
+            if src_name == "European Union" and nm in eu_members:
+                v = val; matched.add("European Union"); break
+        for ring in rings_of(f["geometry"]):
+            try:
+                xs, ys = zip(*ring)
+            except ValueError:
+                continue
+            if v is None:
+                ax.add_patch(plt.Polygon(list(zip(xs, ys)), closed=True,
+                            facecolor="#e8e8e8", edgecolor="#999999", linewidth=0.4))
+            else:
+                frac = (v - vmin) / rng
+                ax.add_patch(plt.Polygon(list(zip(xs, ys)), closed=True,
+                            facecolor=plt.cm.YlOrRd(0.15 + 0.8 * frac),
+                            edgecolor="#555555", linewidth=0.4))
+    unmatched = set(values) - matched
+    ax.set_xlim(-170, 180); ax.set_ylim(-58, 84)
+    ax.axis("off")
+    ax.set_title(spec.get("title", "World Map"), fontsize=13)
+    sm = plt.cm.ScalarMappable(cmap="YlOrRd", norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, shrink=0.55)
+    cbar.set_label(spec.get("label", "value"))
+    fig.tight_layout()
+    path = _save_chart_png(fig, spec.get("title", "world-map"))
+    out = {"artifact": os.path.relpath(path, SESSION_DIR), "type": "png",
+           "title": spec.get("title", "World Map")}
+    if unmatched:
+        out["warning"] = "unmatched countries (no map match): " + ", ".join(sorted(unmatched))
+    return out
+
+
 def tool_make_report(kind, title, summary_md, body_md):
     """Generate a client-ready report file: pdf | xlsx | docx. Returns artifact path.
     body_md: markdown-ish (## sections, bullets '- ', bold **x**, tables via | a | b |)."""
@@ -276,6 +438,27 @@ def _render_md_pdf(pdf, body_md):
             pdf.ln(1)
             _pdf_table(pdf, tbl)
             pdf.ln(1)
+        elif re.match(r"^!\[\]\((.+?)\)\s*$", ln.strip()):
+            m = re.match(r"^!\[\]\((.+?)\)\s*$", ln.strip())
+            img = os.path.join(SESSION_DIR, m.group(1))
+            if os.path.exists(img):
+                if pdf.get_y() > 230:
+                    pdf.add_page()
+                w = 160
+                h = w * 0.55
+                try:
+                    from PIL import Image as _PILImage
+                    with _PILImage.open(img) as im:
+                        w0, h0 = im.size
+                    h = w * h0 / max(w0, 1)
+                    if h > 150: w = w * 150 / h; h = 150
+                except Exception:
+                    pass
+                pdf.image(img, x=(190 - w) / 2, w=w, h=h)
+                pdf.ln(4)
+            else:
+                pdf.set_font("helvetica", "i", 9)
+                pdf.multi_cell(0, 5, f"[chart: {m.group(1)}]", new_x="LMARGIN", new_y="NEXT")
         elif ln.strip():
             pdf.set_font("helvetica", "", 10.5)
             pdf.multi_cell(0, 5.8, _pdf_clean(_strip_md(ln)), new_x="LMARGIN", new_y="NEXT")
@@ -437,10 +620,14 @@ TOOLS = [
      "parameters": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]}},
     {"name": "forecast", "description": "Honest monthly forecast (OLS trend + seasonality, 80% bands, seasonal-naive baseline comparison). Input: JSON array of [date 'YYYY-MM-DD', value] pairs, ordered oldest first.",
      "parameters": {"type": "object", "properties": {"series_json": {"type": "string"}, "periods": {"type": "integer", "default": 12}}, "required": ["series_json"]}},
-    {"name": "make_report", "description": "Generate a report file (pdf/xlsx/docx) from markdown-ish content. Use for the final deliverable.",
+    {"name": "make_report", "description": "Generate a report file (pdf/xlsx/docx) from markdown-ish content. Use for the final deliverable. Embed chart/map PNGs with a line like: ![](artifacts/xxx.png)",
      "parameters": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["pdf", "xlsx", "docx"]},
         "title": {"type": "string"}, "summary_md": {"type": "string"}, "body_md": {"type": "string"}},
         "required": ["kind", "title", "summary_md", "body_md"]}},
+    {"name": "make_chart", "description": "Generate a chart PNG. spec_json: {\"type\": \"line\"|\"bar\"|\"grouped_bar\", \"title\": str, \"x\": [...labels], \"series\": {\"SeriesName\": [values aligned with x]}, \"ylabel\": str}. Returns artifact path; embed into a report with an image line in body_md.",
+     "parameters": {"type": "object", "properties": {"spec_json": {"type": "string"}}, "required": ["spec_json"]}},
+    {"name": "make_map", "description": "Generate a choropleth WORLD MAP PNG. spec_json: {\"title\": str, \"values\": {\"Country\": number}, \"label\": str}. Aliases handled (US/USA->United States, UK->United Kingdom, European Union->its members). Returns artifact path for report embedding.",
+     "parameters": {"type": "object", "properties": {"spec_json": {"type": "string"}}, "required": ["spec_json"]}},
 ]
 
 SYSTEM_PROMPT = """You are the NorthLedger Agent: an AI data analyst with full read access to a client's database.
@@ -469,9 +656,12 @@ def chat(messages, tools=TOOLS):
     last_err = None
     for attempt in range(5):
         try:
+            tools_payload = tools
+            if AGENT_PROVIDER == "deepseek":
+                tools_payload = [{"type": "function", "function": t} for t in tools]
             r = requests.post(f"{BASE_URL}/chat/completions",
                 headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-                json={"model": MODEL, "messages": messages, "tools": tools, "tool_choice": "auto"},
+                json={"model": MODEL, "messages": messages, "tools": tools_payload, "tool_choice": "auto"},
                 timeout=300)
             if r.status_code == 200:
                 return r.json()
@@ -500,6 +690,10 @@ def dispatch(name, args):
         return tool_run_python(args.get("code", ""))
     if name == "forecast":
         return tool_forecast(args.get("series_json", "[]"), int(args.get("periods", 12)))
+    if name == "make_chart":
+        return tool_make_chart(args.get("spec_json", "{}"))
+    if name == "make_map":
+        return tool_make_map(args.get("spec_json", "{}"))
     if name == "make_report":
         return tool_make_report(args.get("kind", "pdf"), args.get("title", "Report"),
                                 args.get("summary_md", ""), args.get("body_md", ""))

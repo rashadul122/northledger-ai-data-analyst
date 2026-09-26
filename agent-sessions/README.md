@@ -51,5 +51,6 @@ DeepSeek needs `DEEPSEEK_API_KEY`; Ollama Cloud needs `OLLAMA_API_KEY` (in `~/.h
 `web_search` needs **no key at all**: it calls the portfolio's search proxy
 (`https://northledger-insight-proxy.r-mdrashad97.workers.dev/search`), a Cloudflare Worker that
 holds the Serper key and serves a capped number of searches a day (5 per visitor per minute,
-300 a day for everyone). To use your own Serper key instead, set `SERPER_API_KEY` in the
+300 a day for everyone). This is NorthLedger's own search path, separate from any other app's
+Serper key. To use your own Serper key instead, set `SERPER_API_KEY` in this agent's
 environment; to point elsewhere, set `SEARCH_PROXY_URL`.

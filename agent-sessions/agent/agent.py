@@ -232,8 +232,10 @@ def _save_chart_png(fig_or_ax, title):
 def tool_web_search(query, num=5):
     """Search the web via the portfolio's search proxy (Cloudflare Worker holding the Serper key,
     northledger-insight-proxy POST /search), so a distant user running this agent needs no key of
-    their own. A local SERPER_API_KEY (env or ~/StyleCast/env) is tried first and wins when it
-    works; on any failure the proxy is the fallback. Returns top organic results with
+    their own. This is NorthLedger's own search path and is fully separate from the StyleCast app,
+    which has its own key; nothing here reads StyleCast's files. An optional local
+    SERPER_API_KEY (this agent's own environment only) is tried first and wins when it works; on
+    any failure the proxy is the fallback. Returns top organic results with
     title/link/snippet (+ answer box + knowledge graph when present) for context gathering and
     citations."""
     import requests as _rq
@@ -268,14 +270,6 @@ def tool_web_search(query, num=5):
         return result
 
     key = ENV.get("SERPER_API_KEY") or os.environ.get("SERPER_API_KEY", "")
-    if not key:
-        # fallback: StyleCast env file
-        try:
-            for line in open(os.path.expanduser("~/StyleCast/env")):
-                if line.startswith("SERPER_API_KEY="):
-                    key = line.split("=", 1)[1].strip()
-        except OSError:
-            pass
 
     proxy_url = (os.environ.get("SEARCH_PROXY_URL")
                  or ENV.get("SEARCH_PROXY_URL")

@@ -11,7 +11,9 @@ with **two interchangeable brains** — Ollama Cloud (glm-5.3) or **DeepSeek** (
 via `AGENT_PROVIDER=deepseek` — and seven tools:
 
 `run_sql` (read-only enforced) · `profile_table` · `run_python` · `forecast` (OLS trend
-+ seasonality, 80% bands, seasonal-naive baseline always) · `web_search` (Serper/Google — context, verification, citations) · `web_read` (fetch +
++ seasonality, 80% bands, seasonal-naive baseline always) · `web_search` (Google via Serper,
+behind the portfolio's search proxy — a Cloudflare Worker holds the key, so it works with **no
+key of your own**) · `web_read` (fetch +
 read any URL — the browser's READ half; search + read = the full browse loop) · `make_chart`
 (line/bar/grouped) · `make_map` (world choropleth, Natural Earth) · `make_report`
 (PDF/Excel/Word; validates non-empty bodies; embeds charts)
@@ -46,3 +48,8 @@ AGENT_PROVIDER=deepseek venv/bin/python agent.py --db big_data.db \
 ```
 
 DeepSeek needs `DEEPSEEK_API_KEY`; Ollama Cloud needs `OLLAMA_API_KEY` (in `~/.hermes/.env`).
+`web_search` needs **no key at all**: it calls the portfolio's search proxy
+(`https://northledger-insight-proxy.r-mdrashad97.workers.dev/search`), a Cloudflare Worker that
+holds the Serper key and serves a capped number of searches a day (5 per visitor per minute,
+300 a day for everyone). To use your own Serper key instead, set `SERPER_API_KEY` in the
+environment; to point elsewhere, set `SEARCH_PROXY_URL`.

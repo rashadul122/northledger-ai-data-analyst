@@ -230,9 +230,43 @@ def _save_chart_png(fig_or_ax, title):
 
 
 def tool_web_search(query, num=5):
-    """Search the web via Serper.dev. Returns top organic results with title/link/snippet
-    (+ answer box + knowledge graph when present) for context gathering and citations."""
+    """Search the web via the portfolio's search proxy (Cloudflare Worker holding the Serper key,
+    northledger-insight-proxy POST /search), so a distant user running this agent needs no key of
+    their own. A local SERPER_API_KEY (env or ~/StyleCast/env) is tried first and wins when it
+    works; on any failure the proxy is the fallback. Returns top organic results with
+    title/link/snippet (+ answer box + knowledge graph when present) for context gathering and
+    citations."""
     import requests as _rq
+    num = int(min(max(num, 1), 10))
+
+    def _direct(key):
+        r = _rq.post("https://google.serper.dev/search",
+                     headers={"X-API-KEY": key, "Content-Type": "application/json"},
+                     json={"q": query, "num": num}, timeout=30)
+        if r.status_code != 200:
+            return {"failed": f"serper {r.status_code}: {r.text[:150]}"}
+        return _shape(r.json())
+
+    def _shape(d):
+        out = []
+        for item in (d.get("organic") or [])[:num]:
+            out.append({"title": item.get("title", ""),
+                        "link": item.get("link", ""),
+                        "snippet": (item.get("snippet") or "")[:300],
+                        "date": item.get("date", "")})
+        result = {"query": query, "results": out}
+        if d.get("answerBox"):
+            ab = d["answerBox"]
+            result["answer_box"] = {"title": ab.get("title", ""),
+                                    "answer": ab.get("answer") or ab.get("snippet", ""),
+                                    "link": ab.get("link", "")}
+        if d.get("knowledgeGraph"):
+            kg = d["knowledgeGraph"]
+            result["knowledge_graph"] = {"title": kg.get("title", ""),
+                                          "type": kg.get("type", ""),
+                                          "description": (kg.get("description") or "")[:300]}
+        return result
+
     key = ENV.get("SERPER_API_KEY") or os.environ.get("SERPER_API_KEY", "")
     if not key:
         # fallback: StyleCast env file
@@ -242,35 +276,33 @@ def tool_web_search(query, num=5):
                     key = line.split("=", 1)[1].strip()
         except OSError:
             pass
-    if not key:
-        return {"error": "SERPER_API_KEY not configured (set it in the environment)"}
+
+    proxy_url = (os.environ.get("SEARCH_PROXY_URL")
+                 or ENV.get("SEARCH_PROXY_URL")
+                 or "https://northledger-insight-proxy.r-mdrashad97.workers.dev/search")
+
+    direct_error = None
+    if key:
+        try:
+            out = _direct(key)
+            if "failed" not in out:
+                return out
+            direct_error = out["failed"]
+        except _rq.RequestException as e:
+            direct_error = f"direct search request failed: {e}"
+
     try:
-        r = _rq.post("https://google.serper.dev/search",
-                     headers={"X-API-KEY": key, "Content-Type": "application/json"},
-                     json={"q": query, "num": int(min(max(num, 1), 10))}, timeout=30)
-        if r.status_code != 200:
-            return {"error": f"serper {r.status_code}: {r.text[:150]}"}
-        d = r.json()
+        r = _rq.post(proxy_url, headers={"Content-Type": "application/json"},
+                     json={"q": query, "num": num}, timeout=30)
+        if r.status_code == 200:
+            return r.json()          # the proxy already answers this tool's own shape
+        proxy_error = f"search proxy {r.status_code}: {r.text[:150]}"
     except _rq.RequestException as e:
-        return {"error": f"search request failed: {e}"}
-    out = []
-    for item in d.get("organic", [])[:int(num)]:
-        out.append({"title": item.get("title", ""),
-                    "link": item.get("link", ""),
-                    "snippet": item.get("snippet", "")[:300],
-                    "date": item.get("date", "")})
-    result = {"query": query, "results": out}
-    if d.get("answerBox"):
-        ab = d["answerBox"]
-        result["answer_box"] = {"title": ab.get("title", ""),
-                                "answer": ab.get("answer") or ab.get("snippet", ""),
-                                "link": ab.get("link", "")}
-    if d.get("knowledgeGraph"):
-        kg = d["knowledgeGraph"]
-        result["knowledge_graph"] = {"title": kg.get("title", ""),
-                                     "type": kg.get("type", ""),
-                                     "description": kg.get("description", "")[:300]}
-    return result
+        proxy_error = f"search proxy request failed: {e}"
+
+    if direct_error:
+        return {"error": f"{direct_error} | proxy fallback failed: {proxy_error}"}
+    return {"error": proxy_error}
 
 
 

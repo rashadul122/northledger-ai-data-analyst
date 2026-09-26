@@ -1,10 +1,10 @@
 {
  "schema": "engine_scorecard/1",
- "built_at": "2026-09-24T21:10:53Z",
+ "built_at": "2026-09-26T12:43:50Z",
  "built_by": "engagements/rentsafe/build_engine_scorecard.py",
  "engine": {
   "kind": "sha256 of northledger/*.py (no git commit available)",
-  "id": "82a6be7b4b336e355e704fdb21dd2748d40e1647594303134f4f212dd5a28fd6",
+  "id": "19ec81d19e0d428f2d048eaa9dab1a05ca59f727f2fe2dfcc27786a314805aaf",
   "files": 25,
   "environment": {
    "python": "3.9.6",
@@ -30,7 +30,7 @@
  },
  "verdict": {
   "question": "Can the workflow go from messy data to insightful storytelling with prediction?",
-  "short": "Mechanically yes, insightful not yet. On the messy reviews file the engine now goes from 48,384 messy rows to a cleaned table, a checked story and a backtested forecast in 61.6 s (before the engine work it kept 41 rows). On the RentSafeTO files everything it printed reproduced, but the brief is not one a landlord could use: the landlord answers (ward and pillar scorecard, points per fix, risk of losing green) still come from the site's own build script, not from the engine.",
+  "short": "Mechanically yes, insightful not yet. On the messy reviews file the engine now goes from 48,384 messy rows to a cleaned table, a checked story and a backtested forecast in 60.5 s (before the engine work it kept 41 rows). On the RentSafeTO files everything it printed reproduced, but the brief is not one a landlord could use: the landlord answers (ward and pillar scorecard, points per fix, risk of losing green) still come from the site's own build script, not from the engine.",
   "today": "messy file -> verified audit -> gated brief -> backtested forecast (generic measures only)",
   "not_yet": [
    "domain measures (a weighted score, a band share, a ward x pillar table)",
@@ -50,11 +50,11 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 7.413
+    "seconds": 7.399
    },
    "rentsafe": {
     "status": "works",
-    "seconds": 1.606,
+    "seconds": 1.602,
     "evidence": "3 files, 22,052 rows landed; 10 columns flagged across the three, 5 of them holding no personal data (item scores named 'contact' or 'tenant', a text band, a parking description; see decisions.json)"
    }
   },
@@ -65,7 +65,7 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 0.975
+    "seconds": 0.685
    },
    "rentsafe": {
     "status": "works",
@@ -93,12 +93,12 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 13.331,
+    "seconds": 13.042,
     "evidence": "Health 92.7/100; profiling is still the slowest analysis sub-stage"
    },
    "rentsafe": {
     "status": "partial",
-    "seconds": 11.753,
+    "seconds": 11.953,
     "evidence": "Health 88.2/100 on the post-2023 file, but structural 'N/A' (no pool, no elevator) is scored as missing data: 'the pools column is 93.4% null-like' is a RECOMMEND (the engine has no structural N/A step yet)"
    }
   },
@@ -110,7 +110,7 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 2.841,
+    "seconds": 2.938,
     "evidence": "46,455 clean + 1,929 quarantined (3.987%), gated WATCH; monthly counts a median -1.03% from the uncorrupted source over the last 24 months (before: -99.76%)"
    },
    "rentsafe": {
@@ -139,7 +139,7 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 0.267,
+    "seconds": 0.297,
     "evidence": "80 of 80 analysis facts reproduced on re-run or refit"
    },
    "rentsafe": {
@@ -154,7 +154,7 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 0.535,
+    "seconds": 0.562,
     "evidence": "volume -32.4% (uncorrupted source -32.8%), star rating +0.141 (source +0.140)"
    },
    "rentsafe": {
@@ -170,7 +170,7 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 0.056,
+    "seconds": 0.059,
     "evidence": "champion holt_damped_log, INSUFFICIENT; replayed 24 months, month-ahead band held 18 of 24"
    },
    "rentsafe": {
@@ -203,12 +203,12 @@
    },
    "fixture_after": {
     "status": "works",
-    "seconds": 16.927,
+    "seconds": 16.693,
     "evidence": "lint clean; Forecast and Backtest tables"
    },
    "rentsafe": {
     "status": "works (not opened in Desktop)",
-    "seconds": 10.469,
+    "seconds": 10.672,
     "evidence": "pbip_lint clean; Microsoft TMDL parser loaded 6 tables and 1 relationship (raw) and 6 tables (view); never opened in Power BI Desktop"
    }
   },
@@ -288,20 +288,20 @@
    },
    "analysis": {},
    "seconds": {
-    "land": 7.413,
-    "decide": 0.975,
-    "audit": 18.87,
-    "analyze": 17.372,
-    "export": 16.927,
-    "analyze.profile": 13.331,
-    "analyze.clean": 2.841,
-    "analyze.measure": 0.535,
-    "analyze.forecast": 0.056,
-    "analyze.gate_verify": 0.267,
+    "land": 7.399,
+    "decide": 0.685,
+    "audit": 18.455,
+    "analyze": 17.235,
+    "export": 16.693,
+    "analyze.profile": 13.042,
+    "analyze.clean": 2.938,
+    "analyze.measure": 0.562,
+    "analyze.forecast": 0.059,
+    "analyze.gate_verify": 0.297,
     "analyze.narrate": 0.001
    },
-   "total_seconds": 61.56,
-   "peak_rss_mb": 422.9,
+   "total_seconds": 60.47,
+   "peak_rss_mb": 430.8,
    "business_measures": {
     "volume_change_pct": -32.39966555183946,
     "volume_p": 0.119,
@@ -367,12 +367,12 @@
  },
  "rentsafe": {
   "cli_run": {
-   "total_seconds": 65.74,
+   "total_seconds": 66.252,
    "seconds_by_engagement": {
-    "eval-2023": 35.989,
-    "eval-pre2023": 11.917,
-    "registration": 6.578,
-    "view-2023": 11.213
+    "eval-2023": 36.665,
+    "eval-pre2023": 11.896,
+    "registration": 6.559,
+    "view-2023": 11.071
    },
    "audits": {
     "eval-2023": {

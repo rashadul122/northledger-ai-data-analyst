@@ -7,11 +7,6 @@
       <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs at least {{d try_fc_months}} months of monthly history, so that the last {{d try_fc_replay}} can be replayed to test it, and a finding must rest on {{d try_rec_rows}} rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
     </div>
     <div class="try-app" id="try-app">
-      <div class="try-q-wrap" id="try-q-wrap" hidden>
-        <label class="try-q-lab" for="try-q">What do you want to know? <span class="muted">The AI takes it as the report's goal; left empty, it proposes one from the data</span></label>
-        <textarea id="try-q" rows="2" maxlength="300" placeholder="For example: which units pay late most often, and what will rent look like next?"></textarea>
-        <p class="note">One integrated run: the AI reads a summary of your columns (names, counts, ranges and the values of category columns; never rows, and nothing from a column flagged as personal) and plans what to test. The engine computes every number and grades every finding. Then the AI writes the full storytelling report from the engine's results, fetching outside context with cited sources when the goal needs it. Every figure in the finished report is the engine's own, checked against its results; every outside claim carries its citation.</p>
-      </div>
       <div class="try-start" id="try-start">
         <div class="try-drop" id="try-drop">
           <svg class="try-drop-ic" aria-hidden="true" viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M25 36V22m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -35,6 +30,7 @@
           <h3 id="try-run-h">Working on <span id="try-run-name"></span></h3>
           <button type="button" class="btn btn-ghost btn-sm" id="try-cancel">Stop</button>
         </div>
+        <p class="try-uploaded" id="try-uploaded" hidden><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10.5l2.6 2.6L14 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Upload successful — analysing your file</p>
         <div class="try-bar" id="try-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Run progress">
           <div class="try-bar-track"><div class="try-bar-fill"></div></div>
           <span class="try-bar-pct">0%</span>

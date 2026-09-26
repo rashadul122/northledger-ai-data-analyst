@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "f7f4bd9ce1b0ac3dd9b94a82a750a594d9c614dce305034fdaf7a3a0d397a635",
-  "bytes": 357265
+  "sha256": "9aceaf80fe0d499439695ee1eca78721dd856ea23e5ec704c21a49e5ec73e80f",
+  "bytes": 357299
  },
  "files": [
   {
@@ -103,14 +103,14 @@
   },
   {
    "path": "northledger/benchmark_receipt.json",
-   "sha256": "6efb3d41005da290291915c7005dab2aa2e55d0ef705d6db2829a6580f597ccb",
-   "bytes": 52788,
+   "sha256": "b9e760306adb0c0f6bdfe9e592bf1731fdfbe335d42ad322bcb2f3cb0542c9fb",
+   "bytes": 53384,
    "source": "northledger-core/northledger/benchmark_receipt.json"
   },
   {
    "path": "benchmark/engine_benchmark.json",
-   "sha256": "f81bbef8988a7a19081aa7ae7bed8cc317479a430dc2c1d3dded4b1a26ef55e4",
-   "bytes": 105401,
+   "sha256": "e87369e690f68d020a66c600c43eb80cebc2e56eb021e01bc00c07d18827c119",
+   "bytes": 105396,
    "source": "northledger-core/benchmark/engine_benchmark.json"
   },
   {

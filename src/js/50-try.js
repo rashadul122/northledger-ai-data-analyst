@@ -1214,12 +1214,10 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), q: $('try-q'), planCard: $('try-plan-card'), sample: $('try-sample'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report') };
     var LIM = T.limits();
-    var qWrap = $('try-q-wrap');
-    if (qWrap && el.q) qWrap.hidden = !CFG.ai_proxy_url;             // the question is the goal of the one integrated run
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
     var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [] };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
@@ -1325,7 +1323,6 @@
       S.t0 = {}; S.busy = false;
       el.run.hidden = true; el.pd.hidden = true;
       el.sample.disabled = false; el.pick.disabled = false;
-      if (el.q) el.q.disabled = false;
     }
 
     /* ---- the worker ---- */
@@ -1616,7 +1613,7 @@
       c.hidden = false;
       mountMaps(c, rep);
       Array.prototype.forEach.call(c.querySelectorAll('.try-plan-alt'), function (b) {
-        b.addEventListener('click', function () { if (el.q) el.q.value = b.getAttribute('data-goal'); if (S.again) S.again(); });
+        b.addEventListener('click', function () { S.objective = b.getAttribute('data-goal') || ''; if (S.again) S.again(); });
       });
     }
 
@@ -1631,7 +1628,6 @@
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
       S.busy = true; el.sample.disabled = true; el.pick.disabled = true;
-      if (el.q) el.q.disabled = true;
       getBuffer().then(function (buf) {
         var u8 = new Uint8Array(buf), sn = T.sniff(u8, name);
         if (!sn.ok) return refuse(sn.reason);
@@ -1643,10 +1639,12 @@
         }
         if (rows === 0) return refuse('norows');
         if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
-        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = CFG.ai_proxy_url && el.q ? (el.q.value || '').trim() : ''; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = [];
+        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = ''; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = [];   // no question box: the AI proposes the goal from the data
         el.runName.textContent = name;
         drawStages();
         el.run.hidden = false;
+        var up = document.getElementById('try-uploaded');
+        if (up) { up.hidden = false; }               // upload success, straight into analysis
         goTo(el.run);
         var w;
         try { w = worker(); } catch (e) { return refuse('engine', { title: 'This browser cannot run the engine', body: 'It does not allow a background worker here (' + e.message + ').' }); }
@@ -1708,7 +1706,6 @@
       STAGES.forEach(function (s) { var li = stageEl(s); if (li && li.className !== 'st-done') setStage(s, 'skip'); });
       S.report = rep; S.busy = false;
       el.sample.disabled = false; el.pick.disabled = false;
-      if (el.q) el.q.disabled = false;
       drawPlan(rep);
       drawReport();
       el.report.hidden = false;

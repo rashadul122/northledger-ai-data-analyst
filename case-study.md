@@ -2,7 +2,7 @@
 
 *Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure
 below was filled in by build.py from the data files in data/; none was typed. City data to
-2026-09-21 (latest evaluation in the file); built 2026-09-25 08:48:52 UTC.*
+2026-09-21 (latest evaluation in the file); built 2026-09-26 12:47:14 UTC.*
 
 ## The client question
 
@@ -53,7 +53,7 @@ season. For the next evaluation, our model failed the rule fixed before the resu
 
 ## What the engine does today, and does not
 
-Mechanically yes, insightful not yet. On the messy reviews file the engine now goes from 48,384 messy rows to a cleaned table, a checked story and a backtested forecast in 61.6 s (before the engine work it kept 41 rows). On the RentSafeTO files everything it printed reproduced, but the brief is not one a landlord could use: the landlord answers (ward and pillar scorecard, points per fix, risk of losing green) still come from the site's own build script, not from the engine.
+Mechanically yes, insightful not yet. On the messy reviews file the engine now goes from 48,384 messy rows to a cleaned table, a checked story and a backtested forecast in 60.5 s (before the engine work it kept 41 rows). On the RentSafeTO files everything it printed reproduced, but the brief is not one a landlord could use: the landlord answers (ward and pillar scorecard, points per fix, risk of losing green) still come from the site's own build script, not from the engine.
 
 ## What a client gets
 

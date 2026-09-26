@@ -959,11 +959,15 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-plan-risks { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn, #b45309); border-radius: 8px; background: color-mix(in srgb, var(--warn, #b45309) 6%, transparent); }
 .try-plan-risks h4 { margin: 0 0 6px; }
 .try-plan-alt { white-space: normal; text-align: left; }
-/* the progress bar (owner's ask, 26 Sep 2026): one bar fills 0 to 100% across the whole run */
+/* the progress bar (owner's spec, 26 Sep 2026): one horizontal bar, transparent green fill,
+   the percentage beside it, filling 0 to 100% across the whole run */
 .try-bar { display: flex; align-items: center; gap: 12px; margin: 10px 0 14px; }
 .try-bar-track { flex: 1; height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
-.try-bar-fill { height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--ink))); transition: width .45s ease; }
+.try-bar-fill { height: 100%; width: 0; border-radius: 999px; background: rgba(34, 154, 22, 0.55); transition: width .45s ease; }
 .try-bar-pct { font-size: .9rem; font-weight: 600; min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+/* the upload-success banner */
+.try-uploaded { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: #229a16; font-weight: 600; }
+.try-uploaded svg { width: 18px; height: 18px; flex: none; }
 /* the AI-written report card */
 .try-ai-report { position: relative; margin: 20px 0; padding: 22px 24px 26px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--hairline)); border-radius: 16px; background: var(--surface); }
 .ai-rep-head h3 { margin: 0 0 4px; }

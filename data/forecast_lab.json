@@ -1,6 +1,6 @@
 {
  "schema": "forecast_lab/1",
- "generated_at": "2026-09-24T21:07:31Z",
+ "generated_at": "2026-09-26T12:40:30Z",
  "built_by": "build_forecast.py",
  "schedule": null,
  "series": {

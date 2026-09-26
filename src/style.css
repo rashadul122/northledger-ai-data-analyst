@@ -942,3 +942,58 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
   .nav-links a { font-size: 13.5px; }
   .bar { gap: 12px; }
 }
+
+/* the AI's plan for the visitor's file (25 Sep 2026) */
+.try-plan-lab { display: flex; gap: 8px; align-items: flex-start; font-size: .92rem; }
+.try-plan-lab input { margin-top: 3px; }
+.try-plan-card { margin: 18px 0; padding: 16px 20px; border: 1px solid var(--hairline); border-radius: 16px; background: var(--surface); }
+.try-plan-card h3 { margin: 0 0 8px; }
+.try-plan-card h4 { margin: 14px 0 6px; font-size: .95rem; }
+.try-plan-card ul { margin: 0; padding-left: 20px; }
+.try-plan-alts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* the highlighted opening (owner's ask, 26 Sep 2026): goal, reading, risks before everything else */
+.try-plan-head { margin: -4px 0 14px; padding: 14px 16px; border-left: 3px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.try-plan-title { font-size: 1.02rem; letter-spacing: .01em; }
+.try-plan-goal { margin: 8px 0 0; font-size: 1.05rem; font-weight: 600; line-height: 1.45; }
+.try-plan-read { margin: 6px 0 0; }
+.try-plan-risks { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn, #b45309); border-radius: 8px; background: color-mix(in srgb, var(--warn, #b45309) 6%, transparent); }
+.try-plan-risks h4 { margin: 0 0 6px; }
+.try-plan-alt { white-space: normal; text-align: left; }
+/* the progress bar (owner's ask, 26 Sep 2026): one bar fills 0 to 100% across the whole run */
+.try-bar { display: flex; align-items: center; gap: 12px; margin: 10px 0 14px; }
+.try-bar-track { flex: 1; height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
+.try-bar-fill { height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--ink))); transition: width .45s ease; }
+.try-bar-pct { font-size: .9rem; font-weight: 600; min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+/* the AI-written report card */
+.try-ai-report { position: relative; margin: 20px 0; padding: 22px 24px 26px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--hairline)); border-radius: 16px; background: var(--surface); }
+.ai-rep-head h3 { margin: 0 0 4px; }
+.ai-rep-body h4 { margin: 18px 0 6px; font-size: 1.02rem; }
+.ai-rep-body p { margin: 8px 0; }
+.ai-rep-body ul, .ai-rep-body ol { margin: 8px 0; padding-left: 22px; }
+.ai-rep-body li { margin: 4px 0; }
+.ai-rep-body table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: .9rem; }
+.ai-rep-body th, .ai-rep-body td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+.ai-rep-body th { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ai-rep-body a.cite { color: var(--accent); text-decoration: none; font-weight: 600; }
+.ai-rep-srcs { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--hairline); font-size: .88rem; color: var(--muted-foreground, inherit); }
+.ai-rep-srcs a { color: var(--accent); word-break: break-all; }
+.ai-rep-actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+.try-share-out { font-size: .88rem; }
+.try-share-out a { color: var(--accent); word-break: break-all; }
+/* the watermark on the in-page AI report */
+.ai-rep-wm { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--hairline); font-size: .72rem; letter-spacing: .16em; opacity: .6; }
+.ai-rep-wm a { color: var(--accent); text-decoration: none; text-transform: uppercase; font-weight: 600; }
+/* printing the AI report: only that card, with the watermark on every page */
+@media print {
+  body[data-print-target="try-ai-report"] * { visibility: hidden; }
+  body[data-print-target="try-ai-report"] .try-ai-report, body[data-print-target="try-ai-report"] .try-ai-report * { visibility: visible; }
+  body[data-print-target="try-ai-report"] .try-ai-report { position: absolute; left: 0; top: 0; width: 100%; border: none; padding: 0; }
+  .try-ai-report .btn { display: none; }
+}
+.try-ana-h { margin: 22px 0 4px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.try-ana { margin: 14px 0 18px; }
+.try-ana h4 { font-size: 1rem; margin: 0 0 4px; }
+.try-ana-key { font-weight: 600; line-height: 1.5; margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--accent); }
+.try-ana-chart { overflow-x: auto; }
+.try-ana-chart svg { max-width: 100%; height: auto; }
+.try-ana details { margin-top: 6px; }

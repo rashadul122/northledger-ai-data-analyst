@@ -1420,7 +1420,9 @@ check('try-question-box-only-with-ai-and-locked-during-a-run', DESK, async (ctx)
     ok(await p.isVisible('#try-q-wrap'), 'with AI wording on, the question box is hidden');
     const order = await p.evaluate(() => document.getElementById('try-q-wrap').compareDocumentPosition(document.getElementById('try-start')) & Node.DOCUMENT_POSITION_FOLLOWING);
     ok(order, 'the question box does not come before the file picker');
-    ok(/used only if you choose AI summaries/.test(await p.textContent('#try-q-wrap')), 'the question box does not say what it is used for');
+    // since the AI planner (25 Sep 2026) the question is the plan's goal, and it is sent with any AI summaries
+    const qText = await p.textContent('#try-q-wrap');
+    ok(/AI planner takes it as the report's goal/.test(qText) && /If you later ask for AI summaries, your question is sent/.test(qText), 'the question box does not say what it is used for');
     await p.fill('#try-q', 'Which units pay late?');
     await p.click('#try-sample');
     await tryUntil(p, '#try-pd:not([hidden])');

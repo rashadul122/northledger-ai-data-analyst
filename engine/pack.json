@@ -1,14 +1,14 @@
 {
  "what": "The NorthLedger engine packed for the in-browser demo: the modules the adapter's path uses, copied unmodified, plus the adapter and its stubs.",
- "engine_snapshot": "82a6be7b4b33",
- "engine_snapshot_full": "82a6be7b4b336e355e704fdb21dd2748d40e1647594303134f4f212dd5a28fd6",
+ "engine_snapshot": "19ec81d19e0d",
+ "engine_snapshot_full": "19ec81d19e0d428f2d048eaa9dab1a05ca59f727f2fe2dfcc27786a314805aaf",
  "engine_version": "0.1.0",
- "decision_code_snapshot": "88372dbe63e8989c761ac931bee3b8dbdbb1ad577faea63a5fdcf791fa060c9e",
+ "decision_code_snapshot": "0f39cf74494ac1df3e48cfa4629b3c9a8c457e52ac6f9a8468cf7c8b02d8aa11",
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "7fc148b74f19e88789d4fade1bf249153b1cd627a496e33a88fcadba12cdbfbf",
-  "bytes": 337792
+  "sha256": "f7f4bd9ce1b0ac3dd9b94a82a750a594d9c614dce305034fdaf7a3a0d397a635",
+  "bytes": 357265
  },
  "files": [
   {
@@ -31,8 +31,8 @@
   },
   {
    "path": "northledger/clean.py",
-   "sha256": "6fb971267ce62d0660d49e30a6959eff269b1bd9e3e66144c50616af8489f62b",
-   "bytes": 96365,
+   "sha256": "98b5c1cdae94f1872f216ccbeacdaf510de9ec4b6e8bde1be061451f754296b7",
+   "bytes": 97266,
    "source": "northledger-core/northledger/clean.py"
   },
   {
@@ -115,8 +115,8 @@
   },
   {
    "path": "nl_browser.py",
-   "sha256": "42b4423f3b4320d979d007e03306fd7da0a90451a6640375b136a101c36eb87a",
-   "bytes": 185656,
+   "sha256": "b9e41fbf114204fda6462fcb6d8cec5ba095c52d306e9e472adbd361b80d48e7",
+   "bytes": 251609,
    "source": "portfolio-website/engine/nl_browser.py"
   },
   {

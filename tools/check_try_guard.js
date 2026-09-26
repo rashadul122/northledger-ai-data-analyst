@@ -302,6 +302,24 @@ const GOOD = {
     if (proxy) { const v = proxy.validatePayload(JSON.parse(JSON.stringify(p))); ok(v.ok, 'the proxy would refuse it: ' + v.detail); }
   });
 
+  check('aiPayload sends the AI plan\'s analyses in the story\'s optional analyses section, one sentence a line', () => {
+    const ana = { items: [{ type: 'trend', sentence: 'GCAG rose by 0.0865 per decade over 1880 to 2025 (95% range 0.0707 to 0.102). Lines are drawn for 2 series.' },
+      { type: 'agreement', sentence: 'Over 1,752 shared dates, GCAG runs 0.0843 lower than GISTEMP on average.' }], refused: [] };
+    const base = JSON.parse(JSON.stringify(REPORT));
+    const p = T.aiPayload(Object.assign({}, base, { ai_analyses: ana }), '');
+    eq(p.story.analyses, ['GCAG rose by 0.0865 per decade over 1880 to 2025 (95% range 0.0707 to 0.102).', 'Lines are drawn for 2 series.',
+      'Over 1,752 shared dates, GCAG runs 0.0843 lower than GISTEMP on average.'], 'one sentence a line');
+    ok(!('analyses' in T.aiPayload(base, '').story), 'no analyses: the section is not sent, so the payload keeps its old shape');
+    const src = T.templateSources ? T.templateSources(p) : null;
+    if (proxy) {
+      const v = proxy.validatePayload(JSON.parse(JSON.stringify(p))); ok(v.ok, 'the proxy would refuse it: ' + v.detail);
+      ok(v.value.story.analyses.length === 3, 'the proxy keeps the section');
+      const sys = proxy.systemPrompt('executive', v.value);
+      ok(/section "analyses"/.test(sys) && /(Begin|Right after \{NONE_CONFIRMED\}, begin) with the first one or two/.test(sys), 'the prompt has the summary begin with them');
+      ok(!/section "analyses"/.test(proxy.systemPrompt('executive', proxy.validatePayload(JSON.parse(JSON.stringify(T.aiPayload(base, '')))).value)), 'and says nothing of them when there are none');
+    }
+  });
+
   console.log(failed ? 'GUARD CHECKS: ' + failed + ' of ' + ran + ' FAILED' : 'GUARD CHECKS: ALL ' + ran + ' PASS');
   process.exit(failed ? 1 : 0);
 })();

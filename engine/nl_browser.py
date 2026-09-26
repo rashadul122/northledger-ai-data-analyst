@@ -2808,8 +2808,10 @@ def _pnorm(c: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(c).lower())
 
 
-def _reshape_long_panel(data: bytes) -> Tuple[bytes, Optional[Dict[str, Any]]]:
-    """A long statistical table as one column per series, or (data, None) when it is not one."""
+def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[str] = None,
+                        value_col: Optional[str] = None) -> Tuple[bytes, Optional[Dict[str, Any]]]:
+    """A long statistical table as one column per series, or (data, None) when it is not one. An AI
+    plan may name the date and value columns (a 'Year' of months, a 'Mean' of anomalies)."""
     import pandas as pd
     try:
         df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
@@ -2818,8 +2820,13 @@ def _reshape_long_panel(data: bytes) -> Tuple[bytes, Optional[Dict[str, Any]]]:
     norm = {c: _pnorm(c) for c in df.columns}
     date = next((c for k in _PANEL_DATE for c in df.columns if norm[c] == k), None)
     value = next((c for k in _PANEL_VALUE for c in df.columns if norm[c] == k), None)
+    if planned and date_col in df.columns:
+        date = date_col
+    if planned and value_col in df.columns and value_col != date:
+        value = value_col
     meta = [c for c in df.columns if norm[c] in _PANEL_META and c not in (date, value)]
-    if not date or not value or len(meta) < 3 or len(df) < 50:
+    # the rule needs three metadata columns to call a table long; an AI plan that says so is trusted
+    if not date or not value or (len(meta) < 3 and not planned) or len(df) < 50:
         return data, None
     dims = [c for c in df.columns if c not in meta and c not in (date, value)]
     varying = [c for c in dims if df[c].nunique() > 1]
@@ -2848,11 +2855,14 @@ def _reshape_long_panel(data: bytes) -> Tuple[bytes, Optional[Dict[str, Any]]]:
             v = v.mask(z)
             zeroed += int(z.sum())
     long = pd.DataFrame({"_d": dt, "_key": key, "_v": v}).dropna(subset=["_v"])
-    # compare series where they exist: the active ones (a value in the file's last 90 days) that run at
-    # least three years set the start; discontinued, too recent or too sparse series are set aside and named
+    # compare series where they exist: the active ones (a value in the file's last six steps, at least 90
+    # days: a monthly series published six months late is still current) that run at least three years
+    # set the start; discontinued, too recent or too sparse series are set aside and named
     span = long.groupby("_key")["_d"].agg(["min", "max", "count"])
     last = long["_d"].max()
-    active = span[span["max"] >= last - pd.Timedelta(days=90)]
+    steps = pd.Series(sorted(long["_d"].unique())).diff().dropna()
+    step = steps.median() if len(steps) else pd.Timedelta(days=1)
+    active = span[span["max"] >= last - max(pd.Timedelta(days=90), 6 * step)]
     lasting = active[active["max"] - active["min"] >= pd.Timedelta(days=3 * 365)]
     if lasting.empty:
         return data, None
@@ -2884,7 +2894,7 @@ def _reshape_long_panel(data: bytes) -> Tuple[bytes, Optional[Dict[str, Any]]]:
         "series_column": " | ".join(varying) if varying else None, "series": n_series, "kept": len(kept),
         "set_aside": {k: v for k, v in dropped.items() if v}, "start": start.strftime("%Y-%m-%d"),
         "order": [str(c) for c in order if c in wide.columns],
-        "value_column": str(value), "metadata_set_aside": [str(c) for c in meta],
+        "value_column": str(value), "date_column": str(date), "metadata_set_aside": [str(c) for c in meta],
         "constant_set_aside": [str(c) for c in constant], "zeros_as_empty": zeroed,
         "units": sorted(set(u for u in units.values() if u)),
     }
@@ -2910,6 +2920,1139 @@ def _lead_series(lay: Dict[str, Any], objective: str) -> Tuple[str, str]:
     return order[0], "it comes first in the file; name another series in the question box to lead with it"
 
 
+# ----------------------------------------------------------------------------- the AI plan
+# Owner's design (25 Sep 2026): the AI reads a privacy-safe profile of the file, states the goal, says
+# what each column is and directs the engine through a small set of generic operations; the engine
+# computes every number. The plan arrives as JSON (the worker's /plan, DeepSeek) and is validated here:
+# an operation that names a column the file lacks, or that is not in the menu, is refused and listed.
+PLAN_OPS = ("set_aside", "keep_columns", "long_to_wide", "exclude_rows", "keep_rows", "exclude_blank", "date_from_year",
+            "not_personal")
+SEMANTIC_TYPES = ("flow_amount", "level", "percentage", "log_scale", "count", "rating", "category",
+                  "ordinal", "duration", "date", "year", "boolean", "free_text", "identifier", "code",
+                  "geography", "entity", "metadata", "other")
+
+
+def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any = None) -> Dict[str, Any]:
+    """What the AI planner sees: names, types, counts, ranges and, for a column with few distinct
+    short values, its commonest values. Never rows, never values of a column that looks personal."""
+    import pandas as pd
+    data = _as_bytes(data)
+    try:
+        df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False,
+                         nrows=MAX_ROWS)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": "unreadable: %s" % type(exc).__name__}
+    cols = []
+    email = re.compile(r"@|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b")
+    for c in list(df.columns)[:max_cols]:
+        v = df[c].str.strip()
+        filled = v[v != ""]
+        num = pd.to_numeric(filled.str.replace(",", "", regex=False).str.rstrip("%"), errors="coerce")
+        info = {"name": str(c), "filled": int(len(filled)), "distinct": int(filled.nunique()),
+                "numeric_share": round(float(num.notna().mean()) if len(filled) else 0.0, 3)}
+        if info["numeric_share"] >= 0.9 and num.notna().any():
+            info.update({"min": float(num.min()), "median": float(num.median()), "max": float(num.max()),
+                         "integers": bool((num.dropna() % 1 == 0).all()),
+                         "percent_sign": bool(filled.str.endswith("%").mean() > 0.5)})
+        else:
+            dt = pd.to_datetime(filled.head(500), errors="coerce")
+            info["date_share"] = round(float(dt.notna().mean()) if len(filled) else 0.0, 3)
+            looks_personal = bool(filled.head(500).str.contains(email).mean() > 0.05)
+            if not looks_personal and info["distinct"] <= 300 and filled.str.len().median() <= 60:
+                info["top_values"] = [str(x)[:60] for x in filled.value_counts().head(12).index]
+                # every value of a category column (countries, regions, products) so the AI can tell the
+                # members from the aggregates (World, Asia, High-income countries) mixed in with them
+                if 12 < info["distinct"] and not (flagged and str(c) in flagged):
+                    info["values"] = sorted(str(x)[:60] for x in filled.unique())
+            info["looks_personal"] = looks_personal
+        if len(filled) < len(df):
+            info["blank"] = int(len(df) - len(filled))
+        if flagged and str(c) in flagged:
+            info["privacy_flag"] = str(flagged[str(c)])[:60]
+            info.pop("values", None)
+        cols.append(info)
+    return {"ok": True, "name": _clean_name(name), "rows": int(len(df)), "columns": cols,
+            "columns_total": int(len(df.columns))}
+
+
+def profile_json(data: Any, name: str = "", flagged: Any = None) -> str:
+    """profile_for_ai as JSON text; flagged: {column: kind} from the scan (the engine's privacy flags),
+    so the planner can clear a numeric column the check flagged by mistake."""
+    if isinstance(flagged, str):
+        try:
+            flagged = json.loads(flagged)
+        except ValueError:
+            flagged = None
+    elif flagged is not None and hasattr(flagged, "to_py"):
+        flagged = flagged.to_py()
+    return json.dumps(profile_for_ai(data, name, flagged=flagged), allow_nan=False, default=str)
+
+
+def results_for_ai(rep: Any) -> Dict[str, Any]:
+    """The engine's own report distilled for the AI report writer (the /report route): every figure
+    the writer may quote, nothing else. The writer never sees a row; it sees the goal, the graded
+    claims with their values and intervals, the AI-named analyses with their tables, the story,
+    the forecast, and the health and cleaning summary. Capped: the worker's body limit is small.
+    """
+    if isinstance(rep, str):
+        try:
+            rep = json.loads(rep)
+        except ValueError:
+            return {"ok": False, "error": "the report is not JSON"}
+    if not isinstance(rep, dict):
+        return {"ok": False, "error": "the report is not an object"}
+
+    def _num(x: Any) -> Any:
+        try:
+            f = float(x)
+            return f if (f == f and abs(f) != float("inf")) else None
+        except (TypeError, ValueError):
+            return None
+
+    def _cap(x: Any, n: int) -> Any:
+        return x[:n] if isinstance(x, list) else x
+
+    findings = []
+    for f in _cap(rep.get("findings") or [], 20):
+        if not isinstance(f, dict):
+            continue
+        d = {"verdict": str(f.get("verdict") or ""), "kind": str(f.get("kind") or ""),
+             "claim": str(f.get("claim") or "")[:400]}
+        for k in ("value", "interval", "p_value", "power"):
+            v = _num(f.get(k))
+            if v is not None:
+                d[k] = v
+        if f.get("why"):
+            d["why"] = str(f["why"])[:240]
+        findings.append(d)
+
+    analyses = []
+    for a in _cap((rep.get("ai_analyses") or {}).get("items") or [], 8):
+        if not isinstance(a, dict):
+            continue
+        d = {"title": str(a.get("title") or "")[:160],
+             "sentence": str(a.get("sentence") or "")[:700],
+             "method": str(a.get("method") or "")[:300]}
+        t = a.get("table") or {}
+        rows = t.get("rows") or []
+        if isinstance(rows, list) and rows:
+            cols = [str(c)[:60] for c in (t.get("cols") or [])][:6]
+            d["table"] = {"cols": cols,
+                          "rows": [[str(v)[:80] for v in r][:len(cols)] for r in rows[:12]]}
+        analyses.append(d)
+
+    clean = rep.get("cleaning") or {}
+    health = rep.get("health") or {}
+    plan = rep.get("ai_plan") or {}
+    applied = [str(x)[:200] for x in _cap(plan.get("applied") or [], 8)]
+    story = rep.get("story") or {}
+    # the writer needs a goal. With no AI plan (rules-only run, or the planner did not answer),
+    # the engine's own headline stands in: it is the report's primary claim, checked by the engine.
+    goal = str(plan.get("goal") or (rep.get("objective") or "")).strip()
+    if not goal and isinstance(story.get("headline"), str):
+        goal = story["headline"][:300]
+    if not goal:
+        goal = "What does this file say, and what should be done about it?"
+    # the story distilled for the writer, from the engine's own story
+    st = story
+    for k in ("headline", "what_happened", "why", "what_to_do", "whats_next", "cannot_answer"):
+        v = st.get(k)
+        if isinstance(v, list):
+            story[k] = [str(x)[:300] for x in _cap(v, 8)]
+        elif v:
+            story[k] = str(v)[:300]
+
+    fc = {}
+    f = rep.get("forecast") or {}
+    if f.get("available"):
+        fc["available"] = True
+        for k in ("series", "verdict", "champion", "coverage", "baseline_won", "reason"):
+            if f.get(k) is not None:
+                fc[k] = str(f[k])[:200]
+        fwd = f.get("forecast") or []
+        if isinstance(fwd, list) and fwd:
+            fc["points"] = [{kk: vv for kk, vv in x.items() if kk in ("date", "value", "lo", "hi")}
+                             for x in fwd[:14] if isinstance(x, dict)]
+
+    # the applied steps carry real figures (rows left after a filter, series count after a
+    # reshape): the writer may quote them, so they must be in the payload as findings of the run
+    out = {
+        "ok": True,
+        "input": {"name": (rep.get("input") or {}).get("name"),
+                  "rows": (rep.get("input") or {}).get("rows"),
+                  "columns": (rep.get("input") or {}).get("columns")},
+        "goal": goal,
+        "reading": plan.get("understanding") or "",
+        "quality_risks": [str(x)[:240] for x in _cap(plan.get("quality_risks") or [], 6)],
+        "plan_applied": applied,
+        "plan_refused": [str(x)[:160] for x in _cap(plan.get("refused") or [], 6)],
+        "findings": findings,
+        "analyses": analyses,
+        "analyses_refused": [str(x)[:160] for x in _cap((rep.get("ai_analyses") or {}).get("refused") or [], 6)],
+        "story": story,
+        "forecast": fc,
+        "health_score": _num(health.get("score")),
+        "health_issues": [str(x)[:200] for x in _cap(health.get("issues") or [], 6)],
+        "cleaning": {"rows_in": clean.get("rows_in"), "rows_clean": clean.get("rows_clean"),
+                     "rows_quarantined": clean.get("rows_quarantined"),
+                     "fixes": [str(x.get("what") or x)[:160] for x in _cap(clean.get("fixes") or [], 6)
+                               if isinstance(x, dict)]},
+        "limitations": [str(x.get("text") or x)[:240] for x in _cap(rep.get("limitations") or [], 6)
+                        if isinstance(x, dict)],
+    }
+    return out
+
+
+def results_json(rep: Any) -> str:
+    """results_for_ai as JSON text (what the page POSTs to the worker's /report)."""
+    return json.dumps(results_for_ai(rep), allow_nan=False, default=str)
+
+
+def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[str]]:
+    """The plan cut down to what is valid, and the reasons for each part refused."""
+    refused: List[str] = []
+    if not isinstance(plan, dict):
+        return {}, ["the plan is not an object"]
+    have = set(columns)
+    out: Dict[str, Any] = {k: str(plan.get(k) or "")[:600] for k in ("goal", "understanding", "kind")}
+    out["goal_candidates"] = [str(x)[:200] for x in (plan.get("goal_candidates") or [])[:3] if str(x).strip()]
+    out["quality_risks"] = [str(x)[:240] for x in (plan.get("quality_risks") or [])[:6]]
+    out["columns"] = []
+    for c in (plan.get("columns") or [])[:200]:
+        if isinstance(c, dict) and c.get("name") in have:
+            t = str(c.get("semantic_type") or "other")
+            out["columns"].append({"name": c["name"], "semantic_type": t if t in SEMANTIC_TYPES else "other",
+                                   "role": str(c.get("role") or "")[:20], "unit": str(c.get("unit") or "")[:40],
+                                   "why": str(c.get("why") or "")[:200]})
+    ops = []
+    for op in (plan.get("operations") or [])[:12]:
+        if not isinstance(op, dict) or op.get("op") not in PLAN_OPS:
+            refused.append("an operation outside the menu (%s)" % str((op or {}).get("op") if isinstance(op, dict) else op)[:40])
+            continue
+        names = [op.get("column")] if op.get("column") else list(op.get("columns") or [])
+        missing = [n for n in names if n not in have]
+        if missing:
+            refused.append("%s names columns the file lacks: %s" % (op["op"], ", ".join(map(str, missing))[:120]))
+            continue
+        if op["op"] in ("exclude_rows", "keep_rows") and not (op.get("column") and op.get("values")):
+            refused.append("%s needs a column and values" % op["op"])
+            continue
+        ops.append({k: op[k] for k in ("op", "column", "columns", "values") if k in op})
+    out["operations"] = ops
+    # analyses name series that may exist only after long_to_wide (GCAG from Source), so their names are
+    # checked when they run, against the file as the engine read it
+    ans = []
+    for a in (plan.get("analyses") or [])[:12]:
+        if not isinstance(a, dict) or a.get("type") not in ANALYSIS_TYPES:
+            refused.append("an analysis outside the menu (%s)" % str((a or {}).get("type") if isinstance(a, dict) else a)[:40])
+            continue
+        if len(ans) >= ANALYSES_MAX:
+            refused.append("more than %d analyses; the rest were not run" % ANALYSES_MAX)
+            break
+        cols = [str(c)[:120] for c in (a.get("columns") or []) if isinstance(c, (str, int, float))][:8]
+        item = {"type": a["type"], "columns": cols, "why": str(a.get("why") or "")[:200]}
+        if isinstance(a.get("by"), str) and a["by"] in have:
+            item["by"] = a["by"]
+        ans.append(item)
+    out["analyses"] = ans
+    prim = plan.get("primary")
+    out["primary"] = prim if prim in have else ""
+    if prim and prim not in have:
+        refused.append("the headline measure %s is not a column" % str(prim)[:60])
+    return out, refused
+
+
+def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any], Optional[Dict[str, Any]]]:
+    """Run the plan's operations on the file. Returns the bytes, what was applied (and refused), and
+    the long-table layout when long_to_wide ran."""
+    import pandas as pd
+    df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    applied, refused, decisions = [], [], {}
+    layout = None
+    # row filters read the file's own columns, so they run before any column is set aside
+    # the units of a long table, read before any column is set aside (a plan may set UOM aside first)
+    ucol = next((c for c in df.columns if _pnorm(c) in ("uom", "unit", "units", "unitmeasure")), None)
+    units_orig = sorted(set(v.strip() for v in df[ucol].unique() if str(v).strip())) if ucol else []
+    rowf = ("exclude_rows", "keep_rows", "exclude_blank")
+    ops = [o for o in plan.get("operations", []) if o["op"] in rowf] + \
+          [o for o in plan.get("operations", []) if o["op"] not in rowf]
+    for op in ops:
+        kind = op["op"]
+        try:
+            if kind == "keep_columns":
+                keep = [c for c in op.get("columns", []) if c in df.columns]
+                if len(keep) < 2:
+                    refused.append("keep_columns: fewer than two columns named, so every column was kept")
+                    continue
+                dropped = [c for c in df.columns if c not in keep]
+                df = df[keep]
+                applied.append("kept the %d columns the goal needs, set aside %d others" % (len(keep), len(dropped)))
+            elif kind == "set_aside":
+                cols = [c for c in op.get("columns", []) if c in df.columns]
+                if cols:
+                    df = df.drop(columns=cols)
+                    applied.append("set aside %s" % ", ".join(cols))
+            elif kind in ("exclude_rows", "keep_rows"):
+                vals = set(str(v) for v in op["values"][:500])
+                m = df[op["column"]].isin(vals)
+                before = len(df)
+                df = df[~m] if kind == "exclude_rows" else df[m]
+                applied.append("%s %s rows where %s is one of %d values (%s rows left)"
+                               % ("dropped" if kind == "exclude_rows" else "kept", format(before - len(df) if kind == "exclude_rows" else len(df), ","),
+                                  op["column"], len(vals), format(len(df), ",")))
+            elif kind == "exclude_blank":
+                c = op.get("column")
+                if c not in df.columns:
+                    refused.append("exclude_blank: %s is not a column now" % c)
+                    continue
+                blank = df[c].str.strip() == ""
+                if not blank.any() or blank.all():
+                    refused.append("exclude_blank: %s has %s blank" % (c, "no" if not blank.any() else "every value"))
+                    continue
+                df = df[~blank]
+                applied.append("dropped %s rows where %s is blank (%s rows left)" % (format(int(blank.sum()), ","), c, format(len(df), ",")))
+            elif kind == "date_from_year":
+                c = op["column"]
+                y = pd.to_numeric(df[c], errors="coerce")
+                if y.between(1000, 2999).mean() < 0.95:
+                    refused.append("date_from_year: %s does not hold years" % c)
+                    continue
+                old = y < 1900
+                if old.any():
+                    df, y = df[~old], y[~old]
+                    applied.append("set aside %s rows before 1900 (the engine's dates start there)" % format(int(old.sum()), ","))
+                df.insert(0, "date", y.astype("Int64").astype(str) + "-12-31")
+                df = df.drop(columns=[c])
+                applied.append("read %s as the date (the year's last day)" % c)
+            elif kind == "not_personal":
+                for c in op.get("columns", []):
+                    filled = df[c].str.strip()[df[c].str.strip() != ""] if c in df.columns else None
+                    num = pd.to_numeric(filled.str.replace(",", "", regex=False), errors="coerce") if filled is not None else None
+                    if num is not None and len(num) and num.notna().mean() >= 0.95:
+                        decisions[c] = "keep"
+                    else:
+                        refused.append("not_personal: %s is not a numeric column, so its privacy check stands" % c)
+                if decisions:
+                    applied.append("kept numeric columns the privacy check had flagged: %s" % ", ".join(decisions))
+            elif kind == "long_to_wide":
+                buf = df.to_csv(index=False).encode("utf-8")
+                roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name") in df.columns}
+                dcol = op.get("column") if op.get("column") in df.columns and op.get("column") == roles.get("date") else roles.get("date")
+                vcol = plan.get("primary") if plan.get("primary") in df.columns else roles.get("target")
+                nb, lay = _reshape_long_panel(buf, planned=True, date_col=dcol, value_col=vcol)
+                if lay:
+                    if not lay.get("units") and len(units_orig) > 1:
+                        lay["units"] = units_orig
+                    layout = lay
+                    df = pd.read_csv(io.BytesIO(nb), dtype=str, keep_default_na=False)
+                    applied.append("one column per series (%d series)" % lay["kept"])
+                else:
+                    refused.append("long_to_wide: the file is not a long table")
+        except Exception as exc:  # noqa: BLE001 - one failed step never stops the run
+            refused.append("%s failed (%s)" % (kind, type(exc).__name__))
+    return df.to_csv(index=False).encode("utf-8"), {"applied": applied, "refused": refused, "decisions": decisions}, layout
+
+
+# ----------------------------------------------------------------------------- the AI's analyses
+# Owner's design, step 3 (25 Sep 2026): the plan also says WHAT to compute, from a fixed menu; this
+# code computes every number. A long temperature record wants its trend, its extremes and whether two
+# sources agree, not only "the latest 12 months against the 12 before". These are descriptive: they
+# are not graded by the change gate, and every card says so and how it was computed.
+ANALYSIS_TYPES = ("trend", "extremes", "agreement", "rank", "share", "compare", "relationship", "distribution", "themes",
+                  "predict")
+ANALYSES_MAX = 6
+_LEVEL_TYPES = ("level", "percentage", "log_scale", "rating", "ordinal", "duration", "other")
+
+
+def _fmt(v: Any, sig: int = 3) -> str:
+    """A number for a sentence: 3 significant digits, thousands separated, a true minus sign."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "n/a"
+    if v != v:
+        return "n/a"
+    a = abs(v)
+    if a >= 1000:
+        s = format(round(v), ",")
+    elif a == 0:
+        s = "0"
+    else:
+        import math
+        dp = max(0, sig - 1 - int(math.floor(math.log10(a))))
+        s = ("%.*f" % (min(dp, 6), v))
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+    return s.replace("-", "−")
+
+
+def _hac_slope(t: Any, y: Any) -> Tuple[float, float, int]:
+    """OLS slope of y on t with a Newey-West standard error (Bartlett weights, lag 4(n/100)^(2/9)):
+    yearly values of a climate or price series lean on the year before, and a plain OLS interval
+    would be too narrow. Returns (slope, se, lag)."""
+    import numpy as np
+    t = np.asarray(t, float)
+    y = np.asarray(y, float)
+    n = len(t)
+    X = np.column_stack([np.ones(n), t - t.mean()])
+    xtx_inv = np.linalg.inv(X.T @ X)
+    beta = xtx_inv @ (X.T @ y)
+    e = y - X @ beta
+    lag = int(np.floor(4 * (n / 100.0) ** (2.0 / 9.0)))
+    xe = X * e[:, None]
+    S = xe.T @ xe
+    for l in range(1, lag + 1):
+        w = 1.0 - l / (lag + 1.0)
+        G = xe[l:].T @ xe[:-l]
+        S += w * (G + G.T)
+    V = xtx_inv @ S @ xtx_inv
+    return float(beta[1]), float(np.sqrt(max(V[1, 1], 0.0))), lag
+
+
+def _tcrit(df: int) -> float:
+    """The two-sided 97.5% t critical value, from the core's own distribution code (forecast.py:
+    t_cdf through the incomplete beta, checked in tests/test_forecast_baseline.py). No scipy: it
+    does not exist in Pyodide, and a value that differed between the browser and a local run
+    would make two runs of the same file disagree. Bisection on the monotone CDF, 1e-6 in x."""
+    from northledger.forecast import t_cdf
+    d = max(int(df), 1)
+    if d == 1:
+        return 12.706204736432095  # tan(pi * 0.975); the exact closed form
+    lo, hi = 0.0, 12.71
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if t_cdf(mid, d) < 0.975:
+            lo = mid
+        else:
+            hi = mid
+    return float(0.5 * (lo + hi))
+
+
+def _analysis_frame(data: bytes, plan: Dict[str, Any], layout: Optional[Dict[str, Any]]):
+    """The file as the engine read it after the plan: (frame, date column, entity column)."""
+    import pandas as pd
+    df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name")}
+    date = None
+    for c in ([layout.get("date_column")] if layout and layout.get("date_column") else []) + \
+             (["date"] if "date" in df.columns else []) + [roles.get("date")] + list(df.columns):
+        if c in df.columns:
+            dt = pd.to_datetime(df[c], errors="coerce")
+            if dt.notna().mean() >= 0.95:
+                date = c
+                break
+    ent = None
+    for r in ("entity", "geography", "segment"):
+        c = roles.get(r)
+        if c in df.columns and c != date and df[c].nunique() > 1:
+            ent = c
+            break
+    return df, date, ent
+
+
+def _resolve(names: Any, df: Any, layout: Optional[Dict[str, Any]], date: Optional[str], ent: Optional[str]) -> List[str]:
+    """Plan names as the frame's numeric columns. After long_to_wide a series is a column named by its
+    value (GCAG), and the old value column (Mean) stands for every series. A plan that names a
+    dimension value (Export, Import) on a long table names every series of that kind at once: the
+    series names carry the dimension (united_states_export), so a word matching many series
+    resolves to all of them (capped), and the analysis ranks or trends them side by side."""
+    cols = [c for c in df.columns if c not in (date, ent)]
+    low = {str(c).lower(): c for c in cols}
+    out: List[str] = []
+    for n in (names or [])[:8]:
+        n = str(n)
+        if n in cols:
+            out.append(n)
+        elif n.lower() in low:
+            out.append(low[n.lower()])
+        elif layout and n in (layout.get("value_column"), layout.get("series_column")):
+            out.extend(layout.get("order") or [])
+        else:
+            hit = [c for c in cols if n.lower() in str(c).lower() or str(c).lower() in n.lower()]
+            if len(hit) == 1:
+                out.append(hit[0])
+            elif layout and len(hit) > 1 and len(hit) <= 12:
+                # a dimension value the long table was reshaped on (Export, Import): every
+                # series of that kind, in the layout's own order
+                order = layout.get("order") or []
+                out.extend([c for c in order if c in hit] or hit)
+    seen, res = set(), []
+    for c in out:
+        if c not in seen and c in df.columns:
+            seen.add(c)
+            res.append(c)
+    return res
+
+
+def _col_type(plan: Dict[str, Any], col: str, layout: Optional[Dict[str, Any]]) -> Tuple[str, str]:
+    """(semantic type, unit) the plan gave a column; a reshaped series takes its value column's."""
+    by = {c["name"]: c for c in plan.get("columns", []) if c.get("name")}
+    c = by.get(col) or (by.get(layout.get("value_column")) if layout else None) or {}
+    unit = str(c.get("unit") or "")
+    if layout and col not in by and len(layout.get("units") or []) > 1:
+        unit = ""                        # series in several units: one unit for all of them would be wrong
+    return str(c.get("semantic_type") or "other"), unit
+
+
+def _yearly(df: Any, date: str, col: str, how: str):
+    """Values by calendar year: a sub-annual series becomes each complete year's mean (a level) or sum
+    (an amount); a year with under 90% of the usual count of values is left out and counted."""
+    import pandas as pd
+    d = pd.to_datetime(df[date], errors="coerce")
+    v = pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False), errors="coerce")
+    s = pd.DataFrame({"d": d, "v": v}).dropna()
+    if s.empty:
+        return pd.Series(dtype=float), 0, "none"
+    steps = s["d"].drop_duplicates().sort_values().diff().dropna()
+    if len(steps) and steps.median() < pd.Timedelta(days=300):
+        g = s.groupby(s["d"].dt.year)["v"]
+        n = g.count()
+        full = n >= 0.9 * n.max()
+        agg = (g.mean() if how == "mean" else g.sum())[full]
+        return agg, int((~full).sum()), "year " + ("average" if how == "mean" else "total")
+    s = s.groupby(s["d"].dt.year)["v"].mean()
+    return s, 0, "value"
+
+
+def _panel_yearly(df: Any, date: str, ent: Optional[str], col: str, how: str):
+    """(values by year, dropped years, what a value is). With an entity column (countries by year) a year's
+    value is over one steady set of entities, so a trend is not the arrival of new reporters: those with a
+    value in the latest year and in 95% of the years since most of them began; an amount is their sum, a
+    level (per person, a rate) their median."""
+    import pandas as pd
+    if not ent:
+        return _yearly(df, date, col, how)
+    d = pd.to_datetime(df[date], errors="coerce")
+    v = pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False), errors="coerce")
+    s = pd.DataFrame({"e": df[ent].astype(str), "y": d.dt.year, "v": v}).dropna()
+    if s.empty:
+        return pd.Series(dtype=float), 0, "none"
+    w = s.pivot_table(index="y", columns="e", values="v", aggfunc="mean")
+    last = w.index.max()
+    now = w.columns[w.loc[last].notna()]
+    if len(now) == 0:
+        return pd.Series(dtype=float), 0, "none"
+    frac = w[now].notna().mean(axis=1)
+    start = frac[frac >= 0.9].index.min() if (frac >= 0.9).any() else w.index.min()
+    ww = w.loc[w.index >= start, now]
+    steady = ww.columns[ww.notna().mean() >= 0.95]
+    if len(steady) == 0:
+        return pd.Series(dtype=float), 0, "none"
+    ww = ww[steady]
+    agg = ww.sum(axis=1, min_count=max(1, int(0.9 * len(steady)))) if how == "sum" else ww.median(axis=1)
+    agg = agg.dropna()
+    what = ("the sum over the %d %s entries that report every year from %d" if how == "sum" else
+            "the median of the %d %s entries that report every year from %d") % (len(steady), ent, int(start))
+    return agg, 0, what
+
+
+def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    import numpy as np
+    rows, lines, sentences, fits = [], [], [], []
+    for col in cols[:4]:
+        st, unit = _col_type(plan, col, layout)
+        how = "sum" if st in ("flow_amount", "count") else "mean"
+        y, dropped, grain = _panel_yearly(df, date, ent, col, how)
+        if len(y) < 8:
+            continue
+        yrs = np.asarray(y.index, float)
+        b, se, lag = _hac_slope(yrs, y.values)
+        tc = _tcrit(len(y) - 2)
+        per = 10.0 if yrs.max() - yrs.min() >= 20 else 1.0
+        pword = "decade" if per == 10.0 else "year"
+        span_txt = "%d to %d" % (int(yrs.min()), int(yrs.max()))
+        recent = None
+        if yrs.max() - yrs.min() >= 60:
+            m = yrs >= yrs.max() - 29
+            rb, rse, _ = _hac_slope(yrs[m], y.values[m])
+            recent = (rb, rse, int(yrs[m].min()), _tcrit(int(m.sum()) - 2))
+        u = (" " + unit) if unit else ""
+        text = ("%s rose by %s%s per %s over %s (95%% range %s to %s)" if b > 0 else
+                "%s fell by %s%s per %s over %s (95%% range %s to %s)") % (
+            col, _fmt(abs(b * per)), u, pword, span_txt, _fmt((b - tc * se) * per), _fmt((b + tc * se) * per))
+        if recent:
+            rb, rse, r0, rtc = recent
+            text += "; since %d the pace is %s%s per decade (%s to %s)" % (
+                r0, _fmt(rb * per), u, _fmt((rb - rtc * rse) * per), _fmt((rb + rtc * rse) * per))
+            if (rb - rtc * rse) > (b + tc * se):
+                text += ", faster than the whole record"
+        if ent:
+            text += " (a year's value is %s)" % grain
+        sentences.append(text + ".")
+        rows.append([col, span_txt, str(len(y)), _fmt(b * per), "%s to %s" % (_fmt((b - tc * se) * per), _fmt((b + tc * se) * per)),
+                     (_fmt(recent[0] * per) if recent else "")])
+        lines.append({"name": col, "x": [int(v) for v in yrs], "y": [float(v) for v in y.values]})
+        c0 = float(np.mean(y.values)) - b * float(np.mean(yrs))
+        fits.append({"name": col + " trend", "x0": int(yrs.min()), "x1": int(yrs.max()),
+                     "y0": c0 + b * yrs.min(), "y1": c0 + b * yrs.max()})
+        if recent:
+            m = yrs >= recent[2]
+            c1 = float(np.mean(y.values[m])) - recent[0] * float(np.mean(yrs[m]))
+            fits.append({"name": col + " since %d" % recent[2], "x0": recent[2], "x1": int(yrs.max()),
+                         "y0": c1 + recent[0] * recent[2], "y1": c1 + recent[0] * yrs.max(), "recent": True})
+    if not sentences:
+        return {"refused": "trend: no series with 8 or more years of values"}
+    if len(cols) > 4:
+        sentences.append("Lines are drawn for the first 4 of the %d series named." % len(cols))
+    short = _short_labels([ln["name"] for ln in lines])
+    for ln in lines:
+        ln["name"] = short.get(ln["name"], ln["name"])
+    for f in fits:
+        base = next((k for k in short if f["name"].startswith(k)), None)
+        if base:
+            f["name"] = short[base] + f["name"][len(base):]
+    return {"type": "trend", "title": "Long-run trend", "sentence": " ".join(sentences),
+            "method": "Least-squares line through each %s; the 95%% range uses Newey-West errors, because "
+                      "one year's value leans on the year before." % ("year's value" if ent else grain),
+            "table": {"cols": ["Series", "Years", "Points", "Change per " + pword, "95% range", "Last 30 years"], "rows": rows},
+            "chart": {"kind": "line", "x_label": "year", "series": lines, "fits": fits}}
+
+
+def _a_extremes(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    sentences, rows, bars = [], [], []
+    for col in cols[:2]:
+        st, unit = _col_type(plan, col, layout)
+        y, dropped, grain = _panel_yearly(df, date, ent, col, "sum" if st in ("flow_amount", "count") else "mean")
+        if len(y) < 10:
+            continue
+        top = y.sort_values(ascending=False).head(5)
+        low = y.sort_values().head(3)
+        recent10 = sum(1 for k in top.index if k >= y.index.max() - 9)
+        sentences.append("Highest %s years%s: %s; lowest: %s.%s" % (
+            col, (" (%s)" % grain) if ent else "", ", ".join("%d (%s)" % (k, _fmt(v)) for k, v in top.items()),
+            ", ".join("%d (%s)" % (k, _fmt(v)) for k, v in low.items()),
+            ((" All 5 fall in the last 10 of %d years." % len(y)) if recent10 == 5 else
+             (" %d of the 5 fall in the last 10 of %d years." % (recent10, len(y))) if recent10 >= 3 else "")))
+        for k, v in top.items():
+            rows.append([col, str(k), _fmt(v), "highest"])
+        for k, v in low.items():
+            rows.append([col, str(k), _fmt(v), "lowest"])
+        if not bars:
+            bars = [{"label": str(k), "value": float(v)} for k, v in top.items()]
+    if not sentences:
+        return {"refused": "extremes: no series with 10 or more complete years"}
+    return {"type": "extremes", "title": "Highest and lowest years", "sentence": " ".join(sentences),
+            "method": ("Each year's value (%s), ranked." % grain) if ent else
+                      "Each complete calendar year's %s, ranked." % ("value" if not grain.startswith("year") else grain.split(" ", 1)[1]),
+            "table": {"cols": ["Series", "Year", "Value", "Rank"], "rows": rows},
+            "chart": {"kind": "bars", "series": bars}}
+
+
+def _a_agreement(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    import numpy as np
+    import pandas as pd
+    if len(cols) < 2:
+        return {"refused": "agreement: needs two series"}
+    a, b = cols[0], cols[1]
+    d = pd.to_datetime(df[date], errors="coerce")
+    va = pd.to_numeric(df[a].astype(str).str.replace(",", "", regex=False), errors="coerce")
+    vb = pd.to_numeric(df[b].astype(str).str.replace(",", "", regex=False), errors="coerce")
+    s = pd.DataFrame({"d": d, "a": va, "b": vb}).dropna()
+    if len(s) < 12:
+        return {"refused": "agreement: fewer than 12 dates where both have a value"}
+    diff = s["a"] - s["b"]
+    r = float(np.corrcoef(s["a"], s["b"])[0, 1])
+    i = int(diff.abs().values.argmax())
+    sd = float(diff.std())
+    steady = sd < 0.25 * abs(float(diff.mean())) if diff.mean() != 0 else False
+    text = ("Over %s shared dates (%s to %s), %s runs %s %s than %s on average, and they move together "
+            "(correlation %s); the widest gap was %s on %s." % (
+                format(len(s), ","), s["d"].min().strftime("%Y-%m"), s["d"].max().strftime("%Y-%m"), a,
+                _fmt(abs(diff.mean())), "higher" if diff.mean() > 0 else "lower", b, _fmt(r),
+                _fmt(float(diff.iloc[i])), s["d"].iloc[i].strftime("%Y-%m")))
+    if steady:
+        text += " The gap is nearly constant (its spread is %s), the mark of two series measured from different baselines rather than disagreeing." % _fmt(sd)
+    ya = s.groupby(s["d"].dt.year)[["a", "b"]].mean()
+    return {"type": "agreement", "title": "Do %s and %s agree?" % (a, b), "sentence": text,
+            "method": "Dates where both series have a value; difference = %s minus %s; Pearson correlation." % (a, b),
+            "table": {"cols": ["Shared dates", "Mean difference", "Spread of difference", "Correlation", "Widest gap"],
+                      "rows": [[format(len(s), ","), _fmt(diff.mean()), _fmt(sd), _fmt(r), "%s (%s)" % (_fmt(float(diff.iloc[i])), s["d"].iloc[i].strftime("%Y-%m"))]]},
+            "chart": {"kind": "line", "x_label": "year", "series": [
+                {"name": a, "x": [int(k) for k in ya.index], "y": [float(v) for v in ya["a"]]},
+                {"name": b, "x": [int(k) for k in ya.index], "y": [float(v) for v in ya["b"]]}], "fits": []}}
+
+
+def _short_labels(names: List[str]) -> Dict[str, str]:
+    """Chart labels without the words every series shares (', daily average'); tables keep full names."""
+    names = [str(n) for n in names]
+    if len(names) < 2:
+        return {n: n for n in names}
+    rev = [n[::-1] for n in names]
+    k = len(os.path.commonprefix(rev))
+    suf = names[0][len(names[0]) - k:] if k else ""
+    cut = suf.find(",") if "," in suf else (suf.find(" ") if suf.startswith(" ") else -1)
+    suf = suf[cut:] if cut >= 0 else ""
+    out = {}
+    for n in names:
+        short = n[:len(n) - len(suf)].strip(" ,") if suf and n.endswith(suf) else n
+        out[n] = short or n
+    return out
+
+
+def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
+    """Series side by side (currencies after long_to_wide): each one's change from its first complete
+    year to its last, as a percentage of the first year's average (a level) or total (an amount)."""
+    rows = []
+    for col in cols[:60]:
+        st, _u = _col_type(plan, col, layout)
+        y, _d, _g = _yearly(df, date, col, "sum" if st in ("flow_amount", "count") else "mean")
+        y = y.dropna()
+        if len(y) < 2 or not y.iloc[0]:
+            continue
+        rows.append((col, int(y.index[0]), int(y.index[-1]), float(y.iloc[0]), float(y.iloc[-1]),
+                     100.0 * (float(y.iloc[-1]) / float(y.iloc[0]) - 1.0) if y.iloc[0] > 0 else None))
+    rows = [r for r in rows if r[5] is not None]
+    if len(rows) < 2:
+        return {"refused": "rank: fewer than two series with two complete years"}
+    rows.sort(key=lambda r: -r[5])
+    y0 = min(r[1] for r in rows)
+    y1 = max(r[2] for r in rows)
+    up = [r for r in rows if r[5] > 0]
+    text = ("From %d to %d (yearly averages), %s rose most (%s%%) and %s fell most (%s%%); %d of %d series rose."
+            % (y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5]), len(up), len(rows)))
+    if rows[-1][5] > 0:
+        text = "From %d to %d (yearly averages) every series rose: most %s (%s%%), least %s (%s%%)." % (
+            y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5]))
+    shown = rows if len(rows) <= 12 else rows[:6] + rows[-6:]
+    return {"type": "rank", "title": "Which series moved most", "sentence": text,
+            "method": "Each series' first and last complete calendar year, averaged (a total for an amount); "
+                      "change as a percentage of the first year. Series of different units are compared "
+                      "only as percentages.",
+            "table": {"cols": ["Series", "First year", "Last year", "First", "Last", "Change"],
+                      "rows": [[r[0], str(r[1]), str(r[2]), _fmt(r[3]), _fmt(r[4]), _fmt(r[5]) + "%"] for r in rows]},
+            "chart": {"kind": "bars", "unit": "%", "series": [{"label": _short_labels([x[0] for x in rows])[r[0]], "value": r[5]} for r in shown]}}
+
+
+def _a_rank(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    import pandas as pd
+    if not ent and date and len(cols) >= 2:
+        return _a_rank_series(df, date, cols, plan, layout)
+    if not ent or not cols:
+        return {"refused": "rank: needs an entity column (country, product, region) and a measure"}
+    col = cols[0]
+    v = pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False), errors="coerce")
+    s = pd.DataFrame({"e": df[ent].astype(str), "v": v})
+    if date:                               # no date column: one value per entity, nothing to drop for want of a date
+        s["d"] = pd.to_datetime(df[date], errors="coerce")
+    s = s.dropna()
+    if s.empty:
+        return {"refused": "rank: %s has no numbers" % col}
+    if date:
+        n_ent = s["e"].nunique()
+        per = s.groupby("d")["e"].nunique()
+        good = per[per >= 0.8 * per.max()]
+        latest = good.index.max() if len(good) else s["d"].max()
+        now = s[s["d"] == latest].groupby("e")["v"].sum()
+        years = sorted(s["d"].unique())
+        idx = years.index(latest)
+        back = years[idx - 10] if idx >= 10 else None
+        then = s[s["d"] == back].groupby("e")["v"].sum() if back is not None else None
+    else:
+        now, then, latest, back, n_ent = s.groupby("e")["v"].sum(), None, None, None, s["e"].nunique()
+    top = now.sort_values(ascending=False).head(10)
+    additive = _col_type(plan, col, layout)[0] in ("flow_amount", "count")
+    total = float(now.sum()) if additive else 0.0
+    rows, bars = [], []
+    for k, val in top.items():
+        chg = ""
+        if then is not None and k in then.index and then[k]:
+            chg = _fmt(100.0 * (val / then[k] - 1.0)) + "%"
+        rows.append([k, _fmt(val), (_fmt(100.0 * val / total) + "%") if total > 0 else "", chg])
+        bars.append({"label": k, "value": float(val)})
+    when = pd.Timestamp(latest).strftime("%Y") if latest is not None else ""
+    head = ", ".join("%s (%s)" % (k, _fmt(v)) for k, v in top.head(3).items())
+    share3 = 100.0 * float(top.head(3).sum()) / total if total > 0 else None
+    tail = ("; together %s%% of the total over all %d %s entries" % (_fmt(share3), len(now), ent)) if share3 else ""
+    text = ("In %s the largest %s were %s%s." % (when, col, head, tail) if when
+            else "The largest %s values were %s%s." % (col, head, tail))
+    if then is not None and len(rows):
+        ch = [(k, 100.0 * (now[k] / then[k] - 1.0)) for k in top.index if k in then.index and then[k] > 0]
+        if ch:
+            fast = max(ch, key=lambda x: x[1])
+            text += " Over the 10 %s before, the fastest riser among them was %s (%s%%)." % (
+                "steps", fast[0], _fmt(fast[1]))
+    mp = None
+    if 5 <= len(now) <= 300:
+        # every entity's value at that date: the page draws a world map when most of the names are countries
+        mp = {"measure": col, "when": when, "values": {str(k): float(v) for k, v in now.items()}}
+    return {"type": "rank", "title": "Largest %s by %s%s" % (col, ent, (" in " + when) if when else ""), "sentence": text, "map": mp,
+            "method": (("The latest date that at least 80%% of the %s entries report; change against the date 10 steps before%s."
+                        % (ent, (" (" + pd.Timestamp(back).strftime("%Y") + ")") if back is not None else "")) if date
+                       else "Each %s entry's value in the file (summed where it repeats)." % ent),
+            "table": {"cols": [ent, col, "Share of all", "Change over 10 steps"], "rows": rows},
+            "chart": {"kind": "bars", "series": bars}}
+
+
+def _a_share(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    import pandas as pd
+    if len(cols) < 2:
+        return {"refused": "share: needs two or more parts"}
+    num = {c: pd.to_numeric(df[c].astype(str).str.replace(",", "", regex=False), errors="coerce") for c in cols[:8]}
+    f = pd.DataFrame(num)
+    f["_d"] = pd.to_datetime(df[date], errors="coerce") if date else 0
+    g = f.groupby("_d")[list(num)].sum(min_count=1).dropna(how="any")
+    if g.empty:
+        return {"refused": "share: no date where every part has a value"}
+    last, first = g.index.max(), g.index.min()
+    tl, tf = g.loc[last].sum(), g.loc[first].sum()
+    if tl <= 0 or tf <= 0:
+        return {"refused": "share: the parts do not add to a positive whole"}
+    rows = [[c, _fmt(100.0 * g.loc[first, c] / tf) + "%", _fmt(100.0 * g.loc[last, c] / tl) + "%"] for c in num]
+    lead = max(num, key=lambda c: g.loc[last, c])
+    ly, fy = pd.Timestamp(last).strftime("%Y"), pd.Timestamp(first).strftime("%Y")
+    text = "In %s, %s was the largest part (%s%% of the %d parts' total), against %s%% in %s." % (
+        ly, lead, _fmt(100.0 * g.loc[last, lead] / tl), len(num), _fmt(100.0 * g.loc[first, lead] / tf), fy)
+    return {"type": "share", "title": "What the total is made of", "sentence": text,
+            "method": "Each part's sum at the first and latest date where every part has a value%s." % ((", over every %s kept" % ent) if ent else ""),
+            "table": {"cols": ["Part", "Share " + fy, "Share " + ly], "rows": rows},
+            "chart": {"kind": "bars", "series": [{"label": c, "value": float(100.0 * g.loc[last, c] / tl)} for c in num]}}
+
+
+def _col_nums(df: Any, col: str):
+    import pandas as pd
+    return pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False).str.rstrip("%").str.strip(),
+                         errors="coerce")
+
+
+def _center(vals: Any, st: str) -> float:
+    """The average that fits the scale: decibels (log_scale) are averaged as energy, 10^(dB/10), and
+    turned back into dB; everything else is the plain mean."""
+    import numpy as np
+    v = np.asarray(vals, float)
+    if st == "log_scale":
+        return float(10.0 * np.log10(np.mean(np.power(10.0, v / 10.0))))
+    return float(np.mean(v))
+
+
+def _boot_ci(vals: Any, st: str, seed: int = 20260925, B: int = 999) -> Tuple[float, float]:
+    import numpy as np
+    v = np.asarray(vals, float)
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(v), size=(B, len(v)))
+    if st == "log_scale":
+        e = np.power(10.0, v / 10.0)
+        m = 10.0 * np.log10(e[idx].mean(axis=1))
+    else:
+        m = v[idx].mean(axis=1)
+    return float(np.percentile(m, 2.5)), float(np.percentile(m, 97.5))
+
+
+def _a_compare(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
+    import numpy as np
+    import pandas as pd
+    roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name")}
+    seg = by if by in df.columns else next((roles.get(r) for r in ("segment", "entity", "geography")
+                                             if roles.get(r) in df.columns), None)
+    if not seg:
+        return {"refused": "compare: needs a column of groups (the plan's 'by' or a segment column)"}
+    col = cols[0]
+    if col == seg:
+        return {"refused": "compare: the measure and the groups are the same column"}
+    st, unit = _col_type(plan, col, layout)
+    s = pd.DataFrame({"g": df[seg].astype(str).str.strip(), "v": _col_nums(df, col)}).dropna()
+    s = s[s["g"] != ""]
+    counts = s["g"].value_counts()
+    keep = counts[counts >= 5].index[:12]
+    if len(keep) < 2:
+        return {"refused": "compare: fewer than two groups with 5 or more values"}
+    rows, bars = [], []
+    for g in keep:
+        v = s.loc[s["g"] == g, "v"].values
+        lo, hi = _boot_ci(v, st)
+        rows.append((g, len(v), _center(v, st), lo, hi, float(np.median(v))))
+    rows.sort(key=lambda r: -r[2])
+    top, bot = rows[0], rows[-1]
+    rng = np.random.default_rng(20260925)
+    a = s.loc[s["g"] == top[0], "v"].values
+    b = s.loc[s["g"] == bot[0], "v"].values
+    d = [_center(a[rng.integers(0, len(a), len(a))], st) - _center(b[rng.integers(0, len(b), len(b))], st) for _ in range(999)]
+    dlo, dhi = float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))
+    u = (" " + unit) if unit else ""
+    avg = "energy average" if st == "log_scale" else "average"
+    text = ("By %s, the highest %s %s is %s (%s%s, 95%% range %s to %s, %d rows) and the lowest %s (%s%s, %d rows): "
+            "a gap of %s%s (95%% range %s to %s)%s." % (
+                seg, avg, col, top[0], _fmt(top[2]), u, _fmt(top[3]), _fmt(top[4]), top[1], bot[0], _fmt(bot[2]), u,
+                bot[1], _fmt(top[2] - bot[2]), u, _fmt(dlo), _fmt(dhi),
+                "" if dlo > 0 else ", a range that includes no gap at all, so the two may not differ"))
+    if st == "log_scale":
+        text += " Decibels are averaged as energy (10^(dB/10)), not as plain numbers."
+    if len(counts) > len(keep):
+        text += " %d smaller groups are not shown." % (len(counts) - len(keep))
+    return {"type": "compare", "title": "%s by %s" % (col, seg), "sentence": text,
+            "method": "Each group's %s with a 95%% bootstrap range (999 resamples); groups with fewer than 5 values "
+                      "are left out. An association with the group, not its cause." % avg,
+            "table": {"cols": [seg, "Rows", avg.capitalize(), "95% range", "Median"],
+                      "rows": [[r[0], format(r[1], ","), _fmt(r[2]), "%s to %s" % (_fmt(r[3]), _fmt(r[4])), _fmt(r[5])] for r in rows]},
+            "chart": {"kind": "bars", "series": [{"label": r[0], "value": r[2]} for r in rows]}}
+
+
+def _a_relationship(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
+    import numpy as np
+    import pandas as pd
+    if len(cols) < 2:
+        return {"refused": "relationship: needs two numeric columns"}
+    x, y = cols[0], cols[1]
+    s = pd.DataFrame({"x": _col_nums(df, x), "y": _col_nums(df, y)}).dropna()
+    n = len(s)
+    if n < 10 or s["x"].nunique() < 3 or s["y"].nunique() < 3:
+        return {"refused": "relationship: fewer than 10 rows with both values, or a column that barely varies"}
+    rho = float(s["x"].rank().corr(s["y"].rank()))
+    z = np.arctanh(max(min(rho, 0.999999), -0.999999))
+    se = 1.06 / np.sqrt(max(n - 3, 1))            # Fieller et al. for Spearman
+    lo, hi = float(np.tanh(z - 1.96 * se)), float(np.tanh(z + 1.96 * se))
+    strength = "barely" if abs(rho) < 0.1 else "weakly" if abs(rho) < 0.3 else "moderately" if abs(rho) < 0.6 else "strongly"
+    if lo <= 0 <= hi:
+        text = ("Across %s rows, %s and %s show no clear link (Spearman %s, 95%% range %s to %s)."
+                % (format(n, ","), x, y, _fmt(rho), _fmt(lo), _fmt(hi)))
+    else:
+        text = ("Across %s rows, higher %s goes with %s %s, %s (Spearman %s, 95%% range %s to %s). "
+                "An association, not a cause." % (format(n, ","), x, "higher" if rho > 0 else "lower", y, strength,
+                                                  _fmt(rho), _fmt(lo), _fmt(hi)))
+    pts = s.sample(min(n, 400), random_state=1) if n > 400 else s
+    return {"type": "relationship", "title": "%s and %s" % (x, y), "sentence": text,
+            "method": "Spearman rank correlation (it reads any steady rise or fall, not only a straight line); "
+                      "95% range by the Fisher transform with the Spearman correction.",
+            "table": {"cols": ["Rows", "Spearman", "95% range"], "rows": [[format(n, ","), _fmt(rho), "%s to %s" % (_fmt(lo), _fmt(hi))]]},
+            "chart": {"kind": "scatter", "x_name": x, "y_name": y,
+                      "points": [[float(a), float(b)] for a, b in zip(pts["x"], pts["y"])]}}
+
+
+def _a_distribution(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
+    import numpy as np
+    col = cols[0]
+    st, unit = _col_type(plan, col, layout)
+    v = _col_nums(df, col).dropna().values
+    if len(v) < 10:
+        return {"refused": "distribution: fewer than 10 values in %s" % col}
+    q = np.percentile(v, [10, 25, 50, 75, 90])
+    u = (" " + unit) if unit else ""
+    text = ("%s: half the %s values lie between %s and %s%s (median %s); one in ten is below %s and one in ten above %s."
+            % (col, format(len(v), ","), _fmt(q[1]), _fmt(q[3]), u, _fmt(q[2]), _fmt(q[0]), _fmt(q[4])))
+    if st == "log_scale":
+        text += " The energy average is %s%s, above the median because loud values dominate energy." % (_fmt(_center(v, st)), u)
+    zeros = float((v == 0).mean())
+    if zeros >= 0.05:
+        text += " %s%% of the values are exactly zero." % _fmt(100 * zeros)
+    edges = np.histogram_bin_edges(v, bins=min(12, max(5, int(np.sqrt(len(v))))))
+    h, _e = np.histogram(v, bins=edges)
+    return {"type": "distribution", "title": "How %s is spread" % col, "sentence": text,
+            "method": "Percentiles of every value; the bars count values in equal-width bins.",
+            "table": {"cols": ["Values", "10th", "25th", "Median", "75th", "90th"],
+                      "rows": [[format(len(v), ",")] + [_fmt(x) for x in q]]},
+            "chart": {"kind": "bars", "series": [{"label": "%s to %s" % (_fmt(edges[i]), _fmt(edges[i + 1])), "value": int(h[i])}
+                                                 for i in range(len(h))]}}
+
+
+_STOP = frozenset("""a an and are as at be been but by can could did do does for from had has have he her his i if in
+into is it its just me my no not of on or our so than that the their them then there these they this to too us
+was we were what when which who will with would you your very really also get got all any some more most much one
+out up about after again am being both each few how im ive dont didnt its it's only other own same should such
+""".split())
+
+
+def _a_themes(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
+    import collections
+    col = cols[0]
+    texts = [str(t) for t in df[col].tolist() if str(t).strip()]
+    if len(texts) < 20:
+        return {"refused": "themes: fewer than 20 non-empty texts in %s" % col}
+    words, pairs = collections.Counter(), collections.Counter()
+    for t in texts:
+        toks = [w for w in re.findall(r"[a-z][a-z']{2,}", t.lower()) if w not in _STOP and not re.search(r"\d", w)]
+        words.update(set(toks))
+        pairs.update(set(" ".join(p) for p in zip(toks, toks[1:])))
+    n = len(texts)
+    top = [(w, c) for w, c in words.most_common(40) if c >= 3][:10]
+    top2 = [(w, c) for w, c in pairs.most_common(20) if c >= 3][:6]
+    if not top:
+        return {"refused": "themes: no word appears in 3 or more of the texts"}
+    text = "Across %s texts in %s, the words most often used are %s" % (
+        format(n, ","), col, ", ".join("'%s' (%s%%)" % (w, _fmt(100.0 * c / n)) for w, c in top[:6]))
+    if top2:
+        text += "; the most frequent phrases are %s" % ", ".join("'%s' (%s%%)" % (w, _fmt(100.0 * c / n)) for w, c in top2[:4])
+    text += ". Counts of words, not a reading of meaning."
+    return {"type": "themes", "title": "What the %s texts talk about" % col, "sentence": text,
+            "method": "Share of texts that use each word or two-word phrase at least once; common words (the, and, "
+                      "very) are left out. Names, emails and phone numbers are withheld before this step.",
+            "table": {"cols": ["Word or phrase", "Texts", "Share of texts"],
+                      "rows": [[w, format(c, ","), _fmt(100.0 * c / n) + "%"] for w, c in top + top2]},
+            "chart": {"kind": "bars", "unit": "%", "series": [{"label": w, "value": 100.0 * c / n} for w, c in top]}}
+
+
+def _design(df: Any, cols: List[str]):
+    """Numeric columns as they are; a column of categories as one-hot columns of its 8 commonest values
+    (the rest together, the commonest left out as the base). Returns (matrix, groups, names, rows used)."""
+    import numpy as np
+    import pandas as pd
+    parts, groups, names = [], [], []
+    for c in cols:
+        num = _col_nums(df, c)
+        if num.notna().mean() >= 0.9:
+            parts.append(num.rename(c))
+            groups.append(c)
+            names.append(c)
+        else:
+            v = df[c].astype(str).str.strip()
+            top = v[v != ""].value_counts().index[:8]
+            if len(top) < 2:
+                continue
+            v = v.where(v.isin(top), "other")
+            for lv in [x for x in list(top[1:]) + (["other"] if (v == "other").any() else [])]:
+                parts.append((v == lv).astype(float).rename("%s = %s" % (c, lv)))
+                groups.append(c)
+                names.append("%s = %s" % (c, lv))
+    if not parts:
+        return None, [], [], None
+    X = pd.concat(parts, axis=1)
+    ok = X.notna().all(axis=1)
+    return X[ok].values.astype(float), groups, names, ok
+
+
+def _cv_r2(X: Any, y: Any, folds: Any) -> Tuple[float, float]:
+    """Out-of-sample R squared and mean absolute error of least squares over the folds."""
+    import numpy as np
+    pred = np.empty_like(y)
+    for f in np.unique(folds):
+        tr, te = folds != f, folds == f
+        A = np.column_stack([np.ones(tr.sum()), X[tr]])
+        beta = np.linalg.lstsq(A, y[tr], rcond=None)[0]
+        pred[te] = np.column_stack([np.ones(te.sum()), X[te]]) @ beta
+    base = np.empty_like(y)
+    for f in np.unique(folds):
+        base[folds == f] = y[folds != f].mean()
+    sse, sst = float(((y - pred) ** 2).sum()), float(((y - base) ** 2).sum())
+    return (1.0 - sse / sst if sst > 0 else 0.0), float(np.abs(y - pred).mean())
+
+
+def _a_predict(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
+    import numpy as np
+    target = cols[0]
+    roles = {c["name"]: c for c in plan.get("columns", []) if c.get("name")}
+    drivers = [c for c in cols[1:] if c in df.columns and c not in (target, date)]
+    if not drivers:
+        drivers = [c for c, m in roles.items() if m.get("role") in ("driver", "segment") and c in df.columns
+                   and c not in (target, date, ent)][:8]
+    drivers = drivers[:8]
+    if not drivers:
+        return {"refused": "predict: no driver columns named (the plan's columns after the target)"}
+    y_all = _col_nums(df, target)
+    X, groups, names, ok = _design(df, drivers)
+    if X is None:
+        return {"refused": "predict: none of the drivers can enter a model"}
+    y = y_all[ok].values.astype(float)
+    keep = ~np.isnan(y)
+    X, y = X[keep], y[keep]
+    n, p = X.shape
+    if n < 30 or n < 10 * (p + 1):
+        return {"refused": "predict: %d complete rows for %d model terms; at least 10 rows a term are needed" % (n, p + 1)}
+    folds = np.random.default_rng(20260925).permutation(n) % 5
+    r2, mae = _cv_r2(X, y, folds)
+    mae0 = float(np.mean([np.abs(y[folds == f] - y[folds != f].mean()).mean() for f in range(5)]))
+    imp = []
+    for g in dict.fromkeys(groups):
+        m = np.array([gg != g for gg in groups])
+        r2g = _cv_r2(X[:, m], y, folds)[0] if m.any() else 0.0
+        imp.append((g, r2 - r2g))
+    imp.sort(key=lambda t: -t[1])
+    A = np.column_stack([np.ones(n), X])
+    beta = np.linalg.lstsq(A, y, rcond=None)[0][1:]
+    st, unit = _col_type(plan, target, layout)
+    u = (" " + unit) if unit else ""
+    if r2 < 0.05:
+        text = ("A straight-line model of %s from %s does not predict held-out rows better than the average does "
+                "(out-of-sample R squared %s, 5-fold): these columns say little about %s on their own."
+                % (target, ", ".join(drivers), _fmt(r2), target))
+    else:
+        text = ("A straight-line model of %s from %s predicts rows it did not see with R squared %s (5-fold), a typical "
+                "error of %s%s against %s%s for the average alone. %s carries most of it (R squared falls by %s without it)."
+                % (target, ", ".join(drivers), _fmt(r2), _fmt(mae), u, _fmt(mae0), u, imp[0][0], _fmt(imp[0][1])))
+    text += " An association the model learned, not a cause."
+    coefs = {nm: b for nm, b in zip(names, beta)}
+    rows = [[g, _fmt(d) if d > 0.005 else "adds nothing held-out", "; ".join("%s %s" % (nm.split(" = ", 1)[-1] if " = " in nm else "per unit", _fmt(coefs[nm]))
+                                   for nm in names if (nm == g or nm.startswith(g + " = ")))] for g, d in imp]
+    return {"type": "predict", "title": "What predicts %s" % target, "sentence": text,
+            "method": "Least squares on %s complete rows; categories as one column per value (their commonest value "
+                      "is the base); scored on held-out rows in 5 folds, and each driver by how much the held-out "
+                      "R squared falls without it." % format(n, ","),
+            "table": {"cols": ["Driver", "R squared lost without it", "Effect (per unit, or against the base value)"], "rows": rows},
+            "chart": {"kind": "bars", "series": [{"label": g, "value": max(0.0, d)} for g, d in imp]}}
+
+
+_ANALYSIS_FN = {"trend": _a_trend, "extremes": _a_extremes, "agreement": _a_agreement, "rank": _a_rank, "share": _a_share,
+                "compare": _a_compare, "relationship": _a_relationship, "distribution": _a_distribution,
+                "themes": _a_themes, "predict": _a_predict}
+_TAKES_BY = ("compare", "relationship", "distribution", "themes", "predict")
+
+
+def _run_analyses(data: bytes, plan: Dict[str, Any], layout: Optional[Dict[str, Any]], withheld: Any) -> Dict[str, Any]:
+    """The plan's analyses, computed here. Never raises: a request that cannot run is refused and named."""
+    out, refused = [], []
+    asked = [a for a in (plan.get("analyses") or []) if isinstance(a, dict)][:ANALYSES_MAX]
+    if not asked:
+        return {"items": [], "refused": []}
+    try:
+        df, date, ent = _analysis_frame(data, plan, layout)
+    except Exception as exc:  # noqa: BLE001
+        return {"items": [], "refused": ["the analyses could not read the file (%s)" % type(exc).__name__]}
+    hidden = set(str(c) for c in (withheld or []))
+    for a in asked:
+        t = a.get("type")
+        if t not in _ANALYSIS_FN:
+            refused.append("%s: not on the menu" % str(t)[:40])
+            continue
+        if ent and ent in hidden and t in ("rank", "share"):
+            refused.append("%s: %s is withheld as personal, so no entity is named" % (t, ent))
+            continue
+        if not date and t in ("trend", "extremes", "agreement"):
+            refused.append("%s: the file has no date column" % t)
+            continue
+        named = _resolve(a.get("columns"), df, layout, date, ent)
+        cols = [c for c in named if c not in hidden]
+        by = a.get("by")
+        if by and by in hidden:
+            refused.append("%s: %s is withheld as personal, so it is not used to group rows" % (t, by))
+            continue
+        if named and not cols:
+            refused.append("%s: %s is withheld as personal" % (t, ", ".join(named[:3])))
+            continue
+        if not cols:
+            refused.append("%s: none of %s is a column here" % (t, ", ".join(map(str, (a.get("columns") or [])[:4])) or "the named columns"))
+            continue
+        try:
+            res = (_ANALYSIS_FN[t](df, date, ent, cols, plan, layout, by=by) if t in _TAKES_BY
+                   else _ANALYSIS_FN[t](df, date, ent, cols, plan, layout))
+        except Exception as exc:  # noqa: BLE001 - one analysis never stops the report
+            res = {"refused": "%s failed (%s)" % (t, type(exc).__name__)}
+        if res.get("refused"):
+            refused.append(res["refused"])
+        else:
+            res["columns"] = cols
+            res["graded"] = False
+            out.append(res)
+    return {"items": out, "refused": refused,
+            "note": "Asked for by the AI plan, computed by the engine's adapter from the cleaned file. These "
+                    "are descriptive: the change gate did not grade them. Units are the AI's reading of the "
+                    "column; the numbers are the file's."}
+
+
+_SHORT_LINE = re.compile(r"^([\d,]+) months of history \(([^)]*)\): too short to compare the latest 12 months with the "
+                         r"12 before, so no change is tested; the averages over the period are below\.")
+
+
+def _mend_short_history_line(rep: Dict[str, Any]) -> None:
+    """The engine's bottom line for a file whose change tests settled nothing says the history is "too short"
+    whatever its length (review 25 Sep 2026: 1,758 months of temperatures read "too short"). From 24 months
+    on, that is not why, so the line says what happened. The fix lives here, not in the engine's narrate.py,
+    so the engine's decision code (and the benchmark receipt measured on it) is unchanged."""
+    st = rep.get("story") or {}
+    h = st.get("headline")
+    m = _SHORT_LINE.match(h) if isinstance(h, str) else None
+    if m and int(m.group(1).replace(",", "")) >= 24:
+        st["headline"] = ("%s months of history (%s): the latest 12 months against the 12 before settled no change "
+                          "strong enough to act on; the averages over the period are below.%s"
+                          % (m.group(1), m.group(2), h[m.end():]))
+
+
 def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
     """Say in the report how a long statistical table was read (limitations and cleaning)."""
     n = lay["series"]
@@ -2923,8 +4066,9 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
         "series is analysed on its own.%s" % (format(lay["rows_out"], ","), lay["start"], unit_note),
     ]
     parts += ["Set aside as %s: %s." % (why, ", ".join(ks)) for why, ks in lay["set_aside"].items()]
-    parts.append("The agency's metadata columns (%s) were set aside: they describe the series, they are not "
-                 "measures." % ", ".join(lay["metadata_set_aside"]))
+    if lay["metadata_set_aside"]:
+        parts.append("The agency's metadata columns (%s) were set aside: they describe the series, they are "
+                     "not measures." % ", ".join(lay["metadata_set_aside"]))
     if lay["constant_set_aside"]:
         parts.append("Columns with one value throughout (%s) were set aside as well."
                      % ", ".join(lay["constant_set_aside"]))
@@ -2991,12 +4135,35 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "again. Nothing was read.")
 
         layout = None
-        try:
-            reshaped, layout = _reshape_long_panel(data)
-            if layout:
-                data = reshaped
-        except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
-            layout = None
+        ai_plan = None
+        goal_from_plan = False
+        if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
+            decisions = dict(decisions)
+            raw_plan = decisions.pop("__plan__")
+            try:
+                import pandas as _pd
+                cols = list(_pd.read_csv(io.BytesIO(data), dtype=str, nrows=0, encoding="utf-8-sig").columns)
+                ai_plan, plan_refused = _validate_plan(raw_plan, cols)
+                data, applied, layout = _apply_plan(data, ai_plan)
+                ai_plan["applied"] = applied["applied"]
+                if ai_plan.get("primary") and layout is not None:
+                    ai_plan["refused"] = list(ai_plan.get("refused") or [])
+                    ai_plan["primary"] = ""          # the value column became one column per series: lead with a series
+                ai_plan["refused"] = plan_refused + applied["refused"]
+                for c, d in applied["decisions"].items():
+                    decisions.setdefault(c, d)
+                if ai_plan.get("goal") and objective == DEFAULT_OBJECTIVE:
+                    objective = ai_plan["goal"]
+                    goal_from_plan = True
+            except Exception as exc:  # noqa: BLE001 - a plan that cannot run leaves the rule-based path
+                ai_plan = {"refused": ["the plan could not run (%s); the rule-based reading was used" % type(exc).__name__]}
+        if layout is None:
+            try:
+                reshaped, layout = _reshape_long_panel(data)
+                if layout:
+                    data = reshaped
+            except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
+                layout = None
 
         _install_stubs()
         _import_engine()
@@ -3061,10 +4228,16 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             # -- the business analysis: measures, forecast, story
             try:
                 pol = None
-                if layout:
+                if ai_plan and ai_plan.get("primary"):
+                    import dataclasses as _dc
+                    from northledger import gate as _gate
+                    pol = _dc.replace(_gate.DEFAULT_POLICY, primary_metric=_slug(ai_plan["primary"]))
+                elif layout:
                     import dataclasses as _dc
                     from northledger import gate as _gate
                     layout["lead"], layout["lead_why"] = _lead_series(layout, objective)
+                    if goal_from_plan and layout["lead_why"] == "your question names it":
+                        layout["lead_why"] = "the goal the AI plan set names it"
                     if layout["lead"]:
                         pol = _dc.replace(_gate.DEFAULT_POLICY, primary_metric=_slug(layout["lead"]))
                 r = _loop.run_analyze(eng.db_path, table, objective, policy=pol,
@@ -3188,8 +4361,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _build_v2(rep, audit, r if (r is not None and not date_withheld) else None, th, cr, eng.db_path,
                   flagged, withheld, pub, as_of_eff, objective, reasons, rules)
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
+        _mend_short_history_line(rep)
         if layout:
             _layout_notes(rep, layout)
+        if ai_plan:
+            rep["ai_plan"] = ai_plan
+            if ai_plan.get("analyses"):
+                rep["ai_analyses"] = _run_analyses(data, ai_plan, layout, withheld)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)

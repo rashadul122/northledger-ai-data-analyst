@@ -106,7 +106,16 @@ async function onScan(m) {
   first = { report: report, options: m.options || {} };
   timesOf(report, BEFORE, m.id);
   var flagged = ((report.privacy || {}).flagged || []).map(function (f) { return { column: f.column, kind: f.kind }; });
-  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged } });
+  var profile = null;
+  if ((m.options || {}).want_profile && nl.profile_json) {
+    try {
+      var fm = {};
+      flagged.forEach(function (f) { fm[f.column] = f.kind; });
+      profile = JSON.parse(nl.profile_json(file.bytes, String(m.name || ''), JSON.stringify(fm)));
+      if (!profile || !profile.ok) profile = null;
+    } catch (e) { profile = null; }
+  }
+  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, profile: profile } });
 }
 
 async function onRun(m) {
@@ -125,12 +134,25 @@ async function onRun(m) {
   post({ type: 'result', id: m.id, report: report });
 }
 
+// the engine's distilled results for the AI report writer (results_for_ai in the packed
+// adapter): the page asks after the report is drawn; the reply is the JSON payload the page
+// POSTs to the proxy's /report. Never rows: claims, analyses, story, forecast, health.
+function onResults(m) {
+  if (!booted || !nl) { post({ type: 'results_json', id: m.id, results: null }); return; }
+  var results = null;
+  try {
+    if (nl.results_json) results = JSON.parse(nl.results_json(JSON.stringify(m.report || {})));
+  } catch (e) { results = null; }
+  post({ type: 'results_json', id: m.id, results: results });
+}
+
 var queue = Promise.resolve();
 self.onmessage = function (e) {
   var m = e.data || {};
   queue = queue.then(function () {
     if (m.type === 'scan') return onScan(m);
     if (m.type === 'run') return onRun(m);
+    if (m.type === 'results') return onResults(m);
     return null;
   }).catch(function (err) {
     if (err && err.code) fail(m.id, err.code, err.message, err.detail);

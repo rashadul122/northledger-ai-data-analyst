@@ -2196,6 +2196,206 @@ def test_an_ordinary_file_is_not_reshaped():
     assert rep["ok"] and "layout" not in rep["input"], rep["input"]
 
 
+def _panel_csv():
+    rows = ["country,year,iso_code,population,co2"]
+    for c, iso in (("Canada", "CAN"), ("Mexico", "MEX"), ("World", "")):
+        for y in range(1850, 2025):
+            rows.append("%s,%d,%s,%d,%.2f" % (c, y, iso, 1000000 + y, (y - 1800) * (3 if c == "World" else 1)))
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
+def test_an_ai_plan_is_validated_applied_and_reported():
+    plan = {"goal": "How have CO2 emissions changed?", "understanding": "Countries by year.",
+            "goal_candidates": ["Which country emits most?"],
+            "operations": [{"op": "exclude_rows", "column": "country", "values": ["World"]},
+                           {"op": "set_aside", "columns": ["iso_code"]},
+                           {"op": "date_from_year", "column": "year"},
+                           {"op": "not_personal", "columns": ["population"]},
+                           {"op": "drop_everything"},
+                           {"op": "set_aside", "columns": ["no_such_column"]}],
+            "primary": "co2", "quality_risks": ["aggregates mixed with countries"]}
+    rep = NB.run(_panel_csv(), "co2.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    ap = rep["ai_plan"]
+    assert ap["goal"] == "How have CO2 emissions changed?"
+    assert any("dropped" in a and "country" in a for a in ap["applied"]), ap["applied"]
+    assert any("before 1900" in a for a in ap["applied"]), ap["applied"]
+    assert any("drop_everything" in r for r in ap["refused"]) and any("no_such_column" in r for r in ap["refused"]), ap["refused"]
+    assert rep["roles"]["date"] == "date", rep["roles"]
+    assert "iso_code" not in rep["roles"]["measures"] and "year" not in rep["roles"]["measures"], rep["roles"]
+    assert all(f["column"] != "population" or f["decision"] != "withhold" for f in rep["privacy"]["flagged"]), rep["privacy"]
+
+
+def test_the_profile_for_the_planner_holds_no_rows():
+    prof = NB.profile_for_ai(_panel_csv(), "co2.csv", flagged={"population": "some values look personal"})
+    assert prof["ok"] and prof["rows"] == 525
+    names = [c["name"] for c in prof["columns"]]
+    assert names == ["country", "year", "iso_code", "population", "co2"], names
+    pop = [c for c in prof["columns"] if c["name"] == "population"][0]
+    assert pop.get("privacy_flag") and "top_values" not in pop, pop
+    text = json.dumps(prof)
+    assert "1001850" not in text.replace("1001850.0", ""), "a raw value leaked beyond min/median/max"
+
+
+def _two_source_csv():
+    """Two sources of one monthly quantity in long form, named Source/Year/Mean (not the agency names the
+    rule knows); B runs 0.1 above A and stops six months earlier; both warm 0.02 a year."""
+    rows = ["Source,Year,Mean"]
+    for src, off, end in (("A", 0.0, 2026), ("B", 0.1, 2025)):
+        for y in range(1950, end + 1):
+            for m in range(1, 13):
+                if src == "A" and y == 2026 and m > 6:
+                    break
+                wob = 0.05 * (((y * 7 + m * 3) % 11) - 5) / 5
+                rows.append("%s,%d-%02d,%.4f" % (src, y, m, off + 0.02 * (y - 1950) + wob))
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
+def test_the_ai_names_the_date_and_value_of_a_long_table_the_rule_does_not_know():
+    plan = {"goal": "How has Mean changed, and do A and B agree?", "operations": [{"op": "long_to_wide"}],
+            "columns": [{"name": "Source", "role": "segment"}, {"name": "Year", "role": "date"},
+                        {"name": "Mean", "role": "target", "semantic_type": "level", "unit": "C"}],
+            "primary": "Mean",
+            "analyses": [{"type": "trend", "columns": ["Mean"]}, {"type": "extremes", "columns": ["A"]},
+                         {"type": "agreement", "columns": ["A", "B"]}, {"type": "rank", "columns": ["Mean"]},
+                         {"type": "crystal_ball", "columns": ["A"]}]}
+    rep = NB.run(_two_source_csv(), "temps.csv", "", {"__plan__": plan}, "2026-07-15")
+    assert rep["ok"], rep["error"]
+    ap = rep["ai_plan"]
+    assert ap["applied"] == ["one column per series (2 series)"], ap
+    assert any("crystal_ball" in r for r in ap["refused"]), ap["refused"]
+    assert rep["input"]["layout"]["kept"] == 2, "B, six months behind, is current, not discontinued"
+    assert "too short" not in json.dumps(rep["story"]), "76 years of months is not a short file"
+    A = rep["ai_analyses"]
+    kinds = [a["type"] for a in A["items"]]
+    assert kinds == ["trend", "extremes", "agreement"], (kinds, A["refused"])
+    assert any(r.startswith("rank:") for r in A["refused"]), "rank needs an entity column"
+    tr = A["items"][0]
+    per_decade = float(tr["table"]["rows"][0][3].replace("\u2212", "-"))
+    assert abs(per_decade - 0.2) < 0.01, tr["table"]       # 0.02 a year, as built
+    ag = A["items"][2]
+    assert "0.1 lower" in ag["sentence"] and "nearly constant" in ag["sentence"], ag["sentence"]
+    assert all(not a["graded"] for a in A["items"])
+    assert "not grade" in A["note"]
+
+
+def test_a_panel_analysis_sums_a_steady_set_of_entities_after_the_aggregates_go():
+    plan = {"goal": "Which country emits most?",
+            "operations": [{"op": "set_aside", "columns": ["iso_code"]}, {"op": "exclude_blank", "column": "iso_code"},
+                           {"op": "date_from_year", "column": "year"}, {"op": "not_personal", "columns": ["population"]}],
+            "columns": [{"name": "country", "role": "entity"}, {"name": "year", "role": "date"},
+                        {"name": "co2", "role": "target", "semantic_type": "flow_amount", "unit": "Mt"}],
+            "primary": "co2",
+            "analyses": [{"type": "rank", "columns": ["country", "co2"]}, {"type": "extremes", "columns": ["co2"]}]}
+    rep = NB.run(_panel_csv(), "co2.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    assert any("iso_code is blank" in a for a in rep["ai_plan"]["applied"]), "the row filter ran before the column went"
+    rank, ext = rep["ai_analyses"]["items"]
+    labels = [b["label"] for b in rank["chart"]["series"]]
+    assert "World" not in labels and labels[:2] == ["Canada", "Mexico"], labels
+    # 2024: Canada and Mexico each (2024 - 1800) = 224, summed = 448
+    assert ext["table"]["rows"][0][1:3] == ["2024", "448"], ext["table"]["rows"][0]
+    assert "sum over the 2 country entries" in ext["sentence"], ext["sentence"]
+
+
+def test_the_profile_lists_every_value_of_a_category_column_unless_it_is_flagged():
+    rows = ["region,amount"] + ["R%02d,%d" % (i % 20, i) for i in range(200)]
+    data = ("\n".join(rows) + "\n").encode()
+    prof = NB.profile_for_ai(data, "r.csv")
+    reg = prof["columns"][0]
+    assert reg["values"] == ["R%02d" % i for i in range(20)], reg
+    prof2 = NB.profile_for_ai(data, "r.csv", flagged={"region": "some values look personal"})
+    assert "values" not in prof2["columns"][0]
+
+
+def test_series_side_by_side_are_ranked_by_their_change_with_no_unit_across_units():
+    plan = {"goal": "Which currencies moved most?", "operations": [{"op": "long_to_wide"}],
+            "columns": [{"name": "REF_DATE", "role": "date"}, {"name": "VALUE", "role": "target", "semantic_type": "level",
+                                                             "unit": "CAD / unit (CERI: index 1992=100)"}],
+            "analyses": [{"type": "rank", "columns": ["Type of currency", "VALUE"]}, {"type": "trend", "columns": ["VALUE"]}]}
+    rep = NB.run(_long_table(), "fx.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    items = {a["type"]: a for a in rep["ai_analyses"]["items"]}
+    rk = items["rank"]
+    assert rk["title"] == "Which series moved most" and len(rk["table"]["rows"]) == 3, rk
+    changes = [float(r[5].rstrip("%").replace("\u2212", "-")) for r in rk["table"]["rows"]]
+    assert changes == sorted(changes, reverse=True), changes
+    assert "trend" not in items and any("8 or more years" in r for r in rep["ai_analyses"]["refused"]), \
+        "six complete years are too few for a yearly trend, and the refusal says so"
+    lay = rep["input"]["layout"]
+    assert NB._col_type(rep["ai_plan"], lay["order"][0], lay)[1] == "", "two units: no single unit is printed"
+
+
+def _survey_csv():
+    """Sites with noise readings in dB, a rating, free-text comments and a person's email per row."""
+    rows = ["site,noise_db,rating,comment,contact"]
+    words = ["delivery was late", "friendly staff", "late delivery again", "staff were friendly and quick",
+             "noisy street outside", "quick service"]
+    for i in range(120):
+        site = "North" if i % 2 else "South"
+        db = (60.0 if i % 4 < 2 else 70.0) if site == "North" else 55.0
+        rows.append('%s,%.1f,%d,"%s",person%d@example.com' % (site, db, 1 + i % 5, words[i % 6], i))
+    return ("\n".join(rows) + "\n").encode()
+
+
+def test_decibels_average_as_energy_and_text_themes_count_words_but_withheld_columns_stay_out():
+    plan = {"goal": "Where is it loudest, and what do people say?",
+            "columns": [{"name": "site", "role": "segment"}, {"name": "noise_db", "semantic_type": "log_scale", "unit": "dB"},
+                        {"name": "comment", "semantic_type": "free_text"}, {"name": "rating", "semantic_type": "rating"}],
+            "analyses": [{"type": "compare", "columns": ["noise_db"], "by": "site"},
+                         {"type": "themes", "columns": ["comment"]}, {"type": "themes", "columns": ["contact"]},
+                         {"type": "relationship", "columns": ["rating", "noise_db"]}, {"type": "distribution", "columns": ["rating"]}]}
+    rep = NB.run(_survey_csv(), "survey.csv", "", {"__plan__": plan, "comment": "keep"}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    A = rep["ai_analyses"]
+    items = {a["type"]: a for a in A["items"]}
+    cmp_ = items["compare"]
+    north = [r for r in cmp_["table"]["rows"] if r[0] == "North"][0]
+    # half 60 dB, half 70 dB: 10*log10((10^6 + 10^7) / 2) = 67.4 dB, not the plain mean 65
+    assert north[2] == "67.4", north
+    assert "as energy" in cmp_["sentence"]
+    th = items["themes"]
+    assert "'delivery'" in th["sentence"] and "@" not in json.dumps(th), th["sentence"]
+    assert any("contact" in r and "withheld" in r for r in A["refused"]), A["refused"]
+    assert "relationship" in items and "distribution" in items, A
+
+
+def test_a_ranking_with_no_date_column_ranks_every_entity_and_carries_map_values():
+    rows = ["country,co2"] + ["C%02d,%d" % (i, 100 - i) for i in range(30)]
+    plan = {"goal": "Who emits most?", "columns": [{"name": "country", "role": "entity", "semantic_type": "geography"},
+                                                   {"name": "co2", "semantic_type": "flow_amount"}],
+            "analyses": [{"type": "rank", "columns": ["country", "co2"]}]}
+    rep = NB.run(("\n".join(rows) + "\n").encode(), "c.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    A = rep["ai_analyses"]
+    assert not A["refused"], A["refused"]          # was "co2 has no numbers": an empty date column dropped every row
+    rk = A["items"][0]
+    assert [b["label"] for b in rk["chart"]["series"]][:3] == ["C00", "C01", "C02"], rk["chart"]
+    assert len(rk["map"]["values"]) == 30 and rk["map"]["values"]["C05"] == 95.0, rk["map"]
+
+
+def test_predict_scores_on_held_out_rows_and_names_the_driver_that_matters():
+    import random
+    rnd = random.Random(7)
+    rows = ["price,area,rooms,region,noise"]
+    for i in range(300):
+        area = rnd.uniform(40, 200)
+        region = ["North", "South", "East"][i % 3]
+        price = 3.0 * area + (40 if region == "North" else 0) + rnd.gauss(0, 20)
+        rows.append("%.1f,%.1f,%d,%s,%.3f" % (price, area, 1 + i % 5, region, rnd.random()))
+    plan = {"goal": "What sets the price?", "columns": [{"name": "price", "role": "target", "unit": "k"}],
+            "analyses": [{"type": "predict", "columns": ["price", "area", "rooms", "region", "noise"]},
+                         {"type": "predict", "columns": ["noise", "rooms"]}]}
+    rep = NB.run(("\n".join(rows) + "\n").encode(), "homes.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    good, weak = rep["ai_analyses"]["items"]
+    assert good["table"]["rows"][0][0] == "area", good["table"]["rows"]
+    r2 = float(good["sentence"].split("R squared ")[1].split(" ")[0])
+    assert 0.9 < r2 < 1.0, good["sentence"]                 # 3 per unit of area over a range of 160 against noise of 20
+    assert "per unit 3" in good["table"]["rows"][0][2], good["table"]["rows"][0]
+    assert "does not predict held-out rows better than the average" in weak["sentence"], weak["sentence"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

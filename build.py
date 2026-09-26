@@ -1286,11 +1286,10 @@ def blocks(I, R, D, pbip, examples):
                           ('<p class="noai">AI model calls in the audit runs recorded on this page: %s.</p>' % dd("audit_ai_calls")) if o.get("no_ai") else ""))
     B["offers"] = "".join(offers)
 
-    # ---------------- the demo's AI wording note (only when the owner has set ai_proxy_url)
-    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> After the report, you can ask for the story to be reworded by an AI model (DeepSeek) through the owner's "
-                        "proxy: only if you tick consent, and it receives your question, the findings and the story, never your "
-                        "rows. AI wording with a figure the engine did not state (in digits or in words), or with a figure's unit or "
-                        "direction changed, is set aside.</span>"
+    # ---------------- the demo's AI note (only when the owner has set ai_proxy_url)
+    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> One integrated run: the AI plans what to test (from a summary of your columns, never rows), the engine computes and "
+                        "grades every figure, then the AI writes the full report from the engine's results through the owner's proxy, fetching outside context with cited sources when the "
+                        "goal needs it. A figure the engine did not state is set aside, and every outside claim carries its citation.</span>"
                         if try_proxy(I["config"])[0] else "")
     # ---------------- the receipts' privacy sentence: what the page fetches, and when
     B["receipts_requests"] = (

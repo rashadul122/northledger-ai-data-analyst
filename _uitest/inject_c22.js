@@ -1,0 +1,3 @@
+(async function(){var PLAN=await (await fetch('/_uitest/c22_plan.json')).json();var of=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/plan')>=0){return Promise.resolve(new Response(JSON.stringify(PLAN),{status:200,headers:{'Content-Type':'application/json'}}));}return of.apply(this,arguments);};
+var buf=await (await of('/_uitest/c22.csv')).arrayBuffer();var f=new File([buf],'co2_2022.csv',{type:'text/csv'});var dt=new DataTransfer();dt.items.add(f);var inp=document.getElementById('try-file');var pl=document.getElementById('try-plan');if(pl&&!pl.checked){pl.checked=true;pl.dispatchEvent(new Event('change',{bubbles:true}));}
+inp.files=dt.files;inp.dispatchEvent(new Event('change',{bubbles:true}));return 'sent';})()

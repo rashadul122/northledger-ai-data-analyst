@@ -1,0 +1,152 @@
+{
+ "plan": {
+  "goal": "How have the daily exchange rates of the world's currencies against the Canadian dollar moved over the long run, and which currencies have weakened or strengthened the most?",
+  "goal_candidates": [
+   "Which currencies have lost or gained the most against the Canadian dollar over the past 5, 10 and 20 years?",
+   "How does the Canadian-Dollar Effective Exchange Rate Index (CERI) compare with the U.S. dollar rate as a gauge of the loonie's strength?",
+   "How volatile are these currencies day to day, and which ones fluctuate the most around their own trend?"
+  ],
+  "kind": "time_series_panel",
+  "understanding": "This is a Statistics Canada daily exchange-rate file (table 33-10-0036): each row is one currency series on one date, and the rows are a long panel of about 28 series (27 bilateral currency rates plus the CERI) repeated across roughly 16,574 distinct dates. VALUE is the daily average rate in Canadian dollars for the 27 currency series and an index level (1992=100) for the CERI series, which is why UOM has two values. GEO is constant (Canada) and the VECTOR, COORDINATE and *_ID columns are catalogue metadata. 17,353 rows have no published value (STATUS '..', VALUE blank) and 24,644 rows belong to series flagged TERMINATED.",
+  "columns": [
+   {
+    "name": "REF_DATE",
+    "semantic_type": "date",
+    "role": "date",
+    "unit": "",
+    "why": "the observation date, ~16,574 distinct days"
+   },
+   {
+    "name": "Type of currency",
+    "semantic_type": "category",
+    "role": "key",
+    "unit": "",
+    "why": "the 28 series that each date repeats over; becomes the series names"
+   },
+   {
+    "name": "VALUE",
+    "semantic_type": "level",
+    "role": "target",
+    "unit": "CAD / unit (CERI: index 1992=100)",
+    "why": "the rate to be trended and ranked"
+   },
+   {
+    "name": "UOM",
+    "semantic_type": "category",
+    "role": "metadata",
+    "unit": "",
+    "why": "separates the CERI index from the 27 dollar series"
+   },
+   {
+    "name": "SCALAR_FACTOR",
+    "semantic_type": "category",
+    "role": "metadata",
+    "unit": "",
+    "why": "units vs millions: some series are scaled differently"
+   },
+   {
+    "name": "TERMINATED",
+    "semantic_type": "boolean",
+    "role": "metadata",
+    "unit": "",
+    "why": "'t' marks series that stopped being published"
+   },
+   {
+    "name": "STATUS",
+    "semantic_type": "category",
+    "role": "metadata",
+    "unit": "",
+    "why": "'..' marks the 17,353 rows with no published value"
+   },
+   {
+    "name": "VECTOR",
+    "semantic_type": "identifier",
+    "role": "key",
+    "unit": "",
+    "why": "one stable code per currency series"
+   },
+   {
+    "name": "GEO",
+    "semantic_type": "geography",
+    "role": "set_aside",
+    "unit": "",
+    "why": "constant 'Canada'"
+   },
+   {
+    "name": "DGUID",
+    "semantic_type": "identifier",
+    "role": "set_aside",
+    "unit": "",
+    "why": "constant geography code"
+   }
+  ],
+  "operations": [
+   {
+    "op": "set_aside",
+    "columns": [
+     "GEO",
+     "DGUID",
+     "UOM",
+     "UOM_ID",
+     "SCALAR_FACTOR",
+     "SCALAR_ID",
+     "VECTOR",
+     "COORDINATE",
+     "STATUS",
+     "SYMBOL",
+     "TERMINATED",
+     "DECIMALS"
+    ]
+   },
+   {
+    "op": "keep_columns",
+    "columns": [
+     "REF_DATE",
+     "Type of currency",
+     "VALUE"
+    ]
+   },
+   {
+    "op": "exclude_blank",
+    "column": "VALUE"
+   },
+   {
+    "op": "long_to_wide"
+   }
+  ],
+  "analyses": [
+   {
+    "type": "trend",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "long-run path of every currency series (decade line plus the last 30 years), CERI read on its own scale"
+   },
+   {
+    "type": "extremes",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "highest and lowest points of each series, dating the peaks and troughs"
+   },
+   {
+    "type": "rank",
+    "columns": [
+     "Type of currency",
+     "VALUE"
+    ],
+    "why": "which currencies trade highest against the Canadian dollar at the latest comparable date, and how much each has moved"
+   }
+  ],
+  "primary": "VALUE",
+  "quality_risks": [
+   "The Canadian-Dollar Effective Exchange Rate Index (CERI) is an index (1992=100), not a dollar rate; plotting it on the same level axis as the dollar series would be misleading.",
+   "17,353 rows have a blank VALUE flagged STATUS '..' (not available) - these are missing observations, not zeros, and dropping them leaves some series shorter than others.",
+   "SCALAR_FACTOR is 'millions' for some series and 'units' for others, so raw VALUE levels are not all on the same scale.",
+   "24,644 rows carry TERMINATED = 't': those series (e.g. legacy European currencies superseded by the euro) stop partway and must not be compared at the latest date.",
+   "The 28 series start and end on different dates (16,574 distinct dates in total), so a 'latest date' ranking compares currencies at different points unless the dates are aligned.",
+   "The file mixes 27 different currencies on one long axis: totals or averages across currencies are meaningless, and only within-currency comparisons (or percentage changes) are valid."
+  ]
+ },
+ "model": "deepseek-flash"
+}

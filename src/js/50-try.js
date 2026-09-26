@@ -65,7 +65,7 @@
     var CODES = ['empty', 'length', 'format', 'unknown_marker', 'digit', 'percent', 'currency', 'number_word', 'grade_word',
       'confidence', 'cause', 'intensity', 'prediction', 'advice', 'register', 'echo', 'negation', 'vocabulary', 'citation',
       'binding', 'grade_swap', 'grade_missing', 'inferential', 'direction', 'unit', 'none_confirmed', 'no_figure'];
-    var STORY_PARTS = ['headline', 'what_happened', 'why', 'what_to_do', 'whats_next', 'cannot_answer'];
+    var STORY_PARTS = ['headline', 'what_happened', 'why', 'what_to_do', 'whats_next', 'cannot_answer', 'analyses'];
     var MAX_CHARS = 6000;
 
     function setOf(list) { var o = Object.create(null); for (var i = 0; i < list.length; i++) o[list[i]] = true; return o; }
@@ -933,6 +933,15 @@
       return v.slice(0, L.lines).map(function (x) { return cut(x, L.line); });
     };
     STORY_KEYS.forEach(function (k) { story[k[0]] = lines(k[0]); });
+    // the AI plan's analyses (rep.ai_analyses, computed by the engine's adapter) in the story's optional
+    // "analyses" section, one sentence a line; the proxy's prompt has the summary begin with them
+    var ana = [];
+    (((rep.ai_analyses || {}).items) || []).forEach(function (a) {
+      String((a && a.sentence) || '').split(/(?<=[.!?])\s+(?=[A-Z'"‘“(\[])/).forEach(function (x) {
+        if (x.trim() && !named(x)) ana.push(cut(w(x.trim()), L.line));
+      });
+    });
+    if (ana.length) story.analyses = ana.slice(0, L.lines);
     var body = {
       objective: cut(objective, L.objective),
       findings: T.aiOrder(rep).filter(function (f) { return typeof f.id === 'string' && f.id && f.id.length <= L.id && VERDICTS.indexOf(f.verdict) >= 0 && !named(f.id) && !named(f.claim); })
@@ -944,6 +953,7 @@
     var size = function () { return new TextEncoder().encode(JSON.stringify(body)).length; };
     while (size() > L.bytes && body.findings.length) body.findings.pop();          // the lowest in priority go first
     STORY_KEYS.slice().reverse().forEach(function (k) { while (size() > L.bytes && story[k[0]].length) story[k[0]].pop(); });
+    while (size() > L.bytes && story.analyses && story.analyses.length > 1) story.analyses.pop();
     return body;
   };
 
@@ -1204,17 +1214,18 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), q: $('try-q'), sample: $('try-sample'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), q: $('try-q'), planCard: $('try-plan-card'), sample: $('try-sample'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report') };
     var LIM = T.limits();
     var qWrap = $('try-q-wrap');
-    if (qWrap && el.q) qWrap.hidden = !CFG.ai_proxy_url;             // the question is used only for the AI summaries
+    if (qWrap && el.q) qWrap.hidden = !CFG.ai_proxy_url;             // the question is the goal of the one integrated run
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
     var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [] };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
-      forecast: 'Backtest a forecast', story: 'Write the story' };
+      forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
+      report: 'The AI writes the full report, with cited context' };
     var reduced = function () { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); };
     var goTo = function (node, focus) {
       if (!node) return;
@@ -1245,12 +1256,37 @@
       goTo(el.msg);
     }
 
-    /* ---- the staged progress list ---- */
+    /* ---- the staged progress list + the progress bar (owner's ask, 26 Sep 2026: one
+       integrated flow, one bar filling 0 to 100% until the final outcome) ---- */
     function drawStages() {
-      el.stages.innerHTML = ['load'].concat(STAGES).map(function (s) {
+      var list = ['load'].concat(STAGES);
+      list.splice(list.indexOf('decide') + 1, 0, 'plan');
+      list.push('report');
+      el.stages.innerHTML = list.map(function (s) {
         return '<li data-stage="' + s + '" class="st-wait"><span class="st-dot" aria-hidden="true"></span><span class="st-name">' + esc(STAGE_LABEL[s]) +
           '<small class="st-state">waiting</small></span><span class="st-sec"></span></li>';
       }).join('');
+      drawBar(list);
+    }
+    // the bar: each stage is an equal share of the whole; a done stage adds its share, a running
+    // stage animates its own share's first half. The report stage completes only when the AI
+    // report is written and drawn, so the bar reaches 100% exactly at the final outcome.
+    function drawBar(list) {
+      var bar = document.getElementById('try-bar');
+      if (!bar) return;
+      var lis = el.stages.querySelectorAll('li[data-stage]');
+      var n = list ? list.length : lis.length;
+      var done = 0, running = 0;
+      lis.forEach = lis.forEach || Array.prototype.forEach;
+      Array.prototype.forEach.call(lis, function (li) {
+        if (li.className.indexOf('st-done') > -1) done += 1;
+        else if (li.className === 'st-run') running += 1;
+      });
+      var pct = Math.min(100, Math.round(((done + 0.5 * running) / Math.max(n, 1)) * 100));
+      bar.setAttribute('aria-valuenow', String(pct));
+      bar.querySelector('.try-bar-fill').style.width = pct + '%';
+      var pctEl = bar.querySelector('.try-bar-pct');
+      if (pctEl) pctEl.textContent = pct + '%';
     }
     function stageEl(s) { return el.stages.querySelector('li[data-stage="' + s + '"]'); }
     function setStage(s, state, seconds, note) {
@@ -1274,6 +1310,7 @@
         li.className = 'st-done st-skip'; st.textContent = note || 'not needed'; sec.textContent = '';
         delete S.t0[s];
       }
+      drawBar();
     }
     function tickStages() {
       var any = false;
@@ -1317,11 +1354,15 @@
       } else if (m.type === 'scanned') {
         var r = m.result || {};
         if (!r.ok) return refuse('engine', { title: 'The engine could not read this file', body: r.error || 'It gave no reason.' });
+        S.profile = r.profile || null;
         var flagged = (r.flagged || []).filter(function (f) { return f && typeof f.column === 'string'; });
         if (flagged.length) askPersonal(flagged);
         else { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
       } else if (m.type === 'result') {
         onReport(m.report);
+      } else if (m.type === 'results_json') {
+        // the engine's distilled results (results_for_ai), asked for by askAiReport
+        if (S.onResults) S.onResults(m.results || null);
       } else if (m.type === 'error') {
         var e = ERR[m.code] || ERR.engine;
         refuse('engine', { title: e[0], body: (m.message ? m.message + ' ' : '') + e[1],
@@ -1360,8 +1401,223 @@
       var first = el.pd.querySelector('input[type=radio]:checked');
       if (first) { try { first.focus({ preventScroll: true }); } catch (e) { first.focus(); } }
     }
+    // One integrated flow (owner's ask, 26 Sep 2026): the AI plans and the engine computes in a
+    // single run; there is no separate AI button any more. The proxy configured = planning on.
+    function planOn() { return !!CFG.ai_proxy_url; }
+    // The AI planner (owner's design, 25 Sep 2026): the profile goes to the proxy's /plan; the plan rides
+    // to the engine inside the decisions (the engine validates it again and computes every number)
+    function askPlan() {
+      var ctrl = window.AbortController ? new AbortController() : null;
+      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 115000);
+      return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objective: S.objective, profile: S.profile }), credentials: 'omit', referrerPolicy: 'no-referrer',
+        cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { return j && j.plan ? j.plan : null; })
+        .catch(function () { return null; })
+        .then(function (p) { clearTimeout(timer); return p; });
+    }
     function sendRun(decisions) {
-      worker().postMessage({ type: 'run', id: S.seq, options: { name: S.name, objective: S.objective, decisions: decisions, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } });
+      var seq = S.seq;
+      var go = function (d) { worker().postMessage({ type: 'run', id: seq, options: { name: S.name, objective: S.objective, decisions: d, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } }); };
+      S.plan = null; S.planNote = '';
+      if (!planOn() || !S.profile) { setStage('plan', 'skip'); return go(decisions); }
+      setStage('plan', 'start');
+      askPlan().then(function (plan) {
+        if (seq !== S.seq) return;
+        var d = {};
+        Object.keys(decisions || {}).forEach(function (k) { d[k] = decisions[k]; });
+        if (plan) { d.__plan__ = plan; S.plan = plan; setStage('plan', 'done'); }
+        else { S.planNote = 'The AI planner did not answer, so the engine read the file with its own rules.'; setStage('plan', 'skip', null, 'no plan: rules used'); }
+        go(d);
+      });
+    }
+    // the analyses the AI plan asked for, computed by the engine's adapter (rep.ai_analyses): a line
+    // chart with the fitted trend dashed, or bars; the numbers are the engine's, never the model's
+    function anaChart(ch, W) {
+      var H = 230, L = 58, R = W - 12, T0 = 26, Bt = H - 28, b = '';
+      if (ch.kind === 'bars') {
+        var items = (ch.series || []).slice(0, 10), bh = 22, LB = Math.min(170, Math.round(W * 0.34));
+        H = T0 + items.length * (bh + 6) + 6;
+        var vs = items.map(function (d) { return d.value; }), unit = ch.unit || '';
+        var mx = Math.max.apply(null, vs.concat([0])), mn = Math.min.apply(null, vs.concat([0]));
+        var xs = U.scale(mn, mx === mn ? mn + 1 : mx, LB + (mn < 0 ? 50 : 0), R - 60), z = xs(0);
+        items.forEach(function (d, i) {
+          var y = T0 + i * (bh + 6), x1 = xs(d.value), neg = d.value < 0, w = Math.max(1, Math.abs(x1 - z));
+          var lab = num(d.value) + unit;
+          b += U.txt(LB - 8, y + 15, U.clip(String(d.label), LB - 12), 'lab', 'end') +
+            '<rect class="' + (neg ? 'bar-a' : 'bar-s') + ' mk" x="' + (neg ? x1 : z).toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + bh + '" rx="3" tabindex="0"' + U.tipAttr(d.label + ': ' + lab) + '/>' +
+            U.txt(neg ? x1 - 4 : z + w + 6, y + 15, lab, 'lab', neg ? 'end' : 'start');
+        });
+        if (mn < 0) b += '<line x1="' + z.toFixed(1) + '" x2="' + z.toFixed(1) + '" y1="' + (T0 - 4) + '" y2="' + (H - 4) + '" stroke="var(--axis)"/>';
+        return U.svg(W, H, 'Bars: ' + items.map(function (d) { return d.label + ' ' + num(d.value); }).join(', '), b);
+      }
+      if (ch.kind === 'scatter') {
+        var P = ch.points || [];
+        if (!P.length) return '';
+        var px = P.map(function (p) { return p[0]; }), py = P.map(function (p) { return p[1]; });
+        var a0 = Math.min.apply(null, px), a1 = Math.max.apply(null, px), c0 = Math.min.apply(null, py), c1 = Math.max.apply(null, py);
+        var sx = U.scale(a0, a1 === a0 ? a0 + 1 : a1, L, R), sy = U.scale(c0, c1 === c0 ? c0 + 1 : c1, Bt, T0);
+        U.ticks(c0, c1 === c0 ? c0 + 1 : c1, 5).forEach(function (t) {
+          b += '<line class="gridl" x1="' + L + '" x2="' + R + '" y1="' + sy(t).toFixed(1) + '" y2="' + sy(t).toFixed(1) + '"/>' + U.txt(L - 6, sy(t) + 4, axis(t), 'lab', 'end');
+        });
+        U.ticks(a0, a1 === a0 ? a0 + 1 : a1, Math.max(2, Math.floor((R - L) / 70))).forEach(function (t) { b += U.txt(sx(t), H - 8, axis(t), 'lab', 'middle'); });
+        P.forEach(function (p) { b += '<circle class="dot-s" cx="' + sx(p[0]).toFixed(1) + '" cy="' + sy(p[1]).toFixed(1) + '" r="2.6" fill="var(--series)" fill-opacity=".55"/>'; });
+        b += U.txt(R, T0 - 8, (ch.x_name || 'x') + ' (across) against ' + (ch.y_name || 'y') + ' (up)', 'lab', 'end');
+        return U.svg(W, H, 'Scatter of ' + (ch.y_name || 'y') + ' against ' + (ch.x_name || 'x') + ', ' + P.length + ' points', b);
+      }
+      var ser = ch.series || [], fits = ch.fits || [], xsAll = [], ysAll = [];
+      ser.forEach(function (s0) { xsAll = xsAll.concat(s0.x); ysAll = ysAll.concat(s0.y); });
+      fits.forEach(function (f) { ysAll.push(f.y0, f.y1); });
+      if (!xsAll.length) return '';
+      var x0 = Math.min.apply(null, xsAll), x1 = Math.max.apply(null, xsAll), lo = Math.min.apply(null, ysAll), hi = Math.max.apply(null, ysAll), pad = (hi - lo) * 0.06 || 1;
+      var x = U.scale(x0, x1, L, R), y = U.scale(lo - pad, hi + pad, Bt, T0);
+      U.ticks(lo - pad, hi + pad, 5).forEach(function (t) {
+        b += '<line class="gridl" x1="' + L + '" x2="' + R + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"/>' + U.txt(L - 6, y(t) + 4, axis(t), 'lab', 'end');
+      });
+      U.ticks(x0, x1, Math.max(2, Math.floor((R - L) / 70))).forEach(function (t) { if (t % 1 === 0) b += U.txt(x(t), H - 8, String(t), 'lab', 'middle'); });
+      var cls = ['ln ln-s', 'ln ln-a', 'ln ln-s ln-dash', 'ln ln-a ln-dash'];
+      ser.forEach(function (s0, k) {
+        var faint = k >= 2 ? ' style="stroke-opacity:.5"' : '';      // two colours: the third and fourth line are lighter
+        b += '<path class="' + cls[k % 2] + '"' + faint + ' d="' + U.path(s0.x.map(function (v, i) { return [x(v), y(s0.y[i])]; })) + '"/>';
+        b += '<path class="' + cls[k % 2] + '"' + faint + ' d="M' + (L + 6 + k * 120) + ' 10h18"/>' + U.txt(L + 28 + k * 120, 14, U.clip(s0.name, 90), 'lab');
+      });
+      fits.forEach(function (f) {
+        var k = Math.max(0, ser.findIndex(function (s0) { return f.name.indexOf(s0.name) === 0; }));
+        b += '<path class="' + cls[2 + (k % 2)] + '" style="stroke-width:' + (f.recent ? 2.6 : 1.6) + '" d="M' + x(f.x0).toFixed(1) + ' ' + y(f.y0).toFixed(1) + 'L' + x(f.x1).toFixed(1) + ' ' + y(f.y1).toFixed(1) + '"/>';
+      });
+      return U.svg(W, H, 'Lines by year: ' + ser.map(function (s0) { return s0.name; }).join(', ') + (fits.length ? ', with fitted trends dashed' : ''), b);
+    }
+    // a choropleth of a ranking over countries (a.map, the engine's values at the latest date): the Natural
+    // Earth outline (engine/world-110m.json, public domain, same origin) is fetched only when a map is drawn
+    var WORLD = null, ALIAS = {
+      'united states': 'united states of america', 'usa': 'united states of america', 'us': 'united states of america',
+      'bosnia and herzegovina': 'bosnia and herz', 'central african republic': 'central african rep', 'czech republic': 'czechia',
+      'ivory coast': 'cote divoire', 'democratic republic of congo': 'dem rep congo', 'democratic republic of the congo': 'dem rep congo',
+      'congo dem rep': 'dem rep congo', 'dr congo': 'dem rep congo', 'republic of congo': 'congo', 'republic of the congo': 'congo',
+      'congo rep': 'congo', 'dominican republic': 'dominican rep', 'equatorial guinea': 'eq guinea', 'falkland islands': 'falkland is',
+      'lao pdr': 'laos', 'lao peoples democratic republic': 'laos', 'north macedonia': 'macedonia', 'northern cyprus': 'n cyprus',
+      'korea dem peoples rep': 'north korea', 'democratic peoples republic of korea': 'north korea', 'korea': 'south korea',
+      'korea rep': 'south korea', 'republic of korea': 'south korea', 'russian federation': 'russia', 'south sudan': 's sudan',
+      'solomon islands': 'solomon is', 'syrian arab republic': 'syria', 'east timor': 'timor leste', 'uk': 'united kingdom',
+      'great britain': 'united kingdom', 'viet nam': 'vietnam', 'western sahara': 'w sahara', 'swaziland': 'eswatini',
+      'iran islamic rep': 'iran', 'islamic republic of iran': 'iran', 'egypt arab rep': 'egypt', 'venezuela rb': 'venezuela',
+      'yemen rep': 'yemen', 'gambia the': 'gambia', 'bahamas the': 'bahamas', 'turkiye': 'turkey', 'brunei darussalam': 'brunei',
+      'kyrgyz republic': 'kyrgyzstan', 'slovak republic': 'slovakia', 'west bank and gaza': 'palestine', 'state of palestine': 'palestine',
+      'palestinian territories': 'palestine', 'burma': 'myanmar', 'united republic of tanzania': 'tanzania', 'republic of moldova': 'moldova',
+      'french southern territories': 'fr s antarctic lands', 'timor': 'timor leste'
+    };
+    function geoKey(n) {
+      var k = String(n || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ')
+        .replace(/[.,'’()]/g, '').replace(/-/g, ' ').replace(/\s+/g, ' ').trim().replace(/^the /, '');
+      return ALIAS[k] || k;
+    }
+    function worldShapes(topo) {
+      var tf = topo.transform, arcs = topo.arcs.map(function (a) {
+        var x = 0, y = 0;
+        return a.map(function (p) { x += p[0]; y += p[1]; return [x * tf.scale[0] + tf.translate[0], y * tf.scale[1] + tf.translate[1]]; });
+      });
+      var ring = function (r) {
+        var pts = [];
+        r.forEach(function (i) { var a = i < 0 ? arcs[~i].slice().reverse() : arcs[i]; pts = pts.concat(pts.length ? a.slice(1) : a); });
+        // a ring that crosses the 180th meridian (Russia, Fiji) is unwrapped so it never strokes across the map;
+        // the part past the edge falls outside the drawing and is clipped
+        for (var k = 1, off = 0; k < pts.length; k++) {
+          var d = pts[k][0] + off - pts[k - 1][0];
+          if (d > 180) off -= 360; else if (d < -180) off += 360;
+          if (off) pts[k] = [pts[k][0] + off, pts[k][1]];
+        }
+        return pts;
+      };
+      return topo.objects.countries.geometries.map(function (g) {
+        var polys = g.type === 'Polygon' ? [g.arcs] : g.type === 'MultiPolygon' ? g.arcs : [];
+        return { name: g.properties.name, key: geoKey(g.properties.name), rings: [].concat.apply([], polys.map(function (p) { return p.map(ring); })) };
+      }).filter(function (c) { return c.name !== 'Antarctica'; });
+    }
+    function drawMap(host, spec) {
+      var go = function () {
+        var W = Math.max(300, Math.min(760, host.clientWidth || 700)), H = Math.round(W * 0.5), top = 84, bot = -58;
+        var px = function (lon) { return (lon + 180) / 360 * W; }, py = function (lat) { return (top - Math.max(bot, Math.min(top, lat))) / (top - bot) * H; };
+        var vals = {}, names = Object.keys(spec.values || {}), hit = 0, known = {};
+        WORLD.forEach(function (c) { known[c.key] = true; });
+        names.forEach(function (n) { vals[geoKey(n)] = { v: spec.values[n], n: n }; });
+        // a map only when most of the names are countries (not products, regions of a firm, or people)
+        var placed = names.filter(function (n) { return known[geoKey(n)]; }).length;
+        if (placed < 10 || placed < 0.6 * names.length) { host.remove(); return; }
+        var nums = names.map(function (n) { return spec.values[n]; }).filter(function (v) { return isFinite(v); }).sort(function (a, b) { return a - b; });
+        var q = [0.2, 0.4, 0.6, 0.8].map(function (f) { return nums[Math.min(nums.length - 1, Math.floor(f * nums.length))]; });
+        var cls = function (v) { var k = 0; while (k < 4 && v > q[k]) k++; return k; }, op = [0.18, 0.34, 0.5, 0.68, 0.9];
+        var b = '';
+        WORLD.forEach(function (c) {
+          var d = c.rings.map(function (r) { return 'M' + r.map(function (p) { return px(p[0]).toFixed(1) + ' ' + py(p[1]).toFixed(1); }).join('L') + 'Z'; }).join('');
+          var m = vals[c.key];
+          if (m) hit++;
+          b += '<path d="' + d + '" fill="' + (m ? 'var(--series)' : 'var(--grid)') + '" fill-opacity="' + (m ? op[cls(m.v)] : 1) + '" stroke="var(--surface)" stroke-width=".5"' +
+            (m ? ' class="mk" tabindex="0"' + U.tipAttr(m.n + ': ' + num(m.v)) : '') + '/>';
+        });
+        var lg = '', lab = [nums[0]].concat(q).concat([nums[nums.length - 1]]), sw = Math.min(90, Math.floor((W - 40) / 5));
+        for (var k = 0; k < 5; k++) lg += '<rect x="' + (12 + k * sw) + '" y="' + (H + 8) + '" width="' + (sw - 2) + '" height="10" fill="var(--series)" fill-opacity="' + op[k] + '"/>';
+        for (var j = 0; j < 6; j++) lg += U.txt(12 + j * sw - (j === 5 ? 2 : 0), H + 32, axis(lab[j]), 'lab', j === 0 ? 'start' : j === 5 ? 'end' : 'middle');
+        b = '<clipPath id="try-map-clip"><rect x="0" y="0" width="' + W + '" height="' + H + '"/></clipPath><g clip-path="url(#try-map-clip)">' + b + '</g>';
+        host.innerHTML = U.svg(W, H + 40, 'Map of ' + spec.measure + ' by country' + (spec.when ? ' in ' + spec.when : '') + ', darker is higher', b + lg) +
+          '<p class="note">' + esc(plural(hit, 'country', 'countries') + ' on the map carry a value; ' + (names.length - Math.min(hit, names.length)) +
+          ' named in the file could not be placed (regions, small islands or other spellings). Grey: no value.') + '</p>';
+      };
+      if (WORLD) return go();
+      fetch('engine/world-110m.json', { credentials: 'omit' }).then(function (r) { return r.json(); })
+        .then(function (t) { WORLD = worldShapes(t); go(); }).catch(function () { host.innerHTML = '<p class="note">The map outline did not load.</p>'; });
+    }
+    function mountMaps(root, rep) {
+      var items = ((rep && rep.ai_analyses) || {}).items || [];
+      Array.prototype.forEach.call(root.querySelectorAll('.try-ana-map'), function (el2) {
+        var a = items[+el2.getAttribute('data-i')];
+        if (a && a.map) drawMap(el2, a.map);
+        else el2.remove();
+      });
+    }
+    function analysesHtml(rep) {
+      var A = rep && rep.ai_analyses;
+      if (!A || (!(A.items || []).length && !(A.refused || []).length)) return '';
+      var W = Math.max(300, Math.min(760, ((el.planCard && el.planCard.clientWidth) || 700) - 40));
+      var h = '<h3 class="try-ana-h">What the AI asked the engine to compute</h3>';
+      (A.items || []).forEach(function (a, i) {
+        var t = a.table || { cols: [], rows: [] };
+        h += '<section class="try-ana"><h4>' + esc(a.title) + '</h4>' +
+          '<p class="try-ana-key">' + esc(a.sentence) + '</p>' +
+          (a.map ? '<div class="try-ana-chart try-ana-map" data-i="' + i + '"><p class="note">Drawing the map\u2026</p></div>' : '') +
+          (a.chart ? '<div class="try-ana-chart">' + anaChart(a.chart, W) + '</div>' : '') +
+          '<p class="note">' + esc(a.method || '') + '</p>' +
+          (t.rows && t.rows.length ? '<details><summary>The numbers</summary>' + tbl(a.title, t.cols.map(function (c, j) { return { t: c, num: j > 0 }; }),
+            t.rows.map(function (r) { return r.map(function (v) { return esc(v); }); })) + '</details>' : '') + '</section>';
+      });
+      if ((A.refused || []).length) h += '<h4>Asked for but not computed</h4>' + list(A.refused);
+      if (A.note) h += '<p class="note">' + esc(A.note) + '</p>';
+      return h;
+    }
+    function drawPlan(rep) {
+      var p = rep && rep.ai_plan, c = el.planCard;
+      if (!c) return;
+      if (!p) { c.hidden = !S.planNote; c.innerHTML = S.planNote ? '<p class="note">' + esc(S.planNote) + '</p>' : ''; return; }
+      var li = function (a) { return a && a.length ? '<ul>' + a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : ''; };
+      var alts = (p.goal_candidates || []).map(function (g, i) { return '<button type="button" class="btn btn-ghost try-plan-alt" data-goal="' + esc(g) + '">' + esc(g) + '</button>'; }).join(' ');
+      // the highlighted opening of the report (owner's ask, 26 Sep 2026): the goal, what the AI read
+      // this file to be, and the risks that could mislead it, as the first thing a visitor sees.
+      c.innerHTML = '<div class="try-plan-head">' +
+        '<h3 class="try-plan-title">The AI\'s plan for this file</h3>' +
+        '<p class="try-plan-goal"><strong>Goal:</strong> ' + esc(p.goal || '') + '</p>' +
+        (p.understanding ? '<p class="try-plan-read"><strong>What the AI read:</strong> ' + esc(p.understanding) + '</p>' : '') +
+        '</div>' +
+        ((p.quality_risks || []).length ? '<div class="try-plan-risks"><h4>What could mislead this goal</h4>' + li(p.quality_risks) + '</div>' : '') +
+        ((p.applied || []).length ? '<h4>Steps the engine ran</h4>' + li(p.applied) : '') +
+        ((p.refused || []).length ? '<h4>Steps refused</h4>' + li(p.refused) : '') +
+        (alts ? '<h4>Other questions this data can answer</h4><div class="try-plan-alts">' + alts + '</div><p class="note">Pick one to run the report again with that goal.</p>' : '') +
+        '<p class="note">AI-planned, engine-computed: every figure below comes from the engine, which checked the plan and refused any step it could not run.</p>' +
+        analysesHtml(rep);
+      c.hidden = false;
+      mountMaps(c, rep);
+      Array.prototype.forEach.call(c.querySelectorAll('.try-plan-alt'), function (b) {
+        b.addEventListener('click', function () { if (el.q) el.q.value = b.getAttribute('data-goal'); if (S.again) S.again(); });
+      });
     }
 
     /* ---- start: from the picker, a drop, or the sample ---- */
@@ -1369,6 +1625,8 @@
       if (S.busy) return;
       clearMsg();
       el.report.hidden = true;
+      if (el.planCard) el.planCard.hidden = true;
+      S.again = function () { start(name, size, getBuffer, asOf); };
       if (!LIM.max_bytes || !LIM.max_rows) return refuse('engine', { title: 'The demo is not set up on this page', body: 'Its limits are missing from the page data.' });
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
@@ -1393,7 +1651,7 @@
         var w;
         try { w = worker(); } catch (e) { return refuse('engine', { title: 'This browser cannot run the engine', body: 'It does not allow a background worker here (' + e.message + ').' }); }
         w.postMessage({ type: 'scan', id: S.seq, name: name, buffer: buf,
-          options: { name: name, objective: S.objective, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } }, [buf]);
+          options: { name: name, objective: S.objective, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows, want_profile: planOn() } }, [buf]);
       }).catch(function (e) {
         refuse('engine', { title: 'The file could not be read', body: 'The browser could not open it (' + (e && e.message || e) + ').' });
       });
@@ -1448,15 +1706,158 @@
       // stages the engine did not announce take their time from the report
       (rep.timings || []).forEach(function (t) { var li = stageEl(t.stage); if (li && li.className !== 'st-done') setStage(t.stage, 'done', t.seconds); });
       STAGES.forEach(function (s) { var li = stageEl(s); if (li && li.className !== 'st-done') setStage(s, 'skip'); });
-      el.note.textContent = 'Done: the report is below.';
       S.report = rep; S.busy = false;
       el.sample.disabled = false; el.pick.disabled = false;
       if (el.q) el.q.disabled = false;
+      drawPlan(rep);
       drawReport();
       el.report.hidden = false;
       el.run.hidden = true;
       drawFc();
       goTo(el.report, true);
+      // the AI report writer: the last stage of the one integrated flow (owner's design,
+      // 26 Sep 2026). The engine's distilled results go to the proxy's /report; the model writes
+      // the full storytelling report and may fetch cited web context through the same worker.
+      askAiReport(rep);
+    }
+
+    // POST /report with the engine's results_for_ai payload; on success draw the AI report card
+    // and finish the progress bar at 100%; on failure the bar completes with a plain note.
+    function askAiReport(rep) {
+      var stage = stageEl('report');
+      if (!CFG.ai_proxy_url || !stage) { setStage('report', 'skip', null, 'not on this page'); return; }
+      var ctrl = window.AbortController ? new AbortController() : null;
+      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 175000);
+      setStage('report', 'start');
+      el.note.textContent = 'The engine finished. The AI is writing the full report\u2026';
+      var payload;
+      // the distilled results come from the engine worker itself (results_for_ai, packed in the
+      // zip): ask it over the postMessage bridge, then POST them to the proxy's /report
+      function postIt(pl) {
+        fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objective: S.objective, results: pl }),
+          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
+          .then(function (j) {
+            clearTimeout(timer);
+            if (!j || !j.report) throw new Error('no report');
+            S.aiReport = j;
+            drawAiReport(j);
+            setStage('report', 'done');
+            el.note.textContent = 'Done: the report is below.';
+            drawBar();
+          })
+          .catch(function (e) {
+            clearTimeout(timer);
+            setStage('report', 'skip', null, String(e && e.message ? e.message : 'the AI report was not written'));
+            el.note.textContent = 'The engine\'s checked report is below; the AI-written report could not be written this time.';
+            drawBar();
+          });
+      }
+      var seq = S.seq;
+      S.onResults = function (results) {
+        S.onResults = null;
+        if (results) postIt(results);
+        else { clearTimeout(timer); setStage('report', 'skip', null, 'the results could not be distilled'); }
+      };
+      worker().postMessage({ type: 'results', id: seq, report: rep });
+    }
+
+    // the AI-written report card: the storytelling text, its sources, the share and PDF actions,
+    // and the NorthLedger watermark, mirroring the shared-link viewer
+    function drawAiReport(j) {
+      var card = document.getElementById('try-ai-report');
+      if (!card) return;
+      var html = aiReportHtml(j.report || '');
+      var srcs = j.sources || [];
+      card.innerHTML = '<div class="ai-rep-head"><h3>The AI-written report</h3>' +
+        '<p class="note">Figures by the engine, words by ' + esc(j.model || 'the AI') + ', outside claims cited [S1]\u2026; every figure was checked against the engine\'s own results.</p></div>' +
+        '<div class="ai-rep-body">' + html + '</div>' +
+        (srcs.length ? '<div class="ai-rep-srcs"><b>Sources</b><ol>' + srcs.map(function (s, i) {
+          return '<li><a href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.title || ('Source ' + (i + 1))) + '</a></li>';
+        }).join('') + '</ol></div>' : '') +
+        '<div class="ai-rep-actions"><button type="button" class="btn btn-primary" id="try-share">Shareable link</button>' +
+        '<button type="button" class="btn btn-ghost" id="try-pdf">Download PDF</button>' +
+        '<span class="try-share-out" id="try-share-out" hidden></span></div>' +
+        '<div class="ai-rep-wm"><a href="https://rashadul122.github.io/northledger-ai-data-analyst/" target="_blank" rel="noopener">NorthLedger</a></div>';
+      card.hidden = false;
+      var share = document.getElementById('try-share');
+      if (share) share.addEventListener('click', doShare);
+      var pdf = document.getElementById('try-pdf');
+      if (pdf) pdf.addEventListener('click', doPdf);
+      goTo(card, true);
+    }
+
+    // markdown-lite, the same rendering the shared viewer uses (headings, bullets, tables)
+    function aiReportHtml(text) {
+      var esc2 = esc;
+      var out = [], open = null, tbl = [];
+      var close = function () { if (open) { out.push('</' + open + '>'); open = null; } };
+      var flush = function () {
+        if (!tbl.length) return;
+        var rows = tbl.filter(function (r) { return !/^\|?[\s:|-]+$/.test(r); });
+        if (rows.length) {
+          out.push('<table>');
+          rows.forEach(function (r, i) {
+            var cells = r.split('|').map(function (c) { return c.trim(); }).filter(function (c, k, a) { return !(k === 0 && !c) && !(k === a.length - 1 && !c); });
+            out.push('<tr>' + cells.map(function (c) { return (i === 0 ? '<th>' + esc2(c) + '</th>' : '<td>' + esc2(c) + '</td>'); }).join('') + '</tr>');
+          });
+          out.push('</table>');
+        }
+        tbl = [];
+      };
+      String(text || '').split(/\n/).forEach(function (L) {
+        if (/^\|/.test(L)) { close(); tbl.push(L); return; }
+        if (tbl.length) flush();
+        if (/^##\s/.test(L)) { close(); out.push('<h4>' + esc2(L.replace(/^##\s*/, '')) + '</h4>'); }
+        else if (/^[-*]\s/.test(L)) { if (open !== 'ul') { close(); out.push('<ul>'); open = 'ul'; } out.push('<li>' + esc2(L.replace(/^[-*]\s*/, '')) + '</li>'); }
+        else if (/^\d+\.\s/.test(L)) { if (open !== 'ol') { close(); out.push('<ol>'); open = 'ol'; } out.push('<li>' + esc2(L.replace(/^\d+\.\s*/, '')) + '</li>'); }
+        else if (L.trim() === '') close();
+        else { close(); out.push('<p>' + esc2(L) + '</p>'); }
+      });
+      close();
+      if (tbl.length) flush();
+      // [Sn] citations link to the sources the worker returned
+      var srcs = (S.aiReport && S.aiReport.sources) || [];
+      return out.join('\n').replace(/\[S(\d+)\]/g, function (m, n) {
+        var s = srcs[Number(n) - 1];
+        return s && s.link ? ' <a class="cite" href="' + esc2(s.link) + '" target="_blank" rel="noopener">[' + n + ']</a>' : '[' + n + ']';
+      });
+    }
+
+    // share: POST /share with the finished report, then show the link
+    function doShare() {
+      var out = document.getElementById('try-share-out');
+      if (!S.aiReport || !out) return;
+      out.hidden = false;
+      out.textContent = 'Making the link\u2026';
+      fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/share', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: (S.report && S.report.input) || { name: S.name },
+          goal: (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '',
+          report: S.aiReport.report, sources: S.aiReport.sources || [], model: S.aiReport.model || '', days: 7,
+        }),
+        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
+        .then(function (j) {
+          out.innerHTML = '';
+          var a = document.createElement('a');
+          a.href = j.link; a.textContent = j.link; a.target = '_blank'; a.rel = 'noopener';
+          out.appendChild(a);
+          out.appendChild(document.createTextNode(' \u00b7 expires in 7 days \u00b7 anyone with the link can read it'));
+          try { navigator.clipboard.writeText(j.link); out.appendChild(document.createTextNode(' \u00b7 copied')); } catch (e4) { /* clipboard needs a gesture; the link is shown */ }
+        })
+        .catch(function (e) { out.textContent = 'The link could not be made: ' + String(e && e.message ? e.message : 'try again'); });
+    }
+
+    // PDF: print the AI report card only (a print stylesheet hides the rest of the page)
+    function doPdf() {
+      var card = document.getElementById('try-ai-report');
+      if (!card) return;
+      document.body.setAttribute('data-print-target', 'try-ai-report');
+      window.print();
     }
 
     // what a visitor can do about the reasons rows were set aside (plain steps, no figures)
@@ -1535,6 +1936,7 @@
         '<button type="button" class="btn btn-ghost" data-dl="clean_csv">Cleaned CSV</button>' +
         '<button type="button" class="btn btn-ghost" data-dl="quarantine_csv">Set-aside rows CSV</button>' +
         '<button type="button" class="btn btn-ghost" data-dl="ledger_json">Evidence ledger (JSON)</button>' +
+        '<button type="button" class="btn btn-ghost" data-act="report-html">The whole report (HTML, opens offline)</button>' +
         '<button type="button" class="btn btn-ghost" data-act="print">Save as PDF</button>' +
         '<button type="button" class="btn btn-ghost" data-act="again">Try another file</button></div>' +
         '<p class="note">The files are made in your browser from the engine\'s output.' +
@@ -1723,7 +2125,7 @@
           '<p class="note tr-ai-more">' + (techShown ? 'The technical summary is in the Analyst view, in its first section.' : esc(T.partNote(S.ai.chk, 'technical')) + ' The Analyst view says so too.') +
           ' <button type="button" class="btn btn-ghost btn-sm" data-act="ai-analyst">' + (techShown ? 'Read the technical summary' : 'Open the Analyst view') + '</button></p>' +
           aiLimit('in this report') + '</div>';
-      } else h += aiOffer(S.report, true);
+      } else h += '';   // the integrated flow writes the AI report (try-ai-report); the old optional-summary button is gone
       host.innerHTML = h;
     }
     function drawStory() {
@@ -1740,8 +2142,8 @@
         h += '<div class="tr-ai-sum" role="region" aria-label="AI summaries">' + aiLabel() + aiLimit('above') +
           T.SUMMARY_PARTS.map(function (part) { return aiPart(part, 'above'); }).join('') + '</div>';
       } else if (CFG.ai_proxy_url && mgr) {
-        h += '<p class="note tr-ai-where">Optional AI summaries of this report are offered in the Manager view, under the bottom line. <button type="button" class="btn btn-ghost btn-sm" data-act="ai-manager">Go to the offer</button></p>';
-      } else if (CFG.ai_proxy_url) h += aiOffer(r, false);
+        h += '';
+      } else if (CFG.ai_proxy_url) h += '';
       box.innerHTML = h;
       if (mgr) drawAIManager(mgr);
       var ok = document.getElementById('try-ai-ok'), go = document.getElementById('try-ai-go'), raw = document.getElementById('try-ai-raw');
@@ -1770,11 +2172,11 @@
       var body = T.aiPayload(S.report, S.objective, S.aiRaw), red = S.aiRaw ? [] : T.aiRedactions(S.report);
       var FALLBACK = ' Only the engine\'s story is shown.';
       go.disabled = true;
-      if (st) st.textContent = 'Asking the AI model (it thinks before it writes, so this takes about a minute)…';
+      if (st) st.textContent = 'Asking the AI model (it thinks before it writes, so this takes one to two minutes)…';
       var ctrl = window.AbortController ? new AbortController() : null;
-      // the proxy runs DeepSeek in thinking mode at its highest effort (25 Sep 2026): measured ~59 s a request,
-      // with PART_DEADLINE_MS 100 s in the proxy, so the page waits longer than that
-      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 120000);
+      // the proxy runs DeepSeek in thinking mode at its highest effort (25 Sep 2026): measured 15-100 s a request
+      // (longer with the AI plan's analyses), with PART_DEADLINE_MS 140 s in the proxy, so the page waits longer
+      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 170000);
       fetch(CFG.ai_proxy_url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
         .then(function (res) {
@@ -1833,6 +2235,24 @@
       try { window.print(); } finally { setTimeout(restore, 0); }
     }
 
+    // The whole report as one self-contained HTML file: the plan, the report as drawn (charts are SVG),
+    // and this page's own styles; no script, no rows beyond what the report itself shows.
+    function saveReportHtml() {
+      var css = Array.prototype.map.call(document.querySelectorAll('style'), function (s) { return s.textContent; }).join('\n');
+      var body = (el.planCard && !el.planCard.hidden ? el.planCard.outerHTML : '') + el.report.outerHTML.replace(/ hidden(=""|)/, '');
+      body = body.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<button[\s\S]*?<\/button>/gi, '');
+      var title = 'NorthLedger report: ' + (S.report.input.name || 'your file');
+      var html = '<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<title>' + esc(title) + '</title><style>' + css + '\nbody{max-width:1100px;margin:24px auto;padding:0 16px}<\/style><\/head><body><main>' +
+        '<p class="note">' + esc(title) + '. Made in a browser by the NorthLedger engine on ' + esc(new Date().toISOString().slice(0, 10)) + '; every figure was computed from the file, none by the AI.</p>' +
+        body + '<\/main><\/body><\/html>';   // escaped: this script is inline in index.html
+      var url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = stem(S.report.input.name) + '-report.html'; a.hidden = true;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    }
+
     /* ---- report actions (one listener for the report) ---- */
     el.report.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button');
@@ -1848,6 +2268,8 @@
         setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
       } else if (act === 'print') {
         printReport();
+      } else if (act === 'report-html') {
+        saveReportHtml();
       } else if (act === 'ai-analyst' || act === 'ai-manager') {
         aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
       } else if (act === 'again') {

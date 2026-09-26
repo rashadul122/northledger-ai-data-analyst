@@ -1,0 +1,3 @@
+(async function(){var PLAN=await (await fetch('/_uitest/fx_plan.json')).json();var of=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/plan')>=0){return Promise.resolve(new Response(JSON.stringify(PLAN),{status:200,headers:{'Content-Type':'application/json'}}));}return of.apply(this,arguments);};
+var buf=await (await of('/_uitest/fx.csv')).arrayBuffer();var f=new File([buf],'33100036.csv',{type:'text/csv'});var dt=new DataTransfer();dt.items.add(f);var inp=document.getElementById('try-file');var pl=document.getElementById('try-plan');if(pl&&!pl.checked){pl.checked=true;pl.dispatchEvent(new Event('change',{bubbles:true}));}
+inp.files=dt.files;inp.dispatchEvent(new Event('change',{bubbles:true}));return 'sent';})()

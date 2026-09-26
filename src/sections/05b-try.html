@@ -8,9 +8,9 @@
     </div>
     <div class="try-app" id="try-app">
       <div class="try-q-wrap" id="try-q-wrap" hidden>
-        <label class="try-q-lab" for="try-q">What do you want to know? <span class="muted">Optional, and used only if you choose AI summaries after the report</span></label>
+        <label class="try-q-lab" for="try-q">What do you want to know? <span class="muted">The AI takes it as the report's goal; left empty, it proposes one from the data</span></label>
         <textarea id="try-q" rows="2" maxlength="300" placeholder="For example: which units pay late most often, and what will rent look like next?"></textarea>
-        <p class="note">The engine checks the same things whatever you type here. If you later ask for AI summaries, your question is sent with the findings exactly as you typed it, so leave out names and addresses.</p>
+        <p class="note">One integrated run: the AI reads a summary of your columns (names, counts, ranges and the values of category columns; never rows, and nothing from a column flagged as personal) and plans what to test. The engine computes every number and grades every finding. Then the AI writes the full storytelling report from the engine's results, fetching outside context with cited sources when the goal needs it. Every figure in the finished report is the engine's own, checked against its results; every outside claim carries its citation.</p>
       </div>
       <div class="try-start" id="try-start">
         <div class="try-drop" id="try-drop">
@@ -35,9 +35,15 @@
           <h3 id="try-run-h">Working on <span id="try-run-name"></span></h3>
           <button type="button" class="btn btn-ghost btn-sm" id="try-cancel">Stop</button>
         </div>
+        <div class="try-bar" id="try-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Run progress">
+          <div class="try-bar-track"><div class="try-bar-fill"></div></div>
+          <span class="try-bar-pct">0%</span>
+        </div>
         <ol class="try-stages" id="try-stages" aria-labelledby="try-run-h"></ol>
         <p class="note" id="try-run-note" aria-live="polite"></p>
       </div>
+      <div class="try-plan-card" id="try-plan-card" hidden role="region" aria-label="The AI's plan for this file"></div>
+      <div class="try-ai-report" id="try-ai-report" hidden role="region" aria-label="The AI-written report" data-fact-exempt="the AI-written report; every figure checked against the engine's results"></div>
       <div class="try-report" id="try-report" hidden tabindex="-1" role="region" aria-label="Your report" data-fact-exempt="every figure here is computed in your browser by the engine, from your own file"></div>
     </div>
     <noscript><p class="note">This demo needs JavaScript: the engine runs in your browser, so without it nothing can run.</p></noscript>

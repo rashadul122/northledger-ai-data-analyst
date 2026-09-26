@@ -1824,7 +1824,7 @@
     }
 
     // share: POST /share with the finished report, then show the link
-    function doShare() {
+    function doShare(onLink) {
       var out = document.getElementById('try-share-out');
       if (!S.aiReport || !out) return;
       out.hidden = false;
@@ -1839,20 +1839,44 @@
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
         .then(function (j) {
+          S.shareUrl = j.link;
           out.innerHTML = '';
           var a = document.createElement('a');
           a.href = j.link; a.textContent = j.link; a.target = '_blank'; a.rel = 'noopener';
           out.appendChild(a);
           out.appendChild(document.createTextNode(' \u00b7 expires in 7 days \u00b7 anyone with the link can read it'));
           try { navigator.clipboard.writeText(j.link); out.appendChild(document.createTextNode(' \u00b7 copied')); } catch (e4) { /* clipboard needs a gesture; the link is shown */ }
+          if (typeof onLink === 'function') onLink(j.link);
         })
         .catch(function (e) { out.textContent = 'The link could not be made: ' + String(e && e.message ? e.message : 'try again'); });
     }
 
-    // PDF: print the AI report card only (a print stylesheet hides the rest of the page)
+    // PDF: print the AI report card only (a print stylesheet hides the rest of the page).
+    // Never call window.print() from an embedded page (the Hermes preview pane is an Electron
+    // <webview>: printing from the guest kills/reloads it). Embedded pages open the report in a
+    // real system browser tab instead, where the print dialog works; a top-level page prints.
     function doPdf() {
       var card = document.getElementById('try-ai-report');
       if (!card) return;
+      var embedded = (function () {
+        try { return window.parent !== window || (window.navigator && window.navigator.userAgent.indexOf('Electron') >= 0) || !!window.process; } catch (e) { return true; }
+      })();
+      if (embedded) {
+        // Open the same shareable viewer, then print from there: the viewer prints its own
+        // report cleanly and the print dialog belongs to a real browser window.
+        var out = document.getElementById('try-share-out');
+        if (S.shareUrl) {
+          if (out) { out.hidden = false; out.textContent = ''; var a = document.createElement('a'); a.href = S.shareUrl; a.textContent = 'Open the report to print it'; a.target = '_blank'; a.rel = 'noopener'; out.appendChild(a); }
+          window.open(S.shareUrl, '_blank', 'noopener');
+          return;
+        }
+        // No share link yet: make one, then open it (POSTs report text only, never rows).
+        doShare(function (link) {
+          if (out) { out.hidden = false; out.textContent = ''; var a2 = document.createElement('a'); a2.href = link; a2.textContent = 'Open the report to print it'; a2.target = '_blank'; a2.rel = 'noopener'; out.appendChild(a2); }
+          window.open(link, '_blank', 'noopener');
+        });
+        return;
+      }
       document.body.setAttribute('data-print-target', 'try-ai-report');
       window.print();
     }

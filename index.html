@@ -1129,6 +1129,26 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-ana h4 { font-size: 1rem; margin: 0 0 4px; }
 .try-ana-key { font-weight: 600; line-height: 1.5; margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--accent); }
 .try-ana-chart { overflow-x: auto; }
+/* the question box: a chat-style input above the drop zone */
+.try-q-wrap { margin: 16px 0 4px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--hairline)); border-radius: 14px; background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.try-q-label { display: block; font-size: .92rem; margin-bottom: 6px; }
+.try-q { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); color: inherit; }
+.try-q:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+.try-q-wrap .note { margin: 6px 0 0; }
+/* engine-drawn figures inside the AI report: a [CHART:n] marker becomes this */
+.ai-rep-figure { margin: 14px 0; padding: 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); overflow-x: auto; }
+.ai-rep-figure-cap { font-size: .8rem; color: var(--muted-foreground, inherit); margin: 4px 2px 0; }
+.ai-rep-figure svg { display: block; max-width: 100%; height: auto; }
+/* the previous-reports gallery: every answered question stays findable */
+.try-prev { margin: 20px 0; }
+.try-prev-h { margin: 0 0 10px; }
+.try-prev-list { display: grid; gap: 10px; }
+.try-prev-item { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); flex-wrap: wrap; }
+.try-prev-item .pv-goal { font-weight: 600; margin: 0 0 2px; }
+.try-prev-item .pv-meta { font-size: .82rem; color: var(--muted-foreground, inherit); margin: 0; }
+.try-prev-item .pv-link { font-size: .82rem; word-break: break-all; }
+.try-prev-item .pv-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.try-prev-empty { font-size: .9rem; color: var(--muted-foreground, inherit); margin: 4px 0; }
 .try-ana-chart svg { max-width: 100%; height: auto; }
 .try-ana details { margin-top: 6px; }
 
@@ -1156,7 +1176,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-26 19:10:59 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-26 21:16:07 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -1578,6 +1598,11 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
           <p class="note">The sample is a deliberately messy rent and expense ledger for five invented Toronto buildings, made for this demo: no real people or accounts in it.</p>
         </div>
       </div>
+      <div class="try-q-wrap" id="try-q-wrap">
+        <label class="try-q-label" for="try-q"><strong>Ask your question about the data (optional)</strong></label>
+        <input type="text" id="try-q" class="try-q" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. What drives the rent the most, and what does the regression table say about each driver?">
+        <p class="note">Type it before you drop the file: the AI reads the columns, plans the analyses around your question, and the engine computes every number in your browser. Leave it empty and the AI proposes the goal itself; the plan also offers other questions this data can answer, one click each.</p>
+      </div>
       <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.<span class="try-ai-note" data-needs-ai> One integrated run: the AI plans what to test (from a summary of your columns, never rows), the engine computes and grades every figure, then the AI writes the full report from the engine's results through the owner's proxy, fetching outside context with cited sources when the goal needs it. A figure the engine did not state is set aside, and every outside claim carries its citation.</span></span></p>
       <div class="try-msg" id="try-msg" role="alert" hidden data-fact-exempt="written in your browser from your own file and the engine's answer"></div>
       <div class="try-pd" id="try-pd" hidden data-fact-exempt="column names from your own file"></div>
@@ -1586,7 +1611,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
           <h3 id="try-run-h">Working on <span id="try-run-name"></span></h3>
           <button type="button" class="btn btn-ghost btn-sm" id="try-cancel">Stop</button>
         </div>
-        <p class="try-uploaded" id="try-uploaded" hidden><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10.5l2.6 2.6L14 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Upload successful — analysing your file</p>
+        <p class="try-uploaded" id="try-uploaded" hidden><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10.5l2.6 2.6L14 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Upload successful; analysing your file</p>
         <div class="try-bar" id="try-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Run progress">
           <div class="try-bar-track"><div class="try-bar-fill"></div></div>
           <span class="try-bar-pct">0%</span>
@@ -1596,6 +1621,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
       </div>
       <div class="try-plan-card" id="try-plan-card" hidden role="region" aria-label="The AI's plan for this file"></div>
       <div class="try-ai-report" id="try-ai-report" hidden role="region" aria-label="The AI-written report" data-fact-exempt="the AI-written report; every figure checked against the engine's results"></div>
+      <div class="try-prev" id="try-prev" hidden role="region" aria-label="Your previous reports" data-fact-exempt="titles, goals and links of reports this browser ran before"></div>
       <div class="try-report" id="try-report" hidden tabindex="-1" role="region" aria-label="Your report" data-fact-exempt="every figure here is computed in your browser by the engine, from your own file"></div>
     </div>
     <noscript><p class="note">This demo needs JavaScript: the engine runs in your browser, so without it nothing can run.</p></noscript>
@@ -1863,7 +1889,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-26 19:10:59 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-26 21:16:07 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-26 12:43:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -4652,10 +4678,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var $ = function (id) { return document.getElementById(id); };
     var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
-      note: $('try-run-note'), report: $('try-report') };
+      note: $('try-run-note'), report: $('try-report'),
+      qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
     var LIM = T.limits();
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
-    var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [] };
+    var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [],
+      aiCharts: [], aiTables: [], shareUrl: '', question: '' };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
       forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
@@ -5064,6 +5092,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
       S.busy = true; el.sample.disabled = true; el.pick.disabled = true;
+      // the question box: typed before the run, sent as the objective the AI plans around
+      S.question = (el.q && el.q.value || '').trim().slice(0, 300);
+      S.objective = S.question;
       getBuffer().then(function (buf) {
         var u8 = new Uint8Array(buf), sn = T.sniff(u8, name);
         if (!sn.ok) return refuse(sn.reason);
@@ -5075,7 +5106,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         }
         if (rows === 0) return refuse('norows');
         if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
-        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = ''; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = [];   // no question box: the AI proposes the goal from the data
+        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = '';   // the question box carries the visitor's typed question as the objective
         el.runName.textContent = name;
         drawStages();
         el.run.hidden = false;
@@ -5167,6 +5198,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       // the distilled results come from the engine worker itself (results_for_ai, packed in the
       // zip): ask it over the postMessage bridge, then POST them to the proxy's /report
       function postIt(pl) {
+        // the engine's charts and tables ride along in the distilled results: the page draws the
+        // real figures at the [CHART:n]/[TABLE:n] markers the report places
+        if (pl && Array.isArray(pl.charts)) S.aiCharts = pl.charts;
+        if (pl && Array.isArray(pl.tables)) S.aiTables = pl.tables;
         fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ objective: S.objective, results: pl }),
@@ -5177,6 +5212,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             if (!j || !j.report) throw new Error('no report');
             S.aiReport = j;
             drawAiReport(j);
+            savePrev(j);
             setStage('report', 'done');
             el.note.textContent = 'Done: the report is below.';
             drawBar();
@@ -5241,6 +5277,16 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         tbl = [];
       };
       String(text || '').split(/\n/).forEach(function (L) {
+        var mk = L.trim().match(/^\[(CHART|TABLE):(\d+)\]$/);
+        if (mk) {
+          close();
+          var idx = Number(mk[2]) - 1;
+          var node = null;
+          if (mk[1] === 'CHART' && S.aiCharts && S.aiCharts[idx]) node = chartFig(S.aiCharts[idx]);
+          if (mk[1] === 'TABLE' && S.aiTables && S.aiTables[idx]) node = tableFig(S.aiTables[idx]);
+          if (node) out.push(node);
+          return;
+        }
         if (/^\|/.test(L)) { close(); tbl.push(L); return; }
         if (tbl.length) flush();
         if (/^##\s/.test(L)) { close(); out.push('<h4>' + esc2(L.replace(/^##\s*/, '')) + '</h4>'); }
@@ -5257,6 +5303,111 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var s = srcs[Number(n) - 1];
         return s && s.link ? ' <a class="cite" href="' + esc2(s.link) + '" target="_blank" rel="noopener">[' + n + ']</a>' : '[' + n + ']';
       });
+    }
+
+    // the engine-drawn figure a [CHART:n] marker becomes (anaChart draws the SVG; the payload
+    // shapes are identical, both rebuilt from the engine's results_for_ai)
+    function chartFig(ch) {
+      var W = Math.max(320, Math.min(720, ((el.planCard && el.planCard.clientWidth) || 680) - 24));
+      var svg = anaChart(ch, W);
+      return '<figure class="ai-rep-figure">' + svg + '<figcaption class="ai-rep-figure-cap">Engine-drawn: ' + esc(ch.title || ch.kind) +
+        '. Every value is computed by the engine from your file.</figcaption></figure>';
+    }
+    // the engine's own analysis table a [TABLE:n] marker becomes (regression coefficients,
+    // correlations, rankings — the numbers the engine computed, not the AI)
+    function tableFig(t) {
+      var h = '<figure class="ai-rep-figure"><table><thead><tr>';
+      (t.cols || []).forEach(function (c) { h += '<th>' + esc(c) + '</th>'; });
+      h += '</tr></thead><tbody>';
+      (t.rows || []).forEach(function (r) {
+        h += '<tr>' + r.map(function (v) { return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>';
+      });
+      return h + '</tbody></table><figcaption class="ai-rep-figure-cap">Engine-computed numbers: ' + esc(t.title || '') + '.</figcaption></figure>';
+    }
+
+    /* ---- the previous-reports gallery: every answered question stays findable, each with its
+       own shareable link (made on demand) and PDF (the same guarded print as the live card) ---- */
+    var PREV_KEY = 'nl_try_reports_v1';
+    function loadPrev() {
+      try { return JSON.parse(localStorage.getItem(PREV_KEY) || '[]'); } catch (e) { return []; }
+    }
+    function storePrev(list) {
+      try { localStorage.setItem(PREV_KEY, JSON.stringify(list.slice(0, 12))); } catch (e) { /* private mode: the gallery just stays empty */ }
+    }
+    function savePrev(j) {
+      if (!j || !j.report) return;
+      var title = String(j.report || '').split(/\n/)[0].slice(0, 160) || 'Report';
+      var goal = (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
+      var entry = { t: Date.now(), title: title, goal: goal.slice(0, 300), file: S.name, model: j.model || '',
+        report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 12), share: S.shareUrl || '',
+        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8) };
+      var list = loadPrev().filter(function (x) { return x && x.t !== entry.t; });
+      list.unshift(entry);
+      storePrev(list);
+      S.prevT = entry.t;
+      drawPrev();
+    }
+    function drawPrev() {
+      if (!el.prev) return;
+      var list = loadPrev();
+      if (!list.length) { el.prev.hidden = true; el.prev.innerHTML = ''; return; }
+      var h = '<h3 class="try-prev-h">Your previous reports</h3><div class="try-prev-list">';
+      list.forEach(function (x, i) {
+        h += '<article class="try-prev-item" data-i="' + i + '">' +
+          '<div class="pv-main"><p class="pv-goal">' + esc(x.goal || x.title) + '</p>' +
+          '<p class="pv-meta">' + esc(x.file || '') + (x.model ? ' · worded by ' + esc(x.model) : '') + ' · ' + new Date(x.t).toLocaleString() + '</p>' +
+          (x.share ? '<p class="pv-link"><a href="' + esc(x.share) + '" target="_blank" rel="noopener">' + esc(x.share) + '</a></p>' : '') +
+          '</div><div class="pv-actions">' +
+          '<button type="button" class="btn btn-ghost btn-sm pv-open">Open</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm pv-share">Shareable link</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm pv-pdf">Download PDF</button>' +
+          '</div></article>';
+      });
+      el.prev.innerHTML = h + '</div><p class="try-prev-empty">Reports and their links live only in this browser (localStorage); a shareable link is the way to send one anywhere.</p>';
+      el.prev.hidden = false;
+      Array.prototype.forEach.call(el.prev.querySelectorAll('.try-prev-item'), function (item) {
+        var x = list[+item.getAttribute('data-i')];
+        if (!x) return;
+        item.querySelector('.pv-open').addEventListener('click', function () { openPrev(x); });
+        item.querySelector('.pv-share').addEventListener('click', function () { sharePrev(x, item); });
+        item.querySelector('.pv-pdf').addEventListener('click', function () { pdfPrev(x); });
+      });
+    }
+    // reopening a saved answer re-renders it into the live AI report card (charts and tables
+    // saved with it), so the PDF button and the share button work on it exactly as on a fresh run
+    function openPrev(x) {
+      S.aiCharts = (x.charts || []).slice(0, 6);
+      S.aiTables = (x.tables || []).slice(0, 8);
+      S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '' };
+      S.shareUrl = x.share || '';
+      S.prevT = x.t;
+      drawAiReport(S.aiReport);
+      goTo(document.getElementById('try-ai-report'), true);
+    }
+    // a share link made for the currently open report (fresh or reopened) is written back to its
+    // gallery entry, so the next open reuses it instead of asking the worker again
+    function persistShare(link) {
+      var list = loadPrev();
+      var t = S.prevT || (S.aiReport && S.aiReport.savedT) || 0;
+      if (!t) return;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].t === t) { list[i].share = link; storePrev(list); drawPrev(); return; }
+      }
+    }
+    function sharePrev(x, item) {
+      var out = document.getElementById('try-share-out');
+      if (!S.aiReport || x.report !== S.aiReport.report) { openPrev(x); }
+      // openPrev re-renders the card; the share button then works on it (S.shareUrl reused)
+      if (S.shareUrl) { if (out) { out.hidden = false; } return; }
+      var b = document.getElementById('try-share');
+      if (b) b.click();
+      else doShare();
+    }
+    function pdfPrev(x) {
+      openPrev(x);
+      var b = document.getElementById('try-pdf');
+      if (b) b.click();
+      else doPdf();
     }
 
     // share: POST /share with the finished report, then show the link
@@ -5276,6 +5427,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
         .then(function (j) {
           S.shareUrl = j.link;
+          persistShare(j.link);
           out.innerHTML = '';
           var a = document.createElement('a');
           a.href = j.link; a.textContent = j.link; a.target = '_blank'; a.rel = 'noopener';
@@ -5748,6 +5900,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         if (more) more.hidden = !!v;
       }
     });
+    // the previous-reports gallery: drawn once on load, updated after every saved answer
+    drawPrev();
   });
 })();
 

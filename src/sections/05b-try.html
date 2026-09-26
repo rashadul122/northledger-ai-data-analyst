@@ -22,6 +22,11 @@
           <p class="note">The sample is a deliberately messy rent and expense ledger for five invented Toronto buildings, made for this demo: no real people or accounts in it.</p>
         </div>
       </div>
+      <div class="try-q-wrap" id="try-q-wrap">
+        <label class="try-q-label" for="try-q"><strong>Ask your question about the data (optional)</strong></label>
+        <input type="text" id="try-q" class="try-q" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. What drives the rent the most, and what does the regression table say about each driver?">
+        <p class="note">Type it before you drop the file: the AI reads the columns, plans the analyses around your question, and the engine computes every number in your browser. Leave it empty and the AI proposes the goal itself; the plan also offers other questions this data can answer, one click each.</p>
+      </div>
       <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.{{r try_ai_note}}</span></p>
       <div class="try-msg" id="try-msg" role="alert" hidden data-fact-exempt="written in your browser from your own file and the engine's answer"></div>
       <div class="try-pd" id="try-pd" hidden data-fact-exempt="column names from your own file"></div>
@@ -30,7 +35,7 @@
           <h3 id="try-run-h">Working on <span id="try-run-name"></span></h3>
           <button type="button" class="btn btn-ghost btn-sm" id="try-cancel">Stop</button>
         </div>
-        <p class="try-uploaded" id="try-uploaded" hidden><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10.5l2.6 2.6L14 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Upload successful — analysing your file</p>
+        <p class="try-uploaded" id="try-uploaded" hidden><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10.5l2.6 2.6L14 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Upload successful; analysing your file</p>
         <div class="try-bar" id="try-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Run progress">
           <div class="try-bar-track"><div class="try-bar-fill"></div></div>
           <span class="try-bar-pct">0%</span>
@@ -40,6 +45,7 @@
       </div>
       <div class="try-plan-card" id="try-plan-card" hidden role="region" aria-label="The AI's plan for this file"></div>
       <div class="try-ai-report" id="try-ai-report" hidden role="region" aria-label="The AI-written report" data-fact-exempt="the AI-written report; every figure checked against the engine's results"></div>
+      <div class="try-prev" id="try-prev" hidden role="region" aria-label="Your previous reports" data-fact-exempt="titles, goals and links of reports this browser ran before"></div>
       <div class="try-report" id="try-report" hidden tabindex="-1" role="region" aria-label="Your report" data-fact-exempt="every figure here is computed in your browser by the engine, from your own file"></div>
     </div>
     <noscript><p class="note">This demo needs JavaScript: the engine runs in your browser, so without it nothing can run.</p></noscript>

@@ -1216,10 +1216,12 @@
     var $ = function (id) { return document.getElementById(id); };
     var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
-      note: $('try-run-note'), report: $('try-report') };
+      note: $('try-run-note'), report: $('try-report'),
+      qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
     var LIM = T.limits();
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
-    var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [] };
+    var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [],
+      aiCharts: [], aiTables: [], shareUrl: '', question: '' };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
       forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
@@ -1628,6 +1630,9 @@
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
       S.busy = true; el.sample.disabled = true; el.pick.disabled = true;
+      // the question box: typed before the run, sent as the objective the AI plans around
+      S.question = (el.q && el.q.value || '').trim().slice(0, 300);
+      S.objective = S.question;
       getBuffer().then(function (buf) {
         var u8 = new Uint8Array(buf), sn = T.sniff(u8, name);
         if (!sn.ok) return refuse(sn.reason);
@@ -1639,7 +1644,7 @@
         }
         if (rows === 0) return refuse('norows');
         if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
-        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = ''; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = [];   // no question box: the AI proposes the goal from the data
+        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = '';   // the question box carries the visitor's typed question as the objective
         el.runName.textContent = name;
         drawStages();
         el.run.hidden = false;
@@ -1731,6 +1736,10 @@
       // the distilled results come from the engine worker itself (results_for_ai, packed in the
       // zip): ask it over the postMessage bridge, then POST them to the proxy's /report
       function postIt(pl) {
+        // the engine's charts and tables ride along in the distilled results: the page draws the
+        // real figures at the [CHART:n]/[TABLE:n] markers the report places
+        if (pl && Array.isArray(pl.charts)) S.aiCharts = pl.charts;
+        if (pl && Array.isArray(pl.tables)) S.aiTables = pl.tables;
         fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ objective: S.objective, results: pl }),
@@ -1741,6 +1750,7 @@
             if (!j || !j.report) throw new Error('no report');
             S.aiReport = j;
             drawAiReport(j);
+            savePrev(j);
             setStage('report', 'done');
             el.note.textContent = 'Done: the report is below.';
             drawBar();
@@ -1805,6 +1815,16 @@
         tbl = [];
       };
       String(text || '').split(/\n/).forEach(function (L) {
+        var mk = L.trim().match(/^\[(CHART|TABLE):(\d+)\]$/);
+        if (mk) {
+          close();
+          var idx = Number(mk[2]) - 1;
+          var node = null;
+          if (mk[1] === 'CHART' && S.aiCharts && S.aiCharts[idx]) node = chartFig(S.aiCharts[idx]);
+          if (mk[1] === 'TABLE' && S.aiTables && S.aiTables[idx]) node = tableFig(S.aiTables[idx]);
+          if (node) out.push(node);
+          return;
+        }
         if (/^\|/.test(L)) { close(); tbl.push(L); return; }
         if (tbl.length) flush();
         if (/^##\s/.test(L)) { close(); out.push('<h4>' + esc2(L.replace(/^##\s*/, '')) + '</h4>'); }
@@ -1821,6 +1841,111 @@
         var s = srcs[Number(n) - 1];
         return s && s.link ? ' <a class="cite" href="' + esc2(s.link) + '" target="_blank" rel="noopener">[' + n + ']</a>' : '[' + n + ']';
       });
+    }
+
+    // the engine-drawn figure a [CHART:n] marker becomes (anaChart draws the SVG; the payload
+    // shapes are identical, both rebuilt from the engine's results_for_ai)
+    function chartFig(ch) {
+      var W = Math.max(320, Math.min(720, ((el.planCard && el.planCard.clientWidth) || 680) - 24));
+      var svg = anaChart(ch, W);
+      return '<figure class="ai-rep-figure">' + svg + '<figcaption class="ai-rep-figure-cap">Engine-drawn: ' + esc(ch.title || ch.kind) +
+        '. Every value is computed by the engine from your file.</figcaption></figure>';
+    }
+    // the engine's own analysis table a [TABLE:n] marker becomes (regression coefficients,
+    // correlations, rankings — the numbers the engine computed, not the AI)
+    function tableFig(t) {
+      var h = '<figure class="ai-rep-figure"><table><thead><tr>';
+      (t.cols || []).forEach(function (c) { h += '<th>' + esc(c) + '</th>'; });
+      h += '</tr></thead><tbody>';
+      (t.rows || []).forEach(function (r) {
+        h += '<tr>' + r.map(function (v) { return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>';
+      });
+      return h + '</tbody></table><figcaption class="ai-rep-figure-cap">Engine-computed numbers: ' + esc(t.title || '') + '.</figcaption></figure>';
+    }
+
+    /* ---- the previous-reports gallery: every answered question stays findable, each with its
+       own shareable link (made on demand) and PDF (the same guarded print as the live card) ---- */
+    var PREV_KEY = 'nl_try_reports_v1';
+    function loadPrev() {
+      try { return JSON.parse(localStorage.getItem(PREV_KEY) || '[]'); } catch (e) { return []; }
+    }
+    function storePrev(list) {
+      try { localStorage.setItem(PREV_KEY, JSON.stringify(list.slice(0, 12))); } catch (e) { /* private mode: the gallery just stays empty */ }
+    }
+    function savePrev(j) {
+      if (!j || !j.report) return;
+      var title = String(j.report || '').split(/\n/)[0].slice(0, 160) || 'Report';
+      var goal = (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
+      var entry = { t: Date.now(), title: title, goal: goal.slice(0, 300), file: S.name, model: j.model || '',
+        report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 12), share: S.shareUrl || '',
+        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8) };
+      var list = loadPrev().filter(function (x) { return x && x.t !== entry.t; });
+      list.unshift(entry);
+      storePrev(list);
+      S.prevT = entry.t;
+      drawPrev();
+    }
+    function drawPrev() {
+      if (!el.prev) return;
+      var list = loadPrev();
+      if (!list.length) { el.prev.hidden = true; el.prev.innerHTML = ''; return; }
+      var h = '<h3 class="try-prev-h">Your previous reports</h3><div class="try-prev-list">';
+      list.forEach(function (x, i) {
+        h += '<article class="try-prev-item" data-i="' + i + '">' +
+          '<div class="pv-main"><p class="pv-goal">' + esc(x.goal || x.title) + '</p>' +
+          '<p class="pv-meta">' + esc(x.file || '') + (x.model ? ' · worded by ' + esc(x.model) : '') + ' · ' + new Date(x.t).toLocaleString() + '</p>' +
+          (x.share ? '<p class="pv-link"><a href="' + esc(x.share) + '" target="_blank" rel="noopener">' + esc(x.share) + '</a></p>' : '') +
+          '</div><div class="pv-actions">' +
+          '<button type="button" class="btn btn-ghost btn-sm pv-open">Open</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm pv-share">Shareable link</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm pv-pdf">Download PDF</button>' +
+          '</div></article>';
+      });
+      el.prev.innerHTML = h + '</div><p class="try-prev-empty">Reports and their links live only in this browser (localStorage); a shareable link is the way to send one anywhere.</p>';
+      el.prev.hidden = false;
+      Array.prototype.forEach.call(el.prev.querySelectorAll('.try-prev-item'), function (item) {
+        var x = list[+item.getAttribute('data-i')];
+        if (!x) return;
+        item.querySelector('.pv-open').addEventListener('click', function () { openPrev(x); });
+        item.querySelector('.pv-share').addEventListener('click', function () { sharePrev(x, item); });
+        item.querySelector('.pv-pdf').addEventListener('click', function () { pdfPrev(x); });
+      });
+    }
+    // reopening a saved answer re-renders it into the live AI report card (charts and tables
+    // saved with it), so the PDF button and the share button work on it exactly as on a fresh run
+    function openPrev(x) {
+      S.aiCharts = (x.charts || []).slice(0, 6);
+      S.aiTables = (x.tables || []).slice(0, 8);
+      S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '' };
+      S.shareUrl = x.share || '';
+      S.prevT = x.t;
+      drawAiReport(S.aiReport);
+      goTo(document.getElementById('try-ai-report'), true);
+    }
+    // a share link made for the currently open report (fresh or reopened) is written back to its
+    // gallery entry, so the next open reuses it instead of asking the worker again
+    function persistShare(link) {
+      var list = loadPrev();
+      var t = S.prevT || (S.aiReport && S.aiReport.savedT) || 0;
+      if (!t) return;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].t === t) { list[i].share = link; storePrev(list); drawPrev(); return; }
+      }
+    }
+    function sharePrev(x, item) {
+      var out = document.getElementById('try-share-out');
+      if (!S.aiReport || x.report !== S.aiReport.report) { openPrev(x); }
+      // openPrev re-renders the card; the share button then works on it (S.shareUrl reused)
+      if (S.shareUrl) { if (out) { out.hidden = false; } return; }
+      var b = document.getElementById('try-share');
+      if (b) b.click();
+      else doShare();
+    }
+    function pdfPrev(x) {
+      openPrev(x);
+      var b = document.getElementById('try-pdf');
+      if (b) b.click();
+      else doPdf();
     }
 
     // share: POST /share with the finished report, then show the link
@@ -1840,6 +1965,7 @@
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
         .then(function (j) {
           S.shareUrl = j.link;
+          persistShare(j.link);
           out.innerHTML = '';
           var a = document.createElement('a');
           a.href = j.link; a.textContent = j.link; a.target = '_blank'; a.rel = 'noopener';
@@ -2312,5 +2438,7 @@
         if (more) more.hidden = !!v;
       }
     });
+    // the previous-reports gallery: drawn once on load, updated after every saved answer
+    drawPrev();
   });
 })();

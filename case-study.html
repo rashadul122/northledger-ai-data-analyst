@@ -1129,6 +1129,26 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-ana h4 { font-size: 1rem; margin: 0 0 4px; }
 .try-ana-key { font-weight: 600; line-height: 1.5; margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--accent); }
 .try-ana-chart { overflow-x: auto; }
+/* the question box: a chat-style input above the drop zone */
+.try-q-wrap { margin: 16px 0 4px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--hairline)); border-radius: 14px; background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.try-q-label { display: block; font-size: .92rem; margin-bottom: 6px; }
+.try-q { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); color: inherit; }
+.try-q:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+.try-q-wrap .note { margin: 6px 0 0; }
+/* engine-drawn figures inside the AI report: a [CHART:n] marker becomes this */
+.ai-rep-figure { margin: 14px 0; padding: 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); overflow-x: auto; }
+.ai-rep-figure-cap { font-size: .8rem; color: var(--muted-foreground, inherit); margin: 4px 2px 0; }
+.ai-rep-figure svg { display: block; max-width: 100%; height: auto; }
+/* the previous-reports gallery: every answered question stays findable */
+.try-prev { margin: 20px 0; }
+.try-prev-h { margin: 0 0 10px; }
+.try-prev-list { display: grid; gap: 10px; }
+.try-prev-item { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); flex-wrap: wrap; }
+.try-prev-item .pv-goal { font-weight: 600; margin: 0 0 2px; }
+.try-prev-item .pv-meta { font-size: .82rem; color: var(--muted-foreground, inherit); margin: 0; }
+.try-prev-item .pv-link { font-size: .82rem; word-break: break-all; }
+.try-prev-item .pv-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.try-prev-empty { font-size: .9rem; color: var(--muted-foreground, inherit); margin: 4px 0; }
 .try-ana-chart svg { max-width: 100%; height: auto; }
 .try-ana details { margin-top: 6px; }
 
@@ -1148,7 +1168,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-26 19:10:59 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-26 21:16:07 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

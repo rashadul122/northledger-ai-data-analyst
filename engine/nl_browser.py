@@ -3027,10 +3027,12 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         findings.append(d)
 
     analyses = []
+    charts = []
+    tables = []
     for a in _cap((rep.get("ai_analyses") or {}).get("items") or [], 8):
         if not isinstance(a, dict):
             continue
-        d = {"title": str(a.get("title") or "")[:160],
+        d: Dict[str, Any] = {"title": str(a.get("title") or "")[:160],
              "sentence": str(a.get("sentence") or "")[:700],
              "method": str(a.get("method") or "")[:300]}
         t = a.get("table") or {}
@@ -3040,6 +3042,49 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             d["table"] = {"cols": cols,
                           "rows": [[str(v)[:80] for v in r][:len(cols)] for r in rows[:12]]}
         analyses.append(d)
+        # the chart and the numbers behind the report: the writer may place a chart marker
+        # [CHART:n] (the n-th chart here) and a table marker [TABLE:n] beside the finding it
+        # belongs to; the page and the shared viewer draw both from this list, engine-computed
+        ch = a.get("chart")
+        if isinstance(ch, dict) and len(charts) < 6:
+            c2: Dict[str, Any] = {"kind": str(ch.get("kind") or "")[:10],
+                  "title": str(a.get("title") or "")[:160]}
+            for k in ("x_name", "y_name", "x_label", "unit"):
+                if ch.get(k):
+                    c2[k] = str(ch[k])[:60]
+            if isinstance(ch.get("series"), list):
+                ser = []
+                for s in ch["series"][:4]:
+                    if isinstance(s, dict) and isinstance(s.get("x"), list) and isinstance(s.get("y"), list):
+                        n = min(len(s["x"]), len(s["y"]), 60)
+                        ser.append({"name": str(s.get("name") or s.get("label") or "")[:80],
+                                    "x": [float(v) if isinstance(v, (int, float)) else 0.0 for v in s["x"][:n]],
+                                    "y": [float(v) if isinstance(v, (int, float)) else 0.0 for v in s["y"][:n]]})
+                    elif isinstance(s, dict) and isinstance(s.get("value"), (int, float)):
+                        ser.append({"label": str(s.get("label") or "")[:80], "value": float(s["value"])})
+                if ser:
+                    c2["series"] = ser
+            if isinstance(ch.get("points"), list):
+                pts = []
+                for p in ch["points"][:120]:
+                    if isinstance(p, (list, tuple)) and len(p) >= 2 and all(isinstance(v, (int, float)) for v in p[:2]):
+                        pts.append([float(p[0]), float(p[1])])
+                if pts:
+                    c2["points"] = pts
+            if isinstance(ch.get("fits"), list):
+                fits = []
+                for f in ch["fits"][:4]:
+                    if isinstance(f, dict) and all(isinstance(f.get(k), (int, float)) for k in ("x0", "y0", "x1", "y1")):
+                        fits.append({"name": str(f.get("name") or "")[:80], "recent": bool(f.get("recent")),
+                                     "x0": float(f["x0"]), "y0": float(f["y0"]), "x1": float(f["x1"]), "y1": float(f["y1"])})
+                if fits:
+                    c2["fits"] = fits
+            if c2.get("series") or c2.get("points"):
+                charts.append(c2)
+        # the econometrics numbers the writer may quote from the analysis tables: every figure in a
+        # table row is an engine figure, so it must be in the payload for the guard to accept
+        if d.get("table"):
+            tables.append({"title": d["title"], "cols": d["table"]["cols"], "rows": d["table"]["rows"]})
 
     clean = rep.get("cleaning") or {}
     health = rep.get("health") or {}
@@ -3088,6 +3133,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         "plan_refused": [str(x)[:160] for x in _cap(plan.get("refused") or [], 6)],
         "findings": findings,
         "analyses": analyses,
+        "charts": charts,
+        "tables": tables,
         "analyses_refused": [str(x)[:160] for x in _cap((rep.get("ai_analyses") or {}).get("refused") or [], 6)],
         "story": story,
         "forecast": fc,

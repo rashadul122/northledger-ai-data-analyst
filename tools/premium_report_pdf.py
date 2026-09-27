@@ -44,11 +44,25 @@ r2  = json.load(open(OUT + "/report2.json"))
 ai  = json.load(open(OUT + "/ai-report-v2.json"))
 plan = json.load(open(OUT + "/plan.json"))
 charts = {c["id"]: c for c in r2["charts"]}
-fan = charts["fan.total_amount"]["data"]
-season = charts["season.amount"]["data"]
-models = charts["models.total_amount"]["data"]["rows"]
-kpi = charts["kpi"]["data"]["tiles"]
-ai_items = r2["ai_analyses"]["items"]
+def by_kind(kind, want=None):
+    """first chart of this engine type, preferring an id whose key word matches the primary measure."""
+    cands = [c for c in r2["charts"] if c["type"] == kind]
+    if not cands:
+        return None
+    if want:
+        for c in cands:
+            if want in c["id"]:
+                return c
+    return cands[0]
+primary_name = (r2.get("primary_metric") or {}).get("claim_key") or "amount"
+fan_c = by_kind("fan") or {"data": {"history": [], "forward": []}}
+fan = fan_c["data"]
+season_c = by_kind("heatmap", "season." + primary_name) or by_kind("heatmap", "season.") or {"data": {}}
+season = season_c.get("data") or {}
+models_c = by_kind("table", "models.")
+models = models_c["data"]["rows"] if models_c else []
+kpi = (by_kind("kpi_tiles") or {"data": {"tiles": []}})["data"]["tiles"]
+ai_items = (r2.get("ai_analyses") or {}).get("items", [])
 by_type = {}
 for it in ai_items:
     by_type.setdefault(it["type"], []).append(it)
@@ -84,12 +98,15 @@ ax.set_xlim(-1, len(hist) + len(fwd))
 savefig(fig, "arc.png")
 
 # ---------- 2) month x year heat map (average amount) ----------
-years = [str(y) for y in season["years"]]; months = season["months"]
-vals = np.array(season["values"], dtype=float)
-vals[vals == 0] = np.nan
+HAS_SEASON = bool(season.get("years"))
+if HAS_SEASON:
+    years = [str(y) for y in season["years"]]; months = season["months"]
+    vals = np.array(season["values"], dtype=float)
+    vals[vals == 0] = np.nan
 from matplotlib.colors import LinearSegmentedColormap
 cmap = LinearSegmentedColormap.from_list("nl", ["#F7F4EC", "#DCC9A4", GOLD, "#6E5836", INK])
-fig, ax = plt.subplots(figsize=(7.4, 3.6))
+if HAS_SEASON:
+  fig, ax = plt.subplots(figsize=(7.4, 3.6))
 masked = np.ma.masked_invalid(vals)
 im = ax.imshow(masked, cmap=cmap, aspect="auto")
 ax.set_xticks(range(len(months)))
@@ -106,28 +123,37 @@ for s in ax.spines.values(): s.set_visible(False)
 cb = fig.colorbar(im, ax=ax, shrink=0.82, pad=0.015)
 cb.outline.set_visible(False); cb.ax.tick_params(labelsize=8, length=0)
 cb.set_label("Average amount per row ($)", fontsize=8.5, color=MUTED)
-savefig(fig, "heat.png")
+if HAS_SEASON: savefig(fig, "heat.png")
 
 # ---------- 3) stores: latest-year amount with change ----------
-loc = by_type["rank"][0]
-lb = loc["chart"]["series"]
-labels_l = [d["label"] for d in lb]; vals_l = [d["value"] for d in lb]
-chg = {"Harbourfront": "+15.9%", "Danforth Avenue": "\u22121.52%", "Kensington Market": "\u221211.3%"}
-fig, ax = plt.subplots(figsize=(9.6, 2.7))
-bars = ax.barh(range(len(labels_l)), vals_l, height=0.62, color=[GOLD, "#C9BCA4", "#8B8794"])
-for i, (v, l) in enumerate(zip(vals_l, labels_l)):
-    ax.text(v + 14, i, f"{v:,.0f}   ({chg.get(l,'')})", va="center", fontsize=9.5, color=INK)
-ax.set_yticks(range(len(labels_l))); ax.set_yticklabels(labels_l, fontsize=10)
-ax.invert_yaxis(); ax.set_xlim(0, max(vals_l) * 1.30)
-ax.set_xticks([]); ax.grid(False)
-for s in ["left", "top", "right", "bottom"]: ax.spines[s].set_visible(False)
-savefig(fig, "stores.png")
+rank_items = by_type.get("rank") or []
+loc = rank_items[0] if rank_items else None
+if loc and loc.get("chart"):
+    lb = loc["chart"]["series"]
+    labels_l = [d["label"] for d in lb]; vals_l = [d["value"] for d in lb]
+    chg = {}
+    if loc.get("table"):
+        for r in loc["table"].get("rows", []):
+            chg[r[0]] = r[-1]
+    fig, ax = plt.subplots(figsize=(9.6, 2.7))
+    ax.barh(range(len(labels_l)), vals_l, height=0.62,
+            color=[GOLD, "#C9BCA4", "#8B8794", "#B5A98C", "#9A958F", "#8B8794"][:len(labels_l)])
+    for i, (v, l) in enumerate(zip(vals_l, labels_l)):
+        tag = f"   ({chg[l]})" if chg.get(l) else ""
+        ax.text(v * 1.01, i, f"{v:,.0f}{tag}", va="center", fontsize=9.5, color=INK)
+    ax.set_yticks(range(len(labels_l))); ax.set_yticklabels(labels_l, fontsize=10)
+    ax.invert_yaxis(); ax.set_xlim(0, max(vals_l) * 1.34)
+    ax.set_xticks([]); ax.grid(False)
+    for s in ["left", "top", "right", "bottom"]: ax.spines[s].set_visible(False)
+    savefig(fig, "stores.png")
 
 # ---------- 4) the menu: amount and units by category ----------
-am = next(i for i in by_type["compare"] if i["sentence"].startswith("By product_category, the highest average amount"))
-un = next(i for i in by_type["compare"] if i["sentence"].startswith("By product_category, the highest average units"))
+compares = by_type.get("compare") or []
+am = compares[0] if len(compares) > 0 else None
+un = compares[1] if len(compares) > 1 else None
 fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.0))
-for ax, item, unit in [(axes[0], am, "$ per row"), (axes[1], un, "units per row")]:
+for ax, item, unit in [(axes[0], am, "first measure"), (axes[1], un, "second measure")]:
+    if not item: ax.axis("off"); continue
     s = item["chart"]["series"]
     names = [d["label"].replace("_", " ") for d in s]; v = [d["value"] for d in s]
     ax.barh(range(len(names)), v, height=0.6, color=GOLD if ax is axes[0] else "#4A4453")
@@ -141,27 +167,31 @@ for ax, item, unit in [(axes[0], am, "$ per row"), (axes[1], un, "units per row"
 savefig(fig, "menu.png")
 
 # ---------- 5) the typical sale: distribution ----------
-dist = by_type["distribution"][0]["chart"]["series"]
+dist_item = (by_type.get("distribution") or [None])[0]
+dist = dist_item["chart"]["series"] if dist_item and dist_item.get("chart") else []
 bins = [d["label"] for d in dist]; counts = [d["value"] for d in dist]
-fig, ax = plt.subplots(figsize=(9.6, 2.9))
-ax.bar(range(len(bins)), counts, width=0.82, color=GOLD)
-for i, c in enumerate(counts):
-    if c > 0: ax.text(i, c + max(counts)*0.012, f"{c:,}", ha="center", fontsize=7.4, color=MUTED)
-ax.set_xticks(range(len(bins))); ax.set_xticklabels(bins, rotation=38, ha="right", fontsize=8)
-ax.set_ylabel("Rows"); ax.set_ylim(0, max(counts) * 1.14)
-ax.grid(axis="x", visible=False)
-savefig(fig, "dist.png")
+if counts:
+    fig, ax = plt.subplots(figsize=(9.6, 2.9))
+    ax.bar(range(len(bins)), counts, width=0.82, color=GOLD)
+    for i, c in enumerate(counts):
+        if c > 0: ax.text(i, c + max(counts)*0.012, f"{c:,}", ha="center", fontsize=7.4, color=MUTED)
+    ax.set_xticks(range(len(bins))); ax.set_xticklabels(bins, rotation=38, ha="right", fontsize=8)
+    ax.set_ylabel("Rows"); ax.set_ylim(0, max(counts) * 1.14)
+    ax.grid(axis="x", visible=False)
+    savefig(fig, "dist.png")
 
 # ---------- 6) price vs volume scatter ----------
-rel = by_type["relationship"][0]["chart"]
-pts = np.array(rel["points"])
-fig, ax = plt.subplots(figsize=(6.4, 3.6))
-ax.scatter(pts[:, 0], pts[:, 1], s=14, color=GOLD, alpha=0.5, lw=0)
-z = np.polyfit(pts[:, 0], pts[:, 1], 1)
-xs = np.linspace(pts[:, 0].min(), pts[:, 0].max(), 50)
-ax.plot(xs, np.polyval(z, xs), color=INK, lw=1.2, ls=(0, (4, 3)))
-ax.set_xlabel("unit_price ($)", fontsize=9); ax.set_ylabel("units", fontsize=9)
-savefig(fig, "scatter.png")
+rel_item = (by_type.get("relationship") or [None])[0]
+rel = rel_item.get("chart") if rel_item else None
+pts = np.array(rel["points"]) if rel and rel.get("points") else np.array([])
+if len(pts):
+    fig, ax = plt.subplots(figsize=(6.4, 3.6))
+    ax.scatter(pts[:, 0], pts[:, 1], s=14, color=GOLD, alpha=0.5, lw=0)
+    z = np.polyfit(pts[:, 0], pts[:, 1], 1)
+    xs = np.linspace(pts[:, 0].min(), pts[:, 0].max(), 50)
+    ax.plot(xs, np.polyval(z, xs), color=INK, lw=1.2, ls=(0, (4, 3)))
+    ax.set_xlabel(rel.get("x_name", "x"), fontsize=9); ax.set_ylabel(rel.get("y_name", "y"), fontsize=9)
+    savefig(fig, "scatter.png")
 
 # ---------- 7) forecast methods table chart (data only; rendered as PDF table) ----------
 for m in models:
@@ -314,11 +344,21 @@ pdf.cell(0, 6, "A U T O M A T E D   A N A L Y S I S", new_x="LMARGIN", new_y="NE
 pdf.set_y(108)
 pdf.set_font("Georgia", "B", 30)
 pdf.set_text_color(*hexrgb(INK))
-pdf.cell(0, 13, "Northside Coffee", new_x="LMARGIN", new_y="NEXT", align="C")
+COVER_TITLE = r2["input"]["name"].rsplit(".", 1)[0].replace("-", " ").replace("_", " ").title()
+# shrink a long title so the cover stays one line, two at most
+if len(COVER_TITLE) > 34:
+    words = COVER_TITLE.split()
+    COVER_TITLE = " ".join(words[:5]) + (" \u2026" if len(words) > 5 else "")
+pdf.set_font("Georgia", "B", 30 if len(COVER_TITLE) <= 26 else 24)
+pdf.cell(0, 13, COVER_TITLE, new_x="LMARGIN", new_y="NEXT", align="C")
 pdf.ln(2)
 pdf.set_font("Georgia", "", 13)
 pdf.set_text_color(*hexrgb(MUTED))
-pdf.cell(0, 7, "Sales performance and outlook \u00b7 2022\u20132026", new_x="LMARGIN", new_y="NEXT", align="C")
+_years = ""
+_hm = [h.get("month") for h in (fan.get("history") or []) if h.get("month")]
+if _hm:
+    _years = f" \u00b7 {_hm[0][:4]}\u2013{_hm[-1][:4]}"
+pdf.cell(0, 7, ("Data analysis and outlook" + _years), new_x="LMARGIN", new_y="NEXT", align="C")
 pdf.ln(3)
 pdf.set_draw_color(*hexrgb(GOLD)); pdf.set_line_width(0.5)
 pdf.line(80, pdf.get_y(), pdf.w - 80, pdf.get_y())
@@ -327,11 +367,13 @@ pdf.set_font("Georgia", "I", 9.6)
 pdf.set_text_color(*hexrgb(MUTED))
 pdf.multi_cell(0, 5.2, plan["goal"], new_x="LMARGIN", new_y="NEXT", align="C")
 
+cl_stats = r2["cleaning"]
+_next_fc = (fan.get("forward") or [{}])[0]
 stats = [
-    ("26,306", "rows analysed"),
-    ("26,287", "clean rows"),
-    ("75 / 100", "data health"),
-    ("79,801", "Sep 2026 forecast ($)\u00b9"),
+    (f"{cl_stats['rows_in']:,}", "rows analysed"),
+    (f"{cl_stats['rows_clean']:,}", "clean rows"),
+    (f"{r2['health']['score']:.0f} / 100", "data health"),
+    (f"{_next_fc.get('value', 0):,.0f}", (_next_fc.get("month") or "next") + " forecast\u00b9"),
 ]
 pdf.set_y(-74)
 pdf.set_draw_color(*hexrgb("#D8D2C4")); pdf.set_line_width(0.3)
@@ -351,10 +393,11 @@ for i, (v, l) in enumerate(stats):
 pdf.set_y(-46)
 pdf.set_font("Georgia", "", 8.6)
 pdf.set_text_color(*hexrgb(MUTED))
+_lohi = f"\u00b9 80% range {_next_fc.get('lo',0):,.0f}\u2013{_next_fc.get('hi',0):,.0f}." if _next_fc else ""
 pdf.multi_cell(0, 4.8,
     "Every figure in this report was computed by the NorthLedger engine from the file "
-    "northside-coffee-sales-2022-2026.csv; none was written by the AI. \u00b9 80% range 78,037\u201381,925. "
-    "Written 26 September 2026 \u00b7 engine + AI report by deepseek-flash, guard-checked.",
+    + r2["input"]["name"] + "; none was written by the AI. " + _lohi +
+    " Written 26 September 2026 \u00b7 engine + AI report by " + ai.get("model", "deepseek") + ", guard-checked.",
     new_x="LMARGIN", new_y="NEXT", align="C")
 
 # ---------------- parse the AI report into numbered sections (robust to wording) ----------------
@@ -417,12 +460,12 @@ for i, t in enumerate(tiles):
     pdf.set_text_color(*hexrgb(INK))
     v = t["value"]
     label = t["claim"]
-    if t["unit"] == "pct":
+    if t.get("unit") == "pct":
         vs = f"{v:+.1f}%"
-    elif v > 999:
+    elif abs(v) >= 1000:
         vs = f"{v:,.0f}"
     else:
-        vs = f"{v:,.0f}"
+        vs = f"{v:,.2f}".rstrip("0").rstrip(".")
     pdf.cell(tile_w - 8, 8, vs, align="C", new_x="LMARGIN", new_y="TOP")
     pdf.set_xy(x + 4, y0 + 13)
     pdf.set_font("Georgia", "", 8.2)
@@ -456,25 +499,27 @@ table(tbl_rows, widths=[W*0.34, W*0.22, W*0.22, W*0.22])
 # ---------------- 03 SEASON ----------------
 pdf.add_page()
 h2("03", "The seasonal shape")
-peak = np.nanmax(vals); py, pm = np.unravel_index(np.nanargmax(vals), vals.shape)
-trough = np.nanmin(vals); ty, tm = np.unravel_index(np.nanargmin(vals), vals.shape)
-para(f"Average amount per row, by month and year. The engine's matrix shows the summer peak in "
-     f"month {months[int(pm)]} of {years[int(py)]} (average {peak:,.0f}) against the winter trough of "
-     f"{trough:,.0f} in month {months[int(tm)]} of {years[int(ty)]} \u2014 a seasonal swing the forecast carries into its "
-     f"month-of-year effects. 2022 begins in September and 2026 stops at August: the file's own coverage, "
-     f"not missing data.")
+if HAS_SEASON:
+    peak = np.nanmax(vals); py, pm = np.unravel_index(np.nanargmax(vals), vals.shape)
+    trough = np.nanmin(vals); ty, tm = np.unravel_index(np.nanargmin(vals), vals.shape)
+    para(f"{season_c['title']}. The engine's matrix shows the peak in "
+         f"month {months[int(pm)]} of {years[int(py)]} (average {peak:,.0f}) against the trough of "
+         f"{trough:,.0f} in month {months[int(tm)]} of {years[int(ty)]} \u2014 the seasonal shape the forecast "
+         f"carries as month-of-year effects. Any partial first and last year is the file's own coverage, "
+         f"not missing data.")
 img("heat.png")
-caption("Average amount by month (J\u2013D) and year. Darker = higher. Calendar-month columns are directly comparable.")
+if HAS_SEASON:
+    caption(season_c['title'] + " \u2014 darker = higher. Calendar-month columns are directly comparable across years.")
 render_sec("6")
-fwd_rows = [["Month", "Amount ($)", "80% low", "80% high", "Units", "80% range"]]
-units_fwd = r2["forecast"].get("series") or None
-for p in fwd:
-    fwd_rows.append([p["month"], f"{p['value']:,.0f}", f"{p['lo']:,.0f}", f"{p['hi']:,.0f}", "", ""])
-table(fwd_rows, widths=[W*0.14, W*0.19, W*0.17, W*0.17, W*0.15, W*0.18])
+if fan.get("forward"):
+    fwd_rows = [["Month", "Forecast", "80% low", "80% high"]]
+    for p in fan["forward"]:
+        fwd_rows.append([p["month"], f"{p['value']:,.0f}", f"{p['lo']:,.0f}", f"{p['hi']:,.0f}"])
+    table(fwd_rows, widths=[W*0.18, W*0.28, W*0.27, W*0.27])
 
 # ---------------- 04 STORES ----------------
 pdf.add_page()
-h2("04", "The stores")
+h2("04", "The entities: " + (rank_items[0]["title"].split(" in ")[-1].split(" by ")[-1] if rank_items else "segments"))
 render_sec("3")
 img("stores.png")
 caption("Total amount in 2026 by location, with each store's change over the 10 months before (engine's rank analysis).")
@@ -485,7 +530,7 @@ table(loc_tbl, widths=[W*0.34, W*0.27, W*0.18, W*0.21])
 
 # ---------------- 05 MENU ----------------
 pdf.add_page()
-h2("05", "The menu")
+h2("05", "The segments")
 render_sec("4")
 img("menu.png")
 caption("Left: average amount per row by category. Right: average units per row \u2014 the value/volume split the plan asked for.")
@@ -500,11 +545,22 @@ h2("06", "The typical sale, and price versus volume")
 render_sec("5")
 img("dist.png")
 caption("Rows by amount bin; the engine's distribution analysis (26,296 values).")
-rel_sent = rel and by_type["relationship"][0]["sentence"]
-if rel_sent: para(rel_sent)
+if rel_item and rel_item.get("sentence"): para(rel_item["sentence"])
 img("scatter.png", w=120)
 caption("unit_price against units across the engine's sample. The dashed line is the model's own fit, drawn for the eye; "
         "the association and its grade come from the engine's Spearman test.")
+
+# the plan's predict analysis (regression), when the engine ran one: the honest-driver table
+pred_items = by_type.get("predict") or []
+if pred_items:
+    pred = pred_items[0]
+    pdf.ln(2)
+    para(pred.get("sentence", ""))
+    if pred.get("table") and pred["table"].get("rows"):
+        prow = [["Driver", "R\u00b2 lost without it", "Effect"]]
+        for r in pred["table"]["rows"]:
+            prow.append([str(x) for x in r])
+        table(prow, widths=[W*0.3, W*0.3, W*0.4], size=8.2)
 
 # ---------------- 07 HOW IT WAS CHECKED ----------------
 pdf.add_page()

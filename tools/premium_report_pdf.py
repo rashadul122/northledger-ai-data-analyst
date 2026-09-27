@@ -127,7 +127,12 @@ if HAS_SEASON: savefig(fig, "heat.png")
 
 # ---------- 3) stores: latest-year amount with change ----------
 rank_items = by_type.get("rank") or []
+engine_ranked = [c for c in r2["charts"] if c["type"] == "ranked_bars" and (c.get("data") or {}).get("bars")]
 loc = rank_items[0] if rank_items else None
+if not loc and engine_ranked:
+    er = engine_ranked[0]["data"]["bars"]
+    loc = {"chart": {"series": [{"label": b["label"], "value": b["rows"]} for b in er]},
+           "title": engine_ranked[0]["title"], "table": None}
 if loc and loc.get("chart"):
     lb = loc["chart"]["series"]
     labels_l = [d["label"] for d in lb]; vals_l = [d["value"] for d in lb]
@@ -151,6 +156,18 @@ if loc and loc.get("chart"):
 compares = by_type.get("compare") or []
 am = compares[0] if len(compares) > 0 else None
 un = compares[1] if len(compares) > 1 else None
+MENU_ITEMS = [am, un]
+if not any(MENU_ITEMS):
+    # no plan compares (a qualitative file): the engine's own ranked category bars carry the story.
+    # use the two richest ranked columns not already drawn as the entities chart.
+    rest = [c for c in engine_ranked[1:]] if (not rank_items and engine_ranked) else engine_ranked
+    rest = sorted(rest, key=lambda c: len(c["data"]["bars"]), reverse=True)[:2]
+    def _fake(c):
+        return {"chart": {"series": [{"label": b["label"], "value": b["rows"]} for b in c["data"]["bars"]]},
+                "title": c["title"], "sentence": c["title"] + ".", "table": None}
+    MENU_ITEMS = [_fake(c) for c in rest]
+    am, un = MENU_ITEMS[0] if MENU_ITEMS else None, MENU_ITEMS[1] if len(MENU_ITEMS) > 1 else None
+MENU_SAVE = bool(am or un)
 fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.0))
 for ax, item, unit in [(axes[0], am, "first measure"), (axes[1], un, "second measure")]:
     if not item: ax.axis("off"); continue
@@ -164,7 +181,7 @@ for ax, item, unit in [(axes[0], am, "first measure"), (axes[1], un, "second mea
     ax.set_xlim(0, max(v) * 1.22)
     for sp in ax.spines.values(): sp.set_visible(False)
     ax.set_title("Average " + unit, fontsize=10, color=MUTED, loc="left", pad=8)
-savefig(fig, "menu.png")
+if MENU_SAVE: savefig(fig, "menu.png")
 
 # ---------- 5) the typical sale: distribution ----------
 dist_item = (by_type.get("distribution") or [None])[0]
@@ -523,21 +540,40 @@ h2("04", "The entities: " + (rank_items[0]["title"].split(" in ")[-1].split(" by
 render_sec("3")
 img("stores.png")
 caption("Total amount in 2026 by location, with each store's change over the 10 months before (engine's rank analysis).")
-loc_tbl = [["Location", "Amount 2026 ($)", "Share", "Change"]]
-for r in loc["table"]["rows"]:
-    loc_tbl.append(r)
-table(loc_tbl, widths=[W*0.34, W*0.27, W*0.18, W*0.21])
+if loc.get("table") and loc["table"].get("rows"):
+    hdr = ["Segment", "Measure", "Share", "Change"] if loc["table"].get("cols") and "cost" not in " ".join(loc["table"].get("cols", [])).lower() else ["Location", "Amount 2026 ($)", "Share", "Change"]
+    loc_tbl = [hdr]
+    for r in loc["table"]["rows"]:
+        loc_tbl.append(r)
+    table(loc_tbl, widths=[W*0.34, W*0.27, W*0.18, W*0.21])
 
 # ---------------- 05 MENU ----------------
 pdf.add_page()
 h2("05", "The segments")
 render_sec("4")
+if not by_type.get("compare") and engine_ranked:
+    # qualitative file: the engine's own category rankings speak here
+    for c in sorted(engine_ranked, key=lambda x: len(x["data"]["bars"]), reverse=True)[:2]:
+        bs = c["data"]["bars"]
+        tot = c["data"].get("total") or sum(b["rows"] for b in bs)
+        top = bs[0]
+        para(f"{c['title']}: {top['label']} carries the largest share at {top['share_pct']:.1f}% of rows "
+             f"({top['rows']:,} of {tot:,}); " +
+             ", ".join(f"{b['label']} {b['share_pct']:.1f}%" for b in bs[1:4]) + " follow.")
 img("menu.png")
 caption("Left: average amount per row by category. Right: average units per row \u2014 the value/volume split the plan asked for.")
-am_tbl = [["Category", "Rows", "Average ($)", "95% range", "Median"]]
-for r in am["table"]["rows"]:
-    am_tbl.append(r)
-table(am_tbl, widths=[W*0.26, W*0.14, W*0.19, W*0.24, W*0.17])
+if am and am.get("table") and am["table"].get("rows"):
+    am_tbl = [["Category", "Rows", "Average ($)", "95% range", "Median"]]
+    for r in am["table"]["rows"]:
+        am_tbl.append(r)
+    table(am_tbl, widths=[W*0.26, W*0.14, W*0.19, W*0.24, W*0.17])
+elif am and am.get("chart"):
+    # a ranked-bars-only analysis (no table): list the bars as a share table
+    am_tbl = [["Segment", "Rows", "Share"]]
+    for d in am["chart"]["series"]:
+        tot = sum(x["value"] for x in am["chart"]["series"])
+        am_tbl.append([d["label"], f"{d['value']:,.0f}", f"{d['value']/tot*100:.1f}%"])
+    table(am_tbl, widths=[W*0.5, W*0.25, W*0.25])
 
 # ---------------- 06 TYPICAL SALE ----------------
 pdf.add_page()

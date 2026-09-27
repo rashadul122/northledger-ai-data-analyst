@@ -305,7 +305,7 @@ def table(rows, aligns=None, header=True, widths=None, size=8.8):
             pdf.set_font("Georgia", "", size)
             pdf.set_text_color(*hexrgb(INK))
         y0 = pdf.get_y()
-        if y0 > 262: pdf.add_page()
+        if y0 > 250: pdf.add_page()   # audit 27 Sep: a row could land 6pt above the footer rule
         for ci, c in enumerate(r[:ncol]):
             pdf.cell(widths[ci], 5.8, str(c), border=0, align=aligns[ci],
                      new_x="RIGHT", new_y="TOP")
@@ -362,10 +362,14 @@ pdf.set_y(108)
 pdf.set_font("Georgia", "B", 30)
 pdf.set_text_color(*hexrgb(INK))
 COVER_TITLE = r2["input"]["name"].rsplit(".", 1)[0].replace("-", " ").replace("_", " ").title()
-# shrink a long title so the cover stays one line, two at most
+# shrink a long title so the cover stays one line, two at most; never leave a dangling
+# year or date fragment at the cut (audit 27 Sep: "Metroline Facilities Work Orders 2020 \u2026")
 if len(COVER_TITLE) > 34:
     words = COVER_TITLE.split()
-    COVER_TITLE = " ".join(words[:5]) + (" \u2026" if len(words) > 5 else "")
+    CUT = 5
+    while CUT > 1 and (words[CUT - 1][:1].isdigit() or len(words[CUT - 1]) <= 2):
+        CUT -= 1
+    COVER_TITLE = " ".join(words[:CUT]) + (" \u2026" if len(words) > CUT else "")
 pdf.set_font("Georgia", "B", 30 if len(COVER_TITLE) <= 26 else 24)
 pdf.cell(0, 13, COVER_TITLE, new_x="LMARGIN", new_y="NEXT", align="C")
 pdf.ln(2)

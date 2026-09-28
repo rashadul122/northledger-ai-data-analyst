@@ -71,6 +71,46 @@ async function boot(id) {
 }
 
 // one engine run; `show` lists the stages this phase announces as they run
+// Excel -> CSV in the Pyodide runtime. openpyxl loads on first use; a book with several sheets
+// uses the sheet that holds the most rows. Numbers keep their plain str() form (no forced
+// thousands separators), dates become ISO text, and empty cells stay empty.
+// Excel -> CSV in the Pyodide runtime. openpyxl loads lazily on first use, from the same Pyodide
+// CDN as numpy and pandas. Multi-sheet books: the sheet with the most data rows is read; the page
+// can say which sheet was used. Dates become ISO text; empty cells stay empty.
+var xlsxBooted = null;
+function xlsxToCsv(bytes, name) {
+  if (!xlsxBooted) xlsxBooted = py.loadPackage(['openpyxl'], { messageCallback: function () {}, errorCallback: function () {} });
+  var code = [
+    'import io, csv, json',
+    'from openpyxl import load_workbook',
+    'def _nl_xlsx(data):',
+    '    wb = load_workbook(io.BytesIO(bytes(data)), read_only=True, data_only=True)',
+    '    best, best_n, names = None, -1, []',
+    '    for ws in wb.worksheets:',
+    '        names.append(ws.title)',
+    '        n = 0',
+    '        for row in ws.iter_rows(values_only=True):',
+    '            if any(c is not None and str(c).strip() for c in row): n += 1',
+    '        if n > best_n: best, best_n = ws, n',
+    '    if best is None: return json.dumps({"error": "The workbook has no data rows."})',
+    '    buf = io.StringIO()',
+    '    w = csv.writer(buf, lineterminator="\n")',
+    '    for row in best.iter_rows(values_only=True):',
+    '        w.writerow(["" if c is None else (c.isoformat() if hasattr(c, "isoformat") else c) for c in row])',
+    '    return json.dumps({"csv": buf.getvalue(), "sheet": best.title, "sheets": names[:12]})',
+    'r = _nl_xlsx(NL_DATA)',
+    'r',
+  ].join('\n');
+  return Promise.resolve(xlsxBooted).then(function () {
+    var fut = py.runPython(code, { globals: py.toPy({ NL_DATA: Array.from(bytes) }) });
+    return Promise.resolve(fut);
+  }).then(function (r) {
+    var parsed = JSON.parse(String(r));
+    if (parsed.error) throw new Error(parsed.error);
+    return parsed;
+  });
+}
+
 function engine(id, options, decisions, show) {
   var fn = nl.run_json, args = [file.bytes, String(options.name || file.name), String(options.objective || ''),
     JSON.stringify(decisions || {}), options.as_of ? String(options.as_of) : null];
@@ -97,6 +137,24 @@ function timesOf(report, stages, id) {
 async function onScan(m) {
   await boot(m.id);
   file = { name: m.name, bytes: new Uint8Array(m.buffer) };
+  // Excel in (owner's decision, 28 Sep 2026): .xlsx/.xlsm sheets the visitor drops are converted to
+  // CSV inside this tab before the engine reads them — the engine still receives CSV text, so its
+  // receipts and its pack never change. openpyxl is loaded lazily, only when an Excel file arrives,
+  // from the same Pyodide CDN as numpy and pandas. Multi-sheet books: the sheet with the most data
+  // rows is read (a plain note rides back so the page can say which sheet was used).
+  var nm = String(m.name || '').toLowerCase();
+  if (/\.(xlsx|xlsm)$/.test(nm)) {
+    try {
+      var converted = await xlsxToCsv(file.bytes, nm);
+      file = { name: String(m.name || 'sheet').replace(/\.(xlsx|xlsm)$/i, '') + '.csv',
+        bytes: new TextEncoder().encode(converted.csv),
+        excel: { sheet: converted.sheet, sheets: converted.sheets } };
+      m = Object.assign({}, m, { name: file.name });
+    } catch (e) {
+      fail(m.id, 'engine', (e && e.message) || String(e));
+      return;
+    }
+  }
   first = null;
   var report = engine(m.id, m.options || {}, {}, BEFORE);
   if (!report || !report.ok) {
@@ -115,7 +173,8 @@ async function onScan(m) {
       if (!profile || !profile.ok) profile = null;
     } catch (e) { profile = null; }
   }
-  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, profile: profile } });
+  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, profile: profile,
+    excel: (file && file.excel) ? { sheet: file.excel.sheet, sheets: file.excel.sheets } : null } });
 }
 
 async function onRun(m) {

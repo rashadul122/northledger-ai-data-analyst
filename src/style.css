@@ -971,6 +971,9 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 /* the AI-written report card */
 .try-ai-report { position: relative; margin: 20px 0; padding: 22px 24px 26px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--hairline)); border-radius: 16px; background: var(--surface); }
 .ai-rep-head h3 { margin: 0 0 4px; }
+/* the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden */
+.ai-rep-trust { margin: 10px 0 0; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--green, #3b7a4b) 45%, transparent);
+  border-radius: 8px; font-size: .84rem; color: color-mix(in srgb, var(--green, #3b7a4b) 80%, var(--ink, #1b1a21)); }
 .ai-rep-body h4 { margin: 18px 0 6px; font-size: 1.02rem; }
 .ai-rep-body p { margin: 8px 0; }
 .ai-rep-body ul, .ai-rep-body ol { margin: 8px 0; padding-left: 22px; }

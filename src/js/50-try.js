@@ -1016,7 +1016,10 @@
     var nm = String(name || '').toLowerCase(), b = bytes || new Uint8Array(0);
     if (!b.length) return { ok: false, reason: 'empty' };
     var sig = function (arr) { for (var i = 0; i < arr.length; i++) if (b[i] !== arr[i]) return false; return b.length >= arr.length; };
-    if (sig([0x50, 0x4b, 0x03, 0x04]) || sig([0x50, 0x4b, 0x05, 0x06])) return { ok: false, reason: /\.(xlsx|xlsm|xls|ods|numbers)$/.test(nm) || !/\.zip$/.test(nm) ? 'excel' : 'zip' };
+    // .xlsx/.xlsm ride through as Excel (the engine worker converts the sheet to CSV in the tab,
+    // owner's decision 28 Sep 2026); other zip-like files stay refused
+    if (/\.(xlsx|xlsm)$/.test(nm)) return { ok: true, excel: true, encoding: 'utf-8', delim: ',' };
+    if (sig([0x50, 0x4b, 0x03, 0x04]) || sig([0x50, 0x4b, 0x05, 0x06])) return { ok: false, reason: /\.(xls|ods|numbers)$/.test(nm) || !/\.zip$/.test(nm) ? 'excel' : 'zip' };
     if (sig([0xd0, 0xcf, 0x11, 0xe0])) return { ok: false, reason: 'excel' };
     if (sig([0x25, 0x50, 0x44, 0x46])) return { ok: false, reason: 'pdf' };
     var enc = 'utf-8';
@@ -1354,6 +1357,8 @@
         var r = m.result || {};
         if (!r.ok) return refuse('engine', { title: 'The engine could not read this file', body: r.error || 'It gave no reason.' });
         S.profile = r.profile || null;
+        if (r.excel && r.excel.sheet) { S.planNote = 'Read the sheet "' + r.excel.sheet + '" of your workbook' +
+          (r.excel.sheets && r.excel.sheets.length > 1 ? ' (the sheet with the most rows)' : '') + '.'; }
         var flagged = (r.flagged || []).filter(function (f) { return f && typeof f.column === 'string'; });
         if (flagged.length) askPersonal(flagged);
         else { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
@@ -1407,10 +1412,11 @@
     // to the engine inside the decisions (the engine validates it again and computes every number)
     function askPlan() {
       var ctrl = window.AbortController ? new AbortController() : null;
+      var waited = S.hashWait || Promise.resolve();
       var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 115000);
-      return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: S.objective, profile: S.profile }), credentials: 'omit', referrerPolicy: 'no-referrer',
-        cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+      return waited.then(function () { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objective: S.objective, profile: S.profile, profile_hash: S.fileHash || undefined }), credentials: 'omit', referrerPolicy: 'no-referrer',
+        cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) { return j && j.plan ? j.plan : null; })
         .catch(function () { return null; })
@@ -1636,15 +1642,32 @@
       getBuffer().then(function (buf) {
         var u8 = new Uint8Array(buf), sn = T.sniff(u8, name);
         if (!sn.ok) return refuse(sn.reason);
-        var text = new TextDecoder(sn.encoding).decode(u8);
-        var rows = T.countRows(text.replace(/^\ufeff/, ''), sn.delim, LIM.max_rows);
-        if (rows > LIM.max_rows) {
-          // count on to the end, so the message states the file's real size
-          return refuse('rows', { rows: T.countRows(text.replace(/^\ufeff/, ''), sn.delim) });
+        if (sn.excel) {
+          // an Excel book: the engine worker converts the sheet to CSV in this tab; rows are
+          // counted after conversion, inside the worker, against the same limits
+          S.excel = true;
+        } else {
+          S.excel = false;
+          var text = new TextDecoder(sn.encoding).decode(u8);
+          var rows = T.countRows(text.replace(/^\ufeff/, ''), sn.delim, LIM.max_rows);
+          if (rows > LIM.max_rows) {
+            // count on to the end, so the message states the file's real size
+            return refuse('rows', { rows: T.countRows(text.replace(/^\ufeff/, ''), sn.delim) });
+          }
+          if (rows === 0) return refuse('norows');
+          if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
         }
-        if (rows === 0) return refuse('norows');
         if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
-        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null; S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = '';   // the question box carries the visitor's typed question as the objective
+        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null;
+        // the file's SHA-256 (hex): the plan cache key and nothing else — never the bytes
+        S.fileHash = ''; S.hashWait = null;
+        try {
+          if (window.crypto && window.crypto.subtle) {
+            S.hashWait = window.crypto.subtle.digest('SHA-256', u8).then(function (dg) {
+              S.fileHash = Array.from(new Uint8Array(dg)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+            }, function () { /* the digest refused: the plan runs uncached, the old behaviour */ });
+          }
+        } catch (e) { /* no crypto.subtle (a plain http: page): the old behaviour */ } S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = '';   // the question box carries the visitor's typed question as the objective
         el.runName.textContent = name;
         drawStages();
         el.run.hidden = false;
@@ -1742,7 +1765,8 @@
         if (pl && Array.isArray(pl.tables)) S.aiTables = pl.tables;
         fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: S.objective, results: pl }),
+          body: JSON.stringify({ objective: S.objective, results: pl,
+            context_queries: (S.plan && Array.isArray(S.plan.context_queries) && S.plan.context_queries.length) ? S.plan.context_queries.slice(0, 4) : undefined }),
           credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
           .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
           .then(function (j) {
@@ -1778,8 +1802,15 @@
       if (!card) return;
       var html = aiReportHtml(j.report || '');
       var srcs = j.sources || [];
+      // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden.
+      // A repaired sentence carried a figure the engine never computed; it was deleted before shipping.
+      var trust = (typeof j.repaired === 'number' && j.repaired > 0)
+        ? '<p class="ai-rep-trust" role="note">\u2713 Honesty check: ' + j.repaired + ' sentence' + (j.repaired === 1 ? '' : 's') +
+          ' carrying a figure the engine never computed ' + (j.repaired === 1 ? 'was' : 'were') + ' removed before this report was shown.</p>'
+        : '<p class="ai-rep-trust" role="note">\u2713 Honesty check: every figure in this report matches the engine\'s own computed results.</p>';
       card.innerHTML = '<div class="ai-rep-head"><h3>The AI-written report</h3>' +
         '<p class="note">Figures by the engine, words by ' + esc(j.model || 'the AI') + ', outside claims cited [S1]\u2026; every figure was checked against the engine\'s own results.</p></div>' +
+        trust +
         '<div class="ai-rep-body">' + html + '</div>' +
         (srcs.length ? '<div class="ai-rep-srcs"><b>Sources</b><ol>' + srcs.map(function (s, i) {
           return '<li><a href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.title || ('Source ' + (i + 1))) + '</a></li>';

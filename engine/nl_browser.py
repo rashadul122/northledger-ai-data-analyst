@@ -3116,8 +3116,16 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 fc[k] = str(f[k])[:200]
         fwd = f.get("forecast") or []
         if isinstance(fwd, list) and fwd:
-            fc["points"] = [{kk: vv for kk, vv in x.items() if kk in ("date", "value", "lo", "hi")}
-                             for x in fwd[:14] if isinstance(x, dict)]
+            # the writer must be able to QUOTE a forecast figure: the engine's full floats
+            # (8973.866344820577) are not quotable prose, so the payload carries the same
+            # display rounding the engine's own story uses (live finding, 28 Sep 2026: the
+            # report shipped raw floats when the scenario rules asked for base/low/high).
+            def _r1(x: Any) -> Any:
+                v = _num(x)
+                return None if v is None else (int(round(v)) if abs(v) >= 1000 else round(v, 1))
+            fc["points"] = [{kk: (_r1(vv) if kk in ("value", "lo", "hi") else vv)
+                             for kk, vv in x.items() if kk in ("date", "value", "lo", "hi")}
+                            for x in fwd[:14] if isinstance(x, dict)]
 
     # the applied steps carry real figures (rows left after a filter, series count after a
     # reshape): the writer may quote them, so they must be in the payload as findings of the run

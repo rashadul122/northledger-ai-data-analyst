@@ -1991,6 +1991,11 @@
           input: (S.report && S.report.input) || { name: S.name },
           goal: (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '',
           report: S.aiReport.report, sources: S.aiReport.sources || [], model: S.aiReport.model || '', days: 7,
+          // the engine-drawn figures the report's [CHART:n]/[TABLE:n] markers point at: without
+          // them the shared link showed the words without the illustrations (live finding,
+          // 28 Sep 2026: the viewer was ready to draw them, the page never sent them)
+          charts: (S.aiReport && S.aiReport.charts) || S.aiCharts || [],
+          tables: (S.aiReport && S.aiReport.tables) || S.aiTables || [],
         }),
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
@@ -2015,27 +2020,17 @@
     function doPdf() {
       var card = document.getElementById('try-ai-report');
       if (!card) return;
-      var embedded = (function () {
-        try { return window.parent !== window || (window.navigator && window.navigator.userAgent.indexOf('Electron') >= 0) || !!window.process; } catch (e) { return true; }
-      })();
-      if (embedded) {
-        // Open the same shareable viewer, then print from there: the viewer prints its own
-        // report cleanly and the print dialog belongs to a real browser window.
-        var out = document.getElementById('try-share-out');
-        if (S.shareUrl) {
-          if (out) { out.hidden = false; out.textContent = ''; var a = document.createElement('a'); a.href = S.shareUrl; a.textContent = 'Open the report to print it'; a.target = '_blank'; a.rel = 'noopener'; out.appendChild(a); }
-          window.open(S.shareUrl, '_blank', 'noopener');
-          return;
-        }
-        // No share link yet: make one, then open it (POSTs report text only, never rows).
-        doShare(function (link) {
-          if (out) { out.hidden = false; out.textContent = ''; var a2 = document.createElement('a'); a2.href = link; a2.textContent = 'Open the report to print it'; a2.target = '_blank'; a2.rel = 'noopener'; out.appendChild(a2); }
-          window.open(link, '_blank', 'noopener');
-        });
-        return;
-      }
-      document.body.setAttribute('data-print-target', 'try-ai-report');
-      window.print();
+      var out = document.getElementById('try-share-out');
+      // The worker answers GET /r/<slug>.pdf with real PDF bytes (owner's ask, 28 Sep 2026:
+      // window.print dies inside in-app browsers and popups get blocked there; a direct file
+      // link saves straight to the phone). The share slug is made first if none exists.
+      var openPdf = function (link) {
+        var pdfUrl = String(link).replace(/\/$/, '') + '.pdf';
+        if (out) { out.hidden = false; out.textContent = ''; var a = document.createElement('a'); a.href = pdfUrl; a.textContent = 'The PDF is opening; tap here if nothing happened'; a.target = '_blank'; a.rel = 'noopener'; out.appendChild(a); }
+        window.open(pdfUrl, '_blank', 'noopener');
+      };
+      if (S.shareUrl) { openPdf(S.shareUrl); return; }
+      doShare(function (link) { openPdf(link); });
     }
 
     // what a visitor can do about the reasons rows were set aside (plain steps, no figures)

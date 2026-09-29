@@ -1016,9 +1016,8 @@
     var nm = String(name || '').toLowerCase(), b = bytes || new Uint8Array(0);
     if (!b.length) return { ok: false, reason: 'empty' };
     var sig = function (arr) { for (var i = 0; i < arr.length; i++) if (b[i] !== arr[i]) return false; return b.length >= arr.length; };
-    // .xlsx/.xlsm ride through as Excel (the engine worker converts the sheet to CSV in the tab,
-    // owner's decision 28 Sep 2026); other zip-like files stay refused
-    if (/\.(xlsx|xlsm)$/.test(nm)) return { ok: true, excel: true, encoding: 'utf-8', delim: ',' };
+    // spreadsheets are refused before the engine loads: Pyodide 0.27.7 has no openpyxl, so they cannot be read
+    if (/\.(xlsx|xlsm|xls|ods)$/.test(nm)) return { ok: false, reason: 'excel' };
     if (sig([0x50, 0x4b, 0x03, 0x04]) || sig([0x50, 0x4b, 0x05, 0x06])) return { ok: false, reason: /\.(xls|ods|numbers)$/.test(nm) || !/\.zip$/.test(nm) ? 'excel' : 'zip' };
     if (sig([0xd0, 0xcf, 0x11, 0xe0])) return { ok: false, reason: 'excel' };
     if (sig([0x25, 0x50, 0x44, 0x46])) return { ok: false, reason: 'pdf' };
@@ -1224,10 +1223,11 @@
     var LIM = T.limits();
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
     var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [],
-      aiCharts: [], aiTables: [], shareUrl: '', question: '' };
+      aiCharts: [], aiTables: [], shareUrl: '', delToken: '', question: '' };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
       forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
+      replan: 'The AI checks the result and corrects its plan',
       report: 'The AI writes the full report, with cited context' };
     var reduced = function () { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); };
     var goTo = function (node, focus) {
@@ -1264,7 +1264,7 @@
     function drawStages() {
       var list = ['load'].concat(STAGES);
       list.splice(list.indexOf('decide') + 1, 0, 'plan');
-      list.push('report');
+      list.push('replan', 'report');
       el.stages.innerHTML = list.map(function (s) {
         return '<li data-stage="' + s + '" class="st-wait"><span class="st-dot" aria-hidden="true"></span><span class="st-name">' + esc(STAGE_LABEL[s]) +
           '<small class="st-state">waiting</small></span><span class="st-sec"></span></li>';
@@ -1325,7 +1325,7 @@
     }
     function stopRun() {
       if (S.tick) { clearInterval(S.tick); S.tick = null; }
-      S.t0 = {}; S.busy = false;
+      S.t0 = {}; S.busy = false; if (el.q) el.q.disabled = false;
       el.run.hidden = true; el.pd.hidden = true;
       el.sample.disabled = false; el.pick.disabled = false;
     }
@@ -1361,7 +1361,8 @@
           (r.excel.sheets && r.excel.sheets.length > 1 ? ' (the sheet with the most rows)' : '') + '.'; }
         var flagged = (r.flagged || []).filter(function (f) { return f && typeof f.column === 'string'; });
         if (flagged.length) askPersonal(flagged);
-        else { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
+        else if (!CFG.ai_proxy_url) { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
+        else { setStage('decide', 'skip', null, 'no personal data flagged'); askAiChoice(); }
       } else if (m.type === 'result') {
         onReport(m.report);
       } else if (m.type === 'results_json') {
@@ -1379,6 +1380,33 @@
     var CHOICES = [['withhold', 'Withhold', 'its values are never shown, downloaded, used in the business analysis or sent to an AI, and nothing that names it is sent to an AI; the data-health findings on this page still name it and count its blanks and spellings'],
       ['code', 'Code', 'each value replaced with a code in the downloads; the analysis still leaves the column out'],
       ['keep', 'Keep', 'used as it is: it can appear in the findings, the story and the downloads']];
+    // The visitor's AI choice (26 Sep 2026 flow, consent restored 29 Sep 2026): nothing reaches the proxy unless
+    // they press "Continue with the AI". Shown on the personal-data step, or alone when nothing was flagged.
+    function aiChoiceHtml() {
+      return '<p class="pd-ai-note">With the AI, a summary of the columns (names, counts, ranges and category values; never rows, never columns flagged as personal) goes to DeepSeek through this site\'s proxy to plan the analysis. The engine runs that plan straight away and the AI corrects its plan once if the engine finds a problem; you can change the plan afterwards. The engine\'s results (numbers only, never rows) go back to write the report, which may look up public sources on the web. Without the AI, nothing leaves this browser.</p>' +
+        '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with the AI</button> ' +
+        '<button type="button" class="btn btn-ghost" id="try-pd-noai">Continue without AI</button></div>';
+    }
+    function wireAiChoice(getDecisions) {
+      var seq = S.seq;
+      [['try-pd-go', true], ['try-pd-noai', false]].forEach(function (b) {
+        $(b[0]).addEventListener('click', function () {
+          if (seq !== S.seq) return;
+          var d = getDecisions();
+          S.useAi = b[1];
+          el.pd.hidden = true;
+          if (d) setStage('decide', 'start');
+          sendRun(d || {});
+        });
+      });
+    }
+    function askAiChoice() {
+      el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' + aiChoiceHtml();
+      el.pd.hidden = false;
+      wireAiChoice(function () { return null; });
+      goTo($('try-pd-h'));
+      try { $('try-pd-go').focus({ preventScroll: true }); } catch (e) { $('try-pd-go').focus(); }
+    }
     function askPersonal(flagged) {
       setStage('decide', 'wait');
       el.pd.innerHTML = '<h3 id="try-pd-h">Personal data: you decide</h3>' +
@@ -1392,49 +1420,146 @@
               return '<label class="pd-opt"><input type="radio" name="pd-' + i + '" value="' + c[0] + '"' + (c[0] === 'withhold' ? ' checked' : '') + (off ? ' disabled' : '') + ' data-col="' + esc(f.column) + '"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
             }).join('') + '</div>' + (coded ? '<p class="pd-note">Already coded as it arrived: an email address or phone number cannot be kept as it is, so Keep is not offered.</p>' : '') + '</fieldset>';
         }).join('') +
-        '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>';
+        (CFG.ai_proxy_url ? aiChoiceHtml() : '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>');
       el.pd.hidden = false;
-      $('try-pd-go').addEventListener('click', function () {
+      var pdDecisions = function () {
         var d = {};
         Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio]:checked'), function (x) { d[x.getAttribute('data-col')] = x.value; });
-        el.pd.hidden = true;
-        setStage('decide', 'start');
-        sendRun(d);
-      });
+        return d;
+      };
+      if (CFG.ai_proxy_url) wireAiChoice(pdDecisions);
+      else $('try-pd-go').addEventListener('click', function () { var d = pdDecisions(); el.pd.hidden = true; setStage('decide', 'start'); sendRun(d); });
       goTo($('try-pd-h'));
       var first = el.pd.querySelector('input[type=radio]:checked');
       if (first) { try { first.focus({ preventScroll: true }); } catch (e) { first.focus(); } }
     }
     // One integrated flow (owner's ask, 26 Sep 2026): the AI plans and the engine computes in a
-    // single run; there is no separate AI button any more. The proxy configured = planning on.
-    function planOn() { return !!CFG.ai_proxy_url; }
+    // single run. AI is on only when the proxy is configured AND the visitor chose "Continue with the AI" for this run.
+    function planOn() { return !!CFG.ai_proxy_url && S.useAi === true; }
     // The AI planner (owner's design, 25 Sep 2026): the profile goes to the proxy's /plan; the plan rides
     // to the engine inside the decisions (the engine validates it again and computes every number)
-    function askPlan() {
+    function askPlan(feedback) {
       var ctrl = window.AbortController ? new AbortController() : null;
       var waited = S.hashWait || Promise.resolve();
       var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 115000);
       return waited.then(function () { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: S.objective, profile: S.profile, profile_hash: S.fileHash || undefined }), credentials: 'omit', referrerPolicy: 'no-referrer',
+        body: JSON.stringify({ objective: S.objective, profile: S.profile, profile_hash: S.fileHash || undefined, feedback: feedback || undefined }), credentials: 'omit', referrerPolicy: 'no-referrer',
         cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) { return j && j.plan ? j.plan : null; })
         .catch(function () { return null; })
         .then(function (p) { clearTimeout(timer); return p; });
     }
+    // Autonomous engine (owner's ask, 29 Sep 2026): the plan runs at once; the visitor may edit it and re-run afterwards
+    function opWords(o) {
+      var l = function (a) { return (a || []).map(String).join(', '); }, col = o.column ? String(o.column) : '', v = o.values || [];
+      switch (o.op) {
+        case 'keep_columns': return 'Keep only: ' + l(o.columns);
+        case 'set_aside': return 'Set aside: ' + l(o.columns);
+        case 'exclude_rows': return 'Drop rows where ' + col + ' is one of ' + v.length + ' values (' + l(v.slice(0, 3)) + (v.length > 3 ? '...' : '') + ')';
+        case 'keep_rows': return 'Keep only rows where ' + col + ' is one of ' + v.length + ' values (' + l(v.slice(0, 3)) + (v.length > 3 ? '...' : '') + ')';
+        case 'exclude_blank': return 'Drop rows where ' + (col || l(o.columns)) + ' is blank';
+        case 'date_from_year': return 'Read ' + col + ' as the date (years)';
+        case 'long_to_wide': return 'One column per series';
+        case 'not_personal': return 'Treat as not personal: ' + l(o.columns);
+        default: return String(o.op || 'unknown step');
+      }
+    }
+    function anaWords(a) { return String(a.type || 'analysis') + ': ' + (a.columns || []).map(String).join(', ') + (a.by ? ' by ' + a.by : ''); }
+    // the data test each column type compiles to (mirrors the engine's mapping by semantic_type; the engine
+    // decides the exact ranges), shown in the review so a visitor can turn a test off
+    var CONTRACT_WORDS = { percentage: 'between 0 and 100 (or 0 and 1)', count: 'a whole number, 0 or more', duration: '0 or more',
+      year: 'a whole year between 1000 and 2999', rating: 'a whole number on the file\'s rating scale', identifier: 'unique: no value repeated',
+      boolean: 'at most 2 different values', category: 'one of the values the profile lists', date: 'a date that can be read' };
+    function contractWords(c) {
+      var t = String(c && c.semantic_type || '');
+      if (!Object.prototype.hasOwnProperty.call(CONTRACT_WORDS, t)) return '';
+      if (t === 'category' && !(c.values && c.values.length)) return '';
+      return String(c.name) + ': ' + CONTRACT_WORDS[t] + ' (' + t + ')';
+    }
+    function reviewPlan(plan, go, d) {
+      var c = el.planCard, seq = S.seq;
+      if (!c) { d.__plan__ = plan; return go(d); }
+      var ops = (plan.operations || []).filter(function (o) { return o && typeof o === 'object'; });
+      var ans = (plan.analyses || []).filter(function (a) { return a && typeof a === 'object'; });
+      var cons = (plan.columns || []).filter(function (x) { return x && typeof x === 'object' && contractWords(x); });
+      var box = function (grp, i, t) { return '<li><label class="try-plan-lab"><input type="checkbox" data-grp="' + grp + '" data-i="' + i + '" checked> <span>' + esc(t) + '</span></label></li>'; };
+      c.className = 'try-plan-card try-review';
+      c.innerHTML = '<h3 class="try-plan-title" id="try-review-h" tabindex="-1">Change the AI\'s plan and run again</h3>' +
+        '<p class="note">This is the plan that just ran. Edit the goal, untick any step or analysis you do not want, then run again.</p>' +
+        '<p><label for="try-review-goal"><strong>Goal</strong></label><br><textarea id="try-review-goal" maxlength="300" rows="2" style="width:100%">' + esc(plan.goal || '') + '</textarea></p>' +
+        (plan.understanding ? '<p class="try-plan-read"><strong>What the AI read:</strong> ' + esc(plan.understanding) + '</p>' : '') +
+        (ops.length ? '<h4>Steps</h4><ul class="try-review-list">' + ops.map(function (o, i) { return box('op', i, opWords(o)); }).join('') + '</ul>' : '') +
+        (ans.length ? '<h4>Analyses</h4><ul class="try-review-list">' + ans.map(function (a, i) { return box('an', i, anaWords(a)); }).join('') + '</ul>' : '') +
+        (cons.length ? '<h4>Data tests</h4><p class="note">The engine checks these against the values in the file. Untick one to turn it off.</p><ul class="try-review-list">' + cons.map(function (x, i) { return box('ct', i, contractWords(x)); }).join('') + '</ul>' : '') +
+        ((plan.quality_risks || []).length ? '<h4>What could mislead this goal</h4><ul>' + plan.quality_risks.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+        '<p class="try-review-btns"><button type="button" class="btn btn-primary" id="try-review-go">Run with this plan</button> ' +
+        '<button type="button" class="btn btn-ghost" id="try-review-skip">Run without the AI plan</button></p>';
+      c.hidden = false;
+      goTo($('try-review-h'), true);
+      var fin = function () { c.hidden = true; c.className = 'try-plan-card'; c.innerHTML = ''; };
+      $('try-review-go').addEventListener('click', function () {
+        if (seq !== S.seq) return;
+        var ed = {}, goal = ($('try-review-goal').value || '').trim().slice(0, 300), removed = [], anaOut = [];
+        Object.keys(plan).forEach(function (k) { ed[k] = plan[k]; });
+        var on = function (grp, i) { var b = c.querySelector('input[data-grp="' + grp + '"][data-i="' + i + '"]'); return !b || b.checked; };
+        ed.goal = goal || plan.goal;
+        ed.operations = ops.filter(function (o, i) { if (on('op', i)) return true; removed.push(String(o.op)); return false; });
+        ed.analyses = ans.filter(function (a, i) { if (on('an', i)) return true; anaOut.push(String(a.type) + ':' + (a.columns || []).join(',')); return false; });
+        var off = cons.filter(function (x, i) { return !on('ct', i); }).map(function (x) { return String(x.name); });
+        if (off.length) d.__contracts_off__ = off;
+        d.__plan__ = ed; S.plan = ed;
+        d.__plan_review__ = { approved: true, goal_edited: ed.goal !== plan.goal, ops_removed: removed, analyses_removed: anaOut, at: new Date().toISOString() };
+        fin(); go(d);
+      });
+      $('try-review-skip').addEventListener('click', function () {
+        if (seq !== S.seq) return;
+        d.__plan_review__ = { approved: false, at: new Date().toISOString() };
+        S.plan = null; delete d.__plan__; fin(); go(d);
+      });
+    }
+    function postRun(d) {
+      S.lastD = d;
+      worker().postMessage({ type: 'run', id: S.seq, options: { name: S.name, objective: S.objective, decisions: d, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } });
+    }
+    function copyOf(o) { var d = {}; Object.keys(o || {}).forEach(function (k) { d[k] = o[k]; }); return d; }
     function sendRun(decisions) {
       var seq = S.seq;
-      var go = function (d) { worker().postMessage({ type: 'run', id: seq, options: { name: S.name, objective: S.objective, decisions: d, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } }); };
-      S.plan = null; S.planNote = '';
-      if (!planOn() || !S.profile) { setStage('plan', 'skip'); return go(decisions); }
+      S.plan = null; S.planNote = ''; S.replanned = false; S.replan = null; S.firstRep = null;
+      if (!planOn() || !S.profile) { setStage('plan', 'skip'); setStage('replan', 'skip'); return postRun(decisions); }
       setStage('plan', 'start');
       askPlan().then(function (plan) {
         if (seq !== S.seq) return;
-        var d = {};
-        Object.keys(decisions || {}).forEach(function (k) { d[k] = decisions[k]; });
-        if (plan) { d.__plan__ = plan; S.plan = plan; setStage('plan', 'done'); }
-        else { S.planNote = 'The AI planner did not answer, so the engine read the file with its own rules.'; setStage('plan', 'skip', null, 'no plan: rules used'); }
-        go(d);
+        var d = copyOf(decisions);
+        if (plan) { setStage('plan', 'done'); d.__plan__ = plan; S.plan = plan; return postRun(d); }
+        S.planNote = 'The AI planner did not answer, so the engine read the file with its own rules.'; setStage('plan', 'skip', null, 'no plan: rules used');
+        setStage('replan', 'skip'); postRun(d);
+      });
+    }
+    // the visitor's optional edit after the run: the engine runs the edited plan (no second AI correction)
+    function rerun(d) {
+      S.seq += 1; S.replanned = true; S.replan = null; S.firstRep = null; S.busy = true; S.aiReport = null;
+      el.sample.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      var ar = document.getElementById('try-ai-report'); if (ar) ar.hidden = true;
+      el.report.hidden = true; el.run.hidden = false;
+      drawStages(); setStage('load', 'skip', null, 'already loaded'); setStage('plan', 'done', null, 'the plan that ran, as you changed it'); setStage('replan', 'skip', null, 'you edited the plan');
+      goTo(el.run);
+      postRun(d);
+    }
+    // the AI's one self-correction: the engine's signals go back with the plan that ran (never rows)
+    function replan(first, sigs) {
+      var seq = S.seq, pp = S.plan || {};
+      S.firstRep = first;
+      setStage('replan', 'start');
+      var prev = { goal: pp.goal, kind: pp.kind, primary: pp.primary, operations: pp.operations, analyses: pp.analyses,
+        columns: (pp.columns || []).map(function (c) { return { name: c.name, semantic_type: c.semantic_type, role: c.role }; }) };
+      askPlan({ attempt: 1, previous_plan: prev, signals: sigs }).then(function (np) {
+        if (seq !== S.seq) return;
+        if (!np) { setStage('replan', 'skip', null, 'no revised plan, so the first result is kept'); S.firstRep = null; return finishReport(first); }
+        S.replan = { signals: sigs, changes: np.changes }; S.plan = np;
+        setStage('replan', 'done');
+        var d = copyOf(S.lastD); delete d.__plan_review__; d.__plan__ = np;
+        postRun(d);
       });
     }
     // the analyses the AI plan asked for, computed by the engine's adapter (rep.ai_analyses): a line
@@ -1599,6 +1724,17 @@
       if (A.note) h += '<p class="note">' + esc(A.note) + '</p>';
       return h;
     }
+    // the data tests the engine ran from the AI's column types, and what each did (rep.contracts)
+    function contractsHtml(rep) {
+      var k = rep && rep.contracts;
+      if (!k || !(k.tests || []).length) return '';
+      return '<h4>Data tests</h4><table class="try-contracts"><thead><tr><th>Column</th><th>Test</th><th>Checked</th><th>Failed</th><th>Action</th></tr></thead><tbody>' +
+        k.tests.map(function (t) {
+          return '<tr><td>' + esc(t.column) + '</td><td>' + esc(t.test) + '</td><td>' + esc(t.checked) + '</td><td>' + esc(t.failed) +
+            ((t.examples || []).length ? ' (e.g. ' + esc(t.examples.join(', ')) + ')' : '') + '</td><td>' + esc(t.action) + '</td></tr>';
+        }).join('') + '</tbody></table><p class="note">' + esc(k.note || '') + '</p>' +
+        (rep.downloads && rep.downloads.contract_set_aside_csv ? '<p><button type="button" class="btn btn-ghost" data-dl="contract_set_aside_csv">Rows the tests set aside (' + esc(k.rows_set_aside) + ') CSV</button></p>' : '');
+    }
     function drawPlan(rep) {
       var p = rep && rep.ai_plan, c = el.planCard;
       if (!c) return;
@@ -1616,10 +1752,24 @@
         ((p.applied || []).length ? '<h4>Steps the engine ran</h4>' + li(p.applied) : '') +
         ((p.refused || []).length ? '<h4>Steps refused</h4>' + li(p.refused) : '') +
         (alts ? '<h4>Other questions this data can answer</h4><div class="try-plan-alts">' + alts + '</div><p class="note">Pick one to run the report again with that goal.</p>' : '') +
+        (p.review ? '<p class="try-plan-review">You approved this plan' + (function (r) { var e = []; if (r.goal_edited) e.push('you edited the goal');
+          if ((r.ops_removed || []).length) e.push('you turned off ' + r.ops_removed.length + ' step' + (r.ops_removed.length > 1 ? 's' : ''));
+          if ((r.analyses_removed || []).length) e.push('you turned off ' + r.analyses_removed.length + ' analys' + (r.analyses_removed.length > 1 ? 'es' : 'is'));
+          return e.length ? ' (' + e.join(', ') + ').' : ' (no changes).'; })(p.review) + '</p>' : '') +
+        (S.replan ? '<div class="try-plan-replan"><p><strong>The AI corrected its plan after the engine found:</strong></p>' +
+          li(S.replan.signals.slice(0, 5).map(function (x) { return (x.column ? x.column + ': ' : '') + x.detail; })) +
+          (S.replan.changes ? '<p><strong>What it changed:</strong> ' + esc([].concat(S.replan.changes).join('; ')) + '</p>' : '') + '</div>' : '') +
+        (S.plan ? '<p><button type="button" class="btn btn-ghost" id="try-plan-edit">Change the plan and run again</button></p>' : '') +
         '<p class="note">AI-planned, engine-computed: every figure below comes from the engine, which checked the plan and refused any step it could not run.</p>' +
+        contractsHtml(rep) +
         analysesHtml(rep);
       c.hidden = false;
+      Array.prototype.forEach.call(c.querySelectorAll('[data-dl="contract_set_aside_csv"]'), function (b) {
+        b.addEventListener('click', function () { downloadText(rep.downloads.contract_set_aside_csv, stem(rep.input.name) + '-tests-set-aside.csv', 'text/csv'); });
+      });
       mountMaps(c, rep);
+      var eb = $('try-plan-edit');
+      if (eb) eb.addEventListener('click', function () { var d = copyOf(S.lastD); delete d.__contracts_off__; delete d.__plan_review__; reviewPlan(S.plan, rerun, d); });
       Array.prototype.forEach.call(c.querySelectorAll('.try-plan-alt'), function (b) {
         b.addEventListener('click', function () { S.objective = b.getAttribute('data-goal') || ''; if (S.again) S.again(); });
       });
@@ -1635,7 +1785,7 @@
       if (!LIM.max_bytes || !LIM.max_rows) return refuse('engine', { title: 'The demo is not set up on this page', body: 'Its limits are missing from the page data.' });
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
-      S.busy = true; el.sample.disabled = true; el.pick.disabled = true;
+      S.busy = true; el.sample.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       // the question box: typed before the run, sent as the objective the AI plans around
       S.question = (el.q && el.q.value || '').trim().slice(0, 300);
       S.objective = S.question;
@@ -1658,8 +1808,8 @@
           if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
         }
         if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
-        S.seq += 1; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null;
-        // the file's SHA-256 (hex): the plan cache key and nothing else — never the bytes
+        S.seq += 1; S.useAi = false; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null;
+        // the file's SHA-256 (hex): the plan cache key and nothing else, never the bytes
         S.fileHash = ''; S.hashWait = null;
         try {
           if (window.crypto && window.crypto.subtle) {
@@ -1667,7 +1817,7 @@
               S.fileHash = Array.from(new Uint8Array(dg)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
             }, function () { /* the digest refused: the plan runs uncached, the old behaviour */ });
           }
-        } catch (e) { /* no crypto.subtle (a plain http: page): the old behaviour */ } S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = '';   // the question box carries the visitor's typed question as the objective
+        } catch (e) { /* no crypto.subtle (a plain http: page): the old behaviour */ } S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = ''; S.delToken = '';   // the question box carries the visitor's typed question as the objective
         el.runName.textContent = name;
         drawStages();
         el.run.hidden = false;
@@ -1677,7 +1827,7 @@
         var w;
         try { w = worker(); } catch (e) { return refuse('engine', { title: 'This browser cannot run the engine', body: 'It does not allow a background worker here (' + e.message + ').' }); }
         w.postMessage({ type: 'scan', id: S.seq, name: name, buffer: buf,
-          options: { name: name, objective: S.objective, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows, want_profile: planOn() } }, [buf]);
+          options: { name: name, objective: S.objective, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows, want_profile: !!CFG.ai_proxy_url } }, [buf]);
       }).catch(function (e) {
         refuse('engine', { title: 'The file could not be read', body: 'The browser could not open it (' + (e && e.message || e) + ').' });
       });
@@ -1728,11 +1878,22 @@
         return refuse('engine', { title: 'The engine\'s answer could not be shown', body: 'Its report did not have the shape this page reads, so nothing from it is shown.',
           extra: '<details class="more"><summary>What was wrong</summary>' + list(bad.slice(0, 12)) + '</details>' });
       }
+      if (!rep.ok && S.firstRep) { var f1 = S.firstRep; S.firstRep = null; setStage('replan', 'skip', null, 'the corrected run failed, so the first result is kept'); return finishReport(f1); }
       if (!rep.ok) { stopRun(); return refuse('engine', { title: 'The engine could not work on this file', body: rep.error }); }
+      if (S.plan && !S.replanned) {
+        S.replanned = true;
+        var sigs = Array.isArray(rep.plan_signals) ? rep.plan_signals : [];
+        if (sigs.length) return replan(rep, sigs);
+        setStage('replan', 'skip', null, 'the engine found nothing to correct');
+      }
+      S.firstRep = null;
+      finishReport(rep);
+    }
+    function finishReport(rep) {
       // stages the engine did not announce take their time from the report
       (rep.timings || []).forEach(function (t) { var li = stageEl(t.stage); if (li && li.className !== 'st-done') setStage(t.stage, 'done', t.seconds); });
       STAGES.forEach(function (s) { var li = stageEl(s); if (li && li.className !== 'st-done') setStage(s, 'skip'); });
-      S.report = rep; S.busy = false;
+      S.report = rep; S.busy = false; if (el.q) el.q.disabled = false;
       el.sample.disabled = false; el.pick.disabled = false;
       drawPlan(rep);
       drawReport();
@@ -1750,7 +1911,7 @@
     // and finish the progress bar at 100%; on failure the bar completes with a plain note.
     function askAiReport(rep) {
       var stage = stageEl('report');
-      if (!CFG.ai_proxy_url || !stage) { setStage('report', 'skip', null, 'not on this page'); return; }
+      if (!planOn() || !stage) { setStage('report', 'skip', null, 'not on this page'); return; }
       var ctrl = window.AbortController ? new AbortController() : null;
       var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 175000);
       setStage('report', 'start');
@@ -1771,6 +1932,7 @@
           .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
           .then(function (j) {
             clearTimeout(timer);
+            if (seq !== S.seq) return;
             if (!j || !j.report) throw new Error('no report');
             S.aiReport = j;
             drawAiReport(j);
@@ -1781,6 +1943,7 @@
           })
           .catch(function (e) {
             clearTimeout(timer);
+            if (seq !== S.seq) return;
             setStage('report', 'skip', null, String(e && e.message ? e.message : 'the AI report was not written'));
             el.note.textContent = 'The engine\'s checked report is below; the AI-written report could not be written this time.';
             drawBar();
@@ -1818,7 +1981,7 @@
         '<div class="ai-rep-actions"><button type="button" class="btn btn-primary" id="try-share">Shareable link</button>' +
         '<button type="button" class="btn btn-ghost" id="try-pdf">Download PDF</button>' +
         '<span class="try-share-out" id="try-share-out" hidden></span></div>' +
-        '<div class="ai-rep-wm"><a href="https://rashadul122.github.io/northledger-ai-data-analyst/" target="_blank" rel="noopener">NorthLedger</a></div>';
+        '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
       var share = document.getElementById('try-share');
       if (share) share.addEventListener('click', doShare);
@@ -1883,7 +2046,7 @@
         '. Every value is computed by the engine from your file.</figcaption></figure>';
     }
     // the engine's own analysis table a [TABLE:n] marker becomes (regression coefficients,
-    // correlations, rankings — the numbers the engine computed, not the AI)
+    // correlations, rankings: the numbers the engine computed, not the AI)
     function tableFig(t) {
       var h = '<figure class="ai-rep-figure"><table><thead><tr>';
       (t.cols || []).forEach(function (c) { h += '<th>' + esc(c) + '</th>'; });
@@ -1908,7 +2071,7 @@
       var title = String(j.report || '').split(/\n/)[0].slice(0, 160) || 'Report';
       var goal = (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
       var entry = { t: Date.now(), title: title, goal: goal.slice(0, 300), file: S.name, model: j.model || '',
-        report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 12), share: S.shareUrl || '',
+        report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 12), share: S.shareUrl || '', del: S.delToken || '',
         charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8) };
       var list = loadPrev().filter(function (x) { return x && x.t !== entry.t; });
       list.unshift(entry);
@@ -1920,19 +2083,21 @@
       if (!el.prev) return;
       var list = loadPrev();
       if (!list.length) { el.prev.hidden = true; el.prev.innerHTML = ''; return; }
-      var h = '<h3 class="try-prev-h">Your previous reports</h3><div class="try-prev-list">';
+      var h = '<h3 class="try-prev-h">Your previous reports</h3>' + (prevMsg ? '<p class="try-prev-empty" role="status">' + esc(prevMsg) + '</p>' : '') + '<div class="try-prev-list">';
+      prevMsg = '';
       list.forEach(function (x, i) {
         h += '<article class="try-prev-item" data-i="' + i + '">' +
           '<div class="pv-main"><p class="pv-goal">' + esc(x.goal || x.title) + '</p>' +
           '<p class="pv-meta">' + esc(x.file || '') + (x.model ? ' · worded by ' + esc(x.model) : '') + ' · ' + new Date(x.t).toLocaleString() + '</p>' +
-          (x.share ? '<p class="pv-link"><a href="' + esc(x.share) + '" target="_blank" rel="noopener">' + esc(x.share) + '</a></p>' : '') +
+          (x.share ? '<p class="pv-link"><a href="' + esc(x.share) + '" target="_blank" rel="noopener">' + esc(x.share) + '</a>' +
+            (x.del ? ' <button type="button" class="btn btn-ghost btn-sm pv-del">Delete this link</button>' : '') + '</p>' : '') +
           '</div><div class="pv-actions">' +
           '<button type="button" class="btn btn-ghost btn-sm pv-open">Open</button>' +
           '<button type="button" class="btn btn-ghost btn-sm pv-share">Shareable link</button>' +
           '<button type="button" class="btn btn-ghost btn-sm pv-pdf">Download PDF</button>' +
           '</div></article>';
       });
-      el.prev.innerHTML = h + '</div><p class="try-prev-empty">Reports and their links live only in this browser (localStorage); a shareable link is the way to send one anywhere.</p>';
+      el.prev.innerHTML = h + '</div><p class="try-prev-empty">Reports and their links live only in this browser (localStorage); a shareable link is the way to send one anywhere. A link stores the finished report (text, charts and tables, not your file) on this site\'s Cloudflare storage for 7 days. "Delete this link" removes it at once; after that, or at expiry, it is gone.</p>';
       el.prev.hidden = false;
       Array.prototype.forEach.call(el.prev.querySelectorAll('.try-prev-item'), function (item) {
         var x = list[+item.getAttribute('data-i')];
@@ -1940,6 +2105,8 @@
         item.querySelector('.pv-open').addEventListener('click', function () { openPrev(x); });
         item.querySelector('.pv-share').addEventListener('click', function () { sharePrev(x, item); });
         item.querySelector('.pv-pdf').addEventListener('click', function () { pdfPrev(x); });
+        var dl = item.querySelector('.pv-del');
+        if (dl) dl.addEventListener('click', function () { removeLink(x.t, x.share, x.del); });
       });
     }
     // reopening a saved answer re-renders it into the live AI report card (charts and tables
@@ -1949,19 +2116,44 @@
       S.aiTables = (x.tables || []).slice(0, 8);
       S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '' };
       S.shareUrl = x.share || '';
+      S.delToken = x.del || '';
       S.prevT = x.t;
       drawAiReport(S.aiReport);
       goTo(document.getElementById('try-ai-report'), true);
     }
     // a share link made for the currently open report (fresh or reopened) is written back to its
     // gallery entry, so the next open reuses it instead of asking the worker again
-    function persistShare(link) {
+    function persistShare(link, token) {
       var list = loadPrev();
       var t = S.prevT || (S.aiReport && S.aiReport.savedT) || 0;
       if (!t) return;
       for (var i = 0; i < list.length; i++) {
-        if (list[i] && list[i].t === t) { list[i].share = link; storePrev(list); drawPrev(); return; }
+        if (list[i] && list[i].t === t) { list[i].share = link; list[i].del = token || ''; storePrev(list); drawPrev(); return; }
       }
+    }
+    // "Delete this link": POST the token (kept only in this browser's archive) to the worker, which
+    // removes the stored report. 404 means it is already gone. The token goes nowhere else.
+    var prevMsg = '';
+    function removeLink(t, link, token) {
+      var out = document.getElementById('try-share-out');
+      var slug = String(link || '').split('/r/')[1] || '';
+      var cur = t && t === S.prevT;
+      var say = function (m) { prevMsg = m; if (out && cur) { out.hidden = false; out.textContent = m; } drawPrev(); };
+      fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/r/' + encodeURIComponent(slug) + '/delete', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }),
+        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
+        .then(function (r) {
+          if (r.ok || r.status === 404) return;
+          return r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }, function () { throw new Error('HTTP ' + r.status); });
+        })
+        .then(function () {
+          var list = loadPrev();
+          for (var i = 0; i < list.length; i++) if (list[i] && list[i].t === t) { list[i].share = ''; list[i].del = ''; }
+          storePrev(list);
+          if (cur) { S.shareUrl = ''; S.delToken = ''; }
+          say('The shared link is deleted; anyone opening it now sees \'not found\'.');
+        })
+        .catch(function (e) { say('The link could not be deleted: ' + String(e && e.message ? e.message : 'try again')); });
     }
     function sharePrev(x, item) {
       var out = document.getElementById('try-share-out');
@@ -2000,13 +2192,21 @@
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
         .then(function (j) {
-          S.shareUrl = j.link;
-          persistShare(j.link);
+          S.shareUrl = j.link; S.delToken = j.delete_token || '';
+          persistShare(j.link, S.delToken);
           out.innerHTML = '';
           var a = document.createElement('a');
           a.href = j.link; a.textContent = j.link; a.target = '_blank'; a.rel = 'noopener';
           out.appendChild(a);
-          out.appendChild(document.createTextNode(' \u00b7 expires in 7 days \u00b7 anyone with the link can read it'));
+          out.appendChild(document.createTextNode(' \u00b7 stores this report (text, charts and tables, not your file) on this site\'s Cloudflare storage for 7 days \u00b7 anyone with the link can read it \u00b7 delete it any time from this browser'));
+          if (S.delToken) {
+            var db = document.createElement('button');
+            db.type = 'button'; db.className = 'btn btn-ghost btn-sm'; db.textContent = 'Delete this link';
+            var t0 = S.prevT || 0, l0 = j.link, k0 = S.delToken;
+            db.addEventListener('click', function () { removeLink(t0, l0, k0); });
+            out.appendChild(document.createTextNode(' '));
+            out.appendChild(db);
+          }
           try { navigator.clipboard.writeText(j.link); out.appendChild(document.createTextNode(' \u00b7 copied')); } catch (e4) { /* clipboard needs a gesture; the link is shown */ }
           if (typeof onLink === 'function') onLink(j.link);
         })
@@ -2426,6 +2626,14 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     }
 
+    function downloadText(text, name, mime) {
+      var url = URL.createObjectURL(new Blob([text], { type: mime + ';charset=utf-8' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = name; a.hidden = true;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    }
+
     /* ---- report actions (one listener for the report) ---- */
     el.report.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button');
@@ -2434,11 +2642,7 @@
       if (dl) {
         var ext = dl === 'ledger_json' ? '.json' : '.csv', mime = dl === 'ledger_json' ? 'application/json' : 'text/csv';
         var name = stem(S.report.input.name) + (dl === 'clean_csv' ? '-clean' : dl === 'quarantine_csv' ? '-set-aside' : '-evidence-ledger') + ext;
-        var url = URL.createObjectURL(new Blob([S.report.downloads[dl]], { type: mime + ';charset=utf-8' }));
-        var a = document.createElement('a');
-        a.href = url; a.download = name; a.hidden = true;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        downloadText(S.report.downloads[dl], name, mime);
       } else if (act === 'print') {
         printReport();
       } else if (act === 'report-html') {

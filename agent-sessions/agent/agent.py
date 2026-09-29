@@ -30,9 +30,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------- config
 def load_env():
+    """Keys come from the environment. To read them from a KEY=value file instead, name the file in
+    NL_AGENT_ENV_FILE; this published copy points at no file of its own."""
     env = {}
-    p = os.path.expanduser("~/.hermes/.env")
-    if os.path.exists(p):
+    p = os.path.expanduser(os.environ.get("NL_AGENT_ENV_FILE", ""))
+    if p and os.path.exists(p):
         for line in open(p):
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:

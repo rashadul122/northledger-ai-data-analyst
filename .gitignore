@@ -12,6 +12,10 @@ Senior-Data-Analytics-Portfolio-Blueprint.pdf
 # profile in tools/check_driver.py
 demo-data.json
 
+# agent tooling notes (a governor plugin writes these next to the work); never part of the site
+.governor/
+.work/
+
 # local clutter
 .DS_Store
 __pycache__/

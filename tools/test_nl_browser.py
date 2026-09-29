@@ -24,6 +24,7 @@ Python 3.9, pandas and numpy (the engine's own environment); nothing is fetched.
 from __future__ import annotations
 
 import csv
+import datetime
 import io
 import json
 import math
@@ -2226,6 +2227,18 @@ def test_an_ai_plan_is_validated_applied_and_reported():
     assert all(f["column"] != "population" or f["decision"] != "withhold" for f in rep["privacy"]["flagged"]), rep["privacy"]
 
 
+def test_the_visitors_plan_review_is_kept_as_a_clean_record():
+    plan = {"goal": "How have CO2 emissions changed?", "operations": [{"op": "date_from_year", "column": "year"}], "primary": "co2"}
+    rv = {"approved": True, "goal_edited": True, "ops_removed": ["set_aside"], "analyses_removed": [],
+          "at": "2026-09-29T00:00:00Z", "evil": {"x": 1}}
+    rep = NB.run(_panel_csv(), "co2.csv", "", {"__plan__": plan, "__plan_review__": rv}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    r = rep["ai_plan"]["review"]
+    assert set(r) == {"approved", "goal_edited", "ops_removed", "analyses_removed", "at"} and r["approved"] is True and r["ops_removed"] == ["set_aside"], r
+    rep = NB.run(_panel_csv(), "co2.csv", "", {"__plan_review__": {"approved": False, "at": "2026-09-29T00:00:00Z"}}, "2026-09-15")
+    assert rep["ok"] and rep["plan_review"]["approved"] is False and "ai_plan" not in rep, rep.get("plan_review")
+
+
 def test_the_profile_for_the_planner_holds_no_rows():
     prof = NB.profile_for_ai(_panel_csv(), "co2.csv", flagged={"population": "some values look personal"})
     assert prof["ok"] and prof["rows"] == 525
@@ -2394,6 +2407,107 @@ def test_predict_scores_on_held_out_rows_and_names_the_driver_that_matters():
     assert 0.9 < r2 < 1.0, good["sentence"]                 # 3 per unit of area over a range of 160 against noise of 20
     assert "per unit 3" in good["table"]["rows"][0][2], good["table"]["rows"][0]
     assert "does not predict held-out rows better than the average" in weak["sentence"], weak["sentence"]
+
+
+# ---- data tests compiled from the plan's column types (contracts)
+def _contract_csv(n, price, extra=None):
+    """n rows of date,price,units; price(i) gives the price text. extra: {column: fn(i)} appended columns."""
+    extra = extra or {}
+    rows = [",".join(["date", "price", "units"] + list(extra))]
+    for i in range(n):
+        rows.append(",".join([(datetime.date(2025, 1, 1) + datetime.timedelta(days=i)).isoformat(), str(price(i)), str(10 + i % 7)]
+                             + [str(f(i)) for f in extra.values()]))
+    return ("\n".join(rows) + "\n").encode()
+
+
+def _contract_plan(*cols):
+    return {"goal": "How is price moving?", "columns": [{"name": n, "semantic_type": t} for n, t in cols], "primary": "units"}
+
+
+def _by_col(rep):
+    return {t["column"]: t for t in rep["contracts"]["tests"]}
+
+
+def test_contracts_a_few_bad_values_are_set_aside_and_offered_for_download():
+    csv_ = _contract_csv(100, lambda i: 140 if i in (7, 60) else 20 + i % 50)
+    rep = NB.run(csv_, "p.csv", "", {"__plan__": _contract_plan(("price", "percentage"))}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    c = rep["contracts"]
+    t = _by_col(rep)["price"]
+    assert c["rows_set_aside"] == 2 and t["failed"] == 2 and t["checked"] == 100, c
+    assert t["action"] == "set aside 2 rows" and t["examples"] == ["140"] and "between 0 and 100" in t["test"], t
+    assert rep["input"]["rows"] == 98, rep["input"]
+    assert rep["downloads"]["contract_set_aside_csv"].count("\n") == 3, rep["downloads"]["contract_set_aside_csv"]
+    assert c["note"].startswith("Tests compiled from the AI's reading of each column")
+
+
+def test_contracts_many_bad_values_are_a_finding_about_the_plan_not_a_deletion():
+    csv_ = _contract_csv(100, lambda i: 140 if i % 10 < 3 else 20 + i % 50)
+    rep = NB.run(csv_, "p.csv", "", {"__plan__": _contract_plan(("price", "percentage"))}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    t = _by_col(rep)["price"]
+    assert rep["contracts"]["rows_set_aside"] == 0 and rep["input"]["rows"] == 100, rep["contracts"]
+    assert t["action"].startswith("not applied: 30% fail") and "probably wrong" in t["action"], t
+    assert "contract_set_aside_csv" not in rep["downloads"]
+
+
+def test_contracts_identifier_count_year_and_rating_are_each_reported():
+    extra = {"id": lambda i: 5 if i in (3, 40) else 1000 + i,
+             "cnt": lambda i: -4 if i == 9 else i,
+             "yr": lambda i: 3050 if i == 15 else 2000 + i % 20,
+             "stars": lambda i: 7 if i == 21 else 1 + i % 5}
+    plan = _contract_plan(("id", "identifier"), ("cnt", "count"), ("yr", "year"), ("stars", "rating"))
+    rep = NB.run(_contract_csv(200, lambda i: 30 + i % 40, extra), "p.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    t = _by_col(rep)
+    assert t["id"]["failed"] == 1 and t["id"]["examples"] == ["5"], t["id"]      # the repeat after the first
+    assert t["cnt"]["failed"] == 1 and t["cnt"]["examples"] == ["-4"], t["cnt"]
+    assert t["yr"]["failed"] == 1 and t["yr"]["examples"] == ["3050"], t["yr"]
+    assert t["stars"]["failed"] == 1 and t["stars"]["examples"] == ["7"] and "1 to 5" in t["stars"]["test"], t["stars"]
+    assert rep["contracts"]["rows_set_aside"] == 4, rep["contracts"]
+
+
+def test_contracts_a_test_the_visitor_turned_off_is_marked_and_sets_nothing_aside():
+    csv_ = _contract_csv(100, lambda i: 140 if i in (7, 60) else 20 + i % 50)
+    dec = {"__plan__": _contract_plan(("price", "percentage")), "__contracts_off__": ["price"]}
+    rep = NB.run(csv_, "p.csv", "", dec, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    t = _by_col(rep)["price"]
+    assert t["action"] == "turned off by you" and t["failed"] == 0, t
+    assert rep["contracts"]["rows_set_aside"] == 0 and rep["input"]["rows"] == 100
+    assert "contract_set_aside_csv" not in rep["downloads"]
+
+
+def test_contracts_never_remove_more_than_five_percent_of_rows_in_total():
+    extra = {"cnt": lambda i: -4 if i in (10, 11, 12) else i}
+    csv_ = _contract_csv(100, lambda i: 140 if i in (50, 51, 52) else 20 + i % 50, extra)
+    rep = NB.run(csv_, "p.csv", "", {"__plan__": _contract_plan(("price", "percentage"), ("cnt", "count"))}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    c = rep["contracts"]
+    assert c["rows_set_aside"] == 0 and rep["input"]["rows"] == 100, c
+    assert all(t["failed"] == 3 and t["action"].startswith("not applied: together") for t in c["tests"]), c
+    assert "more than the 5%" in c["note"], c["note"]
+
+
+def test_signals_a_contract_the_engine_did_not_apply_is_named():
+    csv_ = _contract_csv(100, lambda i: 140 if i % 10 < 4 else 20 + i % 50)
+    rep = NB.run(csv_, "p.csv", "", {"__plan__": _contract_plan(("price", "percentage"))}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    sig = [x for x in rep["plan_signals"] if x["kind"] == "contract_failed"]
+    assert len(sig) == 1 and sig[0]["column"] == "price" and "40" in sig[0]["detail"] and len(sig[0]["detail"]) <= 200, rep["plan_signals"]
+
+
+def test_signals_an_off_menu_operation_is_op_refused():
+    plan = dict(_contract_plan(("price", "count")), operations=[{"op": "drop_everything"}])
+    rep = NB.run(_contract_csv(100, lambda i: 20 + i % 50), "p.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    assert any(x["kind"] == "op_refused" for x in rep["plan_signals"]), rep["plan_signals"]
+
+
+def test_signals_a_clean_plan_on_a_clean_file_has_none():
+    rep = NB.run(_contract_csv(100, lambda i: 20 + i % 50), "p.csv", "", {"__plan__": _contract_plan(("price", "percentage"))}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    assert rep["plan_signals"] == [], rep["plan_signals"]
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

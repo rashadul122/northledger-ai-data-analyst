@@ -25,7 +25,7 @@ venv/bin/pip install requests pandas numpy openpyxl python-docx fpdf2
 # 1) Build the demo database (~60k real NYC collision rows + the messy legacy export)
 venv/bin/python build_database.py
 
-# 2) Run a session (needs OLLAMA_API_KEY for Ollama Cloud in ~/.hermes/.env)
+# 2) Run a session (needs OLLAMA_API_KEY for Ollama Cloud, set in the environment)
 venv/bin/python agent.py --session mysession --goal "Profile legacy_export and audit its data quality"
 
 # 3) Rebuild the demo page from all sessions

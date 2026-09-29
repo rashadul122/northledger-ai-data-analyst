@@ -50,7 +50,8 @@ Checks
             page other than the verify harness, no retired demo-data.json.
   requests  The site makes no request to another origin while someone reads it: no external
             script, stylesheet, image, frame or media in any page (built or rendered), and no
-            outside address in any script or style it serves. Two exceptions, each encoded here
+            outside address in any script or style it serves (a <script type="application/json">
+            data block is text, not code, so addresses inside it are not requests). Two exceptions, each encoded here
             and nowhere else: (1) the "Try it on your own file" demo's worker, engine/worker.js,
             may load Pyodide from https://cdn.jsdelivr.net/pyodide/ (and only from there); the
             page starts that worker only after a visitor starts the demo; (2) index.html may
@@ -295,13 +296,20 @@ EDITORIAL_SESSION_FIELDS = ("title", "blurb", "archive_reason")
 def _session_texts(page_html: str):
     """(where, text) for the editorial parts of window.SESSIONS on a replay page: what the page
     writes about a session, not what the agent or the user said in it."""
-    m = re.search(r"window\.SESSIONS\s*=\s*", page_html)
-    if not m:
-        return []
-    try:
-        data, _ = json.JSONDecoder().raw_decode(page_html, m.end())
-    except ValueError:
-        return [("window.SESSIONS", "")]
+    m = re.search(r'<script type="application/json" id="sessions-data">(.*?)</script>', page_html, re.S)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+        except ValueError:
+            return [("sessions-data", "")]
+    else:
+        m = re.search(r"window\.SESSIONS\s*=\s*", page_html)
+        if not m:
+            return []
+        try:
+            data, _ = json.JSONDecoder().raw_decode(page_html, m.end())
+        except ValueError:
+            return [("window.SESSIONS", "")]
     out = []
     for s in (data.get("sessions") or []) if isinstance(data, dict) else []:
         name = s.get("name", "?")
@@ -423,6 +431,8 @@ def check_stray(site: Site) -> Result:
         why = None
         if is_dir and name == "qa":
             why = "verify.sh output (screenshots, a print PDF), not part of the site"
+        elif is_dir and name.startswith("_"):
+            why = "a scratch folder at the site root; a static host serves it publicly"
         elif not is_dir and name.lower().endswith(".pdf"):
             why = "a PDF at the site root; downloads the page offers live in downloads/"
         elif (not is_dir and name.startswith(("test-", "test_")) and name.endswith(".html")
@@ -1046,6 +1056,8 @@ def check_requests(site: Site) -> Result:
                 if "style" in n.attrs:
                     for u in _urls_in_code(n.attrs["style"]):
                         judge(where + " style attribute", page, u, False)
+                if n.tag == "script" and n.attrs.get("type", "").strip().lower() == "application/json":
+                    continue  # a non-executable data block is read as text, never requested
                 if n.tag in ("script", "style") and "src" not in n.attrs:
                     code = "".join(c for c in n.children if isinstance(c, str))
                     for u in _urls_in_code(code):

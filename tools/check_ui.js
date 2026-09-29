@@ -1094,9 +1094,19 @@ self.onmessage = function (e) {
   var m = e.data || {};
   if (m.type === 'scan') {
     self.postMessage({ type: 'stage', id: m.id, stage: 'load', state: 'done', seconds: 0.01 });
-    self.postMessage({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: REPORT.privacy.flagged.map(function (f) { return { column: f.column, kind: f.kind }; }) } });
+    self.postMessage({ type: 'scanned', id: m.id, result: { ok: true, error: null, profile: REPORT.__profile ? {} : undefined, flagged: REPORT.privacy.flagged.map(function (f) { return { column: f.column, kind: f.kind }; }) } });
+  } else if (m.type === 'results') {
+    if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: { charts: [], tables: [] } });
   } else if (m.type === 'run') {
-    self.postMessage({ type: 'result', id: m.id, report: REPORT });
+    var D = (m.options && m.options.decisions) || {}, R = REPORT;
+    if (D.__plan__) { R = JSON.parse(JSON.stringify(REPORT)); R.ai_plan = { goal: D.__plan__.goal, applied: [], refused: [], review: D.__plan_review__ };
+      R.plan_signals = (REPORT.__signals && !D.__plan__.revised && !D.__plan_review__) ? REPORT.__signals : []; }
+    if (D.__plan__ && D.__plan__.columns) {   // echo the data tests the engine would run, for the review-card checks
+      var off = D.__contracts_off__ || [];
+      R.contracts = { tests: D.__plan__.columns.filter(function (c) { return c.semantic_type !== 'category'; }).map(function (c) { return { column: c.name, semantic_type: c.semantic_type, test: 'stub test', checked: off.indexOf(c.name) < 0 ? 10 : 0, failed: 0, examples: [], action: off.indexOf(c.name) < 0 ? 'passed' : 'turned off by you' }; }), rows_set_aside: 1, note: 'stub' };
+      R.downloads.contract_set_aside_csv = 'amount\\n140\\n';
+    }
+    self.postMessage({ type: 'result', id: m.id, report: R });
   }
 };`;
 
@@ -1243,124 +1253,98 @@ check('try-report-shows-exactly-the-engine-report-and-no-ai-when-unset', DESK, a
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });
 
-check('try-ai-summaries-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
-  const rep = stubReport();
-  let mode = 'invented';
-  // what the model writes: words around slots; the page fills every figure and grade (§6 of the plan). The page
-  // sends the findings business first, the forecast next, data health last: F1 amount, F2 forecast, F3 and F4 data health
-  const good = {
-    executive: "Average amount rose {F1.n1} on the year before, to {F1.n2}; this finding is {F1.grade} [F1]. Exact duplicates account for {F3.n1} of {F3.n2} rows: {F3.grade} [F3]. The most common region is '[value A]', with {F4.n1} of rows: {F4.grade} [F4].",
-    technical: 'The average amount rose {F1.n1} against the prior year, to {F1.n2} (grade {F1.grade}) [F1]. Exact duplicates: {F3.n1} of {F3.n2} rows (grade {F3.grade}) [F3]. The next-month value for monthly rows, {F2.n1}, is graded {F2.grade} [F2].'
+// The AI choice (29 Sep 2026): nothing reaches the proxy until the visitor presses "Continue with the AI"; the
+// payloads that do leave carry only the allowed fields; a proxy that fails leaves the engine's own report.
+check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
+  const rep = stubReport(); rep.__profile = true; rep.__results = true;
+  const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: [], operations: [], analyses: [{ type: 'trend', columns: ['amount'] }],
+    columns: [{ name: 'amount', semantic_type: 'percentage' }, { name: 'id', semantic_type: 'identifier' }, { name: 'region', semantic_type: 'category' }] };
+  let mode = 'good';
+  const reply = (b, u) => {
+    if (b.profile) return mode === 'down' ? { status: 503, json: { error: 'x' } } : { status: 200, json: { plan } };
+    return mode === 'noreport' ? { status: 502, json: { error: 'upstream_error' } } : { status: 200, json: { report: 'Rent rose. [S1]', sources: [{ title: 'A source', link: 'https://example.org/a' }], model: 'check', repaired: 0 } };
   };
-  const shown = {
-    executive: "Average amount rose 12.5% on the year before, to 1,234.5; this finding is confirmed [F1]. Exact duplicates account for 12 of 1250 rows: keep watching [F3]. The most common region is 'East', with 40% of rows: keep watching [F4].",
-    technical: 'The average amount rose 12.5% against the prior year, to 1,234.5 (grade CONFIRMED) [F1]. Exact duplicates: 12 of 1250 rows (grade WATCH) [F3]. The next-month value for monthly rows, 190, is graded NOT ENOUGH DATA [F2].'
-  };
-  const replies = {
-    // the old proxy's shape: both parts as text; the page's own guard sets the executive part aside
-    invented: { status: 200, json: { executive: good.executive + ' Expect 47.3 more next year [F1].', technical: good.technical, model: 'check' } },
-    // the per-part proxy: one part passed, the other refused (reason codes) or not written (an error code)
-    partial: { status: 200, json: { executive: good.executive, technical: null, model: 'check', rejected: { technical: ['grade_word', 'confidence'] }, unavailable: {} } },
-    unavail: { status: 200, json: { executive: null, technical: good.technical, model: 'check', rejected: {}, unavailable: { executive: 'upstream_timeout' } } },
-    rejected: { status: 502, json: { error: 'rejected_wording', part: 'technical', reasons: ['grade_word', 'confidence'] } },
-    rejected2: { status: 502, json: { error: 'rejected_wording', part: 'executive', reasons: ['digit'], rejected: { executive: ['digit'], technical: ['grade_word'] }, unavailable: {} } },
-    busy: { status: 429, json: { error: 'upstream_busy' } },
-    down: { status: 502, json: { error: 'upstream_error', upstream_status: 503 } },
-    good: { status: 200, json: { executive: good.executive, technical: good.technical, model: 'check', rejected: {}, unavailable: {} } }
-  };
-  let p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: () => replies[mode] });
+  const proxyReqs = (c) => c.__reqs.filter((r) => r.url.indexOf(PROXY_URL) === 0);
+  const posts = (c, tail) => proxyReqs(c).filter((r) => r.method === 'POST' && r.url === PROXY_URL + tail);
+  let p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
   ok((await p.evaluate(() => window.NL.try.ai_proxy_url)) === PROXY_URL, 'the page did not pick up ai_proxy_url');
-  await runStub(p);
-  let pre = JSON.parse(await p.textContent('#try-ai-preview'));
-  ok(JSON.stringify(pre).indexOf('\'East\'') < 0 && JSON.stringify(pre).indexOf('orders.csv') < 0 && JSON.stringify(pre).indexOf('[value A]') >= 0 && JSON.stringify(pre).indexOf('[your file]') >= 0,
-    'the quoted value or the file name is in the payload by default: ' + JSON.stringify(pre.findings).slice(0, 200));
-  ok(/exactly as you typed|finding's id/.test(await p.textContent('.tr-ai')) && /China/.test(await p.textContent('.tr-ai')) && /neutral heading/.test(await p.textContent('.tr-ai')),
-    'the consent box does not say what is sent, where DeepSeek runs, or what the scan can miss');
-  ok(/writes only the words/.test(await p.textContent('.tr-ai')), 'the consent box does not say the model writes no figure');
-  await p.check('#try-ai-raw');
-  pre = JSON.parse(await p.textContent('#try-ai-preview'));
-  ok(JSON.stringify(pre).indexOf('\'East\'') >= 0 && JSON.stringify(pre).indexOf('[value A]') < 0, 'ticking "send them as they are" did not change the preview');
-  await p.uncheck('#try-ai-raw');
-  ok(await p.isDisabled('#try-ai-go'), 'Send is enabled before consent');
-  await p.click('#try-ai-go', { force: true, timeout: 2000 }).catch(() => {});
-  await p.waitForTimeout(200);
-  ok(!ctx.__ai.length, 'something was sent before consent');
-  const send = async () => { await p.check('#try-ai-ok'); await p.click('#try-ai-go'); };
-  const note = async (re) => {
-    await p.waitForFunction((src) => new RegExp(src).test((document.querySelector('.tr-ai-fallback') || {}).textContent || ''), re.source, { timeout: 20000 });
-    return p.textContent('.tr-ai-fallback');
-  };
-  // what is on screen once some part came back: the label, each part shown or its note
-  const shownParts = () => p.evaluate(() => {
-    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null;
-    const box = document.querySelector('#try-story .tr-ai-sum');
-    if (!box) return null;
-    return { label: t(box.querySelector('.tr-ai-label')), limit: t(box.querySelector('.tr-ai-limit')), heads: Array.from(box.querySelectorAll('h4')).map(t),
-      executive: t(box.querySelector('[data-part="executive"]')), technical: t(box.querySelector('[data-part="technical"]')),
-      asideExecutive: t(box.querySelector('[data-aside="executive"]')), asideTechnical: t(box.querySelector('[data-aside="technical"]')),
-      cite: (box.querySelector('sup.tr-cite') || {}).title, lead: t(document.querySelector('#try-story .tr-lead')), engine: !!document.querySelector('#try-story .tr-engine-label'),
-      slotsLeft: /\{[FS]\d|NONE_CONFIRMED/.test(box.textContent), toggle: !!document.querySelector('#try-story [data-wording]'), all: document.getElementById('try').innerText };
-  });
-  const again = async () => {   // a fresh run of the same report (once a part is shown, the page does not ask again)
-    await p.reload();
-    await p.waitForFunction(() => window.NLTry && document.getElementById('try-sample'));
-    await runStub(p);
-  };
-  // 1. every part refused or failed: only the engine's story, and a note that says why
-  mode = 'rejected'; await send();
-  let fb = await note(/502/);
-  const sent = JSON.parse(ctx.__ai[0]);
-  ok(JSON.stringify(Object.keys(sent)) === '["objective","findings","story"]' && sent.findings.every((f) => JSON.stringify(Object.keys(f)) === '["id","claim","verdict","value"]'),
-    'the proxy got more than {objective, findings[id, claim, verdict, value], story}: ' + JSON.stringify(Object.keys(sent)));
-  ok(JSON.stringify(sent) === JSON.stringify(JSON.parse(await p.textContent('#try-ai-preview'))), 'what was sent differs from the "Exactly what is sent" preview');
-  ok(ctx.__ai[0].indexOf(rep.input.sha256) < 0 && ctx.__ai[0].indexOf(rep.downloads.clean_csv.split('\n')[1]) < 0, 'the file fingerprint or a row went to the proxy');
-  ok(/technical summary wrote a grade of its own; used confidence wording/.test(fb) && /engine's story is shown/.test(fb), 'the proxy\'s refusal reasons are not given: ' + fb);
-  ok(await p.isVisible('#try-story .tr-engine-label') && !(await p.$('#try-story .tr-ai-sum')), 'a refused summary is on screen');
-  mode = 'rejected2'; await send();
-  fb = await note(/executive summary was set aside: it wrote a number of its own/);
-  ok(/technical summary was set aside: it wrote a grade of its own/.test(fb) && /engine's story is shown/.test(fb), 'a refusal of both parts does not name each part and its reason: ' + fb);
-  mode = 'busy'; await send();
-  fb = await note(/429/);
-  ok(/busy/.test(fb) && /engine's story is shown/.test(fb), 'a DeepSeek 429 does not fall back to the engine story: ' + fb);
-  mode = 'down'; await send();
-  fb = await note(/not available right now \(the proxy answered 502\)/);
-  // 2. one part passed: it is shown, labelled; the other part says plainly that it was set aside, and why
-  mode = 'invented'; await send();
-  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
-  let d = await shownParts();
-  ok(d.technical === shown.technical && d.executive === null, 'the part that passed is not shown alone: ' + JSON.stringify([d.executive, d.technical]));
-  ok(/set aside/.test(d.asideExecutive) && /wrote a number of its own/.test(d.asideExecutive), 'the executive part does not say it was set aside and why: ' + d.asideExecutive);
-  ok(!/47\.3/.test(d.all), 'the refused text reached the screen');
-  ok(JSON.stringify(d.heads) === '["Executive summary","Technical summary"]', 'each part is not labelled: ' + JSON.stringify(d.heads));
-  await again();
-  mode = 'partial'; await send();
-  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
-  d = await shownParts();
-  ok(d.executive === shown.executive && d.technical === null, 'the executive part is not shown alone: ' + JSON.stringify([d.executive, d.technical]));
-  ok(/set aside/.test(d.asideTechnical) && /wrote a grade of its own; used confidence wording/.test(d.asideTechnical), 'the technical part does not give the proxy\'s reasons in plain words: ' + d.asideTechnical);
-  ok(!(await p.$('.tr-ai-fallback')), 'a partial answer is reported as a failure');
-  await again();
-  mode = 'unavail'; await send();
-  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
-  d = await shownParts();
-  ok(d.technical === shown.technical && d.executive === null && /could not be written/.test(d.asideExecutive) && /did not answer in time/.test(d.asideExecutive),
-    'a part the model did not write in time is not named: ' + JSON.stringify([d.asideExecutive, d.technical]));
-  // 3. both parts passed
-  await again();
-  mode = 'good'; await send();
-  await tryUntil(p, '#try-story .tr-ai-sum', 20000);
-  d = await shownParts();
-  ok(d.label === 'AI-reworded summaries (DeepSeek); every figure and grade put in by the engine', 'the AI label is wrong: ' + d.label);
-  ok(/wrote only the words/.test(d.limit) && /cannot prove that a sentence means what the finding means/.test(d.limit), 'the caveat does not say what the check cannot see: ' + d.limit);
-  ok(JSON.stringify(d.heads) === '["Executive summary","Technical summary"]', 'the two parts are not both shown: ' + JSON.stringify(d.heads));
-  ok(d.executive === shown.executive, 'the executive summary on screen is wrong: ' + d.executive);
-  ok(d.technical === shown.technical, 'the technical summary on screen is wrong: ' + d.technical);
-  ok(!d.asideExecutive && !d.asideTechnical, 'a set-aside note is shown beside two good parts');
-  ok(d.cite === rep.findings[0].claim, 'a citation does not carry the engine\'s claim: ' + d.cite);
-  ok(!d.slotsLeft, 'a slot was left on screen');
-  ok(d.engine && d.lead === squash(rep.story.headline) && !d.toggle, 'the AI summaries replaced the engine story instead of sitting under it');
-  ok(ctx.__ai.length === 8, ctx.__ai.length + ' proxy requests for 8 presses of Send');
-  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  // 1. with personal columns flagged: the two buttons and the plain paragraph, and nothing sent while they are on screen
+  await p.click('#try-sample');
+  await tryUntil(p, '#try-pd:not([hidden])');
+  const t = await p.textContent('#try-pd');
+  ok(/Continue with the AI/.test(t) && /Continue without AI/.test(t) && !/Continue with these choices/.test(t), 'the personal-data step lacks the two-button choice');
+  ok(/DeepSeek/.test(t) && /this site's proxy/.test(t) && /never rows/.test(t) && /never columns flagged as personal/.test(t) && /public sources on the web/.test(t) && /nothing leaves this browser/.test(t), 'the choice does not say what is sent and to whom: ' + t.slice(0, 400));
+  await p.waitForTimeout(300);
+  ok(!proxyReqs(ctx).length, 'the proxy was contacted before the visitor chose');
+  // 2. without the AI: the engine report, and zero requests to the proxy origin
+  await p.click('#try-pd-noai');
+  await tryUntil(p, '#try-report:not([hidden])');
+  await p.waitForTimeout(500);
+  ok(!proxyReqs(ctx).length, 'a request reached the proxy after "Continue without AI": ' + JSON.stringify(proxyReqs(ctx).map((r) => r.url)));
+  ok(!(await p.isVisible('#try-ai-report')) && !(await p.isVisible('#try-plan-card')), 'AI output is shown after the visitor chose no AI');
+  await p.close();
+  // 3. with the AI: /plan only after the click, only the allowed fields; the plan runs at once (no review gate); the visitor may change it afterwards
+  const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+  try {
+    p = await openTry(c2, { stubReport: rep, proxy: 'set', proxyReply: reply });
+    await p.fill('#try-q', 'Which units pay late?');
+    await p.click('#try-sample');
+    await tryUntil(p, '#try-pd:not([hidden])');
+    ok(!proxyReqs(c2).length, 'the proxy was contacted before the click');
+    await p.click('#try-pd-go');
+    await tryUntil(p, '#try-report:not([hidden])');
+    ok(!(await p.isVisible('#try-review-go')), 'a review card blocked the run');
+    const plans = posts(c2, 'plan');
+    ok(plans.length === 1, plans.length + ' /plan calls after one click');
+    const pb = JSON.parse(plans[0].body);
+    ok(Object.keys(pb).every((k) => ['objective', 'profile', 'profile_hash'].indexOf(k) >= 0) && pb.objective === 'Which units pay late?', 'the /plan body carries more than {objective, profile, profile_hash}: ' + Object.keys(pb));
+    await p.click('#try-plan-edit');
+    await tryUntil(p, '#try-review-go');
+    const rv = await p.textContent('#try-plan-card');
+    ok(/amount: between 0 and 100 \(or 0 and 1\) \(percentage\)/.test(rv) && /id: unique/.test(rv) && !/region:/.test(rv), 'the review card lacks the data-test lines (or shows one for a category with no values): ' + rv.slice(0, 300));
+    ok((await p.locator('#try-plan-card input[data-grp="ct"]:checked').count()) === 2, 'the data-test boxes are not both ticked by default');
+    await p.uncheck('#try-plan-card input[data-grp="ct"][data-i="1"]');
+    await p.click('#try-review-go');
+    await tryUntil(p, '#try-plan-card table.try-contracts');
+    await tryUntil(p, '#try-report:not([hidden])');
+    const ct = await p.textContent('#try-plan-card table.try-contracts');
+    ok(/turned off by you/.test(ct) && /passed/.test(ct), 'the Data tests card does not show the visitor\'s choice: ' + ct);
+    ok(await p.isVisible('#try-plan-card [data-dl="contract_set_aside_csv"]'), 'no download button for the rows the tests set aside');
+    await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+    const rb = JSON.parse(posts(c2, 'report')[0].body);
+    ok(Object.keys(rb).every((k) => ['objective', 'results', 'context_queries'].indexOf(k) >= 0), 'the /report body carries more than {objective, results, context_queries}: ' + Object.keys(rb));
+    ok(JSON.stringify(rb).indexOf(rep.downloads.clean_csv.split('\n')[1]) < 0 && JSON.stringify(rb).indexOf(rep.input.sha256) < 0, 'a row or the file fingerprint went to the proxy');
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+    await p.close();
+    // 4. fallbacks: no plan -> the engine's own rules; no report -> the engine's report and a plain note
+    mode = 'down';
+    p = await openTry(c2, { stubReport: rep, proxy: 'set', proxyReply: reply });
+    await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-go');
+    await tryUntil(p, '#try-report:not([hidden])');
+    ok(!(await p.isVisible('#try-review-go')) && !(await p.isVisible('#try-plan-edit')), 'a plan card is shown although the planner gave no plan');
+    await p.close();
+    mode = 'noreport';
+    p = await openTry(c2, { stubReport: rep, proxy: 'set', proxyReply: reply });
+    await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-go');
+    await p.waitForFunction(() => /could not be written/.test(document.getElementById('try-run-note').textContent), null, { timeout: 20000 });
+    ok(await p.isVisible('#try-report') && !(await p.isVisible('#try-ai-report')), 'a failed AI report hid the engine\'s report or showed an empty card');
+  } finally { await c2.close(); }
+  // 5. nothing flagged: the same choice is still put to the visitor before any AI call
+  const c3 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+  try {
+    const clean = stubReport(); clean.privacy.flagged = []; clean.__profile = true;
+    mode = 'good';
+    p = await openTry(c3, { stubReport: clean, proxy: 'set', proxyReply: reply });
+    await p.click('#try-sample');
+    await tryUntil(p, '#try-pd:not([hidden])');
+    ok(/Continue with the AI/.test(await p.textContent('#try-pd')) && /Continue without AI/.test(await p.textContent('#try-pd')), 'with nothing flagged the choice is not shown');
+    await p.waitForTimeout(300);
+    ok(!proxyReqs(c3).length, 'the proxy was contacted with nothing flagged, before the choice');
+    await p.click('#try-pd-noai');
+    await tryUntil(p, '#try-report:not([hidden])');
+    await p.waitForTimeout(300);
+    ok(!proxyReqs(c3).length, 'the proxy was contacted after "Continue without AI" with nothing flagged');
+  } finally { await c3.close(); }
 });
 
 // a report whose cleaning gate tripped (the shape engine/nl_browser.py returns; figures made up)
@@ -1410,27 +1394,100 @@ check('try-a-tripped-gate-leads-with-what-to-do-and-says-it-once', DESK, async (
 check('try-question-box-only-with-ai-and-locked-during-a-run', DESK, async (ctx) => {
   const rep = stubReport();
   let p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
-  ok(await p.isHidden('#try-q-wrap'), 'the question box shows although no AI wording is offered');
+  ok(await p.isHidden('#try-q-wrap'), 'the question box shows although no AI is offered');
   await runStub(p);
   ok(!(await p.$('#try-report .tr-q')), 'the report echoes a question that nothing used');
   await p.close();
   const ctx2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
   try {
     p = await openTry(ctx2, { stubReport: rep, proxy: 'set' });
-    ok(await p.isVisible('#try-q-wrap'), 'with AI wording on, the question box is hidden');
-    const order = await p.evaluate(() => document.getElementById('try-q-wrap').compareDocumentPosition(document.getElementById('try-start')) & Node.DOCUMENT_POSITION_FOLLOWING);
-    ok(order, 'the question box does not come before the file picker');
-    // since the AI planner (25 Sep 2026) the question is the plan's goal, and it is sent with any AI summaries
+    ok(await p.isVisible('#try-q-wrap'), 'with the AI offered, the question box is hidden');
     const qText = await p.textContent('#try-q-wrap');
-    ok(/AI planner takes it as the report's goal/.test(qText) && /If you later ask for AI summaries, your question is sent/.test(qText), 'the question box does not say what it is used for');
+    ok(/Continue with the AI/.test(qText) && /plans the analyses around your question/.test(qText), 'the question box does not say what it is used for: ' + qText.slice(0, 200));
     await p.fill('#try-q', 'Which units pay late?');
     await p.click('#try-sample');
     await tryUntil(p, '#try-pd:not([hidden])');
     ok(await p.isDisabled('#try-q'), 'the question box can be edited while the engine runs');
-    await p.click('#try-pd-go');
+    await p.click('#try-pd-noai');
     await tryUntil(p, '#try-report:not([hidden])');
     ok(!(await p.isDisabled('#try-q')), 'the question box stays locked after the report');
   } finally { await ctx2.close(); }
+});
+
+check('try-the-visitor-may-change-the-ai-plan-after-the-engine-ran-it', DESK, async (ctx) => {
+  const rep = stubReport(); rep.__profile = true;
+  const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: ['few months'],
+    operations: [{ op: 'set_aside', columns: ['notes'] }, { op: 'date_from_year', column: 'order_date' }], analyses: [{ type: 'trend', columns: ['amount'] }] };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan } } : { status: 503, json: { error: 'x' } } });
+  await p.click('#try-sample');
+  await tryUntil(p, '#try-pd:not([hidden])');
+  await p.click('#try-pd-go');
+  await tryUntil(p, '#try-report:not([hidden])');
+  ok(!(await p.isVisible('#try-review-go')), 'the review card blocked the engine');
+  ok(/Change the plan and run again/.test(await p.textContent('#try-plan-card')), 'no button to change the plan after the run');
+  ok(!/You approved this plan/.test(await p.textContent('#try-plan-card')), 'the card claims an approval nobody gave');
+  await p.click('#try-plan-edit');
+  await tryUntil(p, '#try-review-go');
+  ok(/Set aside: notes/.test(await p.textContent('#try-plan-card')) && (await p.inputValue('#try-review-goal')) === plan.goal, 'the review card does not show the plan that ran');
+  await p.uncheck('#try-plan-card input[data-grp="op"][data-i="0"]');
+  await p.click('#try-review-go');
+  await p.waitForFunction(() => /You approved this plan/.test(document.getElementById('try-plan-card').textContent), null, { timeout: 20000 });
+  const t = await p.textContent('#try-plan-card');
+  ok(/you turned off 1 step/.test(t), 'the plan card does not report the visitor edit: ' + t.slice(0, 300));
+  ok(!ctx.__reqs.filter((r) => r.url === PROXY_URL + 'plan' && r.method === 'POST').slice(1).length, 'editing the plan asked the AI for another plan');
+});
+
+// Autonomous engine (29 Sep 2026): no signals -> one /plan and no review card; signals -> exactly one corrective /plan
+// carrying the feedback and no rows; never a third.
+check('try-the-ai-corrects-its-plan-once-when-the-engine-finds-a-problem', DESK, async (ctx) => {
+  const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: [], operations: [], analyses: [],
+    columns: [{ name: 'amount', semantic_type: 'percentage', role: 'measure' }] };
+  const revised = { goal: 'Which region grows fastest?', revised: true, changes: 'amount is now a plain number, not a percentage', columns: [{ name: 'amount', semantic_type: 'number', role: 'measure' }] };
+  const reply = (b) => b.profile ? { status: 200, json: { plan: b.feedback ? revised : plan } }
+    : { status: 200, json: { report: 'Fine. [S1]', sources: [], model: 'check', repaired: 0 } };
+  const plansOf = (c) => c.__reqs.filter((r) => r.url === PROXY_URL + 'plan' && r.method === 'POST').map((r) => JSON.parse(r.body));
+  // (1) no signals
+  const clean = stubReport(); clean.__profile = true; clean.__results = true;
+  let p = await openTry(ctx, { stubReport: clean, proxy: 'set', proxyReply: reply });
+  await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-report:not([hidden])');
+  await p.waitForTimeout(400);
+  ok(plansOf(ctx).length === 1 && !plansOf(ctx)[0].feedback, plansOf(ctx).length + ' /plan requests with no signals');
+  ok(!(await p.isVisible('#try-review-go')), 'a review card appeared');
+  ok(/nothing to correct/.test(await p.textContent('#try-stages')) && !/The AI corrected its plan/.test(await p.textContent('#try-plan-card')), 'the stage list or card says a correction happened');
+  await p.close();
+  // (2) signals on the first run
+  const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+  try {
+    const bad = stubReport(); bad.__profile = true; bad.__results = true;
+    bad.__signals = [{ kind: 'contract_failed', column: 'x', detail: 'between 0 and 100; 40 of 100 values fail' }];
+    p = await openTry(c2, { stubReport: bad, proxy: 'set', proxyReply: reply });
+    await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-go');
+    await tryUntil(p, '#try-plan-card:not([hidden])');
+    await p.waitForFunction(() => /The AI corrected its plan/.test(document.getElementById('try-plan-card').textContent), null, { timeout: 20000 });
+    await p.waitForTimeout(500);
+    const pl = plansOf(c2);
+    ok(pl.length === 2, pl.length + ' /plan requests (want exactly 2)');
+    const fb = pl[1].feedback;
+    ok(fb && fb.attempt === 1 && fb.signals[0].kind === 'contract_failed' && fb.previous_plan.goal === plan.goal, 'the second /plan body lacks the feedback: ' + JSON.stringify(pl[1]).slice(0, 300));
+    const hasRows = JSON.stringify(pl[1]).indexOf(bad.downloads.clean_csv.split('\n')[1]) >= 0 || Object.keys(pl[1]).some((k) => /rows|csv|data/i.test(k));
+    ok(!hasRows, 'the second /plan body holds rows');
+    const t = await p.textContent('#try-plan-card');
+    ok(/x: between 0 and 100/.test(t) && /What it changed: amount is now a plain number/.test(t), 'the correction block lacks the signal or the change: ' + t.slice(0, 400));
+    await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+    ok(plansOf(c2).length === 2, 'a third /plan request was made');
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+    await p.close();
+  } finally { await c2.close(); }
+  // (3) without the AI: zero proxy requests
+  const c3 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+  try {
+    const bad = stubReport(); bad.__profile = true; bad.__signals = [{ kind: 'contract_failed', column: 'x', detail: 'd' }];
+    p = await openTry(c3, { stubReport: bad, proxy: 'set', proxyReply: reply });
+    await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-noai');
+    await tryUntil(p, '#try-report:not([hidden])'); await p.waitForTimeout(400);
+    ok(!c3.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'a proxy request was made after "Continue without AI"');
+  } finally { await c3.close(); }
 });
 
 check('try-personal-data-step-says-what-each-choice-does', DESK, async (ctx) => {
@@ -1752,53 +1809,26 @@ check('try-v2-bottom-line-is-decision-ready', DESK, async (ctx) => {
 // drawn inside the hidden analyst view, so a visitor on the manager view saw nothing. The offer sits under the
 // bottom line; the executive summary appears there, the technical one in the analyst view's summary section.
 check('try-v2-ai-summaries-show-in-the-view-where-the-visitor-asks', DESK, async (ctx) => {
-  const rep = fixture('sample');
-  let reply = { status: 503, json: { error: 'not_configured' } };
-  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: () => reply });
-  await runReport(p);
-  ok(await p.isVisible('#nl2-manager') && !(await p.isVisible('#nl2-analyst')), 'the report does not open on the manager view');
-  const where = await p.evaluate(() => {
-    const M = document.getElementById('nl2-manager'), go = document.getElementById('try-ai-go');
-    const card = go && Array.from(M.children).filter((c) => c.contains(go))[0], prev = card && card.previousElementSibling;
-    return { inManager: !!go && M.contains(go), afterBottom: !!prev && prev.classList.contains('nl2-bottomcard') };
-  });
-  ok(where.inManager && where.afterBottom, 'the AI offer is not in the manager view right under the bottom line: ' + JSON.stringify(where));
-  ok(await p.isVisible('#try-ai-ok') && await p.isVisible('#try-ai-go'), 'the consent box is not visible in the manager view');
-  ok(!ctx.__ai.length, 'something was sent before consent');
-  // templates the page's own guard passes for this payload: the words do not matter here, where they show does
-  const body = JSON.parse(await p.textContent('#try-ai-preview'));
-  const tpl = await p.evaluate((b) => {
-    const pick = (reg, from) => { for (let i = from; i <= b.findings.length; i++) { const t = '{F' + i + '.claim}; {F' + i + '.grade} [F' + i + '].'; if (!window.NLTry.checkTemplate(t, b, reg).length) return t; } return null; };
-    return { executive: pick('executive', 1), technical: pick('technical', 2) };
-  }, body);
-  ok(tpl.executive && tpl.technical, 'no whole-claim template passes for the sample payload');
-  // a refusal is told where the visitor pressed, and the offer stays there to try again
-  reply = { status: 429, json: { error: 'upstream_busy' } };
-  await p.check('#try-ai-ok');
-  await p.click('#try-ai-go');
-  await p.waitForFunction(() => /429/.test((document.querySelector('#nl2-manager .tr-ai-fallback') || {}).textContent || ''), null, { timeout: 20000 });
-  ok(await p.isVisible('#nl2-manager .tr-ai-fallback') && await p.isVisible('#nl2-manager #try-ai-go'), 'a refusal is not shown in the manager view, beside the offer');
-  reply = { status: 200, json: { executive: tpl.executive, technical: tpl.technical, model: 'check', rejected: {}, unavailable: {} } };
-  await p.check('#try-ai-ok');
-  await p.click('#try-ai-go');
-  await tryUntil(p, '#nl2-manager [data-part="executive"]', 20000);
-  ok(await p.isVisible('#nl2-manager [data-part="executive"]'), 'the executive summary is not visible in the manager view');
-  const want = await p.evaluate(([t, b, r]) => ({ executive: window.NLTry.restore(window.NLTry.fillTemplate(t.executive, b, 'executive', { cite: 'keep' }), window.NLTry.aiRedactions(r)),
-    technical: window.NLTry.restore(window.NLTry.fillTemplate(t.technical, b, 'technical', { cite: 'keep' }), window.NLTry.aiRedactions(r)) }), [tpl, body, rep]);
+  // the integrated flow: the AI-written report opens in its own card, above the engine's report, where the reader is sent
+  const rep = fixture('sample'); rep.__profile = true; rep.__results = true;
+  const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: [], operations: [], analyses: [] };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan } }
+    : { status: 200, json: { report: 'Rent rose in the East. [S1]', sources: [{ title: 'A public source', link: 'https://example.org/a' }], model: 'check', repaired: 0 } } });
+  await p.click('#try-sample');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-msg:not([hidden])');
+  await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
   const d = await p.evaluate(() => {
-    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : '';
-    const M = document.getElementById('nl2-manager'), A = document.getElementById('nl2-analyst');
-    return { exec: t(M.querySelector('[data-part="executive"]')), techInManager: !!M.querySelector('[data-part="technical"]'), pointer: t(M.querySelector('.tr-ai-more')),
-      tech: t(A.querySelector('#nl2-s-summary [data-part="technical"]')), execInAnalyst: !!A.querySelector('[data-part="executive"]'), consentLeft: !!document.getElementById('try-ai-go') };
+    const c = document.getElementById('try-ai-report'), r = document.getElementById('try-report'), t = c.textContent;
+    const a = c.querySelector('.ai-rep-wm a');
+    return { before: !!(c.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING), text: t, src: c.querySelectorAll('.ai-rep-srcs a').length, home: a && a.href,
+      share: !!c.querySelector('#try-share'), pdf: !!c.querySelector('#try-pdf'), old: !!document.getElementById('try-ai-go') || !!document.getElementById('try-ai-ok') };
   });
-  ok(d.exec === squash(want.executive), 'the executive summary on screen is not the engine-filled template: ' + d.exec + ' | want ' + squash(want.executive));
-  ok(!d.techInManager && d.tech === squash(want.technical) && !d.execInAnalyst, 'the technical summary is not in the analyst view\'s summary section alone: ' + JSON.stringify(d).slice(0, 300));
-  ok(/Analyst view/.test(d.pointer) && await p.isVisible('#nl2-manager .tr-ai-more'), 'the manager view does not point to the technical summary: ' + d.pointer);
-  ok(!d.consentLeft, 'the consent box is still offered beside the summaries');
-  await p.click('#nl2-manager .tr-ai-more button');
-  await p.waitForTimeout(200);
-  ok(await p.isVisible('#nl2-analyst #nl2-s-summary [data-part="technical"]'), 'the pointer does not open the technical summary in the analyst view');
-  ok(ctx.__ai.length === 2, ctx.__ai.length + ' proxy requests for two presses');
+  ok(d.before && await p.isVisible('#try-ai-report') && await p.isVisible('#try-report'), 'the AI report is not shown above the engine report');
+  ok(/The AI-written report/.test(d.text) && /Rent rose in the East/.test(d.text) && /Honesty check/.test(d.text), 'the AI report card lacks its heading, text or honesty note: ' + d.text.slice(0, 200));
+  ok(d.src === 1 && d.share && d.pdf, 'the AI report lacks its sources or its share and PDF actions');
+  ok(d.home === DEMO_ORIGIN + '/index.html', 'the watermark does not link to the page\'s own address: ' + d.home);
+  ok(!d.old, 'the old consent box or summary button is offered beside the AI report');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 check('try-v2-a-routed-claim-is-described-by-its-own-rule', DESK, async (ctx) => {

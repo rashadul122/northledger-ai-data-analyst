@@ -24,10 +24,10 @@ is right."
 
 ## Out of scope (explicit)
 
-Real-time streaming; mobile apps; any manual number entry (if a human types a number,
+Streaming ingestion (batch loads only); mobile apps; any manual number entry (if a human types a number,
 it's a defect).
 
-## The senior probes this must survive (from the research; answers live in the docs)
+## The senior probes this must survive (from the research; answers are in the docs)
 
 - "What's the grain of the fact table?" → transaction grain, degenerate dims; decision log
 - "How do you handle late-arriving data?" → quarantine + backfill DAG; RUNBOOK

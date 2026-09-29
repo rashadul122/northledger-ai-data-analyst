@@ -950,6 +950,9 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-plan-card h3 { margin: 0 0 8px; }
 .try-plan-card h4 { margin: 14px 0 6px; font-size: .95rem; }
 .try-plan-card ul { margin: 0; padding-left: 20px; }
+.try-review textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); color: inherit; }
+.try-review-list { list-style: none; padding-left: 0 !important; }
+.try-review-btns { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
 .try-plan-alts { display: flex; flex-wrap: wrap; gap: 8px; }
 /* the highlighted opening (owner's ask, 26 Sep 2026): goal, reading, risks before everything else */
 .try-plan-head { margin: -4px 0 14px; padding: 14px 16px; border-left: 3px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 7%, transparent); }

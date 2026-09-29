@@ -518,7 +518,16 @@ def build(src_html, ev, fix5):
                     "audit/trace-report.json", "agent-demo/sessions/s5-rdw-fleet/transcript.json"],
     }
 
-    out = src_html[:start] + json.dumps(data, ensure_ascii=False) + ";\n" + src_html[end:]
+    # the recorded sessions are data, not code: a non-executable JSON block that a one-line script reads
+    # (the recorded web_search results hold outside addresses, which the requests check allows only in such a block)
+    head = src_html[:start - len("<script>\nwindow.SESSIONS = ")]
+    if not src_html[:start].endswith("<script>\nwindow.SESSIONS = "):
+        raise Missing("expected the sessions script to open with <script> and window.SESSIONS = ")
+    # strict JSON has no Infinity/NaN; JSON.stringify writes them as null, so null is what a reader saw
+    data = json.loads(json.dumps(data, ensure_ascii=False), parse_constant=lambda c: None)
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/").replace("<!--", "<\\u0021--")
+    out = (head + '<script type="application/json" id="sessions-data">' + blob + "</script>\n<script>\n"
+           + 'window.SESSIONS = JSON.parse(document.getElementById("sessions-data").textContent);\n' + src_html[end:])
     out = replace_once(out, "<!doctype html>", "<!doctype html>\n" + MARK, "doctype")
     out = sub_once(out, r'<meta name="description" content="[^"]*">',
                    '<meta name="description" content="An AI data analyst run against a real, public, multi-dataset '

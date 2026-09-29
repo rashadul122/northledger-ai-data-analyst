@@ -47,7 +47,7 @@ AGENT_PROVIDER=deepseek venv/bin/python agent.py --db big_data.db \
   --session mysession --goal "Analyze can_trade and forecast exports"
 ```
 
-DeepSeek needs `DEEPSEEK_API_KEY`; Ollama Cloud needs `OLLAMA_API_KEY` (in `~/.hermes/.env`).
+DeepSeek needs `DEEPSEEK_API_KEY`; Ollama Cloud needs `OLLAMA_API_KEY`. The key comes from the environment.
 `web_search` needs **no key at all**: it calls the portfolio's search proxy
 (`https://northledger-insight-proxy.r-mdrashad97.workers.dev/search`), a Cloudflare Worker that
 holds the Serper key and serves a capped number of searches a day (5 per visitor per minute,

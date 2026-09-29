@@ -1,6 +1,6 @@
 # RUNBOOK.md — operating the NorthLedger pipeline
 
-## Daily (automated — this page is what YOU read when it breaks)
+## Each run (started by the owner when the build is run, not on a schedule — this page is what YOU read when it breaks)
 
 | 06:00 | ingestion batch (extract → stage → test → transform → publish) |
 | 08:00 | AI memo: pulls KPI deltas, drafts brief, validates every number against source, publishes |

@@ -3163,6 +3163,16 @@ def results_json(rep: Any) -> str:
     return json.dumps(results_for_ai(rep), allow_nan=False, default=str)
 
 
+def _clean_plan_review(raw: Any) -> Optional[Dict[str, Any]]:
+    """The visitor's review of the AI plan, kept as a record only: fixed keys, safe types, short."""
+    if not isinstance(raw, dict):
+        return None
+    strs = lambda v: [str(x)[:80] for x in v[:20] if isinstance(x, str)] if isinstance(v, list) else []
+    return {"approved": raw.get("approved") is True, "goal_edited": raw.get("goal_edited") is True,
+            "ops_removed": strs(raw.get("ops_removed")), "analyses_removed": strs(raw.get("analyses_removed")),
+            "at": str(raw.get("at") or "")[:40]}
+
+
 def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[str]]:
     """The plan cut down to what is valid, and the reasons for each part refused."""
     refused: List[str] = []
@@ -3179,6 +3189,8 @@ def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[
             out["columns"].append({"name": c["name"], "semantic_type": t if t in SEMANTIC_TYPES else "other",
                                    "role": str(c.get("role") or "")[:20], "unit": str(c.get("unit") or "")[:40],
                                    "why": str(c.get("why") or "")[:200]})
+            if isinstance(c.get("values"), list):     # a category's profile values, for its contract test
+                out["columns"][-1]["values"] = [str(x)[:60] for x in c["values"][:300]]
     ops = []
     for op in (plan.get("operations") or [])[:12]:
         if not isinstance(op, dict) or op.get("op") not in PLAN_OPS:
@@ -3306,6 +3318,139 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
         except Exception as exc:  # noqa: BLE001 - one failed step never stops the run
             refused.append("%s failed (%s)" % (kind, type(exc).__name__))
     return df.to_csv(index=False).encode("utf-8"), {"applied": applied, "refused": refused, "decisions": decisions}, layout
+
+
+# ----------------------------------------------------------------------------- data tests from the plan
+# The dbt idea: the AI's reading of each column (its semantic_type) compiles to a test the engine
+# runs on the file before any analysis. A test that fails on a few values sets those rows aside; one
+# that fails on many says the AI's reading is probably wrong and deletes nothing. The visitor can turn
+# any test off. Every number here is counted by this code, none by the model.
+CONTRACT_ROW_SHARE = 0.05
+CONTRACT_NOTE = "Tests compiled from the AI's reading of each column; the engine ran them before any analysis."
+_CONTRACT_WORDS = {"percentage": "between 0 and 100 (or 0 and 1)", "count": "a whole number, 0 or more",
+                   "duration": "0 or more", "year": "a whole year between 1000 and 2999",
+                   "rating": "a whole number on the file's rating scale", "identifier": "unique: no value repeated",
+                   "boolean": "at most 2 different values", "category": "one of the values the profile lists",
+                   "date": "a date that can be read"}
+
+
+def _run_contracts(df: Any, plan: Dict[str, Any], off: Any = ()) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """(tests, {column: boolean mask of failing rows}) for the plan's columns; see _plan_contracts."""
+    import warnings
+    import pandas as pd
+    tests: List[Dict[str, Any]] = []
+    masks: Dict[str, Any] = {}
+    off = set(str(x) for x in (off or []))
+    for pc in plan.get("columns") or []:
+        col, st = pc.get("name"), str(pc.get("semantic_type") or "")
+        if col not in df.columns or st not in _CONTRACT_WORDS:
+            continue
+        if st == "category" and not (isinstance(pc.get("values"), list) and pc["values"]):
+            continue
+        s = df[col].astype(str).str.strip()
+        filled = s != ""
+        t = {"column": col, "semantic_type": st, "test": _CONTRACT_WORDS[st], "checked": int(filled.sum()),
+             "failed": 0, "examples": [], "action": ""}
+        if col in off:
+            t.update(checked=0, action="turned off by you")
+            tests.append(t)
+            continue
+        num = pd.to_numeric(s.str.replace(",", "", regex=False).str.rstrip("%"), errors="coerce")
+        isint = num.notna() & (num % 1 == 0)
+        v = num[filled & num.notna()]
+        if st == "percentage":
+            unit = (0, 1) if len(v) and float(v.max()) <= 1 else (0, 100)
+            t["test"] = ("between 0 and 1 (fractions: no value in the file is above 1)" if unit[1] == 1
+                         else "between 0 and 100")
+            bad = filled & ~num.between(*unit)
+        elif st == "count":
+            bad = filled & ~(isint & (num >= 0))
+        elif st == "duration":
+            bad = filled & ~(num >= 0)
+        elif st == "year":
+            bad = filled & ~(isint & num.between(1000, 2999))
+        elif st == "rating":
+            if not len(v) or float(v.max()) > 10:
+                continue
+            lo = 0 if float(v.min()) < 1 else 1
+            hi = 5 if float((v <= 5).mean()) >= 0.9 else int(math.ceil(float(v.max())))
+            t["test"] = "a whole number from %d to %d (a %d-%d scale, read from the file)" % (lo, hi, lo, hi)
+            bad = filled & ~(isint & num.between(lo, hi))
+        elif st == "identifier":
+            bad = filled & s.duplicated(keep="first")
+        elif st == "boolean":
+            bad = filled & ~s.isin(list(s[filled].value_counts().index[:2]))
+        elif st == "category":
+            allowed = set(str(x).strip() for x in pc["values"])
+            t["test"] = "one of the %d values the profile lists" % len(allowed)
+            bad = filled & ~s.isin(allowed)
+        else:  # date
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    dt = pd.to_datetime(s.where(filled), errors="coerce", format="mixed")
+                except Exception:  # noqa: BLE001 - an older pandas has no format="mixed"
+                    dt = pd.to_datetime(s.where(filled), errors="coerce")
+            bad = filled & dt.isna()
+        t["failed"] = int(bad.sum())
+        t["examples"] = [x[:40] for x in list(dict.fromkeys(s[bad]))[:3]]
+        masks[col] = bad
+        tests.append(t)
+    return tests, masks
+
+
+def _plan_contracts(df: Any, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The tests the plan's column types compile to, run on df: [{column, semantic_type, test, checked,
+    failed, examples, action}], one per plan column whose type has a test. plan["contracts_off"] lists
+    the columns whose tests the visitor turned off."""
+    tests, masks = _run_contracts(df, plan, plan.get("contracts_off"))
+    _decide_contracts(tests, masks, len(df))
+    return tests
+
+
+def _decide_contracts(tests: List[Dict[str, Any]], masks: Dict[str, Any], n_rows: int) -> Tuple[Any, str]:
+    """Fill each test's action; returns (mask of rows to set aside or None, why none was applied)."""
+    import pandas as pd
+    take = []
+    for t in tests:
+        if t["action"]:
+            continue
+        if not t["failed"]:
+            t["action"] = "passed"
+        elif t["failed"] / max(t["checked"], 1) > CONTRACT_ROW_SHARE:
+            t["action"] = ("not applied: %d%% fail, so the AI's reading of this column is probably wrong"
+                           % round(100.0 * t["failed"] / t["checked"]))
+        else:
+            take.append(t)
+    if not take:
+        return None, ""
+    union = pd.concat([masks[t["column"]] for t in take], axis=1).any(axis=1)
+    if int(union.sum()) > CONTRACT_ROW_SHARE * n_rows:
+        why = ("together the tests would set aside %d of %d rows, more than the %d%% a contract may remove, so none was applied"
+               % (int(union.sum()), n_rows, int(CONTRACT_ROW_SHARE * 100)))
+        for t in take:
+            t["action"] = "not applied: " + why
+        return None, why
+    for t in take:
+        t["action"] = "set aside %d rows" % t["failed"]
+    return union, ""
+
+
+def _apply_contracts(data: bytes, plan: Dict[str, Any], off: Any) -> Tuple[bytes, Optional[Dict[str, Any]], Any]:
+    """Run the plan's tests on the file the plan produced. Returns (the bytes the engine receives,
+    rep["contracts"] or None, the set-aside rows as a frame or None)."""
+    import pandas as pd
+    df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    tests, masks = _run_contracts(df, plan, off)
+    if not tests:
+        return data, None, None
+    union, why = _decide_contracts(tests, masks, len(df))
+    aside = None
+    if union is not None and int(union.sum()):
+        aside = df[union]
+        data = df[~union].to_csv(index=False).encode("utf-8")
+    note = CONTRACT_NOTE + ((" " + why[0].upper() + why[1:] + ".") if why else "")
+    return data, {"tests": tests, "rows_set_aside": 0 if aside is None else int(len(aside)), "note": note}, aside
 
 
 # ----------------------------------------------------------------------------- the AI's analyses
@@ -4192,6 +4337,16 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         layout = None
         ai_plan = None
         goal_from_plan = False
+        plan_review = None
+        if isinstance(decisions, dict) and "__plan_review__" in decisions:
+            decisions = dict(decisions)
+            plan_review = _clean_plan_review(decisions.pop("__plan_review__"))
+        contracts_off: List[str] = []
+        if isinstance(decisions, dict) and "__contracts_off__" in decisions:
+            decisions = dict(decisions)
+            raw_off = decisions.pop("__contracts_off__")
+            contracts_off = [str(x) for x in raw_off][:200] if isinstance(raw_off, list) else []
+        contracts = contract_aside = None
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
@@ -4205,6 +4360,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     ai_plan["refused"] = list(ai_plan.get("refused") or [])
                     ai_plan["primary"] = ""          # the value column became one column per series: lead with a series
                 ai_plan["refused"] = plan_refused + applied["refused"]
+                try:
+                    data, contracts, contract_aside = _apply_contracts(data, ai_plan, contracts_off)
+                except Exception:  # noqa: BLE001 - the tests are an aid; the file runs as the plan left it
+                    contracts = contract_aside = None
                 for c, d in applied["decisions"].items():
                     decisions.setdefault(c, d)
                 if ai_plan.get("goal") and objective == DEFAULT_OBJECTIVE:
@@ -4412,6 +4571,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             "quarantine_csv": _csv_text(cr.quarantined, withheld, reason_fix, lines),
             "ledger_json": _ledger_text(ledgers, scrub, rep["engine"]),
         }
+        if contracts:
+            hide = set(withheld) | set(_slug(c) for c in withheld)
+            for t in contracts["tests"]:
+                if t["column"] in hide or _slug(t["column"]) in hide:
+                    t["examples"] = []
+            rep["contracts"] = contracts
+            if contract_aside is not None and len(contract_aside):
+                cw = [c for c in contract_aside.columns if c in hide or _slug(c) in hide]
+                rep["downloads"]["contract_set_aside_csv"] = _csv_text(contract_aside, cw)
         # -- contract v2: grades, tests, provenance, quality profile and chart data
         _build_v2(rep, audit, r if (r is not None and not date_withheld) else None, th, cr, eng.db_path,
                   flagged, withheld, pub, as_of_eff, objective, reasons, rules)
@@ -4420,9 +4588,14 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if layout:
             _layout_notes(rep, layout)
         if ai_plan:
+            if plan_review:
+                ai_plan["review"] = plan_review
             rep["ai_plan"] = ai_plan
             if ai_plan.get("analyses"):
                 rep["ai_analyses"] = _run_analyses(data, ai_plan, layout, withheld)
+            rep["plan_signals"] = _plan_signals(rep, ai_plan)
+        if plan_review and not ai_plan and not plan_review["approved"]:
+            rep["plan_review"] = plan_review
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -4436,6 +4609,24 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["timings"] = [{"stage": s, "seconds": round(float(timings[s]), 3)} for s in STAGES]
         _ensure_v2(rep)
     return rep
+
+
+def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """What the engine found wrong with the AI's plan, for the planner's one self-correction (max 20)."""
+    out: List[Dict[str, Any]] = []
+    for t in (rep.get("contracts") or {}).get("tests") or []:
+        if str(t.get("action")).startswith("not applied"):
+            out.append({"kind": "contract_failed", "column": str(t.get("column")),
+                        "detail": ("%s; %s of %s values fail" % (t.get("test"), t.get("failed"), t.get("checked")))[:200]})
+    for x in plan.get("refused") or []:
+        out.append({"kind": "layout_refused" if str(x).startswith("long_to_wide") else "op_refused", "detail": str(x)[:200]})
+    ana = rep.get("ai_analyses") or {}
+    for x in ana.get("refused") or []:
+        out.append({"kind": "analysis_refused", "detail": str(x)[:200]})
+    biz = [f for f in rep.get("findings") or [] if f.get("kind") == "business"]
+    if biz and all(f.get("grade") == "NOT_ENOUGH_DATA" for f in biz) and not ana.get("items"):
+        out.append({"kind": "no_findings", "detail": "every business finding has too little data to judge"})
+    return out[:20]
 
 
 def run_json(csv_bytes: Any, name: str, objective: str = "", decisions: Any = None,

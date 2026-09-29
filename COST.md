@@ -1,7 +1,7 @@
 # COST.md — what NorthLedger costs to run
 
 Last updated: Phase 0 (estimates become measurements at M2; every number below gets a
-measured value in the monitoring page once the pipeline is live).
+measured value in the monitoring page once the pipeline has been run).
 
 ## Monthly run cost
 

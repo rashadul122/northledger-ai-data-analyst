@@ -1,0 +1,59 @@
+{
+ "goal": "How has revenue moved, by region?",
+ "understanding": "orders",
+ "kind": "transactions",
+ "columns": [
+  {
+   "name": "order_date",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "region",
+   "semantic_type": "category",
+   "role": "segment"
+  },
+  {
+   "name": "amount",
+   "semantic_type": "flow_amount",
+   "role": "target",
+   "unit": "USD"
+  }
+ ],
+ "operations": [],
+ "primary": "amount",
+ "analyses": [
+  {
+   "type": "distribution",
+   "columns": [
+    "amount"
+   ]
+  },
+  {
+   "type": "compare",
+   "columns": [
+    "amount"
+   ],
+   "by": "region"
+  },
+  {
+   "type": "trend",
+   "columns": [
+    "amount"
+   ]
+  },
+  {
+   "type": "extremes",
+   "columns": [
+    "amount"
+   ]
+  },
+  {
+   "type": "predict",
+   "columns": [
+    "amount",
+    "region"
+   ]
+  }
+ ]
+}

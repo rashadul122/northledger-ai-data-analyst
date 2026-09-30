@@ -1287,17 +1287,18 @@ def blocks(I, R, D, pbip, examples):
     B["offers"] = "".join(offers)
 
     # ---------------- the demo's AI note (only when the owner has set ai_proxy_url)
-    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> One integrated run: the AI plans what to test (from a summary of your columns, never rows), the engine computes and "
-                        "grades every figure, then the AI writes the full report from the engine's results through the owner's proxy, fetching outside context with cited sources when the "
-                        "goal needs it. A figure the engine did not state is set aside, and every outside claim carries its citation.</span>"
+    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> The AI is used only if you choose \"Continue with the AI\". It plans from a summary of your "
+                        "columns, never rows; a column you withhold is never sent or named, and a personal column you keep is sent only if you tick "
+                        "the box that names it. The engine runs the plan and computes every figure; the AI "
+                        "corrects its plan once if the engine finds a problem, then writes the report from the engine's results.</span>"
                         if try_proxy(I["config"])[0] else "")
     # ---------------- the receipts' privacy sentence: what the page fetches, and when
     B["receipts_requests"] = (
         "No trackers and no analytics. While you read, the page makes no request to another address. The one "
         "exception starts only when you start the Try-it demo: it fetches the engine's Python runtime (Pyodide) from "
         "cdn.jsdelivr.net, and the engine itself from this site" +
-        (", and, only if you tick consent after a report, it sends the findings and the story (never your rows) to "
-         "the owner's AI proxy, which passes them to DeepSeek" if try_proxy(I["config"])[0] else "") +
+        (", and, only if you choose \"Continue with the AI\", it sends a summary of your columns (never rows, never a column "
+         "you withhold) and then the engine's results to the owner's AI proxy, which passes them to DeepSeek" if try_proxy(I["config"])[0] else "") +
         ". Your file itself is never sent anywhere.")
 
     # ---------------- research collaboration: the invitation emails contact_email (site.config.json)

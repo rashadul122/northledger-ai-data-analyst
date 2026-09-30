@@ -1,0 +1,46 @@
+{
+ "goal": "Therapy hours over time",
+ "understanding": "visits",
+ "kind": "transactions",
+ "columns": [
+  {
+   "name": "visit_date",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "clinic",
+   "semantic_type": "category",
+   "role": "segment"
+  },
+  {
+   "name": "hours",
+   "semantic_type": "count",
+   "role": "target",
+   "unit": "sessions"
+  }
+ ],
+ "operations": [],
+ "primary": "hours",
+ "analyses": [
+  {
+   "type": "distribution",
+   "columns": [
+    "hours"
+   ]
+  },
+  {
+   "type": "compare",
+   "columns": [
+    "hours"
+   ],
+   "by": "clinic"
+  },
+  {
+   "type": "trend",
+   "columns": [
+    "hours"
+   ]
+  }
+ ]
+}

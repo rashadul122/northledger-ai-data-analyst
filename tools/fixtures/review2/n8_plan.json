@@ -1,0 +1,38 @@
+{
+ "goal": "What are customers complaining about?",
+ "understanding": "support tickets",
+ "kind": "other",
+ "columns": [
+  {
+   "name": "ticket",
+   "semantic_type": "identifier",
+   "role": "key"
+  },
+  {
+   "name": "topic",
+   "semantic_type": "category",
+   "role": "segment"
+  },
+  {
+   "name": "comment",
+   "semantic_type": "text",
+   "role": "metadata"
+  }
+ ],
+ "operations": [],
+ "primary": "",
+ "analyses": [
+  {
+   "type": "trend",
+   "columns": [
+    "topic"
+   ]
+  },
+  {
+   "type": "distribution",
+   "columns": [
+    "topic"
+   ]
+  }
+ ]
+}

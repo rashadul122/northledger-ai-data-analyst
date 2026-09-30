@@ -1,0 +1,46 @@
+{
+ "goal": "Is conversion improving?",
+ "understanding": "monthly conversion by channel",
+ "kind": "time_series_panel",
+ "columns": [
+  {
+   "name": "month",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "channel",
+   "semantic_type": "category",
+   "role": "segment"
+  },
+  {
+   "name": "conversion_rate",
+   "semantic_type": "percentage",
+   "role": "target",
+   "unit": "%"
+  }
+ ],
+ "operations": [],
+ "primary": "conversion_rate",
+ "analyses": [
+  {
+   "type": "distribution",
+   "columns": [
+    "conversion_rate"
+   ]
+  },
+  {
+   "type": "compare",
+   "columns": [
+    "conversion_rate"
+   ],
+   "by": "channel"
+  },
+  {
+   "type": "trend",
+   "columns": [
+    "conversion_rate"
+   ]
+  }
+ ]
+}

@@ -665,6 +665,18 @@ pre.snip { background: var(--bg); border: 1px solid var(--hairline); border-radi
 .pd-opt small { display: block; color: var(--muted); font-size: 12.5px; }
 .pd-opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
 .pd-go { margin-top: 12px; }
+/* option B: "Keep all", the box a kept column puts on the step, and why "Continue with the AI" is off */
+.pd-all { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 10px 0 0; }
+.pd-all-said:empty { display: none; }
+.pd-send { margin: 12px 0 0; padding: 10px 12px; border: 1.5px solid var(--series-3); border-radius: 12px; background: color-mix(in srgb, var(--series-3) 8%, var(--surface)); }
+.pd-send-ok { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-weight: 600; color: var(--ink); font-size: 14.5px; }
+.pd-send-ok input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+.pd-send-ok label { cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.try-sec .pd-go .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.pd-why { margin: 8px 0 0; }
+.try-plan-optin { margin: 10px 0 0; padding: 8px 12px; border-left: 3px solid var(--series-3); background: color-mix(in srgb, var(--series-3) 8%, var(--surface)); border-radius: 6px; font-weight: 600; color: var(--ink); }
+.try-share-out:has(.try-share-warn) { flex-basis: 100%; }
+.try-share-warn { display: block; margin: 0 0 8px; color: var(--ink); }
 .try-report { display: grid; gap: 14px; outline: none; }
 .try-report > * { min-width: 0; }
 .tr-card { padding: 18px 20px; border-radius: 16px; border: 1px solid var(--hairline); background: var(--surface); min-width: 0; }
@@ -739,7 +751,7 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
 }
 @media (max-width: 860px) {
   .try-start, .tr-two, .tr-sgrid { grid-template-columns: 1fr; }
-  #try .btn, #try button, .pd-opt, .tr-ai-ok { min-height: 44px; }
+  #try .btn, #try button, .pd-opt, .tr-ai-ok, .pd-send-ok { min-height: 44px; }
   .tr-cta { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
@@ -1091,6 +1103,8 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-plan-read { margin: 6px 0 0; }
 .try-plan-risks { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn, #b45309); border-radius: 8px; background: color-mix(in srgb, var(--warn, #b45309) 6%, transparent); }
 .try-plan-risks h4 { margin: 0 0 6px; }
+.try-plan-replan-failed { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn, #b45309); border-radius: 8px; background: color-mix(in srgb, var(--warn, #b45309) 6%, transparent); }
+.try-plan-replan-failed p { margin: 0 0 6px; }
 .try-plan-alt { white-space: normal; text-align: left; }
 /* the progress bar (owner's spec, 26 Sep 2026): one horizontal bar, transparent green fill,
    the percentage beside it, filling 0 to 100% across the whole run */
@@ -1182,7 +1196,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-29 14:02:19 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-09-30 01:43:59 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -1607,9 +1621,9 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
       <div class="try-q-wrap" id="try-q-wrap" data-needs-ai>
         <label class="try-q-label" for="try-q"><strong>Ask your question about the data (optional)</strong></label>
         <input type="text" id="try-q" class="try-q" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. What drives the rent the most, and what does the regression table say about each driver?">
-        <p class="note">Type it before you drop the file. If you then choose "Continue with the AI", the AI reads the column summary, plans the analyses around your question, and the engine computes every number in your browser. Leave it empty and the AI proposes the goal itself; the plan also offers other questions this data can answer, one click each.</p>
+        <p class="note">Type it before you drop the file. If you then choose "Continue with the AI", the AI reads a summary of your columns (never rows, and never a column you withhold), plans the analyses around your question, and the engine computes every number in your browser. Leave it empty and the AI proposes the goal itself; the plan also offers other questions this data can answer, one click each.</p>
       </div>
-      <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.<span class="try-ai-note" data-needs-ai> One integrated run: the AI plans what to test (from a summary of your columns, never rows), the engine computes and grades every figure, then the AI writes the full report from the engine's results through the owner's proxy, fetching outside context with cited sources when the goal needs it. A figure the engine did not state is set aside, and every outside claim carries its citation.</span></span></p>
+      <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.<span class="try-ai-note" data-needs-ai> The AI is used only if you choose "Continue with the AI". It plans from a summary of your columns, never rows; a column you withhold is never sent or named, and a personal column you keep is sent only if you tick the box that names it. The engine runs the plan and computes every figure; the AI corrects its plan once if the engine finds a problem, then writes the report from the engine's results.</span></span></p>
       <div class="try-msg" id="try-msg" role="alert" hidden data-fact-exempt="written in your browser from your own file and the engine's answer"></div>
       <div class="try-pd" id="try-pd" hidden data-fact-exempt="column names from your own file"></div>
       <div class="try-run" id="try-run" hidden data-fact-exempt="elapsed seconds measured in your browser">
@@ -1895,7 +1909,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-29 14:02:19 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-09-30 01:43:59 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -1916,7 +1930,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3>Accessibility and privacy</h3>
         <p>Target: <span data-fact-exempt="the name of a standard">WCAG 2.2 AA</span>. Every chart has a text name and a table view, every focusable chart mark has a spoken name, tooltips open on keyboard focus and close with Esc, the scorecard is a real table on every screen size, and text contrast is checked at build (worst pair <span data-fact="site_build:display.contrast_worst">4.76:1</span>). Behaviour is checked in a headless browser at build time (tools/check_ui.js). Known gaps: the charts need JavaScript (their figures are in the text and in the data files without it), and the page has not been tested with a screen reader by a person.</p>
-        <p>No trackers and no analytics. While you read, the page makes no request to another address. The one exception starts only when you start the Try-it demo: it fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, and the engine itself from this site, and, only if you tick consent after a report, it sends the findings and the story (never your rows) to the owner's AI proxy, which passes them to DeepSeek. Your file itself is never sent anywhere.</p>
+        <p>No trackers and no analytics. While you read, the page makes no request to another address. The one exception starts only when you start the Try-it demo: it fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, and the engine itself from this site, and, only if you choose "Continue with the AI", it sends a summary of your columns (never rows, never a column you withhold) and then the engine's results to the owner's AI proxy, which passes them to DeepSeek. Your file itself is never sent anywhere.</p>
       </div>
     </div>
   </div>
@@ -4427,6 +4441,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
 
   /* ------------------------------------------------------------ reading the report */
   T.gateTripped = function (rep) { return !!(rep && rep.story && typeof rep.story.headline === 'string' && rep.story.headline.indexOf(GATE) === 0); };
+  // the engine's gate stopped the AI's analyses (rep.ai_analyses.gate.over), or its own (the headline)
+  T.gateHeld = function (rep) { var g = rep && rep.ai_analyses && rep.ai_analyses.gate; return !!(g && g.over) || T.gateTripped(rep); };
   // story lines that share the engine's "Why: ... What would settle it: ..." text are shown once,
   // with each line's own claim listed under it; a lead they all share ("The data cannot support
   // this claim:") is said once too. The words and figures are the engine's.
@@ -4630,6 +4646,271 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   function plural(n, one, many) { return num(n, 0) + ' ' + (n === 1 ? one : many); }
   function stem(name) { return String(name || 'file').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'file'; }
 
+  /* ------------------------------------------------------------ what the AI planner is sent */
+  // The promise the personal-data step makes (29 Sep 2026), kept here for the one thing this page sends
+  // itself, the profile to /plan (the proxy's insight-proxy/src/plan.js expects exactly this: "the site
+  // sends looks_personal for a coded column and leaves a withheld column out entirely"):
+  //   withheld: left out and never named: not a column, not profile.time, not an analysis_limits text;
+  //   coded:    only its name, type and counts (PERSONAL_KEEP, the proxy's own list), marked looks_personal,
+  //             never its values or range; profile.time is dropped when it is read from that column;
+  //   kept:     sent like any column (its privacy flag goes, it is marked looks_personal: false, as the adapter
+  //             marks it, so the proxy keeps its values; they stay as the engine profiled them). Under option B
+  //             (owner's decision, 29 Sep 2026) the page asks for the profile only after the visitor has ticked
+  //             the box that names every kept column (syncSend, wireAiChoice).
+  // The adapter already builds the profile that way, after the visitor's choices (engine/worker.js
+  // "profile", nl_browser.plan_profile_json); this is the second layer, so a profile that slipped (an older
+  // adapter, a stand-in) still leaves as promised. A flagged column with no decision is withheld, as the
+  // engine does. The scan names flagged columns as the engine landed them and the profile by the file's own
+  // header: the worker's map {header: landed name} matches the two exactly; without it, the engine's landing
+  // rule (northledger intake normalise_columns: lower case, runs of other characters to "_", "col_N" for a
+  // blank or "unnamed" header, "_N" on a repeat) or its slug (engine/nl_browser.py _slug) stands in; a
+  // profiled column with a privacy flag that matches no flagged name is withheld.
+  var PERSONAL_KEEP = ['name', 'filled', 'distinct', 'blank', 'numeric_share', 'date_share', 'integers', 'percent_sign', 'looks_personal', 'privacy_flag'];
+  var WITHHELD_WORD = '(withheld)';
+  // the file's name never goes to /plan (final review, 29 Sep 2026: "private_mix.csv" reached the planner): it
+  // can say whose the file is. The placeholder /report uses stands in (the adapter sends it too: FILE_WORD)
+  var FILE_WORD = '[your file]';
+  function slug(s) { return String(s === null || s === undefined ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+  function landed(names) {
+    var seen = {};
+    return names.map(function (raw, i) {
+      var base = String(raw).trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+      if (!base || base.indexOf('unnamed') === 0) base = 'col_' + (i + 1);
+      if (Object.prototype.hasOwnProperty.call(seen, base)) { seen[base] += 1; base = base + '_' + seen[base]; } else seen[base] = 0;
+      return base;
+    });
+  }
+  function planSplit(profile, flagged, decisions, landedMap) {
+    var fl = (flagged || []).filter(function (f) { return f && typeof f.column === 'string' && f.column; });
+    var dec = decisions || {}, byName = {}, withheld = [], coded = [], lm = landedMap && typeof landedMap === 'object' ? landedMap : {};
+    var add = function (list, n) { if (n && list.indexOf(n) < 0) list.push(n); };
+    var pcs = ((profile && profile.columns) || []), land = landed(pcs.map(function (c) { return c && c.name; }));
+    pcs.forEach(function (c, i) {
+      if (!c || typeof c.name !== 'string') return;
+      var exact = Object.prototype.hasOwnProperty.call(lm, c.name) ? String(lm[c.name]) : '';
+      var f = (exact && fl.filter(function (x) { return x.column === exact; })[0]) || fl.filter(function (x) { return x.column === c.name; })[0] ||
+        (!exact && fl.filter(function (x) { return x.column === land[i]; })[0]) || fl.filter(function (x) { return slug(x.column) === slug(c.name); })[0];
+      var d = !f && !c.privacy_flag ? 'none' : String((f && dec[f.column]) || dec[c.name] || 'withhold');
+      if (['withhold', 'code', 'keep', 'none'].indexOf(d) < 0) d = 'withhold';
+      byName[c.name] = d;
+      if (d === 'withhold') { add(withheld, c.name); if (f) add(withheld, f.column); }
+      if (d === 'code') { add(coded, c.name); if (f) add(coded, f.column); }
+    });
+    fl.forEach(function (f) { if (String(dec[f.column] || 'withhold') === 'withhold') add(withheld, f.column); });
+    // every spelling of a flagged column's name: the file's own header beside the landed name ("Date Of Birth"
+    // and date_of_birth), from the worker's map, so a withheld one is kept out under either
+    Object.keys(lm).forEach(function (h) {
+      var f = fl.filter(function (x) { return x.column === String(lm[h]); })[0];
+      if (!f) return;
+      var d = String(dec[f.column] || 'withhold');
+      if (d === 'code') add(coded, h);
+      else if (d !== 'keep') add(withheld, h);
+    });
+    return { byName: byName, withheld: withheld, coded: coded };
+  }
+  // does the text name one of the columns (the same whole-name test as T.namesWithheld), and the text
+  // with each such name put as "(withheld)"
+  function nameRx(w) { return new RegExp('(^|[^A-Za-z0-9_])' + String(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9])', 'gi'); }
+  function unname(text, names) {
+    var t = String(text === null || text === undefined ? '' : text);
+    names.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (w) { t = t.replace(nameRx(w), '$1' + WITHHELD_WORD); });
+    return t;
+  }
+  T.planWithheld = function (profile, flagged, decisions, landedMap) { return planSplit(profile, flagged, decisions, landedMap).withheld; };
+  T.planProfile = function (profile, flagged, decisions, landedMap) {
+    if (!profile || typeof profile !== 'object' || !Array.isArray(profile.columns)) return profile;
+    var sp = planSplit(profile, flagged, decisions, landedMap), out = {};
+    var named = function (w, list) { return list.some(function (n) { return n === w || slug(n) === slug(w); }); };
+    Object.keys(profile).forEach(function (k) { if (k !== 'columns' && k !== 'time' && k !== 'analysis_limits') out[k] = profile[k]; });
+    out.name = FILE_WORD;
+    out.columns = profile.columns.filter(function (c) { return c && sp.byName[c.name] !== 'withhold'; }).map(function (c) {
+      var d = sp.byName[c.name], o = {};
+      if (d === 'code') { PERSONAL_KEEP.forEach(function (k) { if (c[k] !== undefined) o[k] = c[k]; }); o.looks_personal = true; return o; }
+      Object.keys(c).forEach(function (k) { o[k] = c[k]; });
+      if (d === 'keep') { delete o.privacy_flag; o.looks_personal = false; }   // the adapter's own mark (CONTRACT-v2 5.4)
+      return o;
+    });
+    var t = profile.time;
+    if (t && typeof t === 'object' && !(typeof t.column === 'string' && (named(t.column, sp.withheld) || named(t.column, sp.coded)))) out.time = t;
+    else if (t !== undefined) out.time = null;
+    if (Array.isArray(profile.analysis_limits)) {
+      out.analysis_limits = profile.analysis_limits.map(function (e) {
+        if (!e || typeof e !== 'object' || typeof e.why !== 'string' || !T.namesWithheld(e.why, sp.withheld)) return e;
+        var o = {}; Object.keys(e).forEach(function (k) { o[k] = e[k]; });
+        o.why = T.cutWords(unname(e.why, sp.withheld), 160);
+        return o;
+      });
+    }
+    return out;
+  };
+  // the plan that ran, as the re-plan sends it back (previous_plan): nothing in it may name a withheld column
+  // (a plan the proxy's cache kept from a run with other choices could), so a column reading, a step or an
+  // analysis that names one is left out, and the goal and headline measure lose the name
+  T.planPrevious = function (pp, withheld) {
+    var w = withheld || [], hit = function (n) { return typeof n === 'string' && T.namesWithheld(n, w) && w.some(function (x) { return x === n || slug(x) === slug(n); }); };
+    var any = function (a) { return (Array.isArray(a) ? a : []).some(hit); };
+    pp = pp || {};
+    return { goal: unname(pp.goal || '', w), kind: pp.kind, primary: hit(pp.primary) ? '' : pp.primary,
+      operations: (pp.operations || []).filter(function (o) { return o && !hit(o.column) && !any(o.columns); }),
+      analyses: (pp.analyses || []).filter(function (a) { return a && !any(a.columns) && !hit(a.by); }),
+      columns: (pp.columns || []).filter(function (c) { return c && !hit(c.name); }).map(function (c) { return { name: c.name, semantic_type: c.semantic_type, role: c.role }; }) };
+  };
+  // what the plan cache key is made from when a choice differs from the default (withhold): the file's hash
+  // and each such choice, sorted; '' when every flagged column is withheld (the key is then the file's hash)
+  T.planKeyText = function (fileHash, decisions) {
+    var d = decisions || {}, ks = Object.keys(d).filter(function (k) { return d[k] !== 'withhold'; }).sort();
+    return fileHash && ks.length ? fileHash + '\n' + ks.map(function (k) { return k + '=' + d[k]; }).join('\n') : '';
+  };
+  // the engine's signals the re-plan may send: never one about a withheld column, or naming one
+  T.planSignals = function (sigs, withheld) {
+    var w = withheld || [];
+    return (sigs || []).filter(function (x) {
+      return x && typeof x === 'object' && !(typeof x.column === 'string' && w.some(function (n) { return n === x.column || slug(n) === slug(x.column); })) &&
+        !T.namesWithheld(x.detail, w) && !T.namesWithheld(x.column, w);
+    });
+  };
+
+  /* ------------------------------------------------------------ "What changed" between two plans */
+  // Computed, never quoted (live probe, 29 Sep 2026: the AI said it "added compare of revenue by channel",
+  // which the first plan already had). Every field the engine runs or the report states: the goal, the
+  // kind of data, what the AI read, the headline measure, the web searches (context_queries), each
+  // column's reading (semantic_type, unit, role), each step with all its columns and values, and the
+  // analyses (type, columns, by). The same items in another order are a reorder, never a removal and an
+  // addition. Not compared: the AI's own words about the plan (why, changes, quality_risks,
+  // goal_candidates), which the card shows as its words.
+  T.cutWords = function (s, n) {
+    s = String(s === null || s === undefined ? '' : s).replace(/\s+/g, ' ').trim();
+    var cp = Array.from(s);                     // code points: a cut never splits a surrogate pair
+    if (cp.length <= n) return s;
+    var head = cp.slice(0, n - 1), sp = head.lastIndexOf(' ');
+    return (sp > 0 ? head.slice(0, sp) : head).join('').replace(/[\s,;:.]+$/, '') + '…';
+  };
+  // two lists compared as multisets by key: what only the second has, what only the first has, and
+  // whether the items both have sit in another order
+  function listDiff(xs, ys, key) {
+    xs = Array.isArray(xs) ? xs : []; ys = Array.isArray(ys) ? ys : [];
+    var kx = xs.map(key), ky = ys.map(key), cnt = {};
+    kx.forEach(function (k) { cnt[k] = (cnt[k] || 0) + 1; });
+    var both = {}, added = [], common = [];
+    ky.forEach(function (k, i) { if (cnt[k] > 0) { cnt[k] -= 1; both[k] = (both[k] || 0) + 1; common.push(k); } else added.push(ys[i]); });
+    var removed = [], left = {}, commonX = [];
+    Object.keys(both).forEach(function (k) { left[k] = both[k]; });
+    kx.forEach(function (k, i) { if (left[k] > 0) { left[k] -= 1; commonX.push(k); } else removed.push(xs[i]); });
+    return { added: added, removed: removed, reordered: commonX.join('\u0000') !== common.join('\u0000') };
+  }
+  T.planDiff = function (a, b) {
+    a = a || {}; b = b || {};
+    var out = [];
+    var S2 = function (v) { return v === null || v === undefined ? '' : String(v); };
+    var q = function (s) { return '"' + s + '"'; };
+    var cols = function (x) { return (Array.isArray(x) ? x : []).map(String).join(', '); };
+    var vals = function (v, one, many) { return (v.length === 1 ? one : many) + ' ' + cols(v); };
+    [['goal', 'the goal'], ['kind', 'the kind of data'], ['understanding', 'what the AI read']].forEach(function (f) {
+      var u = S2(a[f[0]]), v = S2(b[f[0]]);
+      if (u !== v) out.push(f[1] + ': ' + (u ? q(u) : 'none') + ', now ' + (v ? q(v) : 'none'));
+    });
+    if (S2(a.primary) !== S2(b.primary)) out.push('headline measure ' + (S2(a.primary) || 'none') + ', now ' + (S2(b.primary) || 'none'));
+    // column readings, by name (the order of the list means nothing)
+    var ca = {}, cb = {}, na = [], nb = [];
+    (a.columns || []).forEach(function (c) { if (c && c.name !== undefined && !ca[c.name]) { ca[c.name] = c; na.push(c.name); } });
+    (b.columns || []).forEach(function (c) { if (c && c.name !== undefined && !cb[c.name]) { cb[c.name] = c; nb.push(c.name); } });
+    nb.forEach(function (n) {
+      var x = ca[n], y = cb[n], parts = [];
+      if (!x) { out.push('now reads ' + n + ' as ' + (y.semantic_type || 'unstated') + (y.role ? ' (' + y.role + ')' : '') + (y.unit ? ', unit ' + y.unit : '')); return; }
+      ['semantic_type', 'unit', 'role'].forEach(function (f) {
+        var u = S2(x[f]), v = S2(y[f]);
+        if (u !== v) parts.push((f === 'semantic_type' ? 'type' : f) + ' ' + (u || 'none') + ', now ' + (v || 'none'));
+      });
+      if (parts.length) out.push(n + ': ' + parts.join('; '));
+    });
+    na.forEach(function (n) { if (!cb[n]) out.push('no longer reads ' + n + ' (was ' + (ca[n].semantic_type || 'unstated') + ')'); });
+    // steps: paired by operation and column (an exact match first, then in order); a paired step lists
+    // the columns and values it gained or lost, with every value; an unpaired one is added or removed whole
+    var ops = function (p) { return (Array.isArray(p.operations) ? p.operations : []).filter(function (o) { return o && typeof o === 'object'; }); };
+    var head = function (o) { return String(o.op) + (o.column !== undefined && o.column !== null ? ' ' + o.column : ''); };
+    var sorted = function (v) { return (Array.isArray(v) ? v : []).map(String).sort().join('\u0000'); };
+    var canon = function (o) { return head(o) + '\u0001' + sorted(o.columns) + '\u0001' + sorted(o.values); };
+    var whole = function (o) {
+      return head(o) + (Array.isArray(o.columns) && o.columns.length ? ' ' + cols(o.columns) : '') + (Array.isArray(o.values) ? ' (' + cols(o.values) + ')' : '');
+    };
+    var oa = ops(a), ob = ops(b), usedA = oa.map(function () { return false; }), usedB = ob.map(function () { return false; }), pairs = [];
+    [function (x, y) { return canon(x) === canon(y); }, function (x, y) { return head(x) === head(y); }].forEach(function (same) {
+      ob.forEach(function (y, j) {
+        if (usedB[j]) return;
+        for (var i = 0; i < oa.length; i++) if (!usedA[i] && same(oa[i], y)) { usedA[i] = usedB[j] = true; pairs.push([i, j]); return; }
+      });
+    });
+    pairs.sort(function (p, r) { return p[1] - r[1]; }).forEach(function (pr) {
+      var x = oa[pr[0]], y = ob[pr[1]], parts = [];
+      [['columns', 'the column', 'the columns'], ['values', 'the value', 'the values']].forEach(function (f) {
+        var d = listDiff(x[f[0]], y[f[0]], String);
+        if (d.added.length) parts.push('added ' + vals(d.added, f[1], f[2]));
+        if (d.removed.length) parts.push('removed ' + vals(d.removed, f[1], f[2]));
+        if (d.reordered) parts.push('the same ' + f[0] + ' in another order');
+      });
+      if (parts.length) out.push('the step ' + head(y) + ': ' + parts.join('; '));
+    });
+    ob.forEach(function (y, j) { if (!usedB[j]) out.push('added the step ' + whole(y)); });
+    oa.forEach(function (x, i) { if (!usedA[i]) out.push('removed the step ' + whole(x)); });
+    var pa = pairs.slice().sort(function (p, r) { return p[0] - r[0]; }).map(function (p) { return p[1]; });
+    if (pa.some(function (j, k) { return k && j < pa[k - 1]; })) out.push('the same steps in another order');
+    // analyses: type, columns and by; the same columns in another order is a reorder of that analysis
+    var ans = function (p) { return (Array.isArray(p.analyses) ? p.analyses : []).filter(function (x) { return x && typeof x === 'object'; }); };
+    var anKey = function (x) { return String(x.type) + ' of ' + (cols(x.columns) || 'no columns') + (x.by ? ' by ' + x.by : ''); };
+    var anSet = function (x) { return String(x.type) + '\u0001' + sorted(x.columns) + '\u0001' + S2(x.by); };
+    var da = listDiff(ans(a), ans(b), anSet);
+    var inA = ans(a).map(anKey);
+    ans(b).forEach(function (y) {
+      if (da.added.indexOf(y) >= 0) return;
+      if (inA.indexOf(anKey(y)) < 0) out.push('the analysis ' + String(y.type) + ' of ' + cols(y.columns) + (y.by ? ' by ' + y.by : '') + ': the same columns in another order');
+    });
+    da.added.forEach(function (y) { out.push('added the analysis ' + anKey(y)); });
+    da.removed.forEach(function (x) { out.push('removed the analysis ' + anKey(x)); });
+    if (da.reordered) out.push('the same analyses in another order');
+    // the web searches the report writer will run
+    var dq = listDiff(a.context_queries, b.context_queries, String);
+    dq.added.forEach(function (s) { out.push('added the web search ' + q(String(s))); });
+    dq.removed.forEach(function (s) { out.push('removed the web search ' + q(String(s))); });
+    if (dq.reordered) out.push('the same web searches in another order');
+    return out;
+  };
+
+  /* ------------------------------------------------------------ an AI plan that did not come */
+  // why a /plan call gave no plan, from the worker's answer (insight-proxy/src/worker.js): 'timeout' (a 504,
+  // or this page's own wait ran out), 'busy' (a 429), 'cap' (a 503 daily_cap_reached or
+  // daily_counter_failed), 'rejected' (a 502 rejected_plan: it answered, the plan failed its checks),
+  // 'engine' (the corrected plan came but the engine could not run it) or 'error' (anything else)
+  T.planFailOf = function (status, error) {
+    if (status === 504) return 'timeout';
+    if (status === 429) return 'busy';
+    if (status === 503 && (error === 'daily_cap_reached' || error === 'daily_counter_failed')) return 'cap';
+    if (status === 502 && error === 'rejected_plan') return 'rejected';
+    return 'error';
+  };
+  // the plan card's notice when the one self-correction did not come back; each ends "so these results
+  // use the first plan"
+  T.replanFailText = function (why) {
+    var head = 'The engine found problems with the AI\'s first plan and asked it to correct itself';
+    return head + ({
+      timeout: ', but the AI did not answer in time, so these results use the first plan.',
+      busy: ', but the AI service was busy, so the correction was not attempted, and so these results use the first plan.',
+      cap: ', but the AI service has reached its daily limit, so the correction was not attempted, and so these results use the first plan.',
+      rejected: ', and the AI answered, but its corrected plan could not be used, so these results use the first plan.',
+      engine: ', but the engine could not run the corrected plan, so these results use the first plan.'
+    }[why] || ', but the request to the AI failed, so these results use the first plan.');
+  };
+  // the progress list's note for the same, and the plan card's note when the first plan did not come
+  T.replanStageNote = function (why) {
+    return ({ timeout: 'the AI did not answer in time', busy: 'the AI service was busy', cap: 'the AI service reached its daily limit',
+      rejected: 'the corrected plan could not be used', engine: 'the corrected run failed' }[why] || 'the request to the AI failed') + ', so the first result is kept';
+  };
+  T.planFailNote = function (why) {
+    return ({ timeout: 'The AI planner did not answer in time', busy: 'The AI service was busy, so no plan was made',
+      cap: 'The AI service has reached its daily limit, so no plan was made', rejected: 'The AI answered, but its plan could not be used',
+      profile: 'The engine could not make the column summary the AI planner reads, so nothing was sent to it' }[why] ||
+      'The request to the AI planner failed') + ', so the engine read the file with its own rules.';
+  };
+
   /* ------------------------------------------------------------ the forecast chart */
   function drawForecast(W, F) {
     var act = F.series, fc = F.forecast;
@@ -4691,11 +4972,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var LIM = T.limits();
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
     var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [],
-      aiCharts: [], aiTables: [], shareUrl: '', delToken: '', question: '' };
+      aiCharts: [], aiTables: [], shareUrl: '', delToken: '', question: '',
+      kept: [], sendKey: '' };                       // the flagged columns the visitor agreed to send (option B), and the list the box names
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
       forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
-      replan: 'The AI checks the result and corrects its plan',
+      replan: 'The AI checks the result and corrects its plan (up to about a minute and a half)',
       report: 'The AI writes the full report, with cited context' };
     var reduced = function () { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); };
     var goTo = function (node, focus) {
@@ -4824,13 +5106,17 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       } else if (m.type === 'scanned') {
         var r = m.result || {};
         if (!r.ok) return refuse('engine', { title: 'The engine could not read this file', body: r.error || 'It gave no reason.' });
-        S.profile = r.profile || null;
+        S.profile = null; S.landed = null;            // asked for after the visitor's choices (askProfile)
         if (r.excel && r.excel.sheet) { S.planNote = 'Read the sheet "' + r.excel.sheet + '" of your workbook' +
           (r.excel.sheets && r.excel.sheets.length > 1 ? ' (the sheet with the most rows)' : '') + '.'; }
         var flagged = (r.flagged || []).filter(function (f) { return f && typeof f.column === 'string'; });
+        S.flagged = flagged;
         if (flagged.length) askPersonal(flagged);
         else if (!CFG.ai_proxy_url) { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
         else { setStage('decide', 'skip', null, 'no personal data flagged'); askAiChoice(); }
+      } else if (m.type === 'profiled') {
+        // the column summary the adapter built under the visitor's choices, asked for by askProfile
+        if (S.onProfile) S.onProfile(m.profile || null, m.landed || null);
       } else if (m.type === 'result') {
         onReport(m.report);
       } else if (m.type === 'results_json') {
@@ -4845,23 +5131,83 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     }
 
     /* ---- the personal-data step ---- */
-    var CHOICES = [['withhold', 'Withhold', 'its values are never shown, downloaded, used in the business analysis or sent to an AI, and nothing that names it is sent to an AI; the data-health findings on this page still name it and count its blanks and spellings'],
-      ['code', 'Code', 'each value replaced with a code in the downloads; the analysis still leaves the column out'],
-      ['keep', 'Keep', 'used as it is: it can appear in the findings, the story and the downloads']];
+    // What each choice does (the promise of 29 Sep 2026; T.planProfile keeps it for /plan, the adapter for
+    // the analyses, the downloads and what the report writer and a share link receive)
+    // Withhold, literally (final review, 29 Sep 2026): each value is landed as a code no cleaning rule reads, one
+    // code per value exactly as the file writes it (engine/nl_browser.py _neutralize_withheld), so the column's
+    // only part in the exact-duplicate check is to keep rows that differ in it apart, as in the file
+    // Keep, under option B (owner's decision, 29 Sep 2026): the AI may read a kept column's real values, but only
+    // after the visitor ticks the box that names it (syncSend); with no AI on this page the words say nothing of one
+    var CHOICES = [['withhold', 'Withhold', 'never sent to an AI or put in a share link, not even its name; its values are never shown, downloaded or used in the business analysis. No cleaning rule reads or changes them, so they never set a row aside; they only keep otherwise-identical rows apart, as they are in your file. The data-health findings on this page still name it and count its empty cells'],
+      ['code', 'Code', 'each value replaced with a code in the downloads; the analyses leave the column out, and an AI is told only its name, type and counts, never its values or range'],
+      ['keep', 'Keep', 'used like any other column: its values can appear in the findings, the story and the downloads' + (CFG.ai_proxy_url ? ', and go to the AI only if you tick the box that names it' : '')]];
+    // the one convenience control (option B): every flagged column that can be kept, set to Keep where the visitor sees it
+    var KEEP_ALL = CFG.ai_proxy_url ? 'Keep all: let the analysis and the AI read these columns' : 'Keep all: let the analysis read these columns';
+    // the box a kept column puts on the step (option B): required, unticked, and naming the columns it sends
+    function sendWords(kept) {
+      return esc('Send these personal columns to the AI: ') + kept.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(', ') +
+        esc('. Their values (for example people\'s names, emails or phone numbers) go to DeepSeek, a company based in China, through this site\'s proxy, and may appear in the AI\'s report and in any link you share.');
+    }
     // The visitor's AI choice (26 Sep 2026 flow, consent restored 29 Sep 2026): nothing reaches the proxy unless
     // they press "Continue with the AI". Shown on the personal-data step, or alone when nothing was flagged.
+    // the key sentences, one per promise (tools/check_ui.js reads them back from the page). The summary is the
+    // adapter's (engine/nl_browser.py profile_for_ai): a number column's min, median and max, profile.time's
+    // first and last month, and for a text or date column of at most 300 distinct short values its commonest
+    // values and every value; never the file's name (T.planProfile)
+    var AI_CONSENT = ['Nothing goes to an AI unless you choose "Continue with the AI".',
+      'Then a summary of your columns goes to DeepSeek through this site\'s proxy to plan the analysis: each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values.',
+      'Never rows.',
+      'A column you withhold is left out and never named; for a coded column the AI is told only its name, type and counts, never its values or range.',
+      'A flagged column you keep is sent like any other column, values included, but only after you tick the box that names it.',
+      'The page flags columns that look personal and can miss some (for example people\'s names under a heading like "Stylist"); if your file has such a column, continue without the AI.',
+      'The engine runs the plan straight away, and the AI corrects its plan once if the engine finds a problem a new plan could fix (never when it had to set aside too many rows); you can change the plan afterwards.',
+      'The engine\'s results (findings, figures and tables; never rows) then go back for the AI to write the report, which may look up public sources on the web.',
+      'Without the AI, nothing leaves this browser.'];
     function aiChoiceHtml() {
-      return '<p class="pd-ai-note">With the AI, a summary of the columns (names, counts, ranges and category values; never rows, never columns flagged as personal) goes to DeepSeek through this site\'s proxy to plan the analysis. The engine runs that plan straight away and the AI corrects its plan once if the engine finds a problem; you can change the plan afterwards. The engine\'s results (numbers only, never rows) go back to write the report, which may look up public sources on the web. Without the AI, nothing leaves this browser.</p>' +
+      return '<p class="pd-ai-note">' + esc(AI_CONSENT.join(' ')) + '</p>' +
+        '<div class="pd-send" id="try-pd-send" hidden></div>' +
         '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with the AI</button> ' +
-        '<button type="button" class="btn btn-ghost" id="try-pd-noai">Continue without AI</button></div>';
+        '<button type="button" class="btn btn-ghost" id="try-pd-noai">Continue without AI</button>' +
+        '<p class="note pd-why" id="try-pd-why" hidden>Continue with the AI is off until you tick the box above. Continue without AI sends nothing.</p></div>';
     }
+    // the flagged columns set to Keep on the step, in the step's order
+    function keptCols() {
+      return Array.prototype.map.call(el.pd.querySelectorAll('input[type=radio][value="keep"]:checked'), function (x) { return x.getAttribute('data-col'); });
+    }
+    function sendOk() { var t = $('try-pd-send-ok'); return !keptCols().length || !!(t && t.checked); }
+    // The consent gate (option B): while a flagged column is set to Keep, the step shows a required, unticked box
+    // that names every kept column, and "Continue with the AI" stays off until it is ticked. The box is drawn again,
+    // unticked, whenever the list changes: an agreement covers the columns it names, no others.
+    function syncSend() {
+      var box = $('try-pd-send'), go = $('try-pd-go'), why = $('try-pd-why');
+      if (!box || !go) return;
+      var kept = keptCols(), key = kept.join('\n');
+      if (key !== S.sendKey) {
+        S.sendKey = key;
+        box.innerHTML = kept.length ? '<p class="pd-send-ok"><input type="checkbox" id="try-pd-send-ok" required aria-required="true">' +
+          '<label for="try-pd-send-ok">' + sendWords(kept) + '</label></p>' : '';
+      }
+      box.hidden = !kept.length;
+      var ok = sendOk();
+      go.disabled = !ok;
+      if (why) why.hidden = ok;
+      if (ok) go.removeAttribute('aria-describedby'); else go.setAttribute('aria-describedby', 'try-pd-why');
+    }
+    el.pd.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t && (t.type === 'radio' || t.id === 'try-pd-send-ok')) syncSend();
+    });
     function wireAiChoice(getDecisions) {
       var seq = S.seq;
       [['try-pd-go', true], ['try-pd-noai', false]].forEach(function (b) {
         $(b[0]).addEventListener('click', function () {
           if (seq !== S.seq) return;
+          // the gate holds whatever the button says: no request leaves while a kept column's box is unticked
+          if (b[1] && !sendOk()) { syncSend(); var t = $('try-pd-send-ok'); if (t) t.focus(); return; }
           var d = getDecisions();
           S.useAi = b[1];
+          // what the visitor agreed to send (the plan card's record, and the share warning); nothing without the AI
+          S.kept = b[1] ? keptCols() : [];
           el.pd.hidden = true;
           if (d) setStage('decide', 'start');
           sendRun(d || {});
@@ -4869,17 +5215,23 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       });
     }
     function askAiChoice() {
+      S.sendKey = '';
       el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' + aiChoiceHtml();
       el.pd.hidden = false;
+      syncSend();
       wireAiChoice(function () { return null; });
       goTo($('try-pd-h'));
       try { $('try-pd-go').focus({ preventScroll: true }); } catch (e) { $('try-pd-go').focus(); }
     }
     function askPersonal(flagged) {
       setStage('decide', 'wait');
+      S.sendKey = '';                                // a new step: no box, nothing ticked, every column withheld
+      var keepable = flagged.some(function (f) { return String(f.kind || '').indexOf(CODED) < 0; });
       el.pd.innerHTML = '<h3 id="try-pd-h">Personal data: you decide</h3>' +
-        '<p>The engine flagged ' + plural(flagged.length, 'column', 'columns') + ' as possibly personal. Withhold is chosen for each; change it only if the column is safe to use. Whatever you pick, it stays in your browser.</p>' +
-        '<p class="note">The scan reads column names and the shape of values. A column of names under a neutral heading (a technician or a vendor, say) can be missed, and is then used as it is.</p>' +
+        '<p>The engine flagged ' + plural(flagged.length, 'column', 'columns') + ' as possibly personal. Withhold is chosen for each; change it only if the column is safe to use. Your file stays in this browser whatever you pick.</p>' +
+        '<p class="note">The scan reads column names and the shape of values. A column of names under a neutral heading (a stylist or a vendor, say) can be missed, and is then used as it is.</p>' +
+        (keepable ? '<p class="pd-all"><button type="button" class="btn btn-ghost btn-sm" id="try-pd-all">' + esc(KEEP_ALL) + '</button>' +
+          '<span class="pd-all-said note" id="try-pd-all-said" role="status"></span></p>' : '') +
         flagged.map(function (f, i) {
           var coded = String(f.kind || '').indexOf(CODED) >= 0;
           return '<fieldset class="pd-col"><legend><code>' + esc(f.column) + '</code> <span class="pd-kind">flagged: ' + esc(f.kind || 'possibly personal') + '</span></legend><div class="pd-opts">' +
@@ -4895,8 +5247,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio]:checked'), function (x) { d[x.getAttribute('data-col')] = x.value; });
         return d;
       };
-      if (CFG.ai_proxy_url) wireAiChoice(pdDecisions);
-      else $('try-pd-go').addEventListener('click', function () { var d = pdDecisions(); el.pd.hidden = true; setStage('decide', 'start'); sendRun(d); });
+      if (CFG.ai_proxy_url) { syncSend(); wireAiChoice(pdDecisions); }
+      else $('try-pd-go').addEventListener('click', function () { var d = pdDecisions(); el.pd.hidden = true; S.kept = []; setStage('decide', 'start'); sendRun(d); });
+      var all = $('try-pd-all');
+      if (all) all.addEventListener('click', function () {
+        Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio][value="keep"]'), function (x) { if (!x.disabled) x.checked = true; });
+        syncSend();
+        $('try-pd-all-said').textContent = 'Keep is now chosen for every column that can be kept; change any one back below.' +
+          (CFG.ai_proxy_url ? ' Nothing goes to the AI until you tick the box that names them.' : '');
+      });
       goTo($('try-pd-h'));
       var first = el.pd.querySelector('input[type=radio]:checked');
       if (first) { try { first.focus({ preventScroll: true }); } catch (e) { first.focus(); } }
@@ -4906,17 +5265,44 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     function planOn() { return !!CFG.ai_proxy_url && S.useAi === true; }
     // The AI planner (owner's design, 25 Sep 2026): the profile goes to the proxy's /plan; the plan rides
     // to the engine inside the decisions (the engine validates it again and computes every number)
+    // How long the page waits for the worker, in ms. The invariant: each wait is at least the worker's own
+    // deadline plus 10 s (insight-proxy/wrangler.toml [vars], else the defaults in its src/worker.js:
+    // PLAN_TIMEOUT_MS for a first plan, REPLAN_TIMEOUT_MS for the re-plan, REPORT_DEADLINE_MS for /report),
+    // so the page never aborts a call the worker could still answer; the worker answers, or fails with a 504,
+    // first. tools/check_site.py (timeouts) reads both repositories and fails when a margin is under 10 s.
+    // Live test, 29 Sep 2026: the page gave up at 115 s on a re-plan the worker was still waiting for
+    // (140 s), so a late answer was paid for and thrown away.
+    var PLAN_ABORT_MS = 115000, REPLAN_ABORT_MS = 85000, REPORT_ABORT_MS = 175000;
+    // resolves to the plan, or null with S.planFail set to T.planFailOf's reason ('timeout' also when the
+    // page's own wait ran out). The profile goes as T.planProfile leaves it for the visitor's choices: a
+    // withheld column left out and never named, a coded one reduced to its name, type and counts.
+    // the plan cache key (profile_hash): the file's SHA-256 while every flagged column is withheld (the
+    // default), else the SHA-256 of that hash and the choices, so a plan made under other choices (one that
+    // saw a column now withheld) is never served back; '' when the browser cannot hash (no cache)
+    function planKey() {
+      var text = T.planKeyText(S.fileHash, S.decisions);
+      if (!text) return Promise.resolve(S.fileHash || '');
+      try {
+        return window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+          .then(function (dg) { return Array.from(new Uint8Array(dg)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join(''); }, function () { return ''; });
+      } catch (e) { return Promise.resolve(''); }
+    }
     function askPlan(feedback) {
-      var ctrl = window.AbortController ? new AbortController() : null;
-      var waited = S.hashWait || Promise.resolve();
-      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 115000);
-      return waited.then(function () { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: S.objective, profile: S.profile, profile_hash: S.fileHash || undefined, feedback: feedback || undefined }), credentials: 'omit', referrerPolicy: 'no-referrer',
-        cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
-        .then(function (r) { return r.ok ? r.json() : null; })
+      var ctrl = window.AbortController ? new AbortController() : null, late = false, why = '';
+      var waited = (S.hashWait || Promise.resolve()).then(planKey);
+      var timer = setTimeout(function () { late = true; if (ctrl) ctrl.abort(); }, feedback ? REPLAN_ABORT_MS : PLAN_ABORT_MS);
+      S.planFail = '';
+      return waited.then(function (key) { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined }),
+        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
+        .then(function (r) {
+          if (r.ok) return r.json();
+          // the worker's reason word ({error}) picks the words the page says; it is never shown as it is
+          return r.json().catch(function () { return null; }).then(function (j) { why = T.planFailOf(r.status, j && typeof j.error === 'string' ? j.error : ''); return null; });
+        })
         .then(function (j) { return j && j.plan ? j.plan : null; })
         .catch(function () { return null; })
-        .then(function (p) { clearTimeout(timer); return p; });
+        .then(function (p) { clearTimeout(timer); if (!p) S.planFail = late ? 'timeout' : (why || 'error'); return p; });
     }
     // Autonomous engine (owner's ask, 29 Sep 2026): the plan runs at once; the visitor may edit it and re-run afterwards
     function opWords(o) {
@@ -4938,7 +5324,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // decides the exact ranges), shown in the review so a visitor can turn a test off
     var CONTRACT_WORDS = { percentage: 'between 0 and 100 (or 0 and 1)', count: 'a whole number, 0 or more', duration: '0 or more',
       year: 'a whole year between 1000 and 2999', rating: 'a whole number on the file\'s rating scale', identifier: 'unique: no value repeated',
-      boolean: 'at most 2 different values', category: 'one of the values the profile lists', date: 'a date that can be read' };
+      boolean: 'at most 2 different values', category: 'one of the values the profile lists', date: 'a date that can be read',
+      flow_amount: 'a number that can be read', level: 'a number that can be read' };
     function contractWords(c) {
       var t = String(c && c.semantic_type || '');
       if (!Object.prototype.hasOwnProperty.call(CONTRACT_WORDS, t)) return '';
@@ -4991,22 +5378,47 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       worker().postMessage({ type: 'run', id: S.seq, options: { name: S.name, objective: S.objective, decisions: d, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } });
     }
     function copyOf(o) { var d = {}; Object.keys(o || {}).forEach(function (k) { d[k] = o[k]; }); return d; }
+    // The column summary for /plan, made by the adapter AFTER the visitor's choices (integration review,
+    // 29 Sep 2026: a summary made at the scan withheld every flagged column, so a column the visitor coded or
+    // kept never reached the planner as chosen). Resolves to the profile, or null (the plan is then skipped).
+    function askProfile(decisions) {
+      var seq = S.seq;
+      return new Promise(function (resolve) {
+        S.onProfile = function (p, landedMap) {
+          S.onProfile = null;
+          if (seq !== S.seq) return resolve(null);
+          S.profile = p && typeof p === 'object' && Array.isArray(p.columns) ? p : null;
+          S.landed = S.profile && landedMap && typeof landedMap === 'object' ? landedMap : null;
+          resolve(S.profile);
+        };
+        worker().postMessage({ type: 'profile', id: seq, decisions: copyOf(decisions) });
+      });
+    }
     function sendRun(decisions) {
       var seq = S.seq;
-      S.plan = null; S.planNote = ''; S.replanned = false; S.replan = null; S.firstRep = null;
-      if (!planOn() || !S.profile) { setStage('plan', 'skip'); setStage('replan', 'skip'); return postRun(decisions); }
+      S.plan = null; S.planNote = ''; S.replanned = false; S.replan = null; S.replanFail = null; S.firstRep = null;
+      S.decisions = copyOf(decisions);             // the visitor's personal-data choices, which decide what /plan is sent
+      S.profile = null; S.landed = null;
+      if (!planOn()) { setStage('plan', 'skip'); setStage('replan', 'skip'); return postRun(decisions); }
       setStage('plan', 'start');
-      askPlan().then(function (plan) {
+      askProfile(decisions).then(function (prof) {
         if (seq !== S.seq) return;
-        var d = copyOf(decisions);
-        if (plan) { setStage('plan', 'done'); d.__plan__ = plan; S.plan = plan; return postRun(d); }
-        S.planNote = 'The AI planner did not answer, so the engine read the file with its own rules.'; setStage('plan', 'skip', null, 'no plan: rules used');
-        setStage('replan', 'skip'); postRun(d);
+        if (!prof) {
+          S.planNote = T.planFailNote('profile'); setStage('plan', 'skip', null, 'no column summary: rules used');
+          setStage('replan', 'skip'); return postRun(decisions);
+        }
+        return askPlan().then(function (plan) {
+          if (seq !== S.seq) return;
+          var d = copyOf(decisions);
+          if (plan) { setStage('plan', 'done'); d.__plan__ = plan; S.plan = plan; return postRun(d); }
+          S.planNote = T.planFailNote(S.planFail); setStage('plan', 'skip', null, 'no plan: rules used');
+          setStage('replan', 'skip'); postRun(d);
+        });
       });
     }
     // the visitor's optional edit after the run: the engine runs the edited plan (no second AI correction)
     function rerun(d) {
-      S.seq += 1; S.replanned = true; S.replan = null; S.firstRep = null; S.busy = true; S.aiReport = null;
+      S.seq += 1; S.replanned = true; S.replan = null; S.replanFail = null; S.firstRep = null; S.busy = true; S.aiReport = null;
       el.sample.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       var ar = document.getElementById('try-ai-report'); if (ar) ar.hidden = true;
       el.report.hidden = true; el.run.hidden = false;
@@ -5014,17 +5426,24 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       goTo(el.run);
       postRun(d);
     }
-    // the AI's one self-correction: the engine's signals go back with the plan that ran (never rows)
+    // the AI's one self-correction: the engine's signals go back with the plan that ran (never rows, and
+    // never a signal about a withheld column). S.replan / S.replanFail keep what the engine found (shown on
+    // the card) and what was sent (sent: the Data tests say "asked to look again" only for those).
     function replan(first, sigs) {
-      var seq = S.seq, pp = S.plan || {};
-      S.firstRep = first;
+      var seq = S.seq, held = T.planWithheld(S.profile, S.flagged, S.decisions, S.landed);
+      var sent = T.planSignals(sigs, held);
+      if (!sent.length) { setStage('replan', 'skip', null, 'nothing the AI may be told about'); S.firstRep = null; return finishReport(first); }
+      S.firstRep = first; S.firstPlan = S.plan;
       setStage('replan', 'start');
-      var prev = { goal: pp.goal, kind: pp.kind, primary: pp.primary, operations: pp.operations, analyses: pp.analyses,
-        columns: (pp.columns || []).map(function (c) { return { name: c.name, semantic_type: c.semantic_type, role: c.role }; }) };
-      askPlan({ attempt: 1, previous_plan: prev, signals: sigs }).then(function (np) {
+      askPlan({ attempt: 1, previous_plan: T.planPrevious(S.plan, held), signals: sent }).then(function (np) {
         if (seq !== S.seq) return;
-        if (!np) { setStage('replan', 'skip', null, 'no revised plan, so the first result is kept'); S.firstRep = null; return finishReport(first); }
-        S.replan = { signals: sigs, changes: np.changes }; S.plan = np;
+        if (!np) {
+          // said on the plan card, not only on the progress list (which hides once the report shows)
+          S.replanFail = { signals: sigs, sent: sent, why: S.planFail || 'error' };
+          setStage('replan', 'skip', null, T.replanStageNote(S.replanFail.why));
+          S.firstRep = null; return finishReport(first);
+        }
+        S.replan = { signals: sigs, sent: sent, changes: np.changes }; S.plan = np;
         setStage('replan', 'done');
         var d = copyOf(S.lastD); delete d.__plan_review__; d.__plan__ = np;
         postRun(d);
@@ -5192,21 +5611,59 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (A.note) h += '<p class="note">' + esc(A.note) + '</p>';
       return h;
     }
-    // the data tests the engine ran from the AI's column types, and what each did (rep.contracts)
+    // the data tests the engine ran from the AI's column types (rep.contracts): they never change what the
+    // engine reads; each row says what failed and what the engine itself did with those rows, in the
+    // adapter's own words (a withheld or coded column's values never appear: the adapter sends no examples
+    // for it and "value withheld" or "value coded" in the download). The page adds only "the AI was asked to
+    // look again", and only for a column whose signal was sent to the AI (S.replan.sent).
+    function askedAgain(col) {
+      var sent = (S.replan && S.replan.sent) || (S.replanFail && S.replanFail.sent) || [];
+      return sent.some(function (x) { return x && x.kind === 'contract_failed' && x.column === col; });
+    }
     function contractsHtml(rep) {
       var k = rep && rep.contracts;
       if (!k || !(k.tests || []).length) return '';
       return '<h4>Data tests</h4><table class="try-contracts"><thead><tr><th>Column</th><th>Test</th><th>Checked</th><th>Failed</th><th>Action</th></tr></thead><tbody>' +
         k.tests.map(function (t) {
           return '<tr><td>' + esc(t.column) + '</td><td>' + esc(t.test) + '</td><td>' + esc(t.checked) + '</td><td>' + esc(t.failed) +
-            ((t.examples || []).length ? ' (e.g. ' + esc(t.examples.join(', ')) + ')' : '') + '</td><td>' + esc(t.action) + '</td></tr>';
+            ((t.examples || []).length ? ' (e.g. ' + esc(t.examples.join(', ')) + ')' : '') + '</td><td>' +
+            esc(String(t.action || '') + ((t.signal || t.misread) && askedAgain(t.column) ? '; the AI was asked to look again' : '')) + '</td></tr>';
         }).join('') + '</tbody></table><p class="note">' + esc(k.note || '') + '</p>' +
-        (rep.downloads && rep.downloads.contract_set_aside_csv ? '<p><button type="button" class="btn btn-ghost" data-dl="contract_set_aside_csv">Rows the tests set aside (' + esc(k.rows_set_aside) + ') CSV</button></p>' : '');
+        (rep.downloads && rep.downloads.contract_flagged_csv ? '<p><button type="button" class="btn btn-ghost" data-dl="contract_flagged_csv">Cells the data tests flagged (' + esc(k.cells_flagged) + ') CSV</button></p>' : '');
+    }
+    // "What changed" (T.planDiff, computed from the two plans), then the AI's own account, labelled as its
+    // words and each cut at a word boundary (T.cutWords). When nothing the engine runs changed, the card says
+    // the AI was asked and kept its plan, with what the engine found.
+    function explained(said, li) {
+      var words = [].concat(said || []).filter(function (x) { return typeof x === 'string' && x.trim(); }).map(function (x) { return T.cutWords(x, 160); });
+      return words.length ? '<p><strong>The AI\'s explanation (its words):</strong></p>' + li(words.slice(0, 6)) : '';
+    }
+    function sigWords(sigs) { return (sigs || []).map(function (x) { return (x.column ? x.column + ': ' : '') + x.detail; }); }
+    function replanHtml(r, li) {
+      var d = T.planDiff(S.firstPlan, S.plan);
+      if (!d.length) {
+        return '<div class="try-plan-replan try-plan-replan-kept"><p><strong>The engine found problems with the AI\'s first plan and asked it to correct itself; the AI kept its plan unchanged.</strong></p>' +
+          '<p>What the engine found:</p>' + li(sigWords(r.signals)) + explained(r.changes, li) + '</div>';
+      }
+      return '<div class="try-plan-replan"><p><strong>The AI corrected its plan after the engine found:</strong></p>' + li(sigWords(r.signals)) +
+        '<p><strong>What changed</strong> (computed from the two plans):</p>' + li(d) + explained(r.changes, li) + '</div>';
+    }
+    // the re-plan that did not come back (or whose run failed): said where the correction would have gone,
+    // in words that follow the cause (T.replanFailText)
+    function replanFailHtml(f, li) {
+      var sig = sigWords(f.signals);
+      return '<div class="try-plan-replan try-plan-replan-failed" role="note"><p><strong>' + esc(T.replanFailText(f.why)) + '</strong></p>' +
+        (sig.length ? '<p>What the engine found:</p>' + li(sig) : '') + '</div>';
+    }
+    // the visitor's opt-in (option B), stated once in plain words where every AI run says what it did: the plan card
+    // (drawn whenever the AI was used, with the plan or with the reason there is none)
+    function optinHtml() {
+      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You chose to send these personal columns to the AI: ' + S.kept.join(', ') + '.') + '</p>' : '';
     }
     function drawPlan(rep) {
-      var p = rep && rep.ai_plan, c = el.planCard;
+      var p = rep && rep.ai_plan, c = el.planCard, optin = optinHtml();
       if (!c) return;
-      if (!p) { c.hidden = !S.planNote; c.innerHTML = S.planNote ? '<p class="note">' + esc(S.planNote) + '</p>' : ''; return; }
+      if (!p) { c.hidden = !S.planNote && !optin; c.innerHTML = optin + (S.planNote ? '<p class="note">' + esc(S.planNote) + '</p>' : ''); return; }
       var li = function (a) { return a && a.length ? '<ul>' + a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : ''; };
       var alts = (p.goal_candidates || []).map(function (g, i) { return '<button type="button" class="btn btn-ghost try-plan-alt" data-goal="' + esc(g) + '">' + esc(g) + '</button>'; }).join(' ');
       // the highlighted opening of the report (owner's ask, 26 Sep 2026): the goal, what the AI read
@@ -5215,7 +5672,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         '<h3 class="try-plan-title">The AI\'s plan for this file</h3>' +
         '<p class="try-plan-goal"><strong>Goal:</strong> ' + esc(p.goal || '') + '</p>' +
         (p.understanding ? '<p class="try-plan-read"><strong>What the AI read:</strong> ' + esc(p.understanding) + '</p>' : '') +
-        '</div>' +
+        '</div>' + optin +
         ((p.quality_risks || []).length ? '<div class="try-plan-risks"><h4>What could mislead this goal</h4>' + li(p.quality_risks) + '</div>' : '') +
         ((p.applied || []).length ? '<h4>Steps the engine ran</h4>' + li(p.applied) : '') +
         ((p.refused || []).length ? '<h4>Steps refused</h4>' + li(p.refused) : '') +
@@ -5224,16 +5681,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           if ((r.ops_removed || []).length) e.push('you turned off ' + r.ops_removed.length + ' step' + (r.ops_removed.length > 1 ? 's' : ''));
           if ((r.analyses_removed || []).length) e.push('you turned off ' + r.analyses_removed.length + ' analys' + (r.analyses_removed.length > 1 ? 'es' : 'is'));
           return e.length ? ' (' + e.join(', ') + ').' : ' (no changes).'; })(p.review) + '</p>' : '') +
-        (S.replan ? '<div class="try-plan-replan"><p><strong>The AI corrected its plan after the engine found:</strong></p>' +
-          li(S.replan.signals.slice(0, 5).map(function (x) { return (x.column ? x.column + ': ' : '') + x.detail; })) +
-          (S.replan.changes ? '<p><strong>What it changed:</strong> ' + esc([].concat(S.replan.changes).join('; ')) + '</p>' : '') + '</div>' : '') +
+        (S.replan ? replanHtml(S.replan, li) : '') +
+        (!S.replan && S.replanFail ? replanFailHtml(S.replanFail, li) : '') +
         (S.plan ? '<p><button type="button" class="btn btn-ghost" id="try-plan-edit">Change the plan and run again</button></p>' : '') +
         '<p class="note">AI-planned, engine-computed: every figure below comes from the engine, which checked the plan and refused any step it could not run.</p>' +
         contractsHtml(rep) +
         analysesHtml(rep);
       c.hidden = false;
-      Array.prototype.forEach.call(c.querySelectorAll('[data-dl="contract_set_aside_csv"]'), function (b) {
-        b.addEventListener('click', function () { downloadText(rep.downloads.contract_set_aside_csv, stem(rep.input.name) + '-tests-set-aside.csv', 'text/csv'); });
+      Array.prototype.forEach.call(c.querySelectorAll('[data-dl="contract_flagged_csv"]'), function (b) {
+        b.addEventListener('click', function () { downloadText(rep.downloads.contract_flagged_csv, stem(rep.input.name) + '-tests-flagged-cells.csv', 'text/csv'); });
       });
       mountMaps(c, rep);
       var eb = $('try-plan-edit');
@@ -5277,6 +5733,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         }
         if (sn.encoding !== 'utf-8') buf = new TextEncoder().encode(text.replace(/^\ufeff/, '')).buffer;   // the engine reads UTF-8
         S.seq += 1; S.useAi = false; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null;
+        // a new file starts every personal-data choice again (option B): no column kept, no box ticked, and the last
+        // file's AI report off the screen (it stays in "Your previous reports")
+        S.kept = []; S.sendKey = ''; S.aiReport = null;
+        var lastAi = document.getElementById('try-ai-report');
+        if (lastAi) lastAi.hidden = true;
         // the file's SHA-256 (hex): the plan cache key and nothing else, never the bytes
         S.fileHash = ''; S.hashWait = null;
         try {
@@ -5295,7 +5756,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var w;
         try { w = worker(); } catch (e) { return refuse('engine', { title: 'This browser cannot run the engine', body: 'It does not allow a background worker here (' + e.message + ').' }); }
         w.postMessage({ type: 'scan', id: S.seq, name: name, buffer: buf,
-          options: { name: name, objective: S.objective, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows, want_profile: !!CFG.ai_proxy_url } }, [buf]);
+          options: { name: name, objective: S.objective, as_of: S.asOf, max_bytes: LIM.max_bytes, max_rows: LIM.max_rows } }, [buf]);
       }).catch(function (e) {
         refuse('engine', { title: 'The file could not be read', body: 'The browser could not open it (' + (e && e.message || e) + ').' });
       });
@@ -5346,13 +5807,22 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         return refuse('engine', { title: 'The engine\'s answer could not be shown', body: 'Its report did not have the shape this page reads, so nothing from it is shown.',
           extra: '<details class="more"><summary>What was wrong</summary>' + list(bad.slice(0, 12)) + '</details>' });
       }
-      if (!rep.ok && S.firstRep) { var f1 = S.firstRep; S.firstRep = null; setStage('replan', 'skip', null, 'the corrected run failed, so the first result is kept'); return finishReport(f1); }
+      if (!rep.ok && S.firstRep) {
+        var f1 = S.firstRep; S.firstRep = null;
+        S.replanFail = { signals: (S.replan && S.replan.signals) || [], sent: (S.replan && S.replan.sent) || [], why: 'engine' }; S.replan = null;
+        S.plan = S.firstPlan || S.plan;          // the plan behind the results shown is the one a visitor edits
+        setStage('replan', 'skip', null, T.replanStageNote('engine')); return finishReport(f1);
+      }
       if (!rep.ok) { stopRun(); return refuse('engine', { title: 'The engine could not work on this file', body: rep.error }); }
       if (S.plan && !S.replanned) {
         S.replanned = true;
         var sigs = Array.isArray(rep.plan_signals) ? rep.plan_signals : [];
-        if (sigs.length) return replan(rep, sigs);
-        setStage('replan', 'skip', null, 'the engine found nothing to correct');
+        // the engine's gate tripped (it set aside more than its limit of the rows): no new plan can make those
+        // rows readable, so the AI is not asked again, whatever signals a report carries (final review, 29 Sep
+        // 2026; engine/nl_browser.py _gate_state); the refusal shows on the plan card and in the headline
+        if (T.gateHeld(rep)) setStage('replan', 'skip', null, 'the engine set aside too many rows for any plan to read');
+        else if (sigs.length) return replan(rep, sigs);
+        else setStage('replan', 'skip', null, 'the engine found nothing to correct');
       }
       S.firstRep = null;
       finishReport(rep);
@@ -5381,7 +5851,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var stage = stageEl('report');
       if (!planOn() || !stage) { setStage('report', 'skip', null, 'not on this page'); return; }
       var ctrl = window.AbortController ? new AbortController() : null;
-      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 175000);
+      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, REPORT_ABORT_MS);
       setStage('report', 'start');
       el.note.textContent = 'The engine finished. The AI is writing the full report\u2026';
       var payload;
@@ -5402,6 +5872,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             clearTimeout(timer);
             if (seq !== S.seq) return;
             if (!j || !j.report) throw new Error('no report');
+            j.kept = (S.kept || []).slice();          // the flagged columns this report was made with (the share warning)
             S.aiReport = j;
             drawAiReport(j);
             savePrev(j);
@@ -5431,7 +5902,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     function drawAiReport(j) {
       var card = document.getElementById('try-ai-report');
       if (!card) return;
-      var html = aiReportHtml(j.report || '');
+      // the engine's results reach /report with "[your file]" for the file's name (engine/nl_browser.py
+      // results_for_ai); the name comes back only here, in this browser (a share link keeps the placeholder)
+      var html = aiReportHtml(String(j.report || '').split(FILE_WORD).join(S.name || FILE_WORD));
       var srcs = j.sources || [];
       // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden.
       // A repaired sentence carried a figure the engine never computed; it was deleted before shipping.
@@ -5540,7 +6013,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var goal = (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
       var entry = { t: Date.now(), title: title, goal: goal.slice(0, 300), file: S.name, model: j.model || '',
         report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 12), share: S.shareUrl || '', del: S.delToken || '',
-        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8) };
+        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8), kept: Array.isArray(j.kept) ? j.kept.slice(0, 60) : [] };
       var list = loadPrev().filter(function (x) { return x && x.t !== entry.t; });
       list.unshift(entry);
       storePrev(list);
@@ -5582,7 +6055,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     function openPrev(x) {
       S.aiCharts = (x.charts || []).slice(0, 6);
       S.aiTables = (x.tables || []).slice(0, 8);
-      S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '' };
+      // kept: the flagged columns it was made with; a report saved before that was recorded has none (unknown), and
+      // its share link is warned about as one that may hold personal values
+      S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '', kept: Array.isArray(x.kept) ? x.kept : undefined };
       S.shareUrl = x.share || '';
       S.delToken = x.del || '';
       S.prevT = x.t;
@@ -5639,16 +6114,38 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       else doPdf();
     }
 
+    // Before any link (option B): a report made with flagged columns the visitor kept may hold their values, so the
+    // share step says so and makes the link only when the visitor agrees; cancel makes none. The PDF is made from a
+    // link, so it asks the same. A report saved before the kept columns were recorded is asked about too (unknown).
+    var SHARE_WARN = 'This report may contain personal values (names, emails\u2026). Anyone with the link can see them.';
+    function shareRisk() { var k = S.aiReport && S.aiReport.kept; return !Array.isArray(k) || k.length > 0; }
+    function askShare(out, onLink) {
+      var pdf = typeof onLink === 'function', rep = S.aiReport;
+      out.hidden = false;
+      out.innerHTML = '<span class="try-share-warn" role="alert">' + (pdf ? esc('The PDF is made from a shareable link. ') : '') + '<b>' + esc(SHARE_WARN) + '</b></span> ' +
+        '<button type="button" class="btn btn-primary btn-sm" id="try-share-yes">' + (pdf ? 'Make the link and the PDF' : 'Make the link') + '</button> ' +
+        '<button type="button" class="btn btn-ghost btn-sm" id="try-share-no">Cancel</button>';
+      $('try-share-yes').addEventListener('click', function () { if (S.aiReport === rep) doShare(onLink, true); });
+      $('try-share-no').addEventListener('click', function () {
+        out.textContent = 'No link was made.';
+        var back = $(pdf ? 'try-pdf' : 'try-share');
+        if (back) back.focus();
+      });
+      try { $('try-share-no').focus({ preventScroll: true }); } catch (e) { $('try-share-no').focus(); }
+    }
     // share: POST /share with the finished report, then show the link
-    function doShare(onLink) {
+    function doShare(onLink, agreed) {
       var out = document.getElementById('try-share-out');
       if (!S.aiReport || !out) return;
+      if (agreed !== true && shareRisk()) return askShare(out, onLink);
       out.hidden = false;
       out.textContent = 'Making the link\u2026';
       fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/share', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          input: (S.report && S.report.input) || { name: S.name },
+          // never the file's name (option B review, 29 Sep 2026: the file's name and its fingerprint went with every
+          // link, and the name is the viewer's title): the placeholder the report itself uses stands in
+          input: { name: FILE_WORD },
           goal: (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '',
           report: S.aiReport.report, sources: S.aiReport.sources || [], model: S.aiReport.model || '', days: 7,
           // the engine-drawn figures the report's [CHART:n]/[TABLE:n] markers point at: without
@@ -5675,7 +6172,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             out.appendChild(document.createTextNode(' '));
             out.appendChild(db);
           }
-          try { navigator.clipboard.writeText(j.link); out.appendChild(document.createTextNode(' \u00b7 copied')); } catch (e4) { /* clipboard needs a gesture; the link is shown */ }
+          // "copied" only once the browser has copied it (a refused write is not a copy, and not a page error)
+          try {
+            var cp = navigator.clipboard && navigator.clipboard.writeText(j.link);
+            if (cp && cp.then) cp.then(function () { out.appendChild(document.createTextNode(' \u00b7 copied')); }, function () { /* the link is shown */ });
+          } catch (e4) { /* clipboard needs a gesture; the link is shown */ }
           if (typeof onLink === 'function') onLink(j.link);
         })
         .catch(function (e) { out.textContent = 'The link could not be made: ' + String(e && e.message ? e.message : 'try again'); });
@@ -5754,7 +6255,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var priv = '<article class="tr-card tr-priv"><h3>Personal data</h3>' + (r.privacy.flagged.length
         ? tbl('Personal-data decisions', [{ t: 'Column' }, { t: 'Why it was flagged' }, { t: 'Decision' }], r.privacy.flagged.map(function (f) {
           return ['<code>' + esc(f.column) + '</code>', esc(f.kind), '<span class="pd-dec pd-' + esc(f.decision) + '">' + esc(f.decision) + '</span>'];
-        })) + '<p class="note">Withhold: left out of the business analysis, the downloads and anything sent to an AI; the data-health findings still name the column and count its blanks and spellings, never showing a value. Code: each value replaced by a code in the downloads; still left out of the analysis. Keep: used as it is.</p>'
+        })) + '<p class="note">Withhold: never sent to an AI or put in a share link, not even its name, and its values are left out of the business analysis and the downloads; no cleaning rule reads or changes them, so they never set a row aside, and they only keep otherwise-identical rows apart, as they are in your file; the data-health findings still name the column and count its empty cells, never showing a value. Code: each value replaced by a code in the downloads; left out of the analyses, and an AI is told only its name, type and counts. Keep: used like any other column' +
+          (CFG.ai_proxy_url ? '; its values went to the AI only if you ticked the box that named it' : '') + '.</p>'
         : '<p>No column was flagged as personal data.</p>') +
         '<p class="note">The scan reads column names and the shape of values, so names under a neutral heading can be missed: look over the story and the downloads before you share them.</p></article>';
       if (gated) h += priv;

@@ -1,0 +1,59 @@
+{
+ "goal": "How has GDP grown across countries?",
+ "understanding": "country-year panel",
+ "kind": "time_series_panel",
+ "columns": [
+  {
+   "name": "country",
+   "semantic_type": "category",
+   "role": "entity"
+  },
+  {
+   "name": "year",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "gdp_bn",
+   "semantic_type": "level",
+   "role": "target",
+   "unit": "USD bn"
+  },
+  {
+   "name": "inflation_pct",
+   "semantic_type": "percentage",
+   "role": "driver",
+   "unit": "%"
+  }
+ ],
+ "operations": [],
+ "primary": "gdp_bn",
+ "analyses": [
+  {
+   "type": "trend",
+   "columns": [
+    "gdp_bn"
+   ]
+  },
+  {
+   "type": "rank",
+   "columns": [
+    "gdp_bn"
+   ]
+  },
+  {
+   "type": "extremes",
+   "columns": [
+    "gdp_bn"
+   ]
+  },
+  {
+   "type": "predict",
+   "columns": [
+    "gdp_bn",
+    "inflation_pct",
+    "country"
+   ]
+  }
+ ]
+}

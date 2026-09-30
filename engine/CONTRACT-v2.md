@@ -149,6 +149,125 @@ the v2 keys empty and adds one `limitations` entry saying the confidence details
 built. With the environment variable `NL_BROWSER_STRICT` set (the tests set it) it stops the run
 instead, so a defect cannot hide behind the fallback.
 
-## 5. What this contract does not carry yet (R1)
+## 5. The AI plan's blocks: one reading, the privacy promise (29 September 2026)
+
+### 5.1 One parser
+
+The data tests (`contracts`), the AI's analyses (`ai_analyses`) and the planner's profile (`profile_json`)
+read every cell exactly as the engine's cleaner read it. The adapter replays the cleaner's own repair and
+conversion rules (`clean.standard_rules`, the rules `clean_table` ran, in its order, with its own code) on the
+landed table, so every row, kept or set aside, has the value the engine gave it: its decimal comma, its k and M
+suffixes, its accounting negatives, its percent sign (`"12%"` is 0.12), its placeholders (`N/A`, `NULL`, a dash:
+blank, never unreadable) and its day/month rule (a date that could be either way round in a column holding
+both orders is not read). The plan's column names map to the engine's landed names by the engine's own column
+map (`intake.normalise_columns`). No engine file is changed.
+
+### 5.2 `contracts.tests[]`
+
+Each test also carries `ambiguous` (dates the engine set aside because day and month could be either way round:
+counted as failed, never as unreadable, never a misread), `engine_read_as` (`numbers`, `dates`, `years` or
+`text`: how the engine read the column), `would_read` (for a column the engine reads as text: how many of its
+values the engine's own reader would read as the type), `mixed_scale` (`{fractions, percents}` for a
+percentage column holding both 0.12 and 12: flagged and signalled) and `private` (`"withhold"`, `"code"` or
+null). A cell is unreadable when its text is not blank, is not one of the engine's placeholders, and the engine
+holds no value for it. A percentage column is on one scale: a value written with a % sign is already a percent;
+the values written without one are fractions only when at least 95% of them lie between 0 and 1; a value outside
+the chosen scale is out of range. A withheld or coded column's number and date tests are not run (the engine
+reads its codes): `action` says so. Its examples and its cells in `downloads.contract_flagged_csv` read
+`value withheld` or `value coded`; every other example is scrubbed as the download is.
+
+### 5.3 `ai_analyses`
+
+`{items[], refused[], rows: {kept, set_aside}, date, note}`. Every analysis reads only the rows the engine kept
+(the rows of `downloads.clean_csv`), as the engine read them; `rows` counts them and the rows it set aside.
+`date` is the axis: ONLY the layout's date or the column the plan gives the date ROLE (a column merely typed date
+with another role is never the axis), read by the engine as dates or as whole years. A kept row with no date
+drops out of a time analysis and its sentence counts it; a kept cell the engine could not read is counted as
+missing and the sentence counts it. A flow or a count is aggregated by year as its yearly total (every row
+added), a level as its yearly average; the sentence says which. A year is complete when all 12 of its months
+(all 4 quarters for quarterly rows) hold a value. A trend whose 95% range includes zero claims no direction.
+When the engine refuses its own business analysis (its gate: it set aside more than
+`gate.DEFAULT_POLICY.max_quarantine_rate`, 20%, of the rows), no analysis is drawn from the rows it kept either:
+`items` is empty, `refused` holds one line ("trend, extremes: the engine set aside 30.0% of the rows (180 of
+600), over its 20% limit, so no analysis is drawn from the rest"), and `gate` is `{over, pct, limit, aside,
+rows}`. When the gate trips, `plan_signals` is empty (no data test, step or analysis signal), so the planner is
+not asked again: a plan cannot make an unreadable cell readable, and the one change a planner can make, setting
+the unreadable column aside and reading another, is the wrong-axis result the gate exists to prevent (review
+cases f and g). The page does not ask again either when a report's `ai_analyses.gate.over` is true or its
+headline is the gate's, whatever signals the report carries.
+A column the visitor withheld or coded is never an axis, a group, a driver or a measure; a withheld one is
+never named ("a column you withheld").
+
+### 5.4 `profile_json(data, name, flagged, decisions, as_of)` (the planner's profile)
+
+`flagged` is the scan's `{column: kind}`, or `{column: {kind, decision}}`, or `privacy.flagged`; `decisions`
+is the visitor's `{column: "withhold" | "code" | "keep"}` (by either spelling of the name). Every column the
+engine's scan flagged or the adapter's personal-column check added (5.5) is flagged whatever `flagged` says; a
+flagged column with no decision is withheld, the engine's default. Withheld: absent (never named, never
+counted, never the time column). Coded: its name, `filled`, `distinct`, `blank`, `numeric_share`,
+`date_share`, `integers`, `percent_sign`, `looks_personal: true` and `privacy_flag`, and no field that holds a
+value. Kept: like any column, `looks_personal: false`, and no `privacy_flag` (the page's own filter marks it the
+same way, and sends it only after the visitor has ticked the box that names it).
+The facts are the engine's reading under these same decisions (5.6): a coded column is read as its codes (its
+shares describe the codes the engine reads), a kept one like any other. The page asks ONCE, after the visitor's
+choices and only after "Continue with the AI" (engine/worker.js `profile`, answered by
+`plan_profile_json`: `{profile, landed: {header: landed name}}` for every column of the file; `landed` stays in
+the page, which uses it in its own second filter to match each profiled column to its flag exactly and to keep
+every spelling of a withheld column's name out of what it sends). The scan's run leaves its reading
+behind (keyed by the file's sha256 and its decisions, every flagged column withheld), so a profile under those
+decisions costs no second landing; any other choice costs one profile pass of the engine.
+`time` and `analysis_limits` are over the rows the engine kept, skip every withheld or coded column before
+choosing, and name only analyses the planner can ask for.
+The profile's `name` is `"[your file]"`, never the file's name (the page's /report payload says the same).
+What a column not flagged (or kept) shows: a number column its `min`, `median` and `max`; a text or date column
+of at most 300 distinct values (median length 60 characters or fewer) its 12 commonest values (`top_values`)
+and, above 12 distinct, every value (`values`), each cut at 60 characters, unless its values look personal
+(`looks_personal: true`); the date column's first and last month (`time`). The page's consent says exactly this.
+
+### 5.5 The adapter's personal-column check
+
+On top of the engine's scan (never instead of it): a column the scan did not flag joins `privacy.flagged`, with
+the same default (withhold), when at least 60% of its values are email addresses, phone numbers written with
+separators, account or card numbers written in groups of four digits (4-4-4, 4-4-4-4, or 4-6-5: never read as a
+phone), or street addresses (a house number, the street's name, then a street type; "12 ct", "12 Ct Paper
+Towels", "10 Sq Ft Tile" and "3 Way Switch" are not addresses: no street's name stands between the number and
+the type, and a short type such as Ct, St or Way counts only with nothing numeric after it); or when its name
+says it holds people and at least 60% of its values could be a person's name. The name says it holds people when
+its last word (after "assigned", "on duty" or a number) is a word for a person (member, customer, client, user,
+technician, attendee, salesperson, rep, agent, driver, staff, author, owner, assignee, who, and the like in
+Spanish, Portuguese, Italian, French, German, Dutch, Nordic, Polish and Turkish), when a word for a name stands
+with no thing right before it (customer_name, Name, nombre, nom, vorname; never product_name), when it is
+`<verb>ed_by` (created_by, sold_by) or `assigned_to`, or when it holds a word for a name or a person in Russian,
+Arabic, Chinese, Japanese, Korean or Hindi; never user_agent, customer_id or member_since. A value could be a
+person's name when it is 1 to 4 words of letters in any script or case, with initials ("J. Smith"), particles
+("de la", "van") and the comma form ("Fairweather, Marisol"), and no word that says firm, role, tier, software or
+a way to pay ("Acme Corp", "Gold Member", "Sales Manager", "Google Chrome", "Card"). There is no minimum number of distinct values: a
+column of one person's name is flagged. Its `kind` is `person's name`, `email`, `phone number`, `account or card
+number` or `street address`. It is registered as the engine registers a flagged column (a pending row in its
+column register), so the engine's own decide, code and withhold apply to it. A column of names under a heading
+the check does not know ("Stylist") can still be missed, and the page says so before anything is sent.
+
+### 5.6 A withheld column drives no cleaning rule
+
+The engine derives its cleaning rules from every column it profiles and has no option to leave one out. So,
+after its values are read for the scrubber and before the engine profiles or cleans anything, a withheld column
+is landed as text no rule reads: each distinct value, byte for byte as the file holds it (case, spaces and a
+placeholder such as N/A included), becomes its own opaque code of capital letters; only an empty cell stays
+empty. No cleaning rule reads or changes its values, so no row is set aside or changed because of what it holds;
+the data-health check still counts its empty cells (not its spellings), and both exact-duplicate checks compare
+its codes, which are equal exactly where the file's values are: the column only keeps otherwise-identical rows
+apart, as they are in the file (the health's duplicate count equals the file's own).
+
+### 5.7 `results_json` / `results_for_ai` (the report writer, and the charts and tables a share link carries)
+
+No text names a withheld column (a finding, health issue, fix or limitation about one is left out; any other
+mention reads "a column you withheld"), no withheld column's data test line is sent, and no text quotes a cell
+as an example ("(for example ...)" is cut). `plan_signals` (the planner's feedback) follows the same rules.
+A flagged column the visitor kept is not withheld: its name and values go like any column's. Option B (the owner's
+decision, 29 September 2026) lets the page send one only after the visitor ticks a box that names it; the writer
+is then told so once, at the end of `reading`, in one line that names the kept columns and holds no value: "The
+visitor chose to send these personal columns to the AI: staff_name." With no kept column there is no such line.
+
+## 6. What this contract does not carry yet (R1)
 
 Tipping points (S1/M10), drivers and reversals (S2), per-claim power, posterior probabilities (C8), the real-data placebo and the cross-environment receipt, Little's MCAR test, restatement lists and the structural-break screen are `null`/`[]` with their reason. The page must show them as "not measured", never as zero.

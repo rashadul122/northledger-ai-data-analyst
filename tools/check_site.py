@@ -92,7 +92,8 @@ import zlib
 from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECKS = ("banned", "figures", "shipped", "links", "contact", "collab", "pl300", "stray", "requests", "promises")
+CHECKS = ("banned", "figures", "shipped", "links", "contact", "collab", "pl300", "stray", "requests", "promises",
+          "timeouts")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
         "track", "wbr"}
 SKIP_TEXT = {"script", "style", "template"}
@@ -1078,7 +1079,22 @@ FALSE_PROMISES = (
     (r"dropped before analysis", "a withheld column is still profiled by the data-health check (counts, never values)", False),
     (r"counts still work", "a coded column is left out of the analysis like a withheld one", False),
     (r"left out of the business analysis, the story", "the story's data-health lines name a withheld column "
-     "(its blanks and spellings, never a value); only the AI payload leaves out every line that names it", False),
+     "(its blanks, never a value); only the AI payload leaves out every line that names it", False),
+    (r"count(?:s)? its blanks and spellings", "a withheld column is landed as codes no cleaning rule reads "
+     "(engine/nl_browser.py _neutralize_withheld), so the data-health check counts its blanks, not its spellings", False),
+    # final review, 29 Sep 2026
+    (r"commonest values and range of a column", "the planner's profile holds every value of a text or date column "
+     "with at most 300 short values, not only the commonest (engine/nl_browser.py profile_for_ai)", False),
+    (r"a technician or a vendor, say|heading like .technician", "the personal-data check reads \"technician\" as a "
+     "heading for people (engine/nl_browser.py _person_hint), so it is no example of a miss", False),
+    # option B (owner's decision, 29 Sep 2026): a flagged column the visitor keeps goes to the AI, values included,
+    # once they tick the box that names it, and its values may then be in the AI's report and a share link
+    (r"never sends? (?:any |a )?personal (?:data|values?)|personal (?:data|values?) (?:is |are )?never (?:sent|reach|go|leave)",
+     "a flagged column the visitor keeps is sent to the AI, values included, once they tick the box that names it", False),
+    (r"column summary an AI reads", "a kept column reaches the AI only after the visitor ticks the box that names it, "
+     "not whenever an AI reads the summary", False),
+    (r"(?:share|shared) links? (?:never|cannot|can ?not|does not|do not) (?:holds?|contains?|shows?|carry|carries) (?:a |any )?personal",
+     "a report made with kept columns can quote their values, and a share link stores that report", False),
 )
 
 
@@ -1104,9 +1120,73 @@ def check_promises(site: Site) -> Result:
     return r
 
 
+# ----------------------------------------------------------------------------- timeouts
+# The page must never abort a worker call the worker could still answer (live test, 29 Sep 2026: the page
+# gave up at 115 s on a re-plan the worker waited 140 s for, so an answer landing in between was paid for
+# and thrown away). Each page wait (src/js/50-try.js, and the built index.html that ships it) must be at
+# least TIMEOUT_MARGIN_MS longer than the matching worker deadline (../insight-proxy/wrangler.toml [vars],
+# and the default in its src/worker.js, both checked, since either can be the one that runs): a first plan
+# PLAN_ABORT_MS against PLAN_TIMEOUT_MS, the re-plan REPLAN_ABORT_MS against REPLAN_TIMEOUT_MS, and the
+# report REPORT_ABORT_MS against REPORT_DEADLINE_MS.
+PLAN_WAITS = (("PLAN_ABORT_MS", "PLAN_TIMEOUT_MS", "a first /plan"), ("REPLAN_ABORT_MS", "REPLAN_TIMEOUT_MS", "the re-plan"),
+              ("REPORT_ABORT_MS", "REPORT_DEADLINE_MS", "/report"))
+TIMEOUT_MARGIN_MS = 10000
+
+
+def _js_int(text, name):
+    m = re.search(r"\b%s\s*=\s*([0-9][0-9_]*)" % name, text or "")
+    return int(m.group(1).replace("_", "")) if m else None
+
+
+def check_timeouts(site: Site) -> Result:
+    r = Result("timeouts")
+    page_src = os.path.join(site.root, "src", "js", "50-try.js")
+    pages = []
+    if os.path.exists(page_src):
+        pages.append(("src/js/50-try.js", open(page_src, encoding="utf-8").read()))
+    if "index.html" in site.pages():
+        pages.append(("index.html", site.read("index.html")))
+    if not pages:
+        r.fail("neither src/js/50-try.js nor index.html is here, so the page's worker waits cannot be read")
+        return r
+    proxy = os.path.normpath(os.path.join(site.root, "..", "insight-proxy"))
+    toml_p, worker_p = os.path.join(proxy, "wrangler.toml"), os.path.join(proxy, "src", "worker.js")
+    have_proxy = os.path.exists(toml_p) and os.path.exists(worker_p)
+    toml = open(toml_p, encoding="utf-8").read() if have_proxy else ""
+    worker = open(worker_p, encoding="utf-8").read() if have_proxy else ""
+    for page_var, worker_var, what in PLAN_WAITS:
+        for where, text in pages:
+            v = _js_int(text, page_var)
+            if v is None:
+                r.fail("%s: no %s (the page's wait for %s)" % (where, page_var, what))
+                continue
+            if not have_proxy:
+                continue
+            m = re.search(r'^\s*%s\s*=\s*"(\d+)"' % worker_var, toml, re.M)
+            waits = [("wrangler.toml", int(m.group(1)))] if m else []
+            d = _js_int(worker, "export const " + worker_var)
+            if d is not None:
+                waits.append(("the default in src/worker.js", d))
+            if not waits:
+                r.fail("../insight-proxy sets no %s (the worker's deadline for %s): neither wrangler.toml [vars] nor "
+                       "an `export const %s` in src/worker.js" % (worker_var, what, worker_var))
+            for src, w in waits:
+                if v < w + TIMEOUT_MARGIN_MS:
+                    r.fail("%s: %s = %d ms is not at least %d s longer than the worker's %s = %d ms (%s), so the page "
+                           "could abort %s the worker would still answer" % (where, page_var, v, TIMEOUT_MARGIN_MS // 1000,
+                                                                             worker_var, w, src, what))
+    if have_proxy:
+        r.note("page waits for /plan, the re-plan and /report checked against ../insight-proxy (wrangler.toml and "
+               "src/worker.js), margin %d s" % (TIMEOUT_MARGIN_MS // 1000))
+    else:
+        r.note("../insight-proxy is not here, so the page's worker waits were found but not compared with the worker's")
+    return r
+
+
 # ----------------------------------------------------------------------------- main
 RUNNERS = {"banned": check_banned, "figures": check_figures, "shipped": check_shipped, "links": check_links,
-           "contact": check_contact, "collab": check_collab, "pl300": check_pl300, "stray": check_stray, "requests": check_requests, "promises": check_promises}
+           "contact": check_contact, "collab": check_collab, "pl300": check_pl300, "stray": check_stray, "requests": check_requests,
+           "promises": check_promises, "timeouts": check_timeouts}
 
 
 def run(root, checks=CHECKS, doms=None):

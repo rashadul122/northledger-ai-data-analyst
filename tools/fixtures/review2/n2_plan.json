@@ -1,0 +1,46 @@
+{
+ "goal": "How are sales trending?",
+ "understanding": "monthly sales by branch",
+ "kind": "time_series_panel",
+ "columns": [
+  {
+   "name": "date",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "branch",
+   "semantic_type": "category",
+   "role": "segment"
+  },
+  {
+   "name": "sales",
+   "semantic_type": "flow_amount",
+   "role": "target",
+   "unit": "EUR"
+  }
+ ],
+ "operations": [],
+ "primary": "sales",
+ "analyses": [
+  {
+   "type": "trend",
+   "columns": [
+    "sales"
+   ]
+  },
+  {
+   "type": "extremes",
+   "columns": [
+    "sales"
+   ]
+  },
+  {
+   "type": "predict",
+   "columns": [
+    "sales",
+    "branch"
+   ]
+  }
+ ]
+}

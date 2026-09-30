@@ -1,0 +1,70 @@
+{
+ "goal": "How have fees moved?",
+ "understanding": "clinic visits",
+ "kind": "transactions",
+ "columns": [
+  {
+   "name": "Date Of Birth",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "Visit Date",
+   "semantic_type": "date",
+   "role": "metadata"
+  },
+  {
+   "name": "Service",
+   "semantic_type": "category",
+   "role": "segment"
+  },
+  {
+   "name": "Fee",
+   "semantic_type": "flow_amount",
+   "role": "target",
+   "unit": "$"
+  }
+ ],
+ "operations": [],
+ "primary": "Fee",
+ "analyses": [
+  {
+   "type": "trend",
+   "columns": [
+    "Fee"
+   ]
+  },
+  {
+   "type": "extremes",
+   "columns": [
+    "Fee"
+   ]
+  },
+  {
+   "type": "compare",
+   "columns": [
+    "Fee"
+   ],
+   "by": "Service"
+  },
+  {
+   "type": "predict",
+   "columns": [
+    "Fee",
+    "Service"
+   ]
+  },
+  {
+   "type": "rank",
+   "columns": [
+    "Fee"
+   ]
+  },
+  {
+   "type": "share",
+   "columns": [
+    "Fee"
+   ]
+  }
+ ]
+}

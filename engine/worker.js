@@ -11,12 +11,19 @@
      {type: 'scan', id, name, buffer, options}  load the engine if needed, run it with every
                                                 flagged column withheld (the engine's default),
                                                 and report which columns it flagged
+     {type: 'profile', id, decisions}           the column summary the AI planner may read, made
+                                                AFTER the visitor's choices (nl_browser.
+                                                plan_profile_json): a withheld column absent, a
+                                                coded one only its name, type and counts, a kept
+                                                one like any column
      {type: 'run',  id, options}                the visitor's decisions: the same report if every
                                                 flagged column stays withheld, else a new run
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
    Messages out
      {type: 'stage', id, stage, state: 'start'|'done', seconds, cached}
-     {type: 'scanned', id, result: {ok, error, flagged: [{column, kind}]}}
+     {type: 'scanned', id, result: {ok, error, flagged: [{column, kind}], excel}}
+     {type: 'profiled', id, profile, landed}    profile null when it could not be made; landed:
+                                                {header: the engine's landed name}, for the page only
      {type: 'result', id, report}               THE REPORT CONTRACT
      {type: 'error', id, code: 'runtime'|'engine_missing'|'engine', message, detail}
    The engine entry (engine/pack.json "runtime.entry"):
@@ -138,7 +145,7 @@ async function onScan(m) {
   await boot(m.id);
   file = { name: m.name, bytes: new Uint8Array(m.buffer) };
   // Excel in (owner's decision, 28 Sep 2026): .xlsx/.xlsm sheets the visitor drops are converted to
-  // CSV inside this tab before the engine reads them — the engine still receives CSV text, so its
+  // CSV inside this tab before the engine reads them: the engine still receives CSV text, so its
   // receipts and its pack never change. openpyxl is loaded lazily, only when an Excel file arrives,
   // from the same Pyodide CDN as numpy and pandas. Multi-sheet books: the sheet with the most data
   // rows is read (a plain note rides back so the page can say which sheet was used).
@@ -164,17 +171,29 @@ async function onScan(m) {
   first = { report: report, options: m.options || {} };
   timesOf(report, BEFORE, m.id);
   var flagged = ((report.privacy || {}).flagged || []).map(function (f) { return { column: f.column, kind: f.kind }; });
-  var profile = null;
-  if ((m.options || {}).want_profile && nl.profile_json) {
-    try {
-      var fm = {};
-      flagged.forEach(function (f) { fm[f.column] = f.kind; });
-      profile = JSON.parse(nl.profile_json(file.bytes, String(m.name || ''), JSON.stringify(fm)));
-      if (!profile || !profile.ok) profile = null;
-    } catch (e) { profile = null; }
-  }
-  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, profile: profile,
+  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged,
     excel: (file && file.excel) ? { sheet: file.excel.sheet, sheets: file.excel.sheets } : null } });
+}
+
+// The column summary for the AI planner (the page asks only after the visitor chose "Continue with the AI"),
+// built by the adapter under the visitor's own choices: plan_profile_json(bytes, name, flags, decisions, as_of).
+// The flags are the scan's (the engine's and the adapter's personal-column check); a choice for any other
+// column is ignored. The adapter reuses the scan's reading when every flagged column stayed withheld, else
+// runs the engine's profile and cleaning once under these choices.
+function onProfile(m) {
+  if (!booted || !nl || !file || !first || !nl.plan_profile_json) { post({ type: 'profiled', id: m.id, profile: null, landed: null }); return; }
+  var fm = {}, dec = {}, got = m.decisions || {};
+  (((first.report || {}).privacy || {}).flagged || []).forEach(function (f) {
+    fm[f.column] = f.kind;
+    if (['withhold', 'code', 'keep'].indexOf(got[f.column]) >= 0) dec[f.column] = got[f.column];
+  });
+  var out = null;
+  try {
+    out = JSON.parse(String(nl.plan_profile_json(file.bytes, String(first.options.name || file.name), JSON.stringify(fm),
+      JSON.stringify(dec), first.options.as_of ? String(first.options.as_of) : null)));
+  } catch (e) { out = null; }
+  var p = out && out.profile && out.profile.ok ? out.profile : null;
+  post({ type: 'profiled', id: m.id, profile: p, landed: p ? (out.landed || {}) : null });
 }
 
 async function onRun(m) {
@@ -210,6 +229,7 @@ self.onmessage = function (e) {
   var m = e.data || {};
   queue = queue.then(function () {
     if (m.type === 'scan') return onScan(m);
+    if (m.type === 'profile') return onProfile(m);
     if (m.type === 'run') return onRun(m);
     if (m.type === 'results') return onResults(m);
     return null;

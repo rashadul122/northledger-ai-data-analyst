@@ -50,7 +50,8 @@ What this adapter adds, and why:
     column), nor the engine's internal table name; a type conversion is described as one, not
     as a repair; set-aside dates that could be day/month or month/day are counted under that
     reason; a refused business analysis is said once. The downloads carry each row's line in
-    the visitor's file (source_line) and write whole numbers without ".0".
+    the visitor's file (source_line, the same line in every download, after the AI plan's row
+    filters too) and write whole numbers without ".0".
 
 Nothing is sent anywhere. The file lives in a temporary folder for the run and is deleted,
 with everything the engine wrote, before run() returns. run() never raises: a failure
@@ -88,6 +89,11 @@ DEFAULT_OBJECTIVE = ("What is happening to volume and the main measures, and wha
 WITHHELD_MARK = "[withheld]"
 # The start of the headline when the engine refuses the business analysis (the page reads it).
 GATE_TRIPPED = "The business analysis did not run"
+# what the planner's profile says in place of the file's name (the page's /report payload says the same)
+FILE_WORD = "[your file]"
+# The report writer's one line about the flagged columns the visitor kept (option B, owner's decision, 29 Sep
+# 2026: the page sends a kept column's values only after a ticked box that names it). Column names only, no value.
+OPTED_IN = "The visitor chose to send these personal columns to the AI: %s."
 # Added to a flagged column's kind when the engine coded its values as it landed the file.
 CODED_ON_ARRIVAL = "coded as it arrived"
 
@@ -718,7 +724,8 @@ _REASON_LABEL = {"name": "named like personal data", "free_text": "free text",
                  "auto_redact_off": "personal data", "people": "people's names"}
 _KIND_LABEL = {"email": "email", "credit_card": "card number", "phone_na": "phone number",
                "phone_intl": "phone number", "sin_ssn": "SIN or SSN", "postal_ca": "postal code",
-               "ip": "IP address", "person_name": "person's name"}
+               "ip": "IP address", "person_name": "person's name", "street_address": "street address",
+               "account_number": "account or card number"}
 
 
 def _kind_of(col: str, kinds: str, res: Any) -> str:
@@ -786,6 +793,421 @@ def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, A
             kind += "; " + CODED_ON_ARRIVAL
         out.append({"column": col, "kind": kind, "decision": effective})
     return out
+
+
+def _effective_decisions(flagged: List[Dict[str, str]], colmap: Dict[str, str], decisions: Any) -> Dict[str, str]:
+    """{landed column: decision} as _apply_decisions would settle it for these flagged columns: the visitor's
+    choice by the landed name or the file's own header, else withhold; a column coded as it arrived is never
+    kept (keep reads as code)."""
+    wanted: Dict[str, str] = {}
+    for k, v in dict(decisions or {}).items():
+        d = str(v or "").strip().lower()
+        if str(k).startswith("__") or d not in DECISIONS:
+            continue
+        wanted[str(k)] = d
+        if str(k) in colmap:
+            wanted[colmap[str(k)]] = d
+    out: Dict[str, str] = {}
+    for f in flagged:
+        want = wanted.get(f["column"], "withhold")
+        if CODED_ON_ARRIVAL in str(f.get("kind") or ""):
+            want = "withhold" if want == "withhold" else "code"
+        out[f["column"]] = want
+    return out
+
+
+# --------------------------------------------------------------------------- the adapter's personal-column check
+# The engine's scan flags a column by a name hint or by the shape of its values (emails, phone numbers, SINs,
+# people's names whose first word is on its list of common given names). Reviews of 29 Sep 2026: a "member"
+# column of people's names ("Marisol Fairweather") passed both, and so did lower-case names, initials, names in
+# other scripts, "Fairweather, Marisol", and names under "technician", "assigned_to" or "nombre". This check runs
+# AFTER the engine's scan and only ever ADDS a column to the visitor's choices, with the default every flagged
+# column has (withhold); it never replaces or clears an engine flag. A missed column is the costly mistake (its
+# values reach the planner and the report writer); a column flagged in error costs the visitor one click (Keep).
+# A column joins when
+#   most of its values are email addresses, phone numbers written with separators, account or card numbers
+#   written in groups of four digits, or street addresses, or
+#   its NAME says it holds people (_person_hint: a word for a person or a person's name, in English or another
+#   common language, as the column's last word; a person's name ("customer_name", "nombre"); "created_by",
+#   "assigned_to") AND most of its values could be a person's name (_person_value: 1 to 4 words of letters in
+#   any script or case, with initials, particles and the comma form, and no word that says firm, role, tier,
+#   software or a way to pay).
+# A column of names under a heading this check does not know ("Stylist", "Crew") can still be missed, and the
+# page says so.
+PERSONAL_MIN_SHARE = 0.60
+# words for a person, as a column's (last) word says it: in the file's own spelling, lower case, accents
+# dropped and plurals folded as _header_tokens gives them
+_PERSON_WORDS = frozenset((
+    # English
+    "member", "customer", "cust", "client", "person", "people", "patient", "employee", "contact", "owner",
+    "tenant", "guest", "user", "username", "manager", "attendee", "instructor", "technician", "rep",
+    "representative", "salesperson", "salesman", "saleswoman", "salesrep", "agent", "staff", "driver", "cashier",
+    "buyer", "recipient", "payee", "spouse", "teacher", "student", "doctor", "nurse", "parent", "guardian",
+    "beneficiary", "holder", "cardholder", "signer", "approver", "supervisor", "worker", "volunteer", "player",
+    "participant", "applicant", "candidate", "author", "sender", "requester", "submitter", "assignee", "who",
+    "resident", "occupant", "landlord", "subscriber", "donor", "borrower", "physician", "therapist", "consultant",
+    "advisor", "adviser", "coach", "trainer", "caller", "reviewer", "inspector", "clerk", "homeowner",
+    # Spanish, Portuguese, Italian, French
+    "cliente", "empleado", "miembro", "socio", "paciente", "usuario", "vendedor", "persona", "huesped",
+    "funcionario", "utente", "dipendente", "membre", "employe", "utilisateur", "personne", "vendeur", "locataire",
+    # German, Dutch, Nordic, Polish, Turkish
+    "kunde", "kunden", "mitarbeiter", "mitglied", "benutzer", "klant", "medewerker", "gebruiker", "kund",
+    "asiakas", "klient", "pracownik", "musteri", "calisan",
+))
+# words for a person's name: the column holds names wherever one stands, unless a thing comes right before it
+# ("product_name", "store_name"; _THING_WORDS)
+_NAME_WORDS = frozenset((
+    "name", "firstname", "lastname", "fullname", "surname", "forename", "givenname", "familyname", "fname",
+    "lname", "nickname", "nombre", "apellido", "nome", "cognome", "sobrenome", "nom", "prenom", "vorname",
+    "nachname", "naam", "voornaam", "achternaam", "navn", "fornavn", "etternavn", "efternavn", "namn",
+    "efternamn", "nimi", "imie", "nazwisko", "isim", "soyad", "soyadi", "adi", "kundenname", "benutzername",
+    "mitarbeitername",
+))
+# words for a name or a person in scripts the engine's splitter drops, matched anywhere in the column's name
+_PERSON_WORDS_OTHER_SCRIPTS = (
+    "имя", "фамилия", "клиент", "сотрудник", "пользователь", "покупатель",      # Russian
+    "اسم", "عميل", "موظف",                                                    # Arabic
+    "姓名", "名字", "名前", "氏名", "客户", "顾客", "顧客", "会员", "會員", "员工", "員工",   # Chinese, Japanese
+    "이름", "성명", "고객", "회원", "직원",                                         # Korean
+    "नाम", "ग्राहक",                                                            # Hindi
+)
+# the part of a name: first or last name only (a single word is then the whole value)
+_NAME_PART = frozenset(("first", "last", "given", "family", "middle", "maiden", "nick", "firstname", "lastname",
+                        "surname", "fname", "lname", "forename", "givenname", "familyname", "vorname", "nachname",
+                        "prenom", "apellido", "cognome", "sobrenome", "voornaam", "achternaam", "fornavn",
+                        "etternavn", "efternavn", "efternamn", "nazwisko", "soyad", "soyadi"))
+# a thing: a name-word right after one names that thing ("product_name"), and a person word as its modifier
+# names what the person has ("customer_id", "member_since", "user_count", "owner_city")
+_THING_WORDS = frozenset((
+    "product", "item", "sku", "file", "filename", "category", "brand", "company", "business", "store", "shop",
+    "branch", "city", "region", "country", "province", "state", "sheet", "table", "column", "field", "host",
+    "domain", "campaign", "event", "project", "plan", "service", "model", "device", "course", "team",
+    "department", "dept", "warehouse", "location", "site", "tag", "label", "menu", "channel", "list", "report",
+    "stage", "vendor", "supplier", "part", "bank", "color", "colour", "variant", "style", "option", "attribute",
+    "promo", "coupon", "discount", "app", "application", "role", "job", "position", "id", "no", "num", "nbr",
+    "number", "ref", "code", "key", "uuid", "guid", "since", "segment", "tier", "group", "type", "status",
+    "source", "count", "cnt", "lifetime", "ltv", "value", "class", "rank", "score", "date", "time", "at", "ts",
+    "timestamp", "created", "updated", "portal", "kind", "qty", "quantity", "total", "sum", "avg", "mean", "min",
+    "max", "rate", "ratio", "pct", "percent", "size", "level", "flag", "format", "email", "mail", "phone",
+    "address", "age", "gender", "sex", "industry", "language", "note", "comment", "version",
+))
+# words after a person word that leave it the head ("salesperson assigned", "technician on duty", "customer 2")
+_TRAILING = frozenset(("assigned", "responsible", "on", "duty", "in", "charge", "of", "record", "primary",
+                       "secondary", "main", "lead", "current", "previous", "prev", "new", "old", "other", "alt",
+                       "backup", "1", "2", "3", "4"))
+# "<verb>_to" that names who something went to ("assigned_to", "sold_to", "bill_to")
+_TO_VERBS = frozenset(("assigned", "reassigned", "allocated", "delegated", "escalated", "referred", "billed",
+                       "bill", "ship", "shipped", "sold", "sent", "delivered", "paid", "issued", "addressed",
+                       "attention", "attn", "reported", "forwarded", "transferred"))
+# "<verb>_by" that names who did it ("created_by", "sold_by"): a verb ending in "ed", or one of these
+_BY_VERBS = frozenset(("sold", "paid", "made", "done", "run", "taken", "won", "led", "held", "kept", "sent",
+                       "seen", "met", "written", "driven", "given", "bought", "brought", "caught", "taught",
+                       "built", "chosen", "drawn", "set"))
+_PLACE_WORDS = frozenset(("store", "shop", "branch", "warehouse", "site", "office", "vendor", "supplier",
+                          "company", "business", "merchant", "depot", "plant", "location", "facility", "hq",
+                          "outlet", "dealer", "distributor", "manufacturer", "carrier", "courier"))
+# words no person's name holds: a firm, a role, a tier, software or a way to pay ("Acme Corp", "Sales Team",
+# "Gold Member", "Field Technician", "Google Chrome", "Card" under paid_by); matched on whole words, lower case
+_NOT_NAME_WORDS = frozenset((
+    "inc", "ltd", "llc", "llp", "plc", "gmbh", "corp", "corporation", "company", "holdings", "partners",
+    "industries", "systems", "solutions", "services", "logistics", "traders", "trading", "enterprises",
+    "technologies", "labs", "agency", "university", "college", "school", "hospital", "clinic", "foundation",
+    "institute", "association", "department", "dept", "team", "office", "division", "store", "restaurant",
+    "hotel", "centre", "center", "manager", "director", "executive", "officer", "assistant", "technician",
+    "engineer", "analyst", "specialist", "coordinator", "supervisor", "representative", "admin",
+    "administrator", "operations", "sales", "support", "success", "reception", "accounts", "payable",
+    "receivable", "member", "tier", "level", "basic", "plus", "premium", "elite", "platinum", "vip", "standard",
+    "chrome", "firefox", "safari", "browser", "android", "iphone", "windows", "linux", "software",
+    "card", "cash", "cheque", "eft", "visa", "mastercard", "amex", "paypal", "transfer", "debit", "credit", "wire",
+    "invoice", "ach",
+))
+# words beside a name that are not one of its words ("Maria de la Cruz", "Ludwig van Beethoven")
+_PARTICLES = frozenset(("de", "del", "della", "der", "den", "di", "da", "das", "dos", "do", "du", "la", "le",
+                        "les", "van", "von", "ter", "ten", "te", "zu", "af", "av", "y", "e", "bin", "binti", "bint",
+                        "ibn", "al", "el", "abu", "ben", "bat"))
+_EMAIL_VALUE = re.compile(r"^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
+# a phone number as people write one: groups joined by a space, dot or dash, or an area code in brackets
+_PHONE_VALUE = re.compile(r"^(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,4}\)[ .-]?|\d{2,4}[ .-])\d{2,4}[ .-]\d{3,4}"
+                          r"(?:\s*(?:x|ext\.?)\s*\d{1,5})?$", re.I)
+# an account or card number written in groups: 4-4-4, 4-4-4-4 or 4-6-5 digits with one separator. No phone
+# plan writes a number that way, so it is never read as a phone; it identifies an account or a card holder,
+# so it is flagged as "account or card number" (withheld by default, like every flagged column)
+_GROUPED_NUMBER = re.compile(r"^\d{4}([ .-])\d{4}\1\d{4}(?:\1\d{4})?$|^\d{4}([ .-])\d{6}\2\d{4,5}$")
+# street types after the street's name ("12 Queen St W", "4500 Maple Avenue, Unit 3", "100 5th Ave")
+_STREET_TYPES = frozenset(("street", "avenue", "ave", "road", "rd", "boulevard", "blvd", "drive", "lane", "court",
+                           "crescent", "cres", "place", "terrace", "highway", "hwy", "parkway", "pkwy", "square",
+                           "circle", "trail", "trl", "close"))
+# street types that are also other words ("12 ct", "3 Way Switch", "10 Sq Ft", "Dr Pepper"): one counts only
+# when nothing numeric follows it ("12 Oak Ct" and "12 Oak Ct, Unit 3", never "12 Oak Ct 24")
+_STREET_TYPES_SHORT = frozenset(("st", "dr", "ct", "way", "ln", "pl", "sq", "cir", "terr", "ter"))
+# street types before the street's name ("12 rue de Rivoli", "5 Calle Mayor")
+_STREET_TYPES_FIRST = frozenset(("rue", "calle", "avenida", "rua", "via", "viale", "piazza", "plaza", "chemin"))
+# words before a count or a size, never a street's name ("12 Pack Dr Pepper", "Large Eggs 6 Ct")
+_NOT_A_STREET = frozenset(("pack", "pk", "ct", "count", "pc", "pcs", "piece", "pieces", "oz", "lb", "lbs", "kg",
+                           "g", "ml", "l", "ft", "in", "inch", "x", "sq", "cu", "gauge", "amp", "volt", "watt",
+                           "way", "set", "box", "case", "roll", "sheet", "ply"))
+_HOUSE = re.compile(r"^\s*\d{1,6}[A-Za-z]?(?:-\d{1,6})?,?\s+(.*)$")
+_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])")
+
+
+def _header_tokens(name: Any) -> Tuple[str, ...]:
+    """A column name's words, split as the engine's scan splits them (case changes, letters and digits,
+    everything else; plurals folded: "MemberName" and "members" both give "member"), but in any script, with
+    accents dropped ("Prénom" gives "prenom", "Müşteri" "musteri")."""
+    import unicodedata
+    s = _CAMEL.sub(" ", str(name)).lower()
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+    return tuple(t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t
+                 for t in re.split(r"[\W_]+", s) if t)
+
+
+def _person_hint(toks: Tuple[str, ...], header: Any = "") -> Tuple[bool, bool]:
+    """(the column's name says it holds people, and it holds one part of a name: a first or last name).
+    Its last word (after "assigned", "on duty", a number) is a person ("sales_rep", "account_manager",
+    "Salesperson Assigned"); or a name-word stands with no thing right before it ("customer_name", "Name",
+    "nombre del cliente"; never "product_name"); or it is "<verb>ed_by" or "assigned_to"; or it holds a word
+    for a name or a person in another script ("客户姓名"). Never "user_agent", "customer_id", "member_since"."""
+    low = str(header or "").lower()
+    if any(w in low for w in _PERSON_WORDS_OTHER_SCRIPTS):
+        return True, False
+    if not toks:
+        return False, False
+    ts = set(toks)
+    part = bool(ts & (_NAME_PART - {"first", "last", "given", "family", "middle", "maiden", "nick"})) or (
+        bool(ts & _NAME_WORDS) and bool(ts & _NAME_PART))
+    for i, t in enumerate(toks):
+        if t in _NAME_WORDS and (i == 0 or toks[i - 1] not in _THING_WORDS):
+            return True, part
+    if len(toks) >= 2 and toks[-1] == "by" and (toks[-2].endswith("ed") or toks[-2] in _BY_VERBS):
+        return True, False
+    if len(toks) >= 2 and toks[-1] == "to" and toks[-2] in _TO_VERBS:
+        return True, False
+    head = list(toks)
+    while len(head) > 1 and head[-1] in _TRAILING:
+        head.pop()
+    if head[-1] in _PERSON_WORDS and not (head[-1] == "agent" and len(head) >= 2 and head[-2] == "user"):
+        return True, part
+    return False, False
+
+
+def _name_word(w: str) -> bool:
+    """A word of a person's name: letters in any script (marks inside are fine), an apostrophe, hyphen or dot
+    inside or after ("O'Neil", "Mary-Jane", "J.")."""
+    import unicodedata
+    if not w or not w[0].isalpha():
+        return False
+    return all(ch.isalpha() or ch in "'’-." or unicodedata.category(ch).startswith("M") for ch in w[1:])
+
+
+def _person_value(v: str) -> bool:
+    """A value that could be a person's name, in any script or case: 1 to 4 words of letters, with initials
+    ("J. Smith"), particles beside them ("Maria de la Cruz", "Anne van der Berg"), or the comma form
+    ("Fairweather, Marisol"); at least one word of two or more letters ("J. K." is not a name); no word that
+    says firm, role, tier, software or a way to pay (_NOT_NAME_WORDS: "Acme Corp", "Gold Member", "Sales Manager",
+    "Card")."""
+    s = " ".join(str(v).split())
+    if s.count(",") == 1:
+        a, b = (x.strip() for x in s.split(","))
+        if not a or not b:
+            return False
+        s = a + " " + b
+    words = s.split(" ")
+    if not s or len(words) > 8:
+        return False
+    core, full = 0, False
+    for w in words:
+        lw = w.casefold().strip(".'’")
+        if lw in _NOT_NAME_WORDS:
+            return False
+        if lw in _PARTICLES and core:
+            continue                          # a particle after the first word ("de la", "van der")
+        if not _name_word(w):
+            return False
+        core += 1
+        full = full or sum(ch.isalpha() for ch in w) >= 2
+    return 1 <= core <= 4 and full
+
+
+def _street_value(v: str) -> bool:
+    """A street address: a house number, then the street's name (1 to 4 words, the last holding a letter and
+    not a pack or size word), then a street type ("12 Queen St W", "4500 Maple Avenue, Unit 3", "100 5th Ave",
+    "1 Microsoft Way"), or a house number and a type that comes first ("12 rue de Rivoli"). Never "12 ct",
+    "12 Ct Paper Towels", "10 Sq Ft Tile", "3 Way Switch" (no street's name between the number and the type)
+    or "12 Pack Dr Pepper" (a pack word before it)."""
+    m = _HOUSE.match(str(v))
+    if not m:
+        return False
+    toks = re.findall(r"[^\s,#]+|[,#]", m.group(1))
+    if len(toks) >= 2 and toks[0].lower() in _STREET_TYPES_FIRST and re.search(r"[^\W\d_]", toks[1]):
+        return True
+    for i in range(1, min(len(toks), 5)):
+        if toks[i - 1] in (",", "#"):
+            return False                      # the street's name ended with no type
+        t = toks[i].lower().rstrip(".")
+        if t not in _STREET_TYPES and t not in _STREET_TYPES_SHORT:
+            continue
+        last = toks[i - 1].lower().rstrip(".")
+        if not re.search(r"[^\W\d_]", last) or last in _NOT_A_STREET:
+            continue
+        rest = toks[i + 1:]
+        if t in _STREET_TYPES_SHORT and rest and rest[0][:1].isdigit():
+            continue
+        return True
+    return False
+
+
+def _personal_columns(db_path: str, table: str, colmap: Dict[str, str], skip: Set[str]) -> List[Tuple[str, str]]:
+    """[(landed column, kind)]: the columns this check adds to the visitor's choices (see above), in the
+    file's order; `skip`: the columns the engine's scan already flagged. Kinds are the engine's own words
+    (person_name, email, phone_na), street_address and account_number."""
+    import numpy as np
+    import pandas as pd
+    from northledger import clean as _clean
+    from northledger._sqlite import connect_ro
+    con = connect_ro(db_path)
+    try:
+        df = pd.read_sql_query("SELECT * FROM %s" % _clean._quote_ident(table), con)
+    finally:
+        con.close()
+    head = {str(v): str(k) for k, v in (colmap or {}).items()}
+    nulls = _null_tokens()
+    out: List[Tuple[str, str]] = []
+    for col in df.columns:
+        if col in skip:
+            continue
+        s = df[col]
+        t = s.astype(object).where(s.notna(), "").astype(str).str.split().str.join(" ")
+        t = t[~t.str.lower().isin(nulls)]
+        if not len(t):
+            continue
+        vc = t.value_counts()
+        vals = pd.Series([str(x) for x in vc.index], dtype=object)
+        w = vc.to_numpy(dtype=float)
+        total = float(w.sum())
+
+        def share(mask: Any) -> float:
+            return float(w[np.asarray(mask, dtype=bool)].sum()) / total if total else 0.0
+        header = head.get(col, col)
+        toks = _header_tokens(header)
+        digits = vals.str.count(r"\d")
+        grouped = vals.str.match(_GROUPED_NUMBER)
+        kind = None
+        if share(vals.str.match(_EMAIL_VALUE)) >= PERSONAL_MIN_SHARE:
+            kind = "email"
+        elif share(vals.str.match(_PHONE_VALUE) & digits.between(10, 15) & ~grouped) >= PERSONAL_MIN_SHARE:
+            kind = "phone_na"
+        elif share(grouped) >= PERSONAL_MIN_SHARE:
+            kind = "account_number"
+        elif not set(toks) & _PLACE_WORDS and share([_street_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+            kind = "street_address"
+        elif _person_hint(toks, header)[0] and share([_person_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+            kind = "person_name"
+        if kind:
+            out.append((str(col), kind))
+    return out
+
+
+# --------------------------------------------------------------------------- a withheld column drives no rule
+_CODE_HEAD = "WITHHELD"
+
+
+def _opaque_code(i: int) -> str:
+    """The i-th code a withheld column's value becomes: WITHHELDA, WITHHELDB ... WITHHELDZ, WITHHELDAA ...
+    Capital letters only, so no engine reader takes it for a number, a date, a yes/no or a placeholder, and
+    the letter-case rule leaves it as it is."""
+    s, n = "", int(i)
+    while True:
+        s = chr(65 + n % 26) + s
+        n = n // 26 - 1
+        if n < 0:
+            return _CODE_HEAD + s
+
+
+def _neutralize_withheld(db_path: str, table: str, columns: List[str]) -> List[str]:
+    """A withheld column never drives the engine's cleaning (integration review, 29 Sep 2026: a withheld notes
+    column that mostly held dates got the engine's notes_date rule, which set aside every row whose note was
+    not a date, against the promise that the column is never used in the business analysis). The engine has
+    no option to leave a column out of its rules: clean.standard_rules reads every column of the health
+    profile, and the loop takes no rule set of its own. So a withheld column is landed as text no rule acts
+    on, before the engine profiles or cleans anything: each distinct value, byte for byte as the file holds it
+    (its case, its spaces and a placeholder such as N/A or a dash included), becomes its own opaque code of
+    capital letters; only an empty cell stays empty. No date, number, yes/no, range, spelling, spacing or
+    placeholder rule reads a value, so no rule sets a row aside or changes one because of what it holds. The
+    column still counts where every column counts, as the file has it: the data-health check counts its empty
+    cells, and both exact-duplicate checks (the health's count and the cleaning's) compare its codes, which
+    are equal exactly where the file's values are, so it only keeps otherwise-identical rows apart.
+
+    Final review, 29 Sep 2026 (tools/fixtures/review3/codes_probe.py): the codes were made after runs of
+    spaces were collapsed and placeholders blanked, so rows that differed in the file only by spacing or a
+    placeholder became duplicates: the health counted 137 exact duplicate rows where the file has 100, and the
+    cleaning set aside 137. Byte-exact codes give 100 and 100 (codes off, the engine's own reading: 100 and 150;
+    the 50 more are rows that become duplicates only once the engine's trim, case and placeholder rules rewrite
+    the column, which a withheld column must never drive). Blanking placeholders was measured too and not
+    kept: it moves both counts together (107 and 107 blanking N/A as written, 118 and 118 once trimmed), so it
+    brings the pair no closer (every variant is 50 rows off in all), it leaves the health's count off the
+    file's own, and it would need a placeholder rule that reads the values. Returns the codes, which the
+    scrubber hides wherever they would show."""
+    import sqlite3
+    codes: List[str] = []
+    if not columns:
+        return codes
+    qt = '"%s"' % str(table).replace('"', '""')
+    con = sqlite3.connect(db_path)
+    try:
+        for c in columns:
+            qc = '"%s"' % str(c).replace('"', '""')
+            keys: Dict[str, str] = {}
+            pairs = []
+            for (v,) in con.execute("SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL" % (qc, qt, qc)).fetchall():
+                t = str(v)                    # byte for byte: "N/A", " call back" and "Call back" are three codes
+                if t == "":
+                    pairs.append((v, None))   # an empty cell stays empty
+                    continue
+                if t not in keys:
+                    keys[t] = _opaque_code(len(keys))
+                pairs.append((v, keys[t]))
+            con.execute("DROP TABLE IF EXISTS temp._nl_codes")
+            con.execute("CREATE TEMP TABLE _nl_codes (v PRIMARY KEY, t)")
+            con.executemany("INSERT OR IGNORE INTO _nl_codes VALUES (?, ?)", pairs)
+            con.execute("UPDATE %s SET %s = (SELECT t FROM _nl_codes WHERE _nl_codes.v = %s.%s) WHERE %s IS NOT NULL"
+                        % (qt, qc, qt, qc, qc))
+            codes.extend(keys.values())
+        con.execute("DROP TABLE IF EXISTS temp._nl_codes")
+        con.commit()
+    finally:
+        con.close()
+    return codes
+
+
+def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any) -> Tuple[List[Dict[str, str]], List[str], "Scrubber"]:
+    """The decide stage, the same for a run and for the planner's profile: the adapter's personal-column check
+    adds what the engine's scan missed (a pending decision in the engine's own column register, as a column
+    its scan flagged gets), every flagged column takes the visitor's decision or withhold, and each withheld
+    column's values are read for the scrubber and then landed as codes no cleaning rule reads. Returns
+    (privacy.flagged, the withheld columns, the scrubber)."""
+    import sqlite3
+    colmap = dict(getattr(res, "column_map", {}) or {})
+    con = sqlite3.connect(eng.db_path)
+    try:
+        known = {str(r[0]) for r in con.execute("SELECT column_name FROM %s WHERE table_name = ?" % E.COLUMNS_TABLE,
+                                                 (res.table,))}
+    finally:
+        con.close()
+    added = _personal_columns(eng.db_path, res.table, colmap, known)
+    if added:
+        con = sqlite3.connect(eng.db_path)
+        try:
+            con.executemany("INSERT INTO %s VALUES (?,?,?,?,?,?,?)" % E.COLUMNS_TABLE,
+                            [(res.table, c, k, "value", "pending", None, "flagged by the browser adapter's "
+                              "personal-column check") for c, k in added])
+            con.commit()
+        finally:
+            con.close()
+    flagged = _apply_decisions(E, eng, res, decisions)
+    withheld = [f["column"] for f in flagged if f["decision"] == "withhold"]
+    values = _withheld_values(eng.db_path, res.table, withheld)
+    codes = _neutralize_withheld(eng.db_path, res.table, withheld)
+    return flagged, withheld, Scrubber(values + codes)
 
 
 # --------------------------------------------------------------------------- translation
@@ -931,6 +1353,7 @@ def _forecast_block(r: Any, db_path: str, story_next: List[str]) -> Dict[str, An
         block["reason"] = _plain(reasons[0]) if reasons else "No monthly series was found to forecast."
         return block
     s = next((x for x in series if x.slug in r.forecasts), series[0])
+    block["label"] = str(s.label)                 # the series' plain label, for the AI report writer
     con = connect_ro(db_path)
     try:
         rows = _fc.read_series(con, s.sql)
@@ -2674,6 +3097,11 @@ def _stepped(f: Dict[str, Any]) -> bool:
     return (((f.get("watch") or {}).get("movement") or {}).get("kind")) == "stepped"
 
 
+# a forecast's grade in the page's own words (src/js/52-nl2-report.js FC_WORDS): a point is not "confirmed"
+_FC_GRADE_WORDS = {"CONFIRMED": "usable for planning", "WATCH": "not yet shown usable",
+                   "NOT_ENOUGH_DATA": "not enough data"}
+
+
 def _grade_plain(g: Any) -> str:
     return {"CONFIRMED": "confirmed", "WATCH": "not yet conclusive",
             "NOT_ENOUGH_DATA": "too little data to judge"}.get(str(g or ""), "not graded")
@@ -2932,60 +3360,441 @@ SEMANTIC_TYPES = ("flow_amount", "level", "percentage", "log_scale", "count", "r
                   "geography", "entity", "metadata", "other")
 
 
-def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any = None) -> Dict[str, Any]:
-    """What the AI planner sees: names, types, counts, ranges and, for a column with few distinct
-    short values, its commonest values. Never rows, never values of a column that looks personal."""
+# The planner's profile reads the file the way the engine reads it (review M3, 29 Sep 2026: the profile said
+# 39.7% of a money column was numeric where the engine read nearly all of it, and "no column reads as dates"
+# where the data test passed). The page asks for the profile right after its first run of the engine on the
+# same bytes, so that run leaves its reading here (the facts only, keyed by the file's sha256); any other
+# caller gets a fresh landing and cleaning of the file by the engine itself.
+_PROFILE_CACHE: Dict[str, Any] = {}
+_PERSONAL_SHAPE = re.compile(r"@|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b")
+
+
+def _span(d: Any) -> Dict[str, Any]:
+    years, complete = _full_years(d)
+    lo, hi = d.min(), d.max()
+    return {"first": lo.strftime("%Y-%m"), "last": hi.strftime("%Y-%m"),
+            "months": int((hi.year - lo.year) * 12 + hi.month - lo.month + 1), "dates": int(d.nunique()),
+            "years": years, "complete": complete}
+
+
+def _profile_facts(R: "_Reading", headers: List[str]) -> List[Dict[str, Any]]:
+    """What the planner's profile may say about each column, from the engine's reading: counts, how many
+    values the engine read as numbers and as dates, the numbers' range, the commonest values, and the time
+    span over the rows the engine kept (the rows the analyses read). Nothing here is sent anywhere by itself:
+    profile_for_ai chooses what each column shows, by the visitor's privacy decisions."""
+    import numpy as np
     import pandas as pd
-    data = _as_bytes(data)
+    out: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    for h in headers:
+        land = R.landed(h)
+        if land is None or land in seen:
+            continue
+        seen.add(land)
+        txt = R.texts[land].astype(str).str.strip()
+        fill = R.filled(land)
+        f = txt[fill]
+        n_f = int(fill.sum())
+        kind = R.kind(land)
+        nums, dts = R.numbers(land), R.dates(land)
+        ok_n, ok_d = fill & nums.notna().to_numpy(), fill & dts.notna().to_numpy()
+        info: Dict[str, Any] = {"header": str(h), "landed": land, "rows": R.n, "filled": n_f,
+                                "distinct": int(f.nunique()), "kind": kind,
+                                "numeric_share": round(float(ok_n.sum()) / n_f, 3) if n_f else 0.0,
+                                "date_share": round(float(ok_d.sum()) / n_f, 3) if n_f else 0.0,
+                                "percent_sign": bool(f.str.endswith("%").mean() > 0.5) if n_f else False,
+                                "personal_shape": bool(f.head(500).str.contains(_PERSONAL_SHAPE).mean() > 0.05) if n_f else False}
+        if ok_n.any():
+            v = nums[ok_n]
+            info.update({"min": float(v.min()), "median": float(v.median()), "max": float(v.max()),
+                         "integers": bool((v % 1 == 0).all())})
+        if n_f and kind != "number" and info["distinct"] <= 300 and f.str.len().median() <= 60:
+            vc = f.value_counts()
+            info["top_values"] = [str(x)[:60] for x in vc.head(12).index]
+            info["groups"] = int((vc >= COMPARE_MIN_GROUP).sum())
+            if 12 < info["distinct"]:
+                info["values"] = sorted(str(x)[:60] for x in f.unique())
+        if kind == "date":
+            d = dts[np.asarray(R.kept, bool)].dropna()
+            if len(d):
+                info["time"] = _span(d)
+        elif kind == "number" and info.get("integers") and _YEAR_NAME.search(str(h)) \
+                and 1000 <= info.get("min", 0) and info.get("max", 0) <= 2999:
+            y = nums[np.asarray(R.kept, bool)].dropna().astype(int)
+            if len(y):
+                yrs = sorted(set(int(v) for v in y.tolist()))
+                info["time"] = {"first": "%04d-01" % yrs[0], "last": "%04d-12" % yrs[-1],
+                                "months": 12 * (yrs[-1] - yrs[0] + 1), "dates": len(yrs), "years": yrs,
+                                "complete": yrs, "year_column": True}
+        out.append(info)
+    return out
+
+
+def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: Optional[str] = None) -> Dict[str, Any]:
+    """The engine lands the file, the decide stage runs as a run's does (_decide_and_guard: the adapter's
+    personal-column check, the visitor's decisions, a withheld column landed as codes, a coded one coded), and
+    the engine profiles and cleans it (its own code); its reading gives the profile's facts, so the planner
+    reads each column as the run under these decisions will. Used when the run that last read these bytes ran
+    under other decisions (the page's scan withholds every flagged column), and by tests and other callers."""
+    tmp = None
     try:
-        df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False,
-                         nrows=MAX_ROWS)
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": "unreadable: %s" % type(exc).__name__}
-    cols = []
-    email = re.compile(r"@|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b")
-    for c in list(df.columns)[:max_cols]:
-        v = df[c].str.strip()
-        filled = v[v != ""]
-        num = pd.to_numeric(filled.str.replace(",", "", regex=False).str.rstrip("%"), errors="coerce")
-        info = {"name": str(c), "filled": int(len(filled)), "distinct": int(filled.nunique()),
-                "numeric_share": round(float(num.notna().mean()) if len(filled) else 0.0, 3)}
-        if info["numeric_share"] >= 0.9 and num.notna().any():
-            info.update({"min": float(num.min()), "median": float(num.median()), "max": float(num.max()),
-                         "integers": bool((num.dropna() % 1 == 0).all()),
-                         "percent_sign": bool(filled.str.endswith("%").mean() > 0.5)})
-        else:
-            dt = pd.to_datetime(filled.head(500), errors="coerce")
-            info["date_share"] = round(float(dt.notna().mean()) if len(filled) else 0.0, 3)
-            looks_personal = bool(filled.head(500).str.contains(email).mean() > 0.05)
-            if not looks_personal and info["distinct"] <= 300 and filled.str.len().median() <= 60:
-                info["top_values"] = [str(x)[:60] for x in filled.value_counts().head(12).index]
-                # every value of a category column (countries, regions, products) so the AI can tell the
-                # members from the aggregates (World, Asia, High-income countries) mixed in with them
-                if 12 < info["distinct"] and not (flagged and str(c) in flagged):
-                    info["values"] = sorted(str(x)[:60] for x in filled.unique())
-            info["looks_personal"] = looks_personal
-        if len(filled) < len(df):
-            info["blank"] = int(len(df) - len(filled))
-        if flagged and str(c) in flagged:
-            info["privacy_flag"] = str(flagged[str(c)])[:60]
-            info.pop("values", None)
-        cols.append(info)
-    return {"ok": True, "name": _clean_name(name), "rows": int(len(df)), "columns": cols,
-            "columns_total": int(len(df.columns))}
-
-
-def profile_json(data: Any, name: str = "", flagged: Any = None) -> str:
-    """profile_for_ai as JSON text; flagged: {column: kind} from the scan (the engine's privacy flags),
-    so the planner can clear a numeric column the check flagged by mistake."""
-    if isinstance(flagged, str):
+        if not data or not data.strip():
+            return {"ok": False, "error": "empty"}
+        if _looks_like_title(data):
+            return {"ok": False, "error": "the first row looks like a title"}
+        _install_stubs()
+        _import_engine()
+        from northledger import clean as _clean
+        from northledger import engagement as E
+        from northledger import health as _health
+        tmp = tempfile.mkdtemp(prefix="nl_profile_")
+        src_dir = os.path.join(tmp, "incoming")
+        os.makedirs(src_dir)
+        src = os.path.join(src_dir, _clean_name(name))
+        with open(src, "wb") as fh:
+            fh.write(data)
+        eng = E.open_engagement(os.path.join(tmp, "engagement"), create=True)
+        res = E.land(eng, src)
+        colmap = dict(getattr(res, "column_map", {}) or {})
+        flagged, _withheld, _scrub = _decide_and_guard(E, eng, res, decisions)
         try:
-            flagged = json.loads(flagged)
+            as_of = _dt.date.fromisoformat(str(as_of)[:10]).isoformat() if as_of else _dt.date.today().isoformat()
         except ValueError:
-            flagged = None
-    elif flagged is not None and hasattr(flagged, "to_py"):
-        flagged = flagged.to_py()
-    return json.dumps(profile_for_ai(data, name, flagged=flagged), allow_nan=False, default=str)
+            as_of = _dt.date.today().isoformat()
+        con = _health.connect_read_only(eng.db_path)
+        try:
+            th = _health.score_table(con, res.table)
+            cr = _clean.clean_table(con, res.table, health=th, as_of=as_of)
+        finally:
+            con.close()
+        R = _engine_reading(eng.db_path, res.table, _clean.standard_rules(th, as_of=as_of), cr, colmap)
+        headers = list(R.land) or list(R.values.columns)
+        return {"ok": True, "facts": _profile_facts(R, headers), "rows": R.n, "flagged": flagged, "colmap": colmap}
+    except Exception as exc:  # noqa: BLE001 - the profile is an aid; the page runs without it
+        intake_error = getattr(sys.modules.get("northledger.intake"), "IntakeError", Refusal)
+        if os.environ.get("NL_BROWSER_STRICT") and not isinstance(exc, (Refusal, intake_error)):
+            raise
+        return {"ok": False, "error": "unreadable: %s" % type(exc).__name__}
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _profile_privacy(facts: List[Dict[str, Any]], flagged: Any, decisions: Any) -> Dict[str, Tuple[str, str]]:
+    """{column: (decision, why it was flagged)} for every column the engine's scan flagged, compared by the
+    engine's landed name (review H1, 29 Sep 2026: a "Date Of Birth" header against the flag on date_of_birth
+    let a withheld column through). flagged: {column: kind} from the scan (the page's worker), or {column:
+    {"kind", "decision"}}, or the report's privacy.flagged list; decisions: {column: decision}. A flagged
+    column with no decision is withheld, the engine's default; one the engine coded as it arrived cannot be
+    kept, only coded or withheld. With no decisions at all (the page's first call, before the visitor has
+    chosen) every flagged column is withheld: a profile sent as it stands never names one."""
+    fl: Dict[str, Tuple[str, Optional[str]]] = {}
+    if isinstance(flagged, list):
+        flagged = {str(x.get("column")): {"kind": x.get("kind"), "decision": x.get("decision")}
+                   for x in flagged if isinstance(x, dict) and x.get("column")}
+    for k, v in dict(flagged or {}).items():
+        if isinstance(v, dict):
+            fl[str(k)] = (str(v.get("kind") or "possible personal data"), v.get("decision"))
+        else:
+            fl[str(k)] = (str(v or "possible personal data"), None)
+    dec = {str(k): str(v or "").strip().lower() for k, v in dict(decisions or {}).items()}
+    out: Dict[str, Tuple[str, str]] = {}
+    for f in facts:
+        keys = [f["header"], f["landed"], _engine_slug(f["header"])]
+        hit = next((fl[k] for k in keys if k in fl), None)
+        if hit is None:
+            continue
+        kind, d0 = hit
+        want = next((dec[k] for k in keys if k in dec), None) or str(d0 or "").strip().lower() or "withhold"
+        if want not in DECISIONS:
+            want = "withhold"
+        if want == "keep" and CODED_ON_ARRIVAL in kind:
+            want = "code"
+        out[f["header"]] = (want, kind)
+    return out
+
+
+def _same_choices(got: Dict[str, Any], decisions: Any) -> bool:
+    """Whether a profile pass (or the run that left its reading) settled every flagged column as these
+    decisions would: only then may its facts stand for them."""
+    fl = got.get("flagged")
+    if not isinstance(fl, list):
+        return False
+    return _effective_decisions(fl, dict(got.get("colmap") or {}), decisions) == {f["column"]: f["decision"] for f in fl}
+
+
+def _merged_flags(got: Dict[str, Any], flagged: Any) -> Dict[str, Dict[str, Any]]:
+    """{landed column: {"kind", "decision"}}: every column the engine flagged and the adapter's check added, as
+    the pass settled it, plus any other column the caller flags (by the file's header, the landed name or
+    its slug), which is then withheld unless the caller's decisions say otherwise."""
+    out: Dict[str, Dict[str, Any]] = {str(f["column"]): {"kind": f.get("kind"), "decision": f.get("decision")}
+                                      for f in got.get("flagged") or [] if isinstance(f, dict) and f.get("column")}
+    colmap = dict(got.get("colmap") or {})
+    if isinstance(flagged, list):
+        flagged = {str(x.get("column")): {"kind": x.get("kind"), "decision": x.get("decision")}
+                   for x in flagged if isinstance(x, dict) and x.get("column")}
+    for k, v in dict(flagged or {}).items():
+        k = str(k)
+        if k in out or colmap.get(k) in out or _engine_slug(k) in out:
+            continue
+        out[k] = v if isinstance(v, dict) else {"kind": str(v or "possible personal data"), "decision": None}
+    return out
+
+
+def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any = None,
+                   decisions: Any = None, as_of: Optional[str] = None) -> Dict[str, Any]:
+    """What the AI planner sees: names, how the engine reads each column (the shares it read as numbers and as
+    dates), counts, ranges (a number column's min, median and max; profile.time: the date column's first and
+    last month) and, for a text or date column of at most 300 distinct short values (median 60 characters or
+    fewer), its 12 commonest values and, when it has more than 12, every one of them (each cut at 60
+    characters): the page's consent says exactly this (src/js/50-try.js AI_CONSENT). Never rows, and never the
+    file's name (FILE_WORD stands in for it).
+    The visitor's privacy decisions (flagged, decisions: see _profile_privacy) decide each flagged column:
+      withheld (the default): absent. Never named, never counted in a reason, never the time column.
+      coded: its name, its type (the numeric and date shares, whole numbers, a % sign), its counts and
+             looks_personal: true, and nothing that holds a value (no top_values, values, examples, min,
+             median or max). It is never the time column and never counted in analysis_limits: the
+             analyses leave it out.
+      kept: like any column, looks_personal: false.
+    With no decisions every flagged column is withheld. The page asks once, after the visitor's choices
+    (engine/worker.js "profile"), so a coded or kept column reaches the planner as chosen. The facts come from
+    the engine's reading under these same decisions (the scan's run when it ran under them, else a profile
+    pass): a withheld column no rule read, a coded column's codes, a kept column read like any other. Every
+    column the engine flagged or the adapter's personal-column check added counts as flagged, whatever the
+    caller passes in `flagged`."""
+    data = _as_bytes(data)
+    sha = hashlib.sha256(data).hexdigest()
+    got = _PROFILE_CACHE.get("value") if _PROFILE_CACHE.get("sha") == sha else None
+    if got is not None and not _same_choices(got, decisions):
+        got = None
+    if got is None:
+        got = _engine_profile_pass(data, name, decisions, as_of)
+        if got.get("ok"):
+            _PROFILE_CACHE.clear()
+            _PROFILE_CACHE.update(sha=sha, value=got)
+    if not got.get("ok"):
+        return {"ok": False, "error": str(got.get("error") or "unreadable")}
+    facts = got["facts"]
+    priv = _profile_privacy(facts, _merged_flags(got, flagged), decisions)
+    shown = [f for f in facts if (priv.get(f["header"]) or ("",))[0] != "withhold"]
+    cols = []
+    for f in shown[:max_cols]:
+        d, kind = priv.get(f["header"]) or (None, "")
+        info: Dict[str, Any] = {"name": f["header"], "filled": f["filled"], "distinct": f["distinct"],
+                                "numeric_share": f["numeric_share"]}
+        if f["kind"] == "number" and "min" in f:
+            info.update({k: f[k] for k in ("min", "median", "max", "integers")})
+            info["percent_sign"] = f["percent_sign"]
+        else:
+            info["date_share"] = f["date_share"]
+            looks = bool(f["personal_shape"]) and d != "keep"
+            if not looks and "top_values" in f:
+                info["top_values"] = list(f["top_values"])
+                if "values" in f:
+                    # every value of a category column (countries, regions, products) so the AI can tell the
+                    # members from the aggregates (World, Asia, High-income countries) mixed in with them
+                    info["values"] = list(f["values"])
+            info["looks_personal"] = looks
+        if f["rows"] > f["filled"]:
+            info["blank"] = int(f["rows"] - f["filled"])
+        if d == "code":
+            info = {k: info[k] for k in ("name", "filled", "distinct", "blank", "numeric_share", "date_share")
+                    if k in info}
+            info["date_share"] = f["date_share"]
+            if "integers" in f:
+                info["integers"] = f["integers"]
+            info["percent_sign"] = f["percent_sign"]
+            info["looks_personal"] = True
+            info["privacy_flag"] = str(kind)[:60]
+        elif d == "keep":
+            info["looks_personal"] = False
+        cols.append(info)
+    # never the file's name (final review, 29 Sep 2026: "private_mix.csv" reached the planner): it says what the
+    # file is about and whose it is, as the /report payload's "[your file]" stands in for it (src/js/50-try.js)
+    out = {"ok": True, "name": FILE_WORD, "rows": int(got.get("rows") or 0), "columns": cols,
+           "columns_total": len(shown), "time": None, "analysis_limits": []}
+    try:
+        out["time"], out["analysis_limits"] = _time_and_limits(facts, priv, int(got.get("rows") or 0))
+    except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        out["time"], out["analysis_limits"] = None, []
+    return out
+
+
+_YEAR_NAME = re.compile(r"(?i)(?:^|[^a-z])(?:year|yr|fy)(?:$|[^a-z])|year")
+
+
+def _cut160(s: str) -> str:
+    return s if len(s) <= 160 else s[:157].rsplit(" ", 1)[0].rstrip(",;") + "..."
+
+
+def _time_and_limits(facts: List[Dict[str, Any]], priv: Dict[str, Tuple[str, str]], rows: int
+                     ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    """profile.time and profile.analysis_limits, for the planner (owner's schema, 29 Sep 2026):
+    time = {"column", "first": "YYYY-MM", "last": "YYYY-MM", "months" (the span, first to last month
+    inclusive), "distinct_years"} over the rows the engine kept, for the column the engine reads as dates with
+    the most dates (else a whole-year column named like a year), or None. analysis_limits = [{"analysis", "ok",
+    "why"}] (at most 12, why at most 160 characters, one per analysis the planner can choose) from the minimums
+    the analyses themselves enforce (TREND_MIN_YEARS and the rest), so the planner does not ask for a trend a
+    23-month file cannot give. A withheld or coded column is left out BEFORE anything is chosen (review H5):
+    never the time column, never counted, never named."""
+    usable = [f for f in facts if (priv.get(f["header"]) or ("keep",))[0] == "keep"]
+    dated = [f for f in usable if f.get("time") and not f["time"].get("year_column")]
+    best = max(dated, key=lambda f: f["time"]["dates"]) if dated else next(
+        (f for f in usable if f.get("time") and f["time"].get("year_column")), None)
+    time = None
+    complete: List[int] = []
+    dates_n = 0
+    if best is not None:
+        tm = best["time"]
+        complete, dates_n = list(tm["complete"]), int(tm["dates"])
+        time = {"column": best["header"], "first": tm["first"], "last": tm["last"], "months": int(tm["months"]),
+                "distinct_years": len(tm["years"])}
+    numeric = [f for f in usable if f["kind"] == "number" and f is not best]
+    span = ("the file spans %s months (%s to %s), %s" % (format(time["months"], ","), time["first"], time["last"],
+                                                          _n_values(len(complete), "complete calendar year"))
+            if time else "no column the engine reads as dates")
+    lim: List[Dict[str, Any]] = []
+
+    def add(name: str, ok: bool, why: str) -> None:
+        lim.append({"analysis": name, "ok": bool(ok), "why": _cut160(why)})
+
+    add("trend", bool(time) and len(complete) >= TREND_MIN_YEARS,
+        "needs %d or more complete years of values; %s" % (TREND_MIN_YEARS, span))
+    add("extremes", bool(time) and len(complete) >= EXTREMES_MIN_YEARS,
+        "needs %d or more complete years; %s" % (EXTREMES_MIN_YEARS, span))
+    add("agreement", bool(time) and dates_n >= AGREEMENT_MIN_DATES and len(numeric) >= 2,
+        "needs two numeric series with %d or more shared dates; the file has %s and %s" % (
+            AGREEMENT_MIN_DATES, _n_values(dates_n, "distinct date") if time else "no date column",
+            _n_values(len(numeric), "numeric column")))
+    groups = sorted(((int(f.get("groups") or 0), f) for f in usable
+                     if f["kind"] == "text" and f is not best and 2 <= f["distinct"] <= 300 and "top_values" in f),
+                    key=lambda g: -g[0])
+    series_ok = bool(time) and len(complete) >= RANK_MIN_YEARS and len(numeric) >= 2
+    add("rank", (bool(groups) and bool(numeric)) or series_ok,
+        "needs a column of entities (countries, products) and a measure, or two numeric series over %d complete "
+        "years; %s" % (RANK_MIN_YEARS, ("%s has %s" % (groups[0][1]["header"], _n_values(groups[0][1]["distinct"], "value")))
+                        if groups else ("%s" % span if time else "no column of a few hundred values or fewer")))
+    add("share", len(numeric) >= 2, "needs two or more numeric parts of a whole; the file has %s" % _n_values(len(numeric), "numeric column"))
+    add("compare", bool(groups) and groups[0][0] >= 2 and bool(numeric),
+        "needs a column of groups with 2 or more groups of %d or more rows; %s" % (
+            COMPARE_MIN_GROUP, ("%s has %d such groups" % (groups[0][1]["header"], groups[0][0])) if groups else "no such column"))
+    add("relationship", len(numeric) >= 2 and rows >= RELATIONSHIP_MIN_ROWS,
+        "needs two numeric columns and %d or more rows; the file has %s and %s" % (
+            RELATIONSHIP_MIN_ROWS, _n_values(len(numeric), "numeric column"), _n_values(rows, "row")))
+    most = max([int(f["filled"]) for f in numeric] or [0])
+    add("distribution", most >= DISTRIBUTION_MIN_VALUES,
+        "needs %d or more values in a numeric column; the fullest has %s" % (DISTRIBUTION_MIN_VALUES, format(most, ",")))
+    # free text: words, not numbers, dates or a short list of codes (a column of a few hundred values has
+    # top_values), and not the time column
+    texts = [f for f in usable if f is not best and f["kind"] == "text" and not f["personal_shape"]
+             and "top_values" not in f and f["filled"] >= THEMES_MIN_TEXTS]
+    add("themes", bool(texts), "needs a free-text column with %d or more texts; %s" % (
+        THEMES_MIN_TEXTS, ("%s has %s" % (texts[0]["header"], format(int(texts[0]["filled"]), ","))) if texts
+        else "no free-text column"))
+    add("predict", rows >= PREDICT_MIN_ROWS and len(numeric) >= 1,
+        "needs %d or more complete rows and %d per model term; the file has %s, scored %s" % (
+            PREDICT_MIN_ROWS, PREDICT_ROWS_PER_TERM, _n_values(rows, "row"),
+            "forward in time by %s" % time["column"] if time else "in random folds (no usable date)"))
+    return time, lim[:12]
+
+
+def _from_js(v: Any) -> Any:
+    """A value from the page's worker: JSON text, a Pyodide proxy or a plain value."""
+    if isinstance(v, str):
+        try:
+            return json.loads(v)
+        except ValueError:
+            return None
+    if v is not None and hasattr(v, "to_py"):
+        return v.to_py()
+    return v
+
+
+def profile_json(data: Any, name: str = "", flagged: Any = None, decisions: Any = None, as_of: Any = None) -> str:
+    """profile_for_ai as JSON text; flagged: {column: kind} from the scan (the engine's privacy flags), or
+    {column: {"kind", "decision"}}; decisions: {column: "withhold" | "code" | "keep"} (the visitor's). With no
+    decision a flagged column is withheld: absent from the profile."""
+    return json.dumps(profile_for_ai(data, name, flagged=_from_js(flagged), decisions=_from_js(decisions),
+                                     as_of=str(as_of) if as_of else None),
+                      allow_nan=False, default=str)
+
+
+def plan_profile_json(data: Any, name: str = "", flagged: Any = None, decisions: Any = None, as_of: Any = None) -> str:
+    """What engine/worker.js answers the page's "profile" message with, after the visitor's choices:
+    {"profile": profile_for_ai(...), "landed": {the file's header: the engine's landed name}} for every column
+    of the file. The page keeps "landed" to itself and never sends it: its second filter (T.planProfile and the
+    re-plan's filters) matches each profiled column to its flag exactly, and knows every spelling of a withheld
+    column's name ("Date Of Birth" and date_of_birth) to keep out of what it sends."""
+    data = _as_bytes(data)
+    prof = profile_for_ai(data, name, flagged=_from_js(flagged), decisions=_from_js(decisions),
+                          as_of=str(as_of) if as_of else None)
+    landed: Dict[str, str] = {}
+    got = _PROFILE_CACHE.get("value") or {}
+    if prof.get("ok") and _PROFILE_CACHE.get("sha") == hashlib.sha256(data).hexdigest():
+        landed = {str(f["header"]): str(f["landed"]) for f in got.get("facts") or []}
+    return json.dumps({"profile": prof, "landed": landed}, allow_nan=False, default=str)
+
+
+# What leaves for an AI (the /plan feedback and the /report payload) or a share link never names a column the
+# visitor withheld and never quotes a cell (reviewer 2 H4, 29 Sep 2026: a finding sent to /report read "could
+# not be read as numbers (for example 'ask Marisol')").
+WITHHELD_WORDS = "a column you withheld"
+DATE_WITHHELD_LEAD = "The time analysis is not shown: the date column the engine chose for it"
+_LABEL_RE = re.compile(r"\[(?:phone number|email address|withheld)\]")
+_EXAMPLE_RE = re.compile(r"\s*\((?:for example|for instance|e\.g\.,?|such as)\b[^()]*\)", re.I)
+
+
+class _NameScrub:
+    """Every mention of a withheld column's name, in any spelling of it (date_of_birth, Date Of Birth,
+    date-of-birth, DATE OF BIRTH), replaced by "a column you withheld". The page's own labels ([phone number],
+    [email address], [withheld]) are left as they are."""
+
+    def __init__(self, names: Iterable[Any]) -> None:
+        pats = set()
+        for n in names:
+            toks = re.findall(r"[A-Za-z0-9]+", str(n or ""))
+            if toks:
+                pats.add(r"(?<![A-Za-z0-9])" + r"[^A-Za-z0-9\n]{0,3}".join(re.escape(t) for t in toks) + r"(?![A-Za-z0-9])")
+        self.rx = re.compile("|".join(sorted(pats, key=len, reverse=True)), re.I) if pats else None
+
+    def names(self, text: Any) -> bool:
+        return bool(self.rx is not None and isinstance(text, str) and self.rx.search(_LABEL_RE.sub(" ", text)))
+
+    def __call__(self, text: Any) -> Any:
+        if not isinstance(text, str) or self.rx is None:
+            return text
+        if text.startswith(DATE_WITHHELD_LEAD):
+            return DATE_WITHHELD_LEAD + " is " + WITHHELD_WORDS + "."
+        parts, labels = _LABEL_RE.split(text), _LABEL_RE.findall(text)
+        out = []
+        for i, part in enumerate(parts):
+            out.append(self.rx.sub(WITHHELD_WORDS, part))
+            if i < len(labels):
+                out.append(labels[i])
+        return "".join(out)
+
+
+def _withheld_names(rep: Dict[str, Any]) -> List[str]:
+    """The withheld columns' names as the report knows them: the engine's landed names (privacy.flagged) and
+    the file's own spellings of them in the plan and the data tests."""
+    wh = [str(f.get("column")) for f in (rep.get("privacy") or {}).get("flagged") or []
+          if isinstance(f, dict) and f.get("decision") == "withhold" and f.get("column")]
+    if not wh:
+        return []
+    land = set(wh)
+    names = list(wh)
+    plan = rep.get("ai_plan") or {}
+    cands = [c.get("name") for c in plan.get("columns") or [] if isinstance(c, dict)]
+    for op in plan.get("operations") or []:
+        if isinstance(op, dict):
+            cands += [op.get("column")] + list(op.get("columns") or [])
+    cands += [t.get("column") for t in (rep.get("contracts") or {}).get("tests") or [] if isinstance(t, dict)]
+    for c in cands:
+        if c and (_engine_slug(c) in land or str(c) in land):
+            names.append(str(c))
+    return names
 
 
 def results_for_ai(rep: Any) -> Dict[str, Any]:
@@ -2993,6 +3802,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     the writer may quote, nothing else. The writer never sees a row; it sees the goal, the graded
     claims with their values and intervals, the AI-named analyses with their tables, the story,
     the forecast, and the health and cleaning summary. Capped: the worker's body limit is small.
+    A withheld column is never named (its lines are left out, or it reads "a column you withheld"), and no
+    text quotes a cell as an example.
     """
     if isinstance(rep, str):
         try:
@@ -3001,6 +3812,11 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             return {"ok": False, "error": "the report is not JSON"}
     if not isinstance(rep, dict):
         return {"ok": False, "error": "the report is not an object"}
+
+    scrub = _NameScrub(_withheld_names(rep))
+
+    def safe(x: Any, n: int) -> str:
+        return _EXAMPLE_RE.sub("", scrub(str(x if x is not None else "")))[:n]
 
     def _num(x: Any) -> Any:
         try:
@@ -3013,17 +3829,19 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         return x[:n] if isinstance(x, list) else x
 
     findings = []
-    for f in _cap(rep.get("findings") or [], 20):
-        if not isinstance(f, dict):
+    for f in rep.get("findings") or []:
+        if not isinstance(f, dict) or len(findings) >= 20:
             continue
+        if scrub.names(f.get("claim")) or scrub.names(f.get("why")):
+            continue                                     # a claim about a withheld column: never sent
         d = {"verdict": str(f.get("verdict") or ""), "kind": str(f.get("kind") or ""),
-             "claim": str(f.get("claim") or "")[:400]}
+             "claim": safe(f.get("claim"), 400)}
         for k in ("value", "interval", "p_value", "power"):
             v = _num(f.get(k))
             if v is not None:
                 d[k] = v
         if f.get("why"):
-            d["why"] = str(f["why"])[:240]
+            d["why"] = safe(f["why"], 240)
         findings.append(d)
 
     analyses = []
@@ -3032,15 +3850,15 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     for a in _cap((rep.get("ai_analyses") or {}).get("items") or [], 8):
         if not isinstance(a, dict):
             continue
-        d: Dict[str, Any] = {"title": str(a.get("title") or "")[:160],
-             "sentence": str(a.get("sentence") or "")[:700],
-             "method": str(a.get("method") or "")[:300]}
+        d: Dict[str, Any] = {"title": safe(a.get("title"), 160),
+             "sentence": safe(a.get("sentence"), 700),
+             "method": safe(a.get("method"), 300)}
         t = a.get("table") or {}
         rows = t.get("rows") or []
         if isinstance(rows, list) and rows:
-            cols = [str(c)[:60] for c in (t.get("cols") or [])][:6]
+            cols = [safe(c, 60) for c in (t.get("cols") or [])][:6]
             d["table"] = {"cols": cols,
-                          "rows": [[str(v)[:80] for v in r][:len(cols)] for r in rows[:12]]}
+                          "rows": [[safe(v, 80) for v in r][:len(cols)] for r in rows[:12]]}
         analyses.append(d)
         # the chart and the numbers behind the report: the writer may place a chart marker
         # [CHART:n] (the n-th chart here) and a table marker [TABLE:n] beside the finding it
@@ -3048,20 +3866,20 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         ch = a.get("chart")
         if isinstance(ch, dict) and len(charts) < 6:
             c2: Dict[str, Any] = {"kind": str(ch.get("kind") or "")[:10],
-                  "title": str(a.get("title") or "")[:160]}
+                  "title": safe(a.get("title"), 160)}
             for k in ("x_name", "y_name", "x_label", "unit"):
                 if ch.get(k):
-                    c2[k] = str(ch[k])[:60]
+                    c2[k] = safe(ch[k], 60)
             if isinstance(ch.get("series"), list):
                 ser = []
                 for s in ch["series"][:4]:
                     if isinstance(s, dict) and isinstance(s.get("x"), list) and isinstance(s.get("y"), list):
                         n = min(len(s["x"]), len(s["y"]), 60)
-                        ser.append({"name": str(s.get("name") or s.get("label") or "")[:80],
+                        ser.append({"name": safe(s.get("name") or s.get("label") or "", 80),
                                     "x": [float(v) if isinstance(v, (int, float)) else 0.0 for v in s["x"][:n]],
                                     "y": [float(v) if isinstance(v, (int, float)) else 0.0 for v in s["y"][:n]]})
                     elif isinstance(s, dict) and isinstance(s.get("value"), (int, float)):
-                        ser.append({"label": str(s.get("label") or "")[:80], "value": float(s["value"])})
+                        ser.append({"label": safe(s.get("label") or "", 80), "value": float(s["value"])})
                 if ser:
                     c2["series"] = ser
             if isinstance(ch.get("points"), list):
@@ -3075,7 +3893,7 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 fits = []
                 for f in ch["fits"][:4]:
                     if isinstance(f, dict) and all(isinstance(f.get(k), (int, float)) for k in ("x0", "y0", "x1", "y1")):
-                        fits.append({"name": str(f.get("name") or "")[:80], "recent": bool(f.get("recent")),
+                        fits.append({"name": safe(f.get("name") or "", 80), "recent": bool(f.get("recent")),
                                      "x0": float(f["x0"]), "y0": float(f["y0"]), "x1": float(f["x1"]), "y1": float(f["y1"])})
                 if fits:
                     c2["fits"] = fits
@@ -3089,13 +3907,22 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     clean = rep.get("cleaning") or {}
     health = rep.get("health") or {}
     plan = rep.get("ai_plan") or {}
-    applied = [str(x)[:200] for x in _cap(plan.get("applied") or [], 8)]
-    story = rep.get("story") or {}
+    applied = [safe(x, 200) for x in _cap(plan.get("applied") or [], 8)]
+    # what the data tests found and what the engine did with those rows, in the Data tests card's own numbers,
+    # so the writer quotes those and no other count for the same cells. The worker keeps 8 lines: the plan's
+    # own steps first ("37 rows left" is a figure the writer may quote), the test lines fill what is left. A
+    # withheld column's test is never sent.
+    tested = []
+    for t in (rep.get("contracts") or {}).get("tests") or []:
+        if isinstance(t, dict) and t.get("failed") and t.get("brief") and t.get("private") != "withhold":
+            tested.append(safe("data test on %s (%s): %s" % (t.get("column"), t.get("semantic_type"), t.get("brief")), 200))
+    applied = applied + tested[:max(0, 8 - len(applied))]
+    story = dict(rep.get("story") or {})     # a copy: distilling the payload never changes the report itself
     # the writer needs a goal. With no AI plan (rules-only run, or the planner did not answer),
     # the engine's own headline stands in: it is the report's primary claim, checked by the engine.
-    goal = str(plan.get("goal") or (rep.get("objective") or "")).strip()
+    goal = safe(str(plan.get("goal") or (rep.get("objective") or "")).strip(), 600)
     if not goal and isinstance(story.get("headline"), str):
-        goal = story["headline"][:300]
+        goal = safe(story["headline"], 300)
     if not goal:
         goal = "What does this file say, and what should be done about it?"
     # the story distilled for the writer, from the engine's own story
@@ -3103,17 +3930,34 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     for k in ("headline", "what_happened", "why", "what_to_do", "whats_next", "cannot_answer"):
         v = st.get(k)
         if isinstance(v, list):
-            story[k] = [str(x)[:300] for x in _cap(v, 8)]
+            story[k] = [safe(x, 300) for x in _cap(v, 8)]
         elif v:
-            story[k] = str(v)[:300]
+            story[k] = safe(v, 300)
 
+    # the forecast as the proxy's validateResults reads it (insight-proxy/src/report.js): plain strings where
+    # it takes strings, a real boolean for baseline_won (the string "True" read as false there, so the writer
+    # was always told the baseline lost), each point's month as "date". Live bug, 29 Sep 2026.
     fc = {}
     f = rep.get("forecast") or {}
     if f.get("available"):
         fc["available"] = True
-        for k in ("series", "verdict", "champion", "coverage", "baseline_won", "reason"):
-            if f.get(k) is not None:
-                fc[k] = str(f[k])[:200]
+        if f.get("label"):
+            fc["series"] = safe(f["label"], 200)
+        g = GRADE.get(str(f.get("verdict") or ""))
+        if g:
+            fc["verdict"] = _FC_GRADE_WORDS.get(g, _grade_plain(g))
+        if f.get("champion"):
+            fc["champion"] = str(f["champion"])[:120]
+        cov = f.get("coverage") if isinstance(f.get("coverage"), dict) else {}
+        hits, n = cov.get("hits"), cov.get("n")
+        lvl = _num((f.get("band") or {}).get("level")) if isinstance(f.get("band"), dict) else None
+        if isinstance(hits, (int, float)) and isinstance(n, (int, float)) and n:
+            fc["coverage"] = ("%d of %d replayed months inside the %s range" % (
+                int(hits), int(n), ("%s%%" % _fmt(100.0 * lvl if lvl <= 1 else lvl)) if lvl else "forecast"))[:120]
+        if isinstance(f.get("baseline_won"), bool):
+            fc["baseline_won"] = f["baseline_won"]
+        if f.get("reason"):
+            fc["reason"] = safe(f["reason"], 200)
         fwd = f.get("forecast") or []
         if isinstance(fwd, list) and fwd:
             # the writer must be able to QUOTE a forecast figure: the engine's full floats
@@ -3123,9 +3967,19 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             def _r1(x: Any) -> Any:
                 v = _num(x)
                 return None if v is None else (int(round(v)) if abs(v) >= 1000 else round(v, 1))
-            fc["points"] = [{kk: (_r1(vv) if kk in ("value", "lo", "hi") else vv)
-                             for kk, vv in x.items() if kk in ("date", "value", "lo", "hi")}
+            fc["points"] = [{"date": str(x.get("month") or x.get("date") or "")[:20],
+                             "value": _r1(x.get("value")), "lo": _r1(x.get("lo")), "hi": _r1(x.get("hi"))}
                             for x in fwd[:14] if isinstance(x, dict)]
+
+    # the flagged columns the visitor kept (and agreed, on the page, to send): the writer is told once, in the
+    # reading (the proxy keeps only the keys it knows, and the reading has room where the limitations may not),
+    # by name only; a kept column is not withheld, so its name is never scrubbed
+    kept = [str(f.get("column")) for f in (rep.get("privacy") or {}).get("flagged") or []
+            if isinstance(f, dict) and f.get("decision") == "keep" and f.get("column")]
+    reading = safe(plan.get("understanding") or "", 800)
+    if kept:
+        told = (OPTED_IN % ", ".join(kept))[:400]
+        reading = (reading[:max(0, 799 - len(told))].rstrip() + " " + told).strip()
 
     # the applied steps carry real figures (rows left after a filter, series count after a
     # reshape): the writer may quote them, so they must be in the payload as findings of the run
@@ -3135,27 +3989,42 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                   "rows": (rep.get("input") or {}).get("rows"),
                   "columns": (rep.get("input") or {}).get("columns")},
         "goal": goal,
-        "reading": plan.get("understanding") or "",
-        "quality_risks": [str(x)[:240] for x in _cap(plan.get("quality_risks") or [], 6)],
+        "reading": reading,
+        "quality_risks": [safe(x, 240) for x in _cap(plan.get("quality_risks") or [], 6)],
         "plan_applied": applied,
-        "plan_refused": [str(x)[:160] for x in _cap(plan.get("refused") or [], 6)],
+        "plan_refused": [safe(x, 160) for x in _cap(plan.get("refused") or [], 6)],
         "findings": findings,
         "analyses": analyses,
         "charts": charts,
         "tables": tables,
-        "analyses_refused": [str(x)[:160] for x in _cap((rep.get("ai_analyses") or {}).get("refused") or [], 6)],
+        "analyses_refused": [safe(x, 160) for x in _cap((rep.get("ai_analyses") or {}).get("refused") or [], 6)],
         "story": story,
         "forecast": fc,
         "health_score": _num(health.get("score")),
-        "health_issues": [str(x)[:200] for x in _cap(health.get("issues") or [], 6)],
+        "health_issues": [safe(x, 200) for x in health.get("issues") or [] if not scrub.names(x)][:6],
         "cleaning": {"rows_in": clean.get("rows_in"), "rows_clean": clean.get("rows_clean"),
                      "rows_quarantined": clean.get("rows_quarantined"),
-                     "fixes": [str(x.get("what") or x)[:160] for x in _cap(clean.get("fixes") or [], 6)
-                               if isinstance(x, dict)]},
-        "limitations": [str(x.get("text") or x)[:240] for x in _cap(rep.get("limitations") or [], 6)
-                        if isinstance(x, dict)],
+                     "fixes": [safe(x.get("what") or x, 160) for x in clean.get("fixes") or []
+                               if isinstance(x, dict) and not scrub.names(x.get("what")) and not scrub.names(x.get("column"))][:6]},
+        "limitations": [safe(x.get("text") or x, 240) for x in rep.get("limitations") or []
+                        if isinstance(x, dict) and not scrub.names(x.get("text"))][:6],
     }
-    return out
+    # never the file's name (final review, 29 Sep 2026: the engine's sentences name it, "22 values in the amount
+    # column of private_mix.csv could not be read", and every one went to /report): FILE_WORD stands in, as in
+    # the planner's profile; the page puts the name back only in what it shows the visitor (src/js/50-try.js)
+    fname = str((rep.get("input") or {}).get("name") or "")
+    return _swap_text(out, fname, FILE_WORD) if fname else out
+
+
+def _swap_text(x: Any, old: str, new: str) -> Any:
+    """x with every `old` in every string (at any depth) read as `new`."""
+    if isinstance(x, str):
+        return x.replace(old, new)
+    if isinstance(x, list):
+        return [_swap_text(v, old, new) for v in x]
+    if isinstance(x, dict):
+        return {k: _swap_text(v, old, new) for k, v in x.items()}
+    return x
 
 
 def results_json(rep: Any) -> str:
@@ -3234,6 +4103,7 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
     the long-table layout when long_to_wide ran."""
     import pandas as pd
     df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    n_in = len(df)
     applied, refused, decisions = [], [], {}
     layout = None
     # row filters read the file's own columns, so they run before any column is set aside
@@ -3317,30 +4187,271 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
                     refused.append("long_to_wide: the file is not a long table")
         except Exception as exc:  # noqa: BLE001 - one failed step never stops the run
             refused.append("%s failed (%s)" % (kind, type(exc).__name__))
-    return df.to_csv(index=False).encode("utf-8"), {"applied": applied, "refused": refused, "decisions": decisions}, layout
+    # positions: each row's place among the file's data rows (the filters keep pandas' index), so a data
+    # test can name the visitor's own line; a reshaped long table has no such place
+    return df.to_csv(index=False).encode("utf-8"), {"applied": applied, "refused": refused, "decisions": decisions,
+                                                    "rows_in": n_in,
+                                                    "positions": None if layout else [int(i) for i in df.index]}, layout
+
+
+# ----------------------------------------------------------------------------- the engine's reading
+# ONE parser (owner's decision after the review of 29 Sep 2026): the data tests, the AI's analyses and the
+# planner's profile read every cell exactly as the engine's cleaner read it. The adapter used to re-parse the
+# planned text with readers of its own; they missed the engine's decimal comma (a median of 2.29 against the
+# engine's 1,260), its k suffix, its accounting negatives "($86.75)", guessed day/month orders the engine set
+# aside, and counted rows the engine had set aside. Now the cleaner's own repair and conversion rules
+# (clean.standard_rules, in the cleaner's own order, with its own parameters) are replayed on the landed table,
+# so every row, kept or set aside, has the value the engine gave it; the analyses read only the rows it kept
+# (the rows behind downloads.clean_csv). No engine file is changed: the replay calls the cleaner's own code.
+_READ_RULE_KINDS = ("null_like", "trim", "case", "numeric", "date", "boolean")
+_AMBIGUOUS_WORDS = "could be day/month or month/day"
+
+
+def _engine_slug(header: Any) -> str:
+    """A column's landed name by the engine's own rule (intake.normalise_columns, without its duplicate
+    suffix): the fallback when the engine's column map is not at hand."""
+    return re.sub(r"[^a-z0-9_]+", "_", str(header).strip().lower()).strip("_")
+
+
+def _null_tokens() -> Set[str]:
+    """The engine's placeholder words (N/A, NULL, a dash ...), lower-cased, with the empty string."""
+    try:
+        from northledger.clean import DEFAULT_NULL_TOKENS
+        return set(str(t).strip().lower() for t in DEFAULT_NULL_TOKENS)
+    except Exception:  # noqa: BLE001 - the engine is always importable where this runs; a safe floor
+        return {"", "n/a", "na", "null", "none", "nan", "-"}
+
+
+def _filled_text(s: Any) -> Any:
+    """True where a cell holds a value: not blank and not one of the engine's placeholders ("N/A" is blank,
+    as the engine's null_like rule reads it, never an unreadable value)."""
+    t = s.astype(object).where(s.notna(), "").astype(str).str.strip()
+    return ~t.str.lower().isin(_null_tokens())
+
+
+class _Reading:
+    """The engine's reading of the table it landed: `values` holds every cell as its cleaner read it (a float,
+    a datetime or the cleaned text) for every landed row in order, `texts` the text it landed, `kept` which
+    rows the cleaner kept, `aside` the cleaner's own message for each row it set aside, and `land` the map
+    from the file's column names to the landed names (the engine's intake map)."""
+
+    def __init__(self, values: Any, texts: Any, kept: Any, land: Dict[str, str], aside: Dict[int, str]) -> None:
+        self.values, self.texts, self.kept, self.aside = values, texts, kept, aside
+        self.land = {str(k): str(v) for k, v in (land or {}).items() if str(v) in values.columns}
+        self.head = {v: k for k, v in self.land.items()}
+        self.n = int(len(values))
+
+    def landed(self, header: Any) -> Optional[str]:
+        h = str(header)
+        if h in self.land:
+            return self.land[h]
+        if h in self.values.columns:
+            return h
+        s = _engine_slug(h)
+        return s if s in self.values.columns else None
+
+    def header(self, landed: str) -> str:
+        return self.head.get(landed, landed)
+
+    def kind(self, landed: Optional[str]) -> str:
+        """How the engine read a column: "number", "date" or "text"."""
+        import pandas as pd
+        if landed is None or landed not in self.values.columns:
+            return "text"
+        s = self.values[landed]
+        if pd.api.types.is_bool_dtype(s):
+            return "text"
+        if pd.api.types.is_numeric_dtype(s):
+            return "number"
+        if pd.api.types.is_datetime64_any_dtype(s):
+            return "date"
+        return "text"
+
+    def filled(self, landed: str) -> Any:
+        return _filled_text(self.texts[landed]).to_numpy()
+
+    def numbers(self, landed: str) -> Any:
+        """The column as the engine's numbers (NaN where it holds none, and everywhere when the engine did not
+        read the column as numbers)."""
+        import numpy as np
+        import pandas as pd
+        if self.kind(landed) != "number":
+            return pd.Series(np.nan, index=self.values.index, dtype=float)
+        return pd.to_numeric(self.values[landed], errors="coerce").astype(float).replace([np.inf, -np.inf], np.nan)
+
+    def dates(self, landed: str) -> Any:
+        import pandas as pd
+        if self.kind(landed) != "date":
+            return pd.Series(pd.NaT, index=self.values.index, dtype="datetime64[ns]")
+        return pd.to_datetime(self.values[landed], errors="coerce")
+
+    def ambiguous(self, landed: str) -> Any:
+        """Rows the engine set aside because this column's day and month could be read either way round."""
+        import numpy as np
+        lead = "column %r:" % landed
+        m = np.zeros(self.n, dtype=bool)
+        for pos, msg in self.aside.items():
+            if 0 <= pos < self.n and msg.startswith(lead) and _AMBIGUOUS_WORDS in msg:
+                m[pos] = True
+        return m
+
+
+def _engine_reading(db_path: str, table: str, rules: List[Any], cr: Any, colmap: Dict[str, str]) -> _Reading:
+    """Replay the cleaner's repairs and conversions (the rules clean_table ran, in its order) on the landed
+    table with the cleaner's own code, before any row is set aside: the value the engine gave every cell."""
+    import numpy as np
+    import pandas as pd
+    from northledger import clean as _clean
+    from northledger._sqlite import connect_ro
+    con = connect_ro(db_path)
+    try:
+        raw = pd.read_sql_query("SELECT * FROM %s" % _clean._quote_ident(table), con)
+    finally:
+        con.close()
+    state = _clean._Pass(raw)
+    for rule in rules:
+        if rule.kind in _READ_RULE_KINDS:
+            _clean._DISPATCH[rule.kind](state, rule)
+    texts = raw.astype(object).where(raw.notna(), "").astype(str)
+    kept = np.zeros(len(raw), dtype=bool)
+    kept[[int(i) for i in cr.clean.index if 0 <= int(i) < len(raw)]] = True
+    q = cr.quarantined
+    aside = ({int(i): str(v) for i, v in q[_clean.QUARANTINE_COL].items()}
+             if q is not None and _clean.QUARANTINE_COL in getattr(q, "columns", []) else {})
+    return _Reading(state.work, texts, kept, colmap, aside)
+
+
+def _fallback_values(s: Any, kind: str) -> Any:
+    """The engine's own value readers on one column of text, for a table the engine did not land row for row
+    (a file its rules read reshaped): its number reader with the column's own decimal convention and unit
+    suffixes, or its date reader with its default formats. Placeholders read as missing."""
+    import numpy as np
+    import pandas as pd
+    from northledger import clean as _clean
+    raw = s.astype(object).where(_filled_text(s), None)
+    if kind == "number":
+        vals = raw.to_numpy(dtype=object)
+        dec = _clean._decimal_convention(vals)
+        units = _clean.column_units(str(s.name))
+        return pd.Series([_clean._coerce_numeric_detail(v, True, dec, units)[0] for v in vals],
+                         index=s.index, dtype=float).replace([np.inf, -np.inf], np.nan)
+    parsed, _bad, _amb = _clean._coerce_dates_detail(raw, _clean.DEFAULT_DATE_FORMATS)
+    return parsed
+
+
+def _pct_reading(nums: Any, texts: Any, filled: Any) -> Dict[str, Any]:
+    """A percentage column on one scale (review H4/H7, 29 Sep 2026). A value written with a % sign is already a
+    percent (the engine reads "12%" as 0.12, so it is 12 here), never multiplied again. The values written
+    without one are fractions only when at least 95% of them lie between 0 and 1; otherwise they are percents.
+    Returns {"percent": the column in percent, "scale": 1 | 100, "out": out-of-range mask (below 0 or above
+    100 percent), "low"/"high": which side, "mixed": fractions and percents of the same quantity side by side,
+    "n_frac"/"n_pct": their counts}. ONE reading for the data test and the analyses."""
+    import numpy as np
+    import pandas as pd
+    v = np.asarray(pd.to_numeric(pd.Series(nums), errors="coerce"), float)
+    ok = np.asarray(filled, bool) & ~np.isnan(v)
+    sign = np.asarray(pd.Series(texts).astype(str).str.strip().str.endswith("%"), bool)
+    bare = ok & ~sign
+    bv = v[bare]
+    frac_share = float(((bv >= 0) & (bv <= 1)).mean()) if len(bv) else 0.0
+    scale = 1 if len(bv) and frac_share >= 0.95 else 100
+    pct = np.where(sign, v * 100.0, v * (100.0 if scale == 1 else 1.0))
+    pct = np.where(ok, pct, np.nan)
+    low, high = ok & (pct < 0), ok & (pct > 100.0 + 1e-9)
+    mixed, n_frac, n_pct = False, 0, 0
+    if scale == 100:
+        fr, pc = bv[(bv > 0) & (bv < 1)], bv[bv > 1]
+        n_frac, n_pct = int(len(fr)), int(len(pc))
+        if n_frac >= 3 and n_pct >= 3:
+            f100 = 100.0 * fr
+            lo_f, hi_f = np.percentile(f100, [10, 90])
+            lo_p, hi_p = np.percentile(pc, [10, 90])
+            # the same quantity on two scales: each group's middle sits inside the other's spread
+            mixed = bool(lo_p <= np.median(f100) <= hi_p and lo_f <= np.median(pc) <= hi_f)
+    return {"percent": pd.Series(pct, index=getattr(nums, "index", None)), "scale": scale, "out": low | high,
+            "low": low, "high": high, "mixed": mixed, "n_frac": n_frac, "n_pct": n_pct}
 
 
 # ----------------------------------------------------------------------------- data tests from the plan
-# The dbt idea: the AI's reading of each column (its semantic_type) compiles to a test the engine
-# runs on the file before any analysis. A test that fails on a few values sets those rows aside; one
-# that fails on many says the AI's reading is probably wrong and deletes nothing. The visitor can turn
-# any test off. Every number here is counted by this code, none by the model.
-CONTRACT_ROW_SHARE = 0.05
-CONTRACT_NOTE = "Tests compiled from the AI's reading of each column; the engine ran them before any analysis."
+# The dbt idea: the AI's reading of each column (its semantic_type) compiles to a test the engine's adapter
+# runs on the file the plan produced. Every number here is counted by this code, none by the model.
+#
+# THE RULE (owner's decision, 29 Sep 2026, after an adversarial review blocked the cell-blanking rule): a
+# data test never changes what the engine reads. The engine gets the planned file exactly as the plan left
+# it, so its own cleaning, its exact-duplicate check, its health score and its set-aside file all work on
+# the visitor's real data. A test only reports and signals:
+#   * unreadable text in a typed column (a date, or a number: count, duration, percentage, money): the pass
+#     share is the readable values over the non-blank ones. At or above MISREAD_BELOW the AI's reading
+#     stands: the AI's analyses count those cells as missing and say so in each sentence over the column,
+#     and the card says what the engine itself did with those rows (set aside, with its reason, or kept).
+#     Below it the column is probably not what the AI read it as, and the planner is told the fact.
+#   * an out-of-range value (a percentage below 0 or above its scale, a negative duration, a negative or
+#     fractional count, a third value in a yes/no column) is evidence about the TYPE, never a cell to fix:
+#     nothing changes; when more than OUT_OF_RANGE_SIGNAL of the values are out of range the planner is
+#     told the fact, and at or below it the card notes it.
+#   * a repeated identifier: nothing changes; the card counts the repeats and how many of them the engine's
+#     own exact-duplicate check set aside. A column under MISREAD_BELOW unique once those exact duplicate
+#     rows are left out is probably not an identifier, and the planner is told.
+# The visitor can turn any test off (__contracts_off__). The download "values the data tests flagged" lists
+# every failing cell with the visitor's own line, the test and what happened to it.
+#
+# MISREAD_BELOW = 0.80, why: the live run of 29 Sep 2026 had free text in 9% of a real date column
+# ("pending carrier scan") and 8% of a real count ("about 21"). A rule that called any column with more
+# than 5% failing a misread told the AI its correct readings were wrong. A misread usually fails most of a
+# column; a real column with a messy fifth still reads four values in five.
+MISREAD_BELOW = 0.80
+OUT_OF_RANGE_SIGNAL = 0.05
+FLAGGED_CELLS_MAX = 20000
+CONTRACT_NOTE = ("Tests compiled from the AI's reading of each column. They never change what the engine reads: "
+                 "each says what failed and what the engine itself did with those rows. A column where fewer "
+                 "than %d%% of the values can be read (or are unique, for an identifier), or more than %d%% are "
+                 "out of range, is probably not what the AI read it as: that is what the AI's one "
+                 "self-correction is asked to fix." % (round(100 * MISREAD_BELOW), round(100 * OUT_OF_RANGE_SIGNAL)))
 _CONTRACT_WORDS = {"percentage": "between 0 and 100 (or 0 and 1)", "count": "a whole number, 0 or more",
                    "duration": "0 or more", "year": "a whole year between 1000 and 2999",
                    "rating": "a whole number on the file's rating scale", "identifier": "unique: no value repeated",
                    "boolean": "at most 2 different values", "category": "one of the values the profile lists",
-                   "date": "a date that can be read"}
-
-
-def _run_contracts(df: Any, plan: Dict[str, Any], off: Any = ()) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """(tests, {column: boolean mask of failing rows}) for the plan's columns; see _plan_contracts."""
-    import warnings
+                   "date": "a date that can be read", "flow_amount": "a number that can be read",
+                   "level": "a number that can be read"}
+# what a column of each type is, for "so it may not be a date"
+_CONTRACT_NOUN = {"percentage": "a percentage", "count": "a count", "duration": "a duration", "year": "a year",
+                  "rating": "a rating", "identifier": "an identifier", "boolean": "a yes/no column",
+                  "category": "a category with those values", "date": "a date", "flow_amount": "an amount",
+                  "level": "a number"}
+_NUMERIC_TESTS = ("percentage", "count", "duration", "year", "rating", "flow_amount", "level")
+def _year_dates(nums: Any) -> Any:
+    """A column the engine reads as whole numbers between 1000 and 2999, as dates (each year's last day, as
+    date_from_year writes it): the one way a number is read as a date, for a plan that calls a year column
+    its date. Anything else is NaT."""
+    import numpy as np
     import pandas as pd
+    v = pd.to_numeric(pd.Series(nums), errors="coerce").astype(float)
+    ok = v.notna() & (np.mod(v.fillna(0.5), 1) == 0) & (v >= 1000) & (v <= 2999)
+    out = pd.Series(pd.NaT, index=v.index, dtype="datetime64[ns]")
+    if ok.any():
+        out[ok] = pd.to_datetime(v[ok].astype(int).astype(str) + "-12-31", errors="coerce")
+    return out
+
+
+def _run_contracts(df: Any, plan: Dict[str, Any], off: Any = (), reading: Optional[_Reading] = None,
+                   hidden: Optional[Dict[str, str]] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Phase one, on the file the plan produced (the engine's input, unchanged), read the way the engine read
+    it: `reading` is the engine's reading of these same rows (None when its rows are not these rows; the
+    engine's own value readers then read the text). Returns (tests, aux): tests as the card lists them,
+    counted but not yet decided, and aux {column: {"masks": {kind: boolean array over the rows}, "range":
+    words for an out-of-range value, "read_as": "dates" | "numbers"}}. The kinds: unreadable (text the engine
+    could not read as the type), ambiguous (dates the engine set aside because day and month could be either
+    way round), out_of_range, repeated, unexpected. A blank cell or a placeholder (N/A, NULL, a dash: the
+    engine's own list) is never tested and never fails; `off` lists the columns whose tests the visitor
+    turned off. `hidden`: {column: "withhold" | "code"}: the engine reads a withheld or coded column's codes,
+    never its values, so its number and date tests are not run (a test on codes would tell the planner a date
+    is "probably not a date"); its identifier, yes/no and category tests count repeats and never show a value."""
+    import numpy as np
     tests: List[Dict[str, Any]] = []
-    masks: Dict[str, Any] = {}
+    aux: Dict[str, Any] = {}
     off = set(str(x) for x in (off or []))
+    hidden = hidden or {}
+    aligned = reading is not None and reading.n == len(df)
     for pc in plan.get("columns") or []:
         col, st = pc.get("name"), str(pc.get("semantic_type") or "")
         if col not in df.columns or st not in _CONTRACT_WORDS:
@@ -3348,109 +4459,351 @@ def _run_contracts(df: Any, plan: Dict[str, Any], off: Any = ()) -> Tuple[List[D
         if st == "category" and not (isinstance(pc.get("values"), list) and pc["values"]):
             continue
         s = df[col].astype(str).str.strip()
-        filled = s != ""
+        filled = _filled_text(df[col]).to_numpy()
         t = {"column": col, "semantic_type": st, "test": _CONTRACT_WORDS[st], "checked": int(filled.sum()),
-             "failed": 0, "examples": [], "action": ""}
+             "failed": 0, "examples": [], "action": "", "unreadable": 0, "ambiguous": 0, "out_of_range": 0,
+             "repeated": 0, "unexpected": 0, "misread": False, "signal": False}
         if col in off:
             t.update(checked=0, action="turned off by you")
             tests.append(t)
             continue
-        num = pd.to_numeric(s.str.replace(",", "", regex=False).str.rstrip("%"), errors="coerce")
-        isint = num.notna() & (num % 1 == 0)
-        v = num[filled & num.notna()]
-        if st == "percentage":
-            unit = (0, 1) if len(v) and float(v.max()) <= 1 else (0, 100)
-            t["test"] = ("between 0 and 1 (fractions: no value in the file is above 1)" if unit[1] == 1
-                         else "between 0 and 100")
-            bad = filled & ~num.between(*unit)
-        elif st == "count":
-            bad = filled & ~(isint & (num >= 0))
-        elif st == "duration":
-            bad = filled & ~(num >= 0)
-        elif st == "year":
-            bad = filled & ~(isint & num.between(1000, 2999))
-        elif st == "rating":
-            if not len(v) or float(v.max()) > 10:
-                continue
-            lo = 0 if float(v.min()) < 1 else 1
-            hi = 5 if float((v <= 5).mean()) >= 0.9 else int(math.ceil(float(v.max())))
-            t["test"] = "a whole number from %d to %d (a %d-%d scale, read from the file)" % (lo, hi, lo, hi)
-            bad = filled & ~(isint & num.between(lo, hi))
+        if hidden.get(col) and (st in _NUMERIC_TESTS or st == "date"):
+            t.update(checked=0, action=("not tested: you withheld this column, so none of its values is read"
+                                        if hidden[col] == "withhold" else
+                                        "not tested: you chose to code this column, so the engine reads its codes, "
+                                        "not its values"))
+            tests.append(t)
+            continue
+        land = reading.landed(col) if aligned else None
+        ekind = reading.kind(land) if land is not None else None
+        none = np.zeros(len(s), dtype=bool)
+        masks = {"unreadable": none, "ambiguous": none, "out_of_range": none, "repeated": none, "unexpected": none}
+        rng, read_as = "", ""
+        if st in _NUMERIC_TESTS:
+            num = reading.numbers(land) if land is not None else _fallback_values(df[col], "number")
+            nv = np.asarray(num, dtype=float)
+            if land is not None and ekind != "number":
+                # the engine reads the column as text (or dates): none of it counts as numbers. How many values its
+                # own number reader would read tells the planner how far the column is from numbers
+                t["would_read"] = int((filled & np.asarray(_fallback_values(df[col], "number").notna())).sum())
+            ok = filled & ~np.isnan(nv)
+            masks["unreadable"] = filled & ~ok
+            read_as = "numbers"
+            t["engine_read_as"] = {"number": "numbers", "date": "dates", "text": "text"}.get(ekind or "number")
+            whole = ok & (np.mod(np.where(ok, nv, 0.0), 1) == 0)
+            if st == "percentage":
+                pr = _pct_reading(nv, df[col], filled)
+                hi = pr["scale"]
+                t["test"] = ("between 0 and 1 (fractions: at least 95% of the values written without a % sign lie "
+                             "between 0 and 1)" if hi == 1 else "between 0 and 100")
+                t["scale"] = hi
+                masks["out_of_range"] = pr["out"]
+                rng = _either(("below 0", pr["low"].any()), ("above %d" % hi, pr["high"].any()))
+                if pr["mixed"]:
+                    t["mixed_scale"] = {"fractions": pr["n_frac"], "percents": pr["n_pct"]}
+            elif st == "count":
+                neg, frac = ok & (nv < 0), ok & ~whole
+                masks["out_of_range"] = neg | frac
+                rng = _either(("below 0", neg.any()), ("fractional", frac.any()))
+            elif st == "duration":
+                masks["out_of_range"] = ok & (nv < 0)
+                rng = "below 0"
+            elif st == "year":
+                masks["out_of_range"] = ok & ~(whole & (nv >= 1000) & (nv <= 2999))
+                rng = "outside the whole years 1000 to 2999"
+            elif st == "rating":
+                v = nv[ok]
+                if not len(v) or float(v.max()) > 10:
+                    continue
+                lo = 0 if float(v.min()) < 1 else 1
+                hi = 5 if float((v <= 5).mean()) >= 0.9 else int(math.ceil(float(v.max())))
+                t["test"] = "a whole number from %d to %d (a %d-%d scale, read from the file)" % (lo, hi, lo, hi)
+                out_m, frac = ok & ((nv < lo) | (nv > hi)), ok & ~whole
+                masks["out_of_range"] = out_m | frac
+                rng = _either(("outside the %d to %d scale" % (lo, hi), out_m.any()), ("fractional", frac.any()))
         elif st == "identifier":
-            bad = filled & s.duplicated(keep="first")
+            masks["repeated"] = filled & s.duplicated(keep="first").to_numpy()
         elif st == "boolean":
-            bad = filled & ~s.isin(list(s[filled].value_counts().index[:2]))
+            top = list(s[filled].value_counts().index[:2])
+            masks["unexpected"] = filled & ~s.isin(top).to_numpy()
+            rng = "beyond its two commonest values"
         elif st == "category":
             allowed = set(str(x).strip() for x in pc["values"])
             t["test"] = "one of the %d values the profile lists" % len(allowed)
-            bad = filled & ~s.isin(allowed)
+            masks["unexpected"] = filled & ~s.isin(allowed).to_numpy()
+            rng = "not among the %d values the profile lists" % len(allowed)
         else:  # date
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                try:
-                    dt = pd.to_datetime(s.where(filled), errors="coerce", format="mixed")
-                except Exception:  # noqa: BLE001 - an older pandas has no format="mixed"
-                    dt = pd.to_datetime(s.where(filled), errors="coerce")
-            bad = filled & dt.isna()
+            if land is not None and ekind == "text":
+                t["would_read"] = int((filled & np.asarray(_fallback_values(df[col], "date").notna())).sum())
+            if land is None:
+                dates = _fallback_values(df[col], "date")
+            elif ekind == "number":
+                dates = _year_dates(reading.numbers(land))       # whole years stand for dates, as the analyses read them
+            else:
+                dates = reading.dates(land)
+            ok = filled & np.asarray(dates.notna())
+            amb = (filled & reading.ambiguous(land)) if land is not None else none
+            masks["ambiguous"] = amb & ~ok
+            masks["unreadable"] = filled & ~ok & ~amb
+            read_as = "dates"
+            t["engine_read_as"] = {"number": "years", "date": "dates", "text": "text"}.get(ekind or "date")
+        bad = masks["unreadable"] | masks["ambiguous"] | masks["out_of_range"] | masks["repeated"] | masks["unexpected"]
+        for k in masks:
+            t[k] = int(masks[k].sum())
         t["failed"] = int(bad.sum())
         t["examples"] = [x[:40] for x in list(dict.fromkeys(s[bad]))[:3]]
-        masks[col] = bad
+        n = t["checked"]
+        if t["unreadable"] and n and (n - t["unreadable"]) / float(n) < MISREAD_BELOW:
+            t["misread"] = True             # the reading does not stand: nothing the analyses read is changed
+        aux[col] = {"masks": masks, "range": rng, "read_as": read_as}
         tests.append(t)
-    return tests, masks
+    return tests, aux
 
 
-def _plan_contracts(df: Any, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The tests the plan's column types compile to, run on df: [{column, semantic_type, test, checked,
-    failed, examples, action}], one per plan column whose type has a test. plan["contracts_off"] lists
-    the columns whose tests the visitor turned off."""
-    tests, masks = _run_contracts(df, plan, plan.get("contracts_off"))
-    _decide_contracts(tests, masks, len(df))
-    return tests
+def _either(*parts: Tuple[str, Any]) -> str:
+    """'below 0', 'not whole numbers' or 'below 0 or not whole numbers': the parts that happened."""
+    got = [w for w, on in parts if on]
+    return " or ".join(got) if got else parts[0][0]
 
 
-def _decide_contracts(tests: List[Dict[str, Any]], masks: Dict[str, Any], n_rows: int) -> Tuple[Any, str]:
-    """Fill each test's action; returns (mask of rows to set aside or None, why none was applied)."""
-    import pandas as pd
-    take = []
-    for t in tests:
-        if t["action"]:
+def _n_values(n: int, word: str = "value") -> str:
+    return "%s %s%s" % (format(n, ","), word, "" if n == 1 else "s")
+
+
+def _engine_part(rows: Any, engine: Optional[Dict[str, Any]], col: str, empties: bool = False) -> Tuple[str, str]:
+    """What the engine did with these rows, in (the card's words, the AI payload's shorter words).
+    engine: {"aside": {row: reason}, "empty": {column: set of kept rows whose value it left empty}} over the
+    same rows as the tests, or None when its rows are not the tests' rows."""
+    rows = [int(r) for r in rows]
+    if engine is None:
+        w = "the engine read this file reshaped, so what it did with these rows is not matched here"
+        return w, w
+    one = len(rows) == 1
+    aside = [r for r in rows if r in engine["aside"]]
+    kept = len(rows) - len(aside)
+    reasons: Dict[str, int] = {}
+    for r in aside:
+        reasons[engine["aside"][r]] = reasons.get(engine["aside"][r], 0) + 1
+    top = sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))
+    cut = lambda k: k if len(k) <= 90 else k[:87].rstrip() + "..."
+    why = (cut(top[0][0]) if len(top) == 1 else
+           "; ".join("%s: %s" % (cut(k), format(v, ",")) for k, v in top) if len(top) <= 2 else
+           "for %d different reasons" % len(top))
+    emptied = ""
+    if empties and kept:
+        e = sum(1 for r in rows if r not in engine["aside"] and r in engine["empty"].get(col, ()))
+        if e:
+            emptied = (", leaving %s empty" % ("that value" if e == 1 else "those values" if e == kept
+                                                else "%s of those values" % format(e, ",")))
+    if not aside:
+        w = "the engine kept %s%s" % ("its row" if one else "these rows", emptied)
+        return w, w
+    if not kept:
+        return (("the engine set %s aside (%s; see the set-aside file)" % ("its row" if one else "these rows", why)),
+                ("the engine set %s aside" % ("its row" if one else "these rows")))
+    return (("the engine set %s of these rows aside (%s; see the set-aside file) and kept %s%s"
+             % (format(len(aside), ","), why, format(kept, ","), emptied)),
+            ("the engine set %s of these rows aside and kept %s%s" % (format(len(aside), ","), format(kept, ","), emptied)))
+
+
+# words in an engine row message that tell which kind of rule set the row aside (clean.py _RULE_BLURBS)
+_KIND_WORDS = {"date": ("date format", "ambiguous", "day and month"), "not_future": ("future",),
+               "date_plausible": ("placeholder", "implausib"), "range": ("range",), "numeric": ("number",),
+               "not_null": ("missing", "empty"), "allowed": ("allowed",), "boolean": ("yes/no",),
+               "series_end": ("series",), "latest_per_key": ("superseded", "later row"), "dedupe": ("duplicate",)}
+
+
+def _rule_reasons(messages: Dict[int, str], rules: List[Any], used: Any) -> Dict[int, str]:
+    """Each set-aside row's reason as the engine's rule-level words ("order_date_date: value matches no
+    known date format", as its cleaning summary counts them), not the row's own message ("column
+    'order_date': 'TBD' matches no known date format (tried ...)"), so a card can count rows by reason and
+    never quotes a value. A message no rule can be matched to is kept as it is."""
+    known = [(str(getattr(ru, "column", "") or ""), str(getattr(ru, "kind", "")), ru.reason_key()) for ru in rules
+             if ru.reason_key() in used]
+    out: Dict[int, str] = {}
+    memo: Dict[str, str] = {}
+    for row, msg in messages.items():
+        if msg in memo:
+            out[row] = memo[msg]
             continue
+        m = re.match(r"column '((?:[^'\\]|\\.)*)': ", msg)
+        col = m.group(1) if m else ""
+        cands = [(k, key) for c, k, key in known if (c == col if m else k == "dedupe") or key == msg]
+        if len(cands) > 1:
+            low = msg.lower()
+            cands = [(k, key) for k, key in cands if key == msg or any(w in low for w in _KIND_WORDS.get(k, ()))] or cands
+        memo[msg] = out[row] = cands[0][1] if len(cands) == 1 else msg
+    return out
+
+
+def _analysis_tail(rows: Any, engine: Optional[Dict[str, Any]], what: str = "count them as missing") -> str:
+    """What the AI's analyses did with these values: they read only the rows the engine kept, so a value in a
+    row the engine set aside is not read at all, and one in a kept row is counted as missing."""
+    rows = [int(r) for r in rows]
+    if engine is None:
+        return "the AI's analyses %s" % what
+    kept = [r for r in rows if r not in engine["aside"]]
+    if len(kept) == len(rows):
+        return "the AI's analyses %s" % what
+    if not kept:
+        return "the AI's analyses read only the rows the engine kept"
+    return "the AI's analyses read only the rows the engine kept and count the %s kept ones as missing" % format(len(kept), ",")
+
+
+def _finish_contracts(tests: List[Dict[str, Any]], aux: Dict[str, Any], engine: Optional[Dict[str, Any]],
+                      dup_reason: str) -> None:
+    """Phase two, after the engine ran: each test's action (what failed, and what the engine did with those
+    rows, read from its own set-aside file and cleaned table), its short form for the AI report writer
+    (t["brief"]) and, for a probable misread or a type the values contradict, the fact the planner gets
+    (t["signal"], t["problem"]). dup_reason: the engine's set-aside reason for an exact duplicate row."""
+    import numpy as np
+    for t in tests:
+        if t["action"]:                                  # turned off by you
+            t.setdefault("brief", t["action"])
+            continue
+        a = aux.get(t["column"]) or {}
+        m = a.get("masks") or {}
+        n, col = int(t["checked"]), t["column"]
         if not t["failed"]:
-            t["action"] = "passed"
-        elif t["failed"] / max(t["checked"], 1) > CONTRACT_ROW_SHARE:
-            t["action"] = ("not applied: %d%% fail, so the AI's reading of this column is probably wrong"
-                           % round(100.0 * t["failed"] / t["checked"]))
+            t["action"] = t["brief"] = "passed" if n else "nothing to test: every value is blank"
+            continue
+        z = np.zeros(len(next(iter(m.values()))) if m else 0, dtype=bool)
+        rows = np.flatnonzero(m.get("unreadable", z) | m.get("ambiguous", z) | m.get("out_of_range", z)
+                              | m.get("repeated", z) | m.get("unexpected", z))
+        noun = _CONTRACT_NOUN.get(t["semantic_type"], "what the AI read it as")
+        read_as = a.get("read_as") or "values"
+        u, o, r = t["unreadable"], t["out_of_range"] + t["unexpected"], t["repeated"]
+        amb = int(t.get("ambiguous") or 0)
+        one_read = {"dates": "a date", "numbers": "a number"}.get(read_as, "a value")
+        read_u = one_read if u == 1 else read_as
+        eng, eng_short = _engine_part(rows, engine, col, empties=bool(u) and read_as == "numbers")
+        if t["misread"]:
+            ok = n - u
+            as_ = t.get("engine_read_as")
+            if as_ == "text":
+                w = int(t.get("would_read") or 0)
+                kind_w = "dates" if read_as == "dates" else "numbers"
+                t["problem"] = ("only %s of %s values %s (%d%%), too few for the engine to read the column as %s: it "
+                                "reads it as text" % (format(w, ","), format(n, ","),
+                                                      "read as dates" if read_as == "dates" else "can be read as numbers",
+                                                      int(math.floor(100.0 * w / n)), kind_w))
+            elif as_ in ("numbers", "years") and read_as == "dates":
+                t["problem"] = "the engine reads it as numbers, not dates: only %s of %s values are whole years (%d%%)" % (
+                    format(ok, ","), format(n, ","), int(math.floor(100.0 * ok / n)))
+            elif as_ == "dates" and read_as == "numbers":
+                t["problem"] = "the engine reads it as dates, so none of its %s values count as numbers" % format(n, ",")
+            else:
+                t["problem"] = "only %s of %s values %s (%d%%)" % (
+                    format(ok, ","), format(n, ","), "read as dates" if read_as == "dates" else "can be read as numbers",
+                    int(math.floor(100.0 * ok / n)))       # 79.6% is "79%": below the line, never shown as 80%
+            t["signal"] = True
+            t["action"] = "probably not %s: %s; %s" % (noun, t["problem"], eng)
+            t["brief"] = "probably not %s: %s; %s" % (noun, t["problem"], eng_short)
+            continue
+        tail = "the tests changed no value"
+        if r:
+            dup = 0
+            if engine is not None:
+                dup = sum(1 for i in np.flatnonzero(m["repeated"]) if engine["aside"].get(int(i)) == dup_reason)
+            base = n - dup
+            if base and (n - r) / float(base) < MISREAD_BELOW:
+                t["signal"] = True
+                t["problem"] = "only %s of %s values are unique (%d%%)%s" % (
+                    format(n - r, ","), format(base, ","), int(math.floor(100.0 * (n - r) / base)),
+                    (", leaving out %s exact duplicate rows" % format(dup, ",")) if dup else "")
+                head = "probably not %s: %s" % (noun, t["problem"])
+            else:
+                head = "%s %s an earlier value (%s)" % (
+                    _n_values(r), "repeats" if r == 1 else "repeat",
+                    "not matched against the engine's duplicate check" if engine is None else
+                    "none in exact duplicate rows" if not dup else
+                    ("in an exact duplicate row" if r == 1 else "all in exact duplicate rows") if dup == r else
+                    "%s of them in exact duplicate rows" % format(dup, ","))
+        elif amb and not u and not o:
+            # the engine's own reason, in its own words: these are dates, read neither way round
+            head = "%s could be day/month or month/day, and the column holds both orders" % _n_values(amb)
+            tail = _analysis_tail(np.flatnonzero(m["ambiguous"]), engine)
+        elif (u or amb) and not o:
+            head = "%s can't be read as %s" % (_n_values(u), read_u)
+            if amb:
+                head += " and %s could be day/month or month/day" % format(amb, ",")
+            tail = _analysis_tail(np.flatnonzero(m["unreadable"] | m.get("ambiguous", z)), engine)
+        elif u:
+            head = "%s can't be read as %s and %s %s %s" % (_n_values(u), read_u, format(o, ","),
+                                                           "is" if o == 1 else "are", a.get("range"))
+            tail = "%s; the tests changed no value" % _analysis_tail(
+                np.flatnonzero(m["unreadable"]), engine, "count the unreadable %s as missing" % ("one" if u == 1 else "ones"))
         else:
-            take.append(t)
-    if not take:
-        return None, ""
-    union = pd.concat([masks[t["column"]] for t in take], axis=1).any(axis=1)
-    if int(union.sum()) > CONTRACT_ROW_SHARE * n_rows:
-        why = ("together the tests would set aside %d of %d rows, more than the %d%% a contract may remove, so none was applied"
-               % (int(union.sum()), n_rows, int(CONTRACT_ROW_SHARE * 100)))
-        for t in take:
-            t["action"] = "not applied: " + why
-        return None, why
-    for t in take:
-        t["action"] = "set aside %d rows" % t["failed"]
-    return union, ""
+            head = "%s %s %s" % (_n_values(o), "is" if o == 1 else "are", a.get("range"))
+        if o and not t["signal"] and o / float(n) > OUT_OF_RANGE_SIGNAL:
+            t["signal"] = True
+            t["problem"] = "%s of %s values are %s, so it may not be %s" % (
+                format(o, ","), format(n, ","), a.get("range"),
+                ("a 0-%d percentage" % t.get("scale", 100)) if t["semantic_type"] == "percentage" else noun)
+            head = t["problem"] if not u else "%s (%s)" % (head, t["problem"].split(", so ", 1)[-1])
+        mix = t.get("mixed_scale")
+        if mix and not t["signal"]:
+            t["signal"] = True
+            t["problem"] = ("%s values are written as fractions (between 0 and 1) and %s as percents (above 1): the "
+                            "column mixes two scales" % (format(mix["fractions"], ","), format(mix["percents"], ",")))
+            head = "%s; %s" % (head, t["problem"])
+        t["action"] = "%s: %s; %s" % (head, eng, tail)
+        t["brief"] = "%s: %s; %s" % (head, eng_short, tail)
+    for t in tests:
+        # a mixed column with nothing else wrong still says so, and the planner is told
+        mix = t.get("mixed_scale")
+        if mix and t["action"] == "passed":
+            t["signal"] = True
+            t["problem"] = ("%s values are written as fractions (between 0 and 1) and %s as percents (above 1): the "
+                            "column mixes two scales" % (format(mix["fractions"], ","), format(mix["percents"], ",")))
+            t["action"] = t["brief"] = t["problem"] + "; the analyses read it on the 0-100 scale; the tests changed no value"
 
 
-def _apply_contracts(data: bytes, plan: Dict[str, Any], off: Any) -> Tuple[bytes, Optional[Dict[str, Any]], Any]:
-    """Run the plan's tests on the file the plan produced. Returns (the bytes the engine receives,
-    rep["contracts"] or None, the set-aside rows as a frame or None)."""
-    import pandas as pd
-    df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
-    tests, masks = _run_contracts(df, plan, off)
-    if not tests:
-        return data, None, None
-    union, why = _decide_contracts(tests, masks, len(df))
-    aside = None
-    if union is not None and int(union.sum()):
-        aside = df[union]
-        data = df[~union].to_csv(index=False).encode("utf-8")
-    note = CONTRACT_NOTE + ((" " + why[0].upper() + why[1:] + ".") if why else "")
-    return data, {"tests": tests, "rows_set_aside": 0 if aside is None else int(len(aside)), "note": note}, aside
+def _flagged_cells(tests: List[Dict[str, Any]], aux: Dict[str, Any], df: Any, lines: Optional[List[int]],
+                   engine: Optional[Dict[str, Any]], hide: Dict[str, str], clean: Any) -> Tuple[str, int]:
+    """The download "values the data tests flagged": one row per failing cell, in the visitor's line order.
+    Columns: the line (source_line, as the other downloads number the visitor's file; table_row for a file
+    read reshaped), the column, the value (a flagged column's values never leave: a withheld column's read
+    "value withheld", a coded column's "value coded"), the test it failed and what happened (set aside by the
+    engine, counted as missing by the analyses, kept). `hide`: {column: "withhold" | "code"} by the file's
+    names. Returns (CSV text, cells flagged); at most FLAGGED_CELLS_MAX rows."""
+    import numpy as np
+    kinds = (("unreadable", "can't be read"), ("ambiguous", "day and month could be either way round"),
+             ("out_of_range", "out of range"), ("repeated", "repeats an earlier value"),
+             ("unexpected", "unexpected value"))
+    order = {t["column"]: i for i, t in enumerate(tests)}
+    cells = []
+    for t in tests:
+        if t["action"] == "turned off by you" or not t["failed"]:
+            continue
+        col = t["column"]
+        m = (aux.get(col) or {}).get("masks") or {}
+        emp = (engine or {}).get("empty", {}).get(col, ())
+        for key, word in kinds:
+            for pos in np.flatnonzero(m.get(key, np.zeros(0, dtype=bool))):
+                pos = int(pos)
+                what = [word]
+                if engine is None:
+                    what.append("not matched: the engine read this file reshaped")
+                elif pos in engine["aside"]:
+                    what.append("set aside by the engine (%s)" % engine["aside"][pos])
+                elif key == "unreadable" and pos in emp:
+                    what.append("kept by the engine, value left empty")
+                else:
+                    what.append("kept by the engine")
+                if key in ("unreadable", "ambiguous"):
+                    what.append("counted as missing by the analyses" if engine is None or pos not in engine["aside"]
+                                else "not read by the analyses")
+                cells.append((lines[pos] if lines else pos + 1, order.get(col, 0), col,
+                              str(df[col].iat[pos]), t["test"], "; ".join(what)))
+    cells.sort(key=lambda c: (c[0], c[1]))
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["source_line" if lines else "table_row", "column", "value", "test", "what happened"])
+    for ln, _o, col, val, test, what in cells[:FLAGGED_CELLS_MAX]:
+        d = hide.get(col)
+        w.writerow([ln, col, "value withheld" if d == "withhold" else "value coded" if d else clean(val), test, what])
+    return buf.getvalue(), len(cells)
 
 
 # ----------------------------------------------------------------------------- the AI's analyses
@@ -3484,6 +4837,73 @@ def _fmt(v: Any, sig: int = 3) -> str:
         if "." in s:
             s = s.rstrip("0").rstrip(".")
     return s.replace("-", "−")
+
+
+# The unit the AI plan gives a column is words for a sentence, and not every such word is a unit: a planner
+# that does not know the currency writes "currency" (live run, 29 Sep 2026: "933 currency", "a gap of 283
+# currency", in the analyses and then in the AI report), "local currency units", "units", "index" or
+# "value". A word that names no actual unit is dropped and the number stands plain; an ISO code inside one
+# ("currency (CAD)") is the unit; a currency symbol goes before the number ($933, -$5); "%" follows it
+# closed up (5%); any other unit follows it after a space (12 USD, 31.2 kg). A percentage column always
+# reads "%" (its fractions are shown x100, see _analysis_frame), and a difference between two percentages
+# is in percentage points (_diff_amt).
+_NO_UNIT_WORDS = frozenset(("currency", "currencies", "currency unit", "currency units", "units of currency",
+                            "local currency", "local currency unit", "local currency units", "lcu",
+                            "unknown currency", "unknown", "money", "monetary", "monetary unit", "monetary units",
+                            "amount", "amounts", "value", "values", "unit", "units", "index", "indices",
+                            "index points", "index value", "number", "numbers", "count", "counts", "n/a", "na",
+                            "none", "-"))
+_ISO_RE = re.compile(r"\b([A-Z]{3})\b")
+# ISO 4217 currency codes: a three-capital word is a currency only when it is one (review, 29 Sep 2026: "LCU",
+# the World Bank's "local currency units", printed as if it were a currency code)
+_ISO_CURRENCIES = frozenset("""
+AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BRL BSD BTN BWP BYN BZD CAD CDF CHF
+CLP CNY COP CRC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HTG
+HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA
+MKD MMK MNT MOP MRU MUR MVR MWK MXN MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD
+RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH
+UGX USD UYU UZS VES VND VUV WST XAF XCD XOF XPF YER ZAR ZMW ZWL""".split())
+
+
+def _unit_parts(unit: Any) -> Tuple[str, str]:
+    """(before the number, after it) for a plan column's unit; ("", "") for none."""
+    import unicodedata
+    u = " ".join(str(unit or "").split())
+    if not u:
+        return "", ""
+    low = " ".join(re.sub(r"[()\[\]]", " ", u.lower()).split()).strip(".")
+    iso = next((m for m in _ISO_RE.finditer(u) if m.group(1) in _ISO_CURRENCIES), None)
+    if iso and (u.strip("()[] ") == iso.group(1) or any(w in low for w in ("currency", "money", "monetary"))):
+        return "", " " + iso.group(1)
+    if low in _NO_UNIT_WORDS or re.sub(r"\s*[(\[]?\blcu\b[)\]]?\s*", " ", low).strip() in _NO_UNIT_WORDS | {"", "current"} \
+            or re.search(r"\blcu\b", low):
+        return "", ""
+    if u == "%" or low in ("percent", "per cent", "percentage", "pct"):
+        return "", "%"
+    if len(u) <= 4 and any(unicodedata.category(ch) == "Sc" for ch in u):
+        return u, ""
+    return "", " " + u
+
+
+def _amt(v: Any, unit: Any, tail: bool = True) -> str:
+    """_fmt(v) with the column's unit written the way a reader expects (see _unit_parts). tail=False
+    leaves out a unit that follows the number: "between 10 and 20 kg", "between $10 and $20"."""
+    pre, post = _unit_parts(unit)
+    s = _fmt(v)
+    if s == "n/a":
+        return s
+    if pre:
+        s = ("\u2212" + pre + s[1:]) if s.startswith("\u2212") else pre + s
+    return s + (post if tail else "")
+
+
+def _diff_amt(v: Any, st: str, unit: Any) -> str:
+    """A difference or a rate of change of a column: a percentage's in percentage points (5% to 7% is 2
+    percentage points, not 2%), anything else in the column's own unit."""
+    if st == "percentage":
+        s = _fmt(v)
+        return s if s == "n/a" else s + " percentage points"
+    return _amt(v, unit)
 
 
 def _hac_slope(t: Any, y: Any) -> Tuple[float, float, int]:
@@ -3528,26 +4948,165 @@ def _tcrit(df: int) -> float:
     return float(0.5 * (lo + hi))
 
 
-def _analysis_frame(data: bytes, plan: Dict[str, Any], layout: Optional[Dict[str, Any]]):
-    """The file as the engine read it after the plan: (frame, date column, entity column)."""
+# The analyses' date column (reviews H2 and M2, 29 Sep 2026): ONLY the layout's date, else the column the plan
+# gives the date ROLE (or the "date" a date_from_year step made of it). A column merely typed date with another
+# role (a driver, metadata, a refund date) is never the axis: a review file whose order dates were 30% "TBD"
+# got a trend drawn over its refund dates, which run the other way. The axis is a column the engine reads as
+# dates, or as whole years (a year column the plan calls its date). The analyses read only the rows the engine
+# kept, so every date they use is one the engine read; a kept row whose date is blank drops out of a time
+# analysis, and its sentence says how many did.
+# The minimums the analyses enforce, shared with the profile's analysis_limits so the planner is told the
+# same numbers the analyses refuse by.
+TREND_MIN_YEARS = 8               # trend: a least-squares line needs 8 complete years
+EXTREMES_MIN_YEARS = 10           # extremes: the highest and lowest of 10 or more complete years
+AGREEMENT_MIN_DATES = 12          # agreement: 12 dates where both series have a value
+RANK_MIN_YEARS = 2                # rank (series side by side): a first and a last complete year
+COMPARE_MIN_GROUP = 5             # compare: a group needs 5 values, and two groups are needed
+RELATIONSHIP_MIN_ROWS = 10        # relationship: 10 rows with both values
+DISTRIBUTION_MIN_VALUES = 10      # distribution: 10 values
+THEMES_MIN_TEXTS = 20             # themes: 20 non-empty texts
+PREDICT_MIN_ROWS = 30             # predict: 30 complete rows ...
+PREDICT_ROWS_PER_TERM = 10        # ... and 10 rows per model term
+PREDICT_BLOCKS = 5                # forward-chained: 5 blocks in date order, the last 4 scored
+YEARS_MIN_SHARE = 0.95            # a number column is the year axis when 95% of its numbers are whole years
+_TIME_ANALYSES = ("trend", "extremes", "agreement")
+_NUMERIC_ANALYSES = ("trend", "extremes", "agreement", "rank", "share", "compare", "relationship", "distribution")
+
+
+def _full_years(dates: Any) -> Tuple[List[int], List[int]]:
+    """Calendar years with values, and the complete ones (review, 29 Sep 2026: a year with eleven months is not a
+    complete calendar year). Values monthly or more often: all 12 months of the year hold a value; quarterly:
+    all 4 quarters; yearly or sparser: every year with a value. Coverage of the calendar, never a count of
+    rows: a growing business's early years hold fewer rows and are still complete."""
     import pandas as pd
-    df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
-    roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name")}
-    date = None
-    for c in ([layout.get("date_column")] if layout and layout.get("date_column") else []) + \
-             (["date"] if "date" in df.columns else []) + [roles.get("date")] + list(df.columns):
-        if c in df.columns:
-            dt = pd.to_datetime(df[c], errors="coerce")
-            if dt.notna().mean() >= 0.95:
+    d = pd.Series(dates).dropna()
+    if d.empty:
+        return [], []
+    n = d.dt.year.value_counts().sort_index()
+    years = [int(y) for y in n.index]
+    steps = d.drop_duplicates().sort_values().diff().dropna()
+    step = steps.median() if len(steps) else None
+    if step is None or step >= pd.Timedelta(days=300):
+        return years, years
+    periods, need = (d.dt.month, 12) if step < pd.Timedelta(days=60) else (d.dt.quarter, 4)
+    held = periods.groupby(d.dt.year).nunique()
+    return years, [y for y in years if int(held.get(y, 0)) == need]
+
+
+def _date_candidates(plan: Dict[str, Any], layout: Optional[Dict[str, Any]], columns: Any) -> List[str]:
+    """The one column the time analyses may read: the layout's date, else the plan's date ROLE, or "date"
+    when a date_from_year step turned that column into "date". Never a column merely typed date."""
+    if layout and layout.get("date_column"):
+        return [layout["date_column"]]
+    pcs = [c for c in plan.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+    conv = [o.get("column") for o in plan.get("operations") or [] if isinstance(o, dict) and o.get("op") == "date_from_year"]
+    role = next((c["name"] for c in pcs if c.get("role") == "date"), None)
+    if role and role in conv and role not in columns and "date" in columns:
+        return ["date"]                                   # date_from_year turned the plan's column into "date"
+    if role:
+        return [role]
+    return ["date"] if conv and "date" in columns else []
+
+
+def _series_kind(s: Any) -> str:
+    import pandas as pd
+    if pd.api.types.is_bool_dtype(s):
+        return "text"
+    if pd.api.types.is_numeric_dtype(s):
+        return "number"
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return "date"
+    return "text"
+
+
+def _texts_of(df: Any, col: str) -> Any:
+    """A column's values as labels: text as the engine kept it, a whole number without ".0", a date as
+    YYYY-MM-DD, a missing value as ""."""
+    import pandas as pd
+    s = df[col]
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return s.dt.strftime("%Y-%m-%d").fillna("")
+    if pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s):
+        return s.map(lambda v: "" if v != v else (str(int(v)) if float(v).is_integer() and abs(v) < 1e15 else repr(float(v))))
+    return s.astype(object).where(s.notna(), "").astype(str).str.strip()
+
+
+def _who(name: Any, decision: Optional[str]) -> str:
+    """A flagged column in an analysis refusal: a withheld column is never named."""
+    return "a column you withheld" if decision == "withhold" else "%s (coded as personal data)" % name
+
+
+def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Dict[str, Any]]):
+    """The rows the engine kept, as it read them: (frame, date column, entity column, why there is no date
+    column, info). The frame is the engine's cleaned table (the rows behind downloads.clean_csv) under the
+    file's own column names, without every column the visitor withheld or coded; a percentage column is in
+    percent on the scale its data test chose (_pct_reading); the date column is the engine's dates (or whole
+    years read as each year's last day). info: {"kept", "aside", "undated" (kept rows with no date),
+    "unread" {column: kept cells the engine could not read as numbers}, "kinds" {column: number|date|text},
+    "mixed" {column: fractions and percents side by side}}. ctx: {"reading", "clean", "hide" {landed: decision},
+    "pct" {column: _pct_reading}}."""
+    import numpy as np
+    import pandas as pd
+    from northledger.clean import QUARANTINE_COL
+    R, clean, hide = ctx["reading"], ctx["clean"], ctx.get("hide") or {}
+    keep = [c for c in clean.columns if c != QUARANTINE_COL and c not in hide]
+    df = clean[keep].copy()
+    df.columns = [R.header(c) for c in keep]
+    pos = np.asarray([int(i) for i in clean.index], dtype=int)
+    info: Dict[str, Any] = {"kept": int(len(df)), "aside": int(R.n - len(df)), "undated": 0, "unread": {},
+                            "kinds": {h: _series_kind(df[h]) for h in df.columns}, "mixed": {}}
+    for c in keep:
+        h = R.header(c)
+        if info["kinds"][h] == "number":
+            fill = R.filled(c)[pos] if len(pos) else np.zeros(0, dtype=bool)
+            n_bad = int((fill & df[h].isna().to_numpy()).sum())
+            if n_bad:
+                info["unread"][h] = n_bad
+    for h, pr in (ctx.get("pct") or {}).items():
+        if h in df.columns and info["kinds"].get(h) == "number":
+            df[h] = np.asarray(pr["percent"], float)[pos] if len(pos) else df[h]
+            if pr.get("mixed"):
+                info["mixed"][h] = (pr["n_frac"], pr["n_pct"])
+    df.index = pd.RangeIndex(len(df))
+    date, why = None, ""
+    headers = list(R.land) or [R.header(c) for c in R.values.columns]
+    cands = _date_candidates(plan, layout, headers)
+    if not len(df):
+        why = "the engine kept no rows"
+    elif not cands:
+        why = "the plan names no date column"
+    else:
+        c = cands[0]
+        land = R.landed(c)
+        if land is not None and land in hide:
+            why = ("the plan's date column is a column you withheld" if hide[land] == "withhold"
+                   else "the plan's date column %s is coded as personal data" % c)
+        elif c not in df.columns:
+            why = "the plan's date column %s is not in the file the engine read" % c
+        elif not df[c].notna().any():
+            why = "the plan's date column %s is blank" % c
+        elif info["kinds"][c] == "date":
+            date = c
+        elif info["kinds"][c] == "number":
+            yd = _year_dates(df[c])
+            n_num = int(df[c].notna().sum())
+            if n_num and yd.notna().sum() >= YEARS_MIN_SHARE * n_num:
+                df[c] = yd.to_numpy()
                 date = c
-                break
+            else:
+                why = "the engine reads %s as numbers, not dates or whole years" % c
+        else:
+            why = "the engine reads %s as text, not dates" % c
+    if date:
+        info["undated"] = int(pd.to_datetime(df[date], errors="coerce").isna().sum())
+    roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name")}
     ent = None
     for r in ("entity", "geography", "segment"):
         c = roles.get(r)
-        if c in df.columns and c != date and df[c].nunique() > 1:
+        if c in df.columns and c != date and _texts_of(df, c).replace("", np.nan).nunique() > 1:
             ent = c
             break
-    return df, date, ent
+    return df, date, ent, why, info
 
 
 def _resolve(names: Any, df: Any, layout: Optional[Dict[str, Any]], date: Optional[str], ent: Optional[str]) -> List[str]:
@@ -3591,95 +5150,101 @@ def _col_type(plan: Dict[str, Any], col: str, layout: Optional[Dict[str, Any]]) 
     unit = str(c.get("unit") or "")
     if layout and col not in by and len(layout.get("units") or []) > 1:
         unit = ""                        # series in several units: one unit for all of them would be wrong
-    return str(c.get("semantic_type") or "other"), unit
+    st = str(c.get("semantic_type") or "other")
+    if st == "percentage":
+        unit = "%"                       # the frame holds it in percent (_pct_reading), so every value is in %
+    return st, unit
 
 
-def _yearly(df: Any, date: str, col: str, how: str):
-    """Values by calendar year: a sub-annual series becomes each complete year's mean (a level) or sum
-    (an amount); a year with under 90% of the usual count of values is left out and counted."""
+def _how(st: str) -> str:
+    """A flow or a count adds up over a year (its total); anything else is a level (its average)."""
+    return "sum" if st in ("flow_amount", "count") else "mean"
+
+
+def _period_values(df: Any, date: str, ent: Optional[str], col: str, how: str):
+    """(values by complete calendar year, what a value is). how "sum": the year's total, every row of the year
+    added (a flow or a count); "mean": the average of the year's rows (a level). Review H3 (29 Sep 2026): the
+    total used to be a sum of each entity's yearly MEAN, so monthly sales by 3 regions rose "11,906 a year"
+    where the yearly totals rose 142,875. With an entity column the year is over one steady set of entities,
+    those with a value in the latest year and in 95% of the years since most of them began (so a trend is not
+    the arrival of new reporters), and a year counts only when at least 90% of them report in it."""
     import pandas as pd
-    d = pd.to_datetime(df[date], errors="coerce")
-    v = pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False), errors="coerce")
-    s = pd.DataFrame({"d": d, "v": v}).dropna()
+    word = "yearly total" if how == "sum" else "yearly average"
+    s = pd.DataFrame({"d": pd.to_datetime(df[date], errors="coerce"), "v": _col_nums(df, col)})
+    if ent:
+        s["e"] = _texts_of(df, ent)
+    s = s.dropna(subset=["d", "v"])
+    if ent:
+        s = s[s["e"] != ""]
     if s.empty:
-        return pd.Series(dtype=float), 0, "none"
-    steps = s["d"].drop_duplicates().sort_values().diff().dropna()
-    if len(steps) and steps.median() < pd.Timedelta(days=300):
-        g = s.groupby(s["d"].dt.year)["v"]
-        n = g.count()
-        full = n >= 0.9 * n.max()
-        agg = (g.mean() if how == "mean" else g.sum())[full]
-        return agg, int((~full).sum()), "year " + ("average" if how == "mean" else "total")
-    s = s.groupby(s["d"].dt.year)["v"].mean()
-    return s, 0, "value"
-
-
-def _panel_yearly(df: Any, date: str, ent: Optional[str], col: str, how: str):
-    """(values by year, dropped years, what a value is). With an entity column (countries by year) a year's
-    value is over one steady set of entities, so a trend is not the arrival of new reporters: those with a
-    value in the latest year and in 95% of the years since most of them began; an amount is their sum, a
-    level (per person, a rate) their median."""
-    import pandas as pd
+        return pd.Series(dtype=float), "none"
+    s["y"] = s["d"].dt.year
     if not ent:
-        return _yearly(df, date, col, how)
-    d = pd.to_datetime(df[date], errors="coerce")
-    v = pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False), errors="coerce")
-    s = pd.DataFrame({"e": df[ent].astype(str), "y": d.dt.year, "v": v}).dropna()
-    if s.empty:
-        return pd.Series(dtype=float), 0, "none"
-    w = s.pivot_table(index="y", columns="e", values="v", aggfunc="mean")
-    last = w.index.max()
-    now = w.columns[w.loc[last].notna()]
+        _all, full = _full_years(s["d"])
+        g = s.groupby("y")["v"]
+        agg = g.sum() if how == "sum" else g.mean()
+        return agg[agg.index.isin(full)].astype(float), word
+    pres = s.groupby(["y", "e"]).size().unstack("e")
+    last = pres.index.max()
+    now = pres.columns[pres.loc[last].notna()]
     if len(now) == 0:
-        return pd.Series(dtype=float), 0, "none"
-    frac = w[now].notna().mean(axis=1)
-    start = frac[frac >= 0.9].index.min() if (frac >= 0.9).any() else w.index.min()
-    ww = w.loc[w.index >= start, now]
-    steady = ww.columns[ww.notna().mean() >= 0.95]
-    if len(steady) == 0:
-        return pd.Series(dtype=float), 0, "none"
-    ww = ww[steady]
-    agg = ww.sum(axis=1, min_count=max(1, int(0.9 * len(steady)))) if how == "sum" else ww.median(axis=1)
-    agg = agg.dropna()
-    what = ("the sum over the %d %s entries that report every year from %d" if how == "sum" else
-            "the median of the %d %s entries that report every year from %d") % (len(steady), ent, int(start))
-    return agg, 0, what
+        return pd.Series(dtype=float), "none"
+    frac = pres[now].notna().mean(axis=1)
+    start = frac[frac >= 0.9].index.min() if (frac >= 0.9).any() else pres.index.min()
+    ww = pres.loc[pres.index >= start, now]
+    steady = list(ww.columns[ww.notna().mean() >= 0.95])
+    if not steady:
+        return pd.Series(dtype=float), "none"
+    t = s[s["e"].isin(steady) & (s["y"] >= start)]
+    reporting = t.groupby("y")["e"].nunique()
+    _all, full = _full_years(t["d"])
+    ok = [y for y in full if reporting.get(y, 0) >= 0.9 * len(steady)]
+    g = t.groupby("y")["v"]
+    agg = g.sum() if how == "sum" else g.mean()
+    what = "the %s over the %d %s entries that report every year from %d" % (word, len(steady), ent, int(start))
+    return agg[agg.index.isin(ok)].astype(float), what
 
 
 def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
     import numpy as np
     rows, lines, sentences, fits = [], [], [], []
+    grains = []
     for col in cols[:4]:
         st, unit = _col_type(plan, col, layout)
-        how = "sum" if st in ("flow_amount", "count") else "mean"
-        y, dropped, grain = _panel_yearly(df, date, ent, col, how)
-        if len(y) < 8:
+        y, grain = _period_values(df, date, ent, col, _how(st))
+        if len(y) < TREND_MIN_YEARS:
             continue
+        grains.append(grain)
         yrs = np.asarray(y.index, float)
         b, se, lag = _hac_slope(yrs, y.values)
         tc = _tcrit(len(y) - 2)
         per = 10.0 if yrs.max() - yrs.min() >= 20 else 1.0
         pword = "decade" if per == 10.0 else "year"
         span_txt = "%d to %d" % (int(yrs.min()), int(yrs.max()))
+        lo, hi = (b - tc * se) * per, (b + tc * se) * per
         recent = None
         if yrs.max() - yrs.min() >= 60:
             m = yrs >= yrs.max() - 29
             rb, rse, _ = _hac_slope(yrs[m], y.values[m])
             recent = (rb, rse, int(yrs[m].min()), _tcrit(int(m.sum()) - 2))
-        u = (" " + unit) if unit else ""
-        text = ("%s rose by %s%s per %s over %s (95%% range %s to %s)" if b > 0 else
-                "%s fell by %s%s per %s over %s (95%% range %s to %s)") % (
-            col, _fmt(abs(b * per)), u, pword, span_txt, _fmt((b - tc * se) * per), _fmt((b + tc * se) * per))
+        what = ("its %s" % grain) if not ent else grain
+        if lo <= 0 <= hi:
+            # the range includes no change at all: no direction is claimed (review M8, 29 Sep 2026)
+            text = ("%s shows no clear rise or fall over %s: %s moves by %s per %s, with a 95%% range of %s to %s, "
+                    "which includes no change" % (col, span_txt, what, _diff_amt(b * per, st, unit), pword,
+                                                  _fmt(lo), _fmt(hi)))
+        else:
+            text = ("%s rose by %s per %s over %s (%s; 95%% range %s to %s)" if b > 0 else
+                    "%s fell by %s per %s over %s (%s; 95%% range %s to %s)") % (
+                col, _diff_amt(abs(b * per), st, unit), pword, span_txt, what, _fmt(lo), _fmt(hi))
         if recent:
             rb, rse, r0, rtc = recent
-            text += "; since %d the pace is %s%s per decade (%s to %s)" % (
-                r0, _fmt(rb * per), u, _fmt((rb - rtc * rse) * per), _fmt((rb + rtc * rse) * per))
+            text += "; since %d the pace is %s per decade (%s to %s)" % (
+                r0, _diff_amt(rb * per, st, unit), _fmt((rb - rtc * rse) * per), _fmt((rb + rtc * rse) * per))
             if (rb - rtc * rse) > (b + tc * se):
                 text += ", faster than the whole record"
-        if ent:
-            text += " (a year's value is %s)" % grain
         sentences.append(text + ".")
-        rows.append([col, span_txt, str(len(y)), _fmt(b * per), "%s to %s" % (_fmt((b - tc * se) * per), _fmt((b + tc * se) * per)),
+        rows.append([col, span_txt, str(len(y)), _fmt(b * per), "%s to %s" % (_fmt(lo), _fmt(hi)),
                      (_fmt(recent[0] * per) if recent else "")])
         lines.append({"name": col, "x": [int(v) for v in yrs], "y": [float(v) for v in y.values]})
         c0 = float(np.mean(y.values)) - b * float(np.mean(yrs))
@@ -3691,7 +5256,7 @@ def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
             fits.append({"name": col + " since %d" % recent[2], "x0": recent[2], "x1": int(yrs.max()),
                          "y0": c1 + recent[0] * recent[2], "y1": c1 + recent[0] * yrs.max(), "recent": True})
     if not sentences:
-        return {"refused": "trend: no series with 8 or more years of values"}
+        return {"refused": "trend: no series with %d or more complete years of values" % TREND_MIN_YEARS}
     if len(cols) > 4:
         sentences.append("Lines are drawn for the first 4 of the %d series named." % len(cols))
     short = _short_labels([ln["name"] for ln in lines])
@@ -3702,25 +5267,26 @@ def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
         if base:
             f["name"] = short[base] + f["name"][len(base):]
     return {"type": "trend", "title": "Long-run trend", "sentence": " ".join(sentences),
-            "method": "Least-squares line through each %s; the 95%% range uses Newey-West errors, because "
-                      "one year's value leans on the year before." % ("year's value" if ent else grain),
+            "method": "Least-squares line through each complete calendar year's value (%s); the 95%% range uses "
+                      "Newey-West errors, because one year's value leans on the year before." % "; ".join(dict.fromkeys(grains)),
             "table": {"cols": ["Series", "Years", "Points", "Change per " + pword, "95% range", "Last 30 years"], "rows": rows},
             "chart": {"kind": "line", "x_label": "year", "series": lines, "fits": fits}}
 
 
 def _a_extremes(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
-    sentences, rows, bars = [], [], []
+    sentences, rows, bars, grains = [], [], [], []
     for col in cols[:2]:
         st, unit = _col_type(plan, col, layout)
-        y, dropped, grain = _panel_yearly(df, date, ent, col, "sum" if st in ("flow_amount", "count") else "mean")
-        if len(y) < 10:
+        y, grain = _period_values(df, date, ent, col, _how(st))
+        if len(y) < EXTREMES_MIN_YEARS:
             continue
+        grains.append(grain)
         top = y.sort_values(ascending=False).head(5)
         low = y.sort_values().head(3)
         recent10 = sum(1 for k in top.index if k >= y.index.max() - 9)
-        sentences.append("Highest %s years%s: %s; lowest: %s.%s" % (
-            col, (" (%s)" % grain) if ent else "", ", ".join("%d (%s)" % (k, _fmt(v)) for k, v in top.items()),
-            ", ".join("%d (%s)" % (k, _fmt(v)) for k, v in low.items()),
+        sentences.append("Highest %s years (%s): %s; lowest: %s.%s" % (
+            col, grain, ", ".join("%d (%s)" % (k, _amt(v, unit)) for k, v in top.items()),
+            ", ".join("%d (%s)" % (k, _amt(v, unit)) for k, v in low.items()),
             ((" All 5 fall in the last 10 of %d years." % len(y)) if recent10 == 5 else
              (" %d of the 5 fall in the last 10 of %d years." % (recent10, len(y))) if recent10 >= 3 else "")))
         for k, v in top.items():
@@ -3730,10 +5296,9 @@ def _a_extremes(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
         if not bars:
             bars = [{"label": str(k), "value": float(v)} for k, v in top.items()]
     if not sentences:
-        return {"refused": "extremes: no series with 10 or more complete years"}
+        return {"refused": "extremes: no series with %d or more complete years" % EXTREMES_MIN_YEARS}
     return {"type": "extremes", "title": "Highest and lowest years", "sentence": " ".join(sentences),
-            "method": ("Each year's value (%s), ranked." % grain) if ent else
-                      "Each complete calendar year's %s, ranked." % ("value" if not grain.startswith("year") else grain.split(" ", 1)[1]),
+            "method": "Each complete calendar year's value (%s), ranked." % "; ".join(dict.fromkeys(grains)),
             "table": {"cols": ["Series", "Year", "Value", "Rank"], "rows": rows},
             "chart": {"kind": "bars", "series": bars}}
 
@@ -3745,21 +5310,20 @@ def _a_agreement(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
         return {"refused": "agreement: needs two series"}
     a, b = cols[0], cols[1]
     d = pd.to_datetime(df[date], errors="coerce")
-    va = pd.to_numeric(df[a].astype(str).str.replace(",", "", regex=False), errors="coerce")
-    vb = pd.to_numeric(df[b].astype(str).str.replace(",", "", regex=False), errors="coerce")
-    s = pd.DataFrame({"d": d, "a": va, "b": vb}).dropna()
-    if len(s) < 12:
-        return {"refused": "agreement: fewer than 12 dates where both have a value"}
+    s = pd.DataFrame({"d": d, "a": _col_nums(df, a), "b": _col_nums(df, b)}).dropna()
+    if len(s) < AGREEMENT_MIN_DATES:
+        return {"refused": "agreement: fewer than %d dates where both have a value" % AGREEMENT_MIN_DATES}
     diff = s["a"] - s["b"]
     r = float(np.corrcoef(s["a"], s["b"])[0, 1])
     i = int(diff.abs().values.argmax())
     sd = float(diff.std())
     steady = sd < 0.25 * abs(float(diff.mean())) if diff.mean() != 0 else False
+    st, unit = _col_type(plan, a, layout)
     text = ("Over %s shared dates (%s to %s), %s runs %s %s than %s on average, and they move together "
             "(correlation %s); the widest gap was %s on %s." % (
                 format(len(s), ","), s["d"].min().strftime("%Y-%m"), s["d"].max().strftime("%Y-%m"), a,
-                _fmt(abs(diff.mean())), "higher" if diff.mean() > 0 else "lower", b, _fmt(r),
-                _fmt(float(diff.iloc[i])), s["d"].iloc[i].strftime("%Y-%m")))
+                _diff_amt(abs(diff.mean()), st, unit), "higher" if diff.mean() > 0 else "lower", b, _fmt(r),
+                _diff_amt(float(diff.iloc[i]), st, unit), s["d"].iloc[i].strftime("%Y-%m")))
     if steady:
         text += " The gap is nearly constant (its spread is %s), the mark of two series measured from different baselines rather than disagreeing." % _fmt(sd)
     ya = s.groupby(s["d"].dt.year)[["a", "b"]].mean()
@@ -3795,9 +5359,9 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
     rows = []
     for col in cols[:60]:
         st, _u = _col_type(plan, col, layout)
-        y, _d, _g = _yearly(df, date, col, "sum" if st in ("flow_amount", "count") else "mean")
+        y, _g = _period_values(df, date, None, col, _how(st))
         y = y.dropna()
-        if len(y) < 2 or not y.iloc[0]:
+        if len(y) < RANK_MIN_YEARS or not y.iloc[0]:
             continue
         rows.append((col, int(y.index[0]), int(y.index[-1]), float(y.iloc[0]), float(y.iloc[-1]),
                      100.0 * (float(y.iloc[-1]) / float(y.iloc[0]) - 1.0) if y.iloc[0] > 0 else None))
@@ -3808,11 +5372,12 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
     y0 = min(r[1] for r in rows)
     y1 = max(r[2] for r in rows)
     up = [r for r in rows if r[5] > 0]
-    text = ("From %d to %d (yearly averages), %s rose most (%s%%) and %s fell most (%s%%); %d of %d series rose."
-            % (y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5]), len(up), len(rows)))
+    text = ("From %d to %d (yearly averages, or totals for an amount), %s rose most (%s%%) and %s fell most "
+            "(%s%%); %d of %d series rose." % (y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5]),
+                                               len(up), len(rows)))
     if rows[-1][5] > 0:
-        text = "From %d to %d (yearly averages) every series rose: most %s (%s%%), least %s (%s%%)." % (
-            y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5]))
+        text = ("From %d to %d (yearly averages, or totals for an amount) every series rose: most %s (%s%%), least "
+                "%s (%s%%)." % (y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5])))
     shown = rows if len(rows) <= 12 else rows[:6] + rows[-6:]
     return {"type": "rank", "title": "Which series moved most", "sentence": text,
             "method": "Each series' first and last complete calendar year, averaged (a total for an amount); "
@@ -3824,34 +5389,48 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
 
 
 def _a_rank(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    """Entities ranked by the measure's yearly total (a flow or a count) or yearly average (a level) in the
+    latest complete year most of them report (review, 29 Sep 2026: transactions were ranked by the single rows
+    of their latest day, "all 1 region entries"); with no date, by the entity's total or average over the
+    file."""
     import pandas as pd
     if not ent and date and len(cols) >= 2:
         return _a_rank_series(df, date, cols, plan, layout)
     if not ent or not cols:
         return {"refused": "rank: needs an entity column (country, product, region) and a measure"}
     col = cols[0]
-    v = pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False), errors="coerce")
-    s = pd.DataFrame({"e": df[ent].astype(str), "v": v})
-    if date:                               # no date column: one value per entity, nothing to drop for want of a date
+    st, unit = _col_type(plan, col, layout)
+    how = _how(st)
+    word = "total" if how == "sum" else "average"
+    s = pd.DataFrame({"e": _texts_of(df, ent), "v": _col_nums(df, col)})
+    s = s[s["e"] != ""]
+    if date:
         s["d"] = pd.to_datetime(df[date], errors="coerce")
     s = s.dropna()
     if s.empty:
         return {"refused": "rank: %s has no numbers" % col}
+    latest = back = None
     if date:
-        n_ent = s["e"].nunique()
-        per = s.groupby("d")["e"].nunique()
+        s["y"] = s["d"].dt.year
+        _all, full = _full_years(s["d"])
+        s = s[s["y"].isin(full)]
+        if s.empty:
+            return {"refused": "rank: no complete calendar year of %s" % col}
+        g = s.groupby(["y", "e"])["v"]
+        agg = (g.sum() if how == "sum" else g.mean()).unstack("e")
+        per = agg.notna().sum(axis=1)
         good = per[per >= 0.8 * per.max()]
-        latest = good.index.max() if len(good) else s["d"].max()
-        now = s[s["d"] == latest].groupby("e")["v"].sum()
-        years = sorted(s["d"].unique())
-        idx = years.index(latest)
-        back = years[idx - 10] if idx >= 10 else None
-        then = s[s["d"] == back].groupby("e")["v"].sum() if back is not None else None
+        latest = int(good.index.max())
+        now = agg.loc[latest].dropna()
+        back = latest - 10 if (latest - 10) in agg.index else None
+        then = agg.loc[back].dropna() if back is not None else None
+        label = "yearly %s %s" % (word, col)
     else:
-        now, then, latest, back, n_ent = s.groupby("e")["v"].sum(), None, None, None, s["e"].nunique()
+        g = s.groupby("e")["v"]
+        now, then = (g.sum() if how == "sum" else g.mean()), None
+        label = "%s %s" % (word, col)
     top = now.sort_values(ascending=False).head(10)
-    additive = _col_type(plan, col, layout)[0] in ("flow_amount", "count")
-    total = float(now.sum()) if additive else 0.0
+    total = float(now.sum()) if how == "sum" else 0.0
     rows, bars = [], []
     for k, val in top.items():
         chg = ""
@@ -3859,27 +5438,28 @@ def _a_rank(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
             chg = _fmt(100.0 * (val / then[k] - 1.0)) + "%"
         rows.append([k, _fmt(val), (_fmt(100.0 * val / total) + "%") if total > 0 else "", chg])
         bars.append({"label": k, "value": float(val)})
-    when = pd.Timestamp(latest).strftime("%Y") if latest is not None else ""
-    head = ", ".join("%s (%s)" % (k, _fmt(v)) for k, v in top.head(3).items())
+    head = ", ".join("%s (%s)" % (k, _amt(v, unit)) for k, v in top.head(3).items())
     share3 = 100.0 * float(top.head(3).sum()) / total if total > 0 else None
     tail = ("; together %s%% of the total over all %d %s entries" % (_fmt(share3), len(now), ent)) if share3 else ""
-    text = ("In %s the largest %s were %s%s." % (when, col, head, tail) if when
-            else "The largest %s values were %s%s." % (col, head, tail))
+    text = ("In %d the largest %s by %s were %s%s." % (latest, label, ent, head, tail) if latest is not None
+            else "The largest %s values by %s were %s%s." % (label, ent, head, tail))
     if then is not None and len(rows):
         ch = [(k, 100.0 * (now[k] / then[k] - 1.0)) for k in top.index if k in then.index and then[k] > 0]
         if ch:
             fast = max(ch, key=lambda x: x[1])
-            text += " Over the 10 %s before, the fastest riser among them was %s (%s%%)." % (
-                "steps", fast[0], _fmt(fast[1]))
+            text += " Over the 10 years before, the fastest riser among them was %s (%s%%)." % (fast[0], _fmt(fast[1]))
     mp = None
     if 5 <= len(now) <= 300:
-        # every entity's value at that date: the page draws a world map when most of the names are countries
-        mp = {"measure": col, "when": when, "values": {str(k): float(v) for k, v in now.items()}}
-    return {"type": "rank", "title": "Largest %s by %s%s" % (col, ent, (" in " + when) if when else ""), "sentence": text, "map": mp,
-            "method": (("The latest date that at least 80%% of the %s entries report; change against the date 10 steps before%s."
-                        % (ent, (" (" + pd.Timestamp(back).strftime("%Y") + ")") if back is not None else "")) if date
-                       else "Each %s entry's value in the file (summed where it repeats)." % ent),
-            "table": {"cols": [ent, col, "Share of all", "Change over 10 steps"], "rows": rows},
+        # every entity's value that year: the page draws a world map when most of the names are countries
+        mp = {"measure": col, "when": str(latest) if latest is not None else "", "values": {str(k): float(v) for k, v in now.items()}}
+    return {"type": "rank", "title": "Largest %s by %s%s" % (col, ent, (" in %d" % latest) if latest is not None else ""),
+            "sentence": text, "map": mp,
+            "method": (("Each %s entry's %s for each complete calendar year; the latest year at least 80%% of the entries "
+                        "report%s." % (ent, "yearly total (every row added)" if how == "sum" else "yearly average",
+                                       ("; change against 10 years before (%d)" % back) if back is not None else ""))
+                       if date else "Each %s entry's %s over the file." % (
+                           ent, "total (every row added)" if how == "sum" else "average")),
+            "table": {"cols": [ent, col, "Share of all", "Change over 10 years"], "rows": rows},
             "chart": {"kind": "bars", "series": bars}}
 
 
@@ -3887,7 +5467,7 @@ def _a_share(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
     import pandas as pd
     if len(cols) < 2:
         return {"refused": "share: needs two or more parts"}
-    num = {c: pd.to_numeric(df[c].astype(str).str.replace(",", "", regex=False), errors="coerce") for c in cols[:8]}
+    num = {c: _col_nums(df, c) for c in cols[:8]}
     f = pd.DataFrame(num)
     f["_d"] = pd.to_datetime(df[date], errors="coerce") if date else 0
     g = f.groupby("_d")[list(num)].sum(min_count=1).dropna(how="any")
@@ -3909,9 +5489,14 @@ def _a_share(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
 
 
 def _col_nums(df: Any, col: str):
+    """The column's numbers as the engine read them (NaN where it read none; all NaN for a column the engine
+    reads as text or dates)."""
+    import numpy as np
     import pandas as pd
-    return pd.to_numeric(df[col].astype(str).str.replace(",", "", regex=False).str.rstrip("%").str.strip(),
-                         errors="coerce")
+    s = df[col]
+    if _series_kind(s) != "number":
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    return pd.to_numeric(s, errors="coerce").astype(float).replace([np.inf, -np.inf], np.nan)
 
 
 def _center(vals: Any, st: str) -> float:
@@ -3949,12 +5534,12 @@ def _a_compare(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     if col == seg:
         return {"refused": "compare: the measure and the groups are the same column"}
     st, unit = _col_type(plan, col, layout)
-    s = pd.DataFrame({"g": df[seg].astype(str).str.strip(), "v": _col_nums(df, col)}).dropna()
+    s = pd.DataFrame({"g": _texts_of(df, seg), "v": _col_nums(df, col)}).dropna()
     s = s[s["g"] != ""]
     counts = s["g"].value_counts()
-    keep = counts[counts >= 5].index[:12]
+    keep = counts[counts >= COMPARE_MIN_GROUP].index[:12]
     if len(keep) < 2:
-        return {"refused": "compare: fewer than two groups with 5 or more values"}
+        return {"refused": "compare: fewer than two groups with %d or more values" % COMPARE_MIN_GROUP}
     rows, bars = [], []
     for g in keep:
         v = s.loc[s["g"] == g, "v"].values
@@ -3967,20 +5552,19 @@ def _a_compare(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     b = s.loc[s["g"] == bot[0], "v"].values
     d = [_center(a[rng.integers(0, len(a), len(a))], st) - _center(b[rng.integers(0, len(b), len(b))], st) for _ in range(999)]
     dlo, dhi = float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))
-    u = (" " + unit) if unit else ""
     avg = "energy average" if st == "log_scale" else "average"
-    text = ("By %s, the highest %s %s is %s (%s%s, 95%% range %s to %s, %d rows) and the lowest %s (%s%s, %d rows): "
-            "a gap of %s%s (95%% range %s to %s)%s." % (
-                seg, avg, col, top[0], _fmt(top[2]), u, _fmt(top[3]), _fmt(top[4]), top[1], bot[0], _fmt(bot[2]), u,
-                bot[1], _fmt(top[2] - bot[2]), u, _fmt(dlo), _fmt(dhi),
+    text = ("By %s, the highest %s %s is %s (%s, 95%% range %s to %s, %d rows) and the lowest %s (%s, %d rows): "
+            "a gap of %s (95%% range %s to %s)%s." % (
+                seg, avg, col, top[0], _amt(top[2], unit), _fmt(top[3]), _fmt(top[4]), top[1], bot[0], _amt(bot[2], unit),
+                bot[1], _diff_amt(top[2] - bot[2], st, unit), _fmt(dlo), _fmt(dhi),
                 "" if dlo > 0 else ", a range that includes no gap at all, so the two may not differ"))
     if st == "log_scale":
         text += " Decibels are averaged as energy (10^(dB/10)), not as plain numbers."
     if len(counts) > len(keep):
         text += " %d smaller groups are not shown." % (len(counts) - len(keep))
     return {"type": "compare", "title": "%s by %s" % (col, seg), "sentence": text,
-            "method": "Each group's %s with a 95%% bootstrap range (999 resamples); groups with fewer than 5 values "
-                      "are left out. An association with the group, not its cause." % avg,
+            "method": "Each group's %s with a 95%% bootstrap range (999 resamples); groups with fewer than %d values "
+                      "are left out. An association with the group, not its cause." % (avg, COMPARE_MIN_GROUP),
             "table": {"cols": [seg, "Rows", avg.capitalize(), "95% range", "Median"],
                       "rows": [[r[0], format(r[1], ","), _fmt(r[2]), "%s to %s" % (_fmt(r[3]), _fmt(r[4])), _fmt(r[5])] for r in rows]},
             "chart": {"kind": "bars", "series": [{"label": r[0], "value": r[2]} for r in rows]}}
@@ -3994,8 +5578,9 @@ def _a_relationship(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any
     x, y = cols[0], cols[1]
     s = pd.DataFrame({"x": _col_nums(df, x), "y": _col_nums(df, y)}).dropna()
     n = len(s)
-    if n < 10 or s["x"].nunique() < 3 or s["y"].nunique() < 3:
-        return {"refused": "relationship: fewer than 10 rows with both values, or a column that barely varies"}
+    if n < RELATIONSHIP_MIN_ROWS or s["x"].nunique() < 3 or s["y"].nunique() < 3:
+        return {"refused": "relationship: fewer than %d rows with both values, or a column that barely varies"
+                % RELATIONSHIP_MIN_ROWS}
     rho = float(s["x"].rank().corr(s["y"].rank()))
     z = np.arctanh(max(min(rho, 0.999999), -0.999999))
     se = 1.06 / np.sqrt(max(n - 3, 1))            # Fieller et al. for Spearman
@@ -4022,14 +5607,14 @@ def _a_distribution(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any
     col = cols[0]
     st, unit = _col_type(plan, col, layout)
     v = _col_nums(df, col).dropna().values
-    if len(v) < 10:
-        return {"refused": "distribution: fewer than 10 values in %s" % col}
+    if len(v) < DISTRIBUTION_MIN_VALUES:
+        return {"refused": "distribution: fewer than %d values in %s" % (DISTRIBUTION_MIN_VALUES, col)}
     q = np.percentile(v, [10, 25, 50, 75, 90])
-    u = (" " + unit) if unit else ""
-    text = ("%s: half the %s values lie between %s and %s%s (median %s); one in ten is below %s and one in ten above %s."
-            % (col, format(len(v), ","), _fmt(q[1]), _fmt(q[3]), u, _fmt(q[2]), _fmt(q[0]), _fmt(q[4])))
+    text = ("%s: half the %s values lie between %s and %s (median %s); one in ten is below %s and one in ten above %s."
+            % (col, format(len(v), ","), _amt(q[1], unit, tail=False), _amt(q[3], unit), _amt(q[2], unit, tail=False),
+               _amt(q[0], unit, tail=False), _amt(q[4], unit, tail=False)))
     if st == "log_scale":
-        text += " The energy average is %s%s, above the median because loud values dominate energy." % (_fmt(_center(v, st)), u)
+        text += " The energy average is %s, above the median because loud values dominate energy." % _amt(_center(v, st), unit)
     zeros = float((v == 0).mean())
     if zeros >= 0.05:
         text += " %s%% of the values are exactly zero." % _fmt(100 * zeros)
@@ -4053,9 +5638,9 @@ out up about after again am being both each few how im ive dont didnt its it's o
 def _a_themes(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     import collections
     col = cols[0]
-    texts = [str(t) for t in df[col].tolist() if str(t).strip()]
-    if len(texts) < 20:
-        return {"refused": "themes: fewer than 20 non-empty texts in %s" % col}
+    texts = [t for t in _texts_of(df, col).tolist() if t]
+    if len(texts) < THEMES_MIN_TEXTS:
+        return {"refused": "themes: fewer than %d non-empty texts in %s" % (THEMES_MIN_TEXTS, col)}
     words, pairs = collections.Counter(), collections.Counter()
     for t in texts:
         toks = [w for w in re.findall(r"[a-z][a-z']{2,}", t.lower()) if w not in _STOP and not re.search(r"\d", w)]
@@ -4080,25 +5665,26 @@ def _a_themes(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
 
 
 def _design(df: Any, cols: List[str]):
-    """Numeric columns as they are; a column of categories as one-hot columns of its 8 commonest values
-    (the rest together, the commonest left out as the base). Returns (matrix, groups, names, rows used)."""
+    """Columns the engine reads as numbers as they are; any other column as categories: one-hot columns of its
+    8 commonest values (the rest together, the commonest left out as the base). Returns (matrix, groups, names,
+    rows used)."""
     import numpy as np
     import pandas as pd
     parts, groups, names = [], [], []
     for c in cols:
-        num = _col_nums(df, c)
-        if num.notna().mean() >= 0.9:
-            parts.append(num.rename(c))
+        if _series_kind(df[c]) == "number":            # a column the engine reads as numbers; a missing one drops its row
+            parts.append(_col_nums(df, c).rename(c))
             groups.append(c)
             names.append(c)
         else:
-            v = df[c].astype(str).str.strip()
+            v = _texts_of(df, c)
             top = v[v != ""].value_counts().index[:8]
             if len(top) < 2:
                 continue
+            miss = v == ""
             v = v.where(v.isin(top), "other")
-            for lv in [x for x in list(top[1:]) + (["other"] if (v == "other").any() else [])]:
-                parts.append((v == lv).astype(float).rename("%s = %s" % (c, lv)))
+            for lv in [x for x in list(top[1:]) + (["other"] if ((v == "other") & ~miss).any() else [])]:
+                parts.append((v == lv).astype(float).where(~miss).rename("%s = %s" % (c, lv)))
                 groups.append(c)
                 names.append("%s = %s" % (c, lv))
     if not parts:
@@ -4108,30 +5694,56 @@ def _design(df: Any, cols: List[str]):
     return X[ok].values.astype(float), groups, names, ok
 
 
-def _cv_r2(X: Any, y: Any, folds: Any) -> Tuple[float, float]:
-    """Out-of-sample R squared and mean absolute error of least squares over the folds."""
+def _oos(X: Any, y: Any, splits: List[Tuple[Any, Any]]) -> Tuple[float, float, float, int]:
+    """Least squares scored out of sample over (training rows, scored rows) splits: (R squared against the
+    baseline, mean absolute error, the baseline's mean absolute error, rows scored). The baseline predicts
+    each scored row with the mean of its training rows, the forecast a person could make without a model."""
     import numpy as np
-    pred = np.empty_like(y)
-    for f in np.unique(folds):
-        tr, te = folds != f, folds == f
-        A = np.column_stack([np.ones(tr.sum()), X[tr]])
+    pred = np.full(len(y), np.nan)
+    base = np.full(len(y), np.nan)
+    for tr, te in splits:
+        A = np.column_stack([np.ones(len(tr)), X[tr]])
         beta = np.linalg.lstsq(A, y[tr], rcond=None)[0]
-        pred[te] = np.column_stack([np.ones(te.sum()), X[te]]) @ beta
-    base = np.empty_like(y)
-    for f in np.unique(folds):
-        base[folds == f] = y[folds != f].mean()
-    sse, sst = float(((y - pred) ** 2).sum()), float(((y - base) ** 2).sum())
-    return (1.0 - sse / sst if sst > 0 else 0.0), float(np.abs(y - pred).mean())
+        pred[te] = np.column_stack([np.ones(len(te)), X[te]]) @ beta
+        base[te] = y[tr].mean()
+    sc = ~np.isnan(pred)
+    sse, sst = float(((y[sc] - pred[sc]) ** 2).sum()), float(((y[sc] - base[sc]) ** 2).sum())
+    return ((1.0 - sse / sst) if sst > 0 else 0.0, float(np.abs(y[sc] - pred[sc]).mean()),
+            float(np.abs(y[sc] - base[sc]).mean()), int(sc.sum()))
+
+
+def _forward_blocks(d: Any, k: int) -> Optional[List[Tuple[Any, Any]]]:
+    """Forward-chaining splits over rows with dates d (numpy datetime64): the rows in date order cut into k
+    blocks of about equal size, never splitting one date across two blocks; block j (j >= 1) is scored by a
+    model trained on the blocks before it. None when fewer than 3 blocks can be scored."""
+    import numpy as np
+    order = np.argsort(d, kind="stable")
+    ds = d[order]
+    n = len(ds)
+    starts = np.flatnonzero(np.r_[True, ds[1:] != ds[:-1]])          # first row of each distinct date
+    block = np.minimum((starts * k) // max(n, 1), k - 1)
+    ids = np.empty(n, dtype=int)
+    for i, s in enumerate(starts):
+        e = starts[i + 1] if i + 1 < len(starts) else n
+        ids[s:e] = block[i]
+    got = sorted(set(ids.tolist()))
+    splits = []
+    for j in got[1:]:
+        tr, te = order[ids < j], order[ids == j]
+        if len(tr) and len(te):
+            splits.append((tr, te))
+    return splits if len(splits) >= 3 else None
 
 
 def _a_predict(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     import numpy as np
+    import pandas as pd
     target = cols[0]
     roles = {c["name"]: c for c in plan.get("columns", []) if c.get("name")}
     drivers = [c for c in cols[1:] if c in df.columns and c not in (target, date)]
     if not drivers:
         drivers = [c for c, m in roles.items() if m.get("role") in ("driver", "segment") and c in df.columns
-                   and c not in (target, date, ent)][:8]
+                   and c not in (target, date)][:8]
     drivers = drivers[:8]
     if not drivers:
         return {"refused": "predict: no driver columns named (the plan's columns after the target)"}
@@ -4139,43 +5751,75 @@ def _a_predict(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     X, groups, names, ok = _design(df, drivers)
     if X is None:
         return {"refused": "predict: none of the drivers can enter a model"}
+    n_all = len(df)
+    miss_driver = int((~ok).sum())
     y = y_all[ok].values.astype(float)
     keep = ~np.isnan(y)
+    miss_target = int((~keep).sum())
     X, y = X[keep], y[keep]
+    d = None
+    if date:
+        d_all = pd.to_datetime(df[date], errors="coerce")[ok].values[keep]
+        has = ~pd.isna(d_all)
+        if has.sum() >= PREDICT_MIN_ROWS:
+            d = d_all
+    miss_date = 0
+    if d is not None:
+        has = ~pd.isna(d)
+        miss_date = int((~has).sum())
+        X, y, d = X[has], y[has], d[has]
     n, p = X.shape
-    if n < 30 or n < 10 * (p + 1):
-        return {"refused": "predict: %d complete rows for %d model terms; at least 10 rows a term are needed" % (n, p + 1)}
-    folds = np.random.default_rng(20260925).permutation(n) % 5
-    r2, mae = _cv_r2(X, y, folds)
-    mae0 = float(np.mean([np.abs(y[folds == f] - y[folds != f].mean()).mean() for f in range(5)]))
+    if n < PREDICT_MIN_ROWS or n < PREDICT_ROWS_PER_TERM * (p + 1):
+        return {"refused": "predict: %d complete rows for %d model terms; at least %d rows a term are needed"
+                % (n, p + 1, PREDICT_ROWS_PER_TERM)}
+    splits = _forward_blocks(d, PREDICT_BLOCKS) if d is not None else None
+    if splits is not None:
+        design = ("forward-chaining: the rows sorted by %s and cut into %d blocks, each of the last %d predicted by "
+                  "a model trained only on the blocks before it" % (date, PREDICT_BLOCKS, len(splits)))
+        how = "trained on earlier dates and scored on the %d later blocks" % len(splits)
+    else:
+        folds = np.random.default_rng(20260925).permutation(n) % 5
+        splits = [(np.flatnonzero(folds != f), np.flatnonzero(folds == f)) for f in range(5)]
+        design = ("5 random folds, because %s" % ("the rows have too few distinct dates to score later rows by "
+                                                  "earlier ones" if d is not None else "the file has no usable date"))
+        how = "scored on held-out rows in 5 random folds"
+    r2, mae, mae0, scored = _oos(X, y, splits)
     imp = []
     for g in dict.fromkeys(groups):
         m = np.array([gg != g for gg in groups])
-        r2g = _cv_r2(X[:, m], y, folds)[0] if m.any() else 0.0
+        r2g = _oos(X[:, m], y, splits)[0] if m.any() else 0.0
         imp.append((g, r2 - r2g))
     imp.sort(key=lambda t: -t[1])
     A = np.column_stack([np.ones(n), X])
     beta = np.linalg.lstsq(A, y, rcond=None)[0][1:]
     st, unit = _col_type(plan, target, layout)
-    u = (" " + unit) if unit else ""
     if r2 < 0.05:
-        text = ("A straight-line model of %s from %s does not predict held-out rows better than the average does "
-                "(out-of-sample R squared %s, 5-fold): these columns say little about %s on their own."
-                % (target, ", ".join(drivers), _fmt(r2), target))
+        text = ("A straight-line model of %s from %s, %s, does not predict them better than the mean of its "
+                "training rows does (out-of-sample R squared %s): these columns say little about %s on their own."
+                % (target, ", ".join(drivers), how, _fmt(r2), target))
     else:
-        text = ("A straight-line model of %s from %s predicts rows it did not see with R squared %s (5-fold), a typical "
-                "error of %s%s against %s%s for the average alone. %s carries most of it (R squared falls by %s without it)."
-                % (target, ", ".join(drivers), _fmt(r2), _fmt(mae), u, _fmt(mae0), u, imp[0][0], _fmt(imp[0][1])))
+        text = ("A straight-line model of %s from %s, %s, predicts them with R squared %s and a typical error of "
+                "%s, against %s for the mean of its training rows. %s carries most of it (R squared falls by %s "
+                "without it)." % (target, ", ".join(drivers), how, _fmt(r2), _diff_amt(mae, st, unit),
+                                   _diff_amt(mae0, st, unit), imp[0][0], _fmt(imp[0][1])))
     text += " An association the model learned, not a cause."
+    dropped = [(miss_driver, "a missing or unreadable driver"), (miss_target, "a missing or unreadable %s" % target),
+               (miss_date, "no date")]
+    drop_txt = "; ".join("%s for %s" % (format(k, ","), w) for k, w in dropped if k) or "none"
     coefs = {nm: b for nm, b in zip(names, beta)}
-    rows = [[g, _fmt(d) if d > 0.005 else "adds nothing held-out", "; ".join("%s %s" % (nm.split(" = ", 1)[-1] if " = " in nm else "per unit", _fmt(coefs[nm]))
-                                   for nm in names if (nm == g or nm.startswith(g + " = ")))] for g, d in imp]
+    rows = [[g, _fmt(dd) if dd > 0.005 else "adds nothing held-out", "; ".join("%s %s" % (nm.split(" = ", 1)[-1] if " = " in nm else "per unit", _fmt(coefs[nm]))
+                                     for nm in names if (nm == g or nm.startswith(g + " = ")))] for g, dd in imp]
+    rows.append(["Typical held-out error (MAE)", _fmt(mae), "against %s for the mean of the training rows" % _fmt(mae0)])
+    rows.append(["Rows", "%s of %s used, %s scored" % (format(n, ","), format(n_all, ","), format(scored, ",")),
+                 "dropped: %s" % drop_txt])
     return {"type": "predict", "title": "What predicts %s" % target, "sentence": text,
-            "method": "Least squares on %s complete rows; categories as one column per value (their commonest value "
-                      "is the base); scored on held-out rows in 5 folds, and each driver by how much the held-out "
-                      "R squared falls without it." % format(n, ","),
+            "method": "Least squares on %s complete rows (%s of %s dropped: %s); categories as one column per value "
+                      "(their commonest value is the base); scored out of sample by %s, against the mean of the "
+                      "training rows; each driver by how much the out-of-sample R squared falls without it."
+                      % (format(n, ","), format(n_all - n, ","), format(n_all, ","), drop_txt, design),
             "table": {"cols": ["Driver", "R squared lost without it", "Effect (per unit, or against the base value)"], "rows": rows},
-            "chart": {"kind": "bars", "series": [{"label": g, "value": max(0.0, d)} for g, d in imp]}}
+            "chart": {"kind": "bars", "series": [{"label": g, "value": max(0.0, dd)} for g, dd in imp]},
+            "_used": [target] + list(drivers) + ([date] if d is not None else [])}
 
 
 _ANALYSIS_FN = {"trend": _a_trend, "extremes": _a_extremes, "agreement": _a_agreement, "rank": _a_rank, "share": _a_share,
@@ -4184,73 +5828,262 @@ _ANALYSIS_FN = {"trend": _a_trend, "extremes": _a_extremes, "agreement": _a_agre
 _TAKES_BY = ("compare", "relationship", "distribution", "themes", "predict")
 
 
-def _run_analyses(data: bytes, plan: Dict[str, Any], layout: Optional[Dict[str, Any]], withheld: Any) -> Dict[str, Any]:
-    """The plan's analyses, computed here. Never raises: a request that cannot run is refused and named."""
+# how many named columns each analysis reads (the rest are named but unused), for the unreadable note
+_USES = {"trend": 4, "extremes": 2, "agreement": 2, "compare": 1, "relationship": 2, "distribution": 1, "share": 8,
+         "themes": 0}
+
+
+def _unreadable_note(text: str, used: List[str], unread: Dict[str, int], undated: int = 0,
+                     date: Optional[str] = None) -> str:
+    """The analysis sentence with the cells it could not count said at its end: "(127 unreadable values in
+    units are not counted)", and, for an analysis over time, "(12 rows with no order_date are not counted)".
+    The counts are over the rows the engine kept, the rows the analysis read, so the sentence says exactly
+    what was left out of what it counted."""
+    parts = [(c, int(unread[c])) for c in dict.fromkeys(used) if c != date and unread.get(c)]
+    notes = []
+    if parts:
+        words = ["%s in %s" % (_n_values(n, "unreadable value"), c) if i == 0 else "%s in %s" % (format(n, ","), c)
+                 for i, (c, n) in enumerate(parts)]
+        one = len(parts) == 1 and parts[0][1] == 1
+        notes.append("%s %s not counted" % (_listed(words), "is" if one else "are"))
+    if undated and date:
+        notes.append("%s with no %s %s not counted" % (_n_values(int(undated), "row"), date,
+                                                      "is" if int(undated) == 1 else "are"))
+    if not notes:
+        return text
+    note = " (%s)" % "; ".join(notes)
+    first = _first_sentence(text)
+    if first.endswith(".") and text.startswith(first):
+        return first[:-1] + note + "." + text[len(first):]
+    return text.rstrip() + note
+
+
+def _gate_state(cr: Any, limit: float) -> Dict[str, Any]:
+    """The engine's own gate, as the AI's analyses and the planner's feedback respect it (integration review,
+    29 Sep 2026: the analyses ran on the rows the engine kept, with a caveat, after the engine had refused its
+    own analysis because it set aside more than `limit` of the rows; the rest may not stand for the file).
+    {"over", "pct", "limit" (both in percent), "aside", "rows"}.
+
+    When the gate trips, the planner is not asked again (_plan_signals sends nothing): a plan cannot make an
+    unreadable cell readable, so a re-plan is either a wasted call or a plan that sets the unreadable column
+    aside and moves the analysis to another column (review cases f and g: the order date is "TBD" on 30% of
+    rows, and the other date is a refund date that runs the wrong way), the very result the gate exists to
+    prevent. The narrower signal kept until the final review (29 Sep 2026: "setting aside a column the
+    analyses do not read may let them run") is gone too: with two side dates unreadable on the same rows it
+    told the planner that one column alone held those rows back, which was false."""
+    total = int(getattr(cr, "total_in", 0) or 0)
+    rate = float(getattr(cr, "suspect_quarantine_rate", 0.0) or 0.0) if total else 0.0
+    aside = int(getattr(cr, "rows_quarantined", 0) or 0)
+    return {"over": bool(total) and rate > limit, "pct": round(100.0 * rate, 4),
+            "limit": round(100.0 * limit, 2), "aside": aside, "rows": total}
+
+
+def _run_analyses(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The plan's analyses, computed here on the rows the engine kept, as it read them (_analysis_frame). Never
+    raises: a request that cannot run is refused and named. A column the visitor withheld or coded is never
+    read: never an axis, a group, a driver or a measure, and a withheld one is never named (it is "a column you
+    withheld"). ctx: see _analysis_frame, plus "private" (a function: a file's column name to "withhold",
+    "code" or None)."""
     out, refused = [], []
     asked = [a for a in (plan.get("analyses") or []) if isinstance(a, dict)][:ANALYSES_MAX]
     if not asked:
         return {"items": [], "refused": []}
+    gate = ctx.get("gate")
+    if gate is not None:
+        # the engine refused its own business analysis: none of the plan's analyses is drawn from the rows it
+        # kept either (_gate_state says why, and why the planner is then not asked again)
+        kinds = list(dict.fromkeys(str(a.get("type") or "analysis")[:40] for a in asked))
+        why = ("the engine set aside %s of the rows (%s of %s), over its %s limit, so no analysis is drawn from the rest"
+               % (_pct_text(gate["pct"]), format(gate["aside"], ","), format(gate["rows"], ","), "%g%%" % gate["limit"])
+               if gate.get("over") else "the engine's business analysis did not run, so no analysis is drawn from its rows")
+        return {"items": [], "refused": ["%s: %s" % (", ".join(kinds), why)],
+                "rows": {"kept": int(gate["rows"]) - int(gate["aside"]), "set_aside": int(gate["aside"])}, "date": None,
+                "gate": gate,
+                "note": "Not computed: the engine stopped its own business analysis because it set aside too many rows "
+                        "for the rest to stand for the file, and the AI's analyses stop with it. The data tests and the "
+                        "data-health findings still stand."}
     try:
-        df, date, ent = _analysis_frame(data, plan, layout)
+        df, date, ent, no_date, info = _analysis_frame(ctx, plan, layout)
     except Exception as exc:  # noqa: BLE001
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
         return {"items": [], "refused": ["the analyses could not read the file (%s)" % type(exc).__name__]}
-    hidden = set(str(c) for c in (withheld or []))
+    private = ctx.get("private") or (lambda _n: None)
+    roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name")}
+    ent_hidden = next((private(roles[r]) and roles[r] for r in ("entity", "geography") if roles.get(r) and private(roles[r])), None)
     for a in asked:
         t = a.get("type")
         if t not in _ANALYSIS_FN:
             refused.append("%s: not on the menu" % str(t)[:40])
             continue
-        if ent and ent in hidden and t in ("rank", "share"):
-            refused.append("%s: %s is withheld as personal, so no entity is named" % (t, ent))
+        if not date and t in _TIME_ANALYSES:
+            refused.append("%s: no usable date column (%s)" % (t, no_date))
             continue
-        if not date and t in ("trend", "extremes", "agreement"):
-            refused.append("%s: the file has no date column" % t)
-            continue
-        named = _resolve(a.get("columns"), df, layout, date, ent)
-        cols = [c for c in named if c not in hidden]
+        names = [str(c) for c in (a.get("columns") or [])]
+        hidden = [(n, private(n)) for n in names if private(n)]
+        names = [n for n in names if not private(n)]
         by = a.get("by")
-        if by and by in hidden:
-            refused.append("%s: %s is withheld as personal, so it is not used to group rows" % (t, by))
+        if by and private(by):
+            refused.append("%s: %s, so it does not group the rows" % (t, _who(by, private(by))))
             continue
-        if named and not cols:
-            refused.append("%s: %s is withheld as personal" % (t, ", ".join(named[:3])))
+        if t in ("rank", "share") and not ent and ent_hidden:
+            refused.append("%s: the plan's entity column is %s, so no entity is named" % (
+                t, _who(ent_hidden, private(ent_hidden)) if private(ent_hidden) != "withhold" else "a column you withheld"))
             continue
+        if hidden and not names:
+            refused.append("%s: %s" % (t, "every column it names is one you withheld or coded" if len(hidden) > 1 else
+                                       "it names only %s" % _who(*hidden[0])))
+            continue
+        # a driver may be the segment or entity column (review: predict refused the region it was asked to use)
+        cols = _resolve(names, df, layout, date, None if t == "predict" else ent)
         if not cols:
-            refused.append("%s: none of %s is a column here" % (t, ", ".join(map(str, (a.get("columns") or [])[:4])) or "the named columns"))
+            alt = _resolve(names, df, layout, date, None)
+            if alt and t in _NUMERIC_ANALYSES and info["kinds"].get(alt[0]) != "number":
+                refused.append("%s: the engine reads %s as %s, not numbers" % (
+                    t, alt[0], "dates" if info["kinds"].get(alt[0]) == "date" else "text"))
+            elif alt:
+                refused.append("%s: %s groups the rows here (the plan's entity or segment), so it is not also the "
+                               "measure" % (t, alt[0]))
+            else:
+                # a column the plan set aside, or one the table the engine read does not have, is said to be so
+                aside = set()
+                for op in plan.get("operations") or []:
+                    if isinstance(op, dict) and op.get("op") == "set_aside":
+                        aside |= set(str(c) for c in op.get("columns") or [])
+                    elif isinstance(op, dict) and op.get("op") == "keep_columns" and len(op.get("columns") or []) >= 2:
+                        aside |= set(str(c) for c in names if c not in (op.get("columns") or []))
+                gone = [n for n in names if n in aside]
+                refused.append("%s: %s" % (t, ("the plan set %s aside, so the engine did not read it" % ", ".join(gone[:3])) if gone
+                                           else "the table the engine read has no column %s" % (", ".join(names[:4]) or "named")))
             continue
+        need = {"relationship": 2, "agreement": 2, "share": 8}.get(t, 1)
+        if t in _NUMERIC_ANALYSES or t == "predict":
+            text_cols = [c for c in cols[:need if t != "trend" else 4] if info["kinds"].get(c) != "number"]
+            if t == "predict":
+                text_cols = [c for c in cols[:1] if info["kinds"].get(c) != "number"]
+            if text_cols:
+                c0 = text_cols[0]
+                refused.append("%s: the engine reads %s as %s, not numbers" % (
+                    t, c0, "dates" if info["kinds"].get(c0) == "date" else "text"))
+                continue
         try:
             res = (_ANALYSIS_FN[t](df, date, ent, cols, plan, layout, by=by) if t in _TAKES_BY
                    else _ANALYSIS_FN[t](df, date, ent, cols, plan, layout))
         except Exception as exc:  # noqa: BLE001 - one analysis never stops the report
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
             res = {"refused": "%s failed (%s)" % (t, type(exc).__name__)}
         if res.get("refused"):
             refused.append(res["refused"])
-        else:
-            res["columns"] = cols
-            res["graded"] = False
-            out.append(res)
-    return {"items": out, "refused": refused,
-            "note": "Asked for by the AI plan, computed by the engine's adapter from the cleaned file. These "
-                    "are descriptive: the change gate did not grade them. Units are the AI's reading of the "
-                    "column; the numbers are the file's."}
+            continue
+        used = res.pop("_used", None)
+        dated = bool(date) and t in _TIME_ANALYSES + ("rank", "share")      # these read the date when there is one
+        if used is None:
+            k = _USES.get(t, 60 if (t == "rank" and not ent and date and len(cols) >= 2) else 1)
+            used = list(cols[:k]) + ([date] if dated else [])
+        if dated:
+            res["method"] = (res.get("method") or "").rstrip() + " Dates from the %s column." % date
+        if t != "themes":
+            res["sentence"] = _unreadable_note(res.get("sentence") or "", used, info["unread"],
+                                               info["undated"] if dated else 0, date)
+            for c in dict.fromkeys(used):
+                if c in info["mixed"]:
+                    res["sentence"] = res["sentence"].rstrip() + (
+                        " %s mixes two scales (%s values between 0 and 1, %s above 1); every value is read on the "
+                        "0-100 scale." % (c, format(info["mixed"][c][0], ","), format(info["mixed"][c][1], ",")))
+        res["columns"] = cols
+        res["graded"] = False
+        out.append(res)
+    kept, aside = info["kept"], info["aside"]
+    return {"items": out, "refused": refused, "rows": {"kept": kept, "set_aside": aside}, "date": date,
+            "note": "Asked for by the AI plan, computed by the engine's adapter on the %s rows the engine kept%s, "
+                    "with every value as the engine read it. These are descriptive: the change gate did not grade "
+                    "them. A value the engine could not read is counted as missing, and each sentence says how "
+                    "many. A column you withheld or coded is never used. Units are the AI's reading of the column; "
+                    "the numbers are the file's." % (format(kept, ","), (" (the %s it set aside are not counted)" %
+                                                                         format(aside, ",")) if aside else "")}
 
 
 _SHORT_LINE = re.compile(r"^([\d,]+) months of history \(([^)]*)\): too short to compare the latest 12 months with the "
                          r"12 before, so no change is tested; the averages over the period are below\.")
 
 
-def _mend_short_history_line(rep: Dict[str, Any]) -> None:
+_COVERS_LINE = re.compile(r"^The file covers ([\d,]+) months \(([^)]*)\); comparing the latest 12 months with the 12 before "
+                          r"needs 24, so no change over time is tested\.$")
+_MONTHS_HISTORY = re.compile(r"There are ([\d,]+) months of history; .*$")
+_MONTHS_TOO_SHORT = re.compile(r"([\d,]+) months of history is too short to replay and check one\.")
+
+
+def _mend_short_history_line(rep: Dict[str, Any], clean: Any = None, date_col: Optional[str] = None) -> None:
     """The engine's bottom line for a file whose change tests settled nothing says the history is "too short"
     whatever its length (review 25 Sep 2026: 1,758 months of temperatures read "too short"). From 24 months
-    on, that is not why, so the line says what happened. The fix lives here, not in the engine's narrate.py,
-    so the engine's decision code (and the benchmark receipt measured on it) is unchanged."""
+    on, that is not why, so the line says what happened. For yearly rows (review M9, 29 Sep 2026: 30 yearly
+    values read "30 months of history (1995-12 to 2024-12)") it says what the rows are, that the monthly test
+    does not apply, and quotes the lead analysis; the engine's lines that count those rows as months say the
+    same. The fix lives here, not in the engine's narrate.py, so the engine's decision code (and the benchmark
+    receipt measured on it) is unchanged."""
+    import pandas as pd
     st = rep.get("story") or {}
     h = st.get("headline")
     m = _SHORT_LINE.match(h) if isinstance(h, str) else None
+    grain = _date_grain(clean, date_col) if clean is not None and date_col else ""
+    if grain == "yearly":
+        d = pd.to_datetime(clean[date_col], errors="coerce").dropna()
+        if len(d):
+            n, y0, y1 = int(d.nunique()), int(d.min().year), int(d.max().year)
+            line = ("%s yearly values, %d to %d: the engine's monthly change test does not apply."
+                    % (format(n, ","), y0, y1))
+            if m:
+                items = (rep.get("ai_analyses") or {}).get("items") or []
+                st["headline"] = line + ((" From the AI plan's analyses: %s" % _first_sentence(items[0].get("sentence") or ""))
+                                         if items else "")
+            not_monthly = "%s yearly values are not a monthly series, so no monthly forecast is made." % format(n, ",")
+
+            def mend(x: str) -> str:
+                if _COVERS_LINE.match(x):
+                    return ("The file holds %s yearly values (%d to %d); the engine's monthly change test compares "
+                            "months, so it does not apply." % (format(n, ","), y0, y1))
+                x = _MONTHS_HISTORY.sub("There are " + not_monthly, x)
+                return _MONTHS_TOO_SHORT.sub(not_monthly, x)
+            for k in ("cannot_answer", "what_happened", "why", "whats_next"):
+                st[k] = [mend(x) for x in st.get(k) or []]
+            fc = rep.get("forecast") or {}
+            if isinstance(fc.get("reason"), str):
+                fc["reason"] = mend(fc["reason"])
+            return
     if m and int(m.group(1).replace(",", "")) >= 24:
         st["headline"] = ("%s months of history (%s): the latest 12 months against the 12 before settled no change "
                           "strong enough to act on; the averages over the period are below.%s"
                           % (m.group(1), m.group(2), h[m.end():]))
+
+
+_NO_DATES_LINE = "No column holds dates, so nothing can be said about change over time and no forecast is possible."
+
+
+def _mend_cannot_answer(rep: Dict[str, Any]) -> None:
+    """The engine's lines that deny what the AI plan's analyses show (review, 29 Sep 2026: "No column holds
+    dates, so nothing can be said about change over time" under a headline quoting a trend over the years):
+    each says what the engine did and what the analyses read instead."""
+    from northledger import narrate as _narrate
+    ana = rep.get("ai_analyses") or {}
+    items = ana.get("items") or []
+    if not items:
+        return
+    date = ana.get("date")
+    dated = date and any(a.get("type") in _TIME_ANALYSES + ("rank", "share") and
+                         "Dates from the %s column." % date in (a.get("method") or "") for a in items)
+    st = rep.get("story") or {}
+    for k in ("cannot_answer", "what_happened", "why", "whats_next"):
+        lines = []
+        for x in st.get(k) or []:
+            if x == _NO_DATES_LINE and dated:
+                x = ("The engine reads no column as dates for its monthly tests, so it tested no monthly change and "
+                     "made no forecast; the AI plan's analyses read the dates from %s." % date)
+            elif x == _narrate.NO_FACTS_LINE:
+                x = ("The engine's own tests produced no graded finding; the AI plan's analyses are descriptive "
+                     "and were not graded.")
+            lines.append(x)
+        st[k] = lines
 
 
 def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
@@ -4346,7 +6179,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             decisions = dict(decisions)
             raw_off = decisions.pop("__contracts_off__")
             contracts_off = [str(x) for x in raw_off][:200] if isinstance(raw_off, list) else []
-        contracts = contract_aside = None
+        # the data tests (phase one): what they found, their cell masks, and the table they ran on, which is
+        # the file the engine reads, unchanged (a test never changes what the engine reads)
+        ctests: Optional[List[Dict[str, Any]]] = None
+        caux: Dict[str, Any] = {}
+        cdf = None
+        sent = data                               # the file as the visitor sent it, for its line numbers
+        sent_rows = None                          # (each planned row's place among the visitor's rows, their count)
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
@@ -4355,15 +6194,19 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 cols = list(_pd.read_csv(io.BytesIO(data), dtype=str, nrows=0, encoding="utf-8-sig").columns)
                 ai_plan, plan_refused = _validate_plan(raw_plan, cols)
                 data, applied, layout = _apply_plan(data, ai_plan)
+                sent_rows = (applied.get("positions"), applied.get("rows_in"))
                 ai_plan["applied"] = applied["applied"]
                 if ai_plan.get("primary") and layout is not None:
                     ai_plan["refused"] = list(ai_plan.get("refused") or [])
                     ai_plan["primary"] = ""          # the value column became one column per series: lead with a series
                 ai_plan["refused"] = plan_refused + applied["refused"]
                 try:
-                    data, contracts, contract_aside = _apply_contracts(data, ai_plan, contracts_off)
+                    # the table the data tests read, as text: the file the engine reads, unchanged. The tests
+                    # themselves run after the engine, on its own reading of these rows (a test never changes
+                    # what the engine reads)
+                    cdf = _pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
                 except Exception:  # noqa: BLE001 - the tests are an aid; the file runs as the plan left it
-                    contracts = contract_aside = None
+                    cdf = None
                 for c, d in applied["decisions"].items():
                     decisions.setdefault(c, d)
                 if ai_plan.get("goal") and objective == DEFAULT_OBJECTIVE:
@@ -4371,13 +6214,28 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     goal_from_plan = True
             except Exception as exc:  # noqa: BLE001 - a plan that cannot run leaves the rule-based path
                 ai_plan = {"refused": ["the plan could not run (%s); the rule-based reading was used" % type(exc).__name__]}
+        reshaped_after = False                    # the rules read the planned file as a long table
         if layout is None:
             try:
                 reshaped, layout = _reshape_long_panel(data)
                 if layout:
                     data = reshaped
+                    reshaped_after = True
             except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
                 layout = None
+
+        def visitor_lines() -> Optional[List[int]]:
+            """Each record of the file the engine read, as its line in the visitor's file (review M2, 29 Sep
+            2026: the downloads numbered the plan's re-written file, so a row after a filtered one, a quoted
+            line break or a blank line carried the wrong line). ONE mapping for every download. None when the
+            file was read reshaped: a long table read as one column per series has no such line."""
+            if layout is not None:
+                return None
+            lines = _record_lines(sent)
+            if sent_rows is None:
+                return lines                      # no plan ran: the engine read the visitor's own bytes
+            pos, n_sent = sent_rows
+            return [lines[i] for i in pos] if pos is not None and len(lines) == n_sent else None
 
         _install_stubs()
         _import_engine()
@@ -4421,18 +6279,18 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "than freeze it. Remove the repeated rows and try again, or email me about "
                           "the full audit.")
 
-        # -- decide: every flagged column, the visitor's choice or withhold
+        # -- decide: every flagged column (the engine's scan, then the adapter's personal-column check), the
+        # visitor's choice or withhold; a withheld column is then landed as codes no cleaning rule reads
         t0 = time.perf_counter()
-        flagged = _apply_decisions(E, eng, res, decisions)
+        flagged, withheld, scrub = _decide_and_guard(E, eng, res, decisions)
         rep["privacy"]["flagged"] = flagged
-        withheld = [f["column"] for f in flagged if f["decision"] == "withhold"]
-        scrub = Scrubber(_withheld_values(eng.db_path, table, withheld))
         timings["decide"] = time.perf_counter() - t0
 
         as_of_eff = as_of or _dt.date.today().isoformat()
         timer = _loop.StageTimer()
         audit = r = None
         refusal = ""
+        pol = None
         with _pinned_clock(as_of):
             # -- the Data Health Audit: the engine's data-quality findings
             t0 = time.perf_counter()
@@ -4520,9 +6378,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             rep["forecast"]["reason"] = ("The business analysis did not run, so there is no monthly "
                                          "series to forecast.")
         elif date_withheld:
-            why = ("The time analysis is not shown: the date column the engine chose for it, %s, is "
-                   "one you chose to withhold, and its months would appear in every figure. Choose "
-                   "keep for %s to include it." % (r.roles.date, r.roles.date))
+            why = ("%s, %s, is one you chose to withhold, and its months would appear in every figure. "
+                   "Choose keep for %s to include it." % (DATE_WITHHELD_LEAD, r.roles.date, r.roles.date))
             story["headline"] = why
             story["what_to_do"] = _dedupe(audit_actions)
             story["cannot_answer"] = [why]
@@ -4549,6 +6406,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             story[k] = [pub(x) for x in story[k]]
         story["headline"] = pub(story["headline"])
         rep["forecast"]["reason"] = pub(rep["forecast"]["reason"])
+        if rep["forecast"].get("label"):
+            rep["forecast"]["label"] = pub(rep["forecast"]["label"])
         rep["roles"]["excluded"] = {k: pub(v) for k, v in rep["roles"]["excluded"].items()}
 
         # -- downloads: withheld columns never leave, not even in a quarantine reason
@@ -4562,40 +6421,151 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         ledgers = {"audit_ledger": audit.artifacts.get("evidence_json", "")}
         if r is not None and not date_withheld:
             ledgers["analysis_ledger"] = r.artifacts.get("evidence_json", "")
-        starts = _record_lines(data)
+        vlines = visitor_lines()
         n_in = int(cr.total_in)
         idx = set(int(i) for i in cr.clean.index) | set(int(i) for i in cr.quarantined.index)
-        lines = starts if len(starts) == n_in and idx == set(range(n_in)) else None
+        rows_match = idx == set(range(n_in))
+        lines = vlines if vlines is not None and len(vlines) == n_in and rows_match else None
         rep["downloads"] = {
             "clean_csv": _csv_text(cr.clean, withheld, None, lines),
             "quarantine_csv": _csv_text(cr.quarantined, withheld, reason_fix, lines),
             "ledger_json": _ledger_text(ledgers, scrub, rep["engine"]),
         }
-        if contracts:
-            hide = set(withheld) | set(_slug(c) for c in withheld)
-            for t in contracts["tests"]:
-                if t["column"] in hide or _slug(t["column"]) in hide:
-                    t["examples"] = []
-            rep["contracts"] = contracts
-            if contract_aside is not None and len(contract_aside):
-                cw = [c for c in contract_aside.columns if c in hide or _slug(c) in hide]
-                rep["downloads"]["contract_set_aside_csv"] = _csv_text(contract_aside, cw)
+        # -- the engine's reading of every cell of the table it landed (ONE parser: see _engine_reading)
+        reading = None
+        try:
+            reading = _engine_reading(eng.db_path, table, rules, cr, dict(getattr(res, "column_map", {}) or {}))
+        except Exception:  # noqa: BLE001 - without it the tests use the engine's value readers, the analyses do not run
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
+            reading = None
+        # every flagged column the visitor did not keep, by the engine's landed name (review H1: a "Date Of Birth"
+        # header against the landed date_of_birth let a withheld column through). Its values never reach a card,
+        # a download, an AI or a share link, and a withheld one is never named where an AI reads.
+        hidden_land = {str(f["column"]): str(f["decision"]) for f in flagged if f.get("decision") != "keep"}
+
+        def private(name: Any) -> Optional[str]:
+            if name is None or not hidden_land:
+                return None
+            n = str(name)
+            for k in (n, reading.landed(n) if reading is not None else None, _engine_slug(n)):
+                if k and k in hidden_land:
+                    return hidden_land[k]
+            return None
+        names_withheld = [c for c, d in hidden_land.items() if d == "withhold"]
+        if cdf is not None:
+            names_withheld += [str(h) for h in cdf.columns if private(h) == "withhold"]
+        ai_scrub = _NameScrub(names_withheld)
+        # the profile the planner reads next may come from this same reading (the page asks for it after the
+        # visitor's choices; when those are the choices this run made, every flagged column withheld as the
+        # scan runs, the profile needs no second pass of the engine: _same_choices)
+        if ai_plan is None and layout is None and reading is not None:
+            try:
+                _PROFILE_CACHE.clear()
+                _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value={
+                    "ok": True, "facts": _profile_facts(reading, list(reading.land) or list(reading.values.columns)),
+                    "rows": reading.n, "flagged": [dict(f) for f in flagged],
+                    "colmap": dict(getattr(res, "column_map", {}) or {})})
+            except Exception:  # noqa: BLE001 - the profile then lands the file itself
+                if os.environ.get("NL_BROWSER_STRICT"):
+                    raise
+        # -- the data tests: phase one on the engine's reading of the same rows (unless the engine read the file
+        # reshaped, when the engine's own value readers read the text), phase two from the engine's outcome
+        aligned = (reading is not None and cdf is not None and not reshaped_after and len(cdf) == n_in and rows_match
+                   and reading.n == len(cdf))
+        if ai_plan is not None and cdf is not None:
+            try:
+                ctests, caux = _run_contracts(cdf, ai_plan, contracts_off, reading if aligned else None,
+                                              {str(h): private(h) for h in cdf.columns if private(h)})
+                ctests = ctests or None
+            except Exception:  # noqa: BLE001 - the tests are an aid; the report stands without them
+                if os.environ.get("NL_BROWSER_STRICT"):
+                    raise
+                ctests, caux = None, {}
+        if ctests:
+            from northledger.clean import QUARANTINE_COL
+            engine_rows = None
+            if aligned:
+                q = cr.quarantined
+                raw = {int(i): str(v) for i, v in q[QUARANTINE_COL].items()} if QUARANTINE_COL in q.columns else {}
+                keyed = _rule_reasons(raw, rules, set(str(k) for k in (cr.quarantine_reasons or {})))
+                aside = {i: pub(reason_fix(k)) for i, k in keyed.items()}
+                empty: Dict[str, Set[int]] = {}
+                for tt in ctests:
+                    col = tt["column"]
+                    if tt.get("unreadable") and (caux.get(col) or {}).get("read_as") == "numbers":
+                        land = reading.landed(col)
+                        if land is not None and land in cr.clean.columns:
+                            empty[col] = set(int(i) for i in cr.clean.index[cr.clean[land].isna()])
+                engine_rows = {"aside": aside, "empty": empty}
+            dup_reason = pub(reason_fix(next((ru.reason_key() for ru in rules if ru.kind == "dedupe"),
+                                             "exact_duplicates: exact duplicate row")))
+            _finish_contracts(ctests, caux, engine_rows, dup_reason)
+            # a flagged column's values never show in the card or the download unless the visitor chose keep
+            # (a coded column's raw values would undo the code: the downloads carry only its codes); every other
+            # example is scrubbed as the download scrubs its values
+            hide: Dict[str, str] = {}
+            for tt in ctests:
+                d = private(tt["column"])
+                tt["private"] = d
+                if d:
+                    hide[tt["column"]] = d
+                    tt["examples"] = ["value withheld" if d == "withhold" else "value coded"] if tt["failed"] else []
+                else:
+                    tt["examples"] = [scrub.clean(x) for x in tt["examples"]]
+            tlines = vlines if vlines is not None and cdf is not None and len(vlines) == len(cdf) else None
+            text, n_cells = _flagged_cells(ctests, caux, cdf, tlines, engine_rows, hide, scrub.clean)
+            rep["contracts"] = {"tests": ctests, "cells_flagged": n_cells, "line": "source_line" if tlines else "table_row",
+                                "note": CONTRACT_NOTE + (" The download lists the first %s of the %s flagged values."
+                                                         % (format(FLAGGED_CELLS_MAX, ","), format(n_cells, ","))
+                                                         if n_cells > FLAGGED_CELLS_MAX else "")}
+            if n_cells:
+                rep["downloads"]["contract_flagged_csv"] = text
         # -- contract v2: grades, tests, provenance, quality profile and chart data
         _build_v2(rep, audit, r if (r is not None and not date_withheld) else None, th, cr, eng.db_path,
                   flagged, withheld, pub, as_of_eff, objective, reasons, rules)
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
-        _mend_short_history_line(rep)
         if layout:
             _layout_notes(rep, layout)
         if ai_plan:
             if plan_review:
                 ai_plan["review"] = plan_review
             rep["ai_plan"] = ai_plan
+            # the engine's gate (it refused its own analysis): the analyses stop with it and the planner is not
+            # asked again (_gate_state)
+            gate = None
+            if r is None:
+                from northledger import gate as _gate
+                limit = float(getattr(pol if pol is not None else _gate.DEFAULT_POLICY, "max_quarantine_rate", 0.20))
+                gate = _gate_state(cr, limit)
             if ai_plan.get("analyses"):
-                rep["ai_analyses"] = _run_analyses(data, ai_plan, layout, withheld)
-            rep["plan_signals"] = _plan_signals(rep, ai_plan)
+                if reading is None:
+                    rep["ai_analyses"] = {"items": [], "refused": ["the analyses could not read the engine's table"]}
+                else:
+                    # a percentage column on one scale, read once for the data test and the analyses
+                    pct: Dict[str, Any] = {}
+                    for pc in ai_plan.get("columns") or []:
+                        nm = pc.get("name") if isinstance(pc, dict) else None
+                        if not nm or pc.get("semantic_type") != "percentage" or private(nm):
+                            continue
+                        lands = [reading.landed(nm)]
+                        if layout and nm == layout.get("value_column"):
+                            lands = [reading.landed(x) for x in layout.get("order") or []]
+                        for land in lands:
+                            if land is not None and reading.kind(land) == "number":
+                                pct[reading.header(land)] = _pct_reading(reading.numbers(land), reading.texts[land],
+                                                                         reading.filled(land))
+                    rep["ai_analyses"] = _run_analyses({"reading": reading, "clean": cr.clean, "hide": hidden_land,
+                                                        "pct": pct, "private": private, "gate": gate},
+                                                       ai_plan, layout)
+            rep["plan_signals"] = _plan_signals(rep, ai_plan, ai_scrub, gate)
         if plan_review and not ai_plan and not plan_review["approved"]:
             rep["plan_review"] = plan_review
+        _mend_short_history_line(rep, cr.clean if (r is not None and not date_withheld) else None,
+                                 r.roles.date if (r is not None and not date_withheld) else None)
+        if r is not None and not date_withheld:
+            _true_headline(rep, r, pub, _date_grain(cr.clean, r.roles.date))
+        _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -4611,18 +6581,107 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
     return rep
 
 
-def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """What the engine found wrong with the AI's plan, for the planner's one self-correction (max 20)."""
+def _first_sentence(text: str) -> str:
+    """The first sentence of an analysis sentence ("... 12,061). units rose ..." ends at the first full stop
+    followed by a capital or a column name's start; a decimal point never ends one)."""
+    m = re.search(r"\.\s+(?=[A-Z(a-z])", text or "")
+    return (text[:m.start() + 1] if m else (text or "")).strip()
+
+
+def _date_grain(clean: Any, col: Any) -> str:
+    """How far apart the engine's dates are: "yearly" (a year or more between distinct dates, as a panel
+    of countries by year), "quarterly", or "" (monthly or finer, or unknown)."""
+    try:
+        import pandas as pd
+        if not col or col not in clean.columns:
+            return ""
+        d = pd.to_datetime(clean[col], errors="coerce").dropna().drop_duplicates().sort_values()
+        step = d.diff().dropna().median() if len(d) > 2 else None
+        if step is None or step != step:
+            return ""
+        return "yearly" if step >= pd.Timedelta(days=300) else "quarterly" if step >= pd.Timedelta(days=80) else ""
+    except Exception:  # noqa: BLE001 - a missing grain only shortens the headline's reason
+        return ""
+
+
+def _true_headline(rep: Dict[str, Any], r: Any, pub: Any, grain: str = "") -> None:
+    """The engine's monthly story has no bottom line when nothing it tested settled; its fallback then reads
+    "No business measure could be computed from this file", which is false when a measure was computed
+    (review of 29 Sep 2026: a 10-year file of monthly sales whose every monthly change was graded too little
+    data to judge, and whose long-run trend the AI plan's analyses drew). The headline then says what
+    happened to the monthly change test, and why, and quotes the lead analysis's own sentence. The engine's
+    narrate.py is left as it is (its decision code is what the benchmark receipt measured)."""
+    from northledger import narrate as _narrate
+    st = rep.get("story") or {}
+    fallback = (_narrate.NOTHING_HAPPENED_LINE, pub(_narrate.NOTHING_HAPPENED_LINE))
+    if st.get("headline") not in fallback:
+        return
+    biz = [f for f in rep.get("findings") or [] if f.get("kind") == "business"]
+    items = (rep.get("ai_analyses") or {}).get("items") or []
+    if biz and all(f.get("verdict") == "INSUFFICIENT" for f in biz):
+        # what was tested, counted as it was (review, 29 Sep 2026: "5 business measures" were 5 tests over the
+        # row count and 2 columns)
+        dcol = (rep.get("roles") or {}).get("date")
+        reads = [[c for c in (f.get("columns_read") or []) if c != dcol] for f in biz]
+        cols = list(dict.fromkeys(c for cs in reads for c in cs))
+        what = _n_values(len(biz), "test")
+        over = (["the row count"] if any(not cs for cs in reads) else []) + (
+            ["%s (%s)" % (_n_values(len(cols), "column"), ", ".join(cols[:4]) + (", ..." if len(cols) > 4 else ""))]
+            if cols else [])
+        if over:
+            what += " over " + " and ".join(over)
+        why = ("The monthly change test (the latest 12 months against the 12 before) ran %s and settled none of "
+               "them: each is graded too little data to judge%s." % (
+                   what,
+                   {"yearly": ", because the rows are yearly, so each 12 months hold one date",
+                    "quarterly": ", because the rows are quarterly, so each 12 months hold four dates"}.get(grain, "")))
+    elif biz:
+        return                                  # something settled or is being watched: the engine says so itself
+    else:
+        reasons = [_plain(x) for x in list(getattr(getattr(r, "measure", None), "unmeasured", None) or [])]
+        reasons += [x for x in st.get("cannot_answer") or [] if x not in fallback]
+        if not (rep.get("roles") or {}).get("date"):
+            reason = "the engine found no date column to count months by"
+        elif grain:
+            reason = "the rows are %s, and the test compares months" % grain
+        elif reasons:
+            reason = reasons[0].rstrip(". ")
+            reason = reason[:1].lower() + reason[1:]
+        else:
+            reason = "no monthly measure could be formed from this file's rows"
+        why = "The monthly change test did not run: %s." % reason
+    head = why
+    if items:
+        head += " From the AI plan's analyses: %s" % _first_sentence(items[0].get("sentence") or "")
+    st["headline"] = pub(head)
+    if st.get("what_happened") in ([_narrate.NOTHING_HAPPENED_LINE], [pub(_narrate.NOTHING_HAPPENED_LINE)]):
+        st["what_happened"] = [pub(why)]
+
+
+def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any], scrub: Optional["_NameScrub"] = None,
+                  gate: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """What the engine found wrong with the AI's plan, for the planner's one self-correction (max 20). The
+    planner never hears of a column the visitor withheld: its tests are left out and its name never appears.
+    Nothing at all when the engine's gate tripped (it set aside more than its limit of the rows): no data test,
+    step or analysis signal, so the planner is not asked again (see _gate_state for why a new plan cannot help)."""
     out: List[Dict[str, Any]] = []
+    if gate and gate.get("over"):
+        return out
+    safe = scrub if scrub is not None else (lambda x: x)
+    # a test's fact is a signal only when it is evidence against the AI's reading (a probable misread, a type
+    # the values contradict); a reading that stood is not, and telling the planner its correct reading was
+    # wrong would send it to change what worked (live run, 29 Sep 2026)
     for t in (rep.get("contracts") or {}).get("tests") or []:
-        if str(t.get("action")).startswith("not applied"):
-            out.append({"kind": "contract_failed", "column": str(t.get("column")),
-                        "detail": ("%s; %s of %s values fail" % (t.get("test"), t.get("failed"), t.get("checked")))[:200]})
+        if t.get("signal") and t.get("problem") and t.get("private") != "withhold":
+            out.append({"kind": "contract_failed", "column": str(t.get("column")), "detail": safe(str(t.get("problem")))[:200]})
     for x in plan.get("refused") or []:
-        out.append({"kind": "layout_refused" if str(x).startswith("long_to_wide") else "op_refused", "detail": str(x)[:200]})
+        out.append({"kind": "layout_refused" if str(x).startswith("long_to_wide") else "op_refused", "detail": safe(str(x))[:200]})
     ana = rep.get("ai_analyses") or {}
-    for x in ana.get("refused") or []:
-        out.append({"kind": "analysis_refused", "detail": str(x)[:200]})
+    # an analysis refusal is feedback only while the engine's own analysis ran (refused for another reason, no
+    # new plan makes it run either)
+    if not gate:
+        for x in ana.get("refused") or []:
+            out.append({"kind": "analysis_refused", "detail": safe(str(x))[:200]})
     biz = [f for f in rep.get("findings") or [] if f.get("kind") == "business"]
     if biz and all(f.get("grade") == "NOT_ENOUGH_DATA" for f in biz) and not ana.get("items"):
         out.append({"kind": "no_findings", "detail": "every business finding has too little data to judge"})

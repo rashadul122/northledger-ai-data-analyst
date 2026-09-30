@@ -2,7 +2,8 @@
 """Fixtures for the report checks in tools/check_ui.js: four INVENTED business files, each run through
 the browser adapter (engine/nl_browser.py) natively, plus the site's own sample.
 
-    python tools/make_ui_fixtures.py --out DIR      # writes DIR/<name>.csv and DIR/<name>.json
+    python tools/make_ui_fixtures.py --out DIR      # writes DIR/<name>.csv, DIR/<name>.json and
+                                                    # DIR/<name>.profile.json
 
 The files are made up for the checks (no real people, accounts or businesses) and cover the chart
 rules the report draws from the data's roles:
@@ -20,6 +21,18 @@ rules the report draws from the data's roles:
                      with no percentage), a fee that moved 3% (under the 5% bar), a flat measure,
                      and a forecast too short to be offered
   sample             engine/sample-messy.csv at its pinned date (engine/pack.json)
+  orders-private     240 orders with a buyer's email, a free-text note and the member of staff, run
+                     with an AI plan (PRIVATE_PLAN) and the choices code / withhold / keep: the
+                     coded email and the kept staff name fail their tests (the withheld note's date
+                     test is not run), so the report carries the "values the data tests flagged"
+                     download (engine/nl_browser.py _flagged_cells), the email's values as "value coded"
+
+Each <name>.profile.json is what the page would send the AI planner before its own filter, and
+<name>.landed.json the map the worker sends beside it ({header: the engine's landed name}): the adapter's
+plan_profile_json with the scan's flags and the visitor's choices, as engine/worker.js asks for it after
+those choices. orders-private is profiled under PRIVATE_CHOICES (code, withhold, keep), the choices its checks
+make; every other file under the default (every flagged column withheld). Each carries time,
+analysis_limits and each column's looks_personal and privacy_flag.
 
 Deterministic (fixed seed, no clock). Needs numpy and pandas, as the adapter does.
 """
@@ -173,6 +186,36 @@ def write_files(out):
         f.write("\n".join(rows) + "\n")
 
 
+# The AI plan the orders-private run is given (hand-written, as the planner could write it): it types every
+# column, the three personal ones included, so each gets a data test, and the choices below decide what the
+# card and the download may show of each (tools/check_ui.js reads both back).
+PRIVATE_PLAN = {
+    "goal": "How does spend move month by month?", "understanding": "Orders with the buyer, a note and the member of staff.",
+    "kind": "transactions", "primary": "spend", "operations": [], "analyses": [{"type": "distribution", "columns": ["spend"]}],
+    "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                {"name": "customer_email", "semantic_type": "identifier", "role": "key"},
+                {"name": "notes", "semantic_type": "date", "role": "metadata"},
+                {"name": "staff_name", "semantic_type": "identifier", "role": "key"},
+                {"name": "spend", "semantic_type": "flow_amount", "role": "target", "unit": "currency"}]}
+PRIVATE_CHOICES = {"customer_email": "code", "notes": "withhold", "staff_name": "keep"}
+
+
+def write_private(out):
+    """orders-private.csv: invented buyers (example.org addresses), invented staff, notes that hold a phone
+    number or a date, and a spend column with a few "n/a"."""
+    import random as _random
+    r = _random.Random(7)
+    staff = ["Dana Whitfield", "Marco Bellini", "Ines Duarte", "Tom Kaczmarek"]
+    rows = ["order_date,customer_email,notes,staff_name,spend"]
+    for k in range(240):
+        d = dt.date(2024, 1, 1) + dt.timedelta(days=3 * k)
+        note = ("call 416-555-%04d" % r.randint(0, 9999)) if k % 3 == 0 else (d + dt.timedelta(days=9)).isoformat()
+        spend = "n/a" if k % 29 == 5 else "%.2f" % r.uniform(5, 95)
+        rows.append("%s,buyer%02d@example.org,%s,%s,%s" % (d.isoformat(), r.randint(1, 60), note, staff[k % 4], spend))
+    with open(os.path.join(out, "orders-private.csv"), "w", encoding="utf-8") as f:
+        f.write("\n".join(rows) + "\n")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True, help="folder for the CSV files and their reports")
@@ -185,13 +228,35 @@ def main(argv=None):
     pack = json.load(open(os.path.join(SITE, "engine", "pack.json"), encoding="utf-8"))
     jobs = [("sample", os.path.join(SITE, "engine", pack["sample"]["file"]), pack["sample"]["as_of"])]
     jobs += [(n, os.path.join(a.out, n + ".csv"), AS_OF) for n in ("rent-roll", "sales-ledger", "web-analytics", "cafe-invoices-18m", "rent-roll-gated", "shop-margins-36m")]
+    write_private(a.out)
+    jobs += [("orders-private", os.path.join(a.out, "orders-private.csv"), AS_OF)]
     for name, path, as_of in jobs:
-        rep = nl_browser.run(open(path, "rb").read(), os.path.basename(path), "", None, as_of)
+        data = open(path, "rb").read()
+        rep = nl_browser.run(data, os.path.basename(path), "", None, as_of)
         if not rep.get("ok"):
             sys.exit("%s: the adapter refused it: %s" % (name, rep.get("error")))
+        # the profile as the worker answers the page's "profile" message, after the visitor's choices: the
+        # scan's flags {column: kind} and those choices
+        flags = {f["column"]: f["kind"] for f in rep["privacy"]["flagged"]}
+        choices = PRIVATE_CHOICES if name == "orders-private" else {}
+        got = json.loads(nl_browser.plan_profile_json(data, os.path.basename(path), json.dumps(flags), json.dumps(choices), as_of))
+        with open(os.path.join(a.out, name + ".profile.json"), "w", encoding="utf-8") as f:
+            json.dump(got["profile"], f)
+        with open(os.path.join(a.out, name + ".landed.json"), "w", encoding="utf-8") as f:
+            json.dump(got["landed"], f)
+        if name == "orders-private":
+            # the planned run: when the adapter cannot make it, its report says why and only the check that
+            # reads it fails (the other reports stand)
+            dec = dict(PRIVATE_CHOICES, __plan__=PRIVATE_PLAN)
+            rep = nl_browser.run(data, os.path.basename(path), "", dec, as_of)
+            if not rep.get("ok") or not (rep.get("downloads") or {}).get("contract_flagged_csv"):
+                why = "the planned run gave no flagged-values download: %s" % rep.get("error")
+                print("%-18s %s" % (name, why), file=sys.stderr)
+                rep = {"__fixture_error": why}
         with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
             json.dump(rep, f)
-        print("%-18s %d charts, %d findings" % (name, len(rep["charts"]), len(rep["findings"])))
+        if "__fixture_error" not in rep:
+            print("%-18s %d charts, %d findings" % (name, len(rep["charts"]), len(rep["findings"])))
 
 
 if __name__ == "__main__":

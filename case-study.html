@@ -665,6 +665,18 @@ pre.snip { background: var(--bg); border: 1px solid var(--hairline); border-radi
 .pd-opt small { display: block; color: var(--muted); font-size: 12.5px; }
 .pd-opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
 .pd-go { margin-top: 12px; }
+/* option B: "Keep all", the box a kept column puts on the step, and why "Continue with the AI" is off */
+.pd-all { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 10px 0 0; }
+.pd-all-said:empty { display: none; }
+.pd-send { margin: 12px 0 0; padding: 10px 12px; border: 1.5px solid var(--series-3); border-radius: 12px; background: color-mix(in srgb, var(--series-3) 8%, var(--surface)); }
+.pd-send-ok { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-weight: 600; color: var(--ink); font-size: 14.5px; }
+.pd-send-ok input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+.pd-send-ok label { cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.try-sec .pd-go .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.pd-why { margin: 8px 0 0; }
+.try-plan-optin { margin: 10px 0 0; padding: 8px 12px; border-left: 3px solid var(--series-3); background: color-mix(in srgb, var(--series-3) 8%, var(--surface)); border-radius: 6px; font-weight: 600; color: var(--ink); }
+.try-share-out:has(.try-share-warn) { flex-basis: 100%; }
+.try-share-warn { display: block; margin: 0 0 8px; color: var(--ink); }
 .try-report { display: grid; gap: 14px; outline: none; }
 .try-report > * { min-width: 0; }
 .tr-card { padding: 18px 20px; border-radius: 16px; border: 1px solid var(--hairline); background: var(--surface); min-width: 0; }
@@ -739,7 +751,7 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
 }
 @media (max-width: 860px) {
   .try-start, .tr-two, .tr-sgrid { grid-template-columns: 1fr; }
-  #try .btn, #try button, .pd-opt, .tr-ai-ok { min-height: 44px; }
+  #try .btn, #try button, .pd-opt, .tr-ai-ok, .pd-send-ok { min-height: 44px; }
   .tr-cta { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
@@ -1091,6 +1103,8 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-plan-read { margin: 6px 0 0; }
 .try-plan-risks { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn, #b45309); border-radius: 8px; background: color-mix(in srgb, var(--warn, #b45309) 6%, transparent); }
 .try-plan-risks h4 { margin: 0 0 6px; }
+.try-plan-replan-failed { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn, #b45309); border-radius: 8px; background: color-mix(in srgb, var(--warn, #b45309) 6%, transparent); }
+.try-plan-replan-failed p { margin: 0 0 6px; }
 .try-plan-alt { white-space: normal; text-align: left; }
 /* the progress bar (owner's spec, 26 Sep 2026): one horizontal bar, transparent green fill,
    the percentage beside it, filling 0 to 100% across the whole run */
@@ -1174,7 +1188,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-29 14:02:19 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-30 01:43:59 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

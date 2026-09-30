@@ -1,0 +1,27 @@
+{
+ "goal": "Ticket volume",
+ "understanding": "tickets",
+ "kind": "other",
+ "columns": [
+  {
+   "name": "opened",
+   "semantic_type": "date",
+   "role": "date"
+  },
+  {
+   "name": "topic",
+   "semantic_type": "category",
+   "role": "segment"
+  }
+ ],
+ "operations": [],
+ "primary": "",
+ "analyses": [
+  {
+   "type": "trend",
+   "columns": [
+    "topic"
+   ]
+  }
+ ]
+}

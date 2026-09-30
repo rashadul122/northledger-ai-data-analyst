@@ -597,7 +597,7 @@
    "grade": null,
    "parent_grade": "WATCH",
    "grade_words": "part of a change graded WATCH; not graded itself",
-   "assumes": "price, volume and mix add up to the change",
+   "assumes": "measured against the 12 months before; the three parts add up exactly to the change",
    "inputs": {
     "columns": [
      "order_date",
@@ -621,7 +621,7 @@
    "grade": null,
    "parent_grade": "WATCH",
    "grade_words": "part of a change graded WATCH; not graded itself",
-   "assumes": "price, volume and mix add up to the change",
+   "assumes": "measured against the 12 months before; the three parts add up exactly to the change",
    "inputs": {
     "columns": [
      "order_date",
@@ -645,7 +645,7 @@
    "grade": null,
    "parent_grade": "WATCH",
    "grade_words": "part of a change graded WATCH; not graded itself",
-   "assumes": "price, volume and mix add up to the change",
+   "assumes": "measured against the 12 months before; the three parts add up exactly to the change",
    "inputs": {
     "columns": [
      "order_date",

@@ -14,7 +14,9 @@ The zip holds exactly what the browser needs and nothing else:
                             where the engine reads it
   nl_browser.py             the adapter (engine/nl_browser.py)
   nl_scenarios.py           the adapter's scenario and contribution block (engine/nl_scenarios.py)
+  nl_viz.py                 the adapter's charts chosen from the data (engine/nl_viz.py, the chart registry)
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
+  first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
   nl_pack.json              the engine snapshot the zip was cut from, read by the adapter
 
@@ -105,9 +107,15 @@ def cut_receipt(raw: bytes) -> bytes:
 ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the report's scenario and contribution block (design B), imported by nl_browser.run()
                  "nl_scenarios.py": "nl_scenarios.py",
+                 # the charts chosen from the data (the chart registry, CONTRACT §5.9), imported by nl_browser.run(),
+                 # _validate_plan, profile_for_ai and results_for_ai
+                 "nl_viz.py": "nl_viz.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",
+                 # the given names the themes analysis never shows as a theme and the chart registry's person-name test
+                 # reads (nl_browser._first_names reads it beside itself; the chart review, 30 Sep 2026)
+                 "first_names.txt": "first_names.txt",
                  "nl_stubs/__init__.py": os.path.join("nl_stubs", "__init__.py"),
                  "nl_stubs/resource.py": os.path.join("nl_stubs", "resource.py")}
 SAMPLE = {"file": "sample-messy.csv", "as_of": "2026-09-15",

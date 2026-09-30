@@ -42,6 +42,13 @@ The rules (the design's, restated where the code keeps them):
   * Forecast items only when the engine's forecast is usable for planning (CONFIRMED): the base, low and
     high for 3, 6 and 12 months are sums of its points and of their own 80% ranges, labelled as such
     (a sum of monthly ranges is at least as wide as an 80% range for the total).
+  * The segment the goal names comes first (_goal_first): the plan's goal, else the visitor's question, names
+    "departments", so department segments the claim before the plan's other segment roles and the engine's
+    dimensions (live baseline, 30 Sep 2026).
+  * The historical range of a level (_history_range, group history_range): the engine forecasts counts and totals
+    only, so for a rate, a price or an index with 3 years or more of monthly averages the block states the 10th,
+    50th and 90th percentiles of its past 12-month and 3-month changes, the share of those windows that rose and
+    their count: facts about the file's past, no grade, every label saying it is history, not a forecast.
   * No 3-month annualised run rate (three months times four is noise, not a rate).
   * Deterministic (math.fsum, sorted by (-|contribution|, name)), finite or absent (never NaN), and
     guarded against division by zero: a share of the change needs the total to move by at least 1% of
@@ -65,7 +72,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import nl_browser as NB
 
 GROUPS = ("headline", "contribution", "price_volume_mix", "per_unit", "run_rate", "sensitivity", "gap",
-          "forecast", "facts")
+          "forecast", "history_range", "facts")
 KINDS = ("amount", "change", "count", "percent", "points", "per_unit", "date")
 SEGMENT_MAX_LEVELS = 12          # a segment column has at most 12 levels over the two windows
 # the segments whose per-segment items (PER_SEGMENT) come in the core (_ordered): the worker's SCENARIO_TOP_SEGMENTS
@@ -86,8 +93,11 @@ NOT_RECONCILED = "the breakdown could not be reconciled with the engine's own mo
 AVERAGE_REFUSED = "the headline is an average, so it has no parts that add up; see the headline finding"
 MIXED_SHARES = ("shares of the change are not given: segments moved in opposite directions, so shares of the net "
                 "change would exceed 100%")
-PVM_ASSUMES = "price, volume and mix add up to the change"
-PV_ASSUMES = "price and volume add up to the change"           # no mix item: the two parts alone add up
+# the base the parts are measured against; they add up to the change by construction (reconciled, _adds_up), so that is
+# stated as what it is, never as an assumption (review of the live run, 30 Sep 2026)
+PVM_ASSUMES = "measured against the 12 months before; the three parts add up exactly to the change"
+# no mix item: the two parts alone add up
+PV_ASSUMES = "measured against the 12 months before; the two parts add up exactly to the change"
 ENTERED = "new in the latest 12 months"                       # a level with rows only in the latest window
 EXITED = "not in the latest 12 months"                        # a level with rows only in the window before
 # a column the plan types as one of these is read as an average (nl_browser._how), never a total
@@ -101,6 +111,13 @@ NOTE = ("Descriptive arithmetic on the rows the engine kept, in the engine's own
         "what caused it, and a what-if is arithmetic, not a forecast. The figures are shown rounded; they add up "
         "before rounding.")
 NOTE_REFUSED = "No scenario or contribution figures for this file; the reasons are listed."
+# the historical range of a level (a rate, a price, an index): the engine forecasts counts and totals only, so for a
+# level the block states how much its monthly average moved in the file's own past windows, as history (_history_range)
+HISTORY_TYPES = ("level", "percentage")
+HISTORY_MIN_MONTHS = 36          # three years of monthly averages, at least
+HISTORY_LAGS = (12, 3)           # the 12-month and the 3-month changes
+HISTORY_NOTE = ("The historical range items (group history_range) say how much the monthly average moved in the "
+                "file's own past windows: facts about the past, not a forecast and not graded.")
 
 
 def blank() -> Dict[str, Any]:
@@ -336,6 +353,41 @@ def _segment_candidates(rep: Dict[str, Any], frame: Any, plan_by: Dict[str, Dict
     return out
 
 
+def _stem(w: str) -> str:
+    """A word without its plural ending: departments -> department, categories -> category, boxes -> box."""
+    if len(w) > 4 and w.endswith("ies"):
+        return w[:-3] + "y"
+    if len(w) > 3 and w.endswith("es") and w[:-2].endswith(("s", "x", "z", "ch", "sh")):
+        return w[:-2]
+    if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+        return w[:-1]
+    return w
+
+
+def _words(text: Any) -> List[str]:
+    """The words of a question or a column name (net_sales, NetSales and "net sales" are the same two), stemmed."""
+    t = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(text or ""))
+    return [_stem(w) for w in re.findall(r"[a-z0-9]+", t.lower())]
+
+
+def _goal_first(cands: List[str], goal: str, plan_by: Dict[str, Dict[str, Any]]) -> List[str]:
+    """The segment candidates with the ones the goal names first, in the order the goal names them (the live baseline
+    of 30 Sep 2026: the question asked which departments stand out, and keeping the review text switched the breakdown
+    to verified_purchase). A column is named when every word of its name (its plan name, else its landed name) is in
+    the goal, singular or plural ("departments" names department). Then the rest in their own order: the plan's
+    segment roles, its category and geography types, the engine's dimensions (_segment_candidates)."""
+    gw = _words(goal)
+    if not gw or not cands:
+        return list(cands)
+    named = []
+    for c in cands:
+        cw = [w for w in _words((plan_by.get(c) or {}).get("name") or c) if w]
+        if cw and all(w in gw for w in cw):
+            named.append((min(gw.index(w) for w in cw), cands.index(c), c))
+    first = [c for _p, _i, c in sorted(named)]
+    return first + [c for c in cands if c not in first]
+
+
 def _segment_levels(frame: Any, col: str, rows: Any, pub: Optional[Callable[[Any], Any]]) -> Dict[str, Any]:
     """The column's levels over the claim's rows in the windows: {"series" (each row's level as shown, or None
     when the column cannot segment), "raw" (each row's own level, None for a blank), "levels" (shown, in name
@@ -403,14 +455,15 @@ def _seg_name(g: str, entered: List[str], exited: List[str]) -> str:
 # --------------------------------------------------------------------------- the block
 def build(rep: Dict[str, Any], frame: Any, date_col: Optional[str], claims: Dict[str, Dict[str, Any]],
           plan: Optional[Dict[str, Any]] = None, landed: Optional[Callable[[Any], Any]] = None,
-          pub: Optional[Callable[[Any], Any]] = None, additive: Optional[Callable[[Any], str]] = None
-          ) -> Dict[str, Any]:
+          pub: Optional[Callable[[Any], Any]] = None, additive: Optional[Callable[[Any], str]] = None,
+          goal: str = "") -> Dict[str, Any]:
     """rep["scenarios"]. rep: the report so far (findings, charts, primary_metric, privacy, roles, forecast);
     frame: the rows the engine kept under its landed names, without the columns the visitor withheld or coded;
     date_col: the engine's date column; claims: {finding id: {key, total_of, kind_split, currency,
     status_excluded, like_for_like_of}} from the engine's gated claims; plan: the AI plan (its column roles and
     units), or None; landed: the file's header -> the landed name; pub: the report's text scrubber; additive:
-    the engine's measure.additive_kind ('money', 'units' or '')."""
+    the engine's measure.additive_kind ('money', 'units' or ''); goal: the question the report answers (the plan's
+    goal, else the visitor's question): a column it names segments the claim first (_goal_first)."""
     import pandas as pd
     out = blank()
     refused: List[str] = out["refused"]
@@ -427,7 +480,7 @@ def build(rep: Dict[str, Any], frame: Any, date_col: Optional[str], claims: Dict
         refused.append(why)
     else:
         basis, b_items, b_refused = _breakdown(rep, frame, date_col, months, f, claims[f["id"]], charts[f["id"]],
-                                               plan, landed, pub, additive)
+                                               plan, landed, pub, additive, goal)
         out["basis"] = basis
         refused.extend(b_refused)
         if not basis["reconciles"]:
@@ -437,9 +490,12 @@ def build(rep: Dict[str, Any], frame: Any, date_col: Optional[str], claims: Dict
         items.extend(b_items)
     items.extend(fc_items)
     refused.extend(fc_refused)
+    h_items, h_refused = _history_range(rep, frame, date_col, months, claims, plan, landed, additive, pub)
+    items.extend(h_items)
+    refused.extend(h_refused)
     items.extend(_facts(frame, date_col, months))
     out["items"] = _ordered(items)
-    out["note"] = NOTE if out["basis"] is not None else NOTE_REFUSED
+    out["note"] = (NOTE if out["basis"] is not None else NOTE_REFUSED) + (" " + HISTORY_NOTE if h_items else "")
     return out
 
 
@@ -487,6 +543,8 @@ def _grade_words(group: str, grade: Optional[str], parent: Optional[str]) -> Opt
     CONFIRMED (usable for planning)") or a fact ("a fact about the rows, not graded")."""
     if group == "facts":
         return "a fact about the rows, not graded"
+    if group == "history_range":
+        return "a fact about the file's past, not graded: history, not a forecast"
     if group == "forecast":
         return "the engine's forecast, graded %s (%s)" % (grade, NB._FC_GRADE_WORDS.get(str(grade), "not graded")) \
             if grade else "the engine's forecast, not graded"
@@ -535,7 +593,8 @@ def _slugs(names: List[str]) -> Dict[str, str]:
 def _breakdown(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, f: Dict[str, Any],
                claim: Dict[str, Any], chart: Dict[str, Any], plan: Optional[Dict[str, Any]],
                landed: Optional[Callable[[Any], Any]], pub: Optional[Callable[[Any], Any]],
-               additive: Optional[Callable[[Any], str]]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[str]]:
+               additive: Optional[Callable[[Any], str]], goal: str = ""
+               ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[str]]:
     """(basis, items, refused) for the claim `f`."""
     import pandas as pd
     refused: List[str] = []
@@ -653,7 +712,7 @@ def _breakdown(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, f: D
         if claim.get(k):
             busy.add(str(claim[k].get("column")))
     seg_col, lv = None, None
-    cands = _segment_candidates(rep, frame, plan_by, busy)
+    cands = _goal_first(_segment_candidates(rep, frame, plan_by, busy), goal, plan_by)
     for c in cands:
         got = _segment_levels(frame, c, rows, pub)
         if got["series"] is not None:
@@ -898,6 +957,114 @@ def _forecast_items(rep: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str
             if it is not None:
                 out.append(it)
     return out, []
+
+
+def _history_measure(rep: Dict[str, Any], frame: Any, claims: Dict[str, Dict[str, Any]],
+                     plan: Optional[Dict[str, Any]], landed: Optional[Callable[[Any], Any]],
+                     additive: Optional[Callable[[Any], str]]) -> Tuple[Optional[str], str]:
+    """(the level whose past moves the block states, its semantic type), or (None, ""): the plan's primary column when
+    the plan reads it as a level or a percentage (HISTORY_TYPES: a rate, a price, an index); with no primary in the
+    plan, the engine's primary claim when it is the average of a measure the engine does not add up (not money or
+    units). Never a flow, a count or a rating, and only a measure the engine made its average-month claim about."""
+    pcol, ptype = _plan_primary(plan, landed)
+    if pcol:
+        if ptype not in HISTORY_TYPES:
+            return None, ""
+        m = pcol
+    else:
+        c = claims.get(str((rep.get("primary_metric") or {}).get("finding_id") or "")) or {}
+        m, ptype = str(c.get("key") or ""), ""
+        if not m or m == "volume" or m.startswith(("total:", "volume:")) or c.get("like_for_like_of") \
+                or (additive is not None and additive(m) in ("money", "units")):
+            return None, ""
+    keys = {str(c.get("key") or "") for c in claims.values() if not c.get("like_for_like_of")}
+    return (m, ptype) if m in keys and m in getattr(frame, "columns", []) else (None, "")
+
+
+def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, claims: Dict[str, Dict[str, Any]],
+                   plan: Optional[Dict[str, Any]], landed: Optional[Callable[[Any], Any]],
+                   additive: Optional[Callable[[Any], str]], pub: Optional[Callable[[Any], Any]] = None
+                   ) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """(items, refused): the historical range of a level (review of the live baseline, 30 Sep 2026: the engine forecasts
+    counts and totals only, so the report on an exchange rate had no outlook at all, and the writer had nothing honest
+    to say about what an importer should expect). For the level _history_measure picks, with 3 years or more of monthly
+    averages (HISTORY_MIN_MONTHS), for each lag in HISTORY_LAGS (12 and 3 months): every past window of that length, one
+    ending each month (they overlap), whose first and last month both hold a value; the change of the monthly average
+    across each; the 10th, 50th and 90th percentiles of those changes (linear interpolation) and the share of the
+    windows in which it rose, with the window count. The monthly average is the mean of the month's values in the rows
+    the engine kept; a level's zeros that mark "no value" (the analyses' own evidence, nl_browser._zero_shape: weekend
+    placeholders between non-zero rates) are not counted, and the items say so. Facts about the file's past: no grade,
+    group "history_range", every label saying it is history, not a forecast."""
+    import numpy as np
+    import pandas as pd
+    m, st = _history_measure(rep, frame, claims, plan, landed, additive)
+    if m is None:
+        return [], []
+    plan_by = _plan_entries(plan, landed)
+    pc = plan_by.get(m) or {}
+    unit = str(pc.get("unit") or "")
+    kind = "points" if st == "percentage" else "change"
+    head = str(pc.get("name") or m)
+    what = "the monthly average of %s" % (" ".join(str(pc.get("label") or "").split())[:80]
+                                           or " ".join(head.replace("_", " ").split()).lower())
+    if pub is not None:                       # the plan's own words go through the report's scrubber
+        what = str(pub(what))
+    v = pd.to_numeric(frame[m], errors="coerce").astype(float)
+    mon = months                              # each row's month (build: the same index as the frame)
+    note = None
+    if st in NB.PLACEHOLDER_ZERO_TYPES or not st:
+        if NB._zero_gate(v.to_numpy()):
+            _z, ev = NB._zero_shape(v.to_numpy(), frame[date_col], None)
+            if ev:
+                vv = v.to_numpy().copy()
+                vv[ev["mask"]] = np.nan
+                v = pd.Series(vv, index=v.index)
+                zi = {"zeros": int(ev["zeros"]), "word": NB._zero_word(head, unit),
+                      "evidence": {k: x for k, x in ev.items() if k != "mask"}}
+                note = NB._zero_note(head, zi)
+                if len(note) > 240:
+                    note = note.split(":", 1)[0] + " (they mark a day with no value)"
+    ok = v.notna() & mon.notna()
+    avg: Dict[str, float] = {}
+    for mo, g in v[ok].groupby(mon[ok], sort=True):
+        vals = [float(x) for x in g.tolist()]
+        avg[str(mo)] = math.fsum(vals) / len(vals)
+    ms = sorted(avg)
+    if len(ms) < HISTORY_MIN_MONTHS or len(NB._month_range(ms[0], ms[-1])) < HISTORY_MIN_MONTHS:
+        return [], ["no historical range of %s: it has %d months with a value, fewer than the %d (3 years) it needs"
+                    % (what, len(ms), HISTORY_MIN_MONTHS)]
+    span = "%s to %s" % (NB._mon(ms[0]), NB._mon(ms[-1]))
+    cols = [c for c in (date_col, m) if c]
+    items: List[Dict[str, Any]] = []
+    for lag in HISTORY_LAGS:
+        ch = [avg[mo] - avg[NB._shift_month(mo, -lag)] for mo in ms if NB._shift_month(mo, -lag) in avg]
+        if len(ch) < 2:
+            continue
+        n = len(ch)
+        p10, p50, p90 = (float(x) for x in np.percentile(np.asarray(ch, dtype=float), [10, 50, 90]))
+        rose = 100.0 * sum(1 for x in ch if x > 0) / n
+        base = "history_range.m%d" % lag
+        wins = "%d past %d-month windows" % (n, lag)
+        tail = "%s; history, not a forecast" % span
+        txt = {k: _fmt_item(round(x, 6), kind, unit) for k, x in (("p10", p10), ("p50", p50), ("p90", p90))}
+        of = "%s: the %%s of its changes over the %s%%s, %s" % (NB._cap(what), wins, tail)
+        got = [
+            _item(base + ".windows", "history_range",
+                  "In the %s (%s; they overlap, one ending each month), the change in %s ran from %s (1 in 10 lower) "
+                  "to %s (1 in 10 higher); the middle was %s. This is history, not a forecast."
+                  % (wins, span, what, txt["p10"], txt["p90"], txt["p50"]),
+                  float(n), "count", "", None, cols, "history", "count of %d-month windows" % lag, assumes=note),
+            _item(base + ".p10", "history_range", of % ("10th percentile", " (1 in 10 was lower)"), p10, kind, unit,
+                  None, cols, "history", "p10 of %d-month changes" % lag, assumes=note),
+            _item(base + ".p50", "history_range", of % ("middle (median)", ""), p50, kind, unit, None, cols, "history",
+                  "p50 of %d-month changes" % lag, assumes=note),
+            _item(base + ".p90", "history_range", of % ("90th percentile", " (1 in 10 was higher)"), p90, kind, unit,
+                  None, cols, "history", "p90 of %d-month changes" % lag, assumes=note),
+            _item(base + ".rose", "history_range", "Share of the %s in which %s rose, %s" % (wins, what, tail), rose,
+                  "percent", "%", None, cols, "history", "share of %d-month windows that rose" % lag, assumes=note),
+        ]
+        items.extend(x for x in got if x is not None)
+    return items, []
 
 
 def _facts(frame: Any, date_col: str, months: Any) -> List[Dict[str, Any]]:

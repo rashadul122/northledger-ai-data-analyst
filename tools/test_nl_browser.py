@@ -1199,6 +1199,12 @@ def _assert_contract_v2(rep, name=""):
         _keys(c, V2_CHART, "chart")
         assert c["id"] not in seen, c["id"]
         seen.add(c["id"])
+        if c["rule"] == "V":
+            # the charts chosen from the data (CONTRACT §5.9): drawn in the page's viz area, not among section 3's
+            # six manager records; tools/test_nl_viz.py checks them
+            assert c["type"] == "viz" and c["data"].get("id") == c["id"], c["id"]
+            assert set(c["finding_ids"]) <= ids, (c["id"], c["finding_ids"])
+            continue
         assert re.fullmatch(r"#\d+b?", c["rule"]), c["rule"]
         assert c["view"] in ("manager", "analyst") and isinstance(c["default_visible"], bool), c["id"]
         assert c["why_shown"].strip() and isinstance(c["data"], dict) and c["data"], c["id"]
@@ -1208,6 +1214,12 @@ def _assert_contract_v2(rep, name=""):
     assert "findings_table" in seen and "benchmark" in seen, sorted(seen)
     # §5 "Suppression": every rule is either drawn or says in one line why it is absent
     accounted = {c["rule"] for c in rep["charts"]} | {x["rule"] for x in rep["charts_suppressed"]}
+    # #2b (the driver waterfall) is drawn by the chart registry: a contribution_waterfall record (rule V) replaces its
+    # suppressed line (nl_viz.drop_driver_line), and then no line says the drivers are not computed
+    wfall = any(c["rule"] == "V" and (c["data"] or {}).get("chart") == "contribution_waterfall" for c in rep["charts"])
+    if wfall:
+        assert not any(x["rule"] == "#2b" for x in rep["charts_suppressed"]), (name, rep["charts_suppressed"])
+        accounted.add("#2b")
     missing = set(SECTION5_RULES) - accounted
     assert not missing, "%s: rules neither drawn nor suppressed: %s" % (name, sorted(missing))
 
@@ -1252,12 +1264,19 @@ def test_v2_expected_charts_fire_and_absent_ones_say_why():
     win = rep["reproducibility"]["parameters"]["window"]
     assert any(m > win["end"] and k for m, k in zip(ba["months"], ba["kept"])), (win, ba["months"][-3:])
     rules = {s["rule"] for s in rep["charts_suppressed"]}
-    assert "#2b" in rules, rep["charts_suppressed"]
+    # #2b, the driver waterfall: the chart registry draws it here (a contribution_waterfall of region, rule V), so no
+    # line says the drivers are not computed (integration pass, 30 Sep 2026: the line sat beside the waterfall)
+    wf = [c for c in rep["charts"] if c["rule"] == "V" and c["data"]["chart"] == "contribution_waterfall"]
+    assert wf and "#2b" not in rules, (len(wf), rep["charts_suppressed"])
     _, rep = _v2("no_date.csv")
     ids = {c["id"] for c in rep["charts"]}
     assert not any(i.startswith(("trend.", "season.", "fan.", "replay.", "catmonth.")) for i in ids), ids
     rules = {s["rule"] for s in rep["charts_suppressed"]}
-    assert {"#2", "#3", "#4", "#5"} <= rules, rep["charts_suppressed"]
+    # no date, so no waterfall: #2b keeps its line, word for word
+    assert {"#2", "#2b", "#3", "#4", "#5"} <= rules, rep["charts_suppressed"]
+    assert [s["why"] for s in rep["charts_suppressed"] if s["rule"] == "#2b"] == \
+        ["which segments drive a change is not computed in this release"], rep["charts_suppressed"]
+    assert not any(c["rule"] == "V" and c["data"]["chart"] == "contribution_waterfall" for c in rep["charts"])
 
 
 def _chart_strings(obj, out):
@@ -1586,7 +1605,8 @@ def test_v2_chart_data_equals_recomputation_from_the_downloads():
         checked = _recompute_charts(rep)
         done |= {c.split(".")[0] for c in checked}
         drawn = {c["id"] for c in rep["charts"]}
-        data_charts = {i for i in drawn if not i.startswith(("kpi", "findings_table", "benchmark", "models."))}
+        # the viz records (rule V) are re-computed from the downloads by tools/test_nl_viz.py
+        data_charts = {i for i in drawn if not i.startswith(("kpi", "findings_table", "benchmark", "models.", "viz."))}
         assert data_charts <= set(checked), (name, sorted(data_charts - set(checked)))
     for kind in ("trend", "dist", "season", "ranked", "catmonth", "missingness", "cleaning", "corr", "fan", "replay"):
         assert kind in done, "no file exercised the %s chart" % kind
@@ -2030,7 +2050,8 @@ def test_v2_the_manager_cap_note_counts_what_it_names():
     seen = 0
     for name in V2_FILES:
         _, rep = _v2(name)
-        drawn = [c for c in rep["charts"] if c["view"] == "manager" and c["id"] not in ("kpi", "findings_table")]
+        drawn = [c for c in rep["charts"] if c["view"] == "manager" and c["id"] not in ("kpi", "findings_table")
+                 and c["rule"] != "V"]          # the viz records are drawn in their own area (CONTRACT §5.9)
         for c in rep["charts"]:
             if "moved to the analyst view" not in c["why_shown"]:
                 continue
@@ -4592,6 +4613,314 @@ def test_eval_a_rates_placeholder_zeros_are_not_counted_and_its_trend_is_the_rat
     json.loads(NB.run_json(data, "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29"))
 
 
+# ------------------------------------------------------------------ the live baseline evaluation (30 Sep 2026)
+# The live page on the evaluation's two files (.work/eval/out/baseline-2026-10-01/SCORECARD-draft.md): the FX report led
+# with the row count although the AI plan named VALUE, the rate was named "canada" after the constant GEO column, a
+# level had no outlook at all, a one-word review scrubbed "this" out of the engine's sentences, keeping the review text
+# switched the breakdown away from the departments the question asked about, and a method note was cut mid-word.
+EVAL_REVIEWS = os.path.join(HERE, "fixtures", "eval", "reviews_synthetic.csv")    # synthetic (make_reviews.py)
+EVAL_FX_CONSTANTS = (("GEO", "Canada"), ("Type of currency", "U.S. dollar, daily average"), ("UOM", "Dollars"),
+                     ("SCALAR_FACTOR", "units"))
+
+
+def _fx_long() -> bytes:
+    """The FX fixture in the published table's layout: its REF_DATE, VALUE and STATUS, with the four columns that hold
+    one value throughout in StatCan table 33-10-0036-01's U.S. dollar series (GEO, Type of currency, UOM,
+    SCALAR_FACTOR). Three of them are metadata, so the rules read the file as a long statistical table, as the live
+    page did."""
+    with open(EVAL_FX, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["REF_DATE"] + [k for k, _v in EVAL_FX_CONSTANTS] + ["VALUE", "STATUS"])
+    for r in rows:
+        w.writerow([r["REF_DATE"]] + [v for _k, v in EVAL_FX_CONSTANTS] + [r["VALUE"], r["STATUS"]])
+    return buf.getvalue().encode("utf-8")
+
+
+# the live run's plan (quant-fx/plan-response-2.json), cut to the fixture's columns: it keeps the constant columns
+# and names no reshape step, so the rules read the planned file as a long table
+EVAL_FX_LONG_PLAN = {
+    "goal": "How has the Canadian dollar moved against the U.S. dollar since 2017, and what should a Canadian importer "
+            "expect next?", "kind": "time_series_panel", "primary": "VALUE",
+    "understanding": "The Bank of Canada daily U.S. dollar rate, one row per date.",
+    "columns": [{"name": "REF_DATE", "semantic_type": "date", "role": "date", "unit": ""},
+                {"name": "VALUE", "semantic_type": "level", "role": "target", "unit": "CAD per USD"},
+                {"name": "STATUS", "semantic_type": "code", "role": "metadata", "unit": ""},
+                {"name": "GEO", "semantic_type": "geography", "role": "geography", "unit": ""},
+                {"name": "Type of currency", "semantic_type": "category", "role": "metadata", "unit": ""},
+                {"name": "UOM", "semantic_type": "metadata", "role": "metadata", "unit": ""},
+                {"name": "SCALAR_FACTOR", "semantic_type": "metadata", "role": "metadata", "unit": ""}],
+    "operations": [{"op": "keep_columns", "columns": ["REF_DATE", "VALUE", "STATUS", "GEO", "Type of currency", "UOM",
+                                                      "SCALAR_FACTOR"]},
+                   {"op": "exclude_blank", "column": "VALUE"}],
+    "analyses": [{"type": "trend", "columns": ["VALUE"]}, {"type": "distribution", "columns": ["VALUE"]}]}
+
+
+def _fx_rates():
+    """The fixture's rates, this test's own reading: (YYYY-MM-DD, rate) for every row with a VALUE that is not 0
+    (the 550 weekend zeros mark days with no rate: test_eval_a_rates_placeholder_zeros_are_not_counted_...)."""
+    with open(EVAL_FX, encoding="utf-8") as fh:
+        return [(r["REF_DATE"], float(r["VALUE"])) for r in csv.DictReader(fh) if r["VALUE"] and float(r["VALUE"]) != 0]
+
+
+def _monthly_means(pairs):
+    by = {}
+    for d, v in pairs:
+        by.setdefault(d[:7], []).append(v)
+    return {m: math.fsum(vs) / len(vs) for m, vs in by.items()}
+
+
+def _kpi_tiles(rep):
+    return next(c for c in rep["charts"] if c["id"] == "kpi")["data"]["tiles"]
+
+
+def test_eval_b_the_primary_follows_the_plan_on_the_live_fx_layout():
+    # live baseline: the plan named VALUE (the USD/CAD rate); results_for_ai's primary, the bottom line, the tiles and
+    # the PDF title were the row count ("Rows is up 0.4%"), because the rules then read the file as a long table
+    rep = _run(_fx_long(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_LONG_PLAN}, "2026-09-29")
+    assert rep["ok"], rep["error"]
+    assert (rep["input"].get("layout") or {}).get("layout") == "long statistical table", rep["input"].get("layout")
+    pm = rep["primary_metric"]
+    assert pm["finding_id"] == "measure.value.change" and pm["claim_key"] == "value", pm
+    f = next(x for x in rep["findings"] if x["id"] == "measure.value.change")
+    # the engine's claim for VALUE, recomputed here: the average month of the latest 12 months against the 12 before
+    mm = _monthly_means(_fx_rates())
+    prior = math.fsum(mm["2024-%02d" % k] for k in range(9, 13)) + math.fsum(mm["2025-%02d" % k] for k in range(1, 9))
+    latest = math.fsum(mm["2025-%02d" % k] for k in range(9, 13)) + math.fsum(mm["2026-%02d" % k] for k in range(1, 9))
+    assert abs(prior / 12 - 1.396492) < 5e-7 and abs(latest / 12 - 1.386262) < 5e-7, (prior / 12, latest / 12)
+    assert abs(f["value"] - 100.0 * (latest / prior - 1)) < 1e-9 and round(f["value"], 2) == -0.73, f["value"]
+    # the bottom line, the tiles and what the report writer leads with: that claim, never the row count
+    line = rep["summary"]["lines"][0]
+    assert line["kind"] == "moved" and line["finding_ids"][0] == "measure.value.change", line
+    assert line["text"].startswith("Average value (CAD per USD) is down 0.7% on the year before"), line["text"]
+    assert _kpi_tiles(rep)[0]["finding_id"] == "measure.value.change", _kpi_tiles(rep)
+    out = NB.results_for_ai(rep)
+    assert out["primary"] and out["primary"]["id"] == "measure.value.change", out["primary"]
+    assert out["primary"]["grade"] == f["grade"] == "WATCH", (out["primary"], f["grade"])
+    # the same file without the reshape (the fixture's own three columns) leads with the same claim
+    flat = _run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    assert flat["primary_metric"]["finding_id"] == "measure.value.change", flat["primary_metric"]
+    # an amount the engine splits by currency (f3: total:amount:eur, ...): the plan named amount, so its first total
+    # leads (the one the scenarios break down), never the row count the gate's own family chose
+    f3 = _run(_r4("f3_eur.csv"), "f3_eur.csv", "", {"__plan__": R4_EUR_PLAN}, R4_AS_OF)
+    assert f3["primary_metric"]["finding_id"] == _sc(f3)["basis"]["finding_id"] == "measure.amount.total.eur.change", \
+        (f3["primary_metric"], _sc(f3)["basis"]["finding_id"])
+    assert _kpi_tiles(f3)[0]["finding_id"] == "measure.amount.total.eur.change", _kpi_tiles(f3)
+    assert f3["summary"]["lines"][0]["finding_ids"][0] == "measure.amount.total.eur.change", f3["summary"]["lines"][0]
+    # the adapter's own headline, when the engine's story has none, quotes the analysis of the plan's primary column
+    from northledger import narrate as _narrate
+    none = _narrate.NOTHING_HAPPENED_LINE
+    fake = {"story": {"headline": none, "what_happened": [none], "cannot_answer": []}, "roles": {"date": "ref_date"},
+            "findings": [{"kind": "business", "verdict": "INSUFFICIENT", "columns_read": ["value"]}],
+            "ai_plan": {"primary": "VALUE"},
+            "ai_analyses": {"items": [{"sentence": "count rose by 3 a year. More.", "columns": ["count"]},
+                                      {"sentence": "VALUE rose by 0.0104 CAD per USD per year. More.", "columns": ["VALUE"]}]}}
+    NB._true_headline(fake, None, lambda x: x)
+    assert fake["story"]["headline"].endswith("From the AI plan's analyses: VALUE rose by 0.0104 CAD per USD per year."), \
+        fake["story"]["headline"]
+
+
+def test_eval_b_a_measure_is_named_from_its_column_and_the_plans_words_never_a_constant():
+    # live baseline: "Average canada moved from 1.396 ..." and "Measures canada": the U.S. dollar rate was named after
+    # GEO, a column that holds "Canada" on every row
+    rep = _run(_fx_long(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_LONG_PLAN}, "2026-09-29")
+    assert rep["roles"]["measures"] == ["value"] and rep["input"]["layout"]["order"] == ["VALUE"], \
+        (rep["roles"], rep["input"]["layout"]["order"])
+    assert rep["input"]["layout"]["lead"] == "VALUE" and rep["input"]["layout"]["lead_why"] == "it is the file's only series"
+    blob = json.dumps({k: v for k, v in rep.items() if k != "ai_plan"})
+    assert not re.search(r"(?i)\bcanada\b", blob), re.search(r"(?i).{80}\bcanada\b.{40}", blob).group(0)
+    assert rep["summary"]["labels"]["measure.value.change"] == "Average value (CAD per USD), the average month", \
+        rep["summary"]["labels"]
+    assert [a["columns"] for a in rep["ai_analyses"]["items"]] == [["VALUE"], ["VALUE"]], rep["ai_analyses"]["items"]
+    assert all(a["sentence"].startswith("VALUE") for a in rep["ai_analyses"]["items"]), \
+        [a["sentence"][:40] for a in rep["ai_analyses"]["items"]]
+    # the rules alone (no AI plan) name it after its column too
+    rules = _run(_fx_long(), "fx_usd_cad.csv", "", None, "2026-09-29")
+    assert rules["roles"]["measures"] == ["value"] and rules["primary_metric"]["claim_key"] == "value", \
+        (rules["roles"], rules["primary_metric"])
+    assert not re.search(r"(?i)\bcanada\b", json.dumps(rules)), "a constant column's value names the measure"
+    # the plan's own words for the measure, when it gives them, with its unit; a placeholder unit is no unit
+    worded = json.loads(json.dumps(EVAL_FX_LONG_PLAN))
+    worded["columns"][1].update(label="USD/CAD exchange rate")
+    rep = _run(_fx_long(), "fx_usd_cad.csv", "", {"__plan__": worded}, "2026-09-29")
+    assert rep["ai_plan"]["columns"][1]["label"] == "USD/CAD exchange rate", rep["ai_plan"]["columns"][1]
+    assert rep["summary"]["labels"]["measure.value.change"] == \
+        "Average USD/CAD exchange rate (CAD per USD), the average month", rep["summary"]["labels"]
+    assert rep["summary"]["lines"][0]["text"].startswith("Average USD/CAD exchange rate (CAD per USD) is down 0.7%")
+    assert NB._measure_label({"unit": "currency"}, "VALUE") == "value" and \
+        NB._measure_label({"unit": "CAD"}, "Net_Sales") == "net sales (CAD)", "a placeholder unit is printed"
+
+
+def _history_want(pairs, lag):
+    """This test's own historical range: every month m whose month m - lag also holds a value, the change of the
+    monthly average across the two; the 10th, 50th and 90th percentiles (linear interpolation, pandas' default), the
+    share that rose, and the count."""
+    import pandas as pd
+    mm = _monthly_means(pairs)
+
+    def back(m):
+        y, k = int(m[:4]), int(m[5:7]) - lag
+        while k < 1:
+            y, k = y - 1, k + 12
+        return "%04d-%02d" % (y, k)
+    ch = [mm[m] - mm[back(m)] for m in sorted(mm) if back(m) in mm]
+    q = pd.Series(ch).quantile([0.1, 0.5, 0.9], interpolation="linear").tolist()
+    return {"p10": q[0], "p50": q[1], "p90": q[2], "rose": 100.0 * sum(1 for x in ch if x > 0) / len(ch),
+            "windows": float(len(ch)), "first": min(mm), "last": max(mm)}
+
+
+def test_eval_d_a_level_gets_its_historical_range_as_history_not_a_forecast():
+    # the engine forecasts counts and totals only: the FX report's only outlook was "20 rows for 2026-09". A level
+    # (a rate, a price, an index) with 3 years or more of history now gets the range of its past 12-month and 3-month
+    # moves, recomputed here from the fixture's rates, as facts about the past (no grade, group history_range)
+    import nl_scenarios as NS
+    pairs = _fx_rates()
+    flat = _run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    long_ = _run(_fx_long(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_LONG_PLAN}, "2026-09-29")
+    for rep, where in ((flat, "the fixture's columns"), (long_, "the published layout")):
+        sc = _sc(rep)
+        H = {it["id"]: it for it in sc["items"] if it["group"] == "history_range"}
+        assert len(H) == 10, (where, sorted(H), sc["refused"])
+        for lag in NS.HISTORY_LAGS:
+            want = _history_want(pairs, lag)
+            b = "history_range.m%d" % lag
+            for k in ("p10", "p50", "p90", "rose", "windows"):
+                it = H["%s.%s" % (b, k)]
+                assert abs(it["value"] - want[k]) <= 1e-6, (where, it["id"], it["value"], want[k])
+                assert it["grade"] is None and it["parent_grade"] is None, it
+                assert it["grade_words"] == "a fact about the file's past, not graded: history, not a forecast", it
+                assert it["text"] == NS._fmt_item(it["value"], it["kind"], it["unit"]), it
+                assert "history" in it["label"] and "not a forecast" in it["label"], it["label"]
+                assert it["inputs"]["window"] == "history" and it["inputs"]["columns"] == ["ref_date", "value"], it
+            assert (H[b + ".p10"]["kind"], H[b + ".p10"]["unit"]) == ("change", "CAD per USD"), H[b + ".p10"]
+            assert (H[b + ".rose"]["kind"], H[b + ".rose"]["unit"]) == ("percent", "%"), H[b + ".rose"]
+            assert want["windows"] == {12: 104.0, 3: 113.0}[lag] and (want["first"], want["last"]) == ("2017-01", "2026-08")
+            t = {k: H["%s.%s" % (b, k)]["text"] for k in ("p10", "p50", "p90")}
+            assert H[b + ".windows"]["label"] == (
+                "In the %d past %d-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change "
+                "in the monthly average of value ran from %s (1 in 10 lower) to %s (1 in 10 higher); the middle was %s. "
+                "This is history, not a forecast." % (want["windows"], lag, t["p10"], t["p90"], t["p50"])), \
+                H[b + ".windows"]["label"]
+        assert NS.HISTORY_NOTE in sc["note"], sc["note"]
+    # the fixture's own path keeps the engine's zeros (its downloads do): the range counts them as no rate, and says so
+    zero = [it["assumes"] for it in _sc(flat)["items"] if it["group"] == "history_range"]
+    assert set(zero) == {"550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the "
+                         "pattern of a day with no value"}, set(zero)
+    # the report writer receives them 1:1, in the block's order (before the facts)
+    out = NB.results_for_ai(flat)
+    assert [it["id"] for it in out["scenarios"]["items"] if it["group"] == "history_range"] == \
+        [it["id"] for it in _sc(flat)["items"] if it["group"] == "history_range"]
+    # never a flow, a count or a rating: the ticket file's cost (an amount) and the reviews (a row count) have none
+    for rep in (_run(_r4("f3_eur.csv"), "f3_eur.csv", "", {"__plan__": R4_EUR_PLAN}, R4_AS_OF),
+                _run(open(EVAL_REVIEWS, "rb").read(), "reviews_synthetic.csv", "", None, "2026-09-30")):
+        assert not [it for it in _sc(rep)["items"] if it["group"] == "history_range"], _sc(rep)["items"][:2]
+    # too short: a level with 24 months of history is refused, and the refusal says why
+    short = "\n".join(["REF_DATE,VALUE"] + ["2024-%02d-15,%.4f" % (m, 1.3 + m / 100) for m in range(1, 13)]
+                      + ["2025-%02d-15,%.4f" % (m, 1.4 + m / 100) for m in range(1, 13)]).encode() + b"\n"
+    plan = {"goal": "How has the rate moved?", "primary": "VALUE",
+            "columns": [{"name": "REF_DATE", "semantic_type": "date", "role": "date"},
+                        {"name": "VALUE", "semantic_type": "level", "role": "target", "unit": "CAD per USD"}]}
+    sc = _sc(_run(short, "short.csv", "", {"__plan__": plan}, "2026-01-15"))
+    assert not [it for it in sc["items"] if it["group"] == "history_range"], sc["items"]
+    assert "no historical range of the monthly average of value: it has 24 months with a value, fewer than the 36 " \
+           "(3 years) it needs" in sc["refused"], sc["refused"]
+
+
+def test_eval_e_the_scrubber_never_scrubs_a_common_word_and_still_scrubs_a_name():
+    # live baseline: with review_text withheld (the default), one review whose whole text was "this" turned every "this"
+    # in the engine's own sentences into "[withheld]" (62 in one PDF: "a result at least [withheld] strong")
+    data = open(EVAL_REVIEWS, "rb").read()
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8"))))
+    short = [r["review_text"] for r in rows if len(r["review_text"]) < 12]
+    assert sorted(short) == sorted(["this", "good", "free", "yes", "Excellent", "Great game"]), short
+    rep = _run(data, "reviews_synthetic.csv", "Which departments stand out?", None, "2026-09-30")
+    assert rep["ok"], rep["error"]
+    assert rep["privacy"]["flagged"] == [{"column": "review_text", "kind": "free text", "decision": "withhold"}]
+    blob = json.dumps({k: v for k, v in rep.items() if k != "downloads"})
+    assert NB.WITHHELD_MARK not in blob, re.search(r".{60}\[withheld\].{30}", blob).group(0)
+    assert "a result at least this strong" in blob, "the engine's own sentence is not there to check"
+    assert NB.WITHHELD_MARK not in json.dumps(NB.results_for_ai(rep))
+    # the withheld column itself never leaves: not its name where an AI reads, not a review longer than a few words
+    _assert_withheld(rep, "review_text", [r["review_text"] for r in rows if len(r["review_text"]) >= 20])
+    # the rule: a free-text value only whole and 20 characters or more; any other value 2 words or more, or one word
+    # of 6 characters or more that is not a common English word; never a number
+    s = NB.Scrubber(["Marisol Fairweather", "Fairweather", "Zelda", "Excellent", "Pending", "52,000", "x@example.com",
+                     "1994-12-16"], free_text=["this", "good", "Great game", "yes",
+                                               "It stopped working after two weeks of use."])
+    assert s.clean("a result at least this strong; certify a good one; yes") == \
+        "a result at least this strong; certify a good one; yes"
+    assert s.clean("Excellent value, Pending, 52,000 and a Great game") == "Excellent value, Pending, 52,000 and a Great game"
+    assert s.clean("ask Marisol Fairweather today") == "ask [withheld] today"
+    assert s.clean("the Fairweather account") == "the [withheld] account"
+    assert s.clean("mail x@example.com on 1994-12-16") == "mail [withheld] on [withheld]"
+    assert s.clean("quoted 'It stopped working after two weeks of use.' here") == "quoted '[withheld]' here"
+    assert s.clean("Zelda said") == "Zelda said", "a single word under 6 characters identifies no one"
+    assert not NB._specific("this") and not NB._specific("average") and not NB._specific("52,000") and \
+        NB._specific("fairweather") and NB._specific("leaf cleanup") and not NB._specific("great game", True) and \
+        NB._specific("it stopped working after two weeks", True)
+
+
+def test_eval_c_the_scenarios_segment_follows_the_goal():
+    # live baseline: the question asked which departments stand out; keeping review_text switched the breakdown from
+    # department (45 items) to verified_purchase (21 items), the first of the engine's dimensions
+    data = open(EVAL_REVIEWS, "rb").read()
+    ask = "What do customers praise and complain about, and which departments stand out?"
+    for dec in (None, {"review_text": "keep"}):
+        rep = _run(data, "reviews_synthetic.csv", ask, dec, "2026-09-30")
+        assert rep["roles"]["dimensions"][:2] == ["verified_purchase", "department"], rep["roles"]
+        assert _sc(rep)["basis"]["segment"]["column"] == "department", (dec, _sc(rep)["basis"]["segment"])
+        _sc_check_recomputed(rep, where="reviews by department (%s)" % (dec or "defaults"))
+    # a question that names no column: the existing order (the first dimension that qualifies)
+    rep = _run(data, "reviews_synthetic.csv", "", {"review_text": "keep"}, "2026-09-30")
+    assert _sc(rep)["basis"]["segment"]["column"] == "verified_purchase", _sc(rep)["basis"]["segment"]
+    # with a plan: the goal's column first, then the plan's segment roles (verified_purchase is listed first)
+    plan = {"goal": "Which department grows fastest?", "kind": "transactions",
+            "columns": [{"name": "review_date", "semantic_type": "date", "role": "date"},
+                        {"name": "verified_purchase", "semantic_type": "category", "role": "segment"},
+                        {"name": "department", "semantic_type": "category", "role": "segment"},
+                        {"name": "rating", "semantic_type": "rating", "role": "driver"}],
+            "operations": [], "analyses": []}
+    rep = _run(data, "reviews_synthetic.csv", "", {"__plan__": plan}, "2026-09-30")
+    assert _sc(rep)["basis"]["segment"]["column"] == "department", _sc(rep)["basis"]["segment"]
+    rep = _run(data, "reviews_synthetic.csv", "", {"__plan__": dict(plan, goal="How are reviews moving?")}, "2026-09-30")
+    assert _sc(rep)["basis"]["segment"]["column"] == "verified_purchase", _sc(rep)["basis"]["segment"]
+    import nl_scenarios as NS
+    assert NS._goal_first(["a_b", "region", "store"], "Which stores and regions lead?", {}) == ["store", "region", "a_b"]
+    assert NS._goal_first(["category", "store"], "Which categories?", {}) == ["category", "store"]
+    assert NS._goal_first(["verified_purchase", "department"], "verified purchases or not?", {}) == \
+        ["verified_purchase", "department"]
+
+
+def test_eval_f_price_volume_mix_states_its_base_not_an_assumption():
+    # review of the live run: "on the assumption that price, volume and mix add up to the change"; they add up by
+    # construction (the block reconciles them), so the item states the base they are measured against
+    import nl_scenarios as NS
+    assert NS.PVM_ASSUMES == "measured against the 12 months before; the three parts add up exactly to the change"
+    assert NS.PV_ASSUMES == "measured against the 12 months before; the two parts add up exactly to the change"
+    it = _sc_items(_ship2())
+    assert {it["price_volume_mix." + k]["assumes"] for k in ("price", "volume", "mix")} == {NS.PVM_ASSUMES}
+    assert not any("assumption" in (x.get("assumes") or "") for x in it.values())
+
+
+def test_eval_g_an_analysis_method_is_cut_at_a_word_never_mid_word():
+    # review of the live run: a method note reached the report as "...trained only on the blocks befor" (the payload's
+    # 300-character cap, which is the worker's own)
+    rep = NB.run(_fx2("a_personal.csv", PRIVACY), "orders.csv", "", {"__plan__": _a_plan(False)}, "2026-09-15")
+    pr = next(a for a in rep["ai_analyses"]["items"] if a["type"] == "predict")
+    assert len(pr["method"]) > 300, len(pr["method"])
+    out = NB.results_for_ai(rep)
+    got = next(a for a in out["analyses"] if a["title"] == pr["title"])["method"]
+    assert len(got) <= 300 and got.endswith("…"), (len(got), got[-40:])
+    head = got[:-1]
+    assert pr["method"].startswith(head) and pr["method"][len(head)] == " ", (head[-30:], pr["method"][len(head):][:20])
+    v = _proxy_validate(out)
+    assert v is None or next(a for a in v["value"]["analyses"] if a["title"] == pr["title"])["method"] == got, v
+    # a text that fits is sent whole; the placeholder for the file's name is never cut
+    assert NB.ANALYSIS_TEXT_MAX == {"sentence": 700, "method": 300} and NB._cut_words("short", 300) == "short"
+    assert NB._cut_words("the trend of %s is up" % NB.FILE_WORD, 16) == "the trend of…"
+
+
 def _daily_file():
     """Ten years of daily rows: sales (about 6% of days sell nothing: a real 0), price (a level with 3 zeros in
     3,653 days: under 1%) and balance (a level that is often negative, with zeros)."""
@@ -4789,7 +5118,7 @@ def test_scenarios_come_in_the_order_the_workers_cap_keeps_them():
     assert ids[:len(core)] == core, "the core does not come first"
     assert [order[by[i]["group"]] for i in core] == sorted(order[by[i]["group"]] for i in core), [by[i]["group"] for i in core]
     for g in NS.GROUPS:
-        if g != "forecast":
+        if g not in ("forecast", "history_range"):          # a total: no usable forecast here, and no level's history
             assert any(by[i]["group"] == g for i in core), g
     for seg in top:
         for g in ("contribution", "per_unit"):
@@ -5162,9 +5491,10 @@ def test_results_for_ai_sends_the_primary_claim_the_report_leads_with():
     out = check(fx, "measure.value.change", "average month of value", "FX")
     assert out["scenarios"]["basis"] is None, out["scenarios"]["basis"]
     # f3 EUR: the plan's primary is the amount: the EUR total the scenarios break down, never the row count the engine's
-    # own gate chose as its primary here
+    # own gate chose as its primary here (since the live baseline of 30 Sep 2026 the report's primary_metric is that
+    # total too: _V2.primary_gated, test_eval_b_the_primary_follows_the_plan_on_the_live_fx_layout)
     f3 = _run(_r4("f3_eur.csv"), "f3_eur.csv", "", {"__plan__": R4_EUR_PLAN}, R4_AS_OF)
-    assert f3["primary_metric"]["finding_id"] == "measure.volume.change_pct", f3["primary_metric"]
+    assert f3["primary_metric"]["finding_id"] == "measure.amount.total.eur.change", f3["primary_metric"]
     out = check(f3, "measure.amount.total.eur.change", "monthly total of amount in EUR", "f3 EUR")
     assert out["primary"]["id"] == out["scenarios"]["basis"]["finding_id"], out["scenarios"]["basis"]
     # f9c: the total the scenarios break down (CONFIRMED), not the engine's average of the same measure
@@ -5313,7 +5643,7 @@ def test_review4_new_and_closed_segments_are_their_own_rows_and_the_largest_is_c
     _sc_check_recomputed(rep, where="f2 new and closed stores")
     # no mix without a price per unit before for the new store, and no claim that price, volume and mix add up
     assert "price_volume_mix.mix" not in it and it["price_volume_mix.price"]["assumes"] == NS.PV_ASSUMES == \
-        "price and volume add up to the change", it["price_volume_mix.price"]
+        "measured against the 12 months before; the two parts add up exactly to the change", it["price_volume_mix.price"]
     assert any(x.startswith("the mix effect needs units above zero for every store value in both windows (Uptown (new) is "
                             "new in the latest 12 months)") for x in sc["refused"]), sc["refused"]
     assert "The figures are shown rounded; they add up before rounding." in sc["note"], sc["note"]
@@ -5423,9 +5753,13 @@ def test_review4_results_for_ai_sends_each_table_once_and_never_goes_over_its_bu
     v = _proxy_validate(whole)
     if v is not None:
         assert v["ok"] and [t["title"] for t in v["value"]["tables"]] == [t["title"] for t in whole["tables"]], v.get("detail")
-    # a budget the scenario items alone cannot meet: every item goes, then the analyses from the last (each with its
-    # chart and its table), and analyses_refused says so first
-    budget = _payload_bytes_of(dict(whole, scenarios=dict(whole["scenarios"], items=[]))) - 9000
+    # a budget the scenario items alone cannot meet: every item goes, then the charts chosen from the data (rep.viz,
+    # CONTRACT §5.9) from the last, then the analyses from the last (each with its chart and its table), and
+    # analyses_refused says so first
+    import nl_viz as NV
+    assert any(NV.is_record(c) for c in whole["charts"]), "the file no longer has a viz record, so this tests less"
+    budget = _payload_bytes_of(dict(whole, scenarios=dict(whole["scenarios"], items=[]),
+                                    charts=[c for c in whole["charts"] if not NV.is_record(c)])) - 9000
     NB.RESULTS_MAX_BYTES = budget
     try:
         got = NB.results_for_ai(rep)
@@ -5434,6 +5768,7 @@ def test_review4_results_for_ai_sends_each_table_once_and_never_goes_over_its_bu
     finally:
         NB.RESULTS_MAX_BYTES = old
     assert len(json.dumps(got)) <= budget and got["scenarios"]["items"] == [], len(json.dumps(got))
+    assert not any(NV.is_record(c) for c in got["charts"]), "a viz record outlived an analysis"
     titles = [a["title"] for a in whole["analyses"]]
     k = len(got["analyses"])
     assert 0 < k < len(titles) and [a["title"] for a in got["analyses"]] == titles[:k], [a["title"] for a in got["analyses"]]

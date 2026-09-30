@@ -2464,18 +2464,19 @@ check('try-share-body-carries-what-the-shared-pdf-needs', DESK, async (ctx) => {
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
-// the /share body keeps under the page's cap, 115,000 bytes (the worker refuses a body over 130,000 bytes whole): the
-// engine's results give way first, trimmed to the room left; a report too large even without them is never sent, and
-// the visitor reads why (integration pass, 30 Sep 2026)
+// the /share body keeps under the page's cap, 171,000 bytes, about 10% under the worker's 190,000 (the chart registry's
+// caps, 30 Sep 2026; it was 115,000 under 130,000): the engine's results give way first, trimmed to the room left; a
+// report too large even without them is never sent, and the visitor reads why (integration pass, 30 Sep 2026)
+const SHARE_CAP = 171000;
 check('try-share-body-keeps-under-the-worker-cap', DESK, async (ctx) => {
   const resp = pdfFixture('ship2-response-v2.json'), W = require(path.join(SITE_DIR, 'src', 'js', '45-report-pdf.js'));
   const filler = (n) => 'The engine read the file in the browser and kept every figure it could check against its own totals. '.repeat(Math.ceil(n / 100) + 1).slice(0, n);
   const utf8 = (s) => Buffer.byteLength(s, 'utf8');
   // 1. over the cap even without the engine's results: no /share request, and a plain reason
-  const F1 = 125000;
+  const F1 = 182000;
   let p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply({ report: resp.report + '\n' + filler(F1) }) });
   await keptRun(p, ['staff_name']);
-  ok(await p.evaluate(() => window.NLTry.SHARE_BODY_MAX) === 115000, 'the page\'s share cap is not 115,000 bytes');
+  ok(await p.evaluate(() => window.NLTry.SHARE_BODY_MAX) === SHARE_CAP, 'the page\'s share cap is not 171,000 bytes');
   await p.click('#try-share');
   await tryUntil(p, '#try-share-out .try-share-warn');
   await p.click('#try-share-yes');
@@ -2483,13 +2484,13 @@ check('try-share-body-keeps-under-the-worker-cap', DESK, async (ctx) => {
   const msg = (await p.textContent('#try-share-out')).trim();
   ok(proxyPosts(ctx, 'share').length === 0, 'a /share request was made for a body over the cap');
   const kb = Number(((msg.match(/too large for a link: ([\d,]+) KB/) || [])[1] || '0').replace(/,/g, ''));
-  ok(/^The link could not be made\. This report is too large for a link: [\d,]+ KB, and a link holds at most 115 KB\. Nothing was sent\. Download the PDF to pass it on instead\.$/.test(msg) && kb > 115,
+  ok(/^The link could not be made\. This report is too large for a link: [\d,]+ KB, and a link holds at most 171 KB\. Nothing was sent\. Download the PDF to pass it on instead\.$/.test(msg) && kb > 171,
     'the visitor is not told why no link was made: ' + msg);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
   await p.close();
   // 2. a body that fits only with the engine's results trimmed: about 8,000 bytes left for them (the body without them
   // is read from the first message, to the KB above)
-  const base = kb * 1000 - F1 - 2, F2 = 115000 - 8000 - base - 2;
+  const base = kb * 1000 - F1 - 2, F2 = SHARE_CAP - 8000 - base - 2;
   const report2 = resp.report + '\n' + filler(F2);
   const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
   try {
@@ -2502,13 +2503,13 @@ check('try-share-body-keeps-under-the-worker-cap', DESK, async (ctx) => {
     const B = proxyPosts(c2, 'share').map((r) => r.body);
     ok(B.length === 1, B.length + ' /share requests (want 1)');
     const res = pdfFixture('ship2-results-v2.json').results, b = JSON.parse(B[0]), full = W.shareResults(res);
-    ok(utf8(B[0]) <= 115000 && b.report === report2, 'the /share body is ' + utf8(B[0]) + ' bytes, or its report was cut');
+    ok(utf8(B[0]) <= SHARE_CAP && b.report === report2, 'the /share body is ' + utf8(B[0]) + ' bytes, or its report was cut');
     // trimmed by the worker's priority to the room the body left (its cap less the body without them, the last key),
     // never from the tail (the contract test of 30 Sep 2026: the tail cut lost the run rate, the sensitivity and the
     // gaps): exactly the writer's own trim to that room, in the adapter's order, and no item of the full share left out
     // that would still have fit
     const got = b.results, kept = got && got.scenarios ? got.scenarios.items : [], ids = kept.map((x) => x.id);
-    const room = 115000 - utf8(JSON.stringify(Object.assign({}, b, { results: undefined }))) - utf8(',"results":');
+    const room = SHARE_CAP - utf8(JSON.stringify(Object.assign({}, b, { results: undefined }))) - utf8(',"results":');
     const pos = ids.map((id) => res.scenarios.items.findIndex((x) => x.id === id));
     const fits = full.scenarios.items.filter((x) => ids.indexOf(x.id) < 0).filter((x) => {
       const g = JSON.parse(JSON.stringify(got)); g.scenarios.items = full.scenarios.items.filter((y) => y.id === x.id || ids.indexOf(y.id) >= 0);
@@ -2522,6 +2523,37 @@ check('try-share-body-keeps-under-the-worker-cap', DESK, async (ctx) => {
       'the room of about 8,000 bytes did not go to the run rate and the sensitivity before the facts and the segments\' figures per unit: ' + ids.join(', '));
     ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
   } finally { await c2.close(); }
+});
+
+// the charts a link carries (the chart review, 30 Sep 2026): the worker keeps whole records from the start within 60,000
+// bytes (insight-proxy/src/share.js SHARE_CHARTS_MAX_BYTES) and dropped the rest without a word; the page now keeps the
+// same budget and says what the link leaves out. A record with a suppressed cell goes with no rows read (inputs.rows)
+check('try-share-link-keeps-the-chart-budget-and-says-what-it-leaves-out', DESK, async (ctx) => {
+  const utf8 = (s) => Buffer.byteLength(s, 'utf8');
+  const ex = VIZ_SPEC.examples, big = ['edge_heatmap_diverging', 'heatmap', 'edge_heatmap_suppressed', 'edge_waterfall_12_long_labels', 'waterfall', 'edge_heatmap_diverging',
+    'heatmap', 'edge_heatmap_diverging', 'heatmap', 'edge_heatmap_diverging'];
+  // each record made about 2,500 bytes longer where no reader prints it (inputs.op), so ten of them pass the budget
+  const charts = big.map((k, i) => { const r = Object.assign(vizCopy(ex[k].record), { id: 'viz.' + (i + 1) + '.' + ex[k].record.chart }); r.inputs = Object.assign({}, r.inputs, { op: 'x'.repeat(2500) }); return r; });
+  const all = utf8(JSON.stringify(charts));
+  ok(all > 60000, 'the charts are only ' + all + ' bytes: the check needs more than the budget');
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply({ charts }) });
+  await keptRun(p, ['staff_name']);
+  ok(await p.evaluate(() => window.NLTry.SHARE_CHARTS_MAX) === 60000, 'the page\'s chart budget is not the worker\'s 60,000 bytes');
+  await p.click('#try-share');
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
+  await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
+  const B = proxyPosts(ctx, 'share').map((r) => r.body), b = JSON.parse(B[0]), k = b.charts.length;
+  ok(k > 0 && k < charts.length && utf8(JSON.stringify(b.charts)) <= 60000 && b.charts.every((c, i) => c.id === charts[i].id),
+    'the link does not hold whole records from the start within 60,000 bytes: ' + k + ' records, ' + utf8(JSON.stringify(b.charts)) + ' bytes');
+  const next = charts.slice(0, k + 1).map((c) => (c.suppressed && c.suppressed.cells > 0 ? Object.assign(vizCopy(c), { inputs: Object.assign({}, c.inputs, { rows: null }) }) : c));
+  ok(utf8(JSON.stringify(next)) > 60000, 'a record that fits the budget was left out');
+  const sup = b.charts.filter((c) => c.suppressed && c.suppressed.cells > 0);
+  ok(sup.length > 0 && sup.every((c) => c.inputs.rows === null), 'a record with a suppressed cell went with its rows read: ' + JSON.stringify(sup.map((c) => c.inputs)));
+  const note = (await p.textContent('#try-share-out')).replace(/\s+/g, ' ');
+  ok(note.indexOf('The link holds ' + k + ' of the report\'s ' + charts.length + ' charts: a link keeps at most 60 KB of charts. The PDF has them all.') >= 0,
+    'the visitor is not told what the link leaves out: ' + note.slice(-240));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
 // a report reopened from the gallery: its PDF and its link carry the question it answered, not the one on the page now
@@ -2675,6 +2707,47 @@ check('try-report-fits-a-phone', PHONE, async (ctx) => {
   ok(!r.fixCue && r.fixTall < 140, 'the fixes table does not stack on a phone (sideways cue ' + r.fixCue + ', first row ' + Math.round(r.fixTall) + ' px tall)');
 }, { mobile: true });
 
+// The plan card's "Data tests" table (integration pass, 30 Sep 2026): five columns of the engine's words (a long column
+// name, examples, the action) pushed a phone's page 86 to 149 px sideways. The table sits in the page's sideways
+// scroller (.tscroll: a named region with its cue), so from 320 to 390 px the page itself never scrolls sideways.
+check('try-plan-data-tests-fit-a-phone', PHONE, async (ctx) => {
+  const rep = stubReport(); rep.__profile = true; rep.__results = true;
+  const T = (column, test, checked, failed, examples, action) => ({ column, semantic_type: 'x', test, checked, failed, examples, action,
+    unreadable: 0, out_of_range: failed, repeated: 0, unexpected: 0, misread: false, signal: false });
+  rep.__contracts = { tests: [
+    T('shipping_postal_code_region', 'a code of the same shape on every row', 1231, 44, ['M5V-3L9-XX', 'K1A0B1ZZZZ', 'H2X_1Y4_000'], 'kept by the engine; the tests changed no value'),
+    T('amount_before_discount_cad', 'between 0 and 100 (or 0 and 1) (percentage)', 1231, 40, ['140.25', '155.50', '-3.75'], '40 are outside 0 to 100: kept by the engine; the tests changed no value'),
+    T('order_date', 'a date that can be read', 1231, 0, [], 'passed')], cells_flagged: 84, line: 'source_line', note: 'The tests read every value and changed none.' };
+  const plan = { goal: 'How has order value changed?', understanding: 'Orders.', quality_risks: [], operations: [], primary: 'amount',
+    analyses: [{ type: 'trend', columns: ['amount'] }], columns: [{ name: 'order_date', semantic_type: 'date', role: 'date' }, { name: 'amount', semantic_type: 'flow_amount', role: 'target' }] };
+  const reply = (b) => b.profile ? { status: 200, json: { plan } } : { status: 503, json: { error: 'x' } };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
+  await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])');
+  await p.click('#try-pd-go');
+  await tryUntil(p, '#try-plan-card table.try-contracts');
+  await tryUntil(p, '#try-report:not([hidden])');
+  let wider = 0;
+  for (const w of [320, 360, 375, 390]) {
+    await p.setViewportSize({ width: w, height: 844 });
+    await p.waitForTimeout(260);                         // the page's resize handler marks the scrollers after 120 ms
+    const r = await p.evaluate(() => {
+      const t = document.querySelector('#try-plan-card table.try-contracts'), s = t && t.closest('.tscroll');
+      const cue = s && s.previousElementSibling && s.previousElementSibling.classList.contains('swipe-cue') ? s.previousElementSibling : null;
+      const card = document.getElementById('try-plan-card').getBoundingClientRect();
+      return { W: document.documentElement.clientWidth, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        wrapped: !!s, role: s && s.getAttribute('role'), label: s && s.getAttribute('aria-label'), tab: s && s.getAttribute('tabindex'),
+        more: s ? s.scrollWidth - s.clientWidth : null, cue: !!(cue && !cue.hidden), can: !!(s && s.classList.contains('can-scroll')),
+        inCard: s ? s.getBoundingClientRect().right <= card.right + 0.5 : false };
+    });
+    ok(r.sideways <= 0, 'at ' + w + ' px the plan card\'s Data tests push the page ' + r.sideways + ' px sideways');
+    ok(r.wrapped && r.role === 'region' && /Data tests/.test(r.label || '') && r.tab === '0', 'at ' + w + ' px the Data tests table is not in a named, focusable sideways scroller: ' + JSON.stringify(r));
+    ok(r.inCard, 'at ' + w + ' px the Data tests scroller runs past the plan card');
+    if (r.more > 2) { wider++; ok(r.cue && r.can, 'at ' + w + ' px the Data tests table scrolls sideways without its cue: ' + JSON.stringify(r)); }
+  }
+  ok(wider > 0, 'the Data tests table fits every phone width, so this check proves nothing about the scroller');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { mobile: true });
+
 check('try-sample-through-the-real-engine', DESK, async (ctx) => {
   const why = await cdnReachable();
   if (why) throw new Skip(why + ', so the real engine cannot load');
@@ -2756,7 +2829,7 @@ const FX_NAMES = ['sample', 'rent-roll', 'sales-ledger', 'web-analytics', 'cafe-
 // every file the checks read: each report, the profile the page would send /plan for it, and the planned
 // orders-private run (its CSV too, for the personal values that must never show)
 const FX_FILES = FX_NAMES.concat(['orders-private']).map((n) => n + '.json').concat(FX_NAMES.concat(['orders-private']).map((n) => n + '.profile.json'),
-  FX_NAMES.concat(['orders-private']).map((n) => n + '.landed.json'), ['orders-private.csv']);
+  FX_NAMES.concat(['orders-private']).map((n) => n + '.landed.json'), ['orders-private.csv', 'sales-ledger-charts.json', 'viz-hostile-header.json']);
 let FX_DIR = null;
 function fixtureProfile(name) { fixture(name); return JSON.parse(fs.readFileSync(path.join(FX_DIR, name + '.profile.json'), 'utf8')); }
 function fixtureLanded(name) { fixture(name); return JSON.parse(fs.readFileSync(path.join(FX_DIR, name + '.landed.json'), 'utf8')); }
@@ -3156,9 +3229,31 @@ check('try-v2-money-in-whole-units-and-the-like-for-like-line-on-the-first-chart
   ok(line.indexOf('What the file covers changed') >= 0 && line.indexOf('Like for like') >= 0 && line.indexOf(fxVal(L.estimate, 'fraction')) >= 0, 'the primary decision line lacks the coverage change and the like-for-like figure: ' + line);
   // the analyst note of a chart the cap moved counts the charts it names
   const moved = rep.charts.filter((c) => /moved to the analyst view/.test(c.why_shown));
-  const drawn = rep.charts.filter((c) => c.view === 'manager' && ['kpi', 'findings_table'].indexOf(c.id) < 0).length;
+  // the chart registry's records (rule V) are drawn in their own area and are not counted in the manager view's cap (CONTRACT §5.9)
+  const drawn = rep.charts.filter((c) => c.view === 'manager' && c.type !== 'viz' && ['kpi', 'findings_table'].indexOf(c.id) < 0).length;
   const words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
   moved.forEach((c) => ok(c.why_shown.indexOf('draws at most ' + words[drawn] + ' charts') >= 0 && !/at most six charts/.test(c.why_shown), c.id + ': the cap note does not count the ' + drawn + ' drawn charts: ' + c.why_shown));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// A chart's link counts what it highlights in words that agree with the count (integration pass, 30 Sep 2026: "Show
+// the 1 evidence facts behind it"): one evidence fact, two evidence facts; one claim, and its label says so too.
+check('try-v2-chart-links-count-their-evidence-in-the-singular-and-the-plural', DESK, async (ctx) => {
+  const rep = JSON.parse(JSON.stringify(fixture('sample')));
+  const figs = rep.charts.filter((c) => c.view === 'manager' && c.default_visible && c.type !== 'viz' && ['kpi', 'findings_table', 'benchmark'].indexOf(c.id) < 0);
+  ok(figs.length >= 3, 'the sample has ' + figs.length + ' manager figures, 3 are needed');
+  const fid = rep.findings[0].id;
+  figs[0].finding_ids = ['ledger.fact.one']; figs[1].finding_ids = ['ledger.fact.one', 'ledger.fact.two']; figs[2].finding_ids = [fid];
+  const { p } = await openV2(ctx, 'sample', rep);
+  const got = await p.evaluate((ids) => ids.map((id) => {
+    const b = document.querySelector('#nl2-manager [data-chart="' + id + '"] .nl2-link');
+    return b ? [b.textContent, b.getAttribute('aria-label')] : null;
+  }), figs.slice(0, 3).map((c) => c.id));
+  ok(got[0] && got[0][0] === 'Show the 1 evidence fact behind it' && /^Highlight the evidence fact this chart supports: /.test(got[0][1]), 'one evidence fact: ' + JSON.stringify(got[0]));
+  ok(got[1] && got[1][0] === 'Show the 2 evidence facts behind it' && /^Highlight the evidence facts this chart supports: /.test(got[1][1]), 'two evidence facts: ' + JSON.stringify(got[1]));
+  ok(got[2] && got[2][0] === 'Show the claim it supports' && /^Highlight the claim this chart supports: /.test(got[2][1]), 'one claim: ' + JSON.stringify(got[2]));
+  const all = await p.evaluate(() => Array.from(document.querySelectorAll('#try-report .nl2-link')).map((b) => b.textContent + ' | ' + b.getAttribute('aria-label')));
+  ok(!all.some((t) => /\b1 evidence facts\b|\b1 claims\b/.test(t)), 'a link counts one in the plural: ' + JSON.stringify(all.filter((t) => /\b1 (evidence facts|claims)\b/.test(t))));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
@@ -3234,7 +3329,10 @@ check('try-v2-analyst-view-is-a-paper-with-every-table', DESK, async (ctx) => {
     if (c.validity && c.validity.pct !== null) ok(cells.indexOf(c.validity.pct.toFixed(1) + '%') >= 0, c.name + ' validity: ' + cells);
   });
   ok(d.dims.length === rep.health.dimensions.length, 'the quality dimensions table');
-  ok(d.supp.length === rep.charts_suppressed.length && rep.charts_suppressed.every((s, i) => d.supp[i][0] === s.rule && d.supp[i][1].indexOf(squash(s.why)) >= 0), 'the absent charts are not each listed with why: ' + JSON.stringify(d.supp.slice(0, 2)));
+  // a contribution waterfall (the chart registry) shows the drivers: #2b is then not listed as a chart not drawn
+  const wfall = rep.charts.some((c) => c.type === 'viz' && c.data && c.data.chart === 'contribution_waterfall' && c.data.kind === 'waterfall');
+  const absent = rep.charts_suppressed.filter((s) => !(wfall && s.rule === '#2b'));
+  ok(d.supp.length === absent.length && absent.every((s, i) => d.supp[i][0] === s.rule && d.supp[i][1].indexOf(squash(s.why)) >= 0), 'the absent charts are not each listed with why: ' + JSON.stringify(d.supp.slice(0, 2)));
   const R = rep.reproducibility;
   ok(d.repro.indexOf(R.input_sha256) >= 0 && d.repro.indexOf(R.engine_snapshot) >= 0 && d.repro.indexOf(R.decision_code_snapshot) >= 0 &&
     d.repro.indexOf(fmt(R.figures_reproduced.k, 0) + ' of ' + fmt(R.figures_reproduced.n, 0) + ' figures') >= 0, 'the reproducibility block misses a hash or the k of n count');
@@ -3274,15 +3372,22 @@ check('try-v2-each-file-draws-exactly-the-charts-its-rules-select', DESK, async 
         supp: Array.from(document.querySelectorAll('#nl2-analyst .nl2-supp li[data-rule]')).map((li) => li.getAttribute('data-rule')),
         cells: Array.from(document.querySelectorAll('#nl2-analyst [data-chart^="catmonth."]')).map((f) => [f.getAttribute('data-chart'), f.querySelectorAll('g.hc2').length,
           Array.from(f.querySelectorAll('.viz svg text.lab')).map((t) => t.textContent),
-          Array.from(f.querySelectorAll('g.hc2')).filter((g) => !/^\d[\d,]*$/.test((g.querySelector('.cv2') || {}).textContent || '') || !/[○◐●]/.test((g.querySelector('.gl2') || {}).textContent || '')).length]) };
+          Array.from(f.querySelectorAll('g.hc2')).filter((g) => !/^\d[\d,]*$/.test((g.querySelector('.cv2') || {}).textContent || '') || !/[○◐●]/.test((g.querySelector('.gl2') || {}).textContent || '')).length,
+          (f.querySelector('.nl2-fignote') || {}).textContent || '']) };
     });
     const want = rep.charts.map((c) => c.id).sort();
     ok(JSON.stringify(d.ids) === JSON.stringify(want), name + ': charts drawn ' + JSON.stringify(d.ids) + ', the rules select ' + JSON.stringify(want));
     ok(!d.empty.length, name + ': empty charts ' + JSON.stringify(d.empty));
     ok(!d.unlinked.length, name + ': charts with no claim link ' + JSON.stringify(d.unlinked));
-    ok(JSON.stringify(d.supp) === JSON.stringify(rep.charts_suppressed.map((s) => s.rule)), name + ': suppressed rules listed ' + JSON.stringify(d.supp));
-    d.cells.forEach(([id, n, labels, bad]) => {
+    // a contribution waterfall (the chart registry) shows the drivers: #2b is then not listed as a chart not drawn
+    const wfall = rep.charts.some((c) => c.type === 'viz' && c.data && c.data.chart === 'contribution_waterfall' && c.data.kind === 'waterfall');
+    ok(JSON.stringify(d.supp) === JSON.stringify(rep.charts_suppressed.filter((s) => !(wfall && s.rule === '#2b')).map((s) => s.rule)), name + ': suppressed rules listed ' + JSON.stringify(d.supp));
+    d.cells.forEach(([id, n, labels, bad, note]) => {
       const c = chartOf(rep, id).data;
+      // its note says where the change sits only beside the contribution waterfall, and never that drivers are "not
+      // computed in this release" (pre-deploy pass, 30 Sep 2026: it said so beside the waterfall)
+      ok(!/not computed in this release/.test(note) && /contribution waterfall shows where the change sits/.test(note) === wfall &&
+        /no contribution waterfall was built for this file/i.test(note) === !wfall, name + ' ' + id + ': the map\'s note does not match the waterfall (' + wfall + '): ' + note);
       ok(n === c.categories.length * c.months.length && !bad, name + ' ' + id + ': ' + n + ' cells for ' + c.categories.length + ' x ' + c.months.length + ', ' + bad + ' without a number and a band glyph');
       // every category is named on the map (in full, or clipped with an ellipsis)
       const named = (k) => labels.some((l) => l === k || (l.endsWith('…') && k.indexOf(l.slice(0, -1)) === 0));
@@ -3386,7 +3491,8 @@ check('try-v2-save-as-pdf-prints-both-views-as-a-paper', DESK, async (ctx) => {
     window.__printed = { cls: document.body.classList.contains('print-try'), m: shown(M), a: shown(A),
       drawn: Array.from(A.querySelectorAll('figure[data-chart] .viz')).filter((v) => !v.querySelector('svg, table')).length,
       figs: A.querySelectorAll('figure[data-chart]').length, closed: document.querySelectorAll('#try-report details:not([open])').length,
-      cover: R.firstElementChild && R.firstElementChild.className === 'tr-print-cover' ? R.firstElementChild.textContent : '',
+      // the cover prints first: before the report (and before the AI's plan card when there is one)
+      cover: (function () { const c = document.querySelector('#try-app > .tr-print-cover'); return c && (c.compareDocumentPosition(R) & 4) ? c.textContent : ''; })(),
       title: document.title, rule: rule ? rule.textContent : '', wbr: document.querySelectorAll('#try-report .nl2 code wbr').length }; }; });
   await p.click('#try-report [data-act="print"]');
   await p.waitForTimeout(150);
@@ -3420,6 +3526,56 @@ check('try-v2-save-as-pdf-prints-both-views-as-a-paper', DESK, async (ctx) => {
   ok(rep.charts.length > 0 && !p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
+// The engine report's "Save as PDF" with the AI's plan card on the page (live baseline, 30 Sep 2026: the plan card
+// printed first, pages 1 to 3, and the cover began halfway down page 4). The cover is page 1: it goes before everything
+// that prints, the plan card starts page 2, and the page goes back as it was. The PDF is made by Chrome from the page in
+// its printing state (printReport restores it on the next tick; the check holds it there until the PDF is made) and
+// read page by page with poppler's pdftotext.
+check('try-save-as-pdf-puts-the-cover-on-page-1-before-the-ai-plan-card', DESK, async (ctx) => {
+  const rep = stubReport(); rep.__profile = true;
+  const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: ['few months'],
+    operations: [{ op: 'set_aside', columns: ['notes'] }], analyses: [{ type: 'trend', columns: ['amount'] }] };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan } } : { status: 503, json: { error: 'x' } } });
+  await p.click('#try-sample');
+  await tryUntil(p, '#try-pd:not([hidden])');
+  await p.click('#try-pd-go');
+  await tryUntil(p, '#try-report:not([hidden])');
+  ok(await p.isVisible('#try-plan-card'), 'no AI plan card beside the report');
+  await p.evaluate(() => { window.print = () => { const st = window.setTimeout; window.setTimeout = (fn) => { window.setTimeout = st; window.__restore = fn; return 0; }; }; });
+  await p.click('#try-report [data-act="print"]');
+  await p.emulateMedia({ media: 'print' });
+  const at = await p.evaluate(() => {
+    const cover = document.querySelector('.tr-print-cover'), card = document.getElementById('try-plan-card');
+    const shown = (e) => { for (let x = e; x && x !== document.documentElement; x = x.parentElement) if (getComputedStyle(x).display === 'none') return false; return true; };
+    const printed = Array.from(document.querySelectorAll('#try-app > *')).filter((e) => shown(e) && e.getBoundingClientRect().height > 0);
+    return { printed: printed.map((e) => e.id || e.className), inReport: !!(cover && cover.closest('#try-report')),
+      coverTop: cover ? cover.getBoundingClientRect().top : null, cardTop: card.getBoundingClientRect().top,
+      breakAfter: cover ? getComputedStyle(cover).breakAfter : '', h1: cover ? cover.querySelector('h1').textContent : '',
+      prev: shown(document.getElementById('try-prev')) };
+  });
+  ok(at.printed[0] === 'tr-print-cover' && at.coverTop < at.cardTop && at.breakAfter === 'page' && !at.inReport,
+    'the cover is not the first thing that prints: ' + JSON.stringify(at));
+  ok(!at.prev, 'the list of previous reports prints inside the report');
+  const pdf = await p.pdf({ format: 'Letter', printBackground: true, preferCSSPageSize: true });
+  await p.evaluate(() => { if (window.__restore) window.__restore(); });
+  const f = path.join(require('os').tmpdir(), 'nl-ui-cover-' + process.pid + '.pdf');
+  fs.writeFileSync(f, pdf);
+  try {
+    const page = (i) => require('child_process').spawnSync('pdftotext', ['-f', String(i), '-l', String(i), '-layout', f, '-'], { encoding: 'utf8' });
+    const p1 = page(1);
+    if (p1.error) console.log('   (pdftotext not found: the order on the page was checked, the PDF\'s pages were not)');
+    else {
+      const t1 = p1.stdout.replace(/\s+/g, ' '), t2 = page(2).stdout.replace(/\s+/g, ' ');
+      ok(/NorthLedger Insights/i.test(t1) && /Confidential/.test(t1) && t1.indexOf(at.h1.split(' ').slice(0, 3).join(' ')) >= 0,
+        'page 1 of the PDF is not the cover: ' + t1.slice(0, 300));
+      ok(!/The AI's plan for this file/.test(t1) && /The AI's plan for this file/.test(t2), 'the AI plan card is not where page 2 starts: ' + t2.slice(0, 200));
+    }
+  } finally { fs.unlinkSync(f); }
+  const after = await p.evaluate(() => ({ cover: !!document.querySelector('.tr-print-cover'), cls: document.body.classList.contains('print-try'), rule: !!document.getElementById('nl-print-page') }));
+  ok(!after.cover && !after.cls && !after.rule, 'the page did not go back after printing: ' + JSON.stringify(after));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
 check('try-v2-falls-back-to-the-checked-v1-report-when-the-v2-blocks-are-empty-or-broken', DESK, async (ctx) => {
   const empty = fixture('rent-roll');
   empty.charts = []; empty.charts_suppressed = [];
@@ -3440,6 +3596,388 @@ check('try-v2-falls-back-to-the-checked-v1-report-when-the-v2-blocks-are-empty-o
   d = await p.evaluate(() => ({ v2: !!document.querySelector('#try-report .nl2-views'), note: (document.querySelector('#try-report .nl2-fallback') || {}).textContent || '' }));
   ok(!d.v2 && d.note.indexOf(tr.id) >= 0, 'chart data whose lengths disagree are drawn: ' + JSON.stringify(d));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+/* ------------------------------------------------------------ the chart registry, page side (tools/fixtures/viz/spec.json)
+   window.NLV (src/js/55-nl-viz.js) draws each viz record by its draw kind, or its table: the spec's 14 examples (and the
+   engine's own ship2 records once tools/fixtures/viz/engine-charts-ship2.json exists), fed to the page as the engine's
+   v2 records (type "viz", rule V) inside a real adapter report, and as the AI report's [CHART:n] figures. */
+const VIZ_DIR = path.join(SITE_DIR, 'tools', 'fixtures', 'viz');
+const VIZ_SPEC = JSON.parse(fs.readFileSync(path.join(VIZ_DIR, 'spec.json'), 'utf8'));
+const VIZ_DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope'];
+const VIZ_GLYPH = { 1: '○', 2: '◐', 3: '●' };
+const vizCopy = (x) => JSON.parse(JSON.stringify(x));
+// the engine's own records (tools/test_nl_viz.py --write): {engine_pick: {viz}, ai_pick: {viz}}, each viz as rep.viz holds it;
+// a plain list, {charts} or {viz: {charts}} is read too
+function vizEngineRecords() {
+  const f = path.join(VIZ_DIR, 'engine-charts-ship2.json');
+  if (!fs.existsSync(f)) return [];
+  const j = JSON.parse(fs.readFileSync(f, 'utf8')), out = [];
+  const take = (list, who) => (Array.isArray(list) ? list : []).forEach((c) => {
+    const r = c && c.type === 'viz' ? c.data : c;
+    if (r && typeof r.kind === 'string' && r.table && r.id) out.push(Object.assign(vizCopy(r), { __who: who }));
+  });
+  if (Array.isArray(j)) take(j, 'engine');
+  else {
+    take(j.records, 'engine'); take(j.charts, 'engine'); take(j.viz && j.viz.charts, 'engine');
+    ['engine_pick', 'ai_pick'].forEach((k) => take(j[k] && j[k].viz && j[k].viz.charts, k.replace('_', ' ')));
+  }
+  return out;
+}
+// every record the checks draw, each with an id unique on the page (the spec's pattern viz.<n>.<chart>, numbered after the
+// engine's own, at most VIZ_MAX of them, so the adapter's report keeps its records)
+function vizRecords(extra) {
+  const recs = Object.entries(VIZ_SPEC.examples).map(([k, e]) => Object.assign(vizCopy(e.record), { __name: k }))
+    .concat(vizEngineRecords().map((r) => { const c = vizCopy(r); c.__name = r.__who + ' ' + r.id; delete c.__who; return c; }), extra || []);
+  recs.forEach((r, i) => { r.id = 'viz.' + (i + 1 + VIZ_SPEC.caps.VIZ_MAX) + '.' + String(r.chart || 'chart').replace(/[^a-z_]/g, '').slice(0, 24); });
+  return recs;
+}
+// a record of a kind no reader knows (it must be drawn as its table), and a heatmap whose data are malformed
+function vizOddRecords() {
+  const unknown = Object.assign(vizCopy(VIZ_SPEC.examples.table.record), { chart: 'sankey', kind: 'sankey', data: { flows: [[0, 1, 41]] }, title: 'Orders flowing from region to warehouse', __name: 'unknown kind' });
+  delete unknown.degraded;
+  const broken = Object.assign(vizCopy(VIZ_SPEC.examples.heatmap.record), { title: 'A heatmap whose rows and values disagree', __name: 'malformed heatmap' });
+  broken.data.values = broken.data.values.slice(1);
+  return [unknown, broken];
+}
+function vizV2(rec) {
+  const fids = (rec.anchors || []).filter((a) => a.indexOf('finding:') === 0).map((a) => a.slice(8));
+  return { id: rec.id, rule: 'V', type: 'viz', title: rec.title, view: 'manager', default_visible: true, finding_ids: fids, why_shown: rec.why, source: rec.source, data: rec };
+}
+// a real adapter report with the viz records appended as the engine appends them (and rep.viz with the spec's refusals)
+function vizReport(recs, name) {
+  const rep = vizCopy(fixture(name || 'sample'));
+  recs.forEach((r) => { const c = vizCopy(r); delete c.__name; rep.charts.push(vizV2(c)); });
+  rep.viz = { version: VIZ_SPEC.version, charts: recs.map((r) => { const c = vizCopy(r); delete c.__name; return c; }), refused: vizCopy(VIZ_SPEC.plan_directive.example.refused), chosen_by: 'ai' };
+  if (!rep.charts_suppressed.some((x) => x.rule === '#2b')) rep.charts_suppressed.push({ rule: '#2b', type: 'driver_waterfall', why: 'which segments drive a change is not computed in this release' });
+  return rep;
+}
+const vizLabel = (r) => String(r.title || 'Chart').replace(/[.\s]+$/, '') + (r.summary ? '. ' + r.summary : '');
+// the kind the page must draw a record as: its own when valid, else its table (the checks' own reading of the spec)
+function vizKind(r) {
+  if (VIZ_DRAWN.indexOf(r.kind) < 0) return 'table';
+  const d = r.data, a = Array.isArray;
+  if (r.kind === 'heatmap') return a(d.rows) && ['values', 'text', 'tier'].every((k) => a(d[k]) && d[k].length === d.rows.length && d[k].every((x) => a(x) && x.length === d.cols.length)) ? 'heatmap' : 'table';
+  return 'drawn';
+}
+// what a figure shows: its svg's name and focusability, its Table button, its table (pressing the button), every heatmap cell
+async function vizFigure(p, sel, rec) {
+  return p.evaluate(async ([sel, rec]) => {
+    const f = document.querySelector(sel);
+    if (!f) return { missing: true };
+    const svg = f.querySelector('.viz svg.nlv'), btn = f.querySelector('.tbl-btn');
+    const rows = (root) => Array.from(root.querySelectorAll('table tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent.replace(/\s+/g, ' ').trim()));
+    const out = { fig: f.getAttribute('aria-label'), svg: !!svg, name: svg && svg.getAttribute('aria-label'), role: svg && svg.getAttribute('role'), tab: svg && svg.getAttribute('tabindex'),
+      btn: !!btn, direct: rows(f.querySelector('.viz')), why: (f.querySelector('.nlv-why') || {}).textContent || '', cells: [], texts: svg ? Array.from(svg.querySelectorAll('text')).map((t) => t.textContent) : [] };
+    if (svg && rec.kind === 'heatmap') {
+      out.nCells = svg.querySelectorAll('g.hc2, g.hc2-null').length;
+      svg.querySelectorAll('g.hc2[data-cell]').forEach((g) => { const c = g.querySelector('.cv2'), gl = g.querySelector('.gl2'); out.cells.push([g.getAttribute('data-cell'), c ? c.textContent : null, gl ? gl.textContent : '']); });
+    }
+    if (btn) {
+      btn.click(); await new Promise((r) => setTimeout(r, 60));
+      out.table = rows(f.querySelector('.viz'));
+      out.sticky = (() => { const th = f.querySelector('.viz tbody th'); return th ? getComputedStyle(th).position : null; })();
+      btn.click(); await new Promise((r) => setTimeout(r, 60));
+      out.back = !!f.querySelector('.viz svg.nlv');
+    }
+    return out;
+  }, [sel, rec]);
+}
+function vizFigureOk(d, rec, where) {
+  const kind = vizKind(rec), want = rec.table.rows.map((r) => r.map((c) => String(c).replace(/\s+/g, ' ').trim()));
+  ok(!d.missing, where + ': no figure');
+  if (kind === 'table') {
+    ok(!d.svg && !d.btn && JSON.stringify(d.direct) === JSON.stringify(want), where + ' (' + rec.__name + ') is not drawn as its table, with no Table button: ' + JSON.stringify({ svg: d.svg, btn: d.btn, rows: d.direct.length }));
+    if (VIZ_DRAWN.indexOf(rec.kind) < 0 && rec.kind !== 'table') ok(/does not draw a chart of this kind \(/.test(d.why), where + ': an unknown kind does not say why it is a table: ' + d.why);
+    return;
+  }
+  ok(d.svg && d.name === vizLabel(rec) && d.role === 'img' && d.tab === '0', where + ' (' + rec.__name + '): the chart has no svg named by its title and summary, or is not focusable: ' + JSON.stringify([d.svg, d.name && d.name.slice(0, 80), d.role, d.tab]));
+  ok(d.fig === vizLabel(rec), where + ': the figure is not named by the title and summary: ' + d.fig);
+  ok(d.btn && JSON.stringify(d.table) === JSON.stringify(want) && d.back, where + ' (' + rec.__name + '): the Table button does not show the record\'s table and back: ' + JSON.stringify({ btn: d.btn, rows: (d.table || []).length, want: want.length, back: d.back }));
+  ok(d.sticky === 'sticky', where + ': the table view\'s first column does not stay put when it scrolls (' + d.sticky + ')');
+  if (rec.kind === 'heatmap') {
+    const H = rec.data, bad = [];
+    ok(d.nCells === H.rows.length * H.cols.length, where + ': ' + d.nCells + ' cells for ' + H.rows.length + ' x ' + H.cols.length);
+    const got = {};
+    d.cells.forEach(([k, t, g]) => { got[k] = [t, g]; });
+    H.values.forEach((row, i) => row.forEach((v, j) => {
+      const c = got[i + ',' + j], tier = H.tier[i][j];
+      if (v !== null && (!c || !c[0] || c[0] !== H.text[i][j])) bad.push(i + ',' + j + ' prints ' + JSON.stringify(c && c[0]) + ' for ' + H.text[i][j]);
+      if (v !== null && (c ? c[1] : '') !== (tier ? VIZ_GLYPH[Math.abs(tier)] : '')) bad.push(i + ',' + j + ' glyph ' + JSON.stringify(c && c[1]) + ' for tier ' + tier);
+      if (v === null && H.text[i][j] === '<5' && (!c || c[0] !== '<5')) bad.push(i + ',' + j + ' does not read <5');
+    }));
+    ok(!bad.length, where + ' (' + rec.__name + '): cells without their number or glyph: ' + bad.slice(0, 3).join('; '));
+  }
+  if (rec.kind === 'waterfall') ok(rec.data.steps.every((s) => d.texts.indexOf(s.text) >= 0), where + ': a step\'s text is not printed: ' + rec.data.steps.filter((s) => d.texts.indexOf(s.text) < 0).map((s) => s.text).join(', '));
+  if (rec.kind === 'pareto') ok(rec.data.bars.every((b) => d.texts.indexOf(b.text) >= 0), where + ': a bar\'s text is not printed');
+  if (rec.kind === 'slope') ok(rec.data.rows.every((r) => d.texts.indexOf(r.change_text) >= 0), where + ': a row\'s change is not printed');
+}
+
+check('viz-every-kind-draws-with-its-name-and-a-table-button', DESK, async (ctx) => {
+  const recs = vizRecords(vizOddRecords()), rep = vizReport(recs);
+  const { p } = await openV2(ctx, 'sample', rep);
+  const st = await p.evaluate(() => ({ v2: !!document.querySelector('#try-report .nl2-views'), fb: (document.querySelector('#try-report .nl2-fallback') || {}).textContent || '',
+    drivers: Array.from(document.querySelectorAll('#nl2-manager .nl2-drivers')).map((x) => x.textContent).join(' '),
+    kick: Array.from(document.querySelectorAll('#nl2-manager .nl2-viz [data-drivers="1"]')).map((f) => [f.getAttribute('data-chart'), (f.querySelector('.nl2-kick') || {}).textContent]) }));
+  ok(st.v2 && !st.fb, 'the report with viz records fell back to v1: ' + st.fb.slice(0, 200));
+  // the report's first contribution waterfall (the engine's own when it built one) shows the drivers
+  const wf = rep.charts.filter((c) => c.type === 'viz' && c.data.chart === 'contribution_waterfall' && c.data.kind === 'waterfall')[0];
+  ok(!/Top drivers.*not shown/.test(st.drivers) && st.kick.length === 1 && st.kick[0][0] === wf.id && /Top drivers/.test(st.kick[0][1]),
+    'the "Top drivers ... not shown" line did not become the contribution waterfall: ' + JSON.stringify(st));
+  for (const r of recs) vizFigureOk(await vizFigure(p, '[id="nl2c-m-' + r.id + '"]', r), r, 'manager ' + r.id);
+  await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForTimeout(200);
+  for (const r of recs.slice(0, 6)) vizFigureOk(await vizFigure(p, '[id="nl2c-a-' + r.id + '"]', r), r, 'analyst ' + r.id);
+  // the analyst view lists the refused charts in the engine's words, and no longer says the drivers are not computed
+  const sup = await p.evaluate(() => ({ refused: Array.from(document.querySelectorAll('#nl2-analyst .nl2-supp li[data-refused]')).map((li) => [li.getAttribute('data-refused'), li.textContent]),
+    rules: Array.from(document.querySelectorAll('#nl2-analyst .nl2-supp li[data-rule]')).map((li) => li.getAttribute('data-rule')) }));
+  const R = VIZ_SPEC.plan_directive.example.refused;
+  ok(sup.refused.length === R.length && R.every((x, i) => sup.refused[i][0] === x.chart && sup.refused[i][1].indexOf(x.why) >= 0 && /asked for by the AI/.test(sup.refused[i][1])),
+    'the refused charts are not listed with the engine\'s reasons: ' + JSON.stringify(sup.refused));
+  ok(sup.rules.indexOf('#2b') < 0, 'the analyst view still lists the driver waterfall as not computed beside the contribution waterfall');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the layout on phones and a desktop: no sideways page, no chart shrunk or spilling out of its figure, no text outside its
+// drawing or on top of another, no text under 10.5 px, and every clipped label whole in its tooltip
+async function vizFit(p) {
+  return p.evaluate(() => {
+    const W = document.documentElement.clientWidth, bad = [];
+    Array.from(document.querySelectorAll('#nl2-manager .nl2-viz figure')).forEach((f) => {
+      const id = f.getAttribute('data-chart'), svg = f.querySelector('.viz svg.nlv');
+      if (!svg) return;
+      const sb = svg.getBoundingClientRect(), fb = f.getBoundingClientRect(), k = sb.width / svg.viewBox.baseVal.width;
+      if (!sb.width) return;                  // a view not on screen
+      if (k < 0.97 || sb.right > fb.right + 0.5 || sb.left < fb.left - 0.5) bad.push(id + ' shrunk or spilling (scale ' + k.toFixed(2) + ')');
+      const T = Array.from(svg.querySelectorAll('text')).filter((t) => t.textContent.trim() && t.getBoundingClientRect().width);
+      const R = T.map((t) => t.getBoundingClientRect());
+      T.forEach((t, i) => {
+        const q = R[i];
+        if (q.left < sb.left - 0.5 || q.right > sb.right + 0.5 || q.top < sb.top - 0.5 || q.bottom > sb.bottom + 0.5) bad.push(id + ' text outside its drawing: ' + t.textContent);
+        const els = [t].concat(Array.from(t.querySelectorAll('tspan')));
+        els.forEach((e) => { const fs = parseFloat(getComputedStyle(e).fontSize) * k; if (fs < 10.5) bad.push(id + ' text under 10.5 px: ' + e.textContent + ' ' + fs.toFixed(1)); });
+        if (/…$/.test(t.textContent)) { const full = t.getAttribute('data-full') || ''; if (!full || full.indexOf(t.textContent.slice(0, -1).trim()) !== 0) bad.push(id + ' clipped label without its whole text: ' + t.textContent); }
+      });
+      for (let i = 0; i < T.length; i++) for (let j = i + 1; j < T.length; j++) {
+        const a = R[i], c = R[j];
+        if (a.left < c.right - 0.5 && c.left < a.right - 0.5 && a.top < c.bottom - 1 && c.top < a.bottom - 1) bad.push(id + ' labels collide: "' + T[i].textContent + '" and "' + T[j].textContent + '"');
+      }
+    });
+    // what pushes the page sideways, when something does: the innermost elements past the right edge
+    const clipped = (e) => { for (let x = e.parentElement; x && x !== document.body; x = x.parentElement) { const o = getComputedStyle(x).overflowX; if (o !== 'visible') return true; } return false; };
+    const past = Array.from(document.querySelectorAll('body *')).filter((e) => e.getBoundingClientRect().right > W + 1 && e.getBoundingClientRect().width && !clipped(e) && !Array.from(e.children).some((c) => c.getBoundingClientRect().right > W + 1))
+      .map((e) => (e.closest('#try-report') ? 'report: ' : 'outside the report: ') + e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).join('.') : '') + ' ' + Math.round(e.getBoundingClientRect().right) + 'px "' + (e.textContent || '').trim().slice(0, 40) + '"');
+    return { sideways: document.documentElement.scrollWidth - W, bad, past, n: document.querySelectorAll('#nl2-manager .nl2-viz svg.nlv').length };
+  });
+}
+for (const w of [320, 360, 390]) {
+  check('viz-fits-a-' + w + '-px-phone', { width: w, height: 800 }, async (ctx) => {
+    const planned = fixture('sales-ledger-charts');
+    ok(!planned.__fixture_error, 'the adapter could not make the planned charts run (tools/make_ui_fixtures.py): ' + planned.__fixture_error);
+    const o2 = await openV2(ctx, 'sales-ledger-charts', planned);
+    await o2.p.waitForTimeout(250);
+    const r2 = await vizFit(o2.p);
+    // the report itself (the plan card's data tests table of a planned run is outside it: it is noted, not judged here)
+    const inRep = r2.past.filter((x) => x.indexOf('report: ') === 0);
+    ok(r2.n === planned.viz.charts.filter((x) => vizKind(x) !== 'table').length && !inRep.length && !r2.bad.length,
+      'the engine\'s own charts at ' + w + ' px: ' + r2.n + ' drawn; past the edge: ' + inRep.slice(0, 3).join('; ') + '; ' + r2.bad.slice(0, 4).join(' | '));
+    if (r2.sideways > 0) console.log('   note: at ' + w + ' px the planned run\'s page is ' + r2.sideways + ' px too wide: ' + r2.past.slice(0, 2).join('; '));
+    ok(!o2.p.__errs.length, 'page error: ' + o2.p.__errs[0]);
+    await o2.p.close();
+    const recs = vizRecords(), { p } = await openV2(ctx, 'sample', vizReport(recs));
+    await p.waitForTimeout(250);
+    const r = await vizFit(p);
+    ok(r.n >= recs.filter((x) => vizKind(x) !== 'table').length, r.n + ' charts drawn at ' + w + ' px');
+    ok(r.sideways <= 0, 'the page scrolls sideways by ' + r.sideways + ' px at ' + w + ' px: ' + r.past.slice(0, 3).join('; '));
+    ok(!r.bad.length, r.bad.length + ' layout faults at ' + w + ' px: ' + r.bad.slice(0, 4).join(' | '));
+    // every table view, opened, scrolls inside its own box
+    const tv = await p.evaluate(async () => {
+      const B = Array.from(document.querySelectorAll('#nl2-manager .nl2-viz .tbl-btn'));
+      B.forEach((b) => b.click());
+      await new Promise((res) => setTimeout(res, 300));
+      const s = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+      B.forEach((b) => b.click());
+      return { s, n: B.length };
+    });
+    ok(tv.n > 0 && tv.s <= 0, 'with the ' + tv.n + ' table views open the page scrolls sideways by ' + tv.s + ' px');
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  }, { mobile: true });
+}
+check('viz-fits-a-desktop', DESK, async (ctx) => {
+  const recs = vizRecords(), { p } = await openV2(ctx, 'sample', vizReport(recs));
+  await p.waitForTimeout(250);
+  const r = await vizFit(p);
+  ok(r.sideways <= 0 && !r.bad.length, 'desktop layout faults: sideways ' + r.sideways + '; ' + r.bad.slice(0, 4).join(' | '));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the fills resolve to the spec's colours in each theme (the build's tokens), and each cell's number reads at 4.5:1
+for (const scheme of ['light', 'dark']) {
+  check('viz-colours-are-the-' + scheme + '-tokens', PHONE, async (ctx) => {
+    await ctx.addInitScript((t) => { try { localStorage.setItem('nl-theme', t); } catch (e) { /* the check below fails */ } }, scheme);
+    const recs = vizRecords(), { p } = await openV2(ctx, 'sample', vizReport(recs));
+    ok((await p.evaluate(() => document.documentElement.getAttribute('data-theme'))) === scheme, 'the page is not in the ' + scheme + ' theme');
+    const C = VIZ_SPEC.colors[scheme], hex = (h) => { const x = h.replace('#', ''); return 'rgb(' + [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16)).join(', ') + ')'; };
+    const bad = [];
+    for (const r of recs.filter((x) => x.kind === 'heatmap' && vizKind(x) === 'heatmap')) {
+      const fills = await p.evaluate((id) => Array.from(document.querySelectorAll('[id="nl2c-m-' + id + '"] g.hc2[data-cell] rect')).map((e) => [e.parentNode.getAttribute('data-cell'), getComputedStyle(e).fill]), r.id);
+      fills.forEach(([k, fill]) => {
+        const [i, j] = k.split(',').map(Number), t = r.data.tier[i][j], v = r.data.values[i][j];
+        const want = v === null ? C.suppressed.fill : !t ? C.neutral.fill : r.data.scale === 'diverging' ? (t < 0 ? C.falls : C.rises)[Math.abs(t)] : C.sequential[t];
+        if (fill !== hex(want)) bad.push(r.__name + ' ' + k + ' ' + fill + ' (want ' + want + ')');
+      });
+    }
+    const bars = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-manager .nl2-viz rect.w-tot, #nl2-manager .nl2-viz rect.w-rise, #nl2-manager .nl2-viz rect.w-fall')).map((e) => [e.getAttribute('class'), getComputedStyle(e).fill]));
+    const WF = { 'w-tot': C.waterfall.total, 'w-rise': C.waterfall.rise, 'w-fall': C.waterfall.fall };
+    ok(bars.length > 0, 'no waterfall bars found');
+    bars.forEach(([c, fill]) => { if (fill !== hex(WF[c])) bad.push(c + ' ' + fill + ' (want ' + WF[c] + ')'); });
+    ok(!bad.length, bad.length + ' fills are not the ' + scheme + ' tokens: ' + bad.slice(0, 4).join('; '));
+    const cc = await cellContrast(p);
+    ok(cc.n > 0 && cc.worst >= 4.5, 'a heatmap number has contrast ' + cc.worst.toFixed(2) + ' on its cell in the ' + scheme + ' theme (' + cc.where + ')');
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  }, { mobile: true, colorScheme: scheme });
+}
+
+// the engine's own charts for an AI plan (tools/make_ui_fixtures.py sales-ledger-charts): each drawn with its name and a
+// Table button, the engine's refusals listed under "Charts not drawn, and why" in its words
+check('viz-the-engine-s-charts-for-an-ai-plan-draw-and-its-refusals-are-listed', DESK, async (ctx) => {
+  const rep = fixture('sales-ledger-charts');
+  ok(!rep.__fixture_error, 'the adapter could not make the planned charts run (tools/make_ui_fixtures.py): ' + rep.__fixture_error);
+  const V = rep.charts.filter((c) => c.type === 'viz');
+  ok(V.length === rep.viz.charts.length && V.length > 0 && rep.viz.chosen_by === 'ai', 'the report\'s viz records and rep.viz.charts disagree: ' + V.length + ' and ' + rep.viz.charts.length);
+  const { p } = await openV2(ctx, 'sales-ledger-charts', rep);
+  ok(await p.evaluate(() => !!document.querySelector('#try-report .nl2-views') && !document.querySelector('#try-report .nl2-fallback')), 'the planned run\'s report fell back to v1');
+  for (const c of V) vizFigureOk(await vizFigure(p, '[id="nl2c-m-' + c.id + '"]', c.data), Object.assign({ __name: c.data.chart }, c.data), 'manager ' + c.id);
+  const why = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-manager .nl2-viz figure .nl2-why')).map((x) => x.textContent));
+  ok(why.length === V.length && why.every((t) => /^Asked for by the AI: /.test(t)), 'the AI\'s reasons are not shown under its charts: ' + JSON.stringify(why.slice(0, 2)));
+  await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForTimeout(200);
+  const refused = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-analyst .nl2-supp li[data-refused]')).map((li) => [li.getAttribute('data-refused'), li.textContent]));
+  ok(refused.length === rep.viz.refused.length && rep.viz.refused.every((x, i) => refused[i][0] === x.chart && refused[i][1].indexOf(x.why) >= 0),
+    'the engine\'s refusals are not listed in its words: ' + JSON.stringify(refused) + ' for ' + JSON.stringify(rep.viz.refused));
+  const r = await vizFit(p);
+  ok(r.sideways <= 0, 'the page scrolls sideways by ' + r.sideways + ' px');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the chart review of 30 Sep 2026: a CSV header that is markup, in a chart the AI asked for and the engine refused
+// (tools/make_ui_fixtures.py viz-hostile-header, a real adapter run): the analyst view's "Charts not drawn, and why"
+// names it as text, and no element is made from it (it went into the page through innerHTML unescaped)
+check('viz-a-refused-chart-names-a-markup-header-as-text', DESK, async (ctx) => {
+  const HOSTILE = '<img src=x onerror=alert(1)>';
+  const rep = fixture('viz-hostile-header');
+  ok(!rep.__fixture_error, 'the adapter could not make the hostile-header run (tools/make_ui_fixtures.py): ' + rep.__fixture_error);
+  ok(rep.viz.refused.some((x) => (x.columns || []).indexOf(HOSTILE) >= 0), 'the engine did not refuse the chart on the header: ' + JSON.stringify(rep.viz.refused));
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  const dialogs = [];
+  p.on('dialog', (d) => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
+  await runReport(p);
+  await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForTimeout(300);
+  const st = await p.evaluate((h) => ({
+    items: Array.from(document.querySelectorAll('#nl2-analyst .nl2-supp li[data-refused]')).map((li) => li.textContent),
+    made: Array.from(document.querySelectorAll('#try-report img, #try-report [onerror], #try-report script')).map((e) => e.outerHTML.slice(0, 80)),
+    html: Array.from(document.querySelectorAll('#nl2-analyst .nl2-supp li[data-refused]')).map((li) => li.innerHTML).join(' ')
+  }), HOSTILE);
+  ok(st.items.some((t) => t.indexOf(' on ' + HOSTILE + ', amount: ') >= 0), 'the refused chart does not name the header as text: ' + JSON.stringify(st.items));
+  ok(!st.made.length, 'the header made an element in the report: ' + st.made.join(' | '));
+  ok(st.html.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0 && st.html.indexOf('<img') < 0, 'the header is not escaped in the list: ' + st.html.slice(0, 200));
+  ok(!dialogs.length, 'the header ran script: a dialog opened (' + dialogs[0] + ')');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// an unknown kind (or data a reader cannot read) is drawn as its table and never sends the page back to the v1 report
+check('viz-an-unknown-kind-shows-its-table-and-keeps-the-v2-report', DESK, async (ctx) => {
+  const recs = vizOddRecords();
+  recs.forEach((r, i) => { r.id = 'viz.' + (i + 1 + VIZ_SPEC.caps.VIZ_MAX) + '.' + r.chart; });
+  const rep = vizReport(recs);
+  const { p } = await openV2(ctx, 'sample', rep);
+  const d = await p.evaluate((r) => ({ v2: !!document.querySelector('#try-report .nl2-views'), fb: (document.querySelector('#try-report .nl2-fallback') || {}).textContent || '', bad: window.NL2.check(r) }), rep);
+  ok(d.v2 && !d.fb && d.bad.length === 0, 'an unknown or unreadable viz record sent the page back to v1: ' + JSON.stringify(d.bad.slice(0, 3)) + ' ' + d.fb.slice(0, 160));
+  for (const r of recs) vizFigureOk(await vizFigure(p, '[id="nl2c-m-' + r.id + '"]', r), r, r.__name);
+  // a record with no table at all is the one thing still refused, in words
+  const none = vizCopy(rep); none.charts.filter((c) => c.type === 'viz')[0].data.table = null;
+  ok((await p.evaluate((r) => window.NL2.check(r), none)).some((x) => /do not have the shape of a viz/.test(x)), 'a viz record with no table is not refused');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the AI report's [CHART:n] markers: every kind drawn from the list /report sent back (never the page's own copy), each
+// with its name and a Table button; the analyses' own charts get the Table button too; a shared link carries that list
+check('viz-ai-report-markers-draw-every-kind-from-the-validated-list', DESK, async (ctx) => {
+  // one record of each kind, and one of a kind no reader knows
+  const V = vizRecords(vizOddRecords().slice(0, 1)).filter((r, i, a) => a.findIndex((x) => x.kind === r.kind) === i);
+  const bars = { kind: 'bars', title: 'Revenue by region', series: [{ label: 'East', value: 44616.75 }, { label: 'North', value: 42350.45 }] };
+  const validated = V.map((r) => { const c = vizCopy(r); delete c.__name; return c; }).concat([bars]);
+  const local = validated.slice().reverse();          // the page's own copy, in another order: it must not be what is drawn
+  const report = 'Revenue rose in [your file].\n## The headline: revenue rose\n' + validated.map((c, i) => '[CHART:' + (i + 1) + ']').join('\n') + '\n## What to do\n- Check it.';
+  const rep = optinReport(); rep.__resultsJson = { charts: local, tables: [] };
+  const shares = [];
+  const reply = (b) => {
+    if (typeof b.report === 'string' && 'days' in b) { shares.push(b); return { status: 200, json: { link: SHARE_LINK, delete_token: 'tok' } }; }
+    if (b.profile) return { status: 200, json: { plan: OPTIN_PLAN } };
+    if (b.results) return { status: 200, json: { report, sources: [], model: 'check', repaired: 0, charts: validated, tables: [] } };
+    return { status: 503, json: { error: 'x' } };
+  };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  await p.waitForTimeout(200);
+  const caps = await p.evaluate(() => Array.from(document.querySelectorAll('#try-ai-report .ai-rep-figure > figcaption')).map((x) => x.textContent));
+  ok(JSON.stringify(caps) === JSON.stringify(validated.map((c) => c.title)), 'the [CHART:n] figures are not /report\'s charts in its order: ' + JSON.stringify(caps));
+  const figs = await p.evaluate(async () => {
+    const out = [];
+    for (const f of Array.from(document.querySelectorAll('#try-ai-report .ai-rep-figure'))) {
+      const svg = f.querySelector('.viz svg'), btn = f.querySelector('.tbl-btn');
+      const rows = () => Array.from(f.querySelectorAll('.viz table tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent.replace(/\s+/g, ' ').trim()));
+      const o = { svg: !!svg, name: svg && svg.getAttribute('aria-label'), btn: !!btn, direct: rows() };
+      if (btn) { btn.click(); await new Promise((r) => setTimeout(r, 60)); o.table = rows(); btn.click(); await new Promise((r) => setTimeout(r, 60)); o.back = !!f.querySelector('.viz svg'); }
+      out.push(o);
+    }
+    return out;
+  });
+  validated.forEach((c, i) => {
+    const d = figs[i] || {};
+    if (c.kind === 'bars') { ok(d.svg && d.btn && d.back && JSON.stringify(d.table) === JSON.stringify([['East', '44,616.75'], ['North', '42,350.45']]), 'the analyses\' bars chart has no Table button or the wrong table: ' + JSON.stringify(d)); return; }
+    const want = c.table.rows.map((r) => r.map(String));
+    if (vizKind(c) === 'table') { ok(!d.svg && !d.btn && JSON.stringify(d.direct) === JSON.stringify(want), '[CHART:' + (i + 1) + '] (' + c.kind + ') is not its table: ' + JSON.stringify(d).slice(0, 200)); return; }
+    ok(d.svg && d.name === vizLabel(c) && d.btn && d.back && JSON.stringify(d.table) === JSON.stringify(want), '[CHART:' + (i + 1) + '] (' + c.kind + ') is not drawn with its name and a Table button: ' + JSON.stringify(d).slice(0, 240));
+  });
+  await p.click('#try-share');
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
+  await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
+  // as a link carries them (the chart review, 30 Sep 2026): a record with a suppressed cell goes with no rows read
+  const linked = validated.map((c) => (c.suppressed && c.suppressed.cells > 0 && c.inputs ? Object.assign(vizCopy(c), { inputs: Object.assign({}, c.inputs, { rows: null }) }) : c));
+  ok(validated.some((c) => c.suppressed && c.suppressed.cells > 0), 'no validated record suppresses a cell: the check proves little');
+  ok(shares.length === 1 && JSON.stringify(shares[0].charts) === JSON.stringify(linked), 'the shared link does not carry the validated charts: ' + JSON.stringify((shares[0] || {}).charts || null).slice(0, 160));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// screenshots of every kind, light and dark, at 390 px and on a desktop: only when VIZ_SHOTS names a folder
+check('viz-screenshots', DESK, async (ctx) => {
+  const dir = process.env.VIZ_SHOTS;
+  if (!dir) throw new Skip('set VIZ_SHOTS to a folder to write them');
+  fs.mkdirSync(dir, { recursive: true });
+  const recs = vizRecords();
+  let n = 0;
+  for (const [label, vp, mobile] of [['390', { width: 390, height: 844 }, true], ['desktop', DESK, false]]) {
+    for (const scheme of ['light', 'dark']) {
+      const c = await ctx.browser().newContext({ viewport: vp, isMobile: mobile, hasTouch: mobile, reducedMotion: 'reduce', colorScheme: scheme });
+      try {
+        await c.addInitScript((t) => { try { localStorage.setItem('nl-theme', t); } catch (e) { /* light */ } }, scheme);
+        const { p } = await openV2(c, 'sample', vizReport(recs));
+        await p.waitForTimeout(300);
+        for (const r of recs) {
+          const el = await p.$('[id="nl2c-m-' + r.id + '"]');
+          if (!el) continue;
+          await el.scrollIntoViewIfNeeded();
+          await el.screenshot({ path: path.join(dir, r.__name.replace(/[^a-z0-9_]+/gi, '-') + '-' + scheme + '-' + label + '.png') });
+          n++;
+        }
+      } finally { await c.close(); }
+    }
+  }
+  console.log('   ' + n + ' screenshots in ' + dir);
 });
 
 /* ------------------------------------------------------------ runner */

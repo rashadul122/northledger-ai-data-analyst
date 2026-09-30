@@ -1085,6 +1085,8 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .tr-print-cover { display: none; }
 @media print {
   body.print-try .tr-print-cover { display: block !important; break-after: page; padding-top: 1.1in; font-family: Helvetica, Arial, sans-serif; color: #16232e; }
+  /* the cover prints first (50-try.js puts it before the AI's plan card); the list of previous reports is the page's, not the report's */
+  body.print-try #try-prev { display: none !important; }
   .tr-print-cover .k { display: inline-block; margin: 0; padding-bottom: 8px; border-bottom: 2px solid #0b7366; font: 700 8pt/1 Helvetica, Arial, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #0a5c52; }
   .tr-print-cover .k span { color: #56646f; margin-left: 10px; }
   .tr-print-cover h1 { font: 700 24pt/1.2 Helvetica, Arial, sans-serif; color: #16232e; margin: 28px 0 24px; max-width: 90%; }
@@ -1108,3 +1110,74 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
   body.print-try .nl2-ftab[data-cols="analyst"] thead th:nth-child(1) { width: 30%; }
   body.print-try .ai-pdf-opts { display: none !important; }
 }
+
+/* ---------- the chart registry's charts (src/js/55-nl-viz.js, tools/fixtures/viz/spec.json colors): every fill is a build
+   token, so the dark theme follows. The one new token is the suppressed cell's fill: mix(surface, muted, 0.10). ---------- */
+:root { --viz-supp: #eef0f1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --viz-supp: #202b36; } }
+:root[data-theme="dark"] { --viz-supp: #202b36; }
+svg.nlv { display: block; width: 100%; height: auto; overflow: visible; }
+svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.nlv .nlv-t { fill: var(--ink); font-size: 12px; }
+.nlv .nlv-b { font-weight: 700; }
+.nlv .nlv-axn { font-weight: 650; }
+.nlv .nlv-zero { stroke: var(--axis); }
+.nlv .nlv-con { stroke: var(--axis); stroke-dasharray: 3 3; }
+.nlv .nlv-lead { stroke: var(--axis); fill: none; }
+.nlv .w-tot { fill: var(--series); }
+.nlv .w-rise { fill: var(--series-2); }
+.nlv .w-fall { fill: var(--series-3); }
+.nlv .d-rng { stroke: var(--series); stroke-width: 2; }
+.nlv .d-dot { fill: var(--series); }
+.nlv .d-med { stroke: var(--series-3); stroke-width: 2.5; }
+.nlv .p-bar { fill: var(--series); }
+.nlv .p-oth { fill: var(--muted); }
+.nlv .p-k80 { stroke: var(--series-2); stroke-width: 2.5; }
+.nlv .p-cum { fill: none; stroke: var(--series-3); stroke-width: 2; }
+.nlv .p-cumd { fill: var(--series-3); }
+.nlv .p-80 { stroke: var(--ink); stroke-dasharray: 5 4; }
+.nlv .nlv-k80t { fill: var(--series-2); font-size: 12px; font-weight: 700; }
+.nlv .s-rise { stroke: var(--series-2); stroke-width: 2; }
+.nlv .s-fall { stroke: var(--series-3); stroke-width: 2; }
+.nlv .s-flat { stroke: var(--muted); stroke-width: 2; }
+.nlv .s-rise-d { fill: var(--series-2); }
+.nlv .s-fall-d { fill: var(--series-3); }
+.nlv .s-flat-d { fill: var(--muted); }
+.nlv .s-a { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+.nlv .s-rise-t { fill: var(--series-2); }
+.nlv .s-fall-t { fill: var(--series-3); }
+.nlv .s-flat-t { fill: var(--muted); }
+/* heatmap cells share the report's cell style (.hc2): a suppressed cell reads "<5" on its own fill, dashed; a neutral one
+   (exactly 0 on a diverging scale, the correlation diagonal) has no fill and a solid edge */
+.hc2 .nlv-cell { font-size: 11px; pointer-events: none; }
+.hc2 rect.nlv-supr { fill: var(--viz-supp); stroke: var(--axis); stroke-dasharray: 2 2; }
+.hc2 .cv2.nlv-supt { fill: var(--muted); font-weight: 400; }
+.hc2 rect.nlv-neur { fill: var(--surface); stroke: var(--hairline); }
+.nlv-sub { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+.nlv-legend { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--body); }
+.nlv-legend li { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.nlv-sw { display: inline-block; flex: none; width: 16px; height: 11px; border-radius: 2px; }
+.nlv-sw-s1 { background: var(--heat-green-1); } .nlv-sw-s2 { background: var(--heat-green-2); } .nlv-sw-s3 { background: var(--heat-green-3); }
+.nlv-sw-f1 { background: var(--div-neg-1); } .nlv-sw-f2 { background: var(--div-neg-2); } .nlv-sw-f3 { background: var(--div-neg-3); }
+.nlv-sw-r1 { background: var(--div-pos-1); } .nlv-sw-r2 { background: var(--div-pos-2); } .nlv-sw-r3 { background: var(--div-pos-3); }
+.nlv-sw-sup { background: var(--viz-supp); border: 1px dashed var(--axis); }
+.nlv-sw-emp { border: 1px dashed var(--hairline); }
+.nlv-gl, .nlv-supk { color: var(--ink); font-size: 12px; }
+/* a chart's table view scrolls inside its own box: the first column stays, the far edge shades while there is more */
+.nlv-tbl { max-height: 360px; overflow: auto; margin-top: 6px; }
+.nlv-tbl table.dt, .nlv-fig .vtable table.dt { width: auto; min-width: 100%; }
+.nlv-tbl tbody th, .nlv-tbl thead th:first-child, .nlv-fig .vtable tbody th, .nlv-fig .vtable thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.nlv-fig .vtable th, .nlv-fig .vtable td { unicode-bidi: plaintext; }
+.nlv-fig .vtable { background: linear-gradient(to left, var(--surface) 30%, rgba(0, 0, 0, 0)) right center / 28px 100% no-repeat local,
+  linear-gradient(to left, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0)) right center / 12px 100% no-repeat scroll; }
+.nlv-fig .nl2-why { margin: 2px 0 0; font-size: 13px; color: var(--muted); padding-right: 64px; }
+.nlv-fig .nl2-kick { margin: 0 0 2px; padding-right: 76px; }
+.nl2-viz { display: grid; gap: 10px; min-width: 0; }
+.nl2-viz > h3, .nl2-viz > h4 { margin: 8px 0 0; }
+.nl2-viz > .note { margin: 0; }
+.nl2-viz-list { display: grid; gap: 14px; }
+.nl2-viz-list > * { min-width: 0; }
+.ai-rep-figure.visual figcaption { padding-right: 64px; }
+.ai-fig-note .note { margin: 6px 0 0; font-size: 13.5px; }
+@media print { body.print-try .nl2-viz-list { display: block !important; } body.print-try .nl2-viz-list > * { margin-bottom: 12px; } }
+.nlv .nlv-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }

@@ -8,10 +8,17 @@
    "Page X of Y" footer; numbered figures and tables with source notes; clickable references; bookmarks;
    document info, /Lang en-CA and the title shown in the viewer. Pagination: a heading stays with what follows,
    a figure is never split, a paragraph leaves at least 2 lines on each page.
+   The chart registry's records (tools/fixtures/viz/spec.json) are drawn from the record alone by kind (VIZ: waterfall,
+   heatmap, dot_range, pareto, slope; 'table', a kind it does not know or data it cannot read as the record's table),
+   each followed by its table view (in Appendix A past 12 rows); Part 1 draws the contribution waterfall the AI did
+   not place. build(model, {trace: []}) records each such figure's box, operators and cells for the checks, and
+   writes the same bytes as without it.
    NLReportPdf.model(input) turns the page's state (the /report answer, the engine results posted to it, the
    visitor's choices) into the section model NLReportPdf.build(model, {paper}) renders. Every figure comes from
    the engine, or is quoted by the AI from a source cited in the same sentence: the model copies text, it never
-   computes one. A name in a script WinAnsi lacks (Cyrillic, Bengali, CJK...) is printed as a stable placeholder,
+   computes one. Part 3 draws the engine's scenario cards, and a level's historical range (group history_range: how far
+   a rate or a price moved in the file's past 12-month and 3-month windows) as facts with a neutral HISTORY label, never
+   a grade. A name in a script WinAnsi lacks (Cyrillic, Bengali, CJK...) is printed as a stable placeholder,
    "[name 1]", with a note (build: unforeign). NLReportPdf.shareResults trims the engine's results for a share link
    (to a byte cap the page may tighten: NLReportPdf.shareResults(results, maxBytes)).
    This file is ASCII only (it is inlined in index.html); every other character is written as a \u escape. */
@@ -71,6 +78,7 @@
   // here in a built report (build() replaces it with a stable placeholder); an unknown sign becomes one "?"
   function enc(s) {
     s = String(s === null || s === undefined ? '' : s);
+    if (!/[^\x20-\x7e]/.test(s)) return s;      // printable ASCII is its own WinAnsi (the loop below returns it as is)
     if (s.normalize) s = s.normalize('NFC');
     s = s.replace(/[\u2000-\u200a\u202f\u205f\u3000]/g, ' ').replace(/[\u200b\u2060\ufeff]/g, '')
       .replace(/[\u2010\u2011]/g, '-').replace(/\u2713|\u2714/g, '').replace(/\u2264/g, '<=').replace(/\u2265/g, '>=')
@@ -92,6 +100,7 @@
   // period to the next such letter. A lone Greek letter is a symbol and is written as its name. Returns the text.
   function placeholders(s, st) {
     s = String(s);
+    if (!/[^\x00-\x7f]/.test(s)) return s;      // ASCII holds no letter of another script
     if (s.normalize) s = s.normalize('NFC');
     var out = '', i = 0, n = s.length;
     var cpAt = function (k) { return k < n ? s.codePointAt(k) : -1; };
@@ -117,7 +126,9 @@
   }
   // straight quotes and spaced hyphens to typographic ones (prose only; references and addresses are left as written)
   function smart(s) {
-    return String(s === null || s === undefined ? '' : s)
+    s = String(s === null || s === undefined ? '' : s);
+    if (!/['"-]/.test(s)) return s;               // no quote and no hyphen: nothing below applies
+    return s
       .replace(/(\w)'(\w)/g, '$1\u2019$2').replace(/(^|[\s(\[\u2014\u2013])'/g, '$1\u2018').replace(/'/g, '\u2019')
       .replace(/(^|[\s(\[\u2014\u2013])"/g, '$1\u201c').replace(/"/g, '\u201d')
       .replace(/ -{2,3} /g, ' \u2014 ').replace(/ - /g, ' \u2013 ')
@@ -141,6 +152,11 @@
     return s;
   }
   function f2(v) { return (Math.round(v * 100) / 100).toString(); }
+  // a value a drawing places: finite and at most 1e300 across, so no scale, tick or path runs to Infinity or NaN
+  // (review of the chart registry, 30 Sep 2026: a slope from 1e308 to -1e308 wrote "NaN" into the page's operators);
+  // a legacy chart skips a value past it, a chart registry record is drawn as its table
+  var MAXV = 1e300;
+  function pv(v) { return isFinite(v) && Math.abs(v) <= MAXV; }
   // one en-US number format per number of decimals, made once: toLocaleString with options builds a new
   // Intl.NumberFormat on every call, and formats with one built from the same options (the same text)
   var NF = Object.create(null);
@@ -193,6 +209,7 @@
   Doc.prototype.text = function (b, x, y, size, font, hex, tc) {   // b: encoded bytes
     var F = font === 'B' ? 'F2' : font === 'I' ? 'F3' : 'F1';
     this.op('BT /' + F + ' ' + size + ' Tf ' + (tc ? tc + ' Tc ' : '0 Tc ') + rgb(hex || COL.body) + ' rg ' + f2(x) + ' ' + f2(y) + ' Td (' + esc(b) + ') Tj ET');
+    if (this.tt) this.tt.texts.push({ x: x, y: y, w: twc(b, size, font, tc), size: size, s: b });   // a traced figure's words
   };
   Doc.prototype.rect = function (x, y, w, h, fill, stroke, lw, dash) {
     var s = 'q ';
@@ -386,6 +403,14 @@
     this.text(lab, x + 6, y + 3.3, 6.5, 'B', COL.muted);
     return w;
   };
+  // a fact that is not graded at all (the historical range of a level: history, not a forecast): a neutral outline and
+  // its word ("HISTORY"), never a grade's pill and never "from a ... change"
+  Doc.prototype.tagBadge = function (word, x, yb) {
+    var lab = enc(String(word).toUpperCase()), w = twc(lab, 6.5, 'B', 0.5) + 12, h = 11, y = yb - 2.5;
+    this.rect(x, y, w, h, COL.white, COL.hair, 0.8);
+    this.text(lab, x + 6, y + 3.3, 6.5, 'B', COL.muted, 0.5);
+    return w;
+  };
   // an item's own grade, or the grade of the change it is derived from (the adapter's parent_grade, 30 Sep 2026; an
   // older report put the parent's grade on a derived item's own grade)
   var DERIVED = { contribution: 1, price_volume_mix: 1, per_unit: 1, run_rate: 1, sensitivity: 1, gap: 1 };
@@ -425,6 +450,8 @@
   /* ---- figures: vector charts, axes labelled, units named, a source note ---- */
   Doc.prototype.figure = function (c, meta) {
     meta = meta || {};
+    var v = vizOf(c);
+    if (v) return this.vizFigure(v, meta);        // a chart registry record (below): its own drawer, or its table
     var bars = c.kind === 'bars';
     var h = bars && (c.series || []).length > 6 ? 220 : 170, self = this;
     var legend = !bars && (c.series || []).filter(function (s) { return s && s.x && s.y && s.name; }).length > 1;
@@ -455,7 +482,7 @@
     this.y -= 10;
   };
   Doc.prototype.bars = function (c, top, bottom, meta) {
-    var ss = (c.series || []).filter(function (s) { return s && isFinite(s.value); }), self = this;
+    var ss = (c.series || []).filter(function (s) { return s && pv(s.value); }), self = this;
     if (!ss.length) return;
     var vals = ss.map(function (s) { return s.value; });
     var nt = niceTicks(Math.min(0, Math.min.apply(null, vals)), Math.max(0, Math.max.apply(null, vals)), 4);
@@ -479,8 +506,8 @@
   };
   Doc.prototype.xy = function (c, top, bottom, meta) {
     var pts = [], self = this;
-    (c.series || []).forEach(function (s) { if (s && s.x && s.y) for (var i = 0; i < Math.min(s.x.length, s.y.length); i++) if (isFinite(s.x[i]) && isFinite(s.y[i])) pts.push([s.x[i], s.y[i]]); });
-    (c.points || []).forEach(function (p) { if (p && isFinite(p[0]) && isFinite(p[1])) pts.push(p); });
+    (c.series || []).forEach(function (s) { if (s && s.x && s.y) for (var i = 0; i < Math.min(s.x.length, s.y.length); i++) if (pv(s.x[i]) && pv(s.y[i])) pts.push([s.x[i], s.y[i]]); });
+    (c.points || []).forEach(function (p) { if (p && pv(p[0]) && pv(p[1])) pts.push(p); });
     if (!pts.length) return;
     var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; });
     var tx = niceTicks(Math.min.apply(null, xs), Math.max.apply(null, xs), 6), ty = niceTicks(Math.min(0, Math.min.apply(null, ys)), Math.max.apply(null, ys), 4);
@@ -499,11 +526,11 @@
     (c.series || []).forEach(function (s, si) {
       if (!s || !s.x || !s.y) return;
       var d = '', k = 0;
-      for (var i = 0; i < Math.min(s.x.length, s.y.length); i++) { if (!isFinite(s.x[i]) || !isFinite(s.y[i])) continue; d += f2(X(s.x[i])) + ' ' + f2(Y(s.y[i])) + (k++ ? ' l ' : ' m '); }
+      for (var i = 0; i < Math.min(s.x.length, s.y.length); i++) { if (!pv(s.x[i]) || !pv(s.y[i])) continue; d += f2(X(s.x[i])) + ' ' + f2(Y(s.y[i])) + (k++ ? ' l ' : ' m '); }
       if (k > 1) self.op('q ' + rgb(COL.series[si % 4]) + ' RG 1.4 w 1 j ' + d + 'S Q');
     });
-    (c.points || []).forEach(function (p) { if (p && isFinite(p[0]) && isFinite(p[1])) self.circle(X(p[0]), Y(p[1]), 1.7, COL.series[0], null, 0, true); });
-    (c.fits || []).forEach(function (f) { if (f && isFinite(f.x0) && isFinite(f.y0) && isFinite(f.x1) && isFinite(f.y1)) self.line(X(f.x0), Y(f.y0), X(f.x1), Y(f.y1), COL.series[2], 1.2); });
+    (c.points || []).forEach(function (p) { if (p && pv(p[0]) && pv(p[1])) self.circle(X(p[0]), Y(p[1]), 1.7, COL.series[0], null, 0, true); });
+    (c.fits || []).forEach(function (f) { if (f && pv(f.x0) && pv(f.y0) && pv(f.x1) && pv(f.y1)) self.line(X(f.x0), Y(f.y0), X(f.x1), Y(f.y1), COL.series[2], 1.2); });
   };
 
   /* ---- tables: numbers right-aligned, cells wrap (never cut), zebra rows, the header again on a new page ---- */
@@ -511,10 +538,13 @@
   var NUMERIC = /^[-+\u2212\u2013]?[$\u00a3\u20ac\u00a5]?[\d,]*\.?\d+(%|x)?( to [-+\u2212\u2013]?[$\u00a3\u20ac\u00a5]?[\d,]*\.?\d+%?)?( [A-Za-z%]{1,16}){0,3}$/;
   Doc.prototype.table = function (t, meta) {
     meta = meta || {};
+    if (meta.fit && !meta.part) return this.fitTable(t, meta);
     var cols = (t.cols || []).map(String), rows = (t.rows || []).map(function (r) { return cols.map(function (_, j) { return String(r[j] === null || r[j] === undefined ? '' : r[j]); }); });
     if (!cols.length) return;
-    var n = cols.length, size = 8.3, hs = 7.3, pad = 5, self = this;
-    var num = cols.map(function (_, j) { var v = rows.map(function (r) { return r[j].trim(); }).filter(Boolean); return v.length > 0 && v.every(function (s) { return NUMERIC.test(s); }); });
+    // meta.size and meta.pad: a chart's table view set to fit (fitTable)
+    var n = cols.length, size = meta.size || 8.3, hs = meta.size ? Math.round((meta.size - 1) * 10) / 10 : 7.3, pad = meta.pad || 5, ld = meta.size ? size + 2.7 : 11, hld = meta.size ? hs + 2.2 : 9.5, self = this;
+    // a chart's table view (meta.fit): a suppressed cell ("<5") is one of a column's numbers, right-aligned with them
+    var num = cols.map(function (_, j) { var a = rows.map(function (r) { return r[j].trim(); }), v = a.filter(function (s) { return s && !(meta.fit && s === '<5'); }); return v.length > 0 ? v.every(function (s) { return NUMERIC.test(s); }) : !!meta.fit && a.indexOf('<5') >= 0; });
     var nat = cols.map(function (c, j) { return Math.max(tw(enc(c), hs, 'B') + 0.4 * c.length, Math.max.apply(null, rows.map(function (r) { return tw(enc(smart(r[j])), size, 'R'); }).concat([12]))) + 2 * pad; });
     var total = nat.reduce(function (a, b) { return a + b; }, 0), W = this.CW, widths;
     if (total <= W) { widths = nat.map(function (w) { return w * W / total; }); if (total < W * 0.6) widths = nat.map(function (w) { return w + (W * 0.6 - total) / n; }); }
@@ -525,9 +555,9 @@
     var tabW = widths.reduce(function (a, b) { return a + b; }, 0);
     if (tabW > W) { widths = widths.map(function (w) { return w * W / tabW; }); tabW = W; }
     var cell = function (s, j, head) { return wrapTokens(tokens(s, head ? 'B' : 'R', head ? COL.ink : COL.body), head ? hs : size, widths[j] - 2 * pad); };
-    var headL = cols.map(function (c, j) { return cell(c, j, true); }), headH = Math.max.apply(null, headL.map(function (l) { return l.length; })) * 9.5 + 8;
+    var headL = cols.map(function (c, j) { return cell(c, j, true); }), headH = Math.max.apply(null, headL.map(function (l) { return l.length; })) * hld + 8;
     var rowL = rows.map(function (r) { return r.map(function (s, j) { return cell(s, j); }); });
-    var rowH = rowL.map(function (r) { return Math.max(1, Math.max.apply(null, r.map(function (l) { return l.length; }))) * 11 + 6; });
+    var rowH = rowL.map(function (r) { return Math.max(1, Math.max.apply(null, r.map(function (l) { return l.length; }))) * ld + 6; });
     var capLines = 16, noteH = meta.source ? 20 : 6, whole = capLines + headH + rowH.reduce(function (a, b) { return a + b; }, 0) + noteH;
     if (whole > this.room() && whole < (this.TOP - this.BOT) * 0.6) this.newPage();
     this.need(capLines + headH + (rowH[0] || 0) + 10);
@@ -541,7 +571,7 @@
       var top = self.y, x = self.L;
       self.rect(self.L, top - headH, tabW, headH, COL.panel);
       self.line(self.L, top, self.L + tabW, top, COL.ink, 0.8);
-      headL.forEach(function (ls, j) { ls.forEach(function (ln, k) { self.drawLine(ln, num[j] ? x + widths[j] - pad - lineW(ln, hs) : x + pad, top - 10 - k * 9.5, hs); }); x += widths[j]; });
+      headL.forEach(function (ls, j) { ls.forEach(function (ln, k) { self.drawLine(ln, num[j] ? x + widths[j] - pad - lineW(ln, hs) : x + pad, top - 10 - k * hld, hs); }); x += widths[j]; });
       self.line(self.L, top - headH, self.L + tabW, top - headH, COL.ink, 0.5);
       self.y = top - headH;
     };
@@ -550,13 +580,531 @@
       if (self.y - rowH[i] < self.BOT) { self.line(self.L, self.y, self.L + tabW, self.y, COL.ink, 0.5); self.newPage(); drawHead(); }
       var top = self.y, x = self.L;
       if (i % 2 === 1) self.rect(self.L, top - rowH[i], tabW, rowH[i], COL.zebra);
-      r.forEach(function (ls, j) { ls.forEach(function (ln, k) { self.drawLine(ln, num[j] ? x + widths[j] - pad - lineW(ln, size) : x + pad, top - 11 - k * 11, size); }); x += widths[j]; });
+      r.forEach(function (ls, j) { ls.forEach(function (ln, k) { self.drawLine(ln, num[j] ? x + widths[j] - pad - lineW(ln, size) : x + pad, top - ld - k * ld, size); }); x += widths[j]; });
       self.y = top - rowH[i];
       self.line(self.L, self.y, self.L + tabW, self.y, i === rowL.length - 1 ? COL.ink : COL.hair, i === rowL.length - 1 ? 0.8 : 0.4);
     });
     this.y -= 4;
     if (meta.source) { wrapTokens(tokens(meta.source, 'I', COL.muted), 7.5, this.CW).forEach(function (ln) { self.drawLine(ln, self.L, self.y - 7.5, 7.5); self.y -= 10.5; }); }
     this.y -= 12;
+  };
+
+  // a chart's table view (spec accessibility.table_view): 8.3 pt, or smaller to 7 pt, its cells padded 3 pt; a
+  // heatmap's grid turned a quarter when its figure was (meta.flip: the name of its columns) and it fits so; when even
+  // 7 pt is wider than the page, its columns in parts that fit, each repeating the first column (a heatmap's 24
+  // months) and numbered in its caption, "(1 of 2)"
+  Doc.prototype.fitTable = function (t, meta) {
+    var cols = (t.cols || []).map(String), self = this, CW = this.CW, sizes = [8.3, 7.8, 7.4, 7];
+    var rows = (t.rows || []).filter(Array.isArray).map(function (r) { return cols.map(function (_, j) { return String(r[j] === null || r[j] === undefined ? '' : r[j]); }); });
+    if (!cols.length) return;
+    // each column's width at a size, from its widths at 1 pt (measured once: a width is linear in the size): a column
+    // of numbers its widest cell, a column of words at most 110 pt (it wraps)
+    var units = function (cs, rs) {
+      return cs.map(function (c, j) {
+        var cells = rs.map(function (r) { return r[j].trim(); }), m = 0;
+        cells.forEach(function (x) { m = Math.max(m, tw(enc(smart(x)), 1, 'R')); });
+        return { h: tw(enc(c), 1, 'B'), hl: 0.4 * c.length, m: m, num: cells.filter(function (x) { return x && x !== '<5'; }).every(function (x) { return NUMERIC.test(x); }) };
+      });
+    };
+    var width = function (us, size) { return us.map(function (u) { var w = Math.max(u.h * (size - 1) + u.hl, u.m * size, 12) + 6; return u.num ? w : Math.min(w, 110); }); };
+    var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+    var whole = function (cs, rs) {
+      var us = units(cs, rs);
+      for (var i = 0; i < sizes.length; i++) if (cs.length < 2 || sum(width(us, sizes[i])) <= CW) { self.table({ title: t.title, cols: cs, rows: rs }, { source: meta.source, fit: true, part: true, size: sizes[i], pad: 3 }); return true; }
+      return false;
+    };
+    if (meta.flip && this.flipped && rows.length && whole([String(meta.flip)].concat(rows.map(function (r) { return r[0]; })), cols.slice(1).map(function (c, j) { return [c].concat(rows.map(function (r) { return r[j + 1]; })); }))) return;
+    if (whole(cols, rows)) return;
+    var w7 = width(units(cols, rows), 7), parts = [], cur = [], acc = w7[0];
+    for (var j = 1; j < cols.length; j++) { if (cur.length && acc + w7[j] > CW) { parts.push(cur); cur = []; acc = w7[0]; } cur.push(j); acc += w7[j]; }
+    parts.push(cur);
+    parts.forEach(function (p, k) {
+      self.table({ title: t.title + ' (' + (k + 1) + ' of ' + parts.length + ')', cols: [cols[0]].concat(p.map(function (x) { return cols[x]; })), rows: rows.map(function (r) { return [r[0]].concat(p.map(function (x) { return r[x]; })); }) },
+        { source: k === parts.length - 1 ? meta.source : '', fit: true, part: true, size: 7, pad: 3 });
+    });
+  };
+
+  /* ---- the chart registry's records (tools/fixtures/viz/spec.json, version 2026-09-30.1) ----
+     Five draw kinds (waterfall, heatmap, dot_range, pareto, slope), each drawn from its record alone in the spec's
+     light colours; 'table', a kind this writer does not know, or data a drawer cannot read, drawn as the record's
+     table (never an empty box). The engine wrote every printed string: a drawer prints them as they are (a label that
+     does not fit is cut at a character with an ellipsis, and the figure's table view shows it whole) and formats only
+     its axis ticks. A heatmap's tier glyphs (a circle outlined, half filled, filled) are vectors: WinAnsi has none.
+     VIZ[kind]: ok(data); lay(record, CW), the geometry measured once (lay.h: the drawing's height); draw(record, top,
+     bottom), called on the Doc: every mark and word within [L, L + CW] and [bottom, top]. */
+  var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#d9e7f8', '#b7d1f1', '#94bcea'], rises: ['#f1e2d1', '#e5c8a8', '#d9ae80'],
+    cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
+    total: '#24425c', rise: '#0b7366', fall: '#945400', conn: '#b9b5aa', dot: '#24425c', median: '#945400', bar: '#24425c',
+    other: '#56646f', cum: '#945400', ref: '#16232e', k80: '#0b7366', flat: '#56646f', ink: '#16232e', body: '#33424e',
+    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa' };
+  var LEGACY = { line: 1, bars: 1, scatter: 1 };
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+  function fin(v) { return typeof v === 'number' && isFinite(v); }
+  function pos(v) { return fin(v) && Math.abs(v) <= MAXV; }
+  function isStr(v) { return typeof v === 'string'; }
+  // a chart's viz record: the record, or the one a page record carries ({type: 'viz', data: record}); null for the
+  // analyses' own charts (line, bars, scatter; or no kind and no data), which keep their drawers
+  function vizOf(c) {
+    if (!isObj(c)) return null;
+    if (c.type === 'viz' && isObj(c.data) && isStr(c.data.kind)) return c.data;
+    var k = isStr(c.kind) ? c.kind : '';
+    return LEGACY[k] || (!k && !isObj(c.data)) ? null : c;
+  }
+  // a record drawn as its table: kind 'table', a kind with no drawer here, or data its drawer cannot read
+  function asTable(r) { var V = Object.prototype.hasOwnProperty.call(VIZ, r.kind) ? VIZ[r.kind] : null; return !V || !isObj(r.data) || !V.ok(r.data); }
+  // how many characters of b (encoded) fit in width
+  function cutAt(b, size, font, width) {
+    var t = font === 'B' ? WB : WR, w = 0;
+    for (var i = 0; i < b.length; i++) { var c = b.charCodeAt(i); w += (c >= 32 && c <= 255 ? t[c - 32] : 0) * size / 1000; if (w > width + 1e-9) return i; }
+    return b.length;
+  }
+  // b (encoded) on one line of width: whole, or cut at a character with an ellipsis (always, when more follows)
+  function fitB(b, size, font, width, more) {
+    if (!more && tw(b, size, font) <= width + 1e-6) return b;
+    var e = (font === 'B' ? WB : WR)[0x85 - 32] * size / 1000;
+    return width < e ? '' : b.slice(0, cutAt(b, size, font, width - e)).replace(/[\s,;:.\x96\x97-]+$/, '') + '\x85';
+  }
+  // a label in at most max lines of width, broken at spaces (a word longer than a line at a character), the last
+  // line ended with an ellipsis when the rest does not fit; the lines, encoded
+  function wrapLabel(s, size, font, width, max) {
+    var b = enc(s).replace(/ {2,}/g, ' ').trim(), lines = [];
+    while (b && lines.length < max - 1 && tw(b, size, font) > width) {
+      var k = Math.max(1, cutAt(b, size, font, width)), sp = b.charAt(k) === ' ' ? k : b.lastIndexOf(' ', k), n = sp > 0 ? sp : k;
+      lines.push(b.slice(0, n).replace(/ +$/, ''));
+      b = b.slice(n).replace(/^ +/, '');
+    }
+    if (b) lines.push(fitB(b, size, font, width));
+    return lines;
+  }
+  // wrapped lines cut to max, the last ended with an ellipsis within width (a line of one word too long for it is
+  // cut at a character)
+  function capLines(lines, size, width, max) {
+    if (lines.length <= max) return lines;
+    var out = ellipsize(lines.slice(0, max), size, width), last = out[out.length - 1];
+    if (last && lineW(last, size) > width) {
+      var t = last[last.length - 1], s = t[0];
+      out[out.length - 1] = [[{ b: fitB(t.map(function (x) { return x.b; }).join('').replace(/\x85$/, ''), size, s.f, width, true), f: s.f, c: s.c }]];
+    }
+    return out;
+  }
+  function tierFill(t, seq) { return t > 0 ? (seq ? VC.seq : VC.rises)[Math.min(3, t) - 1] : t < 0 ? VC.falls[Math.min(3, -t) - 1] : null; }
+  // an axis's ticks for [lo, hi] and their labels, the only numbers a drawer formats
+  function axis(lo, hi, n) {
+    var nt = niceTicks(lo, hi, n);
+    nt.lab = nt.ticks.map(function (t) { return enc(fmtTick(t + 0, nt.step)); });
+    nt.w = nt.lab.map(function (b) { return tw(b, 7, 'R'); });
+    nt.max = Math.max.apply(null, nt.w);
+    return nt;
+  }
+  // a horizontal axis over width: as many ticks as have room for their labels (5 down to 2)
+  function axisFor(lo, hi, width) { var nt; for (var m = 5; m >= 2; m--) { nt = axis(lo, hi, m); if (width / Math.max(1, nt.ticks.length - 1) >= nt.max + 10) break; } return nt; }
+  // tick labels under a horizontal axis, each centred on its tick; one that would touch the one before is left out
+  Doc.prototype.xTicks = function (nt, X, y) {
+    var last = -Infinity, self = this;
+    nt.ticks.forEach(function (t, k) { var w = nt.w[k], x = X(t) - w / 2; if (x < last + 4) return; self.text(nt.lab[k], x, y, 7, 'R', VC.muted); last = x + w; });
+  };
+  // a tier's glyph as a vector (radius 2.4 pt, stroke 0.7 pt, in the cell text's colour): |tier| 1 the outline, 2 the
+  // outline with its left half filled, 3 filled
+  Doc.prototype.glyph = function (cx, cy, tier) {
+    var a = Math.abs(tier), r = 2.4, k = 0.5523 * r;
+    if (a === 2) this.op('q ' + rgb(VC.cell) + ' rg ' + f2(cx) + ' ' + f2(cy + r) + ' m ' + f2(cx - k) + ' ' + f2(cy + r) + ' ' + f2(cx - r) + ' ' + f2(cy + k) + ' ' + f2(cx - r) + ' ' + f2(cy) + ' c ' +
+      f2(cx - r) + ' ' + f2(cy - k) + ' ' + f2(cx - k) + ' ' + f2(cy - r) + ' ' + f2(cx) + ' ' + f2(cy - r) + ' c h f Q');
+    this.circle(cx, cy, r, a === 3 ? VC.cell : null, VC.cell, 0.7);
+  };
+  // a record's geometry, measured once for its heading, its page and its drawing
+  Doc.prototype.lay = function (r) {
+    var c = this._lay;
+    if (c && c.r === r && c.CW === this.CW) return c.v;
+    var v = VIZ[r.kind].lay(r, this.CW);
+    this._lay = { r: r, CW: this.CW, v: v };
+    return v;
+  };
+  var VIZ = {
+    // one bar per step from its `from` to its `to`: vertical when each gets 44 pt and its text fits over it, else a row
+    // per step with its label in a column on the left; the totals in their own colour (their texts bold), a rise and
+    // a fall in theirs; a dashed connector from each step's end to the next bar; each text at its bar's end; 0 on the axis
+    waterfall: {
+      ok: function (d) { return Array.isArray(d.steps) && d.steps.length >= 2 && d.steps.length <= 14 && d.steps.every(function (s) { return isObj(s) && isStr(s.label) && isStr(s.text) && pos(s.value) && pos(s.from) && pos(s.to); }); },
+      lay: function (r, CW) {
+        var st = r.data.steps, lo = 0, hi = 0;
+        st.forEach(function (s) { lo = Math.min(lo, s.from, s.to); hi = Math.max(hi, s.from, s.to); });
+        var font = st.map(function (s) { return s.kind === 'total' ? 'B' : 'R'; }), tb = st.map(function (s) { return enc(s.text); });
+        var o = { n: st.length, font: font, tb: tb, tws: tb.map(function (b, k) { return tw(b, 7, font[k]); }) };
+        var nt = axis(lo, hi, 4), x0 = nt.max + 8, slot = (CW - x0) / o.n;
+        if (slot >= 44 && Math.max.apply(null, o.tws) <= slot - 4) {
+          o.v = true; o.nt = nt; o.x0 = x0; o.slot = slot; o.down = st.some(function (s) { return s.to < s.from; });
+          o.labels = st.map(function (s, k) { return wrapLabel(s.label, 7, font[k], slot - 4, 2); });
+          o.h = 12 + 150 + (o.down ? 11 : 0) + 24;
+          return o;
+        }
+        var right = 0, left = 0;
+        st.forEach(function (s, k) { if (s.to >= s.from) right = Math.max(right, o.tws[k] + 5); else left = Math.max(left, o.tws[k] + 5); });
+        var labW = Math.min(CW * 0.36, Math.max.apply(null, st.map(function (s, k) { return tw(enc(s.label), 7, font[k]); })) + 8);
+        o.labW = labW = Math.max(60, Math.min(labW, CW - left - right - 100));
+        o.xa = labW + left;
+        o.nt = axisFor(lo, hi, CW - right - o.xa);
+        o.xb = Math.min(CW - right, CW - o.nt.max / 2 - 1);
+        o.labels = st.map(function (s, k) { return wrapLabel(s.label, 7, font[k], labW - 8, 2); });
+        o.rh = o.labels.map(function (ls) { return Math.max(17, ls.length * 8.5 + 8); });
+        o.h = o.rh.reduce(function (a, b) { return a + b; }, 0) + 16;
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), st = r.data.steps, self = this, L = this.L, R = L + this.CW, nt = o.nt, i, s, prev = null;
+        var col = function (x) { return x.kind === 'total' ? VC.total : x.value > 0 ? VC.rise : VC.fall; };
+        if (o.v) {
+          var x0 = L + o.x0, pt = top - 12, pb = bottom + 24, yb = pb + (o.down ? 11 : 0), slot = o.slot, bw = Math.min(40, slot * 0.58);
+          var Y = function (v) { return yb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - yb); };
+          nt.ticks.forEach(function (t, k) { self.line(x0, Y(t), R, Y(t), t === 0 ? VC.axis : VC.grid, t === 0 ? 0.8 : 0.5); self.text(nt.lab[k], x0 - 5 - nt.w[k], Y(t) - 2.5, 7, 'R', VC.muted); });
+          for (i = 0; i < o.n; i++) {
+            s = st[i];
+            var cx = x0 + slot * (i + 0.5), y1 = Y(s.from), y2 = Y(s.to), f = o.font[i];
+            this.rect(cx - bw / 2, Math.min(y1, y2), bw, Math.max(0.8, Math.abs(y2 - y1)), col(s));
+            if (i < o.n - 1) this.line(cx + bw / 2, y2, cx + slot - bw / 2, y2, VC.conn, 0.6, '2 2');
+            this.text(o.tb[i], cx - o.tws[i] / 2, s.to >= s.from ? y2 + 3 : y2 - 8.5, 7, f, VC.ink);
+            o.labels[i].forEach(function (b, k) { self.text(b, cx - tw(b, 7, f) / 2, pb - 9 - k * 8.5, 7, f, VC.body); });
+          }
+          return;
+        }
+        var xa = L + o.xa, xb = L + o.xb, X = function (v) { return xa + (v - nt.lo) / (nt.hi - nt.lo) * (xb - xa); };
+        var y = top, end = top - (o.h - 16);
+        nt.ticks.forEach(function (t) { self.line(X(t), top, X(t), end, t === 0 ? VC.axis : VC.grid, t === 0 ? 0.8 : 0.5); });
+        this.xTicks(nt, X, end - 10);
+        for (i = 0; i < o.n; i++) {
+          s = st[i];
+          var mid = y - o.rh[i] / 2, by = mid - 4.5, a = X(Math.min(s.from, s.to)), e = X(Math.max(s.from, s.to)), ls = o.labels[i], fo = o.font[i];
+          this.rect(a, by, Math.max(0.8, e - a), 9, col(s));
+          if (prev) this.line(X(prev.to), prev.by, X(prev.to), by + 9, VC.conn, 0.6, '2 2');
+          this.text(o.tb[i], s.to >= s.from ? X(s.to) + 3 : X(s.to) - 3 - o.tws[i], mid - 2.5, 7, fo, VC.ink);
+          ls.forEach(function (b, k) { self.text(b, L, mid + (ls.length - 1) * 4.25 - 2.5 - k * 8.5, 7, fo, VC.body); });
+          prev = { to: s.to, by: by };
+          y -= o.rh[i];
+        }
+      }
+    },
+    // a grid of cells, each filled by its tier, with the engine's text (when it fits the cell less 3 pt) and the tier's
+    // glyph after it (when that fits too; the glyph alone when the text does not); column labels over it (a month's
+    // YYYY-MM as its name, the year over it), row labels to its left, turned a quarter when that cuts fewer column
+    // labels; the legend under it from the engine's texts, and, when cells were suppressed, the engine's reason
+    heatmap: {
+      ok: function (d) {
+        var R = d.rows, C = d.cols;
+        var g = function (m, f) { return Array.isArray(m) && m.length === R.length && m.every(function (x) { return Array.isArray(x) && x.length === C.length && x.every(f); }); };
+        return Array.isArray(R) && Array.isArray(C) && R.length >= 1 && R.length <= 12 && C.length >= 1 && C.length <= 24 && R.every(isStr) && C.every(isStr) &&
+          g(d.text, isStr) && g(d.tier, function (t) { return t === Math.round(t) && t >= -3 && t <= 3; });
+      },
+      lay: function (r, CW) {
+        var d = r.data;
+        var ori = function (T) {
+          var cl = T ? d.rows : d.cols, o = { T: T, rl: T ? d.cols : d.rows, cl: cl, rn: String((T ? d.col_label : d.row_label) || ''), cn: String((T ? d.row_label : d.col_label) || ''), cut: 0 };
+          o.rlW = Math.min(CW * 0.3, Math.max(tw(enc(o.rn), 7, 'B'), Math.max.apply(null, o.rl.map(function (s) { return tw(enc(s), 7, 'R'); })))) + 6;
+          o.cw = Math.min(56, (CW - o.rlW) / cl.length);
+          var fits = cl.every(function (s) { return tw(enc(s), 7, 'R') <= o.cw - 2; });
+          o.ym = !fits && cl.every(function (s) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(s); });
+          o.heads = fits ? cl.map(function (s) { return [enc(s)]; })
+            : o.ym ? cl.map(function (s, k) { return [k === 0 || cl[k - 1].slice(0, 4) !== s.slice(0, 4) ? s.slice(0, 4) : '', fitB(MON[Number(s.slice(5)) - 1], 7, 'R', o.cw - 2)]; })
+              : cl.map(function (s) { var ls = wrapLabel(s, 7, 'R', o.cw - 2, 2); if (/\x85$/.test(ls[ls.length - 1]) && !/\u2026$/.test(s)) o.cut += 1; return ls; });
+          o.hl = Math.max.apply(null, o.heads.map(function (x) { return x.length; }));
+          return o;
+        };
+        var o = ori(false);
+        if (o.cut) { var t = ori(true); if (t.cut < o.cut) o = t; }
+        o.seq = d.scale !== 'diverging'; o.nr = o.rl.length; o.nc = o.cl.length;
+        var lg = (Array.isArray(d.legend) ? d.legend : []).filter(function (x) { return isObj(x) && isStr(x.text) && x.text && x.tier === Math.round(x.tier) && x.tier !== 0 && Math.abs(x.tier) <= 3; });
+        var lx = 0;
+        o.lr = lg.length ? 1 : 0;
+        o.legend = lg.map(function (x) {
+          var b = fitB(enc(x.text), 7, 'R', CW - 24), w = 21 + tw(b, 7, 'R');
+          if (lx > 0 && lx + w > CW) { lx = 0; o.lr += 1; }
+          var it = { t: x.tier, b: b, x: lx, row: o.lr - 1 };
+          lx += w + 12;
+          return it;
+        });
+        var sp = r.suppressed;
+        o.sup = isObj(sp) && sp.cells > 0 && isStr(sp.why) && sp.why ? wrapTokens(tokens(sp.why, 'I', VC.muted), 7, CW) : [];
+        o.headH = 13 + o.hl * 8.5;
+        o.h = o.headH + o.nr * 14 + (o.lr ? 7 + o.lr * 11 : 0) + (o.sup.length ? 3 + o.sup.length * 9.5 : 0) + 2;
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), d = r.data, self = this, L = this.L, gx = L + o.rlW, cw = o.cw, gw = cw * o.nc, i, j;
+        var at = function (m, a, b) { return o.T ? m[b][a] : m[a][b]; };
+        var cn = fitB(enc(o.cn), 7, 'B', gw);
+        if (cn) this.text(cn, gx + (gw - tw(cn, 7, 'B')) / 2, top - 7.5, 7, 'B', VC.muted);
+        var lastYear = -Infinity;
+        o.heads.forEach(function (ls, k) {
+          var x = gx + k * cw;
+          ls.forEach(function (b, n) {
+            if (!b) return;
+            var yy = top - 17 - (o.hl - ls.length + n) * 8.5, w = tw(b, 7, 'R');
+            if (o.ym && n === 0) { var xx = Math.min(x + 1, gx + gw - w); if (xx < lastYear + 3) return; self.text(b, xx, yy, 7, 'R', VC.muted); lastYear = xx + w; return; }
+            self.text(b, x + (cw - w) / 2, yy, 7, 'R', VC.muted);
+          });
+        });
+        var rn = fitB(enc(o.rn), 7, 'B', o.rlW - 6);
+        if (rn) this.text(rn, L, top - 17 - (o.hl - 1) * 8.5, 7, 'B', VC.muted);
+        var gt = top - o.headH;
+        for (i = 0; i < o.nr; i++) {
+          var yt = gt - i * 14;
+          this.text(fitB(enc(o.rl[i]), 7, 'R', o.rlW - 6), L, yt - 9.5, 7, 'R', VC.body);
+          for (j = 0; j < o.nc; j++) {
+            var x = gx + j * cw, t = String(at(d.text, i, j)), ti = at(d.tier, i, j), fill = tierFill(ti, o.seq), tb = enc(t), op0 = this.pg.ops.length;
+            if (fill) this.rect(x + 0.5, yt - 13.5, cw - 1, 13, fill);
+            else if (t === '<5') this.rect(x + 0.5, yt - 13.5, cw - 1, 13, VC.supFill, VC.supLine, 0.5, '2 2');
+            else this.rect(x + 0.5, yt - 13.5, cw - 1, 13, VC.white, VC.emptyLine, 0.5, t ? null : '2 2');
+            // the text at 6.5 pt when it fits the cell less 3 pt, its glyph after it when that fits too; else the glyph
+            var w = t ? tw(tb, 6.5, 'R') : 0, fits = !!t && w <= cw - 3, g = ti && w + 7.6 <= cw - 3 ? 7.6 : 0;
+            if (fits) {
+              var x1 = x + (cw - w - g) / 2;
+              this.text(tb, x1, yt - 9.4, 6.5, 'R', t === '<5' ? VC.supText : VC.cell);
+              if (g) this.glyph(x1 + w + 4.8, yt - 7.1, ti);
+            } else if (ti) this.glyph(x + cw / 2, yt - 7, ti);
+            if (this.tt) this.tt.cells.push({ r: [x, yt - 14, x + cw, yt], op0: op0, op1: this.pg.ops.length, s: t, text: fits });
+          }
+        }
+        var ly = gt - o.nr * 14 - 7;
+        o.legend.forEach(function (it) {
+          var x = L + it.x, yb = ly - 8 - it.row * 11;
+          self.rect(x, yb - 1, 9, 7, tierFill(it.t, o.seq));
+          self.glyph(x + 14.8, yb + 2.4, it.t);
+          self.text(it.b, x + 21, yb, 7, 'R', VC.body);
+        });
+        var sy = ly + 7 - (o.lr ? 7 + o.lr * 11 : 0) - 3;
+        o.sup.forEach(function (ln, k) { self.drawLine(ln, L, sy - 7 - k * 9.5, 7); });
+      }
+    },
+    // a row per group: a line from lo to hi, a dot at the average, a short tick at the median, the average's text over
+    // the dot, "lo to hi" at the right, the group's rows in its label; a key over it and the axis under it
+    dot_range: {
+      ok: function (d) { return Array.isArray(d.rows) && d.rows.length >= 1 && d.rows.length <= 12 && d.rows.every(function (q) { return isObj(q) && isStr(q.label) && pos(q.center) && pos(q.lo) && pos(q.hi) && pos(q.median) && isObj(q.texts) && ['n', 'center', 'lo', 'hi'].every(function (k) { return isStr(q.texts[k]); }); }); },
+      lay: function (r, CW) {
+        var rows = r.data.rows, lo = Infinity, hi = -Infinity, o = {};
+        rows.forEach(function (q) { lo = Math.min(lo, q.lo, q.center, q.median); hi = Math.max(hi, q.hi, q.center, q.median); });
+        o.suf = rows.map(function (q) { return enc(' (' + q.texts.n + ')'); });
+        o.rng = rows.map(function (q) { return enc(q.texts.lo + ' to ' + q.texts.hi); });
+        o.cen = rows.map(function (q) { return enc(q.texts.center); });
+        o.labW = Math.min(CW * 0.32, Math.max.apply(null, rows.map(function (q, k) { return tw(enc(q.label) + o.suf[k], 7, 'R'); }))) + 8;
+        o.rtW = Math.min(CW * 0.3, Math.max.apply(null, o.rng.map(function (b) { return tw(b, 7, 'R'); }))) + 8;
+        o.rng = o.rng.map(function (b) { return fitB(b, 7, 'R', o.rtW - 8); });
+        o.names = rows.map(function (q, k) { return fitB(enc(q.label), 7, 'R', o.labW - 8 - tw(o.suf[k], 7, 'R')) + o.suf[k]; });
+        o.names = o.names.map(function (b) { return fitB(b, 7, 'R', o.labW - 8); });
+        o.xa = o.labW + 4; o.xb = CW - o.rtW - 4;
+        o.nt = axisFor(lo, hi, o.xb - o.xa);
+        o.h = 14 + rows.length * 20 + 16;
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), rows = r.data.rows, self = this, L = this.L, R = L + this.CW, nt = o.nt, xa = L + o.xa, xb = L + o.xb;
+        var X = function (v) { return xa + (v - nt.lo) / (nt.hi - nt.lo) * (xb - xa); };
+        var ky = top - 8, kx = xa, kw = function (s) { return tw(enc(s), 7, 'R'); };
+        this.circle(kx + 2.6, ky + 2.4, 2.6, VC.dot); this.text(enc('Average'), kx + 8, ky, 7, 'R', VC.muted); kx += 20 + kw('Average');
+        this.line(kx + 1, ky - 1.2, kx + 1, ky + 6, VC.median, 1.2); this.text(enc('Median'), kx + 6, ky, 7, 'R', VC.muted); kx += 18 + kw('Median');
+        this.line(kx, ky + 2.4, kx + 12, ky + 2.4, VC.dot, 1.2); this.text(enc('95% range'), kx + 16, ky, 7, 'R', VC.muted);
+        var y0 = top - 14, end = y0 - rows.length * 20;
+        nt.ticks.forEach(function (t) { self.line(X(t), y0, X(t), end, t === 0 ? VC.axis : VC.grid, 0.5); });
+        this.xTicks(nt, X, end - 11);
+        rows.forEach(function (q, i) {
+          var mid = y0 - i * 20 - 12, w = tw(o.cen[i], 7, 'R');
+          self.text(o.names[i], L, mid - 2.5, 7, 'R', VC.body);
+          self.line(X(q.lo), mid, X(q.hi), mid, VC.dot, 1.2);
+          self.line(X(q.median), mid - 3.5, X(q.median), mid + 3.5, VC.median, 1.2);
+          self.circle(X(q.center), mid, 2.6, VC.dot);
+          self.text(o.cen[i], Math.max(L + o.labW, Math.min(R - o.rtW - w, X(q.center) - w / 2)), mid + 5, 7, 'R', VC.muted);
+          self.text(o.rng[i], R - o.rtW + 6, mid - 2.5, 7, 'R', VC.muted);
+        });
+      }
+    },
+    // the levels largest first, then 'other': vertical bars with the running share as a line on a right-hand 0 to 100%
+    // axis when every bar has room, else a row a level with the running share in its own panel and its text at the
+    // right; the 80% reference dashed; bar k80.k marked "k80", or, beyond the bars, k80's text under the chart
+    pareto: {
+      ok: function (d) {
+        var bar = function (b) { return isObj(b) && isStr(b.label) && pos(b.value) && b.value >= 0 && isStr(b.text) && fin(b.cum_pct) && isStr(b.cum_text); };
+        return Array.isArray(d.bars) && d.bars.length >= 1 && d.bars.length <= 20 && d.bars.every(bar) && (d.other === null || d.other === undefined || bar(d.other)) && isObj(d.k80) && isStr(d.k80.text) && fin(d.k80.k);
+      },
+      lay: function (r, CW) {
+        var d = r.data, all = d.bars.concat(d.other ? [d.other] : []), o = { all: all, n: all.length };
+        o.kk = d.k80.k >= 1 && d.k80.k <= d.bars.length ? d.k80.k : 0;
+        o.tb = all.map(function (b) { return enc(b.text); }); o.cb = all.map(function (b) { return enc(b.cum_text); });
+        o.tws = o.tb.map(function (b) { return tw(b, 7, 'R'); }); o.cws = o.cb.map(function (b) { return tw(b, 7, 'R'); });
+        o.max = Math.max.apply(null, all.map(function (b) { return b.value; })) || 1;
+        o.note = o.kk ? [] : wrapTokens(tokens(d.k80.text, 'R', VC.body), 7.5, CW);
+        var noteH = o.note.length ? 4 + o.note.length * 10 : 0, nt = axis(0, o.max, 4), x0 = nt.max + 8, slot = (CW - x0 - 26) / o.n;
+        var labels = all.map(function (b) { return wrapLabel(b.label, 7, 'R', slot - 4, 2); });
+        if (slot >= 40 && Math.max.apply(null, o.tws) <= slot - 4 && labels.every(function (ls) { return !/\x85$/.test(ls[ls.length - 1]); })) {
+          o.v = true; o.nt = nt; o.x0 = x0; o.slot = slot; o.labels = labels; o.noteH = noteH;
+          o.h = 22 + 150 + 24 + noteH;
+          return o;
+        }
+        o.labW = Math.min(CW * 0.3, Math.max.apply(null, all.map(function (b) { return tw(enc(b.label), 7, 'R'); }))) + 8;
+        o.labels = all.map(function (b) { return fitB(enc(b.label), 7, 'R', o.labW - 8); });
+        o.ctW = Math.max.apply(null, o.cws) + 4;
+        o.px1 = CW - o.ctW - 8; o.px0 = o.px1 - 72;
+        o.xa = o.labW; o.xb = o.px0 - 12 - Math.max.apply(null, o.tws) - (o.kk ? 4 + tw('k80', 7, 'B') : 0);
+        o.noteH = noteH;
+        o.h = 12 + o.n * 13 + 12 + noteH;
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), d = r.data, self = this, L = this.L, R = L + this.CW, all = o.all, n = o.n, pts = '', k80 = enc('k80');
+        var isOther = function (k) { return !!d.other && k === n - 1; };
+        if (o.v) {
+          var x0 = L + o.x0, x1 = R - 26, pt = top - 22, pb = bottom + 24 + o.noteH, nt = o.nt, slot = o.slot, bw = Math.min(40, slot * 0.58);
+          var Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); }, P = function (p) { return pb + p / 100 * (pt - pb); };
+          nt.ticks.forEach(function (t, k) { self.line(x0, Y(t), x1, Y(t), t === 0 ? VC.axis : VC.grid, t === 0 ? 0.8 : 0.5); self.text(nt.lab[k], x0 - 5 - nt.w[k], Y(t) - 2.5, 7, 'R', VC.muted); });
+          [0, 50, 80, 100].forEach(function (p) { var b = enc(p + '%'); self.line(x1, P(p), x1 + 2, P(p), VC.axis, 0.5); self.text(b, x1 + 4, P(p) - 2.5, 7, 'R', VC.muted); });
+          this.line(x0, P(80), x1, P(80), VC.ref, 0.6, '3 2');
+          all.forEach(function (b, k) {
+            var cx = x0 + slot * (k + 0.5), yv = Y(b.value), y0 = Y(0);
+            self.rect(cx - bw / 2, y0, bw, Math.max(0.8, yv - y0), isOther(k) ? VC.other : VC.bar);
+            self.text(o.tb[k], cx - o.tws[k] / 2, yv + 3, 7, 'R', VC.ink);
+            if (k + 1 === o.kk) self.text(k80, cx - tw(k80, 7, 'B') / 2, yv + 11.5, 7, 'B', VC.k80);
+            o.labels[k].forEach(function (lb, j) { self.text(lb, cx - tw(lb, 7, 'R') / 2, pb - 9 - j * 8.5, 7, 'R', VC.body); });
+            pts += f2(cx) + ' ' + f2(P(b.cum_pct)) + (k ? ' l ' : ' m ');
+          });
+          this.op('q ' + rgb(VC.cum) + ' RG 1.2 w 1 j ' + pts + 'S Q');
+          all.forEach(function (b, k) { self.circle(x0 + slot * (k + 0.5), P(b.cum_pct), 1.8, VC.cum); });
+        } else {
+          var xa = L + o.xa, xb = L + o.xb, px0 = L + o.px0, px1 = L + o.px1, top0 = top - 12, end = top0 - n * 13;
+          var X = function (v) { return xa + v / o.max * (xb - xa); }, P2 = function (p) { return px0 + p / 100 * (px1 - px0); };
+          var b0 = enc('0%'), b1 = enc('100%'), b8 = enc('80%');
+          this.text(b0, px0, top - 8, 7, 'R', VC.muted);
+          this.text(b1, px1 - tw(b1, 7, 'R'), top - 8, 7, 'R', VC.muted);
+          this.line(px0, top0, px0, end, VC.axis, 0.5);
+          this.line(P2(80), top0, P2(80), end, VC.ref, 0.6, '3 2');
+          this.text(b8, P2(80) - tw(b8, 7, 'R') / 2, end - 9, 7, 'R', VC.muted);
+          all.forEach(function (b, k) {
+            var mid = top0 - k * 13 - 6.5, w = Math.max(0.8, X(b.value) - xa);
+            self.text(o.labels[k], L, mid - 2.5, 7, 'R', VC.body);
+            self.rect(xa, mid - 4, w, 8, isOther(k) ? VC.other : VC.bar);
+            self.text(o.tb[k], xa + w + 3, mid - 2.5, 7, 'R', VC.ink);
+            if (k + 1 === o.kk) self.text(k80, xa + w + 3 + o.tws[k] + 4, mid - 2.5, 7, 'B', VC.k80);
+            self.text(o.cb[k], R - o.cws[k], mid - 2.5, 7, 'R', VC.muted);
+            pts += f2(P2(b.cum_pct)) + ' ' + f2(mid) + (k ? ' l ' : ' m ');
+          });
+          this.op('q ' + rgb(VC.cum) + ' RG 1.2 w 1 j ' + pts + 'S Q');
+          all.forEach(function (b, k) { self.circle(P2(b.cum_pct), top0 - k * 13 - 6.5, 1.8, VC.cum); });
+        }
+        var ny = bottom + o.noteH - 7;
+        o.note.forEach(function (ln, k) { self.drawLine(ln, L, ny - k * 10, 7.5); });
+      }
+    },
+    // two vertical axes (the two windows) on one scale, a line a row coloured by its direction; "label a_text" at the
+    // left end and "b_text change_text" at the right, each end's labels spread 10 pt apart with a leader line
+    slope: {
+      ok: function (d) { return Array.isArray(d.rows) && d.rows.length >= 1 && d.rows.length <= 12 && isStr(d.a_label) && isStr(d.b_label) && d.rows.every(function (q) { return isObj(q) && isStr(q.label) && pos(q.a) && pos(q.b) && isStr(q.a_text) && isStr(q.b_text) && isStr(q.change_text); }); },
+      lay: function (r, CW) {
+        var d = r.data, rows = d.rows, o = {};
+        o.at = rows.map(function (q) { return enc(' ' + q.a_text); }); o.bt = rows.map(function (q) { return enc(q.b_text + ' '); }); o.ct = rows.map(function (q) { return enc(q.change_text); });
+        var atW = Math.max.apply(null, o.at.map(function (b) { return tw(b, 7, 'R'); }));
+        var lw = Math.max.apply(null, rows.map(function (q, k) { return tw(enc(q.label), 7, 'R') + tw(o.at[k], 7, 'R'); }));
+        var rw = Math.max.apply(null, rows.map(function (q, k) { return tw(o.bt[k], 7, 'R') + tw(o.ct[k], 7, 'B'); }));
+        o.rW = rw + 12;
+        o.lW = Math.max(atW + 12, Math.min(lw + 12, CW * 0.38, CW - 100 - o.rW));
+        o.names = rows.map(function (q, k) { return fitB(enc(q.label), 7, 'R', o.lW - 12 - tw(o.at[k], 7, 'R')); });
+        o.an = fitB(enc(d.a_label), 7, 'B', CW / 2 - 4); o.bn = fitB(enc(d.b_label), 7, 'B', CW / 2 - 4);
+        o.h = Math.max(120, rows.length * 12 + 40);
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), rows = r.data.rows, self = this, L = this.L, R = L + this.CW, xa = L + o.lW, xb = R - o.rW, lo = Infinity, hi = -Infinity;
+        rows.forEach(function (q) { lo = Math.min(lo, q.a, q.b); hi = Math.max(hi, q.a, q.b); });
+        var pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.05 || 1;
+        lo -= pad; hi += pad;
+        var pt = top - 18, pb = bottom + 6, Y = function (v) { return pb + (v - lo) / (hi - lo) * (pt - pb); };
+        var aw = tw(o.an, 7, 'B'), bw = tw(o.bn, 7, 'B');
+        this.text(o.an, Math.max(L, xa - aw / 2), top - 8, 7, 'B', VC.muted);
+        this.text(o.bn, Math.min(R - bw, xb - bw / 2), top - 8, 7, 'B', VC.muted);
+        this.line(xa, pt + 4, xa, pb, VC.axis, 0.6); this.line(xb, pt + 4, xb, pb, VC.axis, 0.6);
+        var dir = function (q) { return q.b > q.a ? VC.rise : q.b < q.a ? VC.fall : VC.flat; };
+        rows.forEach(function (q) { var c = dir(q); self.line(xa, Y(q.a), xb, Y(q.b), c, 1.3); self.circle(xa, Y(q.a), 2.2, c); self.circle(xb, Y(q.b), 2.2, c); });
+        var spread = function (ys) {
+          var a = ys.map(function (y, i) { return { i: i, y: y, ly: y }; }).sort(function (p, q) { return (q.y - p.y) || (p.i - q.i); }), k, out = [];
+          for (k = 1; k < a.length; k++) if (a[k].ly > a[k - 1].ly - 10) a[k].ly = a[k - 1].ly - 10;
+          if (a[a.length - 1].ly < pb + 3) { a[a.length - 1].ly = pb + 3; for (k = a.length - 2; k >= 0; k--) if (a[k].ly < a[k + 1].ly + 10) a[k].ly = a[k + 1].ly + 10; }
+          a.forEach(function (p) { out[p.i] = p.ly; });
+          return out;
+        };
+        var la = spread(rows.map(function (q) { return Y(q.a); })), lb = spread(rows.map(function (q) { return Y(q.b); }));
+        rows.forEach(function (q, i) {
+          var ya = Y(q.a), yb = Y(q.b), w1 = tw(o.names[i], 7, 'R'), w2 = tw(o.at[i], 7, 'R'), w3 = tw(o.bt[i], 7, 'R');
+          if (Math.abs(la[i] - ya) > 1) self.line(xa - 3, ya, xa - 7, la[i], VC.axis, 0.5);
+          if (o.names[i]) self.text(o.names[i], xa - 8 - w2 - w1, la[i] - 2.5, 7, 'R', VC.body);
+          self.text(o.at[i], xa - 8 - w2, la[i] - 2.5, 7, 'R', VC.muted);
+          if (Math.abs(lb[i] - yb) > 1) self.line(xb + 3, yb, xb + 7, lb[i], VC.axis, 0.5);
+          self.text(o.bt[i], xb + 8, lb[i] - 2.5, 7, 'R', VC.ink);
+          self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', dir(q));
+        });
+      }
+    }
+  };
+  // the figure around a record's drawing, measured first so it stays whole on its page: "Figure n." and the title (2
+  // lines at most), the subtitle (2), the drawing, the summary (the second half of its accessible name: spec
+  // accessibility) and the source note; a record drawn as its table is measured as its summary and the table's start
+  Doc.prototype.vizMeasure = function (r, meta) {
+    var c = this._vm;
+    if (c && c.r === r && c.meta === meta && c.CW === this.CW && c.fig === this.fig) return c.m;
+    var CW = this.CW, m = { table: asTable(r) };
+    if (m.table) m.total = (r.summary ? this.linesHeight(String(r.summary), 8.5, CW, 12) : 0) + 70;
+    else {
+      m.capB = enc('Figure ' + (this.fig + 1) + '.  '); m.capW = tw(m.capB, 9, 'B');
+      m.tl = capLines(wrapTokens(tokens(cap1(r.title || r.chart || r.kind), 'B', COL.ink), 9, CW - m.capW), 9, CW - m.capW, 2);
+      m.sub = r.subtitle ? capLines(wrapTokens(tokens(String(r.subtitle), 'I', COL.muted), 7.5, CW), 7.5, CW, 2) : [];
+      m.lay = this.lay(r);
+      m.sum = r.summary ? wrapTokens(tokens(String(r.summary), 'R', COL.body), 8, CW) : [];
+      m.notes = wrapTokens(tokens(meta.source || '', 'I', COL.muted), 7.5, CW);
+      m.head = 9 + (m.tl.length - 1) * 11.5 + 4 + (m.sub.length ? 8 + (m.sub.length - 1) * 10 + 3 : 0) + 5;
+      m.total = m.head + m.lay.h + 6 + (m.sum.length ? m.sum.length * 11 + 2 : 0) + m.notes.length * 10.5;
+    }
+    this._vm = { r: r, meta: meta, CW: CW, fig: this.fig, m: m };
+    return m;
+  };
+  // the room a chart block asks of its page, so its heading keeps with it: a viz figure's whole height, else the 250 pt
+  // the analyses' charts have always asked
+  Doc.prototype.figureHeight = function (b) { var v = vizOf(b.chart); return v ? this.vizMeasure(v, b).total + 8 : 250; };
+  Doc.prototype.vizFigure = function (r, meta) {
+    var m = this.vizMeasure(r, meta);
+    if (m.table) return this.vizTable(r, meta);
+    this.need(m.total + 8);
+    this.flipped = r.kind === 'heatmap' && !!m.lay.T;      // its table view (next) turns the same way
+    var self = this, L = this.L, y0 = this.y, y;
+    // opts.trace (the checks): the figure's box, its content-stream operators, its words and its heatmap cells
+    var tr = this.tr ? { fig: this.fig + 1, kind: r.kind, chart: String(r.chart || ''), title: String(r.title || ''), page: this.pages.length - 1, op0: this.pg.ops.length, texts: [], cells: [] } : null;
+    this.tt = tr;
+    this.fig += 1;
+    this.text(m.capB, L, y0 - 9, 9, 'B', COL.accentInk);
+    m.tl.forEach(function (ln, i) { self.drawLine(ln, L + m.capW, y0 - 9 - i * 11.5, 9); });
+    y = y0 - 9 - (m.tl.length - 1) * 11.5 - 4;
+    m.sub.forEach(function (ln, i) { self.drawLine(ln, L, y - 8 - i * 10, 7.5); });
+    if (m.sub.length) y -= 8 + (m.sub.length - 1) * 10 + 3;
+    var top = y - 5, bottom = top - m.lay.h;
+    VIZ[r.kind].draw.call(this, r, top, bottom);
+    y = bottom - 6;
+    m.sum.forEach(function (ln, i) { self.drawLine(ln, L, y - 8 - i * 11, 8); });
+    if (m.sum.length) y -= m.sum.length * 11 + 2;
+    m.notes.forEach(function (ln, i) { self.drawLine(ln, L, y - 7.5 - i * 10.5, 7.5); });
+    y -= m.notes.length * 10.5;
+    if (tr) {
+      tr.op1 = this.pg.ops.length; tr.box = [L, y, L + this.CW, y0]; tr.plot = [L, bottom, L + this.CW, top];
+      tr.layout = r.kind === 'heatmap' ? (m.lay.T ? 'transposed' : 'grid') : r.kind === 'waterfall' || r.kind === 'pareto' ? (m.lay.v ? 'vertical' : 'horizontal') : 'wide';
+      this.tr.push(tr);
+      this.tt = null;
+    }
+    this.y = y - 10;
+  };
+  // a record drawn as its table (kind 'table', a kind with no drawer here, or data its drawer cannot read; the note
+  // says which): its summary above it and its title as the caption (spec draw_kinds.table), never an empty box
+  Doc.prototype.vizTable = function (r, meta) {
+    var t = isObj(r.table) ? r.table : {}, cols = Array.isArray(t.cols) ? t.cols : [], rows = Array.isArray(t.rows) ? t.rows.filter(Array.isArray) : [];
+    // the summary keeps with the table: with all of it when the table is short enough to be moved whole (Doc.table
+    // moves one under 60% of a page), else with its first rows
+    var est = 16 + 20 + rows.length * 24 + 30, page = this.TOP - this.BOT;
+    if (r.summary) { this.need(this.linesHeight(String(r.summary), 8.5, this.CW, 12) + (est < page * 0.6 ? est : 80)); this.para(String(r.summary), { x: this.L, width: this.CW, size: 8.5, lead: 12, after: 4 }); }
+    var p0 = this.pages.length - 1;
+    if (cols.length) this.table({ title: r.title || '', cols: cols, rows: rows }, { source: meta.source, fit: true });
+    else this.callout('', cap1(words(r.title || r.kind || 'A chart', 100)) + ': this chart could not be drawn, and it carries no table.' + (meta.source ? ' ' + meta.source : ''), { dash: '3 2', fill: COL.white, size: 9 });
+    if (this.tr) this.tr.push({ as: 'table', table: cols.length ? this.tab : null, kind: String(r.kind || ''), chart: String(r.chart || ''), title: String(r.title || ''), page: p0 });
   };
 
   /* ---- scenario cards (engine-computed), in rows of up to three; or the engine's reason for none ---- */
@@ -577,13 +1125,15 @@
         self.rect(x, top - 3, w, 3, strong ? COL.accent : COL.hair);
         wrapTokens(tokens(String(k.name).toUpperCase(), 'B', strong ? COL.accentInk : COL.muted), 7.5, w - 20).slice(0, 1).forEach(function (ln) { self.drawLine(ln, x + 10, top - 17, 7.5); });
         var v = enc(k.value), vs = 20;
-        while (tw(v, vs, 'B') > w - 20 && vs > 11) vs -= 1;
+        // 20 pt down to 11, and on to 8 only for a figure too wide at 11 (a long unit), never past the card's edge
+        while (tw(v, vs, 'B') > w - 20 && vs > 8) vs -= 1;
         self.text(v, x + 10, top - 42, vs, 'B', COL.ink);
         yy = top - 56;
         s.lab.forEach(function (ln) { self.drawLine(ln, x + 10, yy, 7.5); yy -= 9.5; });
         if (s.asm.length) { yy -= 6; s.asm.forEach(function (ln) { self.drawLine(ln, x + 10, yy, 8); yy -= 10.5; }); }
         if (gradeOf(k.grade)) self.badge(k.grade, x + 10, top - h + 9);
         else if (gradeOf(k.parent)) self.fromBadge(k.parent, x + 10, top - h + 9);
+        else if (k.tag) self.tagBadge(k.tag, x + 10, top - h + 9);
       });
       this.y = top - h - 10;
     }
@@ -741,8 +1291,22 @@
   var FOREIGN_TEXT = 'Some names in this report are in a script this PDF cannot show. Each is printed as a placeholder, [name 1], [name 2] and so on, the same placeholder wherever the same name appears; the on-screen report shows the names.';
   // the model with every name in a script this PDF cannot show replaced by its placeholder (placeholders()); a
   // figure, a table or a set of cards that holds one says so in its source line, and Appendix A says it for the text
+  // a label of symbols only (emoji and marks: WinAnsi has none of them, so it printed as nothing; review of the chart
+  // registry, 30 Sep 2026): "[label 1]", "[label 2]"... in a figure or a table, the same placeholder for the same label
+  // in both
+  function symbolsOnly(s) { return /\S/.test(s) && !enc(s).replace(/\?/g, '').trim(); }
+  function unsymbol(x, sl) {
+    if (typeof x === 'string') {
+      if (!symbolsOnly(x)) return x;
+      if (!Object.prototype.hasOwnProperty.call(sl.map, x)) { sl.n += 1; sl.map[x] = '[label\u00a0' + sl.n + ']'; }
+      return sl.map[x];
+    }
+    if (Array.isArray(x)) return x.map(function (y) { return unsymbol(y, sl); });
+    if (x && typeof x === 'object' && !(x instanceof Date)) { var o = {}; Object.keys(x).forEach(function (k) { o[k] = unsymbol(x[k], sl); }); return o; }
+    return x;
+  }
   function unforeign(m) {
-    var st = { map: {}, n: 0, hits: 0 };
+    var st = { map: {}, n: 0, hits: 0 }, sl = { map: {}, n: 0 };
     var walk = function (x) {
       if (typeof x === 'string') return placeholders(x, st);
       if (Array.isArray(x)) return x.map(walk);
@@ -757,6 +1321,7 @@
       Object.keys(p).forEach(function (k) { if (k !== 'blocks') q[k] = walk(p[k]); });
       q.blocks = (p.blocks || []).map(function (b) {
         var h0 = st.hits, nb = walk(b);
+        if (nb.type === 'chart' || nb.type === 'table') nb = unsymbol(nb, sl);
         if (st.hits > h0 && (nb.type === 'chart' || nb.type === 'table')) nb.source = (nb.source ? nb.source + ' ' : '') + FOREIGN_NOTE;
         else if (st.hits > h0 && nb.type === 'cards') nb.note = (nb.note ? nb.note + ' ' : '') + FOREIGN_NOTE;
         return nb;
@@ -773,6 +1338,9 @@
     opts = opts || {};
     m = unforeign(m);
     var d = new Doc({ paper: opts.paper === 'a4' ? 'a4' : 'letter' }), date = m.date instanceof Date ? m.date : new Date(m.date || Date.now());
+    // opts.trace (an array, for the checks): each viz figure's box, operators, words and cells are pushed to it; the
+    // bytes are the same with it or without
+    if (Array.isArray(opts.trace)) d.tr = opts.trace;
     var parts = m.parts || [];
     // ---- the cover
     d.newPage('cover');
@@ -822,7 +1390,7 @@
       d.h1(p.kicker, p.title, p.id);
       (p.blocks || []).forEach(function (b, bi) {
         var nb = p.blocks[bi + 1] || {};
-        if (b.type === 'h2') d.h2(b.num, b.text, b.id, nb.type === 'chart' ? 250 : nb.type === 'table' || nb.type === 'findings' ? 90 : nb.type === 'cards' ? 150 : 44);
+        if (b.type === 'h2') d.h2(b.num, b.text, b.id, nb.type === 'chart' ? d.figureHeight(nb) : nb.type === 'table' || nb.type === 'findings' ? 90 : nb.type === 'cards' ? 150 : 44);
         else if (b.type === 'p') d.para(b.text, b.wide ? { x: d.L, width: d.CW, size: b.size, lead: b.lead, font: b.font, color: b.color, after: b.after } : b);
         else if (b.type === 'bullets') d.bullets(b.items);
         else if (b.type === 'numbered') d.bullets(b.items, { numbered: true });
@@ -925,12 +1493,40 @@
     var analyses = (R && R.analyses) || [];
     var methodOf = function (t) { var a = analyses.filter(function (x) { return x && x.title === t; })[0]; return a && a.method ? ' Method: ' + a.method : ''; };
     var srcNote = function (t) { return 'Source: NorthLedger engine, computed in the reader\'s browser from ' + fileWord + (rows ? ' (' + Number(rows).toLocaleString('en-US') + ' rows)' : '') + '.' + methodOf(t); };
-    var usedTables = {};
+    var usedTables = {}, usedCharts = {};
     var chartBlock = function (c) {
       var tb = tables.filter(function (t) { return t && t.title === c.title; })[0];
       return { type: 'chart', chart: c, source: srcNote(c.title), yTitle: c.y_name || c.unit || '', xTitle: c.x_name || c.x_label || (c.kind === 'bars' && tb && tb.cols ? tb.cols[0] : '') };
     };
     var tableBlock = function (t, i) { usedTables[i] = true; return { type: 'table', table: t, source: srcNote(t.title) }; };
+    // a chart registry record's blocks (the page's and the share's records alike: /report's validated charts, or the
+    // share's stored copy): its figure, then its table view (every figure it shows, each label whole) when that has at
+    // most 12 rows; a longer one goes to Appendix A, and the figure's note says so (spec accessibility.table_view). A
+    // table view too wide for the page is split by the writer (fitTable). A record drawn as its table (kind
+    // 'table', a kind this writer does not draw, data it cannot read) is that table, its note saying why.
+    var sentence = function (s) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s ? cap1(s) + (/[.!?]$/.test(s) ? '' : '.') : ''; };
+    var vizSource = function (v, table) {
+      var out = ['Source: NorthLedger engine, computed in the reader\'s browser from ' + fileWord + (rows ? ' (' + Number(rows).toLocaleString('en-US') + ' rows)' : '') + '.', sentence(v.source)];
+      if ((table || v.kind !== 'heatmap') && isObj(v.suppressed) && v.suppressed.cells > 0) out.push(sentence(v.suppressed.why));
+      if (table && isObj(v.degraded) && v.degraded.why) out.push(sentence(v.degraded.why));
+      else if (table && v.kind !== 'table') out.push(Object.prototype.hasOwnProperty.call(VIZ, v.kind) ? 'Shown as its table: its drawing data could not be read.' : 'Shown as its table: this PDF does not draw a chart of the kind \u201c' + words(v.kind, 24) + '\u201d.');
+      return out.filter(Boolean).join(' ');
+    };
+    var tableViews = function (v, t) {
+      var d = v.data, grid = v.kind === 'heatmap' && Array.isArray(d.rows) && Array.isArray(d.cols) && t.rows.length === d.rows.length && t.cols.length === d.cols.length + 1;
+      return [{ type: 'table', fit: true, flip: grid ? String(d.col_label || '') : '', table: { title: String(v.title || ''), cols: t.cols.map(String), rows: t.rows.filter(Array.isArray) } }];
+    };
+    var chartBlocks = function (c) {
+      var v = vizOf(c);
+      if (!v) return [chartBlock(c)];
+      var table = asTable(v), b = { type: 'chart', chart: v, source: vizSource(v, table) }, t = v.table;
+      if (table || !isObj(t) || !Array.isArray(t.cols) || !t.cols.length || !Array.isArray(t.rows) || !t.rows.length) return [b];
+      var views = tableViews(v, t);
+      if (t.rows.length <= 12) return [b].concat(views);
+      b.source += ' Its table, with every figure it shows, is in Appendix A.';
+      b.tabs = views;
+      return [b];
+    };
     // one section's lines to blocks: paragraphs, bullets, numbered lists, markdown tables, [CHART:n] and [TABLE:n]
     var blocksOf = function (lines) {
       var out = [], list = null, tbl = [];
@@ -949,7 +1545,7 @@
         flushT();
         if (mk) {
           flush(); var i = Number(mk[2]) - 1;
-          if (mk[1] === 'CHART' && charts[i]) out.push(chartBlock(charts[i]));
+          if (mk[1] === 'CHART' && charts[i]) { usedCharts[i] = true; append(out, chartBlocks(charts[i])); }
           if (mk[1] === 'TABLE' && tables[i]) out.push(tableBlock(tables[i], i));
           return;
         }
@@ -1046,10 +1642,19 @@
     // before, as a saved report may still carry)
     tables.forEach(function (t, i) { if (t && /^(what drove the change|where the change in\b)/i.test(String(t.title || ''))) droveIdx = i; });
     var pvm = items.filter(function (x) { return x.group === 'price_volume_mix'; });
-    if ((droveIdx >= 0 && !usedTables[droveIdx]) || pvm.length) {
+    // ... and the contribution waterfall, the engine's viz record (in the charts, or in results.viz), when the AI placed
+    // none: drawn above the table, as the AI would have placed it
+    var wfOf = function (c) { var v = vizOf(c); return v && v.chart === 'contribution_waterfall' ? v : null; };
+    var wf = null;
+    if (!charts.some(function (c, i) { return usedCharts[i] && wfOf(c); })) {
+      wf = charts.filter(wfOf)[0] || null;
+      if (!wf && R && isObj(R.viz) && Array.isArray(R.viz.charts)) wf = R.viz.charts.filter(wfOf)[0] || null;
+    }
+    if ((droveIdx >= 0 && !usedTables[droveIdx]) || pvm.length || wf) {
       n1 += 1;
       p1.push({ type: 'h2', num: String(n1), text: 'Where the change sits', id: 'p1-sits' });
       if (basis && basis.claim) p1.push({ type: 'p', text: 'The engine split the change in ' + (basis.measure || 'the measure') + ' (' + basis.claim.charAt(0).toLowerCase() + basis.claim.slice(1) + ', graded ' + (GRADE_LABEL[gradeOf(basis.grade)] || basis.grade || 'as shown') + ') by where it sits. A contribution says where the change sits, not what caused it.' });
+      if (wf) append(p1, chartBlocks(wf));
       if (droveIdx >= 0 && !usedTables[droveIdx]) p1.push(tableBlock(tables[droveIdx], droveIdx));
       if (pvm.length) p1.push({ type: 'table', table: { title: 'Price, volume and mix', cols: ['Effect', 'Amount'], rows: pvm.map(function (x) { return [x.label, String(x.text)]; }) },
         source: 'Source: NorthLedger engine, computed in the reader\'s browser from ' + fileWord + '. Price, volume and mix add up to the change; each is arithmetic on that change, with no grade of its own.' });
@@ -1102,6 +1707,34 @@
         rows: hs.map(function (h) { return [String(h), f(h, 'low') ? String(f(h, 'low').text) : '', f(h, 'base') ? String(f(h, 'base').text) : '', f(h, 'high') ? String(f(h, 'high').text) : '']; }) };
       if (hs.length > 1 && !already(fcT)) p3.push({ type: 'table', engine: true, table: fcT, source: 'Source: NorthLedger engine forecast; the low and high cases add up each month\'s own range.' });
     }
+    // the historical range of a level (group history_range: engine/nl_scenarios.py _history_range): for a rate, a price
+    // or an index the engine does not forecast, how far its monthly average moved in the file's own past 12-month and
+    // 3-month windows. Facts about the past: a card per figure with a neutral HISTORY label (never a grade's pill),
+    // the longest window first, each card's words naming its window count; the engine's own sentences under them.
+    var hist = items.filter(function (x) { return x.group === 'history_range'; }), hb = [];
+    if (hist.length) {
+      var lags = [];
+      hist.forEach(function (x) { var lg = (String(x.id).match(/^history_range\.m(\d+)\./) || [])[1]; if (lg && lags.indexOf(+lg) < 0) lags.push(+lg); });
+      lags.sort(function (a, b) { return b - a; });
+      var hi = function (lg, part) { return item('history_range.m' + lg + '.' + part); };
+      var hcards = [], hsays = [], hzero = '';
+      lags.forEach(function (lg) {
+        var win = hi(lg, 'windows'), rose = hi(lg, 'rose');
+        var of = win ? 'the ' + String(win.text) + ' past windows' : 'the past ' + lg + '-month windows';
+        [['p10', '1 in 10 lower', '; 1 in 10 of ' + of + ' was lower'], ['p50', 'Middle', ', the middle of ' + of + (rose ? '; it rose in ' + String(rose.text) + ' of them' : '')],
+          ['p90', '1 in 10 higher', '; 1 in 10 of ' + of + ' was higher']].forEach(function (pp) {
+          var x = hi(lg, pp[0]);
+          if (x) hcards.push({ name: lg + '-month: ' + pp[1], value: String(x.text), unit: 'The change in the monthly average' + pp[2], assumption: '', grade: '', parent: '', tag: 'history' });
+        });
+        if (win && win.label) hsays.push(sentence(win.label));
+      });
+      hist.forEach(function (x) { if (!hzero && x.assumes) hzero = sentence(x.assumes); });
+      if (hcards.length) {
+        hb.push({ type: 'h2', num: '', text: 'What past moves looked like (history, not a forecast)', id: 'sc-hist', engine: true });
+        hb.push({ type: 'cards', engine: true, items: hcards, note: hsays.concat(hzero ? [hzero] : [], ['Facts about the file\'s own past, not graded: how far the average moved before, not how far it will move.']).join(' ') });
+      }
+    }
+    if (any) append(p3, hb);
     if (any && sc && sc.note) p3.push({ type: 'p', engine: true, text: sc.note, wide: true, size: 7.5, lead: 10.5, font: 'I', color: COL.muted, after: 10 });
     if (!any) {
       var why = sc && Array.isArray(sc.refused) && sc.refused.length ? sc.refused.map(function (x) { return cap1(String(x).replace(/[.\s]+$/, '')) + '.'; }).join(' ') : '';
@@ -1110,6 +1743,8 @@
         : inp.shared ? 'This shared copy doesn\'t carry the engine\'s full results; the figures shown are those in the report text.'
           : 'The engine\'s results were not kept with this saved report, so its scenario figures are not in this file.';
       p3.push({ type: 'noscenarios', engine: true, reason: why });
+      // no scenario to add up, and the level's past range instead: the reason first, then the history
+      append(p3, hb);
     }
 
     // ---- Part 4: what to do; Part 5: the risks and what the data cannot say
@@ -1162,6 +1797,10 @@
       pa.push({ type: 'p', text: inp.shared ? 'This shared copy doesn\'t carry the engine\'s full results; the figures shown are those in the report text, with the engine\'s charts and tables it placed.'
         : 'This report was saved before the engine\'s results were kept with it, so its method and data-quality details are not in this file. The engine\'s charts and tables it placed are.' });
     }
+    // the figures' tables of more than 12 rows, in the order of their figures
+    var figTabs = [];
+    [p1, p2, p3, p4, p5].forEach(function (list) { list.forEach(function (b) { if (b.tabs) { append(figTabs, b.tabs); delete b.tabs; } }); });
+    if (figTabs.length) { pa.push({ type: 'h2', num: '', text: 'The tables of the figures', id: 'm-figtabs' }); append(pa, figTabs); }
     pa.push({ type: 'callout', label: 'How to read the grades', size: 8.5, text: 'CONFIRMED: the change clears the engine\'s bar and its interval excludes no change. WATCH: the estimate moved but its interval is too wide, or a rule holds it back; a possibility, not a planning number. INSUFFICIENT (shown as NOT ENOUGH DATA): the file cannot support the claim; the engine says what would settle it. A figure marked "from a CONFIRMED change" or "from a WATCH change" (a run rate, a sensitivity, a gap, a contribution) is arithmetic on that change and has no grade of its own. A grade is the engine\'s rule, not a probability that the claim is true.' });
     var pb = sources.length ? [{ type: 'references', items: sources }] : [{ type: 'p', text: 'This report cites no outside source.' }];
 
@@ -1201,13 +1840,16 @@
   // the per-segment detail beyond the SHARE_TOP_SEGMENTS segments with the largest contributions (the smallest
   // segment's last item first), then the other segments' figures per unit, then the facts; then the findings that are
   // not about the business and the story. The core goes last: the headline, the top segments' contributions, price,
-  // volume and mix, the overall figures per unit, the run rate, the sensitivity, the top segments' gaps and the
-  // forecast; its segments shrink first (the sixth, then the fifth, ...), then its groups go from the end of the
-  // order. Then the other findings, the scenario block and the primary claim. What a later, larger cut made room for
-  // comes back, the most important first (the story alone can free room for the findings cut before it). The items
-  // kept stay in the adapter's order.
+  // volume and mix, the overall figures per unit, the run rate, the sensitivity, the top segments' gaps, the
+  // forecast and a level's historical range; its segments shrink first (the sixth, then the fifth, ...), then its
+  // groups go from the end of the order (the history before the forecast). Then the other findings, the scenario
+  // block and the primary claim. What a later, larger cut made room for comes back, the most important first (the
+  // story alone can free room for the findings cut before it). The items kept stay in the adapter's order.
   var SHARE_MAX_BYTES = 20000, SHARE_MAX_ITEMS = 60, SHARE_TOP_SEGMENTS = 6;
-  var SCEN_GROUPS = ['headline', 'contribution', 'price_volume_mix', 'per_unit', 'run_rate', 'sensitivity', 'gap', 'forecast', 'facts'];
+  // the worker's SCENARIO_PRIORITY (insight-proxy/src/report.js): a level's historical range (history_range) after the
+  // forecast and before the facts (it was missing here until 30 Sep 2026, and a group not on this list goes first
+  // when a cap bites)
+  var SCEN_GROUPS = ['headline', 'contribution', 'price_volume_mix', 'per_unit', 'run_rate', 'sensitivity', 'gap', 'forecast', 'history_range', 'facts'];
   var PER_SEGMENT = ['contribution', 'per_unit', 'gap'];
   function utf8Len(s) {
     var n = 0;

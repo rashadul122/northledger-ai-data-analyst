@@ -448,8 +448,12 @@
     };
   };
 
-  C.catmonth = function (W, ch) {
+  // the category-by-month map counts rows and flags no driver or reversal; its note says where the change sits only when
+  // the report has the contribution waterfall (the registry's record: 52-nl2-report.js driversChart), and never that
+  // drivers are "not computed" beside it (pre-deploy pass, 30 Sep 2026)
+  C.catmonth = function (W, ch, R) {
     var d = ch.data, M = d.months || [], Ks = d.categories || [], Cn = d.counts || [];
+    var wf = !!R && (R.charts || []).some(function (c) { return c && c.type === 'viz' && c.data && c.data.chart === 'contribution_waterfall' && c.data.kind === 'waterfall'; });
     var all = [];
     Cn.forEach(function (r) { r.forEach(function (v) { all.push(v); }); });
     var f = thirds(all);
@@ -460,7 +464,9 @@
     return {
       svg: U.svg(W, g.h, ch.title + ': ' + Ks.length + ' categories by ' + M.length + ' months, the row count in each cell', g.svg),
       table: { cols: ['Month'].concat(Ks), rows: M.map(function (m, j) { return [m].concat(Ks.map(function (k, i) { return num(Cn[i][j], 0); })); }) },
-      note: thirdsLegend(f, true, 'rows') + '<p class="note">Counts of kept rows in the analysis window. Drivers and reversals (which category moved a change) are not computed in this release, so this map flags none.</p>'
+      note: thirdsLegend(f, true, 'rows') + '<p class="note">Counts of kept rows in the analysis window. ' + (wf
+        ? 'The contribution waterfall shows where the change sits; this map only counts rows, so it flags no driver or reversal (a category that moved a change).'
+        : 'No contribution waterfall was built for this file, so this map flags no driver or reversal (a category that moved a change).') + '</p>'
     };
   };
 
@@ -628,9 +634,20 @@
 
   C.TYPES = { trend_windows: C.trend_windows, fan: C.fan, replay: C.replay, stacked_bars: C.stacked_bars, ranked_bars: C.ranked_bars,
     histogram_windows: C.histogram_windows, benchmark_strip: C.benchmark_strip };
-  // the drawer for a chart record, or null when the page has none for it
+  // the chart registry's records (type "viz", rule V; the record itself is ch.data): drawn by window.NLV
+  // (src/js/55-nl-viz.js), which draws the record's table for a kind it does not know or data it cannot read
+  C.viz = function (W, ch) { return window.NLV ? window.NLV.draw(ch.data, W) : C.vizTable(W, ch); };
+  // the table-only drawer: the record's table, captioned by its title, its summary above it
+  C.vizTable = function (W, ch) {
+    var d = (ch && ch.data) || {}, t = d.table;
+    if (window.NLV) return window.NLV.tableOut(d);
+    var ok = t && Array.isArray(t.cols) && Array.isArray(t.rows);
+    return { html: (d.summary ? '<p class="note">' + esc(d.summary) + '</p>' : '') + (ok ? U.table(t) : '<p class="note">This chart could not be drawn.</p>') };
+  };
+  // the drawer for a chart record, or null when the page has none for it (a viz record always has one: its table)
   C.drawer = function (ch) {
     var id = String(ch.id || '');
+    if (ch.type === 'viz') return window.NLV && window.NLV.knows(ch.data) ? C.viz : C.vizTable;
     if (ch.type === 'heatmap') {
       if (id.indexOf('season.') === 0) return C.season;
       if (id.indexOf('catmonth.') === 0) return C.catmonth;

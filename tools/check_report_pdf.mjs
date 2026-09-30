@@ -40,6 +40,18 @@
 // EUR total, never its rows; the FX average); the engine's "Where the change in <measure> came from" table in Part 1;
 // a share's trimmed results keep each item's value, parent grade and grade words, and a tighter byte cap; and a shared
 // copy that carries only the worker's key_figures leads with them.
+// The chart registry (wave 2B, 30 Sep 2026; tools/fixtures/viz/spec.json): viz-results.json and viz-response.json
+// (made by fixtures/report-pdf/make_viz_fixtures.py from the spec's 14 examples and 4 validated illustrative records)
+// build a 10-chart report (every draw kind), the edge cases (negative totals, all-empty and 1-row heatmaps, suppressed
+// cells, 12 long segment labels, a non-Latin label, 24 YYYY-MM columns, 14 long column labels, a page record, a kind
+// no reader knows, a heatmap whose tiers are the wrong shape, a kind with no table), the contribution waterfall the AI
+// placed nowhere (Part 1 draws it) and a share link's copy, Letter and A4, each through every check above and, from
+// build(model, {trace}), vizCheck: each figure's box inside the text area; every mark and word of its operators
+// (parsed from the file) inside its box, no two of its words overlapping; each heatmap cell's fill, text and glyph
+// inside the cell (its text when it fits, else the glyph alone); "Figure n." and the record's title over it and the
+// source note under it; the legend in the engine's words; the table view after its figure (12 rows at most) or in
+// Appendix A; an unknown kind or unreadable data drawn as its table, never an empty box; the trace moves no byte;
+// every kind in each of its layouts; and the same bytes from the classic script for the 10-chart report.
 // Exit 0 when every check passes, 1 otherwise. Needs poppler (pdftotext) for the geometry: without it that check
 // FAILS (it is the only independent measure of the widths).
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -242,7 +254,77 @@ export function checkPdf(bytes, o = {}) {
     const want = o.removed === 0 ? 'removed no sentence' : 'removed ' + o.removed + ' sentence';
     if (hay.indexOf(want) < 0) fail('the notice does not say the honesty check ' + want + (o.removed > 1 ? 's' : ''));
   }
-  return { ok: !fails.length, fails, notes, pages: N, text: all, hay, texts: pages.map((p) => p.texts) };
+  return { ok: !fails.length, fails, notes, pages: N, text: all, hay, texts: pages.map((p) => p.texts), streams: pages.map((p) => p.stream), media };
+}
+
+// ---- the chart registry's figures (spec tools/fixtures/viz/spec.json), checked from the PDF's own operators
+// One content-stream operator's marks: every point a path passes through (re, m, l, c: a Bezier's control points
+// too) and every text's box (Td, measured with the Helvetica AFM widths: ascender 718, descender 207), in points.
+export function marksOf(op) {
+  const toks = op.match(/\((?:[^()\\]|\\.)*\)|\[[^\]]*\]|\/[A-Za-z0-9]+|[-+]?(?:\d+\.?\d*|\.\d+)|[A-Za-z*']+/g) || [];
+  const st = [], pts = [], texts = [];
+  let font = 'R', size = 0, tc = 0, at = [0, 0];
+  for (const t of toks) {
+    if (/^[-+]?[\d.]/.test(t)) { st.push(+t); continue; }
+    if (t[0] === '(') { st.push(t); continue; }
+    if (t[0] === '[') continue;
+    if (t[0] === '/') { if (/^\/F\d$/.test(t)) font = t === '/F2' ? 'B' : 'R'; continue; }
+    if (t === 're') { const [x, y, w, h] = st.splice(-4); pts.push([x, y], [x + w, y + h]); } else if (t === 'm' || t === 'l') pts.push(st.splice(-2));
+    else if (t === 'c') { const a = st.splice(-6); pts.push([a[0], a[1]], [a[2], a[3]], [a[4], a[5]]); } else if (t === 'Tf') size = st.pop();
+    else if (t === 'Tc') tc = st.pop(); else if (t === 'Td') at = st.splice(-2);
+    else if (t === 'Tj') {
+      const raw = String(st.pop()).slice(1, -1).replace(/\\([()\\])/g, '$1'), lead = raw.length - raw.replace(/^ +/, '').length, s = raw.trim();
+      const x1 = at[0] + METRICS._tw(raw.slice(0, lead), size, font) + tc * lead;
+      if (s) texts.push({ x1, x2: x1 + METRICS._tw(s, size, font) + tc * s.length, y1: at[1] - 0.207 * size, y2: at[1] + 0.718 * size, s, size });
+    }
+    st.length = t === 'Tj' || t === 're' || t === 'm' || t === 'l' || t === 'c' || t === 'Tf' || t === 'Tc' || t === 'Td' ? st.length : 0;
+  }
+  return { pts, texts };
+}
+// A PDF's viz figures against their trace (build(model, {trace})): each figure's box inside the text area; every mark
+// and every word of the figure (its operators, parsed from the file) inside its box; no two of its words overlapping;
+// each heatmap cell's fill, text and glyph inside the cell; "Figure n." with the record's title over each; the source
+// note under it.
+export function vizCheck(r, trace) {
+  const fails = [], fail = (m) => { if (fails.length < 12) fails.push(m); };
+  const [PW, PH] = r.media, L = 60, R = PW - 60, TOP = PH - 74, BOT = 66;
+  const inside = (p, b, t) => p[0] >= b[0] - t && p[0] <= b[2] + t && p[1] >= b[1] - t && p[1] <= b[3] + t;
+  const ops = r.streams.map((st) => st.split('\n'));
+  const n = { figs: 0, tables: 0, marks: 0, words: 0, cells: 0, cellText: 0, glyphOnly: 0 };
+  for (const f of trace) {
+    if (f.as === 'table') { n.tables++; continue; }
+    n.figs++;
+    const where = 'Figure ' + f.fig + ' (' + f.kind + ' ' + f.layout + ', page ' + (f.page + 1) + ')', b = f.box;
+    if (b[0] < L - 0.01 || b[2] > R + 0.01 || b[1] < BOT - 0.01 || b[3] > TOP + 0.01) fail(where + ': its box [' + b.map((v) => v.toFixed(1)) + '] leaves the text area');
+    const boxes = [];
+    for (const op of ops[f.page].slice(f.op0, f.op1)) {
+      const m = marksOf(op);
+      for (const p of m.pts) { n.marks++; if (!inside(p, b, 0.8)) fail(where + ': a mark at (' + p.map((v) => v.toFixed(1)) + ') is outside its box'); }
+      for (const t of m.texts) { n.words++; boxes.push(t); if (!inside([t.x1, t.y1], b, 0.5) || !inside([t.x2, t.y2], b, 0.5)) fail(where + ': "' + t.s + '" (x ' + t.x1.toFixed(1) + '..' + t.x2.toFixed(1) + ') is outside its box'); }
+    }
+    const pageText = boxes.map((t) => t.s).join(' ');     // the words in the order they are drawn
+    boxes.sort((a, c) => a.y1 - c.y1);
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length && boxes[j].y1 < boxes[i].y2; j++) {
+        const A = boxes[i], B = boxes[j], ox = Math.min(A.x2, B.x2) - Math.max(A.x1, B.x1), oy = Math.min(A.y2, B.y2) - Math.max(A.y1, B.y1);
+        if (ox > 1 && oy > 0.34 * Math.min(A.y2 - A.y1, B.y2 - B.y1)) fail(where + ': "' + A.s + '" and "' + B.s + '" overlap');
+      }
+    }
+    if (!new RegExp('^Figure ' + f.fig + '\\.').test(pageText)) fail(where + ': it does not open with "Figure ' + f.fig + '."');
+    if (!/Source: NorthLedger engine/.test(pageText.replace(/\s+/g, ' '))) fail(where + ': no source note under it');
+    for (const c of f.cells) {
+      n.cells++;
+      let texts = 0;
+      for (const op of ops[f.page].slice(c.op0, c.op1)) {
+        const m = marksOf(op);
+        for (const p of m.pts) if (!inside(p, c.r, 0.4)) fail(where + ': cell "' + c.s + '" draws at (' + p.map((v) => v.toFixed(1)) + '), outside [' + c.r.map((v) => v.toFixed(1)) + ']');
+        for (const t of m.texts) { texts++; if (!inside([t.x1, t.y1], c.r, 0) || !inside([t.x2, t.y2], c.r, 0)) fail(where + ': cell text "' + t.s + '" leaves its cell'); }
+      }
+      if (c.text) { n.cellText++; if (texts !== 1) fail(where + ': cell "' + c.s + '" should print its text once, printed ' + texts); } else if (texts) fail(where + ': cell "' + c.s + '" prints text it has no room for');
+      else if (c.s) n.glyphOnly++;
+    }
+  }
+  return { ok: !fails.length, fails, n };
 }
 
 function report(label, r) {
@@ -495,6 +577,216 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   const p3s = between(r, 'PART 3', 'PART 4');
   expect('trimmed share f3 EUR', /run rate, a year/.test(p3s) && /sensitivity/.test(p3s) && /gap to the largest country/.test(p3s), 'the shared PDF lacks the run-rate, sensitivity or gap blocks: ' + p3s.slice(0, 300));
 
+  // ---- a level's historical range (pre-deploy pass, 30 Sep 2026): fx-history-results.json, the FX run's results from
+  // the packed engine (make_fx_history.py), whose scenarios hold the ten history_range items (12-month and 3-month
+  // windows) and the facts, and no run rate, gap or forecast. Part 3 says why there are no scenarios, then draws "What
+  // past moves looked like (history, not a forecast)": a card per figure, the longest window first, each with its
+  // window count, a neutral HISTORY label and never a grade's pill, every card's words whole, and the engine's own
+  // sentences under them; the same in a shared copy; and a share's cut keeps the history after the facts and drops
+  // it before the forecast (the worker's SCENARIO_PRIORITY). Before this the writer drew none of it, and shareResults
+  // dropped the history first.
+  const FXH = J('fx-history-results.json'), FXR = FXH.results;
+  const fxItems = FXR.scenarios.items, fxHist = fxItems.filter((x) => x.group === 'history_range');
+  const fxAt = (id) => fxItems.filter((x) => x.id === id)[0];
+  const fxReport = ['The Canadian dollar price of a U.S. dollar moved within its usual band', '## Executive summary',
+    '- The average rate in the latest 12 months was 1.386, against 1.396 in the 12 months before, graded WATCH.',
+    '- ' + fxAt('history_range.m12.windows').label, '## The headline: A flat year for the rate', 'The latest year is graded WATCH.', '[CHART:1]',
+    '## Scenarios', fxAt('history_range.m12.windows').label + ' Over the 113 past 3-month windows it ran from ' + fxAt('history_range.m3.p10').text + ' to ' +
+      fxAt('history_range.m3.p90').text + '.', '## What to do', '1. Compare the rate against its past range before committing money.',
+    '## Risks and what the data cannot say', '- The range is history, not a forecast.'].join('\n');
+  const fxInp = (res, o) => inp(res, fxReport, Object.assign({ name: 'fx_usd_cad.csv', charts: FXR.charts, tables: FXR.tables }, o || {}));
+  expect('FX history', FXH.engine_snapshot === '19ec81d19e0d' && fxHist.length === 10 && fxHist.every((x) => x.grade === null && !x.parent_grade) &&
+    !fxItems.some((x) => ['run_rate', 'sensitivity', 'gap', 'forecast'].indexOf(x.group) >= 0), 'the fixture is not the FX run with ten ungraded history items and no scenario to add up');
+  const HIST_CARDS = [];                  // [name, value, words] as the writer draws them, the 12-month window first
+  [12, 3].forEach((lg) => {
+    const w = fxAt('history_range.m' + lg + '.windows').text, rose = fxAt('history_range.m' + lg + '.rose').text;
+    HIST_CARDS.push([lg + '-month: 1 in 10 lower', fxAt('history_range.m' + lg + '.p10').text, 'The change in the monthly average; 1 in 10 of the ' + w + ' past windows was lower'],
+      [lg + '-month: Middle', fxAt('history_range.m' + lg + '.p50').text, 'The change in the monthly average, the middle of the ' + w + ' past windows; it rose in ' + rose + ' of them'],
+      [lg + '-month: 1 in 10 higher', fxAt('history_range.m' + lg + '.p90').text, 'The change in the monthly average; 1 in 10 of the ' + w + ' past windows was higher']);
+  });
+  const sp = (t) => plainText(t).replace(/\s+/g, ' ');
+  const histCheck = (label, r) => {
+    const p3 = sp(between(r, 'PART 3', 'PART 4')), at = p3.indexOf('what past moves looked like (history, not a forecast)'), blk = at < 0 ? '' : p3.slice(at);
+    expect(label, at >= 0, 'Part 3 has no "What past moves looked like (history, not a forecast)" block: ' + p3.slice(0, 400));
+    // the reason there is nothing to add up comes first, then the history
+    const ns = p3.indexOf('no scenarios');
+    expect(label, ns >= 0 && ns < at && p3.indexOf('the forecast is not yet shown usable') >= 0, 'Part 3 does not say first why there are no scenarios');
+    let from = 0;
+    HIST_CARDS.forEach(([name, value, words]) => {
+      const i = blk.indexOf(sp(name), from), v = blk.indexOf(sp(value), i), wd = blk.indexOf(sp(words), i);
+      expect(label, i >= 0 && v > i && wd > v, 'the card "' + name + '" (' + value + ') is missing, out of order or its words are cut: ' + blk.slice(Math.max(0, i), i + 260));
+      if (i >= 0) from = i + 1;
+    });
+    // a neutral HISTORY label on every card, never a grade's pill; the engine's own sentences and the zero note under them
+    const pills = [];
+    r.texts.forEach((ts) => ts.forEach((t) => { if (/^(CONFIRMED|WATCH|NOT ENOUGH DATA|HISTORY)$/.test(t.s) || /^from a /.test(t.s)) pills.push(t.s); }));
+    const hs = pills.filter((x) => x === 'HISTORY').length;
+    expect(label, hs === HIST_CARDS.length, hs + ' HISTORY labels for ' + HIST_CARDS.length + ' cards');
+    expect(label, !/\b(confirmed|watch|not enough data)\b|from a (confirmed|watch)/.test(blk), 'a grade word or pill in the history block: ' + blk.slice(0, 300));
+    ['history_range.m12.windows', 'history_range.m3.windows'].forEach((id) => expect(label, blk.indexOf(sp(fxAt(id).label)) >= 0, 'the engine\'s sentence is not under the cards: ' + fxAt(id).label));
+    expect(label, blk.indexOf(sp(fxHist[0].assumes)) >= 0 && /not graded: how far the average moved before, not how far it will move/.test(blk), 'the zero note or the "not a forecast" line is missing');
+  };
+  let rh = null;
+  for (const paper of ['letter', 'a4']) { rh = check4('FX history: the historical range, ' + paper, fxInp(FXR, { sources: srcs(2) }), paper, { name: 'fx_usd_cad' }); histCheck('FX history ' + paper, rh); }
+  // a shared copy: the trimmed results keep all ten items, and the shared PDF draws the same cards
+  const fxShare = W.shareResults(FXR), fxS = fxShare && fxShare.scenarios ? fxShare.scenarios.items : [];
+  expect('FX history share', fxS.filter((x) => x.group === 'history_range').map((x) => x.id).join() === fxHist.map((x) => x.id).join() &&
+    fxS.filter((x) => x.group === 'history_range').every((x) => { const o = fxAt(x.id); return o.value === x.value && o.text === x.text && o.label === x.label && o.assumes === x.assumes; }),
+  'the share\'s trimmed results lost history items or their fields: ' + JSON.stringify(fxS.map((x) => x.id)));
+  const rs = check4('FX history: a shared copy', fxInp(fxShare, { shared: true, kept: [], sources: srcs(2) }), 'letter', { name: 'fx_usd_cad' });
+  histCheck('FX history shared', rs);
+  const cardsOf = (m) => JSON.stringify(m.parts.filter((p) => p.id === 'scenarios')[0].blocks.filter((b) => b.type === 'cards' || b.type === 'noscenarios'));
+  expect('FX history shared', cardsOf(W.model(fxInp(FXR))) === cardsOf(W.model(fxInp(fxShare, { shared: true }))), 'the shared copy\'s history cards differ from the full results\'');
+  // a tight cap: the facts go first and the history stays whole; tighter, the history goes before a forecast item
+  const sizeOf = (x) => Buffer.byteLength(JSON.stringify(x), 'utf8');
+  const facts = fxItems.filter((x) => x.group === 'facts');
+  const tight = W.shareResults(FXR, sizeOf(fxShare) - 40), tI = tight ? tight.scenarios.items : [];
+  expect('FX history cap', !!tight && tI.filter((x) => x.group === 'history_range').length === 10 && tI.filter((x) => x.group === 'facts').length < facts.length,
+    'at ' + (sizeOf(fxShare) - 40) + ' bytes the share did not drop a fact before the history: ' + JSON.stringify(tI.map((x) => x.id)));
+  const fcRes = JSON.parse(JSON.stringify(FXR));
+  fcRes.scenarios.items.push({ id: 'forecast.3.base', group: 'forecast', segment: null, label: 'Base case, the next 3 months', value: 60, text: '60', kind: 'count', unit: '', grade: 'CONFIRMED' });
+  let histGone = null;
+  for (let cap = sizeOf(W.shareResults(fcRes)); cap > 400 && !histGone; cap -= 25) {
+    const t = W.shareResults(fcRes, cap), it = t && t.scenarios ? t.scenarios.items : [];
+    if (t && t.scenarios && it.filter((x) => x.group === 'history_range').length < 10) histGone = { cap, it };
+  }
+  expect('FX history cap', !!histGone && histGone.it.some((x) => x.group === 'forecast'),
+    'the history did not go before the forecast: ' + JSON.stringify(histGone && histGone.it.map((x) => x.id)));
+
+  // ---- the chart registry (wave 2B, 30 Sep 2026): the records of tools/fixtures/viz/spec.json drawn by kind
+  // (fixtures/report-pdf/viz-results.json and viz-response.json, made by make_viz_fixtures.py): the 10-chart report
+  // (every kind, 12 long segment labels, suppressed cells, a 10 x 12 diverging grid, a Pareto whose k80 lies beyond its
+  // bars, a record degraded to 'table'), the edge cases (negative totals, all-empty and 1-row heatmaps, non-Latin
+  // labels, 24 YYYY-MM columns, 14 long column labels, a short Pareto and waterfall, a page record, an analysis's bars,
+  // a kind no reader knows, a heatmap whose tier grid is the wrong shape, a kind with no table), the contribution
+  // waterfall the AI placed nowhere, and a share link's copy, each Letter and A4
+  const VR = J('viz-results.json'), VP = J('viz-response.json');
+  const vizRes = (charts) => Object.assign({}, VR.results, { charts });
+  const vizInp = (name, res, o) => ({ report: VP[name].report, sources: VP[name].sources, model: VP[name].model, repaired: VP[name].repaired,
+    removed_figures: VP[name].removed_figures, results: res, kept: [], name: NAME, showName: false, date, goal: res && res.goal, ...(o || {}) });
+  const recOf = (c) => (c && c.type === 'viz' && c.data ? c.data : c);
+  const DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope'];
+  const vizRun = (label, input, paper, charts, also) => {   // also: records drawn without a marker (after the placed ones)
+    const m = W.model(input), trace = [];
+    const u8 = W.build(m, { paper, trace });
+    const same = Buffer.compare(Buffer.from(u8), Buffer.from(W.build(W.model(input), { paper }))) === 0;
+    hashes[label + ' [' + paper + ']'] = sha(u8);
+    const f = path.join(tmp, label.replace(/[^a-z0-9]+/gi, '-') + '-' + paper + '.pdf');
+    writeFileSync(f, u8);
+    const r = checkPdf(u8, { file: f, a4: paper === 'a4', forbid, name: STEM, removed: input.repaired, source: String(input.report) + JSON.stringify(charts) });
+    ok = report(label + ', ' + paper + ' (' + (u8.length / 1024).toFixed(0) + ' KB)', r) && ok;
+    const v = vizCheck(r, trace);
+    const n = v.n;
+    console.log((v.ok ? 'PDF PASS ' : 'PDF FAIL ') + label + ', ' + paper + ': ' + n.figs + ' figures and ' + n.tables + ' records drawn as tables; ' + n.marks + ' marks and ' + n.words +
+      ' words checked against their figure boxes and each other; ' + n.cells + ' heatmap cells (' + n.cellText + ' with their text, ' + n.glyphOnly + ' the glyph alone) against their cells');
+    v.fails.forEach((x) => console.log('  - ' + x));
+    ok = v.ok && ok;
+    expect(label + ', ' + paper, same, 'the trace changed the bytes');
+    // every record placed is a figure or a table, never an empty box; an unknown kind or unreadable data is a table
+    const placed = [...String(input.report).matchAll(/\[CHART:(\d+)\]/g)].map((x) => recOf(charts[Number(x[1]) - 1])).filter((c) => c && !['line', 'bars', 'scatter'].includes(c.kind)).concat(also || []);
+    expect(label + ', ' + paper, trace.length === placed.length, placed.length + ' viz records placed, but ' + trace.length + ' drawn');
+    const T = plainText(r.text);
+    placed.forEach((c, i) => {
+      const t = trace[i] || {}, drawn = DRAWN.includes(c.kind) && t.as !== 'table';
+      const title = plainText(c.title || '').slice(0, 30);
+      if (t.as === 'table') {
+        expect(label, !DRAWN.includes(c.kind) || c.kind === 'heatmap', 'a ' + c.kind + ' record was drawn as a table: ' + c.title);
+        expect(label, t.table ? T.indexOf('table ' + t.table + '. ' + title) >= 0 || T.replace(/\s+/g, ' ').indexOf('table ' + t.table + '. ' + title) >= 0 : /could not be drawn, and it carries no table/.test(T),
+          'the record "' + c.title + '" (kind ' + c.kind + ') is not its table');
+      } else expect(label, drawn && t.kind === c.kind && plainText(t.title) === plainText(c.title), 'record ' + (i + 1) + ' (' + c.kind + ') was not drawn as its kind: ' + JSON.stringify([t.kind, t.as]));
+      // the table view: after its figure (12 rows at most), else in Appendix A with the note saying so
+      if (drawn && c.table && c.table.rows && c.table.rows.length) {
+        const at = T.replace(/\s+/g, ' ').indexOf('figure ' + t.fig + '. ');
+        const rest = T.replace(/\s+/g, ' ').slice(at);
+        const next = rest.search(/table \d+\. /), app = rest.indexOf('the tables of the figures');
+        if (c.table.rows.length <= 12) expect(label, next >= 0 && rest.slice(next).replace(/^table \d+\. /, '').indexOf(title) === 0 && (app < 0 || next < app), 'Figure ' + t.fig + '\'s table view does not follow it: ' + c.title);
+        else expect(label, /is in appendix a/.test(rest.slice(0, 2000)) && app >= 0 && rest.slice(app).indexOf(title) >= 0, 'Figure ' + t.fig + '\'s table (' + c.table.rows.length + ' rows) is not in Appendix A: ' + c.title);
+      }
+      // a heatmap's legend is the engine's own words
+      if (drawn && c.kind === 'heatmap') (c.data.legend || []).forEach((x) => expect(label, T.indexOf(plainText(x.text)) >= 0, 'the legend line "' + x.text + '" is not printed'));
+    });
+    // pagination: a heading directly over a figure is on the figure's page (the figure itself is whole: its box above)
+    const vb = [];
+    m.parts.forEach((p) => p.blocks.forEach((b, i) => { if (b.type === 'chart' && b.chart && (b.chart.data || !['line', 'bars', 'scatter'].includes(b.chart.kind)) && b.chart.kind && !['line', 'bars', 'scatter'].includes(b.chart.kind)) vb.push(p.blocks[i - 1]); }));
+    let headed = 0;
+    vb.forEach((h, i) => {
+      const t = trace[i];
+      if (!h || h.type !== 'h2' || !t || t.as) return;
+      headed++;
+      expect(label + ', ' + paper, plainText(r.texts[t.page].map((q) => q.s).join(' ')).indexOf(plainText(h.text).slice(0, 24)) >= 0, 'the heading "' + h.text + '" is not on the page of Figure ' + t.fig + ' under it');
+    });
+    return { r, trace, T, headed };
+  };
+  const vizAll = [];
+  for (const paper of ['letter', 'a4']) {
+    const ten = vizRun('viz: ten charts', vizInp('ten', vizRes(VR.results.charts)), paper, VR.results.charts);
+    const edge = vizRun('viz: edge cases', vizInp('edge', vizRes(VR.edge.charts)), paper, VR.edge.charts);
+    vizAll.push(ten, edge);
+    expect('viz edge, ' + paper, edge.headed >= 3, 'only ' + edge.headed + ' figures sit right under a heading: the pagination check proves little');
+    // the unknown kinds: the "sankey" (no reader knows it), the heatmap whose tier grid is the wrong shape and the radar
+    // with no table are tables, each note saying why
+    expect('viz edge, ' + paper, /this pdf does not draw a chart of the kind "sankey"/.test(edge.T) && /shown as its table: its drawing data could not be read/.test(edge.T) &&
+      /five measures of each region on a radar: this chart could not be drawn, and it carries no table/.test(edge.T), 'an unknown kind or unreadable data is not said to be shown as its table');
+    expect('viz edge, ' + paper, edge.trace.filter((t) => t.as === 'table').map((t) => t.kind).join(',') === 'sankey,heatmap,radar', 'the tables drawn: ' + edge.trace.filter((t) => t.as === 'table').map((t) => t.kind).join(','));
+    // non-Latin labels are placeholders, the same one in the figure and its table
+    expect('viz edge, ' + paper, /\[name 1\] 18,420/.test(edge.T.replace(/ /g, ' ')) && /\[name 1\] 18,420 21,960/.test(edge.T.replace(/ /g, ' ').replace(/\s+/g, ' ')), 'the non-Latin city names are not the same placeholders in the slope and its table');
+    // the contribution waterfall the AI did not place: Part 1 draws it under "Where the change sits", above the table
+    const auto = vizRun('viz: the waterfall the AI placed nowhere', vizInp('auto', vizRes(VR.auto.charts)), paper, VR.auto.charts, VR.auto.charts);
+    const p1 = between(auto.r, 'PART 1', 'PART 2').replace(/\s+/g, ' ');
+    const fa = p1.indexOf('figure 1. where the change in revenue came from, by region'), ta = p1.indexOf('where the change in total revenue came from');
+    expect('viz auto, ' + paper, /where the change sits/.test(p1) && fa >= 0 && ta > fa && auto.trace.length === 1 && auto.trace[0].kind === 'waterfall',
+      'Part 1 does not draw the unplaced contribution waterfall above the engine\'s table');
+    // ... also from results.viz (the engine's rep.viz) when the charts do not carry it; and never when the AI placed one
+    const fromViz = W.model(vizInp('auto', Object.assign({}, VR.results, { charts: [], viz: { charts: VR.auto.charts } })));
+    const sits = (mm) => { const bs = mm.parts[0].blocks, i = bs.findIndex((b) => b.type === 'h2' && b.id === 'p1-sits'); return i < 0 ? [] : bs.slice(i + 1).filter((b) => b.type === 'chart'); };
+    expect('viz auto, ' + paper, sits(fromViz).length === 1 && sits(fromViz)[0].chart.chart === 'contribution_waterfall' && sits(W.model(vizInp('ten', vizRes(VR.results.charts)))).length === 0,
+      'the contribution waterfall is not drawn under "Where the change sits" from results.viz, or is drawn there beside the AI\'s own');
+    // a share link's copy: the trimmed results (no charts) and the share's stored charts: the same figures
+    const shared = vizRun('viz: a shared copy', vizInp('ten', W.shareResults(vizRes(VR.results.charts)), { shared: true, charts: VR.results.charts, kept: [] }), paper, VR.results.charts);
+    const sig = (x) => JSON.stringify(x.trace.map((t) => [t.as || t.kind, t.title, t.layout || '']));
+    expect('viz share, ' + paper, sig(shared) === sig(ten), 'the shared copy does not draw the same figures as the full results');
+  }
+  // every kind drawn, in each of its layouts; heatmap cells with their text and with the glyph alone
+  const layouts = new Set(vizAll.flatMap((x) => x.trace.filter((t) => !t.as).map((t) => t.kind + ' ' + t.layout)));
+  const want = ['waterfall vertical', 'waterfall horizontal', 'heatmap grid', 'heatmap transposed', 'dot_range wide', 'pareto vertical', 'pareto horizontal', 'slope wide'];
+  const missing = want.filter((k) => !layouts.has(k));
+  console.log((missing.length ? 'PDF FAIL ' : 'PDF PASS ') + 'every draw kind in each of its layouts (' + want.join(', ') + ')' + (missing.length ? ': missing ' + missing.join(', ') : ''));
+  ok = !missing.length && ok;
+  const cellsOf = (pred) => vizAll.reduce((a, x) => a + x.trace.reduce((b, t) => b + (t.cells || []).filter(pred).length, 0), 0);
+  expect('viz cells', cellsOf((c) => c.text) > 0 && cellsOf((c) => !c.text && c.s) > 0, 'no heatmap cell has its text, or none the glyph alone');
+
+  // the chart review (30 Sep 2026): a value of +/-1e308 is never placed (its slope is shown as its table, and no "NaN"
+  // or "Infinity" reaches the page's operators, where the writer threw or wrote them), and a label of symbols only (an
+  // emoji, which WinAnsi cannot show and printed as nothing) reads "[label 1]", the same in the figure and its table
+  {
+    const idx = (k) => VR.results.charts.findIndex((c) => recOf(c) && recOf(c).kind === k);
+    const charts = JSON.parse(JSON.stringify(VR.results.charts));
+    const sl = recOf(charts[idx('slope')]), dr = recOf(charts[idx('dot_range')]);
+    sl.data.rows[0].a = 1e308; sl.data.rows[0].b = -1e308;
+    const was = dr.data.rows[1].label, box = String.fromCodePoint(0x1F4E6);
+    dr.data.rows[1].label = box; dr.table.rows.forEach((row) => { if (row[0] === was) row[0] = box; });
+    for (const paper of ['letter', 'a4']) {
+      const label = 'viz: extreme values and a symbol-only label', input = vizInp('ten', vizRes(charts)), trace = [];
+      let u8 = null;
+      try { u8 = W.build(W.model(input), { paper, trace }); } catch (e) { expect(label + ', ' + paper, false, 'the writer threw: ' + e.message); continue; }
+      hashes[label + ' [' + paper + ']'] = sha(u8);
+      const f = path.join(tmp, 'viz-extremes-' + paper + '.pdf');
+      writeFileSync(f, u8);
+      const r = checkPdf(u8, { file: f, a4: paper === 'a4', forbid, name: STEM, removed: input.repaired, source: String(input.report) + JSON.stringify(charts) });
+      ok = report(label + ', ' + paper, r) && ok;
+      const v = vizCheck(r, trace);
+      v.fails.forEach((x) => console.log('  - ' + x));
+      ok = v.ok && ok;
+      const T = plainText(r.text).replace(/\s+/g, ' ');
+      const ts = trace.find((t) => plainText(t.title) === plainText(sl.title)), td = trace.find((t) => plainText(t.title) === plainText(dr.title));
+      expect(label + ', ' + paper, !/NaN|Infinity/.test(Buffer.from(u8).toString('latin1')), '"NaN" or "Infinity" is written into the page');
+      expect(label + ', ' + paper, ts && ts.as === 'table', 'the slope from 1e308 to -1e308 was not shown as its table: ' + JSON.stringify(ts && [ts.kind, ts.as]));
+      expect(label + ', ' + paper, td && !td.as && (T.match(/\[label 1\] \(/g) || []).length >= 1 && (T.match(/\[label 1\]/g) || []).length >= 2,
+        'the emoji label does not read "[label 1]" in the figure and its table');
+      console.log('PDF PASS ' + label + ', ' + paper + ': checked');
+    }
+  }
+
   // the writer as the page runs it (a classic script: window.NLReportPdf, no module) makes the same bytes
   const ctx = { window: {} };
   vm.runInNewContext(readFileSync(WRITER, 'utf8'), ctx, { filename: '45-report-pdf.js' });
@@ -506,14 +798,19 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   console.log((eq ? 'PDF PASS ' : 'PDF FAIL ') + 'the classic script (as the page runs it) makes the same bytes as the Node module');
   ok = eq && ok;
   if (pageU8) hashes['the classic script, new sections [letter]'] = sha(pageU8);
+  const mv = W.model(vizInp('ten', vizRes(VR.results.charts))), mv1 = JSON.parse(JSON.stringify(mv)); mv1.date = date;
+  const eqv = page && Buffer.compare(Buffer.from(page.build(mv1, { paper: 'a4' })), Buffer.from(W.build(mv, { paper: 'a4' }))) === 0;
+  console.log((eqv ? 'PDF PASS ' : 'PDF FAIL ') + 'the classic script makes the same bytes as the Node module for the 10-chart report (A4)');
+  ok = eqv && ok;
   // every fixture PDF's sha256 (--hashes), and the same bytes as an earlier run's (--same-as)
   if (opt('--hashes')) { writeFileSync(opt('--hashes'), JSON.stringify(hashes, null, 2) + '\n'); console.log('(' + Object.keys(hashes).length + ' PDF hashes written to ' + opt('--hashes') + ')'); }
   if (opt('--same-as')) {
-    const was = JSON.parse(readFileSync(opt('--same-as'), 'utf8')), keys = [...new Set(Object.keys(was).concat(Object.keys(hashes)))];
+    // every PDF BEFORE.json names must be byte-identical (a case it does not name is new: listed, not judged)
+    const was = JSON.parse(readFileSync(opt('--same-as'), 'utf8')), keys = Object.keys(was), fresh = Object.keys(hashes).filter((k) => !(k in was));
     const moved = keys.filter((k) => was[k] !== hashes[k]);
     const letters = keys.filter((k) => /\[letter\]$/.test(k)).length, a4s = keys.filter((k) => /\[a4\]$/.test(k)).length;
     console.log((moved.length ? 'PDF FAIL ' : 'PDF PASS ') + 'every fixture PDF (' + letters + ' Letter, ' + a4s + ' A4) is byte-identical to ' + path.basename(opt('--same-as')) +
-      (moved.length ? ': ' + moved.length + ' differ or are missing: ' + moved.join('; ') : ''));
+      (moved.length ? ': ' + moved.length + ' differ or are missing: ' + moved.join('; ') : '') + (fresh.length ? ' (' + fresh.length + ' new cases not in it: ' + fresh.join('; ') + ')' : ''));
     ok = !moved.length && ok;
   }
   // the download's name: the date, and the file's name only when asked for

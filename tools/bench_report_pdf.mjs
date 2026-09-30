@@ -15,7 +15,9 @@
 // sources", with the engine's full results); the largest share (a 32,000-character report, 6 charts, 8 tables of 12
 // rows, 12 sources); every share field at its cap (that share with every string at its cap, and the engine's results
 // trimmed by shareResults to their 20 KB); and 4,570 headings (the 32,000-character report "## h / w" 4,570 times:
-// an adversarial share, one bookmark each).
+// an adversarial share, one bookmark each); and viz-10 (the 10-chart report of the chart registry as a share: every
+// draw kind, its heatmaps, waterfalls, Pareto, dot range and slope; the writer before it draws none, so only this
+// case's bytes may differ with --against).
 // Warm: 20 calls first, then up to --iters calls within --budget (at least 30), each timed alone, in a process of
 // its own per writer and case. Cold: the first call in a fresh process (the writer already loaded, its load time reported
 // apart), --cold processes a case; ICU's first use (normalize, a collator) is made before it unless --no-prewarm,
@@ -82,6 +84,14 @@ function largestFixture() {
   return { report: R4.reports.odd, sources, model: 'deepseek-v4-pro', repaired: 1, removed_figures: ['12.5'], results: R4.results.reviews, kept: [],
     name: 'review4.csv', showName: false, date: DATE, goal: R4.results.reviews.goal };
 }
+// the 10-chart report of tools/check_report_pdf.mjs as a share: its 10 chart registry records (every draw kind, the 10 x
+// 12 diverging heatmap, the 12 long-labelled waterfall, the 20-bar Pareto; AI_CHARTS_MAX), the ship2 tables, 4 sources
+// and the engine's results trimmed by shareResults (fixtures viz-results.json and viz-response.json)
+function vizShare(W) {
+  const R = J('viz-results.json'), P = J('viz-response.json').ten, res = R.results;
+  return share({ report: P.report, goal: res.goal, model: P.model, sources: P.sources, charts: res.charts, tables: res.tables },
+    { results: W.shareResults(Object.assign({}, res)) });
+}
 export const CASES = {
   'small': { what: 'the ship2 report as a share', input: () => share(smallShare()) },
   'largest-fixture': { what: 'the largest check fixture (35 sources, full results)', input: () => largestFixture() },
@@ -93,6 +103,8 @@ export const CASES = {
     return share(maxShare(), { results: W.shareResults(big) });
   } },
   'headings-4570': { what: 'a 32,000-char report of 4,570 headings', input: () => share(smallShare(), { report: ('## h\nw\n').repeat(4570).slice(0, 32000) }) },
+  // viz: the writer before wave 2B draws no chart registry record (an empty captioned box each), so its bytes differ
+  'viz-10': { what: 'the 10-chart report (every draw kind) as a share', viz: true, input: (W) => vizShare(W) },
 };
 export const call = (W, input, paper) => W.build(W.model(input), { paper: paper || 'letter' });
 
@@ -150,6 +162,7 @@ function main() {
       const WB = requireCjs(before), WA = requireCjs(after), sh = (u8) => createHash('sha256').update(u8).digest('hex').slice(0, 16);
       const same = ['letter', 'a4'].map((paper) => {
         const a = call(WB, CASES[name].input(WB), paper), b = call(WA, CASES[name].input(WA), paper), eq = Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+        if (CASES[name].viz) return paper + ' ' + (eq ? 'identical' : 'different, as it must be (the chart registry\'s records): ' + a.length + ' B vs ' + b.length + ' B');
         identical = identical && eq;
         return paper + ' ' + (eq ? 'identical, ' + a.length + ' B, sha256 ' + sh(a) : 'DIFFERENT: ' + a.length + ' B ' + sh(a) + ' vs ' + b.length + ' B ' + sh(b));
       });
@@ -158,7 +171,7 @@ function main() {
     }
   }
   console.log('warm: 20 calls first, then each call timed alone; cold: the first call in a fresh process, ' + (argv.includes('--no-prewarm') ? 'ICU\'s first use included' : 'after ICU\'s first use') + '; load: require() of the writer');
-  if (before) console.log(identical ? 'BENCH PASS every case makes the same bytes in both writers, Letter and A4' : 'BENCH FAIL a case makes different bytes');
+  if (before) console.log(identical ? 'BENCH PASS every case without chart registry records makes the same bytes in both writers, Letter and A4' : 'BENCH FAIL a case makes different bytes');
   if (opt('--json')) writeFileSync(opt('--json'), JSON.stringify(raw, null, 1) + '\n');
   process.exit(identical ? 0 : 1);
 }

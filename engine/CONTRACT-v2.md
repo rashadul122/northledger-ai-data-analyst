@@ -24,7 +24,12 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
    filled are `[]`.
 4. **Text fields** go through the v1 scrubber (withheld values, phone numbers, email addresses and
    the engine's internal table name are replaced). No text field carries a number the engine did not
-   write.
+   write. A withheld (or coded) value is looked for only when it is specific (live baseline, 30 September 2026:
+   one review whose whole text was "this" turned "a result at least this strong" into "a result at least
+   [withheld] strong", 62 times in one PDF): a free-text column's value only whole and 20 characters or more;
+   any other value 2 words or more, or one word of 6 characters or more that is not a common English word
+   (`nl_browser._COMMON_WORDS`: everyday words and every word of 6 letters or more in the engine's and the
+   adapter's own sentences, names taken out); never a number (`nl_browser._specific`).
 5. **Flagged columns never appear in chart data** (`charts[].data`): not as a series, a matrix row
    or column, a category source or a label, whatever the visitor decided for them. A withheld column
    also never appears in `health.columns[].top_values`, `numeric` or `dates`.
@@ -36,7 +41,7 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
 |---|---|---|---|
 | `ok`, `error`, `engine`, `input`, `timings`, `privacy`, `health`, `cleaning`, `roles`, `findings`, `forecast`, `story`, `downloads` | | 1 | as in v1 |
 | `contract_version` | int | 2 | `2` |
-| `primary_metric` | object or null | 2 | `{finding_id, claim_key, grade}`: the claim the engine tested in its `primary` family, or null |
+| `primary_metric` | object or null | 2 | `{finding_id, claim_key, grade}`: the claim the engine tested in its `primary` family, or null. The gate's primary is set from the AI plan's primary column, as the engine's own name for it (a long table's value column is its lead series, `input.layout.lead`); when the plan named a measure the engine tested and the gate's primary is not about it, the engine's claim for that measure is the primary (live baseline, 30 September 2026: the plan named VALUE and the report led with the row count): a level's, a rate's or a rating's average month, an amount's or a count's first total in the engine's order (the one `scenarios` breaks down), else its average. The row count never leads when the plan named a measure the engine tested; the gate's grades and families are unchanged. `summary`, the tiles and `results_for_ai.primary` follow it |
 | `tests_run` | object | 2 | `{families: [{name, size, fdr_method, level}], claims_tested}` from the gate's family pass |
 | `methods` | list | 2 | `{id, name, assumptions[], applies_to[] (finding ids), desktop_only}` for each method that ran |
 | `limitations` | list | 2 | `{kind: data|statistical|causal|forecast|external, text, finding_ids[]}` |
@@ -45,7 +50,7 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
 | `charts_suppressed` | list | 2 | `{rule, type, why}` for each §5 chart whose rule did not fire (§5 "Suppression") |
 | `llm` | object | 2 | `{used: false, model: null, consent: false, guard: {...}}`; the adapter never calls a model |
 | `scenarios` | object | 2 | the headline claim broken down for the report writer (design B, 29 Sep 2026): `{basis, items[], refused[], note}`, §5.8. Always present; `{basis: null, items: [], refused: [], note: ""}` on a refusal |
-| `summary` | object | 2 | the manager's bottom line (fixer round, 24 Sep 2026): `{lines: [{kind: "moved"|"act"|"plan", text, finding_ids[]}], labels: {finding_id: plain label}, monitoring: [finding_id]}`. `lines` holds at most three sentences built from the engine's facts, every number printed with `narrate.story_number` from a fact the line lists: what moved and why (the primary claim, the steps where what the file covers changed and its like-for-like restatement, a fall since a peak), what to act on (the CONFIRMED business claims, or none), and the planning number (the primary series' forecast, graded). `labels` names each business and forecast claim in the reader's words ("Rent, monthly total", "Ledger lines a month"). `monitoring` lists the claims about the ledger's own line count when the file has a money total: kept off the first screen, the tiles and the bottom line; they stay in the tables and the analyst view |
+| `summary` | object | 2 | the manager's bottom line (fixer round, 24 Sep 2026): `{lines: [{kind: "moved"|"act"|"plan", text, finding_ids[]}], labels: {finding_id: plain label}, monitoring: [finding_id]}`. `lines` holds at most three sentences built from the engine's facts, every number printed with `narrate.story_number` from a fact the line lists: what moved and why (the primary claim, the steps where what the file covers changed and its like-for-like restatement, a fall since a peak), what to act on (the CONFIRMED business claims, or none), and the planning number (the primary series' forecast, graded). `labels` names each business and forecast claim in the reader's words ("Rent, monthly total", "Ledger lines a month"); an average of a measure the AI plan reads is named from its column and the plan's own words for it, its `label` when the plan gives one and its unit when that names a real unit ("Average value (CAD per USD), the average month", "Average USD/CAD exchange rate (CAD per USD), ..."), never from a value in the file (a long table with one series names it after its value column, never after a column that holds one value throughout: the live FX file's rate was "canada", from GEO). `monitoring` lists the claims about the ledger's own line count when the file has a money total: kept off the first screen, the tiles and the bottom line; they stay in the tables and the analyst view |
 
 A refusal (`ok: false`) returns every key with its empty value.
 
@@ -142,7 +147,7 @@ Definitions (the tests re-compute every one from `downloads.clean_csv` / `downlo
 | `benchmark` | #14 | `matched_cell`, `worst_cell`, `file`, `match`, `routed`, `certification`, `target_pct` (as `engine.benchmark`), or `available: false` and `note` |
 | `corr` | #9 | `measures[]`, `r[i][j]` (Pearson, pairwise complete rows), `n[i][j]`; fires at 3+ measures; `default_visible: false` (§5: only when the owner asks) |
 
-Suppressed rules (no chart drawn, one line in `charts_suppressed`): #2b driver waterfall (S2 is not built in R1), and any row above whose condition did not hold.
+Suppressed rules (no chart drawn, one line in `charts_suppressed`): #2b driver waterfall (S2 is not built in R1), and any row above whose condition did not hold. The #2b line goes when the chart registry built a `contribution_waterfall` (§5.9, a rule `V` record in `charts`, which then accounts for #2b; `nl_viz.drop_driver_line`, integration pass, 30 September 2026): the report no longer says the drivers are not computed beside the chart that computes them.
 
 ## 4. Failure handling
 
@@ -362,7 +367,10 @@ claim `scenarios` breaks down (its `basis`, the total of the plan's primary colu
 or a price and the breakdown is refused), else null. `claim` is the same text as its finding's in `findings`, `grade`
 the report's grade word; a claim about a withheld column is never sent, so `primary` is then null. The PDF's key
 figures lead with it (an FX file's with the average rate, the three-currency f3 file's with the EUR total, never the
-row count the engine's own gate chose there).
+row count the engine's own gate chose there; since the live baseline of 30 September 2026 `primary_metric` is that
+claim too, §1). Each analysis's `sentence` and `method` go whole, or cut after the last whole word that fits the
+worker's caps (700 and 300 characters, `ANALYSIS_TEXT_MAX`) with an ellipsis, never inside a word, a figure or the
+"[your file]" placeholder (`_cut_words`; a method note once arrived as "...trained only on the blocks befor").
 
 ### 5.8 `scenarios` and the web searches (design B of `plan/AI-INSIGHTS-DESIGN.md`, 29 September 2026; the searches built from a fixed list, 30 September 2026)
 
@@ -404,7 +412,7 @@ inputs{columns[], window, op}}`.
 `capScenarioItems`, `SCENARIO_TOP_SEGMENTS` 6) by this priority, and the adapter writes them in the same order, so
 a reader that keeps the first N items keeps exactly what the cap keeps: the core first, every item of every group in
 the order of `group` (the headline, contributions, price, volume and mix, figures per unit, the run rate, the
-sensitivity, gaps, the forecast, the facts) with the per-segment groups (`contribution`, `per_unit`, `gap`:
+sensitivity, gaps, the forecast, the historical range, the facts) with the per-segment groups (`contribution`, `per_unit`, `gap`:
 `nl_scenarios.PER_SEGMENT`) cut to the 6 segments with the largest |contribution| (`nl_scenarios.TOP_SEGMENTS`,
 ranked by `nl_scenarios.segment_rank` as the worker ranks them: by the size of the contribution item of kind `change`
 whose unit is not "%", then where the segment first appears); then the rest, segment by segment in that rank, each
@@ -418,21 +426,22 @@ percent; a level with rows in only one window is labelled "Uptown (new in the la
 the latest 12 months)", its missing window's total 0 and no own change in percent for one that entered),
 `price_volume_mix` (price at the latest units, volume at the prior price per unit, mix at each segment's prior price
 per unit; they add up to the change; mix only with a segment whose every level has units in the window before, so a
-level that entered leaves out the mix and says so; `assumes` is "price, volume and mix add up to the change", or
-"price and volume add up to the change" with no mix item), `per_unit` (overall and per
+level that entered leaves out the mix and says so; `assumes` states the base and the arithmetic, never an
+assumption (they add up by construction): "measured against the 12 months before; the three parts add up exactly to
+the change", or "... the two parts add up exactly to the change" with no mix item), `per_unit` (overall and per
 segment: both windows and the change in percent, `per_unit.change_pct` and `per_unit.<segment>.change_pct`, kind
 `change`, unit "%": "revenue per unit 41 to 47.9", "+16.8%"), `run_rate` (the latest 12 months and their average
 month; never a 3-month annualised rate), `sensitivity` (each 1% of the measure over a year at the latest level), `gap` (each segment's distance to
 the largest level in the latest 12 months, chosen among ALL the levels (a folded one or one that entered too) and so
 named in the label ("below Uptown (new)'s, the largest store by total sales in the latest 12 months"), in the measure
 and in percentage points of the total, and, with units, what its units would have made at the largest's price per
-unit when that is higher; never for "other", the largest itself or a level that exited), `forecast`, `facts` (months and
-distinct dates in the kept rows, the first and the last date). `kind` is `amount`, `change`, `count`, `percent`,
+unit when that is higher; never for "other", the largest itself or a level that exited), `forecast`, `history_range`
+(below), `facts` (months and distinct dates in the kept rows, the first and the last date). `kind` is `amount`, `change`, `count`, `percent`,
 `points`, `per_unit` or `date` (a fact's first or last date: `value` is the date text). `text` is
 `nl_scenarios._fmt_item(value, kind, unit)`, the one function, in the adapter's own formats (`_fmt`, `_amt`,
 `_pct_text`): a rise carries "+", a fall the true minus sign, a change in percent is `kind: change, unit: "%"`, a
 share `kind: percent`. `value` is finite, rounded to 1e-6; an item whose value cannot be formed is absent.
-`window` is `prior`, `latest`, `both` or null. `assumes` is the item's assumption in words (a run rate, a
+`window` is `prior`, `latest`, `both`, `history` (a historical range item) or null. `assumes` is the item's assumption in words (a run rate, a
 sensitivity, a what-if, the price, volume and mix split, a forecast sum), else null.
 
 **Grades (final review, 30 September 2026).** The headline items (`headline.*`: the claim itself) carry the claim's
@@ -441,7 +450,8 @@ sensitivity, a what-if, the price, volume and mix split, a forecast sum), else n
 `price_volume_mix`, `per_unit`, `run_rate`, `sensitivity`, `gap`) is not graded itself: `grade` null, `parent_grade`
 the claim's grade and `grade_words` "part of a change graded CONFIRMED; not graded itself" (a region that fell 1.63%
 inside a CONFIRMED rise read CONFIRMED before). A forecast item carries the forecast's `grade` ("the engine's
-forecast, graded CONFIRMED (usable for planning)"), a fact `grade` null ("a fact about the rows, not graded"); both
+forecast, graded CONFIRMED (usable for planning)"), a fact `grade` null ("a fact about the rows, not graded"), a
+historical range item `grade` null ("a fact about the file's past, not graded: history, not a forecast"); all three
 have `parent_grade` null.
 
 **Guards.** A share of the change needs the total to move by at least 1% of its prior level, and every segment to
@@ -469,6 +479,35 @@ labelled "the months' own 80% ranges added up, at least as wide as an 80% range 
 leads with what the sum is ("Low: the months' own 80% ranges added up, ...") and ends with the series and its
 months, so a reader that cuts labels short keeps the meaning. A forecast not usable for planning adds a line to
 `refused` and no item.
+
+**The historical range (`history_range`; review of the live baseline, 30 September 2026).** The engine forecasts
+counts and totals only, so a report on an exchange rate had no outlook at all. For a level (the plan's primary column
+typed `level` or `percentage`: a rate, a price, an index; with no primary in the plan, the engine's primary claim when
+it is the average of a measure the engine does not add up), whose engine average-month claim exists, with 36 months
+or more of monthly averages (3 years), the block states, for 12-month and 3-month windows, every past window (one
+ending each month; they overlap) whose first and last month hold a value: the change of the monthly average across it,
+and of those changes the 10th, 50th and 90th percentiles (linear interpolation), the share of the windows in which it
+rose (kind `percent`) and the window count (kind `count`). Items `history_range.m12.{windows, p10, p50, p90, rose}` and
+`history_range.m3.*`; the changes are kind `change` in the plan's unit (`points` for a percentage). The monthly
+average is the mean of the month's values in the kept rows; a level's zeros that mark "no value" (the analyses' own
+evidence, `nl_browser._zero_shape`) are not counted, and each item's `assumes` then says so ("550 zero values in
+VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value"), else
+null. Every label says it is history, not a forecast; the windows item's label is the sentence the writer may copy:
+"In the 104 past 12-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change in the
+monthly average of value ran from −0.0635 CAD (1 in 10 lower) to +0.0785 CAD (1 in 10 higher); the middle was
++0.0162 CAD. This is history, not a forecast." (its figures are the percentile items' own texts). A level with
+fewer months adds "no historical range of <measure>: it has N months with a value, fewer than the 36 (3 years) it
+needs" to `refused`; a flow, a count, a rating or a row count has none. `note` then adds that the historical range
+items are facts about the past, not a forecast and not graded. **The worker (`insight-proxy/src/report.js`
+`SCENARIO_GROUPS`) keeps only the groups it knows: until `history_range` is added there, it drops these items from
+`/report`.**
+
+**The segment the goal names (live baseline, 30 September 2026).** The question asked which departments stand out,
+and keeping the review text switched the breakdown to `verified_purchase`, the engine's first dimension. The
+candidates (above) are ordered: first the columns the goal names (the plan's goal, else the visitor's question; never
+the default question), in the order it names them, a column being named when every word of its name is in the goal,
+singular or plural ("departments" names `department`); then the plan's segment and geography roles, its category and
+geography types, and the engine's dimensions, as before. The first that qualifies segments the claim.
 
 `refused[]` says, in plain words, what was not computed and why (no dates, the engine's analysis did not run, the
 date column withheld, the headline an average, no claim that adds up, no segment column, no units, shares of a change
@@ -539,6 +578,185 @@ and "|" files, and its own "ordinary words" rule (`tools/fixtures/review5`). Now
 * **The page** always sends `context_queries` to /report as an array: `ai_plan.context_queries`, or `[]` when the
   run has no `ai_plan` (the visitor ran without a plan, or the plan or the profile failed); the plan's own words are
   never sent. A run with no plan has no `ai_plan`.
+
+### 5.9 Charts chosen from the data (viz) (the chart registry, `plan/CHART-REGISTRY-DESIGN.md`, frozen 30 September 2026)
+
+The frozen interface is `tools/fixtures/viz/spec.json` (version `2026-09-30.1`): the caps, the menu, the record's
+JSON Schema (draft 2020-12) and each kind's invariants, the colours, the plan's rules and 14 example records;
+`tools/fixtures/viz/validate_spec.py` checks it (and breaks copies of the examples to prove it catches each break).
+This section summarises it; where they differ, the spec wins and this section is fixed.
+
+**The rule.** The engine computes every value and writes every printed string of a chart (cell texts, step texts,
+legend lines, labels, table cells, the summary) and every colour tier. Renderers never format a data value; only
+axis ticks are formatted locally. The AI only selects charts; the engine validates each choice against the data and
+builds it, or refuses it with a reason. A chart reconciles with the engine's own overlapping figures (the scenarios
+items, the trend chart's monthly series, the compare analysis, the corr chart) to 1e-6, or it is refused. Each chart
+renders the same on the page, in the PDF and in the share viewer, from its record alone.
+
+**Caps.** `VIZ_MAX` 8 charts a report (and items kept from the plan), `VIZ_AUTO` 4 (the engine's own picks when no
+AI chart is built), `HEAT_MAX` 3 heatmaps, `SMALL_CELL` 5 rows, `AI_CHARTS_MAX` 10 charts in `results_for_ai` and
+/report (the analyses' charts and the viz records together), `CHART_BYTES` 6,000: one record as `JSON.stringify`
+writes it, in UTF-8 bytes (Python writes a whole-number float as an integer and measures
+`json.dumps(record, separators=(',', ':'), ensure_ascii=False)` in UTF-8: the same number). About 120 heatmap cells
+fit (a 10-year calendar is 5,996 bytes); the 12 × 24 grid cap is a display cap, and a record over the byte cap is
+trimmed by the engine (a calendar's oldest year, a change heatmap's oldest month, a crosstab's last row into
+"other", a Pareto's last bar into "other"; the subtitle says what is shown), or refused ("too large to draw").
+
+**The menu (Batch 1)** and the plan's columns, in order: `contribution_waterfall` [category, total?] and
+`pvm_waterfall` [total, units, category?] (kind `waterfall`, section `drove`, from the scenarios items of 5.8);
+`calendar_heatmap` [measure?] (month × year: totals for a flow, month-on-month % change for a level, rate or index;
+section `headline` when its measure is the primary claim's, else `other`); `change_heatmap` [category, measure?]
+(segment × month, year-on-year % change, diverging; `drove`); `crosstab_heatmap` [category, category, measure?]
+(`other`); `theme_rating_heatmap` [text, rating] (the themes analysis's words × the rating levels; `other`);
+`correlation_heatmap` [measure, measure, measure, ...] (3 to 12, or [] for the engine's measures; `other`);
+`group_ranges` [measure, category] (the compare analysis's bootstrap ranges as a dot plot, kind `dot_range`;
+`other`); `pareto` [category, total?] (the top 20, the running share, k80; `other`); `slope` [category, total?]
+(each segment's prior and latest total; `scenarios`). Sections name the AI report's parts: `headline` the headline,
+`drove` what drove it, `other` other findings, `scenarios` scenarios. Each entry's data conditions, privacy rule,
+source and reconciliation are in the spec's `menu`.
+
+**The record** (`rep.viz.charts[]`, and whole in `results_for_ai.charts[]`): `{id ("viz.<n>.<chart>"), chart (the
+menu name), kind (the draw kind, at most 10 characters: waterfall | heatmap | dot_range | pareto | slope | table),
+title, subtitle, section, supports (the claim or analysis it illustrates), anchors[] ("finding:<id>",
+"scenario:<item id>", "analysis:<n>", "chart:<id>"), grade, parent_grade (a chart derived from a graded claim has
+grade null and the claim's grade here, as 5.8's items do), chosen_by ("ai" | "engine"; an engine pick's why starts
+"Chosen by the engine: "), why, measure{label, unit, kind}, data (by kind), table{cols, rows} (the table view:
+every figure the chart shows), summary, suppressed{cells, why}, source, inputs{columns, rows, months, op},
+degraded? ({from, why}, set only by a producer or reader that degraded the record to a table)}`. `data` by kind:
+- `waterfall`: `steps[{label, value, text, kind: total|step, from, to}]` (the two totals first and last, from 0;
+  each step continues the running total), `basis{split: segment|price_volume_mix, finding_id, column, prior, latest}`,
+  `change{value, text}`; the steps add up to the change;
+- `heatmap`: `rows[]` (≤ 12), `cols[]` (≤ 24), `values[][]` (number or null), `text[][]` (≤ 12 characters),
+  `tier[][]` (0, or ±1..3), `n[][]`, `scale` (sequential | diverging), `legend[{tier, text}]`, `row_label`,
+  `col_label`. A shown cell has n ≥ 5; a suppressed one reads "<5" (value and n null, tier 0); an empty one reads ""
+  (n 0, tier 0). Tiers are tertiles of the shown values (of |value| on a diverging scale, the sign its value's);
+  correlation uses |r| cut points 0.3 and 0.6;
+- `dot_range`: `rows[{label, n, center, lo, hi, median, texts{n, center, lo, hi, median}}]`;
+- `pareto`: `bars[{label, value, text, cum_pct, cum_text}]` (≤ 20, levels with 5 or more rows), `other{…,
+  n_entities}` or null, `total{value, text}`, `k80{k, of, text}` (k counts levels in order of their totals, every
+  level included, to 80% of the whole, so it may lie beyond the bars);
+- `slope`: `rows[{label, a, b, a_text, b_text, change_text}]`, `a_label`, `b_label`;
+- `table`: `{}`: the record is its table.
+
+**Unknown kind → table, never dropped.** A reader that does not know a record's kind, or finds its data malformed,
+draws its table; the worker degrades such a record to kind `table` at the same index (a chart is never removed, so
+`[CHART:n]` keeps its meaning). The analyses' own charts (`line`, `bars`, `scatter`) keep their shape and readers.
+
+**Privacy.** No flagged column (withheld, coded, or kept by the visitor) in any role or label, and no level the
+scrubber would change or over 80 characters; no printed figure rests on fewer than 5 rows: a heatmap cell is
+suppressed, a bar, row or step is folded into "other". A refusal never names a withheld column. The worker suppresses
+again any heatmap cell with a value and n under 5.
+
+*People's names* (the chart review of 30 September 2026: review titles that named staff put four staff names among
+the theme words, and with no plan the engine charted a Pareto of those titles):
+- The adapter reads the exact tokens of every flagged column's values (withheld, coded or kept; a column flagged as
+  free text left out, its words being the file's vocabulary) before any is coded, and keeps them in the adapter
+  (`Scrubber.flag_tokens`). A level holding one (a token of 2 or more characters with a letter; any length for a theme
+  word) is never printed: the chart is refused "a level too long to print or that reads as personal data".
+- A theme word (the themes analysis and the theme heatmap alike) is never such a token, a given name
+  (`engine/first_names.txt`: `/usr/share/dict/propernames`, public domain, lower-cased, less 36 ordinary words, packed
+  in the zip), or a word the texts capitalise in 60% or more of its occurrences that are not a sentence's first (the
+  proper-noun rule; off when capitals are most of such occurrences, as in titles written in Title Case). A name stands
+  as a break: no two-word phrase joins across it. Words are letters in any script after NFC ("hôtel", "café").
+- A column whose values look like people's names (the adapter's person-name test, `nl_browser._looks_like_names`: the
+  personal-column check's rule on its heading and values, or 60% of its distinct values shaped like a name and 30%
+  beginning with a given name) is never a chart's levels: a Pareto, a crosstab, a change heatmap, group ranges, a
+  waterfall or a slope of it is refused "the values of <column> look like people's names".
+- The engine never picks the theme heatmap itself (only when the AI plan asks for it by name), and its own Pareto reads
+  only a column the plan types category, entity or geography.
+
+*Recoverable cells* (best effort; no secondary suppression). A suppressed cell must not be worked back from exact
+totals beside it. A record as it leaves the adapter (`results_for_ai`, `nl_viz.for_sending`) or the page (the share
+body, `src/js/50-try.js shareSafe`) carries `inputs.rows` null when it suppresses a cell (the rows read, less the shown
+cells' rows, gave a suppressed cell's). The theme heatmap's `all` column, when a rating column is suppressed or 1 to 4
+texts have no rating, is in whole percents with its n null (its share times its n, less the shown cells, gave how many
+of the hidden texts use each word); that shown cell with n null is the one exception to "a shown cell has n of 5 or
+more" (spec invariants.heatmap). A Pareto's and a slope's "other" rests on 5 or more rows (the slope's in each window
+it has rows in): the smallest bar, or the level in both windows with the smallest contribution, joins it until it does.
+Figures that combine across charts (a crosstab's cells and a Pareto of the same column, say) are not checked against
+each other.
+
+**The plan and the profile.** `plan.charts: [{kind (a menu name), columns, why}]`, at most 8: the worker keeps items
+whose kind is on the menu and whose columns fit its args (at most 12, each cut to 120), drops one that names a
+column the profile marks personal and a repeat, cuts `why` to 200 at a word (`plan_directive.worker_rules`); the
+engine checks each again (`validate_directive`) and lists a refusal in `rep.viz.refused[{chart, columns, why,
+chosen_by}]`. A refusal never triggers a re-plan. `profile_json` adds `chart_limits: [{chart, ok, why}]` beside
+`analysis_limits` (at most 16, why at most 160 code points: the chart's needs, "; ", what the file has, never naming
+a withheld or coded column); the planner never plans a chart whose limit says ok false.
+
+**Hooks.** `engine/nl_viz.py` builds after `rep["scenarios"]`: `rep["viz"] = {version, charts, refused,
+chosen_by}` (`blank_report` carries it empty) and each record is appended to `rep["charts"]` as `{id, rule: "V",
+type: "viz", title, view: "manager", default_visible: true, finding_ids, why_shown, source, data: the record}`,
+drawn in the page's viz area (not counted in section 3's six manager records). `results_for_ai.charts` holds the
+analyses' charts first, then the viz records; under the byte budget, viz records go from the end after the scenario
+items and before any analysis. The worker sends the model one card per viz chart (`{n, kind, title, section,
+supports, grade, parent_grade, summary, table}`, never its data; the guard indexes only the summary and the
+table), moves a misplaced `[CHART:n]` into its section (G10), and /report returns the validated charts and tables:
+the page and the share viewer draw those, never their own copy.
+
+**Colours** (the build's tokens, `build.py`; the PDF uses light only): sequential tiers #cfe9e4 #add9d2 #87c7bc
+(dark #143c3f #154b4a #155b55); falls #d9e7f8 #b7d1f1 #94bcea (dark #19304a #1f4168 #265286); rises #f1e2d1
+#e5c8a8 #d9ae80 (dark #332d26 #503b24 #6d4822); cell text #16232e (dark #e9eef3); suppressed fill #eef0f1, text
+#56646f, dashed #b9b5aa (dark #202b36, #9aabb8, #3b4d60); empty: no fill, dashed #e2dfd6 (dark #26364a); waterfall
+totals #24425c, rises #0b7366, falls #945400 (dark #b9cce0, #2bb5a3, #e3a33b). Colour is never the only channel: a
+number in every cell with a ○◐● glyph for its tier (drawn as vectors in the PDF), a + or − on every change, a table
+view for every chart, and its accessible name is its title and summary. Every chart fits a 320-px phone (288 px of
+drawing, no sideways page scroll; the narrow layouts are in the spec's `phone_fit`).
+
+**What the engine does where the spec leaves a choice (wave 1A, `engine/nl_viz.py`, 30 September 2026).**
+- *Byte caps* (the owner's decision on the spec's byte-cap conflict): `CHART_BYTES` 6,000 a record, except a heatmap,
+  `HEATMAP_BYTES` 12,000 (a 10-year calendar is about 6,000 bytes; the worker's `sanitizeChart` uses the same two
+  numbers). A grid over its cap is trimmed as the spec says and its subtitle ends "<first> to <last> shown: the chart's
+  size limit". spec.json records the decision as `caps.HEATMAP_BYTES` (12,000, same version), and validate_spec.py's
+  `check_record` applies `HEATMAP_BYTES` to a heatmap and `CHART_BYTES` to every other kind.
+- *The rows*: every chart reads the rows of `downloads.clean_csv` (the frame the engine's own charts read), without
+  every flagged column; a kept one too. So the theme × rating heatmap never reads a free-text column the engine flagged
+  (it flags every free-text column, so a kept review text is refused "a personal column is never charted"); it reads an
+  unflagged column the plan types `free_text` (or, with no plan entry, one of more than 300 values or a median over 60
+  characters). Its rows are the themes analysis's words and phrases (`_a_themes` on the same texts, and equal to the
+  plan's own themes analysis of that column when it ran); after the rating columns it has an `all` column, the themes
+  analysis's own share and text, and every word's texts across the ratings add up to its count there (a text with no
+  rating refuses the chart).
+- *Small cells in a waterfall and a slope*: a level in both windows with fewer than 5 of the claim's rows in either, one
+  that entered with fewer than 5 in the latest window and one that left with fewer than 5 before are folded into
+  "other" (recounted on the claim's own rows, which must add up to `scenarios.basis.rows`); when "other" then rests on
+  fewer than 5 rows in all, the level in both windows with the smallest contribution is folded in with it, and past 12
+  parts the smallest go the same way; `suppressed` counts the levels under 5 rows and says which were folded for
+  "other" or for the cap. A level that entered or left is labelled "<level> (new)" or "<level> (left)". The steps come
+  in the invariant's order: levels in both windows by the size of their contribution, then "other", then the levels
+  that entered or left; the slope's rows by their latest total, "other" last.
+- *Reconciliation*: a calendar or change heatmap is checked against the claim's trend chart (`trend.total:<m>`,
+  `trend.<m>` or `trend.volume`) where the months overlap, else its season chart; with neither, or no month in
+  common, it is refused. A level's zeros that mark "no value" (`nl_browser._zero_shape`, the analyses' evidence) are not
+  averaged, and the subtitle says how many. A correlation heatmap names only measures of the engine's corr chart (#9) and
+  copies its r; group ranges are the compare analysis run on the same rows (`_a_compare`), and equal the plan's own
+  compare analysis of the same measure and groups to its printed digits when it ran; a Pareto's ranking equals the
+  engine's `ranked.<column>` chart when that chart counts the same rows.
+- *The limits in a run*: `validate_directive` re-computes `chart_limits` over the rows the engine read (the profile's
+  rule, with the plan's types: a column typed `free_text` is text, one typed `rating` a rating; a column of short values
+  the plan types category, entity or geography counts as a Pareto's category up to 5,000 levels, the top 20 and
+  "other", where the profile lists 300; in the planner's profile, before any plan, such a column makes the Pareto's limit
+  ok "when the plan types it one"). A limit that says ok false refuses the chart with its why; a refusal says the true
+  reason (a level under 5 rows among the largest, a ranking that differs from the engine's ranked chart), never "could
+  not be reconciled" for those. `plan.charts` passes through `_validate_plan` cut to its caps (12 items read,
+  `kind` 40 characters, at most 12 columns of 120, `why` 200 at a word); nothing about a chart is added to
+  `ai_plan.refused` or `plan_signals`.
+- *results_for_ai*: the viz records go whole after the analyses' charts (the worker makes the model's card from each,
+  `nl_viz.cards_for_ai` makes the same card here), as `nl_viz.for_sending` makes them: a word that names a withheld column
+  reads "[withheld column]" (a record was left out whole until the chart review of 30 September 2026; the theme heatmap
+  leaves out a word of a withheld column's name, its row only), `inputs.rows` is null beside a suppressed cell, and a
+  record a rewrite takes over a cap is not sent.
+- *Texts the engine writes*: a theme heatmap counts a text with no rating in `all` only and says how many (it was
+  refused); a calendar trimmed to its latest 12 years says so, and "the chart's size limit" only when the byte cap took
+  more; the group ranges' summary names the ranking (each average weighted by its rows) and prints each group's own
+  average; a contribution waterfall's summary says when "other" is the largest part; a diverging legend runs each side
+  to its own extreme (the falls to the largest fall, the rises to the largest rise); a heatmap figure too wide for 12
+  characters is written compact in every cell and the legend ("1.235B", "456.7M").
+- *Themes' ties*: words used by as many texts are in the word's order (they were in the order a set gave them, which
+  changed with the string-hash seed).
+  Under the byte budget they go from the end after the scenario items and before any analysis; the scenario items'
+  estimate leaves out the "Where the change came from" table's rows, so once it fits, the items dropped last come back
+  while the payload still fits (it drops no more than it needs).
 
 ## 6. What this contract does not carry yet (R1)
 

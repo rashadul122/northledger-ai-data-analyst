@@ -1,0 +1,7150 @@
+{
+ "about": "The chart registry records for the report PDF checks (tools/check_report_pdf.mjs), made by make_viz_fixtures.py from tools/fixtures/viz/spec.json 2026-09-30.1 and ship2-results-v2.json. results: the 10-chart report; edge: the edge cases (charts only, on the same results); auto: the contribution waterfall the AI did not place.",
+ "spec_version": "2026-09-30.1",
+ "results": {
+  "ok": true,
+  "input": {
+   "name": "[your file]",
+   "rows": 300,
+   "columns": 4
+  },
+  "goal": "How did order revenue and volume develop over 2024–2025, and how much does order value differ by region and by the number of units sold?",
+  "reading": "This is an order-level sales file of 300 orders placed between January 2024 and December 2025, with one row per order. Each row records the order date, the sales region it belongs to, the revenue the order brought in, and how many units it contained. The dates span 24 months (267 distinct dates), so the grain is a single transaction rather than a monthly or regional total. Revenue is a continuous money amount while units is a bounded integer count.",
+  "quality_risks": [
+   "No currency is stated anywhere in the file; all revenue figures are assumed to be in one consistent currency.",
+   "Only 24 months and 2 calendar years are covered, so long-run trends, multi-year extremes and seasonality beyond two cycles cannot be established.",
+   "Every revenue value is distinct (300 distinct of 300 rows), so this is raw order grain — mixing it with monthly or regional totals would double-count.",
+   "Revenue is right-skewed with a long tail of large orders, so a few big transactions can move regional averages; medians are safer.",
+   "With only region, date and units as context, nothing separates product mix, customer type or discounting from a genuine regional difference.",
+   "Units top out at 40 and are integers, which may indicate a capped or binned field rather than an exact item count."
+  ],
+  "plan_applied": [
+   "kept the 4 columns the goal needs, set aside 2 others"
+  ],
+  "plan_refused": [],
+  "findings": [
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
+    "value": -1.3245033112582831,
+    "why": "No change of at least the 5% bar is shown: a 1.3% fall in the average month, latest 12 months against the 12 before (95% interval -2.4% to +1.8%; built to hold the true change 95% of the time; in simulated series with strong momentum, which"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "value": 18.67968073253438,
+    "why": "No change of at least the 5% bar is shown: an 18.7% rise in the average month, latest 12 months against the 12 before (95% interval -32.1% to +86.2%; built to hold the true change 95% of the time; in simulated series with strong momentum, w"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the monthly total of units, latest 12 months against the 12 before",
+    "value": 1.5994881637875835,
+    "why": "No change of at least the 5% bar is shown: a 1.6% rise in the average month, latest 12 months against the 12 before (95% interval -51.6% to +65.2%; built to hold the true change 95% of the time; in simulated series with strong momentum, whi"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the average month of revenue, latest 12 months against the 12 before",
+    "value": 19.058056110942474,
+    "why": "No change of at least the 5% bar is shown: a 19.1% rise in the average month, latest 12 months against the 12 before (95% interval -24.9% to +113.9%; built to hold the true change 95% of the time; in simulated series with strong momentum, w"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the average month of units, latest 12 months against the 12 before",
+    "value": 1.7860469083894657,
+    "why": "No change of at least the 5% bar is shown: a 1.8% rise in the average month, latest 12 months against the 12 before (95% interval -31.4% to +47.3%; built to hold the true change 95% of the time; in simulated series with strong momentum, whi"
+   },
+   {
+    "verdict": "INSUFFICIENT",
+    "kind": "forecast",
+    "claim": "Months of history available to forecast monthly total revenue in [your file]",
+    "value": 24,
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   },
+   {
+    "verdict": "INSUFFICIENT",
+    "kind": "forecast",
+    "claim": "Months of history available to forecast monthly rows in [your file]",
+    "value": 24,
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   },
+   {
+    "verdict": "INSUFFICIENT",
+    "kind": "forecast",
+    "claim": "Months of history available to forecast monthly total units in [your file]",
+    "value": 24,
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   }
+  ],
+  "analyses": [
+   {
+    "title": "revenue by region",
+    "sentence": "By region, the highest average revenue is North (1,034, 95% range 917 to 1,158, 75 rows) and the lowest West (840, 77 rows): a gap of 194 (95% range 17.3 to 387).",
+    "method": "Each group's average with a 95% bootstrap range (999 resamples); groups with fewer than 5 values are left out. An association with the group, not its cause.",
+    "table": {
+     "cols": [
+      "region",
+      "Rows",
+      "Average",
+      "95% range",
+      "Median"
+     ],
+     "rows": [
+      [
+       "North",
+       "75",
+       "1,034",
+       "917 to 1,158",
+       "1,186"
+      ],
+      [
+       "East",
+       "71",
+       "1,028",
+       "896 to 1,151",
+       "1,033"
+      ],
+      [
+       "South",
+       "77",
+       "847",
+       "738 to 950",
+       "791"
+      ],
+      [
+       "West",
+       "77",
+       "840",
+       "721 to 965",
+       "781"
+      ]
+     ]
+    }
+   },
+   {
+    "title": "units and revenue",
+    "sentence": "Across 300 rows, higher units goes with higher revenue, strongly (Spearman 0.976, 95% range 0.969 to 0.981). An association, not a cause.",
+    "method": "Spearman rank correlation (it reads any steady rise or fall, not only a straight line); 95% range by the Fisher transform with the Spearman correction.",
+    "table": {
+     "cols": [
+      "Rows",
+      "Spearman",
+      "95% range"
+     ],
+     "rows": [
+      [
+       "300",
+       "0.976",
+       "0.969 to 0.981"
+      ]
+     ]
+    }
+   },
+   {
+    "title": "How revenue is spread",
+    "sentence": "revenue: half the 300 values lie between 476 and 1,370 (median 926); one in ten is below 208 and one in ten above 1,664.",
+    "method": "Percentiles of every value; the bars count values in equal-width bins.",
+    "table": {
+     "cols": [
+      "Values",
+      "10th",
+      "25th",
+      "Median",
+      "75th",
+      "90th"
+     ],
+     "rows": [
+      [
+       "300",
+       "208",
+       "476",
+       "926",
+       "1,370",
+       "1,664"
+      ]
+     ]
+    }
+   },
+   {
+    "title": "Largest revenue by region in 2025",
+    "sentence": "In 2025 the largest yearly total revenue by region were East (44,617), North (42,350), South (32,738); together 78.6% of the total over all 4 region entries.",
+    "method": "Each region entry's yearly total (every row added) for each complete calendar year; the latest year at least 80% of the entries report. Dates from the order_date column.",
+    "table": {
+     "cols": [
+      "region",
+      "revenue",
+      "Share of all",
+      "Change over 10 years"
+     ],
+     "rows": [
+      [
+       "East",
+       "44,617",
+       "29.3%",
+       ""
+      ],
+      [
+       "North",
+       "42,350",
+       "27.8%",
+       ""
+      ],
+      [
+       "South",
+       "32,738",
+       "21.5%",
+       ""
+      ],
+      [
+       "West",
+       "32,508",
+       "21.4%",
+       ""
+      ]
+     ]
+    }
+   },
+   {
+    "title": "What predicts revenue",
+    "sentence": "A straight-line model of revenue from units, region, trained on earlier dates and scored on the 4 later blocks, predicts them with R squared 0.949 and a typical error of 91.1, against 475 for the mean of its training rows. units carries most of it (R squared falls by 0.949 without it). An association the model learned, not a cause.",
+    "method": "Least squares on 300 complete rows (0 of 300 dropped: none); categories as one column per value (their commonest value is the base); scored out of sample by forward-chaining: the rows sorted by order_date and cut into 5 blocks, each of the last 4 predicted by a model trained only on the blocks befor",
+    "table": {
+     "cols": [
+      "Driver",
+      "R squared lost without it",
+      "Effect (per unit, or against the base value)"
+     ],
+     "rows": [
+      [
+       "units",
+       "0.949",
+       "per unit 44.7"
+      ],
+      [
+       "region",
+       "0.0139",
+       "South −43.4; North 56.7; East 122"
+      ],
+      [
+       "Typical held-out error (MAE)",
+       "91.1",
+       "against 475 for the mean of the training rows"
+      ],
+      [
+       "Rows",
+       "300 of 300 used, 240 scored",
+       "dropped: none"
+      ]
+     ]
+    }
+   }
+  ],
+  "charts": [
+   {
+    "id": "viz.1.contribution_waterfall",
+    "chart": "contribution_waterfall",
+    "kind": "waterfall",
+    "title": "Where the change in revenue came from, by region",
+    "subtitle": "Total revenue, 2024-01 to 2024-12 against 2025-01 to 2025-12: each region's contribution to the change",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:headline.prior",
+     "scenario:contribution.east.change",
+     "scenario:contribution.north.change",
+     "scenario:contribution.west.change",
+     "scenario:contribution.south.change",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "ai",
+    "why": "The goal asks what moved revenue; region is the one category the breakdown can use.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "steps": [
+      {
+       "label": "12 months before",
+       "value": 128256.1,
+       "text": "128,256",
+       "kind": "total",
+       "from": 0,
+       "to": 128256.1
+      },
+      {
+       "label": "East",
+       "value": 16220.37,
+       "text": "+16,220",
+       "kind": "step",
+       "from": 128256.1,
+       "to": 144476.47
+      },
+      {
+       "label": "North",
+       "value": 7116.13,
+       "text": "+7,116",
+       "kind": "step",
+       "from": 144476.47,
+       "to": 151592.6
+      },
+      {
+       "label": "West",
+       "value": 329.59,
+       "text": "+330",
+       "kind": "step",
+       "from": 151592.6,
+       "to": 151922.19
+      },
+      {
+       "label": "South",
+       "value": 291.74,
+       "text": "+292",
+       "kind": "step",
+       "from": 151922.19,
+       "to": 152213.93
+      },
+      {
+       "label": "Latest 12 months",
+       "value": 152213.93,
+       "text": "152,214",
+       "kind": "total",
+       "from": 0,
+       "to": 152213.93
+      }
+     ],
+     "basis": {
+      "split": "segment",
+      "finding_id": "measure.revenue.total.change",
+      "column": "region",
+      "prior": [
+       "2024-01",
+       "2024-12"
+      ],
+      "latest": [
+       "2025-01",
+       "2025-12"
+      ]
+     },
+     "change": {
+      "value": 23957.83,
+      "text": "+23,958"
+     }
+    },
+    "table": {
+     "cols": [
+      "Step",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "128,256"
+      ],
+      [
+       "East",
+       "+16,220"
+      ],
+      [
+       "North",
+       "+7,116"
+      ],
+      [
+       "West",
+       "+330"
+      ],
+      [
+       "South",
+       "+292"
+      ],
+      [
+       "Latest 12 months",
+       "152,214"
+      ]
+     ]
+    },
+    "summary": "Total revenue went from 128,256 in the 12 months before to 152,214 in the latest 12 months, a change of +23,958 (part of a change graded WATCH; not graded itself). East contributed +16,220 and North +7,116; West (+330) and South (+292) barely moved. Where the change sits, not what caused it.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Scenario items on the rows the engine kept (2024-01 to 2025-12); their monthly totals match the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by region in each 12-month window"
+    }
+   },
+   {
+    "id": "viz.2.pvm_waterfall",
+    "chart": "pvm_waterfall",
+    "kind": "waterfall",
+    "title": "Price, volume and mix in the change in revenue",
+    "subtitle": "Total revenue, 2024 against 2025: the change in revenue per unit, in units sold, and in the regions' mix",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:headline.prior",
+     "scenario:price_volume_mix.price",
+     "scenario:price_volume_mix.volume",
+     "scenario:price_volume_mix.mix",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "ai",
+    "why": "Revenue per unit rose in every region; the split shows how much of the change is price.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "steps": [
+      {
+       "label": "12 months before",
+       "value": 128256.1,
+       "text": "128,256",
+       "kind": "total",
+       "from": 0,
+       "to": 128256.1
+      },
+      {
+       "label": "Price",
+       "value": 20526.705008,
+       "text": "+20,527",
+       "kind": "step",
+       "from": 128256.1,
+       "to": 148782.805008
+      },
+      {
+       "label": "Volume",
+       "value": 2051.441139,
+       "text": "+2,051",
+       "kind": "step",
+       "from": 148782.805008,
+       "to": 150834.246147
+      },
+      {
+       "label": "Mix",
+       "value": 1379.683853,
+       "text": "+1,380",
+       "kind": "step",
+       "from": 150834.246147,
+       "to": 152213.93
+      },
+      {
+       "label": "Latest 12 months",
+       "value": 152213.93,
+       "text": "152,214",
+       "kind": "total",
+       "from": 0,
+       "to": 152213.93
+      }
+     ],
+     "basis": {
+      "split": "price_volume_mix",
+      "finding_id": "measure.revenue.total.change",
+      "column": "region",
+      "prior": [
+       "2024-01",
+       "2024-12"
+      ],
+      "latest": [
+       "2025-01",
+       "2025-12"
+      ]
+     },
+     "change": {
+      "value": 23957.83,
+      "text": "+23,958"
+     }
+    },
+    "table": {
+     "cols": [
+      "Step",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "128,256"
+      ],
+      [
+       "Price",
+       "+20,527"
+      ],
+      [
+       "Volume",
+       "+2,051"
+      ],
+      [
+       "Mix",
+       "+1,380"
+      ],
+      [
+       "Latest 12 months",
+       "152,214"
+      ]
+     ]
+    },
+    "summary": "Of the +23,958 change in total revenue, price (the change in revenue per unit, at the latest units) adds +20,527, volume +2,051 and the shift of units between regions +1,380; they add up to the change. Revenue per unit went from 41 to 47.9 (+16.8%).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Scenario items (price, volume and mix) on the rows the engine kept; units on every row of both windows",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "units",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "price at the latest units, volume at the prior price per unit, mix at each region's prior price"
+    }
+   },
+   {
+    "id": "viz.3.calendar_heatmap",
+    "chart": "calendar_heatmap",
+    "kind": "heatmap",
+    "title": "Revenue by month, 2024 and 2025",
+    "subtitle": "Total revenue in each month; the shade and the glyph mark the lowest, middle and highest third of the months",
+    "section": "headline",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Monthly totals side by side show whether the rise holds across the year or sits in a few months.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "rows": [
+      "2024",
+      "2025"
+     ],
+     "cols": [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "values": [
+      [
+       8592.2,
+       11224.93,
+       12283.74,
+       9204.65,
+       11998.66,
+       12063.21,
+       11266.59,
+       8893.37,
+       9810.72,
+       9505.65,
+       10934.49,
+       12477.89
+      ],
+      [
+       10855.04,
+       13659.66,
+       13936.48,
+       13797.86,
+       12292.51,
+       5845.08,
+       12434.69,
+       12638.04,
+       10290.29,
+       15221.66,
+       18722.52,
+       12520.1
+      ]
+     ],
+     "text": [
+      [
+       "8,592",
+       "11,225",
+       "12,284",
+       "9,205",
+       "11,999",
+       "12,063",
+       "11,267",
+       "8,893",
+       "9,811",
+       "9,506",
+       "10,934",
+       "12,478"
+      ],
+      [
+       "10,855",
+       "13,660",
+       "13,936",
+       "13,798",
+       "12,293",
+       "5,845",
+       "12,435",
+       "12,638",
+       "10,290",
+       "15,222",
+       "18,723",
+       "12,520"
+      ]
+     ],
+     "tier": [
+      [
+       1,
+       2,
+       2,
+       1,
+       2,
+       2,
+       2,
+       1,
+       1,
+       1,
+       2,
+       3
+      ],
+      [
+       1,
+       3,
+       3,
+       3,
+       2,
+       1,
+       2,
+       3,
+       1,
+       3,
+       3,
+       3
+      ]
+     ],
+     "n": [
+      [
+       13,
+       11,
+       14,
+       11,
+       14,
+       11,
+       14,
+       12,
+       13,
+       12,
+       13,
+       13
+      ],
+      [
+       12,
+       12,
+       13,
+       12,
+       13,
+       11,
+       14,
+       12,
+       12,
+       13,
+       13,
+       12
+      ]
+     ],
+     "scale": "sequential",
+     "legend": [
+      {
+       "tier": 1,
+       "text": "5,845 to 10,908"
+      },
+      {
+       "tier": 2,
+       "text": "10,908 to 12,449"
+      },
+      {
+       "tier": 3,
+       "text": "12,449 to 18,723"
+      }
+     ],
+     "row_label": "Year",
+     "col_label": "Month"
+    },
+    "table": {
+     "cols": [
+      "Year",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "rows": [
+      [
+       "2024",
+       "8,592",
+       "11,225",
+       "12,284",
+       "9,205",
+       "11,999",
+       "12,063",
+       "11,267",
+       "8,893",
+       "9,811",
+       "9,506",
+       "10,934",
+       "12,478"
+      ],
+      [
+       "2025",
+       "10,855",
+       "13,660",
+       "13,936",
+       "13,798",
+       "12,293",
+       "5,845",
+       "12,435",
+       "12,638",
+       "10,290",
+       "15,222",
+       "18,723",
+       "12,520"
+      ]
+     ]
+    },
+    "summary": "The highest month is Nov 2025 (18,723) and the lowest Jun 2025 (5,845). 2025 is above 2024 in 11 of the 12 months.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The rows the engine kept, by order_date month; each month's total equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by calendar month"
+    }
+   },
+   {
+    "id": "viz.4.group_ranges",
+    "chart": "group_ranges",
+    "kind": "dot_range",
+    "title": "Average revenue per order by region, with 95% ranges",
+    "subtitle": "Each region's average order, its 95% bootstrap range (999 resamples) and its median; ordered by the average weighted by its rows",
+    "section": "other",
+    "supports": "revenue by region",
+    "anchors": [
+     "analysis:1"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Do regions differ in order size, or only in order count?",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "average"
+    },
+    "data": {
+     "rows": [
+      {
+       "label": "North",
+       "n": 75,
+       "center": 1034.4636,
+       "lo": 916.737953,
+       "hi": 1157.573493,
+       "median": 1186.09,
+       "texts": {
+        "n": "75",
+        "center": "1,034",
+        "lo": "917",
+        "hi": "1,158",
+        "median": "1,186"
+       }
+      },
+      {
+       "label": "East",
+       "n": 71,
+       "center": 1028.353944,
+       "lo": 896.265261,
+       "hi": 1151.130514,
+       "median": 1032.94,
+       "texts": {
+        "n": "71",
+        "center": "1,028",
+        "lo": "896",
+        "hi": "1,151",
+        "median": "1,033"
+       }
+      },
+      {
+       "label": "South",
+       "n": 77,
+       "center": 846.556364,
+       "lo": 737.959519,
+       "hi": 950.052006,
+       "median": 791.16,
+       "texts": {
+        "n": "77",
+        "center": "847",
+        "lo": "738",
+        "hi": "950",
+        "median": "791"
+       }
+      },
+      {
+       "label": "West",
+       "n": 77,
+       "center": 840.094675,
+       "lo": 721.323234,
+       "hi": 965.070032,
+       "median": 780.77,
+       "texts": {
+        "n": "77",
+        "center": "840",
+        "lo": "721",
+        "hi": "965",
+        "median": "781"
+       }
+      }
+     ]
+    },
+    "table": {
+     "cols": [
+      "region",
+      "Rows",
+      "Average",
+      "95% range",
+      "Median"
+     ],
+     "rows": [
+      [
+       "North",
+       "75",
+       "1,034",
+       "917 to 1,158",
+       "1,186"
+      ],
+      [
+       "East",
+       "71",
+       "1,028",
+       "896 to 1,151",
+       "1,033"
+      ],
+      [
+       "South",
+       "77",
+       "847",
+       "738 to 950",
+       "791"
+      ],
+      [
+       "West",
+       "77",
+       "840",
+       "721 to 965",
+       "781"
+      ]
+     ]
+    },
+    "summary": "North has the highest average order (1,034, 95% range 917 to 1,158) and West the lowest (840, 721 to 965). The ranges of North and East overlap, as do those of South and West. An association with the region, not its cause.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The compare analysis on the rows the engine kept: the same seed and resamples, so the figures match its table",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "each region's average revenue per row, 95% bootstrap range, median"
+    }
+   },
+   {
+    "id": "viz.5.pareto",
+    "chart": "pareto",
+    "kind": "pareto",
+    "title": "Reviews by brand: the top 20 and the long tail",
+    "subtitle": "Reviews in 2022 by brand, largest first, with the running share of all 5,581 reviews",
+    "section": "other",
+    "supports": "How concentrated the reviews are across brands",
+    "anchors": [
+     "analysis:1"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: a brand column of 1,391 levels, and how concentrated the reviews are.",
+    "measure": {
+     "label": "rows",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {
+     "bars": [
+      {
+       "label": "Nintendo",
+       "value": 251,
+       "text": "251",
+       "cum_pct": 4.497402,
+       "cum_text": "4.5%"
+      },
+      {
+       "label": "Razer",
+       "value": 224,
+       "text": "224",
+       "cum_pct": 8.51102,
+       "cum_text": "8.5%"
+      },
+      {
+       "label": "PlayStation",
+       "value": 156,
+       "text": "156",
+       "cum_pct": 11.306218,
+       "cum_text": "11.3%"
+      },
+      {
+       "label": "Logitech G",
+       "value": 133,
+       "text": "133",
+       "cum_pct": 13.689303,
+       "cum_text": "13.7%"
+      },
+      {
+       "label": "Amazon Renewed",
+       "value": 97,
+       "text": "97",
+       "cum_pct": 15.427343,
+       "cum_text": "15.4%"
+      },
+      {
+       "label": "Xbox",
+       "value": 91,
+       "text": "91",
+       "cum_pct": 17.057875,
+       "cum_text": "17.1%"
+      },
+      {
+       "label": "PowerA",
+       "value": 76,
+       "text": "76",
+       "cum_pct": 18.419638,
+       "cum_text": "18.4%"
+      },
+      {
+       "label": "eXtremeRate",
+       "value": 65,
+       "text": "65",
+       "cum_pct": 19.584304,
+       "cum_text": "19.6%"
+      },
+      {
+       "label": "SteelSeries",
+       "value": 64,
+       "text": "64",
+       "cum_pct": 20.731052,
+       "cum_text": "20.7%"
+      },
+      {
+       "label": "Meta Quest",
+       "value": 61,
+       "text": "61",
+       "cum_pct": 21.824046,
+       "cum_text": "21.8%"
+      },
+      {
+       "label": "Redragon",
+       "value": 59,
+       "text": "59",
+       "cum_pct": 22.881204,
+       "cum_text": "22.9%"
+      },
+      {
+       "label": "Microsoft",
+       "value": 57,
+       "text": "57",
+       "cum_pct": 23.902526,
+       "cum_text": "23.9%"
+      },
+      {
+       "label": "Corsair",
+       "value": 56,
+       "text": "56",
+       "cum_pct": 24.905931,
+       "cum_text": "24.9%"
+      },
+      {
+       "label": "HyperX",
+       "value": 56,
+       "text": "56",
+       "cum_pct": 25.909335,
+       "cum_text": "25.9%"
+      },
+      {
+       "label": "Electronic Arts",
+       "value": 53,
+       "text": "53",
+       "cum_pct": 26.858986,
+       "cum_text": "26.9%"
+      },
+      {
+       "label": "KIWI design",
+       "value": 53,
+       "text": "53",
+       "cum_pct": 27.808636,
+       "cum_text": "27.8%"
+      },
+      {
+       "label": "BENGOO",
+       "value": 45,
+       "text": "45",
+       "cum_pct": 28.614944,
+       "cum_text": "28.6%"
+      },
+      {
+       "label": "OIVO",
+       "value": 43,
+       "text": "43",
+       "cum_pct": 29.385415,
+       "cum_text": "29.4%"
+      },
+      {
+       "label": "BANDAI NAMCO Entertainment",
+       "value": 42,
+       "text": "42",
+       "cum_pct": 30.137968,
+       "cum_text": "30.1%"
+      },
+      {
+       "label": "Ubisoft",
+       "value": 41,
+       "text": "41",
+       "cum_pct": 30.872603,
+       "cum_text": "30.9%"
+      }
+     ],
+     "other": {
+      "label": "other",
+      "value": 3858,
+      "text": "3,858",
+      "cum_pct": 100,
+      "cum_text": "100.0%",
+      "n_entities": 1371
+     },
+     "total": {
+      "value": 5581,
+      "text": "5,581"
+     },
+     "k80": {
+      "k": 450,
+      "of": 1391,
+      "text": "450 of the 1,391 brands account for 80% of the reviews"
+     }
+    },
+    "table": {
+     "cols": [
+      "brand",
+      "Reviews",
+      "Running share"
+     ],
+     "rows": [
+      [
+       "Nintendo",
+       "251",
+       "4.5%"
+      ],
+      [
+       "Razer",
+       "224",
+       "8.5%"
+      ],
+      [
+       "PlayStation",
+       "156",
+       "11.3%"
+      ],
+      [
+       "Logitech G",
+       "133",
+       "13.7%"
+      ],
+      [
+       "Amazon Renewed",
+       "97",
+       "15.4%"
+      ],
+      [
+       "Xbox",
+       "91",
+       "17.1%"
+      ],
+      [
+       "PowerA",
+       "76",
+       "18.4%"
+      ],
+      [
+       "eXtremeRate",
+       "65",
+       "19.6%"
+      ],
+      [
+       "SteelSeries",
+       "64",
+       "20.7%"
+      ],
+      [
+       "Meta Quest",
+       "61",
+       "21.8%"
+      ],
+      [
+       "Redragon",
+       "59",
+       "22.9%"
+      ],
+      [
+       "Microsoft",
+       "57",
+       "23.9%"
+      ],
+      [
+       "Corsair",
+       "56",
+       "24.9%"
+      ],
+      [
+       "HyperX",
+       "56",
+       "25.9%"
+      ],
+      [
+       "Electronic Arts",
+       "53",
+       "26.9%"
+      ],
+      [
+       "KIWI design",
+       "53",
+       "27.8%"
+      ],
+      [
+       "BENGOO",
+       "45",
+       "28.6%"
+      ],
+      [
+       "OIVO",
+       "43",
+       "29.4%"
+      ],
+      [
+       "BANDAI NAMCO Entertainment",
+       "42",
+       "30.1%"
+      ],
+      [
+       "Ubisoft",
+       "41",
+       "30.9%"
+      ],
+      [
+       "other (1,371 brands)",
+       "3,858",
+       "100.0%"
+      ],
+      [
+       "Total",
+       "5,581",
+       ""
+      ]
+     ]
+    },
+    "summary": "The top 20 of 1,391 brands hold 30.9% of the 5,581 reviews; Nintendo leads with 251 (4.5%). The tail is long: 450 brands account for 80% of the reviews, and 1,185 brands have fewer than 5 reviews each.",
+    "suppressed": {
+     "cells": 1185,
+     "why": "1,185 brands with fewer than 5 reviews are counted only in 'other'"
+    },
+    "source": "Video-game reviews, 2022 (tools/fixtures/eval/brand_ratings_2022.csv, aggregates of the review sample)",
+    "inputs": {
+     "columns": [
+      "brand"
+     ],
+     "rows": 5581,
+     "months": [
+      "2022-01",
+      "2022-12"
+     ],
+     "op": "rows (reviews) by brand; the top 20 with 5 or more rows, the rest as other"
+    }
+   },
+   {
+    "id": "viz.6.slope",
+    "chart": "slope",
+    "kind": "slope",
+    "title": "Revenue by region, the 12 months before and the latest 12 months",
+    "subtitle": "Each region's total revenue in 2024-01 to 2024-12 and 2025-01 to 2025-12, and its own change",
+    "section": "scenarios",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:contribution.east.prior",
+     "scenario:contribution.east.latest",
+     "scenario:contribution.east.pct",
+     "scenario:contribution.north.prior",
+     "scenario:contribution.north.latest",
+     "scenario:contribution.north.pct",
+     "scenario:contribution.west.prior",
+     "scenario:contribution.west.latest",
+     "scenario:contribution.west.pct",
+     "scenario:contribution.south.prior",
+     "scenario:contribution.south.latest",
+     "scenario:contribution.south.pct"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: Two windows and four regions: East overtook North, which a slope shows at a glance.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "rows": [
+      {
+       "label": "East",
+       "a": 28396.38,
+       "b": 44616.75,
+       "a_text": "28,396",
+       "b_text": "44,617",
+       "change_text": "+57.1%"
+      },
+      {
+       "label": "North",
+       "a": 35234.32,
+       "b": 42350.45,
+       "a_text": "35,234",
+       "b_text": "42,350",
+       "change_text": "+20.2%"
+      },
+      {
+       "label": "South",
+       "a": 32446.55,
+       "b": 32738.29,
+       "a_text": "32,447",
+       "b_text": "32,738",
+       "change_text": "+0.899%"
+      },
+      {
+       "label": "West",
+       "a": 32178.85,
+       "b": 32508.44,
+       "a_text": "32,179",
+       "b_text": "32,508",
+       "change_text": "+1.02%"
+      }
+     ],
+     "a_label": "12 months before",
+     "b_label": "Latest 12 months"
+    },
+    "table": {
+     "cols": [
+      "region",
+      "12 months before",
+      "Latest 12 months",
+      "Own change"
+     ],
+     "rows": [
+      [
+       "East",
+       "28,396",
+       "44,617",
+       "+57.1%"
+      ],
+      [
+       "North",
+       "35,234",
+       "42,350",
+       "+20.2%"
+      ],
+      [
+       "South",
+       "32,447",
+       "32,738",
+       "+0.899%"
+      ],
+      [
+       "West",
+       "32,179",
+       "32,508",
+       "+1.02%"
+      ]
+     ]
+    },
+    "summary": "East rose from 28,396 to 44,617 (+57.1%) and overtook North, which rose from 35,234 to 42,350 (+20.2%). South (+0.899%) and West (+1.02%) stayed level. Part of a change graded WATCH; not graded itself.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Scenario items (each region's two totals and its own change) on the rows the engine kept",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by region in each 12-month window"
+    }
+   },
+   {
+    "id": "viz.7.sankey_flow",
+    "chart": "sankey_flow",
+    "kind": "table",
+    "title": "Orders from each region to each warehouse",
+    "subtitle": "Orders in 2025 by region and by the warehouse that shipped them",
+    "section": "other",
+    "supports": "How orders move from regions to warehouses",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: A newer engine's chart kind.",
+    "measure": {
+     "label": "rows",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {},
+    "table": {
+     "cols": [
+      "region",
+      "Warehouse A",
+      "Warehouse B"
+     ],
+     "rows": [
+      [
+       "East",
+       "41",
+       "30"
+      ],
+      [
+       "North",
+       "44",
+       "31"
+      ],
+      [
+       "South",
+       "39",
+       "38"
+      ],
+      [
+       "West",
+       "35",
+       "42"
+      ]
+     ]
+    },
+    "summary": "North sends the most orders to Warehouse A (44) and West the most to Warehouse B (42).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative",
+    "inputs": {
+     "columns": [
+      "region",
+      "warehouse"
+     ],
+     "rows": 300,
+     "months": [
+      "2025-01",
+      "2025-12"
+     ],
+     "op": "rows counted by region and warehouse"
+    },
+    "degraded": {
+     "from": "sankey",
+     "why": "a draw kind this reader does not know: shown as its table"
+    }
+   },
+   {
+    "id": "viz.8.calendar_heatmap",
+    "chart": "calendar_heatmap",
+    "kind": "heatmap",
+    "title": "USD/CAD month on month, 2017 to 2026",
+    "subtitle": "Change in the month's average rate from the month before, in percent; weekend zeros read as no value",
+    "section": "headline",
+    "supports": "The average of VALUE, latest 12 months against the 12 before",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: a daily rate over ten years; the month-on-month change shows when it moved.",
+    "measure": {
+     "label": "VALUE",
+     "unit": "",
+     "kind": "change_pct"
+    },
+    "data": {
+     "rows": [
+      "2017",
+      "2018",
+      "2019",
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026"
+     ],
+     "cols": [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "values": [
+      [
+       null,
+       -0.648073,
+       2.1299,
+       0.401718,
+       1.241312,
+       -2.270882,
+       -4.581842,
+       -0.661825,
+       -2.554372,
+       2.620079,
+       1.302999,
+       0.013072
+      ],
+      [
+       -2.68679,
+       1.277832,
+       2.745098,
+       -1.539957,
+       1.10505,
+       1.983169,
+       0.011607,
+       -0.677173,
+       -0.035698,
+       -0.206964,
+       1.466888,
+       1.753443
+      ],
+      [
+       -0.974119,
+       -0.717398,
+       1.231385,
+       0.071242,
+       0.60796,
+       -1.27606,
+       -1.401749,
+       1.346692,
+       -0.278488,
+       -0.383122,
+       0.371707,
+       -0.506844
+      ],
+      [
+       -0.645116,
+       1.521502,
+       5.017807,
+       0.755113,
+       -0.627102,
+       -3.002082,
+       -0.382413,
+       -2.048005,
+       0.045721,
+       -0.101156,
+       -1.108721,
+       -1.993279
+      ],
+      [
+       -0.653234,
+       -0.20018,
+       -0.983101,
+       -0.619023,
+       -2.956607,
+       0.760209,
+       2.538525,
+       0.593679,
+       0.540018,
+       -1.849857,
+       1.069077,
+       1.7847
+      ],
+      [
+       -1.396286,
+       0.795387,
+       -0.455908,
+       -0.235976,
+       1.776098,
+       -0.30072,
+       1.052706,
+       -0.207317,
+       3.071335,
+       2.860296,
+       -1.831662,
+       1.065753
+      ],
+      [
+       -1.252462,
+       0.213062,
+       1.723887,
+       -1.440403,
+       0.260168,
+       -1.718312,
+       -0.551017,
+       2.048973,
+       0.367334,
+       1.343564,
+       -0.053376,
+       -2.031695
+      ],
+      [
+       -0.047612,
+       0.568364,
+       0.286279,
+       0.992084,
+       -0.024932,
+       0.266901,
+       0.045215,
+       -0.447957,
+       -0.772132,
+       1.540306,
+       1.599335,
+       1.900557
+      ],
+      [
+       1.033123,
+       -0.600978,
+       0.404161,
+       -2.581109,
+       -0.916413,
+       -1.344731,
+       0.126748,
+       0.810417,
+       0.225692,
+       1.148328,
+       0.452138,
+       -1.798522
+      ],
+      [
+       -0.175952,
+       -0.925039,
+       0.486084,
+       0.269074,
+       -0.225025,
+       2.311274,
+       0.476553,
+       -1.481777,
+       null,
+       null,
+       null,
+       null
+      ]
+     ],
+     "text": [
+      [
+       "",
+       "−0.648%",
+       "+2.13%",
+       "+0.402%",
+       "+1.24%",
+       "−2.27%",
+       "−4.58%",
+       "−0.662%",
+       "−2.55%",
+       "+2.62%",
+       "+1.3%",
+       "+0.0131%"
+      ],
+      [
+       "−2.69%",
+       "+1.28%",
+       "+2.75%",
+       "−1.54%",
+       "+1.11%",
+       "+1.98%",
+       "+0.0116%",
+       "−0.677%",
+       "−0.0357%",
+       "−0.207%",
+       "+1.47%",
+       "+1.75%"
+      ],
+      [
+       "−0.974%",
+       "−0.717%",
+       "+1.23%",
+       "+0.0712%",
+       "+0.608%",
+       "−1.28%",
+       "−1.4%",
+       "+1.35%",
+       "−0.278%",
+       "−0.383%",
+       "+0.372%",
+       "−0.507%"
+      ],
+      [
+       "−0.645%",
+       "+1.52%",
+       "+5.02%",
+       "+0.755%",
+       "−0.627%",
+       "−3%",
+       "−0.382%",
+       "−2.05%",
+       "+0.0457%",
+       "−0.101%",
+       "−1.11%",
+       "−1.99%"
+      ],
+      [
+       "−0.653%",
+       "−0.2%",
+       "−0.983%",
+       "−0.619%",
+       "−2.96%",
+       "+0.76%",
+       "+2.54%",
+       "+0.594%",
+       "+0.54%",
+       "−1.85%",
+       "+1.07%",
+       "+1.78%"
+      ],
+      [
+       "−1.4%",
+       "+0.795%",
+       "−0.456%",
+       "−0.236%",
+       "+1.78%",
+       "−0.301%",
+       "+1.05%",
+       "−0.207%",
+       "+3.07%",
+       "+2.86%",
+       "−1.83%",
+       "+1.07%"
+      ],
+      [
+       "−1.25%",
+       "+0.213%",
+       "+1.72%",
+       "−1.44%",
+       "+0.26%",
+       "−1.72%",
+       "−0.551%",
+       "+2.05%",
+       "+0.367%",
+       "+1.34%",
+       "−0.0534%",
+       "−2.03%"
+      ],
+      [
+       "−0.0476%",
+       "+0.568%",
+       "+0.286%",
+       "+0.992%",
+       "−0.0249%",
+       "+0.267%",
+       "+0.0452%",
+       "−0.448%",
+       "−0.772%",
+       "+1.54%",
+       "+1.6%",
+       "+1.9%"
+      ],
+      [
+       "+1.03%",
+       "−0.601%",
+       "+0.404%",
+       "−2.58%",
+       "−0.916%",
+       "−1.34%",
+       "+0.127%",
+       "+0.81%",
+       "+0.226%",
+       "+1.15%",
+       "+0.452%",
+       "−1.8%"
+      ],
+      [
+       "−0.176%",
+       "−0.925%",
+       "+0.486%",
+       "+0.269%",
+       "−0.225%",
+       "+2.31%",
+       "+0.477%",
+       "−1.48%",
+       "",
+       "",
+       "",
+       ""
+      ]
+     ],
+     "tier": [
+      [
+       0,
+       -2,
+       3,
+       1,
+       2,
+       -3,
+       -3,
+       -2,
+       -3,
+       3,
+       2,
+       1
+      ],
+      [
+       -3,
+       2,
+       3,
+       -3,
+       2,
+       3,
+       1,
+       -2,
+       -1,
+       -1,
+       3,
+       3
+      ],
+      [
+       -2,
+       -2,
+       2,
+       1,
+       2,
+       -2,
+       -3,
+       2,
+       -1,
+       -1,
+       1,
+       -1
+      ],
+      [
+       -2,
+       3,
+       3,
+       2,
+       -2,
+       -3,
+       -1,
+       -3,
+       1,
+       -1,
+       -2,
+       -3
+      ],
+      [
+       -2,
+       -1,
+       -2,
+       -2,
+       -3,
+       2,
+       3,
+       2,
+       1,
+       -3,
+       2,
+       3
+      ],
+      [
+       -3,
+       2,
+       -1,
+       -1,
+       3,
+       -1,
+       2,
+       -1,
+       3,
+       3,
+       -3,
+       2
+      ],
+      [
+       -2,
+       1,
+       3,
+       -3,
+       1,
+       -3,
+       -1,
+       3,
+       1,
+       2,
+       -1,
+       -3
+      ],
+      [
+       -1,
+       2,
+       1,
+       2,
+       -1,
+       1,
+       1,
+       -1,
+       -2,
+       3,
+       3,
+       3
+      ],
+      [
+       2,
+       -2,
+       1,
+       -3,
+       -2,
+       -2,
+       1,
+       2,
+       1,
+       2,
+       1,
+       -3
+      ],
+      [
+       -1,
+       -2,
+       1,
+       1,
+       -1,
+       3,
+       1,
+       -3,
+       0,
+       0,
+       0,
+       0
+      ]
+     ],
+     "n": [
+      [
+       0,
+       19,
+       19,
+       19,
+       19,
+       22,
+       20,
+       20,
+       20,
+       20,
+       21,
+       19
+      ],
+      [
+       19,
+       19,
+       19,
+       21,
+       21,
+       21,
+       21,
+       21,
+       19,
+       19,
+       21,
+       19
+      ],
+      [
+       19,
+       19,
+       19,
+       21,
+       21,
+       20,
+       20,
+       21,
+       20,
+       20,
+       20,
+       20
+      ],
+      [
+       20,
+       19,
+       19,
+       21,
+       20,
+       20,
+       22,
+       20,
+       20,
+       21,
+       20,
+       20
+      ],
+      [
+       20,
+       19,
+       19,
+       21,
+       20,
+       20,
+       21,
+       21,
+       20,
+       20,
+       20,
+       21
+      ],
+      [
+       20,
+       19,
+       19,
+       20,
+       20,
+       21,
+       19,
+       19,
+       20,
+       20,
+       20,
+       20
+      ],
+      [
+       20,
+       19,
+       19,
+       19,
+       19,
+       22,
+       20,
+       20,
+       20,
+       20,
+       20,
+       19
+      ],
+      [
+       19,
+       20,
+       20,
+       20,
+       22,
+       20,
+       20,
+       21,
+       19,
+       19,
+       20,
+       20
+      ],
+      [
+       20,
+       19,
+       19,
+       21,
+       21,
+       21,
+       21,
+       20,
+       20,
+       20,
+       19,
+       19
+      ],
+      [
+       21,
+       19,
+       19,
+       20,
+       20,
+       20,
+       22,
+       20,
+       0,
+       0,
+       0,
+       0
+      ]
+     ],
+     "scale": "diverging",
+     "legend": [
+      {
+       "tier": -3,
+       "text": "−5.02% to −1.35%"
+      },
+      {
+       "tier": -2,
+       "text": "−1.35% to −0.551%"
+      },
+      {
+       "tier": -1,
+       "text": "−0.551% to 0%"
+      },
+      {
+       "tier": 1,
+       "text": "0% to +0.551%"
+      },
+      {
+       "tier": 2,
+       "text": "+0.551% to +1.35%"
+      },
+      {
+       "tier": 3,
+       "text": "+1.35% to +5.02%"
+      }
+     ],
+     "row_label": "Year",
+     "col_label": "Month"
+    },
+    "table": {
+     "cols": [
+      "Year",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "rows": [
+      [
+       "2017",
+       "",
+       "−0.648%",
+       "+2.13%",
+       "+0.402%",
+       "+1.24%",
+       "−2.27%",
+       "−4.58%",
+       "−0.662%",
+       "−2.55%",
+       "+2.62%",
+       "+1.3%",
+       "+0.0131%"
+      ],
+      [
+       "2018",
+       "−2.69%",
+       "+1.28%",
+       "+2.75%",
+       "−1.54%",
+       "+1.11%",
+       "+1.98%",
+       "+0.0116%",
+       "−0.677%",
+       "−0.0357%",
+       "−0.207%",
+       "+1.47%",
+       "+1.75%"
+      ],
+      [
+       "2019",
+       "−0.974%",
+       "−0.717%",
+       "+1.23%",
+       "+0.0712%",
+       "+0.608%",
+       "−1.28%",
+       "−1.4%",
+       "+1.35%",
+       "−0.278%",
+       "−0.383%",
+       "+0.372%",
+       "−0.507%"
+      ],
+      [
+       "2020",
+       "−0.645%",
+       "+1.52%",
+       "+5.02%",
+       "+0.755%",
+       "−0.627%",
+       "−3%",
+       "−0.382%",
+       "−2.05%",
+       "+0.0457%",
+       "−0.101%",
+       "−1.11%",
+       "−1.99%"
+      ],
+      [
+       "2021",
+       "−0.653%",
+       "−0.2%",
+       "−0.983%",
+       "−0.619%",
+       "−2.96%",
+       "+0.76%",
+       "+2.54%",
+       "+0.594%",
+       "+0.54%",
+       "−1.85%",
+       "+1.07%",
+       "+1.78%"
+      ],
+      [
+       "2022",
+       "−1.4%",
+       "+0.795%",
+       "−0.456%",
+       "−0.236%",
+       "+1.78%",
+       "−0.301%",
+       "+1.05%",
+       "−0.207%",
+       "+3.07%",
+       "+2.86%",
+       "−1.83%",
+       "+1.07%"
+      ],
+      [
+       "2023",
+       "−1.25%",
+       "+0.213%",
+       "+1.72%",
+       "−1.44%",
+       "+0.26%",
+       "−1.72%",
+       "−0.551%",
+       "+2.05%",
+       "+0.367%",
+       "+1.34%",
+       "−0.0534%",
+       "−2.03%"
+      ],
+      [
+       "2024",
+       "−0.0476%",
+       "+0.568%",
+       "+0.286%",
+       "+0.992%",
+       "−0.0249%",
+       "+0.267%",
+       "+0.0452%",
+       "−0.448%",
+       "−0.772%",
+       "+1.54%",
+       "+1.6%",
+       "+1.9%"
+      ],
+      [
+       "2025",
+       "+1.03%",
+       "−0.601%",
+       "+0.404%",
+       "−2.58%",
+       "−0.916%",
+       "−1.34%",
+       "+0.127%",
+       "+0.81%",
+       "+0.226%",
+       "+1.15%",
+       "+0.452%",
+       "−1.8%"
+      ],
+      [
+       "2026",
+       "−0.176%",
+       "−0.925%",
+       "+0.486%",
+       "+0.269%",
+       "−0.225%",
+       "+2.31%",
+       "+0.477%",
+       "−1.48%",
+       "",
+       "",
+       "",
+       ""
+      ]
+     ]
+    },
+    "summary": "The largest monthly rise in the average rate is +5.02% (Mar 2020) and the largest fall −4.58% (Jul 2017). Blank cells have no month before or no rates.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Statistics Canada, table 33-10-0036-01, the U.S. dollar series (tools/fixtures/eval/fx_usd_cad.csv)",
+    "inputs": {
+     "columns": [
+      "VALUE"
+     ],
+     "rows": 2407,
+     "months": [
+      "2017-01",
+      "2026-08"
+     ],
+     "op": "average rate by calendar month, percent change from the month before"
+    }
+   },
+   {
+    "id": "viz.9.crosstab_heatmap",
+    "chart": "crosstab_heatmap",
+    "kind": "heatmap",
+    "title": "Reviews by brand and star rating, 2022",
+    "subtitle": "Reviews of the 11 brands with the most reviews and of all others, by stars; cells under 5 reviews are not shown",
+    "section": "other",
+    "supports": "How the ratings of the largest brands compare",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Which brands draw one-star reviews out of proportion?",
+    "measure": {
+     "label": "rows",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {
+     "rows": [
+      "Nintendo",
+      "Razer",
+      "PlayStation",
+      "Logitech G",
+      "Amazon Renewed",
+      "Xbox",
+      "PowerA",
+      "eXtremeRate",
+      "SteelSeries",
+      "Meta Quest",
+      "Redragon",
+      "other"
+     ],
+     "cols": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "values": [
+      [
+       35,
+       9,
+       8,
+       21,
+       178
+      ],
+      [
+       33,
+       25,
+       23,
+       28,
+       115
+      ],
+      [
+       20,
+       6,
+       6,
+       17,
+       107
+      ],
+      [
+       24,
+       7,
+       15,
+       14,
+       73
+      ],
+      [
+       23,
+       6,
+       7,
+       8,
+       53
+      ],
+      [
+       30,
+       null,
+       null,
+       null,
+       54
+      ],
+      [
+       16,
+       7,
+       6,
+       8,
+       39
+      ],
+      [
+       8,
+       null,
+       8,
+       8,
+       39
+      ],
+      [
+       11,
+       10,
+       5,
+       6,
+       32
+      ],
+      [
+       10,
+       6,
+       5,
+       8,
+       32
+      ],
+      [
+       6,
+       6,
+       null,
+       9,
+       34
+      ],
+      [
+       787,
+       252,
+       346,
+       466,
+       2453
+      ]
+     ],
+     "text": [
+      [
+       "35",
+       "9",
+       "8",
+       "21",
+       "178"
+      ],
+      [
+       "33",
+       "25",
+       "23",
+       "28",
+       "115"
+      ],
+      [
+       "20",
+       "6",
+       "6",
+       "17",
+       "107"
+      ],
+      [
+       "24",
+       "7",
+       "15",
+       "14",
+       "73"
+      ],
+      [
+       "23",
+       "6",
+       "7",
+       "8",
+       "53"
+      ],
+      [
+       "30",
+       "<5",
+       "<5",
+       "<5",
+       "54"
+      ],
+      [
+       "16",
+       "7",
+       "6",
+       "8",
+       "39"
+      ],
+      [
+       "8",
+       "<5",
+       "8",
+       "8",
+       "39"
+      ],
+      [
+       "11",
+       "10",
+       "5",
+       "6",
+       "32"
+      ],
+      [
+       "10",
+       "6",
+       "5",
+       "8",
+       "32"
+      ],
+      [
+       "6",
+       "6",
+       "<5",
+       "9",
+       "34"
+      ],
+      [
+       "787",
+       "252",
+       "346",
+       "466",
+       "2,453"
+      ]
+     ],
+     "tier": [
+      [
+       3,
+       2,
+       1,
+       2,
+       3
+      ],
+      [
+       3,
+       2,
+       2,
+       2,
+       3
+      ],
+      [
+       2,
+       1,
+       1,
+       2,
+       3
+      ],
+      [
+       2,
+       1,
+       2,
+       2,
+       3
+      ],
+      [
+       2,
+       1,
+       1,
+       1,
+       3
+      ],
+      [
+       2,
+       0,
+       0,
+       0,
+       3
+      ],
+      [
+       2,
+       1,
+       1,
+       1,
+       3
+      ],
+      [
+       1,
+       0,
+       1,
+       1,
+       3
+      ],
+      [
+       2,
+       2,
+       1,
+       1,
+       3
+      ],
+      [
+       2,
+       1,
+       1,
+       1,
+       3
+      ],
+      [
+       1,
+       1,
+       0,
+       2,
+       3
+      ],
+      [
+       3,
+       3,
+       3,
+       3,
+       3
+      ]
+     ],
+     "n": [
+      [
+       35,
+       9,
+       8,
+       21,
+       178
+      ],
+      [
+       33,
+       25,
+       23,
+       28,
+       115
+      ],
+      [
+       20,
+       6,
+       6,
+       17,
+       107
+      ],
+      [
+       24,
+       7,
+       15,
+       14,
+       73
+      ],
+      [
+       23,
+       6,
+       7,
+       8,
+       53
+      ],
+      [
+       30,
+       null,
+       null,
+       null,
+       54
+      ],
+      [
+       16,
+       7,
+       6,
+       8,
+       39
+      ],
+      [
+       8,
+       null,
+       8,
+       8,
+       39
+      ],
+      [
+       11,
+       10,
+       5,
+       6,
+       32
+      ],
+      [
+       10,
+       6,
+       5,
+       8,
+       32
+      ],
+      [
+       6,
+       6,
+       null,
+       9,
+       34
+      ],
+      [
+       787,
+       252,
+       346,
+       466,
+       2453
+      ]
+     ],
+     "scale": "sequential",
+     "legend": [
+      {
+       "tier": 1,
+       "text": "5 to 8"
+      },
+      {
+       "tier": 2,
+       "text": "8 to 30"
+      },
+      {
+       "tier": 3,
+       "text": "30 to 2,453"
+      }
+     ],
+     "row_label": "brand",
+     "col_label": "stars"
+    },
+    "table": {
+     "cols": [
+      "brand",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "rows": [
+      [
+       "Nintendo",
+       "35",
+       "9",
+       "8",
+       "21",
+       "178"
+      ],
+      [
+       "Razer",
+       "33",
+       "25",
+       "23",
+       "28",
+       "115"
+      ],
+      [
+       "PlayStation",
+       "20",
+       "6",
+       "6",
+       "17",
+       "107"
+      ],
+      [
+       "Logitech G",
+       "24",
+       "7",
+       "15",
+       "14",
+       "73"
+      ],
+      [
+       "Amazon Renewed",
+       "23",
+       "6",
+       "7",
+       "8",
+       "53"
+      ],
+      [
+       "Xbox",
+       "30",
+       "<5",
+       "<5",
+       "<5",
+       "54"
+      ],
+      [
+       "PowerA",
+       "16",
+       "7",
+       "6",
+       "8",
+       "39"
+      ],
+      [
+       "eXtremeRate",
+       "8",
+       "<5",
+       "8",
+       "8",
+       "39"
+      ],
+      [
+       "SteelSeries",
+       "11",
+       "10",
+       "5",
+       "6",
+       "32"
+      ],
+      [
+       "Meta Quest",
+       "10",
+       "6",
+       "5",
+       "8",
+       "32"
+      ],
+      [
+       "Redragon",
+       "6",
+       "6",
+       "<5",
+       "9",
+       "34"
+      ],
+      [
+       "other",
+       "787",
+       "252",
+       "346",
+       "466",
+       "2,453"
+      ]
+     ]
+    },
+    "summary": "Five-star reviews lead for every brand shown; Nintendo has 178 five-star reviews of 251. 5 cells rest on fewer than 5 reviews and are not shown.",
+    "suppressed": {
+     "cells": 5,
+     "why": "5 cells rest on fewer than 5 reviews and are not shown"
+    },
+    "source": "Video-game reviews, 2022 (tools/fixtures/eval/brand_ratings_2022.csv)",
+    "inputs": {
+     "columns": [
+      "brand",
+      "stars"
+     ],
+     "rows": 5581,
+     "months": [
+      "2022-01",
+      "2022-12"
+     ],
+     "op": "rows counted by brand (top 11, the rest as other) and stars"
+    }
+   },
+   {
+    "id": "viz.10.contribution_waterfall",
+    "chart": "contribution_waterfall",
+    "kind": "waterfall",
+    "title": "Where the change in sales came from, by territory",
+    "subtitle": "Total sales in CAD, 2024 against 2025: each of the 12 territories' contribution to the change",
+    "section": "drove",
+    "supports": "Change in the monthly total of sales, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.sales.total.change",
+     "scenario:headline.prior",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "CONFIRMED",
+    "chosen_by": "ai",
+    "why": "Which territories carried the change?",
+    "measure": {
+     "label": "sales",
+     "unit": "CAD",
+     "kind": "amount"
+    },
+    "data": {
+     "steps": [
+      {
+       "label": "12 months before",
+       "value": 4812340,
+       "text": "4,812,340 CAD",
+       "kind": "total",
+       "from": 0,
+       "to": 4812340
+      },
+      {
+       "label": "Ontario: Greater Toronto and Hamilton Area",
+       "value": 312450,
+       "text": "+312,450 CAD",
+       "kind": "step",
+       "from": 4812340,
+       "to": 5124790
+      },
+      {
+       "label": "Quebec: Montreal, Laval and the Eastern Townships",
+       "value": -148920,
+       "text": "−148,920 CAD",
+       "kind": "step",
+       "from": 5124790,
+       "to": 4975870
+      },
+      {
+       "label": "British Columbia: Lower Mainland and Vancouver Island",
+       "value": 96310,
+       "text": "+96,310 CAD",
+       "kind": "step",
+       "from": 4975870,
+       "to": 5072180
+      },
+      {
+       "label": "Alberta: Calgary, Edmonton and the Red Deer corridor",
+       "value": 71880,
+       "text": "+71,880 CAD",
+       "kind": "step",
+       "from": 5072180,
+       "to": 5144060
+      },
+      {
+       "label": "Ontario: Ottawa Valley and Eastern Ontario",
+       "value": -52640,
+       "text": "−52,640 CAD",
+       "kind": "step",
+       "from": 5144060,
+       "to": 5091420
+      },
+      {
+       "label": "Manitoba and the Northwest Ontario border region",
+       "value": 38900,
+       "text": "+38,900 CAD",
+       "kind": "step",
+       "from": 5091420,
+       "to": 5130320
+      },
+      {
+       "label": "Saskatchewan, excluding the Lloydminster border stores",
+       "value": 21470,
+       "text": "+21,470 CAD",
+       "kind": "step",
+       "from": 5130320,
+       "to": 5151790
+      },
+      {
+       "label": "Northern Ontario and the Thunder Bay district",
+       "value": -17330,
+       "text": "−17,330 CAD",
+       "kind": "step",
+       "from": 5151790,
+       "to": 5134460
+      },
+      {
+       "label": "New Brunswick, including the Moncton distribution hub",
+       "value": 9850,
+       "text": "+9,850 CAD",
+       "kind": "step",
+       "from": 5134460,
+       "to": 5144310
+      },
+      {
+       "label": "Prince Edward Island and Nova Scotia (combined)",
+       "value": -6120,
+       "text": "−6,120 CAD",
+       "kind": "step",
+       "from": 5144310,
+       "to": 5138190
+      },
+      {
+       "label": "Newfoundland and Labrador, Atlantic sales territory",
+       "value": 3940,
+       "text": "+3,940 CAD",
+       "kind": "step",
+       "from": 5138190,
+       "to": 5142130
+      },
+      {
+       "label": "Yukon, Northwest Territories and Nunavut (the North)",
+       "value": -1215,
+       "text": "−1,215 CAD",
+       "kind": "step",
+       "from": 5142130,
+       "to": 5140915
+      },
+      {
+       "label": "Latest 12 months",
+       "value": 5140915,
+       "text": "5,140,915 CAD",
+       "kind": "total",
+       "from": 0,
+       "to": 5140915
+      }
+     ],
+     "basis": {
+      "split": "segment",
+      "finding_id": "measure.sales.total.change",
+      "column": "territory",
+      "prior": [
+       "2024-01",
+       "2024-12"
+      ],
+      "latest": [
+       "2025-01",
+       "2025-12"
+      ]
+     },
+     "change": {
+      "value": 328575,
+      "text": "+328,575 CAD"
+     }
+    },
+    "table": {
+     "cols": [
+      "Step",
+      "Total sales"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "4,812,340 CAD"
+      ],
+      [
+       "Ontario: Greater Toronto and Hamilton Area",
+       "+312,450 CAD"
+      ],
+      [
+       "Quebec: Montreal, Laval and the Eastern Townships",
+       "−148,920 CAD"
+      ],
+      [
+       "British Columbia: Lower Mainland and Vancouver Island",
+       "+96,310 CAD"
+      ],
+      [
+       "Alberta: Calgary, Edmonton and the Red Deer corridor",
+       "+71,880 CAD"
+      ],
+      [
+       "Ontario: Ottawa Valley and Eastern Ontario",
+       "−52,640 CAD"
+      ],
+      [
+       "Manitoba and the Northwest Ontario border region",
+       "+38,900 CAD"
+      ],
+      [
+       "Saskatchewan, excluding the Lloydminster border stores",
+       "+21,470 CAD"
+      ],
+      [
+       "Northern Ontario and the Thunder Bay district",
+       "−17,330 CAD"
+      ],
+      [
+       "New Brunswick, including the Moncton distribution hub",
+       "+9,850 CAD"
+      ],
+      [
+       "Prince Edward Island and Nova Scotia (combined)",
+       "−6,120 CAD"
+      ],
+      [
+       "Newfoundland and Labrador, Atlantic sales territory",
+       "+3,940 CAD"
+      ],
+      [
+       "Yukon, Northwest Territories and Nunavut (the North)",
+       "−1,215 CAD"
+      ],
+      [
+       "Latest 12 months",
+       "5,140,915 CAD"
+      ]
+     ]
+    },
+    "summary": "Total sales went from 4,812,340 CAD to 5,140,915 CAD (+328,575 CAD, part of a change graded CONFIRMED). The largest parts are Ontario: Greater Toronto and Hamilton Area (+312,450 CAD) and Quebec: Montreal, Laval and the Eastern Townships (−148,920 CAD); the other ten territories moved by less than 100,000 CAD each.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative: a 12-territory sales file (the most levels a waterfall takes)",
+    "inputs": {
+     "columns": [
+      "sales",
+      "territory"
+     ],
+     "rows": 9120,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "sales added up by territory in each 12-month window"
+    }
+   }
+  ],
+  "tables": [
+   {
+    "title": "revenue by region",
+    "cols": [
+     "region",
+     "Rows",
+     "Average",
+     "95% range",
+     "Median"
+    ],
+    "rows": [
+     [
+      "North",
+      "75",
+      "1,034",
+      "917 to 1,158",
+      "1,186"
+     ],
+     [
+      "East",
+      "71",
+      "1,028",
+      "896 to 1,151",
+      "1,033"
+     ],
+     [
+      "South",
+      "77",
+      "847",
+      "738 to 950",
+      "791"
+     ],
+     [
+      "West",
+      "77",
+      "840",
+      "721 to 965",
+      "781"
+     ]
+    ]
+   },
+   {
+    "title": "units and revenue",
+    "cols": [
+     "Rows",
+     "Spearman",
+     "95% range"
+    ],
+    "rows": [
+     [
+      "300",
+      "0.976",
+      "0.969 to 0.981"
+     ]
+    ]
+   },
+   {
+    "title": "How revenue is spread",
+    "cols": [
+     "Values",
+     "10th",
+     "25th",
+     "Median",
+     "75th",
+     "90th"
+    ],
+    "rows": [
+     [
+      "300",
+      "208",
+      "476",
+      "926",
+      "1,370",
+      "1,664"
+     ]
+    ]
+   },
+   {
+    "title": "Largest revenue by region in 2025",
+    "cols": [
+     "region",
+     "revenue",
+     "Share of all",
+     "Change over 10 years"
+    ],
+    "rows": [
+     [
+      "East",
+      "44,617",
+      "29.3%",
+      ""
+     ],
+     [
+      "North",
+      "42,350",
+      "27.8%",
+      ""
+     ],
+     [
+      "South",
+      "32,738",
+      "21.5%",
+      ""
+     ],
+     [
+      "West",
+      "32,508",
+      "21.4%",
+      ""
+     ]
+    ]
+   },
+   {
+    "title": "What predicts revenue",
+    "cols": [
+     "Driver",
+     "R squared lost without it",
+     "Effect (per unit, or against the base value)"
+    ],
+    "rows": [
+     [
+      "units",
+      "0.949",
+      "per unit 44.7"
+     ],
+     [
+      "region",
+      "0.0139",
+      "South −43.4; North 56.7; East 122"
+     ],
+     [
+      "Typical held-out error (MAE)",
+      "91.1",
+      "against 475 for the mean of the training rows"
+     ],
+     [
+      "Rows",
+      "300 of 300 used, 240 scored",
+      "dropped: none"
+     ]
+    ]
+   },
+   {
+    "title": "Where the change in total revenue came from",
+    "cols": [
+     "region",
+     "12 months before",
+     "Latest 12 months",
+     "Change",
+     "Share of the change",
+     "Own change"
+    ],
+    "rows": [
+     [
+      "East",
+      "28,396",
+      "44,617",
+      "+16,220",
+      "67.7%",
+      "+57.1%"
+     ],
+     [
+      "North",
+      "35,234",
+      "42,350",
+      "+7,116",
+      "29.7%",
+      "+20.2%"
+     ],
+     [
+      "West",
+      "32,179",
+      "32,508",
+      "+330",
+      "1.4%",
+      "+1.02%"
+     ],
+     [
+      "South",
+      "32,447",
+      "32,738",
+      "+292",
+      "1.2%",
+      "+0.899%"
+     ]
+    ]
+   }
+  ],
+  "analyses_refused": [],
+  "story": {
+   "headline": "Total revenue +18.7%, graded WATCH; volume -1.3% on the year before, graded WATCH; total units +1.6%, graded WATCH; average revenue +19.1%, graded WATCH; average units +1.8%, graded WATCH.",
+   "what_happened": [
+    "The monthly total of revenue moved from 128,256 in the year before to 152,214 in the latest year, a change of +18.7%. The same test's interval for the change runs from -32.1% to +86.2%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the mode",
+    "The monthly total of units moved from 3,126 in the year before to 3,176 in the latest year, a change of +1.6%. The same test's interval for the change runs from -51.6% to +65.2%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can u",
+    "Row volume changed by -1.3% in the latest year (149 rows) against the year before (151 rows). The same test's interval for the change runs from -2.4% to +1.8%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can underestimate, it he",
+    "Average revenue (the average month) moved from 853.6 in the year before to 1,016.3 in the latest year, a change of +19.1%. The same test's interval for the change runs from -24.9% to +113.9%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which th",
+    "Average units (the average month) moved from 20.8 in the year before to 21.2 in the latest year, a change of +1.8%. The same test's interval for the change runs from -31.4% to +47.3%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model ",
+    "The most common region value is 'South', with 25.7% of rows."
+   ],
+   "why": [
+    "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+   ],
+   "what_to_do": [
+    "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+   ],
+   "whats_next": [
+    "No forecast of monthly total revenue in [your file]: 24 months of history is too short to replay and check one.",
+    "No forecast of monthly rows in [your file]: 24 months of history is too short to replay and check one.",
+    "No forecast of monthly total units in [your file]: 24 months of history is too short to replay and check one."
+   ],
+   "cannot_answer": [
+    "The data cannot support this claim: Months of history available to forecast monthly rows in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) o",
+    "The data cannot support this claim: Months of history available to forecast monthly total revenue in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more m",
+    "The data cannot support this claim: Months of history available to forecast monthly total units in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more mon"
+   ]
+  },
+  "forecast": {},
+  "health_score": 65.3,
+  "health_issues": [
+   "Newest row in order_date is 2025-12-30, 273 days old as of 2026-09-29.",
+   "revenue: 300 of 300 numbers are stored as text; they will sort '10' before '9'.",
+   "units: 300 of 300 numbers are stored as text; they will sort '10' before '9'."
+  ],
+  "cleaning": {
+   "rows_in": 300,
+   "rows_clean": 300,
+   "rows_quarantined": 0,
+   "fixes": [
+    "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+    "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+    "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+   ]
+  },
+  "limitations": [
+   "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+   "The data cannot support this claim: Months of history available to forecast monthly rows in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so ",
+   "The data cannot support this claim: Months of history available to forecast monthly total revenue in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn f",
+   "The data cannot support this claim: Months of history available to forecast monthly total units in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn fro",
+   "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+   "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+  ],
+  "scenarios": {
+   "basis": {
+    "finding_id": "measure.revenue.total.change",
+    "claim": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "grade": "WATCH",
+    "grade_words": "not yet conclusive",
+    "measure": "revenue",
+    "how": "total",
+    "unit": "",
+    "windows": {
+     "prior": [
+      "2024-01",
+      "2024-12"
+     ],
+     "latest": [
+      "2025-01",
+      "2025-12"
+     ]
+    },
+    "rows": {
+     "prior": 151,
+     "latest": 149,
+     "units_missing": 0
+    },
+    "segment": {
+     "column": "region",
+     "levels": [
+      "East",
+      "North",
+      "South",
+      "West"
+     ],
+     "folded": [],
+     "entered": [],
+     "exited": []
+    },
+    "reconciles": true
+   },
+   "items": [
+    {
+     "id": "headline.prior",
+     "group": "headline",
+     "segment": null,
+     "label": "Total revenue, the 12 months before",
+     "value": 128256.1,
+     "text": "128,256",
+     "kind": "amount",
+     "unit": "",
+     "grade": "WATCH",
+     "parent_grade": null,
+     "grade_words": "the claim itself, graded WATCH",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "prior",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "headline.latest",
+     "group": "headline",
+     "segment": null,
+     "label": "Total revenue, the latest 12 months",
+     "value": 152213.93,
+     "text": "152,214",
+     "kind": "amount",
+     "unit": "",
+     "grade": "WATCH",
+     "parent_grade": null,
+     "grade_words": "the claim itself, graded WATCH",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "latest",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "headline.change",
+     "group": "headline",
+     "segment": null,
+     "label": "Change in total revenue, the latest 12 months against the 12 before",
+     "value": 23957.83,
+     "text": "+23,958",
+     "kind": "change",
+     "unit": "",
+     "grade": "WATCH",
+     "parent_grade": null,
+     "grade_words": "the claim itself, graded WATCH",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "both",
+      "op": "latest - prior"
+     }
+    },
+    {
+     "id": "headline.change_pct",
+     "group": "headline",
+     "segment": null,
+     "label": "Change in total revenue, in percent of the 12 months before",
+     "value": 18.679681,
+     "text": "+18.7%",
+     "kind": "change",
+     "unit": "%",
+     "grade": "WATCH",
+     "parent_grade": null,
+     "grade_words": "the claim itself, graded WATCH",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "contribution.east.prior",
+     "group": "contribution",
+     "segment": "East",
+     "label": "East: total revenue, the 12 months before",
+     "value": 28396.38,
+     "text": "28,396",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "prior",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.east.latest",
+     "group": "contribution",
+     "segment": "East",
+     "label": "East: total revenue, the latest 12 months",
+     "value": 44616.75,
+     "text": "44,617",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.east.change",
+     "group": "contribution",
+     "segment": "East",
+     "label": "East: its contribution to the change in total revenue",
+     "value": 16220.37,
+     "text": "+16,220",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "latest - prior"
+     }
+    },
+    {
+     "id": "contribution.east.share",
+     "group": "contribution",
+     "segment": "East",
+     "label": "East: its share of the change in total revenue",
+     "value": 67.703836,
+     "text": "67.7%",
+     "kind": "percent",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "share of the change"
+     }
+    },
+    {
+     "id": "contribution.east.pct",
+     "group": "contribution",
+     "segment": "East",
+     "label": "East: its own change in total revenue, in percent",
+     "value": 57.12126,
+     "text": "+57.1%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "contribution.north.prior",
+     "group": "contribution",
+     "segment": "North",
+     "label": "North: total revenue, the 12 months before",
+     "value": 35234.32,
+     "text": "35,234",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "prior",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.north.latest",
+     "group": "contribution",
+     "segment": "North",
+     "label": "North: total revenue, the latest 12 months",
+     "value": 42350.45,
+     "text": "42,350",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.north.change",
+     "group": "contribution",
+     "segment": "North",
+     "label": "North: its contribution to the change in total revenue",
+     "value": 7116.13,
+     "text": "+7,116",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "latest - prior"
+     }
+    },
+    {
+     "id": "contribution.north.share",
+     "group": "contribution",
+     "segment": "North",
+     "label": "North: its share of the change in total revenue",
+     "value": 29.702732,
+     "text": "29.7%",
+     "kind": "percent",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "share of the change"
+     }
+    },
+    {
+     "id": "contribution.north.pct",
+     "group": "contribution",
+     "segment": "North",
+     "label": "North: its own change in total revenue, in percent",
+     "value": 20.196587,
+     "text": "+20.2%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "contribution.west.prior",
+     "group": "contribution",
+     "segment": "West",
+     "label": "West: total revenue, the 12 months before",
+     "value": 32178.85,
+     "text": "32,179",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "prior",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.west.latest",
+     "group": "contribution",
+     "segment": "West",
+     "label": "West: total revenue, the latest 12 months",
+     "value": 32508.44,
+     "text": "32,508",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.west.change",
+     "group": "contribution",
+     "segment": "West",
+     "label": "West: its contribution to the change in total revenue",
+     "value": 329.59,
+     "text": "+330",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "latest - prior"
+     }
+    },
+    {
+     "id": "contribution.west.share",
+     "group": "contribution",
+     "segment": "West",
+     "label": "West: its share of the change in total revenue",
+     "value": 1.375709,
+     "text": "1.4%",
+     "kind": "percent",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "share of the change"
+     }
+    },
+    {
+     "id": "contribution.west.pct",
+     "group": "contribution",
+     "segment": "West",
+     "label": "West: its own change in total revenue, in percent",
+     "value": 1.024244,
+     "text": "+1.02%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "contribution.south.prior",
+     "group": "contribution",
+     "segment": "South",
+     "label": "South: total revenue, the 12 months before",
+     "value": 32446.55,
+     "text": "32,447",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "prior",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.south.latest",
+     "group": "contribution",
+     "segment": "South",
+     "label": "South: total revenue, the latest 12 months",
+     "value": 32738.29,
+     "text": "32,738",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "contribution.south.change",
+     "group": "contribution",
+     "segment": "South",
+     "label": "South: its contribution to the change in total revenue",
+     "value": 291.74,
+     "text": "+292",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "latest - prior"
+     }
+    },
+    {
+     "id": "contribution.south.share",
+     "group": "contribution",
+     "segment": "South",
+     "label": "South: its share of the change in total revenue",
+     "value": 1.217723,
+     "text": "1.2%",
+     "kind": "percent",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "share of the change"
+     }
+    },
+    {
+     "id": "contribution.south.pct",
+     "group": "contribution",
+     "segment": "South",
+     "label": "South: its own change in total revenue, in percent",
+     "value": 0.89914,
+     "text": "+0.899%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "price_volume_mix.price",
+     "group": "price_volume_mix",
+     "segment": null,
+     "label": "Price effect: the change in revenue per unit, at the latest 12 months' units",
+     "value": 20526.705008,
+     "text": "+20,527",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "measured against the 12 months before; the three parts add up exactly to the change",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "price effect"
+     }
+    },
+    {
+     "id": "price_volume_mix.volume",
+     "group": "price_volume_mix",
+     "segment": null,
+     "label": "Volume effect: the change in units, at the revenue per unit of the 12 months before",
+     "value": 2051.441139,
+     "text": "+2,051",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "measured against the 12 months before; the three parts add up exactly to the change",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "volume effect"
+     }
+    },
+    {
+     "id": "price_volume_mix.mix",
+     "group": "price_volume_mix",
+     "segment": null,
+     "label": "Mix effect: the shift of units between region values, each at its own revenue per unit of the 12 months before",
+     "value": 1379.683853,
+     "text": "+1,380",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "measured against the 12 months before; the three parts add up exactly to the change",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "mix effect"
+     }
+    },
+    {
+     "id": "per_unit.prior",
+     "group": "per_unit",
+     "segment": null,
+     "label": "Revenue per unit (revenue / units), the 12 months before",
+     "value": 41.028823,
+     "text": "41",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "units"
+      ],
+      "window": "prior",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.latest",
+     "group": "per_unit",
+     "segment": null,
+     "label": "Revenue per unit (revenue / units), the latest 12 months",
+     "value": 47.9263,
+     "text": "47.9",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "units"
+      ],
+      "window": "latest",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.change_pct",
+     "group": "per_unit",
+     "segment": null,
+     "label": "Change in revenue per unit (revenue / units), in percent of the 12 months before",
+     "value": 16.811298,
+     "text": "+16.8%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "units"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "per_unit.east.prior",
+     "group": "per_unit",
+     "segment": "East",
+     "label": "East: revenue per unit (revenue / units), the 12 months before",
+     "value": 44.789243,
+     "text": "44.8",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "prior",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.east.latest",
+     "group": "per_unit",
+     "segment": "East",
+     "label": "East: revenue per unit (revenue / units), the latest 12 months",
+     "value": 51.699594,
+     "text": "51.7",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.east.change_pct",
+     "group": "per_unit",
+     "segment": "East",
+     "label": "East: its own change in revenue per unit (revenue / units), in percent",
+     "value": 15.428596,
+     "text": "+15.4%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "per_unit.north.prior",
+     "group": "per_unit",
+     "segment": "North",
+     "label": "North: revenue per unit (revenue / units), the 12 months before",
+     "value": 42.348942,
+     "text": "42.3",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "prior",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.north.latest",
+     "group": "per_unit",
+     "segment": "North",
+     "label": "North: revenue per unit (revenue / units), the latest 12 months",
+     "value": 48.734695,
+     "text": "48.7",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.north.change_pct",
+     "group": "per_unit",
+     "segment": "North",
+     "label": "North: its own change in revenue per unit (revenue / units), in percent",
+     "value": 15.078895,
+     "text": "+15.1%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "per_unit.west.prior",
+     "group": "per_unit",
+     "segment": "West",
+     "label": "West: revenue per unit (revenue / units), the 12 months before",
+     "value": 40.073288,
+     "text": "40.1",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "prior",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.west.latest",
+     "group": "per_unit",
+     "segment": "West",
+     "label": "West: revenue per unit (revenue / units), the latest 12 months",
+     "value": 46.045949,
+     "text": "46",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.west.change_pct",
+     "group": "per_unit",
+     "segment": "West",
+     "label": "West: its own change in revenue per unit (revenue / units), in percent",
+     "value": 14.904346,
+     "text": "+14.9%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "per_unit.south.prior",
+     "group": "per_unit",
+     "segment": "South",
+     "label": "South: revenue per unit (revenue / units), the 12 months before",
+     "value": 37.860618,
+     "text": "37.9",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "prior",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.south.latest",
+     "group": "per_unit",
+     "segment": "South",
+     "label": "South: revenue per unit (revenue / units), the latest 12 months",
+     "value": 44.360827,
+     "text": "44.4",
+     "kind": "per_unit",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "per unit"
+     }
+    },
+    {
+     "id": "per_unit.south.change_pct",
+     "group": "per_unit",
+     "segment": "South",
+     "label": "South: its own change in revenue per unit (revenue / units), in percent",
+     "value": 17.168785,
+     "text": "+17.2%",
+     "kind": "change",
+     "unit": "%",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "both",
+      "op": "percent change"
+     }
+    },
+    {
+     "id": "run_rate.year",
+     "group": "run_rate",
+     "segment": null,
+     "label": "Run rate: total revenue over the latest 12 months",
+     "value": 152213.93,
+     "text": "152,214",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "the latest 12 months repeat unchanged",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "latest",
+      "op": "sum"
+     }
+    },
+    {
+     "id": "run_rate.month",
+     "group": "run_rate",
+     "segment": null,
+     "label": "Run rate: total revenue in the average month of the latest 12 months",
+     "value": 12684.494167,
+     "text": "12,684",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "the latest 12 months repeat unchanged",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "latest",
+      "op": "latest / 12"
+     }
+    },
+    {
+     "id": "sensitivity.one_pct",
+     "group": "sensitivity",
+     "segment": null,
+     "label": "Each 1% of total revenue, over a year at the latest 12 months' level",
+     "value": 1522.1393,
+     "text": "1,522",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "a change of 1% held for a whole year, at the latest 12 months' level",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue"
+      ],
+      "window": "latest",
+      "op": "latest / 100"
+     }
+    },
+    {
+     "id": "gap.north.amount",
+     "group": "gap",
+     "segment": "North",
+     "label": "North: how far its total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+     "value": 2266.3,
+     "text": "2,266",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "gap to the largest"
+     }
+    },
+    {
+     "id": "gap.north.points",
+     "group": "gap",
+     "segment": "North",
+     "label": "North: how far its share of total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+     "value": 1.488891,
+     "text": "1.49 percentage points",
+     "kind": "points",
+     "unit": "points",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "gap in share of the total"
+     }
+    },
+    {
+     "id": "gap.north.per_unit",
+     "group": "gap",
+     "segment": "North",
+     "label": "What if North's units of the latest 12 months had sold at East's revenue per unit (the largest region by total revenue in the latest 12 months): the extra revenue",
+     "value": 2576.497567,
+     "text": "+2,576",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "its units unchanged, each at the largest's revenue per unit",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "what-if"
+     }
+    },
+    {
+     "id": "gap.west.amount",
+     "group": "gap",
+     "segment": "West",
+     "label": "West: how far its total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+     "value": 12108.31,
+     "text": "12,108",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "gap to the largest"
+     }
+    },
+    {
+     "id": "gap.west.points",
+     "group": "gap",
+     "segment": "West",
+     "label": "West: how far its share of total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+     "value": 7.954798,
+     "text": "7.95 percentage points",
+     "kind": "points",
+     "unit": "points",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "gap in share of the total"
+     }
+    },
+    {
+     "id": "gap.west.per_unit",
+     "group": "gap",
+     "segment": "West",
+     "label": "What if West's units of the latest 12 months had sold at East's revenue per unit (the largest region by total revenue in the latest 12 months): the extra revenue",
+     "value": 3991.473673,
+     "text": "+3,991",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "its units unchanged, each at the largest's revenue per unit",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "what-if"
+     }
+    },
+    {
+     "id": "gap.south.amount",
+     "group": "gap",
+     "segment": "South",
+     "label": "South: how far its total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+     "value": 11878.46,
+     "text": "11,878",
+     "kind": "amount",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "gap to the largest"
+     }
+    },
+    {
+     "id": "gap.south.points",
+     "group": "gap",
+     "segment": "South",
+     "label": "South: how far its share of total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+     "value": 7.803793,
+     "text": "7.8 percentage points",
+     "kind": "points",
+     "unit": "points",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region"
+      ],
+      "window": "latest",
+      "op": "gap in share of the total"
+     }
+    },
+    {
+     "id": "gap.south.per_unit",
+     "group": "gap",
+     "segment": "South",
+     "label": "What if South's units of the latest 12 months had sold at East's revenue per unit (the largest region by total revenue in the latest 12 months): the extra revenue",
+     "value": 5416.010695,
+     "text": "+5,416",
+     "kind": "change",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "WATCH",
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "assumes": "its units unchanged, each at the largest's revenue per unit",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "revenue",
+       "region",
+       "units"
+      ],
+      "window": "latest",
+      "op": "what-if"
+     }
+    },
+    {
+     "id": "facts.months",
+     "group": "facts",
+     "segment": null,
+     "label": "Months with a dated row the engine kept",
+     "value": 24.0,
+     "text": "24",
+     "kind": "count",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "window": null,
+      "op": "count distinct months"
+     }
+    },
+    {
+     "id": "facts.dates",
+     "group": "facts",
+     "segment": null,
+     "label": "Distinct dates in the rows the engine kept",
+     "value": 267.0,
+     "text": "267",
+     "kind": "count",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "window": null,
+      "op": "count distinct dates"
+     }
+    },
+    {
+     "id": "facts.first",
+     "group": "facts",
+     "segment": null,
+     "label": "The first date in the rows the engine kept",
+     "value": "2024-01-01",
+     "text": "2024-01-01",
+     "kind": "date",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "window": null,
+      "op": "min"
+     }
+    },
+    {
+     "id": "facts.last",
+     "group": "facts",
+     "segment": null,
+     "label": "The last date in the rows the engine kept",
+     "value": "2025-12-30",
+     "text": "2025-12-30",
+     "kind": "date",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "window": null,
+      "op": "max"
+     }
+    }
+   ],
+   "refused": [],
+   "note": "Descriptive arithmetic on the rows the engine kept, in the engine's own comparison windows (the latest 12 months against the 12 before); the monthly totals of these rows match the engine's own charted series. The headline figures carry the claim's grade; a figure derived from them is not graded itself and names the grade of the change it is part of. A contribution says where the change sits, not what caused it, and a what-if is arithmetic, not a forecast. The figures are shown rounded; they add up before rounding."
+  },
+  "primary": {
+   "id": "measure.revenue.total.change",
+   "claim": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+   "grade": "WATCH"
+  }
+ },
+ "edge": {
+  "charts": [
+   {
+    "id": "viz.1.contribution_waterfall",
+    "chart": "contribution_waterfall",
+    "kind": "waterfall",
+    "title": "Where the change in net income came from, by division",
+    "subtitle": "Total net income, 2024 against 2025: each division's contribution to the change",
+    "section": "drove",
+    "supports": "Change in the monthly total of net_income, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.net_income.total.change",
+     "scenario:headline.prior",
+     "scenario:contribution.retail.change",
+     "scenario:contribution.wholesale.change",
+     "scenario:contribution.online.change",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: A ledger's net income, broken down by its one category.",
+    "measure": {
+     "label": "net_income",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "steps": [
+      {
+       "label": "12 months before",
+       "value": -12480,
+       "text": "−12,480",
+       "kind": "total",
+       "from": 0,
+       "to": -12480
+      },
+      {
+       "label": "Retail",
+       "value": 5210,
+       "text": "+5,210",
+       "kind": "step",
+       "from": -12480,
+       "to": -7270
+      },
+      {
+       "label": "Wholesale",
+       "value": 4020,
+       "text": "+4,020",
+       "kind": "step",
+       "from": -7270,
+       "to": -3250
+      },
+      {
+       "label": "Online",
+       "value": -665,
+       "text": "−665",
+       "kind": "step",
+       "from": -3250,
+       "to": -3915
+      },
+      {
+       "label": "Latest 12 months",
+       "value": -3915,
+       "text": "−3,915",
+       "kind": "total",
+       "from": 0,
+       "to": -3915
+      }
+     ],
+     "basis": {
+      "split": "segment",
+      "finding_id": "measure.net_income.total.change",
+      "column": "division",
+      "prior": [
+       "2024-01",
+       "2024-12"
+      ],
+      "latest": [
+       "2025-01",
+       "2025-12"
+      ]
+     },
+     "change": {
+      "value": 8565,
+      "text": "+8,565"
+     }
+    },
+    "table": {
+     "cols": [
+      "Step",
+      "Total net_income"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "−12,480"
+      ],
+      [
+       "Retail",
+       "+5,210"
+      ],
+      [
+       "Wholesale",
+       "+4,020"
+      ],
+      [
+       "Online",
+       "−665"
+      ],
+      [
+       "Latest 12 months",
+       "−3,915"
+      ]
+     ]
+    },
+    "summary": "Total net income went from −12,480 to −3,915, a change of +8,565: still a loss, a smaller one. Retail (+5,210) and Wholesale (+4,020) narrowed it; Online (−665) widened it.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative: a three-division ledger with a loss in both windows",
+    "inputs": {
+     "columns": [
+      "net_income",
+      "division"
+     ],
+     "rows": 1488,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "net_income added up by division in each 12-month window"
+    }
+   },
+   {
+    "id": "viz.2.change_heatmap",
+    "chart": "change_heatmap",
+    "kind": "heatmap",
+    "title": "Revenue by region and month, change on the year before",
+    "subtitle": "Each region's revenue in the month against the same month a year before, in percent",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "ai",
+    "why": "Where in the year each region's change happened.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "change_pct"
+    },
+    "data": {
+     "rows": [
+      "East",
+      "North",
+      "South",
+      "West"
+     ],
+     "cols": [
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12"
+     ],
+     "values": [
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ]
+     ],
+     "text": [
+      [
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5"
+      ],
+      [
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5"
+      ],
+      [
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5"
+      ],
+      [
+       "<5",
+       "<5",
+       "<5",
+       "",
+       "<5",
+       "<5"
+      ]
+     ],
+     "tier": [
+      [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     ],
+     "n": [
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       null,
+       null,
+       null,
+       0,
+       null,
+       null
+      ]
+     ],
+     "scale": "diverging",
+     "legend": [],
+     "row_label": "region",
+     "col_label": "Month"
+    },
+    "table": {
+     "cols": [
+      "region",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12"
+     ],
+     "rows": [
+      [
+       "East",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5"
+      ],
+      [
+       "North",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5"
+      ],
+      [
+       "South",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5",
+       "<5"
+      ],
+      [
+       "West",
+       "<5",
+       "<5",
+       "<5",
+       "",
+       "<5",
+       "<5"
+      ]
+     ]
+    },
+    "summary": "No cell can be shown: every region's month rests on fewer than 5 orders in one of the two years (23 cells), or has none.",
+    "suppressed": {
+     "cells": 23,
+     "why": "23 cells rest on fewer than 5 rows in one of the two years"
+    },
+    "source": "The rows the engine kept (ship2), 2024-07 to 2025-12",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-07",
+      "2025-12"
+     ],
+     "op": "revenue added up by region and month, percent change on the same month a year before"
+    }
+   },
+   {
+    "id": "viz.3.theme_rating_heatmap",
+    "chart": "theme_rating_heatmap",
+    "kind": "heatmap",
+    "title": "What the comment texts say, by rating",
+    "subtitle": "The share of each rating's comments that use the word; the one word used in 3 or more comments",
+    "section": "other",
+    "supports": "What the comment texts talk about",
+    "anchors": [
+     "analysis:1"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Do the words change with the rating?",
+    "measure": {
+     "label": "comments using the word",
+     "unit": "%",
+     "kind": "share_pct"
+    },
+    "data": {
+     "rows": [
+      "great"
+     ],
+     "cols": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "values": [
+      [
+       null,
+       null,
+       14.285714,
+       36.363636,
+       60
+      ]
+     ],
+     "text": [
+      [
+       "<5",
+       "<5",
+       "14.3%",
+       "36.4%",
+       "60.0%"
+      ]
+     ],
+     "tier": [
+      [
+       0,
+       0,
+       1,
+       2,
+       3
+      ]
+     ],
+     "n": [
+      [
+       null,
+       null,
+       7,
+       11,
+       15
+      ]
+     ],
+     "scale": "sequential",
+     "legend": [
+      {
+       "tier": 1,
+       "text": "14.3% to 29.0%"
+      },
+      {
+       "tier": 2,
+       "text": "29.0% to 44.2%"
+      },
+      {
+       "tier": 3,
+       "text": "44.2% to 60.0%"
+      }
+     ],
+     "row_label": "word",
+     "col_label": "rating"
+    },
+    "table": {
+     "cols": [
+      "word",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "rows": [
+      [
+       "great",
+       "<5",
+       "<5",
+       "14.3%",
+       "36.4%",
+       "60.0%"
+      ]
+     ]
+    },
+    "summary": "'great' is used in 60.0% of the 5-star comments, 36.4% of the 4-star ones and 14.3% of the 3-star ones; ratings 1 and 2 have fewer than 5 comments each and are not shown.",
+    "suppressed": {
+     "cells": 2,
+     "why": "2 ratings have fewer than 5 comments"
+    },
+    "source": "Illustrative: a 40-comment survey file",
+    "inputs": {
+     "columns": [
+      "comment",
+      "rating"
+     ],
+     "rows": 40,
+     "months": null,
+     "op": "share of each rating's texts that use the word at least once"
+    }
+   },
+   {
+    "id": "viz.2.slope",
+    "chart": "slope",
+    "kind": "slope",
+    "title": "Sales by city, the 12 months before and the latest 12 months",
+    "subtitle": "Each city's total sales in the two windows, and its own change",
+    "section": "scenarios",
+    "supports": "Change in the monthly total of sales, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.sales.total.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: Five cities over two windows.",
+    "measure": {
+     "label": "sales",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "rows": [
+      {
+       "label": "東京",
+       "a": 18420,
+       "b": 21960,
+       "a_text": "18,420",
+       "b_text": "21,960",
+       "change_text": "+19.2%"
+      },
+      {
+       "label": "Москва",
+       "a": 15310,
+       "b": 14020,
+       "a_text": "15,310",
+       "b_text": "14,020",
+       "change_text": "−8.43%"
+      },
+      {
+       "label": "São Paulo",
+       "a": 12870,
+       "b": 13540,
+       "a_text": "12,870",
+       "b_text": "13,540",
+       "change_text": "+5.21%"
+      },
+      {
+       "label": "القاهرة",
+       "a": 9640,
+       "b": 11880,
+       "a_text": "9,640",
+       "b_text": "11,880",
+       "change_text": "+23.2%"
+      },
+      {
+       "label": "मुंबई",
+       "a": 8150,
+       "b": 9905,
+       "a_text": "8,150",
+       "b_text": "9,905",
+       "change_text": "+21.5%"
+      }
+     ],
+     "a_label": "12 months before",
+     "b_label": "Latest 12 months"
+    },
+    "table": {
+     "cols": [
+      "city",
+      "12 months before",
+      "Latest 12 months",
+      "Own change"
+     ],
+     "rows": [
+      [
+       "東京",
+       "18,420",
+       "21,960",
+       "+19.2%"
+      ],
+      [
+       "Москва",
+       "15,310",
+       "14,020",
+       "−8.43%"
+      ],
+      [
+       "São Paulo",
+       "12,870",
+       "13,540",
+       "+5.21%"
+      ],
+      [
+       "القاهرة",
+       "9,640",
+       "11,880",
+       "+23.2%"
+      ],
+      [
+       "मुंबई",
+       "8,150",
+       "9,905",
+       "+21.5%"
+      ]
+     ]
+    },
+    "summary": "東京 rose from 18,420 to 21,960 (+19.2%); Москва fell from 15,310 to 14,020 (−8.43%). Part of a change graded WATCH; not graded itself.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative: city names in five scripts (Japanese, Cyrillic, Latin, Arabic, Devanagari)",
+    "inputs": {
+     "columns": [
+      "sales",
+      "city"
+     ],
+     "rows": 2210,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "sales added up by city in each 12-month window"
+    }
+   },
+   {
+    "id": "viz.4.change_heatmap",
+    "chart": "change_heatmap",
+    "kind": "heatmap",
+    "title": "Revenue by region and month, change on the year before, 2024 and 2025",
+    "subtitle": "Each region's revenue in the month against the same month a year before, in percent",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Illustrative: a case the spec examples do not cover.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "change_pct"
+    },
+    "data": {
+     "rows": [
+      "East",
+      "North",
+      "South",
+      "West"
+     ],
+     "cols": [
+      "2024-01",
+      "2024-02",
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+      "2024-07",
+      "2024-08",
+      "2024-09",
+      "2024-10",
+      "2024-11",
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12"
+     ],
+     "values": [
+      [
+       -14.6633,
+       11.4219,
+       -1.2956,
+       -16.5794,
+       -1.9671,
+       39.6295,
+       12.3987,
+       24.2012,
+       -23.4579,
+       14.515,
+       18.6803,
+       -2.3044,
+       5.4223,
+       -8.8674,
+       -24.2864,
+       30.7138,
+       -22.6835,
+       22.9275,
+       15.4495,
+       -6.6648,
+       -4.8981,
+       40.4233,
+       17.4637,
+       -13.2533
+      ],
+      [
+       null,
+       4.8515,
+       31.4097,
+       19.9286,
+       -7.187,
+       10.7847,
+       -29.1033,
+       1.7504,
+       -6.9641,
+       -23.1647,
+       -23.3939,
+       20.0396,
+       0.4309,
+       -1.5153,
+       11.4588,
+       4.1854,
+       40.1008,
+       22.1028,
+       15.6456,
+       2.84,
+       21.9415,
+       -15.7787,
+       24.3337,
+       33.2803
+      ],
+      [
+       2.9274,
+       -14.8756,
+       35.8611,
+       null,
+       null,
+       30.8175,
+       13.2318,
+       -2.9611,
+       3.5455,
+       32.4373,
+       16.7251,
+       -28.2194,
+       17.7472,
+       17.1668,
+       10.4292,
+       16.4988,
+       26.5055,
+       -20.2846,
+       40.5145,
+       -0.5023,
+       -18.1438,
+       28.4288,
+       -21.9434,
+       26.2388
+      ],
+      [
+       -15.7697,
+       -24.91,
+       14.2237,
+       -5.9263,
+       0.1889,
+       2.4741,
+       -19.3614,
+       31.1367,
+       -16.3834,
+       18.72,
+       12.7297,
+       -29.0394,
+       30.6827,
+       32.58,
+       -1.1174,
+       39.3771,
+       23.8865,
+       null,
+       -16.7948,
+       -4.7349,
+       5.4949,
+       -3.6246,
+       14.718,
+       21.7094
+      ]
+     ],
+     "text": [
+      [
+       "−14.7%",
+       "+11.4%",
+       "−1.3%",
+       "−16.6%",
+       "−1.97%",
+       "+39.6%",
+       "+12.4%",
+       "+24.2%",
+       "−23.5%",
+       "+14.5%",
+       "+18.7%",
+       "−2.3%",
+       "+5.42%",
+       "−8.87%",
+       "−24.3%",
+       "+30.7%",
+       "−22.7%",
+       "+22.9%",
+       "+15.4%",
+       "−6.66%",
+       "−4.9%",
+       "+40.4%",
+       "+17.5%",
+       "−13.3%"
+      ],
+      [
+       "",
+       "+4.85%",
+       "+31.4%",
+       "+19.9%",
+       "−7.19%",
+       "+10.8%",
+       "−29.1%",
+       "+1.75%",
+       "−6.96%",
+       "−23.2%",
+       "−23.4%",
+       "+20%",
+       "+0.431%",
+       "−1.52%",
+       "+11.5%",
+       "+4.19%",
+       "+40.1%",
+       "+22.1%",
+       "+15.6%",
+       "+2.84%",
+       "+21.9%",
+       "−15.8%",
+       "+24.3%",
+       "+33.3%"
+      ],
+      [
+       "+2.93%",
+       "−14.9%",
+       "+35.9%",
+       "<5",
+       "<5",
+       "+30.8%",
+       "+13.2%",
+       "−2.96%",
+       "+3.55%",
+       "+32.4%",
+       "+16.7%",
+       "−28.2%",
+       "+17.7%",
+       "+17.2%",
+       "+10.4%",
+       "+16.5%",
+       "+26.5%",
+       "−20.3%",
+       "+40.5%",
+       "−0.502%",
+       "−18.1%",
+       "+28.4%",
+       "−21.9%",
+       "+26.2%"
+      ],
+      [
+       "−15.8%",
+       "−24.9%",
+       "+14.2%",
+       "−5.93%",
+       "+0.189%",
+       "+2.47%",
+       "−19.4%",
+       "+31.1%",
+       "−16.4%",
+       "+18.7%",
+       "+12.7%",
+       "−29%",
+       "+30.7%",
+       "+32.6%",
+       "−1.12%",
+       "+39.4%",
+       "+23.9%",
+       "<5",
+       "−16.8%",
+       "−4.73%",
+       "+5.49%",
+       "−3.62%",
+       "+14.7%",
+       "+21.7%"
+      ]
+     ],
+     "tier": [
+      [
+       -2,
+       1,
+       -1,
+       -2,
+       -1,
+       3,
+       1,
+       3,
+       -3,
+       2,
+       2,
+       -1,
+       1,
+       -1,
+       -3,
+       3,
+       -3,
+       3,
+       2,
+       -1,
+       -1,
+       3,
+       2,
+       -2
+      ],
+      [
+       0,
+       1,
+       3,
+       2,
+       -1,
+       1,
+       -3,
+       1,
+       -1,
+       -3,
+       -3,
+       2,
+       1,
+       -1,
+       1,
+       1,
+       3,
+       3,
+       2,
+       1,
+       2,
+       -2,
+       3,
+       3
+      ],
+      [
+       1,
+       -2,
+       3,
+       0,
+       0,
+       3,
+       2,
+       -1,
+       1,
+       3,
+       2,
+       -3,
+       2,
+       2,
+       1,
+       2,
+       3,
+       -2,
+       3,
+       -1,
+       -2,
+       3,
+       -2,
+       3
+      ],
+      [
+       -2,
+       -3,
+       2,
+       -1,
+       1,
+       1,
+       -2,
+       3,
+       -2,
+       2,
+       2,
+       -3,
+       3,
+       3,
+       -1,
+       3,
+       3,
+       0,
+       -2,
+       -1,
+       1,
+       -1,
+       2,
+       2
+      ]
+     ],
+     "n": [
+      [
+       11,
+       22,
+       17,
+       10,
+       16,
+       34,
+       22,
+       27,
+       7,
+       23,
+       25,
+       16,
+       19,
+       13,
+       7,
+       30,
+       7,
+       27,
+       24,
+       14,
+       15,
+       34,
+       25,
+       11
+      ],
+      [
+       0,
+       19,
+       31,
+       26,
+       14,
+       22,
+       5,
+       18,
+       14,
+       7,
+       7,
+       26,
+       17,
+       16,
+       22,
+       19,
+       34,
+       27,
+       24,
+       18,
+       27,
+       10,
+       28,
+       31
+      ],
+      [
+       18,
+       11,
+       32,
+       null,
+       null,
+       30,
+       23,
+       16,
+       19,
+       31,
+       24,
+       5,
+       25,
+       24,
+       22,
+       24,
+       28,
+       8,
+       34,
+       17,
+       9,
+       29,
+       8,
+       28
+      ],
+      [
+       10,
+       6,
+       23,
+       15,
+       17,
+       18,
+       9,
+       30,
+       10,
+       25,
+       23,
+       5,
+       30,
+       31,
+       17,
+       34,
+       27,
+       null,
+       10,
+       15,
+       19,
+       16,
+       23,
+       26
+      ]
+     ],
+     "scale": "diverging",
+     "legend": [
+      {
+       "tier": -3,
+       "text": "−40.5% to −22%"
+      },
+      {
+       "tier": -2,
+       "text": "−22% to −12.5%"
+      },
+      {
+       "tier": -1,
+       "text": "−12.5% to 0%"
+      },
+      {
+       "tier": 1,
+       "text": "0% to +12.5%"
+      },
+      {
+       "tier": 2,
+       "text": "+12.5% to +22%"
+      },
+      {
+       "tier": 3,
+       "text": "+22% to +40.5%"
+      }
+     ],
+     "row_label": "region",
+     "col_label": "Month"
+    },
+    "table": {
+     "cols": [
+      "region",
+      "2024-01",
+      "2024-02",
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+      "2024-07",
+      "2024-08",
+      "2024-09",
+      "2024-10",
+      "2024-11",
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12"
+     ],
+     "rows": [
+      [
+       "East",
+       "−14.7%",
+       "+11.4%",
+       "−1.3%",
+       "−16.6%",
+       "−1.97%",
+       "+39.6%",
+       "+12.4%",
+       "+24.2%",
+       "−23.5%",
+       "+14.5%",
+       "+18.7%",
+       "−2.3%",
+       "+5.42%",
+       "−8.87%",
+       "−24.3%",
+       "+30.7%",
+       "−22.7%",
+       "+22.9%",
+       "+15.4%",
+       "−6.66%",
+       "−4.9%",
+       "+40.4%",
+       "+17.5%",
+       "−13.3%"
+      ],
+      [
+       "North",
+       "",
+       "+4.85%",
+       "+31.4%",
+       "+19.9%",
+       "−7.19%",
+       "+10.8%",
+       "−29.1%",
+       "+1.75%",
+       "−6.96%",
+       "−23.2%",
+       "−23.4%",
+       "+20%",
+       "+0.431%",
+       "−1.52%",
+       "+11.5%",
+       "+4.19%",
+       "+40.1%",
+       "+22.1%",
+       "+15.6%",
+       "+2.84%",
+       "+21.9%",
+       "−15.8%",
+       "+24.3%",
+       "+33.3%"
+      ],
+      [
+       "South",
+       "+2.93%",
+       "−14.9%",
+       "+35.9%",
+       "<5",
+       "<5",
+       "+30.8%",
+       "+13.2%",
+       "−2.96%",
+       "+3.55%",
+       "+32.4%",
+       "+16.7%",
+       "−28.2%",
+       "+17.7%",
+       "+17.2%",
+       "+10.4%",
+       "+16.5%",
+       "+26.5%",
+       "−20.3%",
+       "+40.5%",
+       "−0.502%",
+       "−18.1%",
+       "+28.4%",
+       "−21.9%",
+       "+26.2%"
+      ],
+      [
+       "West",
+       "−15.8%",
+       "−24.9%",
+       "+14.2%",
+       "−5.93%",
+       "+0.189%",
+       "+2.47%",
+       "−19.4%",
+       "+31.1%",
+       "−16.4%",
+       "+18.7%",
+       "+12.7%",
+       "−29%",
+       "+30.7%",
+       "+32.6%",
+       "−1.12%",
+       "+39.4%",
+       "+23.9%",
+       "<5",
+       "−16.8%",
+       "−4.73%",
+       "+5.49%",
+       "−3.62%",
+       "+14.7%",
+       "+21.7%"
+      ]
+     ]
+    },
+    "summary": "Illustrative: 24 months of year-on-year change by region; the widest swings are in South and West. Three cells rest on fewer than 5 rows and one month has no rows.",
+    "suppressed": {
+     "cells": 3,
+     "why": "3 cells rest on fewer than 5 rows in one of the two years"
+    },
+    "source": "Illustrative: 4 regions over 24 months (the columns the PDF names by month and year)",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 900,
+     "months": [
+      "2023-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by region and month, percent change on the same month a year before"
+    }
+   },
+   {
+    "id": "viz.5.crosstab_heatmap",
+    "chart": "crosstab_heatmap",
+    "kind": "heatmap",
+    "title": "Reviews by star rating and product category, 2022",
+    "subtitle": "Reviews in 2022 by stars and by the 13 largest product categories and all others",
+    "section": "other",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Illustrative: a case the spec examples do not cover.",
+    "measure": {
+     "label": "rows",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {
+     "rows": [
+      "1 star",
+      "3 stars",
+      "5 stars"
+     ],
+     "cols": [
+      "Headsets and gaming audio",
+      "Controllers and gamepads",
+      "Keyboards and mice for gaming",
+      "Consoles, refurbished",
+      "Virtual reality headsets",
+      "Charging stations and docks",
+      "Replacement shells and buttons",
+      "Racing wheels and pedals",
+      "Streaming and capture cards",
+      "Gaming chairs and desks",
+      "Memory cards and storage",
+      "Cables, adapters and hubs",
+      "Protective cases and bags",
+      "Other gaming accessories"
+     ],
+     "values": [
+      [
+       31.0,
+       44.0,
+       12.0,
+       9.0,
+       17.0,
+       8.0,
+       22.0,
+       5.0,
+       6.0,
+       11.0,
+       7.0,
+       14.0,
+       9.0,
+       13.0
+      ],
+      [
+       18.0,
+       26.0,
+       15.0,
+       6.0,
+       9.0,
+       5.0,
+       11.0,
+       7.0,
+       5.0,
+       8.0,
+       6.0,
+       9.0,
+       5.0,
+       10.0
+      ],
+      [
+       212.0,
+       305.0,
+       146.0,
+       48.0,
+       97.0,
+       61.0,
+       88.0,
+       39.0,
+       42.0,
+       57.0,
+       44.0,
+       71.0,
+       50.0,
+       66.0
+      ]
+     ],
+     "text": [
+      [
+       "31",
+       "44",
+       "12",
+       "9",
+       "17",
+       "8",
+       "22",
+       "5",
+       "6",
+       "11",
+       "7",
+       "14",
+       "9",
+       "13"
+      ],
+      [
+       "18",
+       "26",
+       "15",
+       "6",
+       "9",
+       "5",
+       "11",
+       "7",
+       "5",
+       "8",
+       "6",
+       "9",
+       "5",
+       "10"
+      ],
+      [
+       "212",
+       "305",
+       "146",
+       "48",
+       "97",
+       "61",
+       "88",
+       "39",
+       "42",
+       "57",
+       "44",
+       "71",
+       "50",
+       "66"
+      ]
+     ],
+     "tier": [
+      [
+       2,
+       3,
+       2,
+       1,
+       2,
+       1,
+       2,
+       1,
+       1,
+       2,
+       1,
+       2,
+       1,
+       2
+      ],
+      [
+       2,
+       2,
+       2,
+       1,
+       1,
+       1,
+       2,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       2
+      ],
+      [
+       3,
+       3,
+       3,
+       3,
+       3,
+       3,
+       3,
+       2,
+       3,
+       3,
+       3,
+       3,
+       3,
+       3
+      ]
+     ],
+     "n": [
+      [
+       31,
+       44,
+       12,
+       9,
+       17,
+       8,
+       22,
+       5,
+       6,
+       11,
+       7,
+       14,
+       9,
+       13
+      ],
+      [
+       18,
+       26,
+       15,
+       6,
+       9,
+       5,
+       11,
+       7,
+       5,
+       8,
+       6,
+       9,
+       5,
+       10
+      ],
+      [
+       212,
+       305,
+       146,
+       48,
+       97,
+       61,
+       88,
+       39,
+       42,
+       57,
+       44,
+       71,
+       50,
+       66
+      ]
+     ],
+     "scale": "sequential",
+     "legend": [
+      {
+       "tier": 1,
+       "text": "5 to 9"
+      },
+      {
+       "tier": 2,
+       "text": "9 to 40"
+      },
+      {
+       "tier": 3,
+       "text": "40 to 305"
+      }
+     ],
+     "row_label": "stars",
+     "col_label": "category"
+    },
+    "table": {
+     "cols": [
+      "stars",
+      "Headsets and gaming audio",
+      "Controllers and gamepads",
+      "Keyboards and mice for gaming",
+      "Consoles, refurbished",
+      "Virtual reality headsets",
+      "Charging stations and docks",
+      "Replacement shells and buttons",
+      "Racing wheels and pedals",
+      "Streaming and capture cards",
+      "Gaming chairs and desks",
+      "Memory cards and storage",
+      "Cables, adapters and hubs",
+      "Protective cases and bags",
+      "Other gaming accessories"
+     ],
+     "rows": [
+      [
+       "1 star",
+       "31",
+       "44",
+       "12",
+       "9",
+       "17",
+       "8",
+       "22",
+       "5",
+       "6",
+       "11",
+       "7",
+       "14",
+       "9",
+       "13"
+      ],
+      [
+       "3 stars",
+       "18",
+       "26",
+       "15",
+       "6",
+       "9",
+       "5",
+       "11",
+       "7",
+       "5",
+       "8",
+       "6",
+       "9",
+       "5",
+       "10"
+      ],
+      [
+       "5 stars",
+       "212",
+       "305",
+       "146",
+       "48",
+       "97",
+       "61",
+       "88",
+       "39",
+       "42",
+       "57",
+       "44",
+       "71",
+       "50",
+       "66"
+      ]
+     ]
+    },
+    "summary": "Five-star reviews dominate every category; controllers (305) and headsets (212) hold the most. One-star reviews are most common for controllers (44) and headsets (31).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative: 14 long category names (the PDF turns the grid a quarter so they read whole)",
+    "inputs": {
+     "columns": [
+      "stars",
+      "category"
+     ],
+     "rows": 2106,
+     "months": [
+      "2022-01",
+      "2022-12"
+     ],
+     "op": "rows counted by stars and category"
+    }
+   },
+   {
+    "id": "viz.6.pareto",
+    "chart": "pareto",
+    "kind": "pareto",
+    "title": "Revenue by product: the top 8 and the rest",
+    "subtitle": "Revenue in 2025 by product, largest first, with the running share of all 1,035",
+    "section": "other",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Illustrative: a case the spec examples do not cover.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "bars": [
+      {
+       "label": "Headsets",
+       "value": 300,
+       "text": "300",
+       "cum_pct": 28.985507,
+       "cum_text": "29.0%"
+      },
+      {
+       "label": "Controllers",
+       "value": 250,
+       "text": "250",
+       "cum_pct": 53.140097,
+       "cum_text": "53.1%"
+      },
+      {
+       "label": "Keyboards",
+       "value": 180,
+       "text": "180",
+       "cum_pct": 70.531401,
+       "cum_text": "70.5%"
+      },
+      {
+       "label": "Mice",
+       "value": 120,
+       "text": "120",
+       "cum_pct": 82.125604,
+       "cum_text": "82.1%"
+      },
+      {
+       "label": "Chairs",
+       "value": 90,
+       "text": "90",
+       "cum_pct": 90.821256,
+       "cum_text": "90.8%"
+      },
+      {
+       "label": "Cables",
+       "value": 40,
+       "text": "40",
+       "cum_pct": 94.68599,
+       "cum_text": "94.7%"
+      },
+      {
+       "label": "Docks",
+       "value": 20,
+       "text": "20",
+       "cum_pct": 96.618357,
+       "cum_text": "96.6%"
+      },
+      {
+       "label": "Cases",
+       "value": 10,
+       "text": "10",
+       "cum_pct": 97.584541,
+       "cum_text": "97.6%"
+      }
+     ],
+     "other": {
+      "label": "other",
+      "value": 25,
+      "text": "25",
+      "cum_pct": 100,
+      "cum_text": "100.0%",
+      "n_entities": 6
+     },
+     "total": {
+      "value": 1035,
+      "text": "1,035"
+     },
+     "k80": {
+      "k": 4,
+      "of": 14,
+      "text": "4 of the 14 products account for 80% of the revenue"
+     }
+    },
+    "table": {
+     "cols": [
+      "product",
+      "Revenue",
+      "Running share"
+     ],
+     "rows": [
+      [
+       "Headsets",
+       "300",
+       "29.0%"
+      ],
+      [
+       "Controllers",
+       "250",
+       "53.1%"
+      ],
+      [
+       "Keyboards",
+       "180",
+       "70.5%"
+      ],
+      [
+       "Mice",
+       "120",
+       "82.1%"
+      ],
+      [
+       "Chairs",
+       "90",
+       "90.8%"
+      ],
+      [
+       "Cables",
+       "40",
+       "94.7%"
+      ],
+      [
+       "Docks",
+       "20",
+       "96.6%"
+      ],
+      [
+       "Cases",
+       "10",
+       "97.6%"
+      ],
+      [
+       "other",
+       "25",
+       "100.0%"
+      ]
+     ]
+    },
+    "summary": "Headsets lead with 300 of the 1,035; 4 of the 14 products make up 80% of the revenue.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative: 14 products, 6 of them folded into other",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "product"
+     ],
+     "rows": 480,
+     "months": [
+      "2025-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by product, largest first"
+    }
+   },
+   {
+    "id": "viz.7.contribution_waterfall",
+    "chart": "contribution_waterfall",
+    "kind": "waterfall",
+    "title": "Where the change in orders came from, by region",
+    "subtitle": "Orders, 2024 against 2025: each region's contribution to the change",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Illustrative: a case the spec examples do not cover.",
+    "measure": {
+     "label": "orders",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {
+     "steps": [
+      {
+       "label": "12 months before",
+       "value": 58.0,
+       "text": "58",
+       "kind": "total",
+       "from": 0,
+       "to": 58.0
+      },
+      {
+       "label": "North",
+       "value": 9.5,
+       "text": "+9.5",
+       "kind": "step",
+       "from": 58.0,
+       "to": 67.5
+      },
+      {
+       "label": "South",
+       "value": -4.0,
+       "text": "−4",
+       "kind": "step",
+       "from": 67.5,
+       "to": 63.5
+      },
+      {
+       "label": "East",
+       "value": 2.5,
+       "text": "+2.5",
+       "kind": "step",
+       "from": 63.5,
+       "to": 66.0
+      },
+      {
+       "label": "Latest 12 months",
+       "value": 66.0,
+       "text": "66",
+       "kind": "total",
+       "from": 0,
+       "to": 66.0
+      }
+     ],
+     "basis": {
+      "split": "segment",
+      "finding_id": null,
+      "column": "region",
+      "prior": [
+       "2024-01",
+       "2024-12"
+      ],
+      "latest": [
+       "2025-01",
+       "2025-12"
+      ]
+     },
+     "change": {
+      "value": 8.0,
+      "text": "+8"
+     }
+    },
+    "table": {
+     "cols": [
+      "Step",
+      "Orders"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "58"
+      ],
+      [
+       "North",
+       "+9.5"
+      ],
+      [
+       "South",
+       "−4"
+      ],
+      [
+       "East",
+       "+2.5"
+      ],
+      [
+       "Latest 12 months",
+       "66"
+      ]
+     ]
+    },
+    "summary": "Orders went from 58 to 66 (+8): North added +9.5 and East +2.5, South took away −4.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative: a small total, so the vertical bars have short texts",
+    "inputs": {
+     "columns": [
+      "orders",
+      "region"
+     ],
+     "rows": 124,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "orders counted by region in each window"
+    }
+   },
+   {
+    "id": "viz.9.sankey_flow",
+    "chart": "sankey_flow",
+    "kind": "sankey",
+    "title": "Orders from each region to each warehouse",
+    "subtitle": "Orders in 2025 by region and by the warehouse that shipped them",
+    "section": "other",
+    "supports": "How orders move from regions to warehouses",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: A newer engine's chart kind.",
+    "measure": {
+     "label": "rows",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {
+     "links": [
+      [
+       "East",
+       "Warehouse A",
+       41
+      ],
+      [
+       "East",
+       "Warehouse B",
+       30
+      ]
+     ]
+    },
+    "table": {
+     "cols": [
+      "region",
+      "Warehouse A",
+      "Warehouse B"
+     ],
+     "rows": [
+      [
+       "East",
+       "41",
+       "30"
+      ],
+      [
+       "North",
+       "44",
+       "31"
+      ],
+      [
+       "South",
+       "39",
+       "38"
+      ],
+      [
+       "West",
+       "35",
+       "42"
+      ]
+     ]
+    },
+    "summary": "North sends the most orders to Warehouse A (44) and West the most to Warehouse B (42).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative",
+    "inputs": {
+     "columns": [
+      "region",
+      "warehouse"
+     ],
+     "rows": 300,
+     "months": [
+      "2025-01",
+      "2025-12"
+     ],
+     "op": "rows counted by region and warehouse"
+    }
+   },
+   {
+    "id": "viz.10.theme_rating_heatmap",
+    "chart": "theme_rating_heatmap",
+    "kind": "heatmap",
+    "title": "What the comment texts say, by rating (a record whose tier grid is the wrong shape)",
+    "subtitle": "The share of each rating's comments that use the word; the one word used in 3 or more comments",
+    "section": "other",
+    "supports": "What the comment texts talk about",
+    "anchors": [
+     "analysis:1"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Do the words change with the rating?",
+    "measure": {
+     "label": "comments using the word",
+     "unit": "%",
+     "kind": "share_pct"
+    },
+    "data": {
+     "rows": [
+      "great"
+     ],
+     "cols": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "values": [
+      [
+       null,
+       null,
+       14.285714,
+       36.363636,
+       60
+      ]
+     ],
+     "text": [
+      [
+       "<5",
+       "<5",
+       "14.3%",
+       "36.4%",
+       "60.0%"
+      ]
+     ],
+     "tier": [
+      [
+       0,
+       0,
+       1
+      ]
+     ],
+     "n": [
+      [
+       null,
+       null,
+       7,
+       11,
+       15
+      ]
+     ],
+     "scale": "sequential",
+     "legend": [
+      {
+       "tier": 1,
+       "text": "14.3% to 29.0%"
+      },
+      {
+       "tier": 2,
+       "text": "29.0% to 44.2%"
+      },
+      {
+       "tier": 3,
+       "text": "44.2% to 60.0%"
+      }
+     ],
+     "row_label": "word",
+     "col_label": "rating"
+    },
+    "table": {
+     "cols": [
+      "word",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "rows": [
+      [
+       "great",
+       "<5",
+       "<5",
+       "14.3%",
+       "36.4%",
+       "60.0%"
+      ]
+     ]
+    },
+    "summary": "'great' is used in 60.0% of the 5-star comments, 36.4% of the 4-star ones and 14.3% of the 3-star ones; ratings 1 and 2 have fewer than 5 comments each and are not shown.",
+    "suppressed": {
+     "cells": 2,
+     "why": "2 ratings have fewer than 5 comments"
+    },
+    "source": "Illustrative: a 40-comment survey file",
+    "inputs": {
+     "columns": [
+      "comment",
+      "rating"
+     ],
+     "rows": 40,
+     "months": null,
+     "op": "share of each rating's texts that use the word at least once"
+    }
+   },
+   {
+    "id": "viz.11.radar",
+    "chart": "radar",
+    "kind": "radar",
+    "title": "Five measures of each region on a radar",
+    "subtitle": "",
+    "section": "other",
+    "supports": "",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "A kind no reader knows, with no table.",
+    "measure": {
+     "label": "rows",
+     "unit": "",
+     "kind": "count"
+    },
+    "data": {
+     "spokes": 5
+    },
+    "table": {
+     "cols": [],
+     "rows": []
+    },
+    "summary": "A radar of five measures.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Illustrative",
+    "inputs": {
+     "columns": [],
+     "rows": null,
+     "months": null,
+     "op": ""
+    }
+   },
+   {
+    "id": "viz.12.group_ranges",
+    "rule": "V",
+    "type": "viz",
+    "title": "Average revenue per order by region, with 95% ranges",
+    "view": "manager",
+    "default_visible": true,
+    "finding_ids": [],
+    "why_shown": "",
+    "source": "The compare analysis on the rows the engine kept: the same seed and resamples, so the figures match its table",
+    "data": {
+     "id": "viz.5.group_ranges",
+     "chart": "group_ranges",
+     "kind": "dot_range",
+     "title": "Average revenue per order by region, with 95% ranges",
+     "subtitle": "Each region's average order, its 95% bootstrap range (999 resamples) and its median; ordered by the average weighted by its rows",
+     "section": "other",
+     "supports": "revenue by region",
+     "anchors": [
+      "analysis:1"
+     ],
+     "grade": null,
+     "parent_grade": null,
+     "chosen_by": "ai",
+     "why": "Do regions differ in order size, or only in order count?",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "average"
+     },
+     "data": {
+      "rows": [
+       {
+        "label": "North",
+        "n": 75,
+        "center": 1034.4636,
+        "lo": 916.737953,
+        "hi": 1157.573493,
+        "median": 1186.09,
+        "texts": {
+         "n": "75",
+         "center": "1,034",
+         "lo": "917",
+         "hi": "1,158",
+         "median": "1,186"
+        }
+       },
+       {
+        "label": "East",
+        "n": 71,
+        "center": 1028.353944,
+        "lo": 896.265261,
+        "hi": 1151.130514,
+        "median": 1032.94,
+        "texts": {
+         "n": "71",
+         "center": "1,028",
+         "lo": "896",
+         "hi": "1,151",
+         "median": "1,033"
+        }
+       },
+       {
+        "label": "South",
+        "n": 77,
+        "center": 846.556364,
+        "lo": 737.959519,
+        "hi": 950.052006,
+        "median": 791.16,
+        "texts": {
+         "n": "77",
+         "center": "847",
+         "lo": "738",
+         "hi": "950",
+         "median": "791"
+        }
+       },
+       {
+        "label": "West",
+        "n": 77,
+        "center": 840.094675,
+        "lo": 721.323234,
+        "hi": 965.070032,
+        "median": 780.77,
+        "texts": {
+         "n": "77",
+         "center": "840",
+         "lo": "721",
+         "hi": "965",
+         "median": "781"
+        }
+       }
+      ]
+     },
+     "table": {
+      "cols": [
+       "region",
+       "Rows",
+       "Average",
+       "95% range",
+       "Median"
+      ],
+      "rows": [
+       [
+        "North",
+        "75",
+        "1,034",
+        "917 to 1,158",
+        "1,186"
+       ],
+       [
+        "East",
+        "71",
+        "1,028",
+        "896 to 1,151",
+        "1,033"
+       ],
+       [
+        "South",
+        "77",
+        "847",
+        "738 to 950",
+        "791"
+       ],
+       [
+        "West",
+        "77",
+        "840",
+        "721 to 965",
+        "781"
+       ]
+      ]
+     },
+     "summary": "North has the highest average order (1,034, 95% range 917 to 1,158) and West the lowest (840, 721 to 965). The ranges of North and East overlap, as do those of South and West. An association with the region, not its cause.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "The compare analysis on the rows the engine kept: the same seed and resamples, so the figures match its table",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "each region's average revenue per row, 95% bootstrap range, median"
+     }
+    }
+   },
+   {
+    "kind": "bars",
+    "title": "revenue by region",
+    "series": [
+     {
+      "label": "North",
+      "value": 1034.4636
+     },
+     {
+      "label": "East",
+      "value": 1028.3539436619715
+     },
+     {
+      "label": "South",
+      "value": 846.5563636363638
+     },
+     {
+      "label": "West",
+      "value": 840.0946753246754
+     }
+    ]
+   }
+  ]
+ },
+ "auto": {
+  "charts": [
+   {
+    "id": "viz.1.contribution_waterfall",
+    "chart": "contribution_waterfall",
+    "kind": "waterfall",
+    "title": "Where the change in revenue came from, by region",
+    "subtitle": "Total revenue, 2024-01 to 2024-12 against 2025-01 to 2025-12: each region's contribution to the change",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:headline.prior",
+     "scenario:contribution.east.change",
+     "scenario:contribution.north.change",
+     "scenario:contribution.west.change",
+     "scenario:contribution.south.change",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "chosen_by": "ai",
+    "why": "The goal asks what moved revenue; region is the one category the breakdown can use.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "steps": [
+      {
+       "label": "12 months before",
+       "value": 128256.1,
+       "text": "128,256",
+       "kind": "total",
+       "from": 0,
+       "to": 128256.1
+      },
+      {
+       "label": "East",
+       "value": 16220.37,
+       "text": "+16,220",
+       "kind": "step",
+       "from": 128256.1,
+       "to": 144476.47
+      },
+      {
+       "label": "North",
+       "value": 7116.13,
+       "text": "+7,116",
+       "kind": "step",
+       "from": 144476.47,
+       "to": 151592.6
+      },
+      {
+       "label": "West",
+       "value": 329.59,
+       "text": "+330",
+       "kind": "step",
+       "from": 151592.6,
+       "to": 151922.19
+      },
+      {
+       "label": "South",
+       "value": 291.74,
+       "text": "+292",
+       "kind": "step",
+       "from": 151922.19,
+       "to": 152213.93
+      },
+      {
+       "label": "Latest 12 months",
+       "value": 152213.93,
+       "text": "152,214",
+       "kind": "total",
+       "from": 0,
+       "to": 152213.93
+      }
+     ],
+     "basis": {
+      "split": "segment",
+      "finding_id": "measure.revenue.total.change",
+      "column": "region",
+      "prior": [
+       "2024-01",
+       "2024-12"
+      ],
+      "latest": [
+       "2025-01",
+       "2025-12"
+      ]
+     },
+     "change": {
+      "value": 23957.83,
+      "text": "+23,958"
+     }
+    },
+    "table": {
+     "cols": [
+      "Step",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "128,256"
+      ],
+      [
+       "East",
+       "+16,220"
+      ],
+      [
+       "North",
+       "+7,116"
+      ],
+      [
+       "West",
+       "+330"
+      ],
+      [
+       "South",
+       "+292"
+      ],
+      [
+       "Latest 12 months",
+       "152,214"
+      ]
+     ]
+    },
+    "summary": "Total revenue went from 128,256 in the 12 months before to 152,214 in the latest 12 months, a change of +23,958 (part of a change graded WATCH; not graded itself). East contributed +16,220 and North +7,116; West (+330) and South (+292) barely moved. Where the change sits, not what caused it.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "Scenario items on the rows the engine kept (2024-01 to 2025-12); their monthly totals match the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by region in each 12-month window"
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,75 @@
+{
+ "about": "The AI reports placing the records of viz-results.json (make_viz_fixtures.py).",
+ "ten": {
+  "report": "Revenue rose 18.7% on 1.3% fewer orders, and East carried most of it\n## Executive summary\n- Revenue rose 18.7%, from 128,256 to 152,214, graded WATCH [S1].\n- East contributed +16,220 of the +23,958 change and North +7,116.\n## The headline: revenue rose, month by month\nRevenue rose in most months of 2025 against 2024.\n[CHART:3]\nThe Canadian dollar moved within a few percent a month over ten years.\n[CHART:8]\n## What drove it: East and price\nEast carried most of the change, and price more than volume.\n[CHART:1]\n[CHART:2]\nA sales file of 12 territories shows how a long list of parts reads.\n[CHART:10]\n## Other findings: order value by region\nNorth has the highest average order and West the lowest.\n[CHART:4]\n[CHART:5]\n[CHART:9]\n[CHART:7]\n## In the real world\nRetail demand was firm [S2].\n## Scenarios\nEast overtook North.\n[CHART:6]\n## What to do\n1. Watch East.\n## Risks and what the data cannot say\n- The change is an association with the period, not its cause.",
+  "sources": [
+   {
+    "title": "Average order value benchmarks for eCommerce – XP²",
+    "link": "https://marketing.dynamicyield.com/benchmarks/average-order-value/"
+   },
+   {
+    "title": "30 Latest average order value benchmarks for eCommerce",
+    "link": "https://wiserreview.com/blog/average-order-value-statistics/"
+   },
+   {
+    "title": "Average Order Value Statistics: Complete Industry ...",
+    "link": "https://www.sender.net/marketing-glossary/average-order-value-aov/statistics/"
+   },
+   {
+    "title": "Monthly Retail Trade - Sales Report",
+    "link": "https://www.census.gov/retail/sales.html"
+   }
+  ],
+  "model": "deepseek-flash",
+  "repaired": 0,
+  "removed_figures": []
+ },
+ "edge": {
+  "report": "The edge cases of the chart registry\n## Executive summary\n- Every kind the PDF draws, at its edges [S1].\n## The headline: losses and empty grids\n[CHART:1]\n[CHART:2]\n[CHART:3]\n## What drove it: long axes\n[CHART:5]\n[CHART:8]\n## Other findings: what a reader must survive\n[CHART:6]\n[CHART:7]\n[CHART:9]\n[CHART:10]\n[CHART:11]\n[CHART:12]\n[CHART:13]\n## Scenarios\n[CHART:4]\n## What to do\n1. Read the tables.\n## Risks and what the data cannot say\n- Illustrative records.",
+  "sources": [
+   {
+    "title": "Average order value benchmarks for eCommerce – XP²",
+    "link": "https://marketing.dynamicyield.com/benchmarks/average-order-value/"
+   },
+   {
+    "title": "30 Latest average order value benchmarks for eCommerce",
+    "link": "https://wiserreview.com/blog/average-order-value-statistics/"
+   },
+   {
+    "title": "Average Order Value Statistics: Complete Industry ...",
+    "link": "https://www.sender.net/marketing-glossary/average-order-value-aov/statistics/"
+   },
+   {
+    "title": "Monthly Retail Trade - Sales Report",
+    "link": "https://www.census.gov/retail/sales.html"
+   }
+  ],
+  "model": "deepseek-flash",
+  "repaired": 0,
+  "removed_figures": []
+ },
+ "auto": {
+  "report": "Revenue rose 18.7%, most of it in East\n## Executive summary\n- Revenue rose 18.7% [S1].\n## The headline: revenue rose\nRevenue rose from 128,256 to 152,214.\n## What to do\n1. Watch East.",
+  "sources": [
+   {
+    "title": "Average order value benchmarks for eCommerce – XP²",
+    "link": "https://marketing.dynamicyield.com/benchmarks/average-order-value/"
+   },
+   {
+    "title": "30 Latest average order value benchmarks for eCommerce",
+    "link": "https://wiserreview.com/blog/average-order-value-statistics/"
+   },
+   {
+    "title": "Average Order Value Statistics: Complete Industry ...",
+    "link": "https://www.sender.net/marketing-glossary/average-order-value-aov/statistics/"
+   },
+   {
+    "title": "Monthly Retail Trade - Sales Report",
+    "link": "https://www.census.gov/retail/sales.html"
+   }
+  ],
+  "model": "deepseek-flash",
+  "repaired": 0,
+  "removed_figures": []
+ }
+}

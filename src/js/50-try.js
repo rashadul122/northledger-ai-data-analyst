@@ -1317,10 +1317,18 @@
   T.SHARE_WARN_GENERAL = 'This report is built from your file and may contain values from it. Anyone with the link can see them.';
   T.SHARE_WARN_PERSONAL = 'This report may contain personal values (people\'s names, for example). Anyone with the link can see them.';
   T.shareWarning = function (kept) { return !Array.isArray(kept) || kept.length ? T.SHARE_WARN_PERSONAL : T.SHARE_WARN_GENERAL; };
-  // the most a /share body may hold (the worker's cap is 130,000 bytes, insight-proxy/src/share.js SHARE_MAX_BYTES; this
-  // keeps 15,000 below it, see shareBody), and what the visitor reads when a report is over it even without the
-  // engine's results
-  T.SHARE_BODY_MAX = 115000;
+  // the most a /share body may hold: about 10% under the worker's cap (insight-proxy/src/share.js SHARE_MAX_BYTES,
+  // 190,000 bytes since the chart registry: 130,000 for the rest and SHARE_CHARTS_MAX_BYTES for the charts; see
+  // shareBody), and what the visitor reads when a report is over it even without the engine's results
+  T.SHARE_BODY_MAX = 171000;
+  // the charts a link holds: the worker's own budget (share.js SHARE_CHARTS_MAX_BYTES, 60,000 bytes of JSON, whole
+  // records from the start). The page keeps the same budget and says what it left out (review of the chart registry,
+  // 30 Sep 2026: the worker dropped charts past it and nothing said so)
+  T.SHARE_CHARTS_MAX = 60000;
+  T.shareChartsNote = function (kept, of) {
+    return 'The link holds ' + kept + ' of the report\'s ' + of + ' charts: a link keeps at most ' + Math.floor(T.SHARE_CHARTS_MAX / 1000) +
+      ' KB of charts. The PDF has them all.';
+  };
   T.shareTooLarge = function (bytes) {
     return 'This report is too large for a link: ' + Math.ceil(bytes / 1000).toLocaleString('en-US') + ' KB, and a link holds at most ' +
       Math.floor(T.SHARE_BODY_MAX / 1000) + ' KB. Nothing was sent. Download the PDF to pass it on instead.';
@@ -2024,6 +2032,9 @@
     // the analyses the AI plan asked for, computed by the engine's adapter (rep.ai_analyses): a line
     // chart with the fitted trend dashed, or bars; the numbers are the engine's, never the model's
     function anaChart(ch, W) {
+      // a chart registry record (a draw kind the analyses' own charts never use: waterfall, heatmap, dot_range, pareto,
+      // slope, table, or one this page does not know): window.NLV draws it, or its table (src/js/55-nl-viz.js)
+      if (isVizChart(ch)) { var o = window.NLV ? window.NLV.draw(ch, W) : null; return o ? (o.html || '') : ''; }
       var H = 230, L = 58, R = W - 12, T0 = 26, Bt = H - 28, b = '';
       if (ch.kind === 'bars') {
         var items = (ch.series || []).slice(0, 10), bh = 22, LB = Math.min(170, Math.round(W * 0.34));
@@ -2076,6 +2087,25 @@
         b += '<path class="' + cls[2 + (k % 2)] + '" style="stroke-width:' + (f.recent ? 2.6 : 1.6) + '" d="M' + x(f.x0).toFixed(1) + ' ' + y(f.y0).toFixed(1) + 'L' + x(f.x1).toFixed(1) + ' ' + y(f.y1).toFixed(1) + '"/>';
       });
       return U.svg(W, H, 'Lines by year: ' + ser.map(function (s0) { return s0.name; }).join(', ') + (fits.length ? ', with fitted trends dashed' : ''), b);
+    }
+    var LEGACY_KINDS = ['line', 'bars', 'scatter'];
+    function isVizChart(ch) { return !!ch && typeof ch === 'object' && typeof ch.kind === 'string' && LEGACY_KINDS.indexOf(ch.kind) < 0; }
+    // the analyses' own charts as a table (the figure's Table button): the engine's values, as the chart prints them
+    function legacyTable(ch) {
+      if (!ch) return null;
+      if (ch.kind === 'bars' && (ch.series || []).length) {
+        return { cols: ['', ch.unit ? 'Value (' + ch.unit + ')' : 'Value'], rows: ch.series.slice(0, 30).map(function (d) { return [String(d.label), num(d.value)]; }) };
+      }
+      if (ch.kind === 'scatter' && (ch.points || []).length) {
+        return { cols: [ch.x_name || 'x', ch.y_name || 'y'], rows: ch.points.slice(0, 120).map(function (p) { return [num(p[0]), num(p[1])]; }) };
+      }
+      var ser = (ch.series || []).filter(function (s0) { return s0 && Array.isArray(s0.x) && Array.isArray(s0.y); });
+      if (!ser.length) return null;
+      var xs = [];
+      ser.forEach(function (s0) { s0.x.forEach(function (v) { if (xs.indexOf(v) < 0) xs.push(v); }); });
+      xs.sort(function (a, b) { return a - b; });
+      return { cols: [ch.x_label || 'x'].concat(ser.map(function (s0) { return s0.name || ''; })),
+        rows: xs.slice(0, 60).map(function (v) { return [String(v)].concat(ser.map(function (s0) { var i = s0.x.indexOf(v); return i < 0 ? '' : num(s0.y[i]); })); }) };
     }
     // a choropleth of a ranking over countries (a.map, the engine's values at the latest date): the Natural
     // Earth outline (engine/world-110m.json, public domain, same origin) is fetched only when a map is drawn
@@ -2195,12 +2225,14 @@
     function contractsHtml(rep) {
       var k = rep && rep.contracts;
       if (!k || !(k.tests || []).length) return '';
-      return '<h4>Data tests</h4><table class="try-contracts"><thead><tr><th>Column</th><th>Test</th><th>Checked</th><th>Failed</th><th>Action</th></tr></thead><tbody>' +
+      // the table in the page's sideways scroller (.tscroll): five columns of the engine's words pushed a phone's page
+      // 86 to 149 px sideways (integration pass, 30 Sep 2026)
+      return '<h4>Data tests</h4><div class="tscroll" tabindex="0" role="region" aria-label="Data tests; scrolls sideways on narrow screens"><table class="try-contracts"><thead><tr><th>Column</th><th>Test</th><th>Checked</th><th>Failed</th><th>Action</th></tr></thead><tbody>' +
         k.tests.map(function (t) {
           return '<tr><td>' + esc(t.column) + '</td><td>' + esc(t.test) + '</td><td>' + esc(t.checked) + '</td><td>' + esc(t.failed) +
             ((t.examples || []).length ? ' (e.g. ' + esc(t.examples.join(', ')) + ')' : '') + '</td><td>' +
             esc(String(t.action || '') + ((t.signal || t.misread) && askedAgain(t.column) ? '; the AI was asked to look again' : '')) + '</td></tr>';
-        }).join('') + '</tbody></table><p class="note">' + esc(k.note || '') + '</p>' +
+        }).join('') + '</tbody></table></div><p class="note">' + esc(k.note || '') + '</p>' +
         (rep.downloads && rep.downloads.contract_flagged_csv ? '<p><button type="button" class="btn btn-ghost" data-dl="contract_flagged_csv">Cells the data tests flagged (' + esc(k.cells_flagged) + ') CSV</button></p>' : '');
     }
     // "What changed" (T.planDiff, computed from the two plans), then the AI's own account, labelled as its
@@ -2260,6 +2292,7 @@
         contractsHtml(rep) +
         analysesHtml(rep);
       c.hidden = false;
+      if (U.markScrollers) U.markScrollers();   // the Data tests table's sideways cue, now that the card is shown
       Array.prototype.forEach.call(c.querySelectorAll('[data-dl="contract_flagged_csv"]'), function (b) {
         b.addEventListener('click', function () { downloadText(rep.downloads.contract_flagged_csv, stem(rep.input.name) + '-tests-flagged-cells.csv', 'text/csv'); });
       });
@@ -2445,6 +2478,12 @@
             clearTimeout(timer);
             if (seq !== S.seq) return;
             if (!j || !j.report) throw new Error('no report');
+            // the validated charts and tables /report used (sanitizeChart keeps every chart at its index, degraded to a
+            // table when it must): the page draws those, never its own copy, so [CHART:n] means the same chart here, in
+            // the PDF and in a shared link; a worker that sends none leaves the copy sent with the results
+            if (Array.isArray(j.charts)) S.aiCharts = j.charts.slice(0, AI_CHARTS_MAX);
+            if (Array.isArray(j.tables)) S.aiTables = j.tables.slice();
+            if ((Array.isArray(j.charts) || Array.isArray(j.tables)) && S.aiResults) S.aiResults = Object.assign({}, S.aiResults, { charts: S.aiCharts, tables: S.aiTables });
             j.kept = (S.kept || []).slice();          // the flagged columns this report was made with (the share warning)
             j.goal = (rep && rep.ai_plan && rep.ai_plan.goal) || S.objective || '';   // the question it answers (its PDF, its link)
             S.aiReport = j; S.liveAi = j;             // liveAi: the AI report of the engine report on the page (the analyst line)
@@ -2478,6 +2517,7 @@
       if (!card) return;
       // the engine's results reach /report with "[your file]" for the file's name (engine/nl_browser.py
       // results_for_ai); the name comes back only here, in this browser (a share link keeps the placeholder)
+      AI_FIGS = {};                               // the figures of the report shown before this one are gone
       var html = aiReportHtml(String(j.report || '').split(FILE_WORD).join(S.name || FILE_WORD));
       var srcs = j.sources || [];
       // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden, with the count
@@ -2509,6 +2549,7 @@
           '<p class="note" id="try-pdf-note">The PDF is made in this browser and nothing is sent. It leaves your file\'s name off unless you tick the box.</p></fieldset>' +
         '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
+      mountAiFigs(card);
       var share = document.getElementById('try-share');
       if (share) share.addEventListener('click', function () { doShare(); });
       var pdf = document.getElementById('try-pdf');
@@ -2610,13 +2651,35 @@
       return h ? '<div class="ai-scen-wrap">' + h + '</div>' : '';
     }
 
-    // the engine-drawn figure a [CHART:n] marker becomes (anaChart draws the SVG; the payload
-    // shapes are identical, both rebuilt from the engine's results_for_ai)
+    // the engine-drawn figure a [CHART:n] marker becomes: a placeholder that mountAiFigs hands to U.visual once the
+    // report is on the page, so every chart is drawn at the width it has and gets the figure's Table button. A chart
+    // registry record is drawn by window.NLV (its accessible name is its title and summary); the analyses' own charts
+    // by anaChart, their table built from the same values.
+    var AI_FIGS = {}, aiFigN = 0;
     function chartFig(ch) {
-      var W = Math.max(320, Math.min(720, ((el.planCard && el.planCard.clientWidth) || 680) - 24));
-      var svg = anaChart(ch, W);
-      return '<figure class="ai-rep-figure">' + svg + '<figcaption class="ai-rep-figure-cap">Engine-drawn: ' + esc(ch.title || ch.kind) +
-        '. Every value is computed by the engine from your file.</figcaption></figure>';
+      var id = 'ai-fig-' + (++aiFigN), viz = isVizChart(ch), NV = window.NLV;
+      var hasTable = viz ? !!(NV && NV.kindOf(ch) !== 'table') : !!legacyTable(ch);
+      AI_FIGS[id] = ch;
+      return '<figure class="visual ai-rep-figure' + (viz ? ' nlv-fig' : '') + '" data-table="' + (hasTable ? '1' : '0') + '"' + (viz ? ' data-kind="' + esc(ch.kind) + '"' : '') +
+        (viz && NV ? ' aria-label="' + esc(NV.label(ch)) + '"' : '') + '><figcaption>' + esc(ch.title || ch.kind) + '</figcaption>' +
+        '<div class="viz" id="' + id + '"></div><div class="ai-fig-note"></div>' +
+        '<p class="ai-rep-figure-cap">Engine-drawn: every value is computed by the engine from your file.</p></figure>';
+    }
+    function mountAiFigs(root) {
+      if (!U.visual) return;
+      Array.prototype.forEach.call(root.querySelectorAll('.ai-rep-figure .viz[id^="ai-fig-"]'), function (v) {
+        var ch = AI_FIGS[v.id], note = v.parentNode.querySelector('.ai-fig-note');
+        if (!ch) return;
+        U.visual(v.id, function (W) {
+          if (v.clientWidth) W = Math.min(W, Math.floor(v.clientWidth));
+          if (isVizChart(ch) && window.NLV) {
+            var o = window.NLV.draw(ch, W);
+            if (note) note.innerHTML = o.note || '';
+            return o;
+          }
+          return { svg: anaChart(ch, W), table: legacyTable(ch) };
+        });
+      });
     }
     // the engine's own analysis table a [TABLE:n] marker becomes (regression coefficients,
     // correlations, rankings: the numbers the engine computed, not the AI)
@@ -2633,6 +2696,7 @@
     /* ---- the previous-reports gallery: every answered question stays findable, each with its
        own shareable link (made on demand) and PDF (the same guarded print as the live card) ---- */
     var PREV_KEY = 'nl_try_reports_v1';
+    var AI_CHARTS_MAX = 10;   // the charts /report may send (tools/fixtures/viz/spec.json caps.AI_CHARTS_MAX)
     function loadPrev() {
       try { return JSON.parse(localStorage.getItem(PREV_KEY) || '[]'); } catch (e) { return []; }
     }
@@ -2650,7 +2714,7 @@
       var goal = typeof j.goal === 'string' ? j.goal : (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
       var entry = { t: Date.now(), title: title, goal: goal.slice(0, 300), file: S.name, model: j.model || '',
         report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 20), share: S.shareUrl || '', del: S.delToken || '',
-        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8), kept: Array.isArray(j.kept) ? j.kept.slice(0, 60) : [],
+        charts: S.aiCharts.slice(0, AI_CHARTS_MAX), tables: S.aiTables.slice(0, 8), kept: Array.isArray(j.kept) ? j.kept.slice(0, 60) : [],
         // what the PDF of a saved report is made from: the engine's results (their charts and tables are saved above)
         // and the honesty check's count; in this browser only, like the rest of the entry
         results: resultsToSave(S.aiResults), repaired: typeof j.repaired === 'number' ? j.repaired : undefined,
@@ -2700,7 +2764,7 @@
     // reopening a saved answer re-renders it into the live AI report card (charts and tables
     // saved with it), so the PDF button and the share button work on it exactly as on a fresh run
     function openPrev(x) {
-      S.aiCharts = (x.charts || []).slice(0, 6);
+      S.aiCharts = (x.charts || []).slice(0, AI_CHARTS_MAX);
       S.aiTables = (x.tables || []).slice(0, 8);
       // the engine's results it was written from (a report saved before they were kept has none: its PDF says so)
       S.aiResults = x.results && typeof x.results === 'object' ? Object.assign({}, x.results, { charts: S.aiCharts, tables: S.aiTables }) : null;
@@ -2787,16 +2851,45 @@
     }
     // the question a report answered: its own (a gallery entry reopened keeps its question), else the live run's
     function reportGoal(rep) { return rep && typeof rep.goal === 'string' ? rep.goal : (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || ''; }
-    // The /share body's size (integration pass, 30 Sep 2026): the worker refuses a body over 130,000 bytes whole, and a
-    // stored record over the same (insight-proxy/src/share.js SHARE_MAX_BYTES), so the page never sends one over
-    // T.SHARE_BODY_MAX, 115,000: the 15,000 between them is room for what the worker adds to what it stores (the
-    // deletion hash and the expiry, and its rebuild of the results, which may take 24,000 bytes where the page sends at
-    // most 20,000). The engine's results give way first: trimmed to the room left
+    // The /share body's size (integration pass, 30 Sep 2026; the chart registry's caps, same day): the worker refuses a
+    // body over 190,000 bytes whole, and a stored record over the same (insight-proxy/src/share.js SHARE_MAX_BYTES), so
+    // the page never sends one over T.SHARE_BODY_MAX, 171,000: the 19,000 between them is room for what the worker adds
+    // to what it stores (the deletion hash and the expiry, and its rebuild of the results, which may take 24,000 bytes
+    // where the page sends at most 20,000). The charts are held to the worker's own budget first (T.SHARE_CHARTS_MAX,
+    // whole records from the start; the visitor is told what the link leaves out, T.shareChartsNote). The engine's
+    // results give way first: trimmed to the room left
     // (NLReportPdf.shareResults with a byte cap), else left out (the shared PDF then says it lacks them). A body still
     // over the cap without them is not sent: { over: its bytes } and the visitor is told why (T.shareTooLarge).
     var SHARE_BODY_MAX = T.SHARE_BODY_MAX;
     function utf8Bytes(s) { return new TextEncoder().encode(s).length; }
+    // A chart record as a link may carry it (the adapter's nl_viz.for_sending, for a record saved before it): with a
+    // suppressed cell, no exact total a hidden figure could be worked back from (inputs.rows null; a theme heatmap's
+    // 'all' column in whole percents and without its n). Best effort: no secondary suppression (CONTRACT 5.9).
+    function shareSafe(c) {
+      if (!c || typeof c !== 'object' || typeof c.chart !== 'string' || !c.suppressed || !(c.suppressed.cells > 0)) return c;
+      c = JSON.parse(JSON.stringify(c));
+      if (c.inputs && typeof c.inputs === 'object') c.inputs.rows = null;
+      var d = c.data, j = d && Array.isArray(d.cols) ? d.cols.length - 1 : -1;
+      if (c.chart === 'theme_rating_heatmap' && c.kind === 'heatmap' && j >= 0 && d.cols[j] === 'all' && Array.isArray(d.values) && Array.isArray(d.text) && Array.isArray(d.n)) {
+        d.values.forEach(function (row, i) {
+          var v = Array.isArray(row) ? row[j] : null;
+          if (typeof v !== 'number' || !isFinite(v) || !Array.isArray(d.n[i]) || d.n[i][j] === null) return;
+          var w = Math.floor(v + 0.5), was = String(d.text[i][j]), now = String(w) + '%';
+          row[j] = w; d.n[i][j] = null; d.text[i][j] = now;
+          if (c.table && Array.isArray(c.table.rows) && Array.isArray(c.table.rows[i]) && c.table.rows[i][j + 1] === was) c.table.rows[i][j + 1] = now;
+          if (i === 0 && typeof c.summary === 'string') c.summary = c.summary.split(' in ' + was + ' of all texts').join(' in ' + now + ' of all texts');
+        });
+      }
+      return c;
+    }
+    // whole records from the start within the worker's charts budget (insight-proxy/src/charts.js fitShareCharts)
+    function fitCharts(list, budget) {
+      var out = list.slice();
+      while (out.length && utf8Bytes(JSON.stringify(out)) > budget) out.pop();
+      return out;
+    }
     function shareBody(rep) {
+      var allCharts = (rep.charts || S.aiCharts || []).map(shareSafe), charts = fitCharts(allCharts, T.SHARE_CHARTS_MAX);
       var body = {
         // never the file's name (option B review, 29 Sep 2026: the file's name and its fingerprint went with every
         // link, and the name is the viewer's title): the placeholder the report itself uses stands in
@@ -2806,7 +2899,7 @@
         // the engine-drawn figures the report's [CHART:n]/[TABLE:n] markers point at: without
         // them the shared link showed the words without the illustrations (live finding,
         // 28 Sep 2026: the viewer was ready to draw them, the page never sent them)
-        charts: rep.charts || S.aiCharts || [],
+        charts: charts,
         tables: rep.tables || S.aiTables || [],
         // what the shared PDF is written from (final review, 30 Sep 2026: the worker's PDF of a link said the results
         // were not kept and the personal columns not recorded): the honesty check's count; the kept columns, names only
@@ -2816,7 +2909,7 @@
         repaired: typeof rep.repaired === 'number' ? rep.repaired : undefined,
         kept: Array.isArray(rep.kept) ? rep.kept.slice(0, 60) : undefined
       };
-      var text = JSON.stringify(body), bytes = utf8Bytes(text);
+      var text = JSON.stringify(body), bytes = utf8Bytes(text), held = { kept: charts.length, of: allCharts.length };
       if (bytes > SHARE_BODY_MAX) return { over: bytes };
       if (S.aiResults && window.NLReportPdf && window.NLReportPdf.shareResults) {
         var room = SHARE_BODY_MAX - bytes - utf8Bytes(',"results":');
@@ -2824,10 +2917,10 @@
         if (R) {
           body.results = R;
           var withR = JSON.stringify(body);
-          if (utf8Bytes(withR) <= SHARE_BODY_MAX) return { text: withR };
+          if (utf8Bytes(withR) <= SHARE_BODY_MAX) return { text: withR, charts: held };
         }
       }
-      return { text: text };
+      return { text: text, charts: held };
     }
     // share: POST /share with the finished report, then show the link
     function doShare(agreed) {
@@ -2851,6 +2944,11 @@
           a.href = j.link; a.textContent = j.link; a.target = '_blank'; a.rel = 'noopener';
           out.appendChild(a);
           out.appendChild(document.createTextNode(' \u00b7 stores this report (text, charts and tables, not your file) on this site\'s Cloudflare storage for 7 days \u00b7 anyone with the link can read it \u00b7 delete it any time from this browser'));
+          if (sb.charts && sb.charts.kept < sb.charts.of) {
+            var cn = document.createElement('span');
+            cn.className = 'try-share-charts'; cn.textContent = ' \u00b7 ' + T.shareChartsNote(sb.charts.kept, sb.charts.of);
+            out.appendChild(cn);
+          }
           if (S.delToken) {
             var db = document.createElement('button');
             db.type = 'button'; db.className = 'btn btn-ghost btn-sm'; db.textContent = 'Delete this link';
@@ -3250,7 +3348,11 @@
       });
       if (S.report) {
         var cover = printCover(S.report), rule = printPageRule((cover.querySelector('h1') || {}).textContent || 'Data report'), title0 = document.title;
-        el.report.insertBefore(cover, el.report.firstChild);
+        // the cover is page 1: it goes before everything that prints, and the AI's plan card and the AI-written report
+        // come before the engine's report on the page (live baseline, 30 Sep 2026: the plan card filled pages 1 to 3
+        // and the cover began halfway down page 4)
+        var lead = el.planCard && el.planCard.parentNode ? el.planCard : el.report;
+        lead.parentNode.insertBefore(cover, lead);
         document.head.appendChild(rule);
         var d0 = new Date(), z = function (n) { return (n < 10 ? '0' : '') + n; };   // the visitor's own date, not UTC's
         document.title = 'NorthLedger report - ' + d0.getFullYear() + '-' + z(d0.getMonth() + 1) + '-' + z(d0.getDate());

@@ -73,7 +73,7 @@ import sys
 import tempfile
 import time
 import types
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 MAX_BYTES = 25_000_000          # "25 MB", the same figure the page states and enforces (build.py TRY_MAX_BYTES)
 MAX_ROWS = 200000
@@ -101,6 +101,7 @@ CODED_ON_ARRIVAL = "coded as it arrived"
 # check against this, so a change here is a change to the contract. Version 2 (engine/
 # CONTRACT-v2.md, design §4.2) keeps every v1 key and adds the V2_* keys below.
 CONTRACT_VERSION = 2
+VIZ_VERSION = "2026-09-30.1"            # the chart registry's frozen interface (tools/fixtures/viz/spec.json; nl_viz)
 REPORT_KEYS = ("ok", "error", "engine", "input", "timings", "privacy", "health", "cleaning",
                "roles", "findings", "forecast", "story", "downloads",
                "contract_version", "primary_metric", "tests_run", "methods", "limitations",
@@ -115,6 +116,13 @@ SEASON_MIN_MONTHS = 24              # §5 #3
 CORR_MIN_MEASURES = 3               # §5 #9
 MISSING_SHARE = 0.01                # §5 #11: any column over 1% empty
 CATMONTH_MAX = 3                    # category x month heatmaps drawn, in the engine's column order
+# §5 #8's reason: the map counts rows and never flags a driver or a reversal; where the change sits is the contribution
+# waterfall's job, when the chart registry built one (nl_viz.mend_catmonth_why swaps the clause), else none is charted
+CATMONTH_WHY = "a tested change claim and a category column with 2-50 levels (%s)"
+CATMONTH_NO_WATERFALL = ("it counts rows; no contribution waterfall was built for this file, so no driver or reversal "
+                         "is flagged")
+CATMONTH_WATERFALL = ("it counts rows; the contribution waterfall shows where the change sits, and this map flags no "
+                      "driver or reversal")
 SUBKEYS = {
     "engine": ("snapshot", "version"),
     "input": ("name", "bytes", "rows", "columns", "sha256"),
@@ -458,6 +466,8 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         # the headline claim broken down by segment, price, volume and mix, per unit, run rate, sensitivity, gap
         # and the forecast added up, from the rows the engine kept, for the report writer to copy (CONTRACT §5.8)
         "scenarios": {"basis": None, "items": [], "refused": [], "note": ""},
+        # the charts chosen from the data (the chart registry, engine/nl_viz.py; CONTRACT §5.9): nothing built yet
+        "viz": {"version": VIZ_VERSION, "charts": [], "refused": [], "chosen_by": "none"},
     }
 
 
@@ -497,26 +507,199 @@ def _norm(s: Any) -> str:
     return " ".join(str(s).split()).strip(_EDGE).lower()
 
 
+# Common English words (a value that is one of them identifies no one): everyday words, and every word of six letters
+# or more in the engine's and this adapter's own sentences (their string literals of four words or more), so a word
+# the report itself writes is never taken for a withheld value. Only words of six letters or more are listed: a
+# shorter single word is never looked for (Scrubber.SPECIFIC_MIN_CHARS). Names were taken out (a surname such as
+# "Wilson" in "the Wilson interval" is not a common word), and so were technical tokens.
+_COMMON_WORDS = frozenset("""
+absent absolute absolutely absorbs accents accept accepted accepts access accident account accountant accounted
+accumulates accurate across acting action actionable actions active activity actual actually actuals adapter
+additive address adjusted admits adverse advertised advice advising affects affordable afternoon afterwards
+against agency aggregate agreement aliases aligned allowed allowing allows almost alongside already alternative
+although always amazing ambiguous amount amounts analysed analyses analysis analyst analyze annual annualised
+anomalies another answer answers anybody anyone anything anyway anywhere apartment apology apostrophe appear
+appears append appended applicable applied applies appreciate approve approved approximation argument arising
+arithmetic around arrival arrived artefact article assembled assert asserted assigned associated association
+assumed assumes assumptions attach attached attitude attractive attributes auditor audits august autumn
+available average averaged averages awaiting awesome backed background balance barely baseline baselines baskets
+beaten beautiful became because become becomes bedroom before behaviours behind belong belongs benchmark beside
+besides better between beyond biased bigger biggest billed billing binary binned binomial birthday bisection
+blanked blanket blanking blocks boolean borough borrowed bottle bottom bought boundary bounds branch breakage
+breakdown breaks brilliant brings broken brother brought browser buckets budget building buildings builds
+business businesses button buying cached calculation calendar calibrated calibration called caller callers
+calling cancel canceled cancelled candidate candidates cannot capital capped captured cardinality carried
+carrier carries carrying cartridge casing casual categories category caught caused caution cautioning cautious
+caveat caveats census centre centred certain certification certified certifies certify chaining champion chance
+change changed changes changing characters charted charts cheaper checkable checked checks children choice
+choices choose chooses choosing chosen cinema citations claimed claims classified clause clauses cleaned cleaner
+cleaning cleans cleared clearer clearly clears client climate closed closer cluster coarsest coefficient
+coefficients collapse collapsed collapses collapsing collected collection collision column columns combining
+comfort comfortable coming command commit common commonest compact company comparable compare compared compares
+comparing comparison comparisons compatible compiled complain complaint complete completed completeness
+composite composition computed computer computes condition conditional conditions confidence confident
+configuration confirm confirmation confirmed confirming confirms confounded confounder confounders connected
+connection consecutive consent conservation conservatism conservative consistency console constant construction
+consultant contact contain content context contiguous continued contract contradict contradiction contribution
+contributions control controls convention conventions conversion conversions converted cooking coordinate copies
+correct corrected correction correlation cosmetic cotton counted counter counterfactual counting countries
+country counts county couple course cousin covariance coverage covered covers create credit criteria critical
+currencies currency current customer customers damaged damped dashed database dataset daughter decade decaying
+december decibels decide decided decides deciding decimal decimals decision decisions declared decode decoded
+decoding default defect defective defence defensive defensively defined definition degrees delete deleted
+deletion deliberately deliver delivered delivery denominator density departure depend dependence dependent
+depends deprecation derivation derive derived describe described describes description descriptive design
+desktop detail details detected determinism deterministic deterministically development deviation deviations
+diagnostics differ differed difference different differently differs digest digits dimension dimensions dinner
+direction directions disagree disagreeing discovery distance distilled distinct distinctness distribution
+divided dividing division doctor document dollar dollars dominance dominant dominate double doubled doubles
+doubling download downloads downstream drifting drifts driven driver drivers drives dropped dropping duplicate
+duplicated duplicates duplication during earlier earned easily echoes editor effect effective effects either
+elaborate element eleven emails emitted employee encoding energies energy enforce engagement engine enjoyed
+enjoying enough enrichment entered entering enters entirely entities entitled entity entries equals equilibrium
+equivalent errors escapes especially established estimand estimate estimated estimating evaluate evaluated
+evaluation evening events everybody everything everywhere evidence exactly example examples exceed exceedance
+excellent except exception exchangeable exclude excluded executing executive exists exited expected expects
+expensive expiry explain explained explaining explains explanation explicit explodes export exported expose
+exposes expressed expression extend extended extends external extract extreme extremes fabulous facing factor
+factors factory failed failing failure fallback fallen falling falsely falsification falsifies families family
+famous fantastic faster fastest father feature february feedback female fewest fields figure figures filler
+filter filtered filters finally finding findings finite fitted fixtures flagged flattening floating flower
+folded folder follow followed follows footnote forecast forecasting forecasts foreign format formats formatted
+formatting formed formula forward fourth fraction fractions freedom freehand freeze frequent friday friend
+friendly friends fullest function functions further furthest future gaming garden gating general generated
+generates generating generator gentle genuinely geography gorgeous graded grades granddaughter grandma grandson
+greatest grouped groups growing growth guarantee guarded guessed guessing hallucinated halves handed handful
+handled happened happening happens happily hardest harmonic hashes having header headers headings headline
+headset health healthy heuristic hidden hiding higher highest history holding holiday honest honesty honour
+honouring horizon horrible hospital however hundred husband hyphen hypotheses hypothesis identical identifier
+identify images implausibly implements import imported imports impossible inactive include included includes
+including inclusive incomplete inconsistent independence independent independently indexes indicator indicators
+indices inference inferred inform information initials innovation innovations inputs insensitively inside
+insight inspections installed instance instances instead instruction instructions intact intake integer integral
+integration internal interpolate interpolated interval intervals invalid invariant invent invents inverse
+inversion inverting inverts invoice irregular issued issues itself jacket january judged judges keeping kitchen
+labelled labels ladies landed landing language larger largest latest layout lazily leading leaned learned
+leather leaves leaving ledger ledgers legitimately length letter letters levels library licenses likelier
+likelihood likely limitations limits linear linearly listed little longer looked looking loosening looser lovely
+lowers lowest magnitude malformed manager manual mapping marginal marked marker market marking matched matches
+matching material materiality matrix matter matters maximum meaning meaningless measure measured measurement
+measurements measures mechanical mechanism median medium member members memory mention merely merged message
+metadata method methods metric middle midnight million millions milliseconds minimum minimums minute minutes
+mirror mirrored mismatch misread misreading missed misses missing mistaken mistyped mobile modelled models
+modified module modules moment momentum monday monitor monitoring monotone monthly months morning mostly mother
+movement moving multiplicative multiplicatively multiplied mutate naming nanosecond narrate narrated narrating
+narrative narrator narrow narrower nearest nearly needed negative neither nephew nested nevermind newest nobody
+nominal nonpositive normal normalisation normalised normalises normals nothing november nowhere number numbered
+numbers numeric numerical object objective objects observable observation observational observed offered offers
+office offset omission online opaque opened operation operations opposite optimal option optional orange ordered
+ordering orders ordinary origin original origins others otherwise outcome outcomes outlier outnumber output
+outputs outside overall overlapping overstate overwrite packed padded padding paired pairwise parameter
+parametric parentheses parsed parsing partial particles particular passed passes passing pattern payload
+payloads peaked peeking penalised penalties penalty pending people percent percentage percentages percentile
+percentiles percents period periods permutation persistence persistent person personal phrase phrased phrases
+picked picking pieces pinned pipeline placed placeholder placeholders places planner planning plausible pleased
+plural plurals pocket pointed points policy polite population position positionally positions positive possible
+precedence precisely precision predict predicted prediction predicts preferred prefix premium presence present
+presentation preserving pretending pretty prevent previous prices primary printed printing prints priority
+privacy private probabilities probability probable probably problem problems procedure process processes produce
+produced produces product products profile profiled profiler profiles profiling project projects promise
+promised promises proportion proposed provenance provide provided provider provisional public published pulled
+punctuation purchase purchased purely purple purpose pushed qualifiers qualifies quality quantile quantiles
+quantities quantity quarantine quarantined quarantines quarterly quarters queries question quickly quietly
+quoted quotes quoting raises random ranged ranges ranked ranking rather rating ratings ratios reaches reaching
+readable reader readers reading realised reality really reason reasons rebuilt receipt receipts received
+receives recent recipe recognised recommend recommendation recommendations recommended recommending recommends
+recompute recomputed reconcile reconciled record recorded records recovered recovering recovers redaction reduce
+reduced reference referred refits refund refunded refusal refusals refuse refused refuses refusing region
+regions register registered registers regression regular regularised reject rejected rejection rejections
+rejects relationship relative release releases reliable relying remain remaining remains remote removed removes
+renamed rendering renders repair repaired repairs repeat repeated repeating repeats replaced replacement
+replaces replay replayed replays replicated replication replications report reported reporters reports
+repository representable represented reproduce reproduced reproduces request require required requirement
+requires reshaped residual resolution resolved resolves respect restated restatement restatements resting
+restored restricted restricts result resulting results resumes retained retention return returned returning
+returns reveal revenue reversal reversals review reviewable reviews rewrite rewritten robust rolling roughly
+rounded rounding routed routing rumour runner running runtime salary sample sampled samples sampling sanity
+saturday saying scaled scales scanned scanner scenario scenarios sceptical scheduled schema school scored scores
+scoring screen script scrubber scrubs search searched searches season seasonal seasonality second secondary
+seconds secret section sector secure segment segments selection seller semantic sensible sensitivity sentence
+sentences sentinel separate separated separately separator separators sequence serialised series serves service
+setting settle settled several severity shaped shapes shared shares sharing sharper shifted shifts shipped
+shipping shocks shopping shortened shorter shortfall should shuffle shuffles signal signals signed significance
+significant silent silently simple simplest simulate simulated single sister skipped sleeve slightly smaller
+smallest smooth snapshot software someone something somewhat sorted source sourced sources spaces spacing sparse
+sparser speaks special spelling spellings spends splits splitting spread spreads spring square squared squares
+stable stages staleness stamped stamps standard stands started starting starts stated statement statements
+states stating stationary statistic statistical statistically statistics status stayed steadier steadily steady
+stepped sticky stopped stopping storage stored straddles straight stream street stress stretch strict stricter
+string strings strong stronger strongest structural structured stylish subset substring successes suffix
+suffixes summary summed summer sunday superb superseded supply support supported supports supposed surprise
+survive survived survives suspect swapped sweater switch system tables tablet tailed target targeted targets
+temperatures temporary terrible testable tested thankful thanks themes themselves theorem therefore things
+thirds thousands threshold thresholds through throughout thursday ticket timeliness timestamps timezone timing
+timings tipping together tokens tolerance tolerated tomorrow tonight totals touched toward towards tracked
+tracking trailing trained training transactions transform transition translates translation travel treated
+treats trends trials trimmed trimming triples tripped truncated trusted trusting tuesday tunable turned turning
+twelve typical typically unambiguous unanswerable unanswered unchanged unclear uncomfortable unconditional
+uncorrected undated undecodable undefined underestimate underneath understates undoing unexpected ungated
+unhappy unidentified unique uniqueness unknown unless unmodelled unmodified unquoted unread unreadable
+unrecorded unrelated unreproduced unrounded untested untouched untrimmed unverifiable upgrade upload usable
+useful useless usually vacuous validation validity values vanished variance variant variants variation varies
+verbatim verdict verdicts verification verified verify version versus vetted visible visitor volume waiting
+wandering wanders warning wasted watched watching weakest wearing wednesday weekday weekdays weekend weekends
+weighed weighs weighted weights whatever whenever wherever whether whitening whitespace whoever wholly widened
+widening widens widest window windows winter wireless withheld withhold withholds within without wonderful
+worded wording worked worker workers working worthless writer writes writing written yearly yellow yields
+""".split())
+
+
+def _specific(n: str, free_text: bool = False) -> bool:
+    """A normalised value (_norm) specific enough to scrub from text: a free-text column's value only whole and 20
+    characters or more; any other value 2 words or more, or one word of 6 characters or more that is not a common
+    English word; never a number."""
+    if not n or _NUMBER_LIKE.match(n):
+        return False
+    if free_text:
+        return len(n) >= Scrubber.FREE_TEXT_MIN
+    if len(n.split()) >= 2:
+        return True
+    return len(n) >= Scrubber.SPECIFIC_MIN_CHARS and n.strip(_EDGE) not in _COMMON_WORDS
+
+
 class Scrubber:
     """Finds a withheld column's values inside text and replaces them with [withheld].
 
     Values are compared whole, after collapsing whitespace, trimming punctuation at the
     edges and lower-casing: every quoted span and every run of up to 8 words is looked up
-    in a set, so the cost grows with the text, not with the number of values. Values that
-    identify no one are skipped: under 3 characters, or purely numeric (a withheld salary
-    column's 52,000 must not blank out a real figure that happens to be equal)."""
+    in a set, so the cost grows with the text, not with the number of values. Only a
+    SPECIFIC value is looked for (_specific): a value that identifies no one would scrub
+    ordinary words out of the engine's own sentences (the live baseline of 30 Sep 2026: one
+    review whose whole text was "this" turned "a result at least this strong" into "a result
+    at least [withheld] strong", 62 times in one PDF). A value of a free-text column (the
+    `free_text` values) is looked for only when it is 20 characters or more (FREE_TEXT_MIN);
+    any other value when it has at least 2 words or at least 6 characters, and is not a
+    common English word (_COMMON_WORDS) or a number (a withheld salary column's 52,000 must
+    not blank out a real figure that happens to be equal)."""
 
     MAX_WORDS = 8
+    FREE_TEXT_MIN = 20
+    SPECIFIC_MIN_CHARS = 6
+    # the exact tokens of every flagged column's values (_decide_and_guard), all together and by landed column: never
+    # scrubbed from text, read by the themes and the chart registry's labels
+    flag_tokens: FrozenSet[str] = frozenset()
+    flag_tokens_by: Dict[str, FrozenSet[str]] = {}
 
-    def __init__(self, values: Iterable[Any] = ()) -> None:
+    def __init__(self, values: Iterable[Any] = (), free_text: Iterable[Any] = ()) -> None:
         self.values: Set[str] = set()
         self.words = 1
-        for v in values:
-            n = _norm(v)
-            if len(n) < 3 or _NUMBER_LIKE.match(n):
-                continue
-            self.values.add(n)
-            self.words = max(self.words, min(self.MAX_WORDS, len(n.split())))
+        for vals, free in ((values, False), (free_text, True)):
+            for v in vals:
+                n = _norm(v)
+                if not _specific(n, free):
+                    continue
+                self.values.add(n)
+                self.words = max(self.words, min(self.MAX_WORDS, len(n.split())))
 
     def __bool__(self) -> bool:
         return bool(self.values)
@@ -575,9 +758,10 @@ class Scrubber:
         return obj
 
 
-def _withheld_values(db_path: str, table: str, columns: List[str]) -> List[str]:
-    """Every distinct value of the withheld columns as landed, plus the ISO form of any
-    that reads as a date (the profiler prints dates as YYYY-MM-DD)."""
+def _withheld_values(db_path: str, table: str, columns: List[str], dates: bool = True) -> List[str]:
+    """Every distinct value of the withheld columns as landed, plus (dates=True) the ISO form of any
+    that reads as a date (the profiler prints dates as YYYY-MM-DD). A free-text column's values are read
+    with dates=False: its short values are never looked for (Scrubber.FREE_TEXT_MIN), an ISO date among them."""
     if not columns:
         return []
     import pandas as pd
@@ -590,7 +774,7 @@ def _withheld_values(db_path: str, table: str, columns: List[str]) -> List[str]:
             vals = [str(r[0]) for r in con.execute('SELECT DISTINCT %s FROM "%s" WHERE %s IS NOT NULL'
                                                     % (qc, table.replace('"', '""'), qc))]
             out.extend(vals)
-            if vals:
+            if vals and dates:
                 with contextlib.suppress(Exception):
                     import warnings
                     with warnings.catch_warnings():
@@ -1283,11 +1467,33 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any) -> Tuple[List[
             con.commit()
         finally:
             con.close()
+    # the exact tokens of every flagged column's values (withheld, coded or kept; a column flagged as free text left
+    # out: its words are the file's own vocabulary), read before a "code" decision pseudonymises a column in place and
+    # before a withheld one is landed as codes. They never leave the adapter: the themes never show one, and no chart
+    # prints a level that holds one (review of the chart registry, 30 Sep 2026: a staff member's name was the second
+    # commonest theme word)
+    con = sqlite3.connect(eng.db_path)
+    try:
+        now = [str(r[0]) for r in con.execute("SELECT DISTINCT column_name FROM %s WHERE table_name = ?"
+                                              % E.COLUMNS_TABLE, (res.table,))]
+    finally:
+        con.close()
+    raw = {c: _withheld_values(eng.db_path, res.table, [c], dates=False) for c in now}
     flagged = _apply_decisions(E, eng, res, decisions)
     withheld = [f["column"] for f in flagged if f["decision"] == "withhold"]
-    values = _withheld_values(eng.db_path, res.table, withheld)
+    # a free-text column's values are scrubbed only whole and long (Scrubber.FREE_TEXT_MIN): its short reviews
+    # ("this", "good") are ordinary words
+    free = [f["column"] for f in flagged if f["decision"] == "withhold"
+            and _REASON_LABEL["free_text"] in str(f.get("kind") or "")]
+    values = _withheld_values(eng.db_path, res.table, [c for c in withheld if c not in free])
+    free_values = _withheld_values(eng.db_path, res.table, free, dates=False)
+    by = {str(f["column"]): _value_tokens(raw.get(str(f["column"]), ())) for f in flagged
+          if _REASON_LABEL["free_text"] not in str(f.get("kind") or "")}
     codes = _neutralize_withheld(eng.db_path, res.table, withheld)
-    return flagged, withheld, Scrubber(values + codes)
+    sc = Scrubber(values + codes, free_values)
+    sc.flag_tokens_by = by
+    sc.flag_tokens = frozenset().union(*by.values()) if by else frozenset()
+    return flagged, withheld, sc
 
 
 # --------------------------------------------------------------------------- translation
@@ -1611,8 +1817,12 @@ class _V2:
 
     def __init__(self, rep: Dict[str, Any], audit: Any, ana: Any, th: Any, cr: Any, db_path: str,
                  flagged: List[Dict[str, str]], withheld: List[str], pub: Any, as_of: str,
-                 objective: str, reasons: Dict[str, int], rules: List[Any]) -> None:
+                 objective: str, reasons: Dict[str, int], rules: List[Any],
+                 plan_measure: Optional[Tuple[str, str]] = None, names: Optional[Dict[str, str]] = None) -> None:
         self.rep, self.audit, self.ana, self.th, self.cr = rep, audit, ana, th, cr
+        # the plan's primary measure (its landed name, its semantic type) and each planned measure's name in words
+        self.plan_measure = plan_measure if plan_measure and plan_measure[0] else None
+        self.names = dict(names or {})
         self.db_path, self.pub, self.as_of, self.objective = db_path, pub, as_of, objective
         self.flagged = [f["column"] for f in flagged]
         self.withheld = set(withheld)
@@ -1808,8 +2018,28 @@ class _V2:
         return {"routed": False, "cell": out}
 
     def primary_gated(self) -> Any:
+        """The report's primary claim: the gate's primary family, unless the AI plan named a measure the engine tested
+        and the gate's primary is not about it (the live baseline of 30 Sep 2026: the plan named the exchange rate and
+        the report led with the row count). Then the engine's claim for that measure leads: a level's (or a rate's,
+        a price's, a rating's) average month, an amount's or a count's first total in the engine's order (the one the
+        scenarios break down), else its average. The row count never leads when the plan named a measure the engine
+        tested. The gate's own grades and families are unchanged."""
         tested = [g for g in self.shown() if g.fact.test and g.fact.test.get("ran")]
         prim = [g for g in tested if (g.gate.signals or {}).get("family") == "primary"]
+        if self.plan_measure:
+            m, st = self.plan_measure
+
+            def about(g: Any) -> bool:
+                k = str(g.fact.claim_key or "")
+                return not (g.fact.test or {}).get("like_for_like_of") and (
+                    k == m or k == "total:" + m or k.startswith("total:%s:" % m))
+            if not (prim and about(prim[0])):
+                mine = [g for g in tested if about(g)]
+                avg = [g for g in mine if str(g.fact.claim_key or "") == m]
+                tot = [g for g in mine if g not in avg]
+                pick = (tot + avg) if st in ("flow_amount", "count") else (avg + tot)
+                if pick:
+                    return pick[0]
         return (prim or tested or [None])[0]
 
     def shown(self) -> List[Any]:
@@ -2844,9 +3074,11 @@ class _V2:
             if bool((lab == "").any()):
                 cats.append("(missing)")
                 counts.append([got.get(("\0missing", mo), 0) for mo in self.wmonths])
+            # the chart registry runs after this (nl_viz.build); when it builds a contribution waterfall, it rewords
+            # this reason to point at it (nl_viz.mend_catmonth_why, 30 Sep 2026: the line said drivers were "not
+            # computed in this release" beside the waterfall that computes them)
             self.add("catmonth.%s" % dim, "#8", "heatmap", "Rows by %s and month" % dim, "analyst",
-                     "a tested change claim and a category column with 2-50 levels (which segments drive the "
-                     "change is not computed in this release, so no reversal is flagged)",
+                     CATMONTH_WHY % CATMONTH_NO_WATERFALL,
                      {"months": list(self.wmonths), "categories": cats, "counts": counts},
                      [f["id"] for f in self.rep["findings"] if f["estimand"] == "ratio_of_average_month"],
                      "cleaned rows in the analysis window")
@@ -2935,6 +3167,8 @@ class _V2:
             return _human(col)
         if key == "volume" or key.startswith("volume:"):
             return self.event_noun() or ("Ledger lines" if self.money_total() else "Rows")
+        if key in self.names:
+            return "Average %s" % self.names[key]
         return "Average %s" % _human(key).lower() if key else ""
 
     def primary_group(self) -> List[str]:
@@ -3267,11 +3501,13 @@ def _decision_code() -> str:
 
 def _build_v2(rep: Dict[str, Any], audit: Any, ana: Any, th: Any, cr: Any, db_path: str,
               flagged: List[Dict[str, str]], withheld: List[str], pub: Any, as_of: str, objective: str,
-              reasons: Dict[str, int], rules: List[Any]) -> None:
+              reasons: Dict[str, int], rules: List[Any], plan_measure: Optional[Tuple[str, str]] = None,
+              names: Optional[Dict[str, str]] = None) -> None:
     """The v2 blocks. A failure here leaves the v1 report whole and says so under limitations
     (with NL_BROWSER_STRICT set, as the tests set it, it stops the run instead)."""
     try:
-        _V2(rep, audit, ana, th, cr, db_path, flagged, withheld, pub, as_of, objective, reasons, rules).build()
+        _V2(rep, audit, ana, th, cr, db_path, flagged, withheld, pub, as_of, objective, reasons, rules,
+            plan_measure, names).build()
     except Exception as exc:  # noqa: BLE001
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
@@ -3346,7 +3582,10 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
         for c in varying[1:]:
             key = key + " | " + df[c].str.strip()
     else:
-        key = pd.Series([str(df[constant[0]].iloc[0]).strip() if constant else str(value)] * len(df), index=df.index)
+        # one series: named after its value column, never after the value of a column that holds one value throughout
+        # (the live baseline of 30 Sep 2026: the U.S. dollar rate was "canada", from GEO, so the plan's primary VALUE
+        # matched no claim and the report led with the row count)
+        key = pd.Series([str(value)] * len(df), index=df.index)
     n_series = int(key.nunique())
     if n_series > PANEL_MAX_SERIES or pd.Series(list(zip(df[date], key))).duplicated().mean() > 0.01:
         return data, None
@@ -3414,12 +3653,41 @@ def _slug(name: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")
 
 
+def _measure_label(pc: Dict[str, Any], header: Any) -> str:
+    """A measure in words, from the AI plan's reading of its column: the plan's label when it gives one ("USD/CAD
+    exchange rate"), else the column's own name ("value"), with the plan's unit when it names a real unit ("value
+    (CAD per USD)"; a placeholder such as "currency" is no unit, see _unit_parts). Never a value from the file: a long
+    table's one series is named after its value column (_reshape_long_panel)."""
+    label = " ".join(str(pc.get("label") or "").split())[:80]
+    name = label or " ".join(str(header or "").replace("_", " ").split()).lower()
+    unit = " ".join(str(pc.get("unit") or "").split())
+    pre, post = _unit_parts(unit)
+    if (pre or post) and unit.lower() not in name.lower():
+        name += " (%s)" % unit
+    return name
+
+
+def _measure_names(plan: Any, colmap: Dict[str, str], pub: Any) -> Dict[str, str]:
+    """{landed name: the measure in words (_measure_label)} for each column the plan gives a label or a real unit."""
+    out: Dict[str, str] = {}
+    cols = plan.get("columns") if isinstance(plan, dict) else None
+    for c in cols or []:
+        if not isinstance(c, dict) or not c.get("name") or not (c.get("label") or c.get("unit")):
+            continue
+        land = colmap.get(str(c["name"]))
+        if land:
+            out[str(land)] = pub(_measure_label(c, c["name"]))
+    return out
+
+
 def _lead_series(lay: Dict[str, Any], objective: str) -> Tuple[str, str]:
     """The series a long table's report leads with, and why: the one the visitor's question names
     (every word of its name, apart from words all the series share), else the file's first."""
     order = lay.get("order") or []
     if not order:
         return "", ""
+    if len(order) == 1:
+        return order[0], "it is the file's only series"
     toks = [set(re.findall(r"[a-z0-9]+", str(k).lower().replace(".", ""))) for k in order]
     common = set.intersection(*toks) if toks else set()
     asked = set(re.findall(r"[a-z0-9]+", str(objective or "").lower().replace(".", "")))
@@ -3518,7 +3786,10 @@ def _profile_facts(R: "_Reading", headers: List[str], hidden: Iterable[str] = ()
                 _z, ev = _zero_shape(nums[use].to_numpy(), dd, grp)
             info.update({"min": float(v.min()), "median": float(v.median()), "max": float(v.max()),
                          "integers": bool((v % 1 == 0).all()), "zeros": zeros, "zeros_missing_if_level": bool(ev)})
-        if n_f and kind != "number" and info["distinct"] <= 300 and f.str.len().median() <= 60:
+        # short values (a median of 60 characters or fewer): a category's, never free text's (nl_viz.limits reads it for
+        # a Pareto's category past the 300 values listed here)
+        info["short"] = bool(n_f and kind != "number" and f.str.len().median() <= 60)
+        if n_f and kind != "number" and info["distinct"] <= 300 and info["short"]:
             vc = f.value_counts()
             info["top_values"] = [str(x)[:60] for x in vc.head(12).index]
             info["groups"] = int((vc >= COMPARE_MIN_GROUP).sum())
@@ -3580,8 +3851,10 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
             con.close()
         R = _engine_reading(eng.db_path, res.table, _clean.standard_rules(th, as_of=as_of), cr, colmap)
         headers = list(R.land) or list(R.values.columns)
-        return {"ok": True, "facts": _profile_facts(R, headers, hidden), "rows": R.n, "flagged": flagged,
-                "colmap": colmap}
+        facts = _profile_facts(R, headers, hidden)
+        import nl_viz as _nv
+        return {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap,
+                "viz_stats": _nv.profile_stats(R, facts)}
     except Exception as exc:  # noqa: BLE001 - the profile is an aid; the page runs without it
         intake_error = getattr(sys.modules.get("northledger.intake"), "IntakeError", Refusal)
         if os.environ.get("NL_BROWSER_STRICT") and not isinstance(exc, (Refusal, intake_error)):
@@ -3743,6 +4016,15 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         out["time"], out["analysis_limits"] = None, []
+    # the charts the planner may choose (nl_viz.limits, CONTRACT §5.9): one {chart, ok, why} per menu chart, at most
+    # 16, over the rows the engine kept; every flagged column (a kept one too) skipped before anything is chosen
+    try:
+        import nl_viz as _nv
+        out["chart_limits"] = _nv.limits(facts, priv, out["time"], got.get("viz_stats"), int(got.get("rows") or 0))
+    except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        out["chart_limits"] = []
     return out
 
 
@@ -3886,15 +4168,16 @@ class _NameScrub:
     def names(self, text: Any) -> bool:
         return bool(self.rx is not None and isinstance(text, str) and self.rx.search(_LABEL_RE.sub(" ", text)))
 
-    def __call__(self, text: Any) -> Any:
+    def __call__(self, text: Any, words: str = "") -> Any:
+        """text with every mention replaced by `words` (default WITHHELD_WORDS, "a column you withheld")."""
         if not isinstance(text, str) or self.rx is None:
             return text
-        if text.startswith(DATE_WITHHELD_LEAD):
+        if text.startswith(DATE_WITHHELD_LEAD) and not words:
             return DATE_WITHHELD_LEAD + " is " + WITHHELD_WORDS + "."
         parts, labels = _LABEL_RE.split(text), _LABEL_RE.findall(text)
         out = []
         for i, part in enumerate(parts):
-            out.append(self.rx.sub(WITHHELD_WORDS, part))
+            out.append(self.rx.sub(words or WITHHELD_WORDS, part))
             if i < len(labels):
                 out.append(labels[i])
         return "".join(out)
@@ -4037,8 +4320,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         if not isinstance(a, dict):
             continue
         d: Dict[str, Any] = {"title": safe(a.get("title"), 160),
-             "sentence": safe(a.get("sentence"), 700),
-             "method": safe(a.get("method"), 300)}
+             "sentence": _cut_words(safe(a.get("sentence"), 4000), ANALYSIS_TEXT_MAX["sentence"]),
+             "method": _cut_words(safe(a.get("method"), 4000), ANALYSIS_TEXT_MAX["method"])}
         t = a.get("table") or {}
         rows = t.get("rows") or []
         tab = None
@@ -4097,6 +4380,25 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             link_table = len(tables)
             tables.append({"title": d["title"], "cols": tab["cols"], "rows": tab["rows"]})
         links.append((link_chart, link_table))
+
+    # the charts chosen from the data (rep.viz, engine/nl_viz.py; CONTRACT §5.9), after the analyses' charts: each
+    # record whole (the worker makes the model's card from it, never showing the model its data, and returns it
+    # validated for the page, the PDF and the share viewer), at most AI_CHARTS_MAX charts in all, as it may leave the
+    # adapter (nl_viz.for_sending: with a suppressed cell, no exact total a hidden figure could be worked back from; a
+    # word that names a withheld column reads "[withheld column]", and a record that then breaks a cap is not sent)
+    try:
+        import nl_viz as _nv
+        charts_max = _nv.AI_CHARTS_MAX
+    except ImportError:
+        _nv, charts_max = None, 10
+    for rec in ((rep.get("viz") or {}).get("charts") or []) if _nv is not None else []:
+        if len(charts) >= charts_max:
+            break
+        if not _nv.is_record(rec):
+            continue
+        sent = _nv.for_sending(rec, scrub)
+        if sent is not None:
+            charts.append(sent)
 
     # the scenario and contribution block (engine/nl_scenarios.py), 1:1: every key, every figure and every text as
     # the report holds them, its words made safe as every other text here; and ONE table, "What drove the change
@@ -4242,7 +4544,10 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
 
     def final(o: Dict[str, Any]) -> Dict[str, Any]:
         o = _swap_text(o, fname, FILE_WORD) if fname else o
-        return dict(o, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []])
+        # a name shorter than the placeholder makes a text longer: each analysis's sentence and method are cut again
+        ana = [dict(a, **{k: _cut_words(a[k], n) for k, n in ANALYSIS_TEXT_MAX.items() if isinstance(a.get(k), str)})
+               for a in o.get("analyses") or []]
+        return dict(o, analyses=ana, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []])
     return _within_budget(out, final, drove_of, n_tables, links)
 
 
@@ -4259,6 +4564,29 @@ def _cut_text(s: str, n: int) -> str:
         return s
     j = s.find(FILE_WORD, max(0, n - len(FILE_WORD) + 1))
     return s[:j].rstrip() if 0 <= j < n else s[:n]
+
+
+# An analysis's sentence and method, in characters: the worker's caps (insight-proxy/src/report.js validateResults:
+# sentence 700, method 300), which cut a longer text where the count ends. The adapter sends each whole, or cut at a
+# word with an ellipsis (_cut_words), so the worker never has to cut one (review of the live run, 30 Sep 2026: a
+# method note reached the report as "...each of the last 4 predicted by a model trained only on the blocks befor").
+ANALYSIS_TEXT_MAX = {"sentence": 700, "method": 300}
+
+
+def _cut_words(s: str, n: int) -> str:
+    """s at most n characters: whole, or cut after the last whole word that fits, with an ellipsis ("\u2026"); never
+    inside a word or a figure, and never inside the FILE_WORD placeholder. Only a text with no space before the limit is
+    cut where the count ends."""
+    if not isinstance(s, str) or len(s) <= n:
+        return s
+    head = s[:n - 1]
+    k = head.rfind(" ")
+    if k > 0:
+        head = head[:k]
+    o = head.rfind("[")
+    if o >= 0 and "]" not in head[o:] and s.startswith(FILE_WORD, o):
+        head = head[:o]
+    return head.rstrip(" ,;:(\u2212-") + "\u2026"
 
 
 # The adapter's byte budget for results_for_ai (30 Sep 2026): the worker takes a /report body of at most 96,000 bytes
@@ -4307,7 +4635,8 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
                    links: Optional[List[Tuple[Optional[int], Optional[int]]]] = None) -> Dict[str, Any]:
     """final(out), at most RESULTS_MAX_BYTES: scenario items dropped (_budget_drop_order) until it fits, the "Where the
     change came from" table rebuilt from the items kept and scenarios.refused saying first how many were left out;
-    then, if it is still over, the analyses from the last (with the chart and table each one has: links, their
+    then, if it is still over, the charts chosen from the data (rep.viz records) from the last; then the analyses
+    from the last (with the chart and table each one has: links, their
     indices in charts and tables) and analyses_refused saying so first; then the charts, the tables and the findings
     from the end. Never returns a payload over the budget."""
     done = final(out)
@@ -4318,26 +4647,50 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
     items = list((sc or {}).get("items") or [])
     if items:
         order = _budget_drop_order(items)
-        dropped: Set[int] = set()
+        base_out = out
+
+        def without(k: int) -> Tuple[Dict[str, Any], Dict[str, Any], int]:
+            """(out, final(out), its size) with the first k items of the drop order left out, the "Where the change
+            came from" table rebuilt from the items kept."""
+            gone = set(order[:k])
+            kept = [it for i, it in enumerate(items) if i not in gone]
+            sc2 = dict(sc, items=kept, refused=[BUDGET_REFUSED % (format(len(gone), ","), format(len(items), ","),
+                                                                  format(RESULTS_MAX_BYTES, ","))]
+                       + list(sc.get("refused") or []))
+            o2 = dict(base_out, scenarios=sc2)
+            dr = drove_of(sc2)
+            o2["tables"] = list(base_out.get("tables") or [])[:n_tables] + ([dr] if dr is not None else [])
+            d2 = final(o2)
+            return o2, d2, _payload_bytes(d2)
         j = 0
         while j < len(order):
             while j < len(order) and size > RESULTS_MAX_BYTES:
-                dropped.add(order[j])
                 size -= _payload_bytes(items[order[j]]) + 2          # the item and its ", "
                 j += 1
-            kept = [it for i, it in enumerate(items) if i not in dropped]
-            sc2 = dict(sc, items=kept, refused=[BUDGET_REFUSED % (format(len(dropped), ","), format(len(items), ","),
-                                                                  format(RESULTS_MAX_BYTES, ","))]
-                       + list(sc.get("refused") or []))
-            o2 = dict(out, scenarios=sc2)
-            dr = drove_of(sc2)
-            o2["tables"] = list(out.get("tables") or [])[:n_tables] + ([dr] if dr is not None else [])
-            out = o2
-            done = final(out)
-            size = _payload_bytes(done)
+            out, done, size = without(j)
             if size <= RESULTS_MAX_BYTES:
+                # no more than it needs: the estimate leaves out the table's rows, so a segment whose items all went
+                # took its row too; the items dropped last come back while the payload still fits
+                while j > 0:
+                    o3, d3, s3 = without(j - 1)
+                    if s3 > RESULTS_MAX_BYTES:
+                        break
+                    j, out, done, size = j - 1, o3, d3, s3
                 return done
-    # every scenario item is gone and it is still over: the analyses from the last in the plan's order
+    # every scenario item is gone and it is still over: the charts chosen from the data (rep.viz), from the last,
+    # before any analysis (CONTRACT §5.9; they follow the analyses' own charts, whose places the links keep)
+    try:
+        import nl_viz as _nv
+        is_viz = _nv.is_record
+    except ImportError:
+        is_viz = None
+    while is_viz is not None and size > RESULTS_MAX_BYTES and out.get("charts") and is_viz(list(out["charts"])[-1]):
+        out = dict(out, charts=list(out["charts"])[:-1])
+        done = final(out)
+        size = _payload_bytes(done)
+    if size <= RESULTS_MAX_BYTES:
+        return done
+    # and still over: the analyses from the last in the plan's order
     ana = list(out.get("analyses") or [])
     links = list(links or [])[:len(ana)]
     links += [(None, None)] * (len(ana) - len(links))
@@ -4367,6 +4720,17 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
         return {"ok": False, "error": "the results are %s bytes, over the report writer's %s-byte budget" % (
             format(size, ","), format(RESULTS_MAX_BYTES, ","))}
     return done
+
+
+def _strings(x: Any) -> List[str]:
+    """Every string value in x (not its keys), at any depth."""
+    if isinstance(x, str):
+        return [x]
+    if isinstance(x, list):
+        return [s for v in x for s in _strings(v)]
+    if isinstance(x, dict):
+        return [s for v in x.values() for s in _strings(v)]
+    return []
 
 
 def _swap_text(x: Any, old: str, new: str) -> Any:
@@ -4411,6 +4775,8 @@ def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[
             out["columns"].append({"name": c["name"], "semantic_type": t if t in SEMANTIC_TYPES else "other",
                                    "role": str(c.get("role") or "")[:20], "unit": str(c.get("unit") or "")[:40],
                                    "why": str(c.get("why") or "")[:200]})
+            if isinstance(c.get("label"), str) and c["label"].strip():    # the measure in words: "USD/CAD rate"
+                out["columns"][-1]["label"] = " ".join(c["label"].split())[:80]
             if isinstance(c.get("values"), list):     # a category's profile values, for its contract test
                 out["columns"][-1]["values"] = [str(x)[:60] for x in c["values"][:300]]
     ops = []
@@ -4444,6 +4810,10 @@ def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[
             item["by"] = a["by"]
         ans.append(item)
     out["analyses"] = ans
+    # the charts the AI chose (plan.charts): read and cut here, checked by the engine when it builds them
+    # (nl_viz.validate_directive); a refused chart is never a plan signal, so nothing goes to `refused`
+    import nl_viz as _nv
+    out["charts"] = _nv.plan_items(plan.get("charts"))
     prim = plan.get("primary")
     out["primary"] = prim if prim in have else ""
     if prim and prim not in have:
@@ -6436,20 +6806,121 @@ out up about after again am being both each few how im ive dont didnt its it's o
 """.split())
 
 
-def _a_themes(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
+# The themes analysis's words (review of the chart registry, 30 Sep 2026). A word is letters in any script, read after
+# Unicode NFC composition ("hôtel" and "café" stay whole; they were cut to "tel" and "caf"), 3 or more characters
+# starting with a letter, with an apostrophe inside; common words (_STOP) are left out. A word that is a person's
+# name (_theme_drop) stands as a break: it is never a theme, and no two-word phrase joins across it.
+_THEME_WORD = re.compile(r"[^\W\d_](?:[^\W\d_]|'){2,}")
+# the proper-noun rule: a word capitalised in PROPER_SHARE or more of its occurrences that are not a sentence's first
+# word, in a file whose texts do not capitalise most words anyway (at most PROPER_BASELINE of all such occurrences;
+# above that, as in titles written in Title Case, a capital says nothing and the rule is off)
+PROPER_SHARE = 0.60
+PROPER_BASELINE = 0.50
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|[\r\n]+")
+_ANY_WORD = re.compile(r"[^\W\d_]+(?:['\u2019][^\W\d_]+)*")
+# a list of given names (engine/first_names.txt, beside this file and in the pack: /usr/share/dict/propernames, public
+# domain, lower-cased, without the ordinary words it holds; see its header)
+FIRST_NAMES_FILE = "first_names.txt"
+_FIRST_NAMES: Optional[FrozenSet[str]] = None
+
+
+def _first_names() -> FrozenSet[str]:
+    """engine/first_names.txt as a set of lower-case given names (empty when the file is missing)."""
+    global _FIRST_NAMES
+    if _FIRST_NAMES is None:
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), FIRST_NAMES_FILE), encoding="utf-8") as fh:
+                _FIRST_NAMES = frozenset(x.strip().lower() for x in fh if x.strip() and not x.startswith("#"))
+        except OSError:
+            _FIRST_NAMES = frozenset()
+    return _FIRST_NAMES
+
+
+def _nfc(s: Any) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFC", str(s if s is not None else ""))
+
+
+def _value_tokens(values: Iterable[Any]) -> FrozenSet[str]:
+    """Every token of the values, of any length: runs of letters or digits, lower case, after NFC ("Emily Jones" gives
+    emily and jones, "emily.jones@mail.test" emily, jones, mail and test)."""
+    out: Set[str] = set()
+    for v in values:
+        out.update(re.findall(r"[^\W_]+", _nfc(v).lower()))
+    return frozenset(out)
+
+
+def _theme_tokens(t: Any, drop: Any = frozenset()) -> List[Optional[str]]:
+    """One text's theme words in order, lower case (_THEME_WORD, common words left out); a word in `drop` is None."""
+    out: List[Optional[str]] = []
+    for w in _THEME_WORD.findall(_nfc(t).lower()):
+        if w in _STOP:
+            continue
+        out.append(None if w in drop else w)
+    return out
+
+
+def _theme_pairs(toks: List[Optional[str]]) -> Set[str]:
+    """The two-word phrases of a text's theme words: two words side by side, never across a name."""
+    return set(a + " " + b for a, b in zip(toks, toks[1:]) if a and b)
+
+
+def _proper_nouns(texts: Iterable[Any]) -> FrozenSet[str]:
+    """The words the texts write as a name (PROPER_SHARE, PROPER_BASELINE): counted on the words that are not a
+    sentence's first; a sentence of 3 or more long words (4 or more letters) all capitalised is a title in Title Case
+    and is not counted, nor is a word in capitals throughout ("GREAT", "USB")."""
     import collections
+    cap: Dict[str, int] = collections.Counter()
+    low: Dict[str, int] = collections.Counter()
+    for t in texts:
+        for sent in _SENTENCE_SPLIT.split(_nfc(t)):
+            ws = _ANY_WORD.findall(sent)
+            longs = [w for w in ws if len(w) >= 4]
+            if len(longs) >= 3 and all(w[0].isupper() for w in longs):
+                continue
+            for w in ws[1:]:
+                lw = w.lower()
+                if len(w) < 3 or w.isupper() or lw in _STOP or lw.startswith(("i'", "i\u2019")):
+                    continue
+                if w[0].isupper():
+                    cap[lw] += 1
+                else:
+                    low[lw] += 1
+    nc, nl = sum(cap.values()), sum(low.values())
+    if not nc or nc > PROPER_BASELINE * (nc + nl):
+        return frozenset()
+    return frozenset(w for w, c in cap.items() if c >= PROPER_SHARE * (c + low[w]))
+
+
+def _theme_drop(texts: Iterable[Any], names: Any = frozenset()) -> FrozenSet[str]:
+    """The words the themes never show, as people's names: a token of a flagged column's values (withheld, coded or
+    kept; `names`, the exact set, any length), a given name (engine/first_names.txt), and a word the texts write as a
+    name (_proper_nouns)."""
+    return frozenset(names or ()) | _first_names() | _proper_nouns(texts)
+
+
+def _theme_counts(texts: List[str], drop: Any) -> Tuple[Any, Any]:
+    """(words, phrases): collections.Counter of the texts that use each theme word and two-word phrase at least once."""
+    import collections
+    words, pairs = collections.Counter(), collections.Counter()
+    for t in texts:
+        toks = _theme_tokens(t, drop)
+        words.update(set(w for w in toks if w))
+        pairs.update(_theme_pairs(toks))
+    return words, pairs
+
+
+def _a_themes(df, date, ent, cols, plan, layout, by=None, names=None) -> Dict[str, Any]:
     col = cols[0]
     texts = [t for t in _texts_of(df, col).tolist() if t]
     if len(texts) < THEMES_MIN_TEXTS:
         return {"refused": "themes: fewer than %d non-empty texts in %s" % (THEMES_MIN_TEXTS, col)}
-    words, pairs = collections.Counter(), collections.Counter()
-    for t in texts:
-        toks = [w for w in re.findall(r"[a-z][a-z']{2,}", t.lower()) if w not in _STOP and not re.search(r"\d", w)]
-        words.update(set(toks))
-        pairs.update(set(" ".join(p) for p in zip(toks, toks[1:])))
+    words, pairs = _theme_counts(texts, _theme_drop(texts, names))
     n = len(texts)
-    top = [(w, c) for w, c in words.most_common(40) if c >= 3][:10]
-    top2 = [(w, c) for w, c in pairs.most_common(20) if c >= 3][:6]
+    # ties in the word's order (review of the chart registry, 30 Sep 2026: Counter.most_common kept the order the words
+    # were first counted in, a set's, so two words used equally often swapped places with the string-hash seed)
+    top = [(w, c) for w, c in sorted(words.items(), key=lambda kv: (-kv[1], kv[0])) if c >= 3][:10]
+    top2 = [(w, c) for w, c in sorted(pairs.items(), key=lambda kv: (-kv[1], kv[0])) if c >= 3][:6]
     if not top:
         return {"refused": "themes: no word appears in 3 or more of the texts"}
     text = "Across %s texts in %s, the words most often used are %s" % (
@@ -6459,10 +6930,40 @@ def _a_themes(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     text += ". Counts of words, not a reading of meaning."
     return {"type": "themes", "title": "What the %s texts talk about" % col, "sentence": text,
             "method": "Share of texts that use each word or two-word phrase at least once; common words (the, and, "
-                      "very) are left out. Names, emails and phone numbers are withheld before this step.",
+                      "very) are left out. Names, emails and phone numbers are withheld before this step, and a word "
+                      "that is a person's name is never a theme (a word of a flagged column's values, a given name, or "
+                      "a word the texts capitalise mid-sentence).",
             "table": {"cols": ["Word or phrase", "Texts", "Share of texts"],
                       "rows": [[w, format(c, ","), _fmt(100.0 * c / n) + "%"] for w, c in top + top2]},
             "chart": {"kind": "bars", "unit": "%", "series": [{"label": w, "value": 100.0 * c / n} for w, c in top]}}
+
+
+# The adapter's person-name test for a chart's category levels (review of the chart registry, 30 Sep 2026): a Pareto's
+# bars and a crosstab's rows and columns are the column's own values, so a column of people's names that the
+# personal-column check did not flag (its heading names no person: "stylist", "assigned") must not be charted. The
+# column's values look like people's names when the personal-column check would say so from its heading and values
+# (_person_hint and _person_value, PERSONAL_MIN_SHARE), or when PERSONAL_MIN_SHARE of its distinct values could be a
+# person's name (_person_value) and NAMES_FIRST_SHARE of them begin with a given name (engine/first_names.txt).
+NAMES_FIRST_SHARE = 0.30
+
+
+def _looks_like_names(values: Iterable[Any], header: Any = "") -> bool:
+    vals = list(dict.fromkeys(" ".join(str(v).split()) for v in values if str(v).strip()))
+    if not vals:
+        return False
+    person = [v for v in vals if _person_value(v)]
+    if len(person) < PERSONAL_MIN_SHARE * len(vals):
+        return False
+    if _person_hint(_header_tokens(header), header)[0]:
+        return True
+    given = _first_names()
+
+    def first(v: str) -> str:
+        if v.count(",") == 1:
+            v = v.split(",")[1]
+        w = v.split()
+        return w[0].casefold().strip(".'\u2019") if w else ""
+    return sum(1 for v in person if first(v) in given) >= NAMES_FIRST_SHARE * len(vals)
 
 
 def _design(df: Any, cols: List[str]):
@@ -6663,6 +7164,14 @@ def _unreadable_note(text: str, used: List[str], unread: Dict[str, int], undated
     return text.rstrip() + note
 
 
+def _names_but(ctx: Dict[str, Any], col: str) -> FrozenSet[str]:
+    """The tokens of every flagged column's values (ctx "names_by", by landed name) but those of `col` (a file's name)."""
+    nb = ctx.get("names_by") or {}
+    rd = ctx.get("reading")
+    own = {col, _engine_slug(col)} | ({rd.landed(col)} if rd is not None and rd.landed(col) else set())
+    return frozenset().union(*[v for k, v in nb.items() if k not in own]) if nb else frozenset()
+
+
 def _gate_state(cr: Any, limit: float) -> Dict[str, Any]:
     """The engine's own gate, as the AI's analyses and the planner's feedback respect it (integration review,
     29 Sep 2026: the analyses ran on the rows the engine kept, with a caveat, after the engine had refused its
@@ -6773,7 +7282,10 @@ def _run_analyses(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Di
                     t, c0, "dates" if info["kinds"].get(c0) == "date" else "text"))
                 continue
         try:
-            res = (_ANALYSIS_FN[t](df, date, ent, cols, plan, layout, by=by) if t in _TAKES_BY
+            # the themes never show a person's name: the tokens of every flagged column's values but the column the
+            # themes read themselves (a kept column's own words are its themes; ctx "names_by")
+            res = (_ANALYSIS_FN[t](df, date, ent, cols, plan, layout, by=by, names=_names_but(ctx, cols[0])) if t == "themes"
+                   else _ANALYSIS_FN[t](df, date, ent, cols, plan, layout, by=by) if t in _TAKES_BY
                    else _ANALYSIS_FN[t](df, date, ent, cols, plan, layout))
         except Exception as exc:  # noqa: BLE001 - one analysis never stops the report
             if os.environ.get("NL_BROWSER_STRICT"):
@@ -7099,6 +7611,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         audit = r = None
         refusal = ""
         pol = None
+        colmap = dict(getattr(res, "column_map", {}) or {})
+        prim_head = ""                            # the column the report leads with, named as the engine read it
         with _pinned_clock(as_of):
             # -- the Data Health Audit: the engine's data-quality findings
             t0 = time.perf_counter()
@@ -7108,18 +7622,21 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             # -- the business analysis: measures, forecast, story
             try:
                 pol = None
-                if ai_plan and ai_plan.get("primary"):
-                    import dataclasses as _dc
-                    from northledger import gate as _gate
-                    pol = _dc.replace(_gate.DEFAULT_POLICY, primary_metric=_slug(ai_plan["primary"]))
-                elif layout:
-                    import dataclasses as _dc
-                    from northledger import gate as _gate
+                # the plan's primary column, as the engine's claim for that measure (the live baseline of 30 Sep
+                # 2026: the plan named VALUE, the rules then read the file as a long table whose one series was named
+                # otherwise, and the gate's primary matched nothing, so the report led with the row count). A long
+                # table's value column is one column per series: the report leads with one of them (_lead_series).
+                prim_head = str((ai_plan or {}).get("primary") or "")
+                if layout and (not prim_head or prim_head == layout.get("value_column")):
                     layout["lead"], layout["lead_why"] = _lead_series(layout, objective)
                     if goal_from_plan and layout["lead_why"] == "your question names it":
                         layout["lead_why"] = "the goal the AI plan set names it"
-                    if layout["lead"]:
-                        pol = _dc.replace(_gate.DEFAULT_POLICY, primary_metric=_slug(layout["lead"]))
+                    prim_head = layout["lead"]
+                if prim_head:
+                    import dataclasses as _dc
+                    from northledger import gate as _gate
+                    pol = _dc.replace(_gate.DEFAULT_POLICY,
+                                      primary_metric=str(colmap.get(prim_head) or _slug(prim_head)))
                 r = _loop.run_analyze(eng.db_path, table, objective, policy=pol,
                                       out_dir=os.path.join(tmp, "analysis"), as_of=as_of_eff,
                                       display_name=name, timer=timer,
@@ -7271,11 +7788,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if ai_plan is None and layout is None and reading is not None:
             try:
                 _PROFILE_CACHE.clear()
+                import nl_viz as _nv
+                pfacts = _profile_facts(reading, list(reading.land) or list(reading.values.columns), hidden_land)
                 _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value={
-                    "ok": True, "facts": _profile_facts(reading, list(reading.land) or list(reading.values.columns),
-                                                        hidden_land),
+                    "ok": True, "facts": pfacts,
                     "rows": reading.n, "flagged": [dict(f) for f in flagged],
-                    "colmap": dict(getattr(res, "column_map", {}) or {})})
+                    "colmap": dict(getattr(res, "column_map", {}) or {}),
+                    "viz_stats": _nv.profile_stats(reading, pfacts)})
             except Exception:  # noqa: BLE001 - the profile then lands the file itself
                 if os.environ.get("NL_BROWSER_STRICT"):
                     raise
@@ -7331,9 +7850,17 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                                          if n_cells > FLAGGED_CELLS_MAX else "")}
             if n_cells:
                 rep["downloads"]["contract_flagged_csv"] = text
-        # -- contract v2: grades, tests, provenance, quality profile and chart data
+        # -- contract v2: grades, tests, provenance, quality profile and chart data. The plan's primary column leads
+        # (the engine's claim for that measure: _V2.primary_gated), and a measure the plan reads is named from its
+        # column and the plan's label and unit (_measure_names), never from a value in the file
+        plan_measure = None
+        if ai_plan and prim_head:
+            pcs = {str(c.get("name")): c for c in ai_plan.get("columns") or [] if isinstance(c, dict)}
+            pc = pcs.get(prim_head) or pcs.get(str(ai_plan.get("primary") or "")) or {}
+            plan_measure = (str(colmap.get(prim_head) or _slug(prim_head)), str(pc.get("semantic_type") or ""))
         _build_v2(rep, audit, r if (r is not None and not date_withheld) else None, th, cr, eng.db_path,
-                  flagged, withheld, pub, as_of_eff, objective, reasons, rules)
+                  flagged, withheld, pub, as_of_eff, objective, reasons, rules, plan_measure,
+                  _measure_names(ai_plan, colmap, pub))
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
         if layout:
             _layout_notes(rep, layout)
@@ -7371,7 +7898,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                 pct[reading.header(land)] = _pct_reading(reading.numbers(land), reading.texts[land],
                                                                          reading.filled(land))
                     actx = {"reading": reading, "clean": cr.clean, "hide": hidden_land, "pct": pct, "private": private,
-                            "gate": gate}
+                            "gate": gate, "names_by": scrub.flag_tokens_by}
                     rep["ai_analyses"] = _run_analyses(actx, ai_plan, layout)
                     _zero_note_rows(rep, actx.get("zeros") or {}, contracts_off)
             rep["plan_signals"] = _plan_signals(rep, ai_plan, ai_scrub, gate)
@@ -7381,7 +7908,12 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                  r.roles.date if (r is not None and not date_withheld) else None)
         if r is not None and not date_withheld:
             _true_headline(rep, r, pub, _date_grain(cr.clean, r.roles.date))
-        rep["scenarios"] = _scenarios(rep, r, cr, hidden_land, reading, ai_plan, pub, date_withheld)
+        # the question the report answers: the plan's goal, else the visitor's own (never the default question)
+        goal = str((ai_plan or {}).get("goal") or (objective if objective != DEFAULT_OBJECTIVE else ""))
+        rep["scenarios"] = _scenarios(rep, r, cr, hidden_land, reading, ai_plan, pub, date_withheld, goal)
+        # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
+        # record in rep["charts"]
+        rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -7469,7 +8001,10 @@ def _true_headline(rep: Dict[str, Any], r: Any, pub: Any, grain: str = "") -> No
         why = "The monthly change test did not run: %s." % reason
     head = why
     if items:
-        head += " From the AI plan's analyses: %s" % _first_sentence(items[0].get("sentence") or "")
+        # the analysis of the plan's primary column leads, when there is one (the headline follows the plan)
+        prim = str((rep.get("ai_plan") or {}).get("primary") or "")
+        lead = next((a for a in items if prim and prim in (a.get("columns") or [])), items[0])
+        head += " From the AI plan's analyses: %s" % _first_sentence(lead.get("sentence") or "")
     st["headline"] = pub(head)
     if st.get("what_happened") in ([_narrate.NOTHING_HAPPENED_LINE], [pub(_narrate.NOTHING_HAPPENED_LINE)]):
         st["what_happened"] = [pub(why)]
@@ -7506,7 +8041,7 @@ def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any], scrub: Optional["_N
 
 
 def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], reading: Any, plan: Any, pub: Any,
-               date_withheld: bool) -> Dict[str, Any]:
+               date_withheld: bool, goal: str = "") -> Dict[str, Any]:
     """rep["scenarios"] (design B; engine/nl_scenarios.py): the engine's claims as its gate kept them, the rows its
     cleaner kept without any column the visitor withheld or coded (the frame the analyses read, by the landed
     names the claims use), and the plan's column roles and units. The engine's own files are not touched."""
@@ -7536,13 +8071,30 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
                                     "like_for_like_of": t.get("like_for_like_of")}
         return _ns.build(rep, frame, r.roles.date or None, claims,
                          plan if isinstance(plan, dict) and plan.get("columns") else None,
-                         reading.landed if reading is not None else None, pub, additive_kind)
+                         reading.landed if reading is not None else None, pub, additive_kind, goal)
     except Exception as exc:  # noqa: BLE001 - the report stands without the block, and says so
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         return {"basis": None, "items": [], "refused": ["the scenarios could not be computed for this file (%s)"
                                                         % type(exc).__name__],
                 "note": "No scenario or contribution figures for this file; the reasons are listed."}
+
+
+def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",
+         names: Any = frozenset()) -> Dict[str, Any]:
+    """rep["viz"] (engine/nl_viz.py, CONTRACT §5.9): the charts the AI plan chose, each checked and built from the rows
+    the engine kept, or the engine's own picks; every refusal with its reason. The report stands without them. names:
+    the exact tokens of every flagged column's values (Scrubber.flag_tokens)."""
+    try:
+        import nl_viz as _nv
+        return _nv.build(rep, {"r": r, "reading": reading, "plan": plan if isinstance(plan, dict) else None,
+                               "pub": pub, "goal": goal, "names": names})
+    except Exception as exc:  # noqa: BLE001 - the report stands without the charts, and says so
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return {"version": VIZ_VERSION, "charts": [], "refused": [
+            {"chart": "all", "columns": [], "why": "the charts could not be built for this file (%s)" % type(exc).__name__,
+             "chosen_by": "engine"}], "chosen_by": "none"}
 
 
 # ----------------------------------------------------------------------------- the report's web searches

@@ -21,6 +21,14 @@ rules the report draws from the data's roles:
                      with no percentage), a fee that moved 3% (under the 5% bar), a flat measure,
                      and a forecast too short to be offered
   sample             engine/sample-messy.csv at its pinned date (engine/pack.json)
+  sales-ledger-charts  the sales ledger run again with an AI plan that asks for eight charts from the chart menu
+                     (CHARTS_PLAN, tools/fixtures/viz/spec.json menu), one of which the file cannot support, so the
+                     report carries the charts the engine built (rep.viz.charts, rule V records in rep.charts) and a
+                     refusal with its reason (rep.viz.refused); when the adapter cannot make it, the file holds
+                     {"__fixture_error": why} and only the check that reads it fails
+  viz-hostile-header  120 orders whose second column is headed <img src=x onerror=alert(1)>, run with an AI plan
+                     that asks for a Pareto of that column (3 levels): the engine refuses it, and the refusal names the
+                     column as the file does (rep.viz.refused[].columns), which the page must print as text
   orders-private     240 orders with a buyer's email, a free-text note and the member of staff, run
                      with an AI plan (PRIVATE_PLAN) and the choices code / withhold / keep: the
                      coded email and the kept staff name fail their tests (the withheld note's date
@@ -206,6 +214,54 @@ PRIVATE_PLAN = {
     "context_queries": ["Dana Whitfield sales 2024"]}
 PRIVATE_CHOICES = {"customer_email": "code", "notes": "withhold", "staff_name": "keep"}
 
+# The AI plan the sales-ledger-charts run is given: the chart menu's names with the ledger's columns in each chart's
+# argument order (spec.json menu), and one chart the file cannot support (it has no free-text column), so the engine
+# builds some and refuses one with its reason (engine/nl_viz.py validate_directive).
+CHARTS_PLAN = {
+    "goal": "What drove the rise in sales, and where in the year did it happen?", "understanding": "Orders with region, category, channel and amounts.",
+    "kind": "transactions", "primary": "amount", "operations": [], "analyses": [{"type": "compare", "columns": ["amount"], "by": "channel"}],
+    "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                {"name": "order_id", "semantic_type": "identifier", "role": "key"},
+                {"name": "region", "semantic_type": "category", "role": "dimension"},
+                {"name": "category", "semantic_type": "category", "role": "dimension"},
+                {"name": "channel", "semantic_type": "category", "role": "dimension"},
+                {"name": "qty", "semantic_type": "count", "role": "measure"},
+                {"name": "unit_price", "semantic_type": "level", "role": "measure", "unit": "currency"},
+                {"name": "discount", "semantic_type": "percentage", "role": "measure"},
+                {"name": "amount", "semantic_type": "flow_amount", "role": "target", "unit": "currency"}],
+    "charts": [{"kind": "contribution_waterfall", "columns": ["region", "amount"], "why": "The goal asks what moved sales; region is the breakdown."},
+               {"kind": "calendar_heatmap", "columns": ["amount"], "why": "Monthly totals side by side show where in the year sales rose."},
+               {"kind": "change_heatmap", "columns": ["region", "amount"], "why": "Where in the year each region moved."},
+               {"kind": "crosstab_heatmap", "columns": ["region", "channel"], "why": "Which channels each region sells through."},
+               {"kind": "theme_rating_heatmap", "columns": ["region", "qty"], "why": "A chart this file cannot support: it has no free-text column."},
+               {"kind": "group_ranges", "columns": ["amount", "channel"], "why": "Whether order sizes differ by channel."},
+               {"kind": "pareto", "columns": ["category", "amount"], "why": "Which categories carry most sales."},
+               {"kind": "slope", "columns": ["category", "amount"], "why": "Each category before and after the rise."}]}
+
+
+# the chart review of 30 Sep 2026: a column header that is markup, named in a chart the engine refuses
+HOSTILE = "<img src=x onerror=alert(1)>"
+HOSTILE_PLAN = {
+    "goal": "Which kind of order carries the amount?", "understanding": "Orders.", "kind": "transactions",
+    "primary": "amount", "operations": [], "analyses": [],
+    "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                {"name": HOSTILE, "semantic_type": "category", "role": "segment"},
+                {"name": "amount", "semantic_type": "flow_amount", "role": "target"}],
+    "charts": [{"kind": "pareto", "columns": [HOSTILE, "amount"], "why": "Which kind carries the amount."}]}
+
+
+def write_hostile(out):
+    """viz-hostile-header.csv: 120 invented orders over 24 months; the second column's header is markup."""
+    import csv as _csv
+    import random as _random
+    r = _random.Random(5)
+    with open(os.path.join(out, "viz-hostile-header.csv"), "w", encoding="utf-8", newline="") as f:
+        w = _csv.writer(f, lineterminator="\n")
+        w.writerow(["order_date", HOSTILE, "amount"])
+        for k in range(120):
+            d = dt.date(2024, 1, 1) + dt.timedelta(days=6 * k)
+            w.writerow([d.isoformat(), ["online", "store", "phone"][k % 3], "%.2f" % r.uniform(20, 90)])
+
 
 def write_private(out):
     """orders-private.csv: invented buyers (example.org addresses), invented staff, notes that hold a phone
@@ -264,6 +320,40 @@ def main(argv=None):
             json.dump(rep, f)
         if "__fixture_error" not in rep:
             print("%-18s %d charts, %d findings" % (name, len(rep["charts"]), len(rep["findings"])))
+    # the charts an AI plan asks for (CHARTS_PLAN): a failure here leaves its reason in the file, never stops the others
+    name, path = "sales-ledger-charts", os.path.join(a.out, "sales-ledger.csv")
+    try:
+        rep = nl_browser.run(open(path, "rb").read(), "sales-ledger.csv", "", {"__plan__": CHARTS_PLAN}, AS_OF)
+        viz = (rep.get("viz") or {}) if rep.get("ok") else {}
+        if not rep.get("ok"):
+            rep = {"__fixture_error": "the planned run failed: %s" % rep.get("error")}
+        elif not viz.get("charts"):
+            rep = {"__fixture_error": "the planned run built no chart; refused: %s" % json.dumps(viz.get("refused"))[:400]}
+    except Exception as e:                      # the engine's chart registry is new: say what broke, keep the rest
+        rep = {"__fixture_error": "the planned run raised %s: %s" % (type(e).__name__, e)}
+    with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f)
+    if "__fixture_error" in rep:
+        print("%-18s %s" % (name, rep["__fixture_error"]), file=sys.stderr)
+    else:
+        print("%-18s %d charts (%d from the chart registry, %d refused), %d findings" % (name, len(rep["charts"]), len(rep["viz"]["charts"]),
+              len(rep["viz"]["refused"]), len(rep["findings"])))
+    # a header that is markup, in a chart the engine refuses (the chart review of 30 Sep 2026)
+    name = "viz-hostile-header"
+    write_hostile(a.out)
+    try:
+        rep = nl_browser.run(open(os.path.join(a.out, name + ".csv"), "rb").read(), name + ".csv", "",
+                             {"__plan__": HOSTILE_PLAN}, AS_OF)
+        if not rep.get("ok"):
+            rep = {"__fixture_error": "the planned run failed: %s" % rep.get("error")}
+        elif not any(HOSTILE in (x.get("columns") or []) for x in (rep.get("viz") or {}).get("refused") or []):
+            rep = {"__fixture_error": "the engine did not refuse the chart on the header: %s" % json.dumps(rep["viz"])[:400]}
+    except Exception as e:
+        rep = {"__fixture_error": "the planned run raised %s: %s" % (type(e).__name__, e)}
+    with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f)
+    print("%-18s %s" % (name, rep.get("__fixture_error") or "%d refused" % len(rep["viz"]["refused"])),
+          file=sys.stderr if "__fixture_error" in rep else sys.stdout)
 
 
 if __name__ == "__main__":

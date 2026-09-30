@@ -125,6 +125,7 @@
   function lvl(x) { return x === null || x === undefined ? '' : String(+(x * 100).toFixed(2)) + '%'; }
   function chipLabel(ch) {
     if (!ch) return '';
+    if (ch.type === 'viz') return window.NLV ? window.NLV.chartName(ch.data && ch.data.chart).toLowerCase() : 'chart';
     if (ch.type === 'heatmap') return ch.id.indexOf('season.') === 0 ? 'season: ' + ch.id.slice(7).replace(/_/g, ' ') : ch.id.indexOf('catmonth.') === 0 ? 'by ' + ch.id.slice(9).replace(/_/g, ' ') : ch.id === 'corr' ? 'correlation' : 'empty cells';
     return CHIP[ch.type] || ch.type;
   }
@@ -145,6 +146,9 @@
       benchmark_strip: function (d) { return typeof d.available === 'boolean'; },
       table: function (d) { return arr(d.rows); },
       kpi_tiles: function (d) { return arr(d.tiles); },
+      // the chart registry's record (type "viz", rule V): any kind passes, a kind this page does not know is drawn as
+      // its table (src/js/55-nl-viz.js); only a record with no kind or no table is refused
+      viz: function (d) { return obj(d) && typeof d.kind === 'string' && obj(d.table); },
       heatmap: function (d, id) {
         if (id.indexOf('season.') === 0) return arr(d.years) && arr(d.months) && arr(d.values) && d.values.length === d.years.length;
         if (id.indexOf('catmonth.') === 0) return arr(d.months) && arr(d.categories) && arr(d.counts) && d.counts.length === d.categories.length && d.counts.every(function (x) { return same(x, d.months); });
@@ -236,16 +240,55 @@
   }
 
   // a figure for one chart record; the drawer fills .viz when the figure is drawn
-  function fig(ch, P, R) {
+  function fig(ch, P, R, kick) {
     var F = byId(R), ids = ch.finding_ids || [], claims = ids.filter(function (i) { return F[i]; }).length;
     var btn = !ids.length ? '<span class="note">Descriptive: it supports no single claim.</span>'
-      : '<button type="button" class="tb nl2-link" aria-label="Highlight ' + (claims ? 'the claims' : 'the evidence facts') + ' this chart supports: ' + esc(ids.map(function (i) { return F[i] ? F[i].claim : i; }).join('; ')) + '">' +
-        (claims === ids.length ? (claims === 1 ? 'Show the claim it supports' : 'Show the ' + claims + ' claims it supports') : 'Show the ' + ids.length + ' evidence facts behind it') + '</button>';
+      : '<button type="button" class="tb nl2-link" aria-label="Highlight ' + (claims ? (claims === 1 ? 'the claim' : 'the claims') : (ids.length === 1 ? 'the evidence fact' : 'the evidence facts')) + ' this chart supports: ' + esc(ids.map(function (i) { return F[i] ? F[i].claim : i; }).join('; ')) + '">' +
+        (claims === ids.length ? (claims === 1 ? 'Show the claim it supports' : 'Show the ' + claims + ' claims it supports') : 'Show the ' + ids.length + ' evidence ' + (ids.length === 1 ? 'fact' : 'facts') + ' behind it') + '</button>';
     var table = ch.type === 'table' || (ch.type === 'benchmark_strip' && !ch.data.available) ? '0' : '1';
-    return '<figure class="visual nl2-fig" id="nl2c-' + P + '-' + esc(ch.id) + '" data-chart="' + esc(ch.id) + '" data-rule="' + esc(ch.rule) + '" data-findings="' + esc(ids.join(' ')) + '" data-table="' + table + '" tabindex="-1">' +
-      '<figcaption>' + esc(ch.title) + '</figcaption>' +
-      (P === 'a' ? '<p class="nl2-why">Why it is here: ' + esc(ch.why_shown) + '.</p>' : '') +
+    var V = ch.type === 'viz' ? ch.data || {} : null, NV = window.NLV;
+    if (V) table = NV && NV.kindOf(V) !== 'table' ? '1' : '0';
+    // a viz record's why is the AI's reason (or the engine's "Chosen by the engine: ..."): data, shown as text
+    var vwhy = V && V.why ? (V.chosen_by === 'ai' ? 'Asked for by the AI: ' : '') + V.why : '';
+    return '<figure class="visual nl2-fig' + (V ? ' nlv-fig' : '') + '" id="nl2c-' + P + '-' + esc(ch.id) + '" data-chart="' + esc(ch.id) + '" data-rule="' + esc(ch.rule) + '" data-findings="' + esc(ids.join(' ')) + '" data-table="' + table + '"' +
+      (V ? ' data-kind="' + esc(V.kind) + '" aria-label="' + esc(NV ? NV.label(V) : V.title || ch.title) + '"' : '') + (kick ? ' data-drivers="1"' : '') + ' tabindex="-1">' +
+      (kick ? '<p class="kicker nl2-kick">' + esc(kick) + '</p>' : '') +
+      '<figcaption>' + esc(V && V.title ? V.title : ch.title) + '</figcaption>' +
+      (V && vwhy ? '<p class="nl2-why">' + esc(/[?!]\s*$/.test(vwhy) ? vwhy.trim() : vwhy.replace(/[.\s]+$/, '') + '.') + '</p>' : P === 'a' ? '<p class="nl2-why">Why it is here: ' + esc(ch.why_shown) + '.</p>' : '') +
       '<div class="viz" id="nl2v-' + P + '-' + esc(ch.id) + '"></div><div class="nl2-fignote"></div><div class="nl2-figfoot">' + btn + '</div></figure>';
+  }
+
+  /* ------------------------------------------------------------ the chart registry's charts (type "viz", rule V) */
+  var SEC_ORDER = { headline: 0, drove: 1, other: 2, scenarios: 3 };
+  // the viz records to draw, in the report's section order (the headline, what drove it, other findings, scenarios)
+  function vizCharts(r) {
+    return (r.charts || []).map(function (c, i) { return [c, i]; }).filter(function (x) { return x[0] && x[0].type === 'viz' && x[0].default_visible !== false && obj(x[0].data); })
+      .sort(function (a, b) {
+        var sa = SEC_ORDER[a[0].data.section], sb = SEC_ORDER[b[0].data.section];
+        return (sa === undefined ? 9 : sa) - (sb === undefined ? 9 : sb) || a[1] - b[1];
+      }).map(function (x) { return x[0]; });
+  }
+  // the contribution waterfall, when the report has one: the "Top drivers" the manager view used to say were not shown
+  function driversChart(VZ) { return VZ.filter(function (c) { return c.data.chart === 'contribution_waterfall' && c.data.kind === 'waterfall'; })[0] || null; }
+  function vizArea(r, VZ, wf, P) {
+    var ai = VZ.some(function (c) { return c.data.chosen_by === 'ai'; }), eng = VZ.some(function (c) { return c.data.chosen_by === 'engine'; });
+    var who = ai && eng ? 'the AI and the engine' : ai ? 'the AI' : 'the engine';
+    var list = wf ? [wf].concat(VZ.filter(function (c) { return c !== wf; })) : VZ;
+    var hN = P === 'm' ? 'h3' : 'h4';   // the analyst view's sections are h3, their parts h4
+    return '<section class="nl2-viz" data-view="' + P + '" aria-labelledby="nl2-viz-h-' + P + '"><' + hN + ' id="nl2-viz-h-' + P + '">Charts chosen for this file</' + hN + '>' +
+      '<p class="note">Chosen by ' + who + ' from what this file holds. The engine computed every value and wrote every label, and each chart\'s figures can also be read as a table.</p>' +
+      '<div class="nl2-viz-list">' + list.map(function (c) { return fig(c, P, r, c === wf ? 'Top drivers (contribution, not cause)' : ''); }).join('') + '</div></section>';
+  }
+  // the charts asked for and not built, in the engine's words (rep.viz.refused)
+  function refusedItems(r) {
+    var R = r.viz && arr(r.viz.refused) ? r.viz.refused : [], NV = window.NLV;
+    return R.filter(obj).map(function (x) {
+      var name = NV ? NV.chartName(x.chart) : String(x.chart || 'chart').replace(/_/g, ' ');
+      // the columns as the plan named them: the file's own headers, data, escaped (review of the chart registry, 30 Sep
+      // 2026: a header "<img src=x onerror=...>" the engine refused went into the page as markup)
+      var cols = arr(x.columns) && x.columns.length ? ' on ' + esc(x.columns.map(String).join(', ')) : '';
+      return '<li data-refused="' + esc(x.chart || '') + '">' + esc(name) + (x.chosen_by === 'ai' ? ', asked for by the AI' + cols : cols) + ': ' + esc(String(x.why || 'not built').replace(/[.\s]+$/, '')) + '.</li>';
+    }).join('');
   }
 
   /* ------------------------------------------------------------ the manager view */
@@ -355,7 +398,8 @@
   }
   function manager(r, CH, parts) {
     var K = CH.kpi, B = CH.benchmark, drv = (r.charts_suppressed || []).filter(function (s) { return s.rule === '#2b'; })[0];
-    var figs = r.charts.filter(function (c) { return c.view === 'manager' && c.default_visible && ['kpi', 'findings_table', 'benchmark'].indexOf(c.id) < 0; });
+    var figs = r.charts.filter(function (c) { return c.view === 'manager' && c.default_visible && c.type !== 'viz' && ['kpi', 'findings_table', 'benchmark'].indexOf(c.id) < 0; });
+    var VZ = vizCharts(r), wf = driversChart(VZ);
     var biz = r.findings.filter(function (f) { return (f.kind === 'business' || f.kind === 'forecast') && f.grade !== 'CONFIRMED'; });
     var dq = r.findings.filter(function (f) { return f.kind !== 'business' && f.kind !== 'forecast' && f.grade === 'WATCH'; });
     var causal = (r.limitations || []).filter(function (l) { return l.kind === 'causal'; })[0];
@@ -381,9 +425,11 @@
     h += '<article class="tr-card nl2-trustcard"><p class="nl2-trust-line"><b>Can I trust it?</b> ' + esc(trustLine(r)) + '</p>' +
       '<details class="nl2-trust-more"><summary>How much to trust it, layer by layer</summary><ul class="nl2-trust">' + trustLayers(r).map(function (x) { return '<li data-layer="' + x[0] + '">' + x[1] + '</li>'; }).join('') + '</ul></details></article>';
     if (figs.length) h += '<div class="nl2-grid' + (figs.length === 1 ? ' nl2-grid-1' : '') + '">' + figs.map(function (c) { return fig(c, 'm', r); }).join('') + '</div>';
-    // below the fold: every finding, what would settle each open one, and the benchmark behind the false-alarm line
+    if (VZ.length) h += vizArea(r, VZ, wf, 'm');
+    // below the fold: every finding, what would settle each open one, and the benchmark behind the false-alarm line;
+    // the "Top drivers ... not shown" line only when no contribution waterfall shows them
     var more = '';
-    if (drv) more += '<p class="nl2-drivers"><b>Top drivers</b> (contribution, not cause): not shown, because ' + esc(drv.why) + '.</p>';
+    if (drv && !wf) more += '<p class="nl2-drivers"><b>Top drivers</b> (contribution, not cause): not shown, because ' + esc(drv.why) + '.</p>';
     // the manager charts whose rule did not fire, one line each (§5 "Suppression"); the analyst view lists them all
     var MGR = { '#2': 'trend', '#4': 'forecast', '#5': 'forecast replay' }, gone = {};
     (r.charts_suppressed || []).forEach(function (x) { if (MGR[x.rule]) { gone[x.why] = gone[x.why] || []; if (gone[x.why].indexOf(MGR[x.rule]) < 0) gone[x.why].push(MGR[x.rule]); } });
@@ -526,7 +572,8 @@
     S.methods = methods(r);
     var order = ['trend_windows', 'histogram_windows', 'fan', 'replay', 'table', 'heatmap', 'ranked_bars'];
     var rank = function (c) { var i = order.indexOf(c.type); return c.id === 'corr' ? 99 : c.id.indexOf('catmonth.') === 0 ? 8 : c.id.indexOf('season.') === 0 ? 6.5 : i < 0 ? 50 : i; };
-    var res = r.charts.filter(function (c) { return ['kpi', 'findings_table', 'benchmark', 'cleaning.before_after', 'missingness'].indexOf(c.id) < 0; })
+    var VZa = vizCharts(r), wfa = driversChart(VZa);
+    var res = r.charts.filter(function (c) { return ['kpi', 'findings_table', 'benchmark', 'cleaning.before_after', 'missingness'].indexOf(c.id) < 0 && c.type !== 'viz'; })
       .map(function (c, i) { return [c, i]; }).sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (x) { return x[0]; });
     S.results = '<h4>Findings</h4><div data-chart="findings_table" data-findings="' + esc(CH.findings_table ? CH.findings_table.finding_ids.join(' ') : '') + '">' + ftab(r, 'analyst', CH) + '</div>' +
       '<p class="note">p: for a change claim, how often a result at least this strong would appear if the change were smaller than the bar; q: the same after allowing for the claims tested together in its family. Neither is the probability that the claim is true. The interval is the same test inverted; a selection-adjusted bound allows for having picked the confirmed claims out of the family.</p>' +
@@ -534,8 +581,9 @@
       '<h4>Charts</h4>' + res.map(function (c) {
         if (c.id === 'corr') return '<div class="nl2-ask" data-ask="corr"><p class="note">A correlation map of the ' + esc(num((c.data.measures || []).length, 0)) + ' measures is available. It is descriptive only and supports no finding, so it is off until you ask.</p><button type="button" class="btn btn-ghost" data-act="corr">Show the correlation map</button></div>';
         return c.default_visible ? fig(c, 'a', r) : '';
-      }).join('') +
-      '<h4>Charts not drawn, and why</h4><ul class="nl2-supp">' + (r.charts_suppressed || []).map(function (s) { return '<li data-rule="' + esc(s.rule) + '">' + esc(String(s.type || '').replace(/_/g, ' ')) + ': ' + esc(s.why) + '</li>'; }).join('') + '</ul>';
+      }).join('') + (VZa.length ? vizArea(r, VZa, wfa, 'a') : '') +
+      '<h4>Charts not drawn, and why</h4><ul class="nl2-supp">' + (r.charts_suppressed || []).filter(function (s) { return !(wfa && s.rule === '#2b'); })
+        .map(function (s) { return '<li data-rule="' + esc(s.rule) + '">' + esc(String(s.type || '').replace(/_/g, ' ')) + ': ' + esc(s.why) + '</li>'; }).join('') + refusedItems(r) + '</ul>';
     var lim = r.limitations || [];
     var nm = [].concat((en.benchmark && en.benchmark.not_measured || []).map(function (k) { return NOT_MEASURED[k] || k.replace(/_/g, ' '); }),
       [(h.missingness && h.missingness.mcar && h.missingness.mcar.p === null) ? 'whether the empty cells are missing at random (Little\'s test)' : null,
@@ -587,6 +635,7 @@
       if (!fn) return;
       v.setAttribute('data-drawn', '1');
       U.visual(v.id, function (W) {
+        if (ch.type === 'viz' && v.clientWidth) W = Math.min(W, Math.floor(v.clientWidth));
         var out = fn(W, ch, r) || {};
         if (note) note.innerHTML = out.note ? (/^<p/.test(out.note) ? out.note : '<p class="note">' + out.note + '</p>') : '';
         return out;

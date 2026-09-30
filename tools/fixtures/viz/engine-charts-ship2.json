@@ -1,0 +1,1843 @@
+{
+ "about": "The charts the engine emits for ship2 (tools/fixtures/scenarios/ship2_privacy_orders.csv, analysis date 2026-09-29, the personal columns withheld as by default): engine_pick with no chart asked for, ai_pick for the plan's charts below (two of them refused). Records as rep.viz holds them and as results_for_ai sends them; cards as the model sees them. Rewrite with: python tools/test_nl_viz.py --write-fixture",
+ "spec_version": "2026-09-30.1",
+ "engine_snapshot": "19ec81d19e0d",
+ "byte_caps": {
+  "record": 6000,
+  "heatmap": 12000
+ },
+ "engine_pick": {
+  "viz": {
+   "version": "2026-09-30.1",
+   "charts": [
+    {
+     "id": "viz.1.contribution_waterfall",
+     "chart": "contribution_waterfall",
+     "kind": "waterfall",
+     "title": "Where the change in revenue came from, by region",
+     "subtitle": "Total revenue, 2024-01 to 2024-12 against 2025-01 to 2025-12: each region's contribution to the change",
+     "section": "drove",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change",
+      "scenario:headline.prior",
+      "scenario:contribution.east.change",
+      "scenario:contribution.north.change",
+      "scenario:contribution.west.change",
+      "scenario:contribution.south.change",
+      "scenario:headline.latest",
+      "scenario:headline.change"
+     ],
+     "grade": null,
+     "parent_grade": "WATCH",
+     "chosen_by": "engine",
+     "why": "Chosen by the engine: each segment's contribution to the headline's change, from the prior total to the latest",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "steps": [
+       {
+        "label": "12 months before",
+        "value": 128256.1,
+        "text": "128,256",
+        "kind": "total",
+        "from": 0,
+        "to": 128256.1
+       },
+       {
+        "label": "East",
+        "value": 16220.37,
+        "text": "+16,220",
+        "kind": "step",
+        "from": 128256.1,
+        "to": 144476.47
+       },
+       {
+        "label": "North",
+        "value": 7116.13,
+        "text": "+7,116",
+        "kind": "step",
+        "from": 144476.47,
+        "to": 151592.6
+       },
+       {
+        "label": "West",
+        "value": 329.59,
+        "text": "+330",
+        "kind": "step",
+        "from": 151592.6,
+        "to": 151922.19
+       },
+       {
+        "label": "South",
+        "value": 291.74,
+        "text": "+292",
+        "kind": "step",
+        "from": 151922.19,
+        "to": 152213.93
+       },
+       {
+        "label": "Latest 12 months",
+        "value": 152213.93,
+        "text": "152,214",
+        "kind": "total",
+        "from": 0,
+        "to": 152213.93
+       }
+      ],
+      "basis": {
+       "split": "segment",
+       "finding_id": "measure.revenue.total.change",
+       "column": "region",
+       "prior": [
+        "2024-01",
+        "2024-12"
+       ],
+       "latest": [
+        "2025-01",
+        "2025-12"
+       ]
+      },
+      "change": {
+       "value": 23957.83,
+       "text": "+23,958"
+      }
+     },
+     "table": {
+      "cols": [
+       "Step",
+       "Total revenue"
+      ],
+      "rows": [
+       [
+        "12 months before",
+        "128,256"
+       ],
+       [
+        "East",
+        "+16,220"
+       ],
+       [
+        "North",
+        "+7,116"
+       ],
+       [
+        "West",
+        "+330"
+       ],
+       [
+        "South",
+        "+292"
+       ],
+       [
+        "Latest 12 months",
+        "152,214"
+       ]
+      ]
+     },
+     "summary": "Total revenue went from 128,256 in the 12 months before to 152,214 in the latest 12 months, a change of +23,958 (part of a change graded WATCH; not graded itself). The largest contributions: East +16,220 and North +7,116. Where the change sits, not what caused it.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "Scenario items on the rows the engine kept (2024-01 to 2025-12); their monthly totals match the engine's own charted series",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "revenue added up by region in each 12-month window"
+     }
+    },
+    {
+     "id": "viz.2.calendar_heatmap",
+     "chart": "calendar_heatmap",
+     "kind": "heatmap",
+     "title": "Revenue by month, 2024 and 2025",
+     "subtitle": "Total revenue in each month; the shade and the glyph mark the lowest, middle and highest third of the months",
+     "section": "headline",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change"
+     ],
+     "grade": null,
+     "parent_grade": null,
+     "chosen_by": "engine",
+     "why": "Chosen by the engine: month (across) by year (down) of the measure, on the engine's date column",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "rows": [
+       "2024",
+       "2025"
+      ],
+      "cols": [
+       "Jan",
+       "Feb",
+       "Mar",
+       "Apr",
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep",
+       "Oct",
+       "Nov",
+       "Dec"
+      ],
+      "values": [
+       [
+        8592.2,
+        11224.93,
+        12283.74,
+        9204.65,
+        11998.66,
+        12063.21,
+        11266.59,
+        8893.37,
+        9810.72,
+        9505.65,
+        10934.49,
+        12477.89
+       ],
+       [
+        10855.04,
+        13659.66,
+        13936.48,
+        13797.86,
+        12292.51,
+        5845.08,
+        12434.69,
+        12638.04,
+        10290.29,
+        15221.66,
+        18722.52,
+        12520.1
+       ]
+      ],
+      "text": [
+       [
+        "8,592",
+        "11,225",
+        "12,284",
+        "9,205",
+        "11,999",
+        "12,063",
+        "11,267",
+        "8,893",
+        "9,811",
+        "9,506",
+        "10,934",
+        "12,478"
+       ],
+       [
+        "10,855",
+        "13,660",
+        "13,936",
+        "13,798",
+        "12,293",
+        "5,845",
+        "12,435",
+        "12,638",
+        "10,290",
+        "15,222",
+        "18,723",
+        "12,520"
+       ]
+      ],
+      "tier": [
+       [
+        1,
+        2,
+        2,
+        1,
+        2,
+        2,
+        2,
+        1,
+        1,
+        1,
+        2,
+        3
+       ],
+       [
+        1,
+        3,
+        3,
+        3,
+        2,
+        1,
+        2,
+        3,
+        1,
+        3,
+        3,
+        3
+       ]
+      ],
+      "n": [
+       [
+        13,
+        11,
+        14,
+        11,
+        14,
+        11,
+        14,
+        12,
+        13,
+        12,
+        13,
+        13
+       ],
+       [
+        12,
+        12,
+        13,
+        12,
+        13,
+        11,
+        14,
+        12,
+        12,
+        13,
+        13,
+        12
+       ]
+      ],
+      "scale": "sequential",
+      "legend": [
+       {
+        "tier": 1,
+        "text": "5,845 to 10,908"
+       },
+       {
+        "tier": 2,
+        "text": "10,908 to 12,449"
+       },
+       {
+        "tier": 3,
+        "text": "12,449 to 18,723"
+       }
+      ],
+      "row_label": "Year",
+      "col_label": "Month"
+     },
+     "table": {
+      "cols": [
+       "Year",
+       "Jan",
+       "Feb",
+       "Mar",
+       "Apr",
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep",
+       "Oct",
+       "Nov",
+       "Dec"
+      ],
+      "rows": [
+       [
+        "2024",
+        "8,592",
+        "11,225",
+        "12,284",
+        "9,205",
+        "11,999",
+        "12,063",
+        "11,267",
+        "8,893",
+        "9,811",
+        "9,506",
+        "10,934",
+        "12,478"
+       ],
+       [
+        "2025",
+        "10,855",
+        "13,660",
+        "13,936",
+        "13,798",
+        "12,293",
+        "5,845",
+        "12,435",
+        "12,638",
+        "10,290",
+        "15,222",
+        "18,723",
+        "12,520"
+       ]
+      ]
+     },
+     "summary": "The highest month is Nov 2025 (18,723) and the lowest Jun 2025 (5,845). 2025 is above 2024 in 11 of the 12 months.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "The rows the engine kept, by order_date month; each month's total equals the engine's own charted series",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "order_date"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "revenue added up by calendar month"
+     }
+    },
+    {
+     "id": "viz.3.group_ranges",
+     "chart": "group_ranges",
+     "kind": "dot_range",
+     "title": "Average revenue by region, with 95% ranges",
+     "subtitle": "Each region's average revenue, its 95% bootstrap range (999 resamples) and its median; ordered by the average weighted by its rows",
+     "section": "other",
+     "supports": "revenue by region",
+     "anchors": [],
+     "grade": null,
+     "parent_grade": null,
+     "chosen_by": "engine",
+     "why": "Chosen by the engine: each group's average with its 95% bootstrap range and its median: the compare analysis as a dot plot",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "average"
+     },
+     "data": {
+      "rows": [
+       {
+        "label": "North",
+        "n": 75,
+        "center": 1034.4636,
+        "lo": 916.737953,
+        "hi": 1157.573493,
+        "median": 1186.09,
+        "texts": {
+         "n": "75",
+         "center": "1,034",
+         "lo": "917",
+         "hi": "1,158",
+         "median": "1,186"
+        }
+       },
+       {
+        "label": "East",
+        "n": 71,
+        "center": 1028.353944,
+        "lo": 896.265261,
+        "hi": 1151.130514,
+        "median": 1032.94,
+        "texts": {
+         "n": "71",
+         "center": "1,028",
+         "lo": "896",
+         "hi": "1,151",
+         "median": "1,033"
+        }
+       },
+       {
+        "label": "South",
+        "n": 77,
+        "center": 846.556364,
+        "lo": 737.959519,
+        "hi": 950.052006,
+        "median": 791.16,
+        "texts": {
+         "n": "77",
+         "center": "847",
+         "lo": "738",
+         "hi": "950",
+         "median": "791"
+        }
+       },
+       {
+        "label": "West",
+        "n": 77,
+        "center": 840.094675,
+        "lo": 721.323234,
+        "hi": 965.070032,
+        "median": 780.77,
+        "texts": {
+         "n": "77",
+         "center": "840",
+         "lo": "721",
+         "hi": "965",
+         "median": "781"
+        }
+       }
+      ]
+     },
+     "table": {
+      "cols": [
+       "region",
+       "Rows",
+       "Average",
+       "95% range",
+       "Median"
+      ],
+      "rows": [
+       [
+        "North",
+        "75",
+        "1,034",
+        "917 to 1,158",
+        "1,186"
+       ],
+       [
+        "East",
+        "71",
+        "1,028",
+        "896 to 1,151",
+        "1,033"
+       ],
+       [
+        "South",
+        "77",
+        "847",
+        "738 to 950",
+        "791"
+       ],
+       [
+        "West",
+        "77",
+        "840",
+        "721 to 965",
+        "781"
+       ]
+      ]
+     },
+     "summary": "Ranked by each region's average weighted by its rows, North is highest (its own average 1,034, 95% range 917 to 1,158) and West lowest (840, 721 to 965). An association with the region, not its cause.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "The compare analysis on the rows the engine kept: the same seed and resamples, so the figures match its table",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "each region's average revenue per row, 95% bootstrap range, median"
+     }
+    },
+    {
+     "id": "viz.4.pvm_waterfall",
+     "chart": "pvm_waterfall",
+     "kind": "waterfall",
+     "title": "Price, volume and mix in the change in revenue",
+     "subtitle": "Total revenue, 2024-01 to 2024-12 against 2025-01 to 2025-12: the change in revenue per unit, in units, and in the region mix",
+     "section": "drove",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change",
+      "scenario:headline.prior",
+      "scenario:price_volume_mix.price",
+      "scenario:price_volume_mix.volume",
+      "scenario:price_volume_mix.mix",
+      "scenario:headline.latest",
+      "scenario:headline.change"
+     ],
+     "grade": null,
+     "parent_grade": "WATCH",
+     "chosen_by": "engine",
+     "why": "Chosen by the engine: the headline's change split into price, volume and mix",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "steps": [
+       {
+        "label": "12 months before",
+        "value": 128256.1,
+        "text": "128,256",
+        "kind": "total",
+        "from": 0,
+        "to": 128256.1
+       },
+       {
+        "label": "Price",
+        "value": 20526.705008,
+        "text": "+20,527",
+        "kind": "step",
+        "from": 128256.1,
+        "to": 148782.805008
+       },
+       {
+        "label": "Volume",
+        "value": 2051.441139,
+        "text": "+2,051",
+        "kind": "step",
+        "from": 148782.805008,
+        "to": 150834.246147
+       },
+       {
+        "label": "Mix",
+        "value": 1379.683853,
+        "text": "+1,380",
+        "kind": "step",
+        "from": 150834.246147,
+        "to": 152213.93
+       },
+       {
+        "label": "Latest 12 months",
+        "value": 152213.93,
+        "text": "152,214",
+        "kind": "total",
+        "from": 0,
+        "to": 152213.93
+       }
+      ],
+      "basis": {
+       "split": "price_volume_mix",
+       "finding_id": "measure.revenue.total.change",
+       "column": "region",
+       "prior": [
+        "2024-01",
+        "2024-12"
+       ],
+       "latest": [
+        "2025-01",
+        "2025-12"
+       ]
+      },
+      "change": {
+       "value": 23957.83,
+       "text": "+23,958"
+      }
+     },
+     "table": {
+      "cols": [
+       "Step",
+       "Total revenue"
+      ],
+      "rows": [
+       [
+        "12 months before",
+        "128,256"
+       ],
+       [
+        "Price",
+        "+20,527"
+       ],
+       [
+        "Volume",
+        "+2,051"
+       ],
+       [
+        "Mix",
+        "+1,380"
+       ],
+       [
+        "Latest 12 months",
+        "152,214"
+       ]
+      ]
+     },
+     "summary": "Of the +23,958 change in total revenue, price (the change in revenue per unit, at the latest units) adds +20,527, volume +2,051 and the shift of units between region values +1,380; they add up to the change.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "Scenario items (price, volume and mix) on the rows the engine kept; units on every row of both windows",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "units",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "price at the latest units, volume at the prior price per unit, mix at each region's prior price"
+     }
+    }
+   ],
+   "refused": [],
+   "chosen_by": "engine"
+  }
+ },
+ "ai_pick": {
+  "plan_charts": [
+   {
+    "kind": "contribution_waterfall",
+    "columns": [
+     "region",
+     "revenue"
+    ],
+    "why": "What moved revenue."
+   },
+   {
+    "kind": "pvm_waterfall",
+    "columns": [
+     "revenue",
+     "units",
+     "region"
+    ],
+    "why": "Price or volume?"
+   },
+   {
+    "kind": "calendar_heatmap",
+    "columns": [
+     "revenue"
+    ],
+    "why": "Monthly totals side by side."
+   },
+   {
+    "kind": "change_heatmap",
+    "columns": [
+     "region",
+     "revenue"
+    ],
+    "why": "Where in the year."
+   },
+   {
+    "kind": "group_ranges",
+    "columns": [
+     "revenue",
+     "region"
+    ],
+    "why": "Order size by region."
+   },
+   {
+    "kind": "pareto",
+    "columns": [
+     "region",
+     "revenue"
+    ],
+    "why": "Which regions carry revenue."
+   },
+   {
+    "kind": "slope",
+    "columns": [
+     "region",
+     "revenue"
+    ],
+    "why": "Each region before and after."
+   }
+  ],
+  "viz": {
+   "version": "2026-09-30.1",
+   "charts": [
+    {
+     "id": "viz.1.contribution_waterfall",
+     "chart": "contribution_waterfall",
+     "kind": "waterfall",
+     "title": "Where the change in revenue came from, by region",
+     "subtitle": "Total revenue, 2024-01 to 2024-12 against 2025-01 to 2025-12: each region's contribution to the change",
+     "section": "drove",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change",
+      "scenario:headline.prior",
+      "scenario:contribution.east.change",
+      "scenario:contribution.north.change",
+      "scenario:contribution.west.change",
+      "scenario:contribution.south.change",
+      "scenario:headline.latest",
+      "scenario:headline.change"
+     ],
+     "grade": null,
+     "parent_grade": "WATCH",
+     "chosen_by": "ai",
+     "why": "What moved revenue.",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "steps": [
+       {
+        "label": "12 months before",
+        "value": 128256.1,
+        "text": "128,256",
+        "kind": "total",
+        "from": 0,
+        "to": 128256.1
+       },
+       {
+        "label": "East",
+        "value": 16220.37,
+        "text": "+16,220",
+        "kind": "step",
+        "from": 128256.1,
+        "to": 144476.47
+       },
+       {
+        "label": "North",
+        "value": 7116.13,
+        "text": "+7,116",
+        "kind": "step",
+        "from": 144476.47,
+        "to": 151592.6
+       },
+       {
+        "label": "West",
+        "value": 329.59,
+        "text": "+330",
+        "kind": "step",
+        "from": 151592.6,
+        "to": 151922.19
+       },
+       {
+        "label": "South",
+        "value": 291.74,
+        "text": "+292",
+        "kind": "step",
+        "from": 151922.19,
+        "to": 152213.93
+       },
+       {
+        "label": "Latest 12 months",
+        "value": 152213.93,
+        "text": "152,214",
+        "kind": "total",
+        "from": 0,
+        "to": 152213.93
+       }
+      ],
+      "basis": {
+       "split": "segment",
+       "finding_id": "measure.revenue.total.change",
+       "column": "region",
+       "prior": [
+        "2024-01",
+        "2024-12"
+       ],
+       "latest": [
+        "2025-01",
+        "2025-12"
+       ]
+      },
+      "change": {
+       "value": 23957.83,
+       "text": "+23,958"
+      }
+     },
+     "table": {
+      "cols": [
+       "Step",
+       "Total revenue"
+      ],
+      "rows": [
+       [
+        "12 months before",
+        "128,256"
+       ],
+       [
+        "East",
+        "+16,220"
+       ],
+       [
+        "North",
+        "+7,116"
+       ],
+       [
+        "West",
+        "+330"
+       ],
+       [
+        "South",
+        "+292"
+       ],
+       [
+        "Latest 12 months",
+        "152,214"
+       ]
+      ]
+     },
+     "summary": "Total revenue went from 128,256 in the 12 months before to 152,214 in the latest 12 months, a change of +23,958 (part of a change graded WATCH; not graded itself). The largest contributions: East +16,220 and North +7,116. Where the change sits, not what caused it.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "Scenario items on the rows the engine kept (2024-01 to 2025-12); their monthly totals match the engine's own charted series",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "revenue added up by region in each 12-month window"
+     }
+    },
+    {
+     "id": "viz.2.pvm_waterfall",
+     "chart": "pvm_waterfall",
+     "kind": "waterfall",
+     "title": "Price, volume and mix in the change in revenue",
+     "subtitle": "Total revenue, 2024-01 to 2024-12 against 2025-01 to 2025-12: the change in revenue per unit, in units, and in the region mix",
+     "section": "drove",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change",
+      "scenario:headline.prior",
+      "scenario:price_volume_mix.price",
+      "scenario:price_volume_mix.volume",
+      "scenario:price_volume_mix.mix",
+      "scenario:headline.latest",
+      "scenario:headline.change"
+     ],
+     "grade": null,
+     "parent_grade": "WATCH",
+     "chosen_by": "ai",
+     "why": "Price or volume?",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "steps": [
+       {
+        "label": "12 months before",
+        "value": 128256.1,
+        "text": "128,256",
+        "kind": "total",
+        "from": 0,
+        "to": 128256.1
+       },
+       {
+        "label": "Price",
+        "value": 20526.705008,
+        "text": "+20,527",
+        "kind": "step",
+        "from": 128256.1,
+        "to": 148782.805008
+       },
+       {
+        "label": "Volume",
+        "value": 2051.441139,
+        "text": "+2,051",
+        "kind": "step",
+        "from": 148782.805008,
+        "to": 150834.246147
+       },
+       {
+        "label": "Mix",
+        "value": 1379.683853,
+        "text": "+1,380",
+        "kind": "step",
+        "from": 150834.246147,
+        "to": 152213.93
+       },
+       {
+        "label": "Latest 12 months",
+        "value": 152213.93,
+        "text": "152,214",
+        "kind": "total",
+        "from": 0,
+        "to": 152213.93
+       }
+      ],
+      "basis": {
+       "split": "price_volume_mix",
+       "finding_id": "measure.revenue.total.change",
+       "column": "region",
+       "prior": [
+        "2024-01",
+        "2024-12"
+       ],
+       "latest": [
+        "2025-01",
+        "2025-12"
+       ]
+      },
+      "change": {
+       "value": 23957.83,
+       "text": "+23,958"
+      }
+     },
+     "table": {
+      "cols": [
+       "Step",
+       "Total revenue"
+      ],
+      "rows": [
+       [
+        "12 months before",
+        "128,256"
+       ],
+       [
+        "Price",
+        "+20,527"
+       ],
+       [
+        "Volume",
+        "+2,051"
+       ],
+       [
+        "Mix",
+        "+1,380"
+       ],
+       [
+        "Latest 12 months",
+        "152,214"
+       ]
+      ]
+     },
+     "summary": "Of the +23,958 change in total revenue, price (the change in revenue per unit, at the latest units) adds +20,527, volume +2,051 and the shift of units between region values +1,380; they add up to the change.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "Scenario items (price, volume and mix) on the rows the engine kept; units on every row of both windows",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "units",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "price at the latest units, volume at the prior price per unit, mix at each region's prior price"
+     }
+    },
+    {
+     "id": "viz.3.calendar_heatmap",
+     "chart": "calendar_heatmap",
+     "kind": "heatmap",
+     "title": "Revenue by month, 2024 and 2025",
+     "subtitle": "Total revenue in each month; the shade and the glyph mark the lowest, middle and highest third of the months",
+     "section": "headline",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change"
+     ],
+     "grade": null,
+     "parent_grade": null,
+     "chosen_by": "ai",
+     "why": "Monthly totals side by side.",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "rows": [
+       "2024",
+       "2025"
+      ],
+      "cols": [
+       "Jan",
+       "Feb",
+       "Mar",
+       "Apr",
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep",
+       "Oct",
+       "Nov",
+       "Dec"
+      ],
+      "values": [
+       [
+        8592.2,
+        11224.93,
+        12283.74,
+        9204.65,
+        11998.66,
+        12063.21,
+        11266.59,
+        8893.37,
+        9810.72,
+        9505.65,
+        10934.49,
+        12477.89
+       ],
+       [
+        10855.04,
+        13659.66,
+        13936.48,
+        13797.86,
+        12292.51,
+        5845.08,
+        12434.69,
+        12638.04,
+        10290.29,
+        15221.66,
+        18722.52,
+        12520.1
+       ]
+      ],
+      "text": [
+       [
+        "8,592",
+        "11,225",
+        "12,284",
+        "9,205",
+        "11,999",
+        "12,063",
+        "11,267",
+        "8,893",
+        "9,811",
+        "9,506",
+        "10,934",
+        "12,478"
+       ],
+       [
+        "10,855",
+        "13,660",
+        "13,936",
+        "13,798",
+        "12,293",
+        "5,845",
+        "12,435",
+        "12,638",
+        "10,290",
+        "15,222",
+        "18,723",
+        "12,520"
+       ]
+      ],
+      "tier": [
+       [
+        1,
+        2,
+        2,
+        1,
+        2,
+        2,
+        2,
+        1,
+        1,
+        1,
+        2,
+        3
+       ],
+       [
+        1,
+        3,
+        3,
+        3,
+        2,
+        1,
+        2,
+        3,
+        1,
+        3,
+        3,
+        3
+       ]
+      ],
+      "n": [
+       [
+        13,
+        11,
+        14,
+        11,
+        14,
+        11,
+        14,
+        12,
+        13,
+        12,
+        13,
+        13
+       ],
+       [
+        12,
+        12,
+        13,
+        12,
+        13,
+        11,
+        14,
+        12,
+        12,
+        13,
+        13,
+        12
+       ]
+      ],
+      "scale": "sequential",
+      "legend": [
+       {
+        "tier": 1,
+        "text": "5,845 to 10,908"
+       },
+       {
+        "tier": 2,
+        "text": "10,908 to 12,449"
+       },
+       {
+        "tier": 3,
+        "text": "12,449 to 18,723"
+       }
+      ],
+      "row_label": "Year",
+      "col_label": "Month"
+     },
+     "table": {
+      "cols": [
+       "Year",
+       "Jan",
+       "Feb",
+       "Mar",
+       "Apr",
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep",
+       "Oct",
+       "Nov",
+       "Dec"
+      ],
+      "rows": [
+       [
+        "2024",
+        "8,592",
+        "11,225",
+        "12,284",
+        "9,205",
+        "11,999",
+        "12,063",
+        "11,267",
+        "8,893",
+        "9,811",
+        "9,506",
+        "10,934",
+        "12,478"
+       ],
+       [
+        "2025",
+        "10,855",
+        "13,660",
+        "13,936",
+        "13,798",
+        "12,293",
+        "5,845",
+        "12,435",
+        "12,638",
+        "10,290",
+        "15,222",
+        "18,723",
+        "12,520"
+       ]
+      ]
+     },
+     "summary": "The highest month is Nov 2025 (18,723) and the lowest Jun 2025 (5,845). 2025 is above 2024 in 11 of the 12 months.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "The rows the engine kept, by order_date month; each month's total equals the engine's own charted series",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "order_date"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "revenue added up by calendar month"
+     }
+    },
+    {
+     "id": "viz.4.group_ranges",
+     "chart": "group_ranges",
+     "kind": "dot_range",
+     "title": "Average revenue by region, with 95% ranges",
+     "subtitle": "Each region's average revenue, its 95% bootstrap range (999 resamples) and its median; ordered by the average weighted by its rows",
+     "section": "other",
+     "supports": "revenue by region",
+     "anchors": [],
+     "grade": null,
+     "parent_grade": null,
+     "chosen_by": "ai",
+     "why": "Order size by region.",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "average"
+     },
+     "data": {
+      "rows": [
+       {
+        "label": "North",
+        "n": 75,
+        "center": 1034.4636,
+        "lo": 916.737953,
+        "hi": 1157.573493,
+        "median": 1186.09,
+        "texts": {
+         "n": "75",
+         "center": "1,034",
+         "lo": "917",
+         "hi": "1,158",
+         "median": "1,186"
+        }
+       },
+       {
+        "label": "East",
+        "n": 71,
+        "center": 1028.353944,
+        "lo": 896.265261,
+        "hi": 1151.130514,
+        "median": 1032.94,
+        "texts": {
+         "n": "71",
+         "center": "1,028",
+         "lo": "896",
+         "hi": "1,151",
+         "median": "1,033"
+        }
+       },
+       {
+        "label": "South",
+        "n": 77,
+        "center": 846.556364,
+        "lo": 737.959519,
+        "hi": 950.052006,
+        "median": 791.16,
+        "texts": {
+         "n": "77",
+         "center": "847",
+         "lo": "738",
+         "hi": "950",
+         "median": "791"
+        }
+       },
+       {
+        "label": "West",
+        "n": 77,
+        "center": 840.094675,
+        "lo": 721.323234,
+        "hi": 965.070032,
+        "median": 780.77,
+        "texts": {
+         "n": "77",
+         "center": "840",
+         "lo": "721",
+         "hi": "965",
+         "median": "781"
+        }
+       }
+      ]
+     },
+     "table": {
+      "cols": [
+       "region",
+       "Rows",
+       "Average",
+       "95% range",
+       "Median"
+      ],
+      "rows": [
+       [
+        "North",
+        "75",
+        "1,034",
+        "917 to 1,158",
+        "1,186"
+       ],
+       [
+        "East",
+        "71",
+        "1,028",
+        "896 to 1,151",
+        "1,033"
+       ],
+       [
+        "South",
+        "77",
+        "847",
+        "738 to 950",
+        "791"
+       ],
+       [
+        "West",
+        "77",
+        "840",
+        "721 to 965",
+        "781"
+       ]
+      ]
+     },
+     "summary": "Ranked by each region's average weighted by its rows, North is highest (its own average 1,034, 95% range 917 to 1,158) and West lowest (840, 721 to 965). An association with the region, not its cause.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "The compare analysis on the rows the engine kept: the same seed and resamples, so the figures match its table",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "each region's average revenue per row, 95% bootstrap range, median"
+     }
+    },
+    {
+     "id": "viz.5.slope",
+     "chart": "slope",
+     "kind": "slope",
+     "title": "Revenue by region, the 12 months before and the latest 12 months",
+     "subtitle": "Each region's total revenue in 2024-01 to 2024-12 and 2025-01 to 2025-12, and its own change",
+     "section": "scenarios",
+     "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+     "anchors": [
+      "finding:measure.revenue.total.change",
+      "scenario:contribution.east.prior",
+      "scenario:contribution.east.latest",
+      "scenario:contribution.east.pct",
+      "scenario:contribution.north.prior",
+      "scenario:contribution.north.latest",
+      "scenario:contribution.north.pct",
+      "scenario:contribution.south.prior",
+      "scenario:contribution.south.latest",
+      "scenario:contribution.south.pct",
+      "scenario:contribution.west.prior",
+      "scenario:contribution.west.latest",
+      "scenario:contribution.west.pct"
+     ],
+     "grade": null,
+     "parent_grade": "WATCH",
+     "chosen_by": "ai",
+     "why": "Each region before and after.",
+     "measure": {
+      "label": "revenue",
+      "unit": "",
+      "kind": "amount"
+     },
+     "data": {
+      "rows": [
+       {
+        "label": "East",
+        "a": 28396.38,
+        "b": 44616.75,
+        "a_text": "28,396",
+        "b_text": "44,617",
+        "change_text": "+57.1%"
+       },
+       {
+        "label": "North",
+        "a": 35234.32,
+        "b": 42350.45,
+        "a_text": "35,234",
+        "b_text": "42,350",
+        "change_text": "+20.2%"
+       },
+       {
+        "label": "South",
+        "a": 32446.55,
+        "b": 32738.29,
+        "a_text": "32,447",
+        "b_text": "32,738",
+        "change_text": "+0.899%"
+       },
+       {
+        "label": "West",
+        "a": 32178.85,
+        "b": 32508.44,
+        "a_text": "32,179",
+        "b_text": "32,508",
+        "change_text": "+1.02%"
+       }
+      ],
+      "a_label": "12 months before",
+      "b_label": "Latest 12 months"
+     },
+     "table": {
+      "cols": [
+       "region",
+       "12 months before",
+       "Latest 12 months",
+       "Own change"
+      ],
+      "rows": [
+       [
+        "East",
+        "28,396",
+        "44,617",
+        "+57.1%"
+       ],
+       [
+        "North",
+        "35,234",
+        "42,350",
+        "+20.2%"
+       ],
+       [
+        "South",
+        "32,447",
+        "32,738",
+        "+0.899%"
+       ],
+       [
+        "West",
+        "32,179",
+        "32,508",
+        "+1.02%"
+       ]
+      ]
+     },
+     "summary": "East: 28,396 in the 12 months before, 44,617 in the latest 12 months (+57.1%). North: 35,234 to 42,350 (+20.2%); South: 32,447 to 32,738 (+0.899%). Part of a change graded WATCH; not graded itself.",
+     "suppressed": {
+      "cells": 0,
+      "why": ""
+     },
+     "source": "Scenario items (each region's two totals and its own change) on the rows the engine kept",
+     "inputs": {
+      "columns": [
+       "revenue",
+       "region"
+      ],
+      "rows": 300,
+      "months": [
+       "2024-01",
+       "2025-12"
+      ],
+      "op": "revenue added up by region in each 12-month window"
+     }
+    }
+   ],
+   "refused": [
+    {
+     "chart": "change_heatmap",
+     "columns": [
+      "region",
+      "revenue"
+     ],
+     "why": "needs half the category's level-months to hold 5 or more rows, over 13 or more months; region has 17 of 96",
+     "chosen_by": "ai"
+    },
+    {
+     "chart": "pareto",
+     "columns": [
+      "region",
+      "revenue"
+     ],
+     "why": "needs a category of 8 or more levels (products, brands, stores) and a total; region has 4",
+     "chosen_by": "ai"
+    }
+   ],
+   "chosen_by": "ai"
+  },
+  "cards": [
+   {
+    "n": 1,
+    "id": "viz.1.contribution_waterfall",
+    "chart": "contribution_waterfall",
+    "kind": "waterfall",
+    "title": "Where the change in revenue came from, by region",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:headline.prior",
+     "scenario:contribution.east.change",
+     "scenario:contribution.north.change",
+     "scenario:contribution.west.change",
+     "scenario:contribution.south.change",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "summary": "Total revenue went from 128,256 in the 12 months before to 152,214 in the latest 12 months, a change of +23,958 (part of a change graded WATCH; not graded itself). The largest contributions: East +16,220 and North +7,116. Where the change sits, not what caused it.",
+    "table": {
+     "cols": [
+      "Step",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "128,256"
+      ],
+      [
+       "East",
+       "+16,220"
+      ],
+      [
+       "North",
+       "+7,116"
+      ],
+      [
+       "West",
+       "+330"
+      ],
+      [
+       "South",
+       "+292"
+      ],
+      [
+       "Latest 12 months",
+       "152,214"
+      ]
+     ]
+    }
+   },
+   {
+    "n": 2,
+    "id": "viz.2.pvm_waterfall",
+    "chart": "pvm_waterfall",
+    "kind": "waterfall",
+    "title": "Price, volume and mix in the change in revenue",
+    "section": "drove",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:headline.prior",
+     "scenario:price_volume_mix.price",
+     "scenario:price_volume_mix.volume",
+     "scenario:price_volume_mix.mix",
+     "scenario:headline.latest",
+     "scenario:headline.change"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "summary": "Of the +23,958 change in total revenue, price (the change in revenue per unit, at the latest units) adds +20,527, volume +2,051 and the shift of units between region values +1,380; they add up to the change.",
+    "table": {
+     "cols": [
+      "Step",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "12 months before",
+       "128,256"
+      ],
+      [
+       "Price",
+       "+20,527"
+      ],
+      [
+       "Volume",
+       "+2,051"
+      ],
+      [
+       "Mix",
+       "+1,380"
+      ],
+      [
+       "Latest 12 months",
+       "152,214"
+      ]
+     ]
+    }
+   },
+   {
+    "n": 3,
+    "id": "viz.3.calendar_heatmap",
+    "chart": "calendar_heatmap",
+    "kind": "heatmap",
+    "title": "Revenue by month, 2024 and 2025",
+    "section": "headline",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "summary": "The highest month is Nov 2025 (18,723) and the lowest Jun 2025 (5,845). 2025 is above 2024 in 11 of the 12 months.",
+    "table": {
+     "cols": [
+      "Year",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "rows": [
+      [
+       "2024",
+       "8,592",
+       "11,225",
+       "12,284",
+       "9,205",
+       "11,999",
+       "12,063",
+       "11,267",
+       "8,893",
+       "9,811",
+       "9,506",
+       "10,934",
+       "12,478"
+      ],
+      [
+       "2025",
+       "10,855",
+       "13,660",
+       "13,936",
+       "13,798",
+       "12,293",
+       "5,845",
+       "12,435",
+       "12,638",
+       "10,290",
+       "15,222",
+       "18,723",
+       "12,520"
+      ]
+     ]
+    }
+   },
+   {
+    "n": 4,
+    "id": "viz.4.group_ranges",
+    "chart": "group_ranges",
+    "kind": "dot_range",
+    "title": "Average revenue by region, with 95% ranges",
+    "section": "other",
+    "supports": "revenue by region",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "summary": "Ranked by each region's average weighted by its rows, North is highest (its own average 1,034, 95% range 917 to 1,158) and West lowest (840, 721 to 965). An association with the region, not its cause.",
+    "table": {
+     "cols": [
+      "region",
+      "Rows",
+      "Average",
+      "95% range",
+      "Median"
+     ],
+     "rows": [
+      [
+       "North",
+       "75",
+       "1,034",
+       "917 to 1,158",
+       "1,186"
+      ],
+      [
+       "East",
+       "71",
+       "1,028",
+       "896 to 1,151",
+       "1,033"
+      ],
+      [
+       "South",
+       "77",
+       "847",
+       "738 to 950",
+       "791"
+      ],
+      [
+       "West",
+       "77",
+       "840",
+       "721 to 965",
+       "781"
+      ]
+     ]
+    }
+   },
+   {
+    "n": 5,
+    "id": "viz.5.slope",
+    "chart": "slope",
+    "kind": "slope",
+    "title": "Revenue by region, the 12 months before and the latest 12 months",
+    "section": "scenarios",
+    "supports": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "scenario:contribution.east.prior",
+     "scenario:contribution.east.latest",
+     "scenario:contribution.east.pct",
+     "scenario:contribution.north.prior",
+     "scenario:contribution.north.latest",
+     "scenario:contribution.north.pct",
+     "scenario:contribution.south.prior",
+     "scenario:contribution.south.latest",
+     "scenario:contribution.south.pct",
+     "scenario:contribution.west.prior",
+     "scenario:contribution.west.latest",
+     "scenario:contribution.west.pct"
+    ],
+    "grade": null,
+    "parent_grade": "WATCH",
+    "summary": "East: 28,396 in the 12 months before, 44,617 in the latest 12 months (+57.1%). North: 35,234 to 42,350 (+20.2%); South: 32,447 to 32,738 (+0.899%). Part of a change graded WATCH; not graded itself.",
+    "table": {
+     "cols": [
+      "region",
+      "12 months before",
+      "Latest 12 months",
+      "Own change"
+     ],
+     "rows": [
+      [
+       "East",
+       "28,396",
+       "44,617",
+       "+57.1%"
+      ],
+      [
+       "North",
+       "35,234",
+       "42,350",
+       "+20.2%"
+      ],
+      [
+       "South",
+       "32,447",
+       "32,738",
+       "+0.899%"
+      ],
+      [
+       "West",
+       "32,179",
+       "32,508",
+       "+1.02%"
+      ]
+     ]
+    }
+   }
+  ]
+ }
+}

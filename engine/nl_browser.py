@@ -417,6 +417,7 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         "timings": [],
         "privacy": {"flagged": []},
         "health": {"score": None, "issues": [], "score_min": None, "score_mean": None, "weakest": None,
+                   "csv_text_numbers": None,
                    "dimensions": [], "sample": {"method": "all", "n": 0, "seed": None}, "columns": [],
                    "missingness": {"matrix_columns": [], "by_month": [],
                                    "nullity_corr": {"columns": [], "matrix": [], "n": 0},
@@ -453,6 +454,10 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         # the engine's facts (what moved and why, what to act on, the planning number), plain labels
         # for the claims, and the claims about the ledger's own line count, kept off the first screen
         "summary": {"lines": [], "labels": {}, "monitoring": []},
+        # the scenario and contribution block (design B, plan/AI-INSIGHTS-DESIGN.md; engine/nl_scenarios.py):
+        # the headline claim broken down by segment, price, volume and mix, per unit, run rate, sensitivity, gap
+        # and the forecast added up, from the rows the engine kept, for the report writer to copy (CONTRACT §5.8)
+        "scenarios": {"basis": None, "items": [], "refused": [], "note": ""},
     }
 
 
@@ -608,6 +613,81 @@ def _issue_is_safe(line: str, withheld: Set[str]) -> bool:
         if re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(c), line):
             return False
     return True
+
+
+# Numbers stored as text (reviews of the evaluation preflight, 30 Sep 2026). The engine's health check marks a number
+# column's validity down when its numbers are stored as text (northledger/health.py: validity x (1 - 0.5 x the share),
+# and the line "amount: 3,288 of 3,288 numbers are stored as text; they will sort '10' before '9'."). Every file this
+# page reads is CSV text (ACCEPTED_SUFFIXES), landed as text, so the line is true of every number column of every
+# upload and says nothing about this one; and it is not true of the analysis, which reads those values as numbers
+# (the cleaner converts them), so no figure here sorts '10' before '9'. The adapter leaves the line out of the issues
+# it shows and sends (no engine file is changed). The core's score keeps the mark-down: when it lowers the weakest
+# dimension or the mean, health.csv_text_numbers says so in plain words, and the page prints it in the Data health
+# area (engine/CONTRACT-v2.md 2.2).
+_TEXT_NUMBERS_RE = re.compile(r"^(?P<col>.+?): [\d,]+ of [\d,]+ numbers are stored as text; they will sort '10' before '9'\.?$")
+TEXT_NUMBERS_WORDS = "the score counts numbers stored as text, which every CSV has"
+# the same for the report writer (results_for_ai.health_issues, 200 characters at most): its health_score is the
+# weakest dimension, so this line goes only when the mark-down lowers that one (validity)
+TEXT_NUMBERS_AI = ("The health score counts numbers stored as text, which every CSV has: it is validity, the weakest "
+                   "dimension here, marked down for them, although the engine reads them as numbers.")
+
+
+def _is_text_numbers_line(line: Any) -> bool:
+    """True for the engine's "N of N numbers are stored as text; they will sort '10' before '9'" line."""
+    return isinstance(line, str) and bool(_TEXT_NUMBERS_RE.match(line.strip()))
+
+
+def _text_numbers(th: Any, dims: Dict[str, Any], score_min: Any, score_mean: Any, withheld: Set[str],
+                  pub: Any = None) -> Optional[Dict[str, Any]]:
+    """health.csv_text_numbers: {columns, lowers {validity, score_min, score_mean}, note}, or None when no number
+    column of the file is marked down for numbers stored as text. Whether the mark-down lowers a score is read by
+    undoing it with the engine's own constant and rounding (health._NUM_AS_TEXT_PENALTY, health._pct) and the
+    cleaner's validity cap as the engine applies it; the report prints no counterfactual number, only which score
+    the mark-down lowers. The note names at most three columns (never a withheld one)."""
+    from northledger import health as _health
+    marked = [c for c in (getattr(th, "columns", None) or [])
+              if getattr(c, "dtype_guess", "") == "numeric" and int(getattr(c, "n_numeric_as_text", 0) or 0) > 0]
+    if not marked:
+        return None
+    pen = float(getattr(_health, "_NUM_AS_TEXT_PENALTY", 0.5))
+    ids = set(id(c) for c in marked)
+    vals = []
+    for c in getattr(th, "columns", None) or []:
+        v = getattr(c, "validity", None)
+        if v is None:
+            continue
+        v = float(v)
+        n_num = int((getattr(c, "class_counts", None) or {}).get("numeric", 0) or 0)
+        if id(c) in ids and v > 0 and n_num > 0:
+            f = 1.0 - pen * (int(c.n_numeric_as_text) / float(n_num))   # the factor health.py multiplied in
+            v = min(1.0, v / f) if f > 0 else v
+        vals.append(v)
+    cur_v = dims.get("validity")
+    lowers = {"validity": False, "score_min": False, "score_mean": False}
+    if vals and cur_v is not None:
+        undone = _health._pct(sum(vals) / len(vals))
+        cap = (getattr(th, "validity_cap", None) or {}).get("cap")
+        if cap is not None and float(cap) < undone:
+            undone = float(cap)
+        if undone > float(cur_v) + 1e-9:
+            lowers["validity"] = True
+            other = [float(v) for k, v in dims.items() if v is not None and k != "validity"]
+            new_min = min(other + [undone])
+            lowers["score_min"] = score_min is not None and new_min > float(score_min) + 1e-9
+            new_mean = round((sum(other) + undone) / (len(other) + 1), 1)
+            lowers["score_mean"] = score_mean is not None and new_mean > float(score_mean) + 1e-9
+    names = [str(c.name) for c in marked if str(c.name) not in withheld]
+    shown = [str(pub(n)) if pub is not None else n for n in names[:3]]
+    where = ", ".join(shown[:-1]) + " and " + shown[-1] if len(shown) > 1 else (shown[0] if shown else "")
+    if len(names) > 3:
+        where = "%s and %s" % (", ".join(shown), _n_values(len(names) - 3, "more column"))
+    note = ""
+    if lowers["score_min"] or lowers["score_mean"]:
+        note = "%s%s: %s for the numbers in %s%s, although the engine reads them as numbers." % (
+            TEXT_NUMBERS_WORDS[0].upper(), TEXT_NUMBERS_WORDS[1:],
+            "validity, the weakest dimension here, is marked down" if lowers["score_min"] else "validity is marked down",
+            where or "the number columns", "" if lowers["score_min"] else ", which lowers the mean of the five")
+    return {"columns": names, "lowers": lowers, "note": note}
 
 
 def _exact_duplicates(db_path: str, table: str) -> int:
@@ -1916,6 +1996,8 @@ class _V2:
         h["score_mean"] = _num(th.score)
         h["weakest"] = low["name"] if low else None
         h["score"] = h["score_min"]                         # §4.2: the v1 key now carries the min
+        # the mark-down for numbers stored as text, which every CSV has: which score it lowers, in plain words
+        h["csv_text_numbers"] = _text_numbers(th, dims, h["score_min"], h["score_mean"], set(self.withheld), self.pub)
         h["sample"] = {"method": "sampled" if th.sampled else "all", "n": int(th.n_rows), "seed": None}
         h["accuracy"] = dict(ACCURACY_NOT_MEASURED)
         claim_h = _ms.column_claim_health(th)
@@ -3377,15 +3459,30 @@ def _span(d: Any) -> Dict[str, Any]:
             "years": years, "complete": complete}
 
 
-def _profile_facts(R: "_Reading", headers: List[str]) -> List[Dict[str, Any]]:
+def _profile_facts(R: "_Reading", headers: List[str], hidden: Iterable[str] = ()) -> List[Dict[str, Any]]:
     """What the planner's profile may say about each column, from the engine's reading: counts, how many
     values the engine read as numbers and as dates, the numbers' range, the commonest values, and the time
     span over the rows the engine kept (the rows the analyses read). Nothing here is sent anywhere by itself:
-    profile_for_ai chooses what each column shows, by the visitor's privacy decisions."""
+    profile_for_ai chooses what each column shows, by the visitor's privacy decisions. hidden: the landed names of
+    the flagged columns the visitor did not keep, which the analyses leave out and so never read a series by
+    (zeros_missing_if_level reads a level's zeros as the analyses would: on the rows the engine kept, in date order
+    within each series, _series_groups)."""
     import numpy as np
     import pandas as pd
     out: List[Dict[str, Any]] = []
     seen: Set[str] = set()
+    hidden = set(str(x) for x in hidden or ())
+    # the file's date column (the one the engine reads the most dates in): the order a level's zeros are read in
+    day_col, day_n = None, 0
+    for h in headers:
+        land = R.landed(h)
+        if land is not None and R.kind(land) == "date":
+            n_d = int(R.dates(land).notna().sum())
+            if n_d > day_n:
+                day_col, day_n = land, n_d
+    days = R.dates(day_col) if day_col is not None else None
+    kept = np.asarray(R.kept, bool)
+    series: List[Any] = []                   # the rows' series (_series_groups), worked out once, when a level needs it
     for h in headers:
         land = R.landed(h)
         if land is None or land in seen:
@@ -3406,8 +3503,21 @@ def _profile_facts(R: "_Reading", headers: List[str]) -> List[Dict[str, Any]]:
                                 "personal_shape": bool(f.head(500).str.contains(_PERSONAL_SHAPE).mean() > 0.05) if n_f else False}
         if ok_n.any():
             v = nums[ok_n]
+            zeros = int((v == 0).sum())
+            ev = None
+            use = ok_n & kept
+            if zeros and use.any() and _zero_gate(nums[use].to_numpy()):
+                dd = days[use] if days is not None and land != day_col else None
+                if dd is not None and not series:
+                    # the series over the rows the engine kept, as the analyses read them (their frame is those rows)
+                    series.append(_series_groups(
+                        [(c, np.where(R.filled(c), R.texts[c].astype(str).str.strip().to_numpy(), "")[kept])
+                         for c in dict.fromkeys(R.landed(x) for x in headers)
+                         if c is not None and c != day_col and c not in hidden and R.kind(c) == "text"], days[kept]))
+                grp = series[0][ok_n[kept]] if dd is not None and series and series[0] is not None else None
+                _z, ev = _zero_shape(nums[use].to_numpy(), dd, grp)
             info.update({"min": float(v.min()), "median": float(v.median()), "max": float(v.max()),
-                         "integers": bool((v % 1 == 0).all())})
+                         "integers": bool((v % 1 == 0).all()), "zeros": zeros, "zeros_missing_if_level": bool(ev)})
         if n_f and kind != "number" and info["distinct"] <= 300 and f.str.len().median() <= 60:
             vc = f.value_counts()
             info["top_values"] = [str(x)[:60] for x in vc.head(12).index]
@@ -3457,6 +3567,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         res = E.land(eng, src)
         colmap = dict(getattr(res, "column_map", {}) or {})
         flagged, _withheld, _scrub = _decide_and_guard(E, eng, res, decisions)
+        hidden = [str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("decision") != "keep"]
         try:
             as_of = _dt.date.fromisoformat(str(as_of)[:10]).isoformat() if as_of else _dt.date.today().isoformat()
         except ValueError:
@@ -3469,7 +3580,8 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
             con.close()
         R = _engine_reading(eng.db_path, res.table, _clean.standard_rules(th, as_of=as_of), cr, colmap)
         headers = list(R.land) or list(R.values.columns)
-        return {"ok": True, "facts": _profile_facts(R, headers), "rows": R.n, "flagged": flagged, "colmap": colmap}
+        return {"ok": True, "facts": _profile_facts(R, headers, hidden), "rows": R.n, "flagged": flagged,
+                "colmap": colmap}
     except Exception as exc:  # noqa: BLE001 - the profile is an aid; the page runs without it
         intake_error = getattr(sys.modules.get("northledger.intake"), "IntakeError", Refusal)
         if os.environ.get("NL_BROWSER_STRICT") and not isinstance(exc, (Refusal, intake_error)):
@@ -3545,7 +3657,11 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
                    decisions: Any = None, as_of: Optional[str] = None) -> Dict[str, Any]:
     """What the AI planner sees: names, how the engine reads each column (the shares it read as numbers and as
     dates), counts, ranges (a number column's min, median and max; profile.time: the date column's first and
-    last month) and, for a text or date column of at most 300 distinct short values (median 60 characters or
+    last month), for a number column with values of exactly 0 how many (zeros) and whether the analyses would
+    read them as no value were the column typed a level (zeros_missing_if_level: _zero_shape's evidence rule on the rows
+    the engine kept, in the file's date order within each series as the analyses read it (_series_groups), see
+    PLACEHOLDER_ZERO_TYPES; typed an amount or a count, 0 stays a real 0)
+    and, for a text or date column of at most 300 distinct short values (median 60 characters or
     fewer), its 12 commonest values and, when it has more than 12, every one of them (each cut at 60
     characters): the page's consent says exactly this (src/js/50-try.js AI_CONSENT). Never rows, and never the
     file's name (FILE_WORD stands in for it).
@@ -3585,6 +3701,11 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
         if f["kind"] == "number" and "min" in f:
             info.update({k: f[k] for k in ("min", "median", "max", "integers")})
             info["percent_sign"] = f["percent_sign"]
+            if f.get("zeros"):
+                # how many values are exactly 0, and whether they have a missing value's pattern (PLACEHOLDER_ZERO_TYPES):
+                # typed a level, such a column's 0 is read as no value by the analyses; an amount or a count keeps it
+                info["zeros"] = int(f["zeros"])
+                info["zeros_missing_if_level"] = bool(f.get("zeros_missing_if_level"))
         else:
             info["date_share"] = f["date_share"]
             looks = bool(f["personal_shape"]) and d != "keep"
@@ -3612,7 +3733,10 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
     # never the file's name (final review, 29 Sep 2026: "private_mix.csv" reached the planner): it says what the
     # file is about and whose it is, as the /report payload's "[your file]" stands in for it (src/js/50-try.js)
     out = {"ok": True, "name": FILE_WORD, "rows": int(got.get("rows") or 0), "columns": cols,
-           "columns_total": len(shown), "time": None, "analysis_limits": []}
+           "columns_total": len(shown), "time": None, "analysis_limits": [],
+           # the list of search terms the adapter builds the report's web searches from (engine/context_terms.json):
+           # the planner's plan.context must use its terms (_context_queries); its version, so the two can tell
+           "context_terms_version": _context_terms().get("version") or None}
     try:
         out["time"], out["analysis_limits"] = _time_and_limits(facts, priv, int(got.get("rows") or 0))
     except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
@@ -3797,6 +3921,67 @@ def _withheld_names(rep: Dict[str, Any]) -> List[str]:
     return names
 
 
+def _scenarios_for_ai(sc: Any, safe: Any) -> Dict[str, Any]:
+    """rep["scenarios"] for the report writer, 1:1: the same keys in the same order, every number and every
+    item's text as they are, and every word (the claim, column and level names, labels, assumptions, refusals,
+    the note) through `safe`, as every other text of results_for_ai."""
+    if not isinstance(sc, dict):
+        return {"basis": None, "items": [], "refused": [], "note": ""}
+
+    def words(x: Any, n: int) -> Any:
+        return safe(x, n) if isinstance(x, str) else x
+    basis = sc.get("basis")
+    if isinstance(basis, dict):
+        b = dict(basis)
+        for k, n in (("claim", 400), ("measure", 80), ("unit", 40), ("grade_words", 80)):
+            b[k] = words(b.get(k), n)
+        seg = b.get("segment")
+        if isinstance(seg, dict):
+            b["segment"] = {k: (words(seg.get(k), 80) if k == "column" else [words(x, 80) for x in seg.get(k) or []])
+                            for k in ("column", "levels", "folded", "entered", "exited") if k in seg or k in
+                            ("column", "levels", "folded")}
+        basis = b
+    items = []
+    for it in sc.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        d = dict(it)
+        for k, n in (("segment", 80), ("label", 400), ("text", 80), ("assumes", 400), ("unit", 40)):
+            d[k] = words(d.get(k), n)
+        if "grade_words" in d:
+            d["grade_words"] = words(d["grade_words"], 160)
+        inp = d.get("inputs")
+        if isinstance(inp, dict):
+            d["inputs"] = {"columns": [words(c, 80) for c in inp.get("columns") or []],
+                           "window": inp.get("window"), "op": words(inp.get("op"), 200)}
+        items.append(d)
+    return {"basis": basis, "items": items, "refused": [words(x, 300) for x in sc.get("refused") or []],
+            "note": words(sc.get("note") or "", 600)}
+
+
+def _primary_for_ai(rep: Dict[str, Any], safe: Any, scrub: Any) -> Optional[Dict[str, Any]]:
+    """The report's primary claim for the writer, {id, claim, grade}, or None (integration pass, 30 Sep 2026: the
+    PDF's key figures guessed it from the claims' words, and a file whose plan named amount could lead with its
+    rows). It is the claim the scenarios break down (their basis: the total of the plan's primary column, see
+    nl_scenarios._pick_basis), else the engine's primary claim (its gate's primary, set from the plan's primary
+    column: the average when that column is a rate or a price, which the scenarios refuse to break down), else None.
+    Its claim is the text its finding carries in `findings` (the same `safe`), its grade the report's grade word;
+    never a claim about a withheld column (None then, as its finding is never sent)."""
+    by_id = {f.get("id"): f for f in rep.get("findings") or [] if isinstance(f, dict) and f.get("id")}
+    sc = rep.get("scenarios") if isinstance(rep.get("scenarios"), dict) else {}
+    basis = sc.get("basis") if isinstance(sc.get("basis"), dict) else {}
+    pm = rep.get("primary_metric") if isinstance(rep.get("primary_metric"), dict) else {}
+    for fid in (basis.get("finding_id"), pm.get("finding_id")):
+        f = by_id.get(fid) if fid else None
+        if f is None or not f.get("claim"):
+            continue
+        if scrub.names(f.get("claim")) or scrub.names(f.get("why")):
+            return None
+        return {"id": str(fid)[:120], "claim": safe(f.get("claim"), 400),
+                "grade": str(f.get("grade") or f.get("verdict") or "")[:20]}
+    return None
+
+
 def results_for_ai(rep: Any) -> Dict[str, Any]:
     """The engine's own report distilled for the AI report writer (the /report route): every figure
     the writer may quote, nothing else. The writer never sees a row; it sees the goal, the graded
@@ -3847,6 +4032,7 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     analyses = []
     charts = []
     tables = []
+    links: List[Tuple[Optional[int], Optional[int]]] = []     # each analysis's chart and table in charts / tables
     for a in _cap((rep.get("ai_analyses") or {}).get("items") or [], 8):
         if not isinstance(a, dict):
             continue
@@ -3855,11 +4041,12 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
              "method": safe(a.get("method"), 300)}
         t = a.get("table") or {}
         rows = t.get("rows") or []
+        tab = None
         if isinstance(rows, list) and rows:
             cols = [safe(c, 60) for c in (t.get("cols") or [])][:6]
-            d["table"] = {"cols": cols,
-                          "rows": [[safe(v, 80) for v in r][:len(cols)] for r in rows[:12]]}
+            tab = {"cols": cols, "rows": [[safe(v, 80) for v in r][:len(cols)] for r in rows[:12]]}
         analyses.append(d)
+        link_chart: Optional[int] = None
         # the chart and the numbers behind the report: the writer may place a chart marker
         # [CHART:n] (the n-th chart here) and a table marker [TABLE:n] beside the finding it
         # belongs to; the page and the shared viewer draw both from this list, engine-computed
@@ -3898,11 +4085,39 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 if fits:
                     c2["fits"] = fits
             if c2.get("series") or c2.get("points"):
+                link_chart = len(charts)
                 charts.append(c2)
         # the econometrics numbers the writer may quote from the analysis tables: every figure in a
-        # table row is an engine figure, so it must be in the payload for the guard to accept
-        if d.get("table"):
-            tables.append({"title": d["title"], "cols": d["table"]["cols"], "rows": d["table"]["rows"]})
+        # table row is an engine figure, so it must be in the payload for the guard to accept. Sent once, in
+        # "tables" under the analysis's own title (final review, 30 Sep 2026: each table went twice, as
+        # analyses[].table and in tables[]; the worker reads tables[] for [TABLE:n] and for the figures it accepts,
+        # and needs no analyses[].table)
+        link_table: Optional[int] = None
+        if tab is not None:
+            link_table = len(tables)
+            tables.append({"title": d["title"], "cols": tab["cols"], "rows": tab["rows"]})
+        links.append((link_chart, link_table))
+
+    # the scenario and contribution block (engine/nl_scenarios.py), 1:1: every key, every figure and every text as
+    # the report holds them, its words made safe as every other text here; and ONE table, "What drove the change
+    # in <measure>", a row per segment whose cells are those items' own texts, after the analyses' tables (their
+    # [TABLE:n] places stay where they were)
+    scenarios = _scenarios_for_ai(rep.get("scenarios"), safe)
+
+    def drove_of(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        try:
+            import nl_scenarios as _ns
+            dr = _ns.table(sc)
+        except ImportError:
+            dr = None
+        if dr is None:
+            return None
+        return {"title": safe(dr["title"], 160), "cols": [safe(c, 60) for c in dr["cols"]][:6],
+                "rows": [[safe(v, 80) for v in r][:6] for r in dr["rows"][:12]]}
+    n_tables = len(tables)                   # the analyses' tables; the "What drove the change" table follows them
+    drove = drove_of(scenarios)
+    if drove is not None:
+        tables.append(drove)
 
     clean = rep.get("cleaning") or {}
     health = rep.get("health") or {}
@@ -3911,10 +4126,10 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     # what the data tests found and what the engine did with those rows, in the Data tests card's own numbers,
     # so the writer quotes those and no other count for the same cells. The worker keeps 8 lines: the plan's
     # own steps first ("37 rows left" is a figure the writer may quote), the test lines fill what is left. A
-    # withheld column's test is never sent.
+    # withheld column's test is never sent. A note row (a level's placeholder zeros) goes with them.
     tested = []
     for t in (rep.get("contracts") or {}).get("tests") or []:
-        if isinstance(t, dict) and t.get("failed") and t.get("brief") and t.get("private") != "withhold":
+        if isinstance(t, dict) and (t.get("failed") or t.get("note")) and t.get("brief") and t.get("private") != "withhold":
             tested.append(safe("data test on %s (%s): %s" % (t.get("column"), t.get("semantic_type"), t.get("brief")), 200))
     applied = applied + tested[:max(0, 8 - len(applied))]
     story = dict(rep.get("story") or {})     # a copy: distilling the payload never changes the report itself
@@ -3976,6 +4191,13 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     # by name only; a kept column is not withheld, so its name is never scrubbed
     kept = [str(f.get("column")) for f in (rep.get("privacy") or {}).get("flagged") or []
             if isinstance(f, dict) and f.get("decision") == "keep" and f.get("column")]
+    # the health issues: never the engine's "numbers are stored as text" line (every upload is CSV text, see
+    # _TEXT_NUMBERS_RE; left out here too for a report saved before it was); when that mark-down lowers the score the
+    # writer is sent (health_score, the weakest dimension), the writer is told so first, in the page's words
+    tn = health.get("csv_text_numbers") if isinstance(health.get("csv_text_numbers"), dict) else {}
+    h_issues = [x for x in health.get("issues") or [] if not scrub.names(x) and not _is_text_numbers_line(x)]
+    if tn.get("note") and (tn.get("lowers") or {}).get("score_min"):
+        h_issues = [TEXT_NUMBERS_AI] + h_issues
     reading = safe(plan.get("understanding") or "", 800)
     if kept:
         told = (OPTED_IN % ", ".join(kept))[:400]
@@ -4001,19 +4223,150 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         "story": story,
         "forecast": fc,
         "health_score": _num(health.get("score")),
-        "health_issues": [safe(x, 200) for x in health.get("issues") or [] if not scrub.names(x)][:6],
+        "health_issues": [safe(x, 200) for x in h_issues][:6],
         "cleaning": {"rows_in": clean.get("rows_in"), "rows_clean": clean.get("rows_clean"),
                      "rows_quarantined": clean.get("rows_quarantined"),
                      "fixes": [safe(x.get("what") or x, 160) for x in clean.get("fixes") or []
                                if isinstance(x, dict) and not scrub.names(x.get("what")) and not scrub.names(x.get("column"))][:6]},
-        "limitations": [safe(x.get("text") or x, 240) for x in rep.get("limitations") or []
+        # cut to LIMITATION_MAX only after the file's name is swapped for FILE_WORD (final, below)
+        "limitations": [safe(x.get("text") or x, 4 * LIMITATION_MAX) for x in rep.get("limitations") or []
                         if isinstance(x, dict) and not scrub.names(x.get("text"))][:6],
+        "scenarios": scenarios,
+        # the claim the report leads with ({id, claim, grade} or null): the PDF's key figures read it exactly
+        "primary": _primary_for_ai(rep, safe, scrub),
     }
     # never the file's name (final review, 29 Sep 2026: the engine's sentences name it, "22 values in the amount
     # column of private_mix.csv could not be read", and every one went to /report): FILE_WORD stands in, as in
     # the planner's profile; the page puts the name back only in what it shows the visitor (src/js/50-try.js)
     fname = str((rep.get("input") or {}).get("name") or "")
-    return _swap_text(out, fname, FILE_WORD) if fname else out
+
+    def final(o: Dict[str, Any]) -> Dict[str, Any]:
+        o = _swap_text(o, fname, FILE_WORD) if fname else o
+        return dict(o, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []])
+    return _within_budget(out, final, drove_of, n_tables, links)
+
+
+# Each limitation the report writer receives, in characters: the worker's cap (insight-proxy/src/report.js
+# validateResults, limitations 240). Cut after the file's name is swapped for FILE_WORD: cut before, a name shorter
+# than the placeholder made the line longer than the cap (the contract test of 30 Sep 2026: "f3_eur.csv" is 10
+# characters, "[your file]" 11, and two limitations arrived at 241).
+LIMITATION_MAX = 240
+
+
+def _cut_text(s: str, n: int) -> str:
+    """s at most n characters, never cut inside the FILE_WORD placeholder (a cut through one ends before it)."""
+    if len(s) <= n:
+        return s
+    j = s.find(FILE_WORD, max(0, n - len(FILE_WORD) + 1))
+    return s[:j].rstrip() if 0 <= j < n else s[:n]
+
+
+# The adapter's byte budget for results_for_ai (30 Sep 2026): the worker takes a /report body of at most 96,000 bytes
+# (insight-proxy/src/report.js REPORT_MAX_BYTES), and that body holds these results with the visitor's question and
+# the planner's searches. Past RESULTS_MAX_BYTES, scenario items are dropped from the tail of the worker's own
+# priority (nl_scenarios._ordered): the facts first, then the per-segment detail beyond the TOP_SEGMENTS segments with
+# the largest contributions, the smallest segment's last item first; only if that is not enough do the core's
+# segments shrink (the sixth, then the fifth, ...) and, with no segment left, the groups go from the end of the order.
+# Never an oversize payload (final review, 30 Sep 2026): with every scenario item gone and the payload still over, the
+# analyses go from the last in the plan's order (each with its chart and its table), and analyses_refused says so
+# first; past that (a payload the caps above cannot make), the charts, the tables and the findings from the end.
+# The size is json.dumps's with its \u escapes, never less than the UTF-8 bytes the page sends.
+RESULTS_MAX_BYTES = 90000
+BUDGET_REFUSED = ("%s of the %s scenario items are left out to keep what the report writer receives under %s bytes: "
+                  "the facts first, then the segments with the smallest contributions")
+BUDGET_ANALYSES = ("%s of the %s analyses are left out to keep what the report writer receives under %s bytes: the "
+                   "last ones in the plan's order")
+
+
+def _payload_bytes(x: Any) -> int:
+    """The size of x as JSON (ASCII, \\u escapes: at least the UTF-8 bytes of the same JSON)."""
+    return len(json.dumps(x, default=str))
+
+
+def _budget_drop_order(items: List[Dict[str, Any]]) -> List[int]:
+    """The scenario items' indices in the order the byte budget drops them (RESULTS_MAX_BYTES)."""
+    import nl_scenarios as _ns
+    rank = _ns.segment_rank(items)
+    per = set(_ns.PER_SEGMENT)
+    groups = {g: i for i, g in enumerate(_ns.GROUPS)}
+
+    def seg_rank(i: int) -> Optional[int]:
+        s = items[i].get("segment")
+        return rank.get(s) if items[i].get("group") in per and isinstance(s, str) else None
+    idx = list(range(len(items)))
+    facts = [i for i in reversed(idx) if items[i].get("group") == "facts"]
+    beyond = [i for i in reversed(idx) if (seg_rank(i) or 0) >= _ns.TOP_SEGMENTS]
+    core_seg = sorted((i for i in idx if seg_rank(i) is not None and seg_rank(i) < _ns.TOP_SEGMENTS),
+                      key=lambda i: (-seg_rank(i), -i))
+    taken = set(facts) | set(beyond) | set(core_seg)
+    rest = sorted((i for i in idx if i not in taken), key=lambda i: (-groups.get(items[i].get("group"), 0), -i))
+    return facts + beyond + core_seg + rest
+
+
+def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int,
+                   links: Optional[List[Tuple[Optional[int], Optional[int]]]] = None) -> Dict[str, Any]:
+    """final(out), at most RESULTS_MAX_BYTES: scenario items dropped (_budget_drop_order) until it fits, the "Where the
+    change came from" table rebuilt from the items kept and scenarios.refused saying first how many were left out;
+    then, if it is still over, the analyses from the last (with the chart and table each one has: links, their
+    indices in charts and tables) and analyses_refused saying so first; then the charts, the tables and the findings
+    from the end. Never returns a payload over the budget."""
+    done = final(out)
+    size = _payload_bytes(done)
+    if size <= RESULTS_MAX_BYTES:
+        return done
+    sc = out.get("scenarios") if isinstance(out.get("scenarios"), dict) else None
+    items = list((sc or {}).get("items") or [])
+    if items:
+        order = _budget_drop_order(items)
+        dropped: Set[int] = set()
+        j = 0
+        while j < len(order):
+            while j < len(order) and size > RESULTS_MAX_BYTES:
+                dropped.add(order[j])
+                size -= _payload_bytes(items[order[j]]) + 2          # the item and its ", "
+                j += 1
+            kept = [it for i, it in enumerate(items) if i not in dropped]
+            sc2 = dict(sc, items=kept, refused=[BUDGET_REFUSED % (format(len(dropped), ","), format(len(items), ","),
+                                                                  format(RESULTS_MAX_BYTES, ","))]
+                       + list(sc.get("refused") or []))
+            o2 = dict(out, scenarios=sc2)
+            dr = drove_of(sc2)
+            o2["tables"] = list(out.get("tables") or [])[:n_tables] + ([dr] if dr is not None else [])
+            out = o2
+            done = final(out)
+            size = _payload_bytes(done)
+            if size <= RESULTS_MAX_BYTES:
+                return done
+    # every scenario item is gone and it is still over: the analyses from the last in the plan's order
+    ana = list(out.get("analyses") or [])
+    links = list(links or [])[:len(ana)]
+    links += [(None, None)] * (len(ana) - len(links))
+    n_ana = len(ana)
+    while size > RESULTS_MAX_BYTES and ana:
+        ana.pop()
+        ch, tb = links.pop()
+        charts = list(out.get("charts") or [])
+        tables = list(out.get("tables") or [])
+        if ch is not None and ch < len(charts):
+            charts.pop(ch)
+        if tb is not None and tb < len(tables):
+            tables.pop(tb)
+        note = BUDGET_ANALYSES % (format(n_ana - len(ana), ","), format(n_ana, ","), format(RESULTS_MAX_BYTES, ","))
+        refused = [x for x in out.get("analyses_refused") or [] if not str(x).endswith("the last ones in the plan's order")]
+        out = dict(out, analyses=ana, charts=charts, tables=tables, analyses_refused=[note] + refused)
+        done = final(out)
+        size = _payload_bytes(done)
+    # past what the caps above allow: the charts, the tables and the findings, each from the end
+    for key in ("charts", "tables", "findings"):
+        while size > RESULTS_MAX_BYTES and out.get(key):
+            out = dict(out, **{key: list(out[key])[:-1]})
+            done = final(out)
+            size = _payload_bytes(done)
+    if size > RESULTS_MAX_BYTES:
+        # never sent oversize, and never silently: the worker refuses a result that says ok false, and says why
+        return {"ok": False, "error": "the results are %s bytes, over the report writer's %s-byte budget" % (
+            format(size, ","), format(RESULTS_MAX_BYTES, ","))}
+    return done
 
 
 def _swap_text(x: Any, old: str, new: str) -> Any:
@@ -4759,6 +5112,36 @@ def _finish_contracts(tests: List[Dict[str, Any]], aux: Dict[str, Any], engine: 
             t["action"] = t["brief"] = t["problem"] + "; the analyses read it on the 0-100 scale; the tests changed no value"
 
 
+def _zero_note_rows(rep: Dict[str, Any], zeros: Dict[str, Dict[str, Any]], off: Any = ()) -> None:
+    """The Data tests card's note row for each level whose 0 the AI's analyses read as "no value"
+    (PLACEHOLDER_ZERO_TYPES), right after that column's own test: a note, never a failure, and nothing the engine
+    reads is changed (its table, its duplicate check and every download keep the zeros). A column whose tests the
+    visitor turned off gets none (its row says so); its analyses read the zeros as missing all the same, as
+    turning a test off changes no analysis."""
+    off = set(str(x) for x in (off or []))
+    rows = []
+    for col, zi in zeros.items():
+        if col in off:
+            continue
+        z, n = int(zi["zeros"]), int(zi["values"])
+        what = ("note: %s in %s %s not counted by the AI's analyses (%s); the engine's own reading is unchanged and "
+                "the tests changed no value" % (_n_values(z, "zero value"), col, "is" if z == 1 else "are", _zero_why(zi)))
+        rows.append({"column": col, "semantic_type": "level", "test": "0 marks no value (a level's zeros between "
+                     "non-zero values, in the pattern of a missing value)", "checked": n, "failed": 0, "examples": [],
+                     "action": what, "brief": what,
+                     "unreadable": 0, "ambiguous": 0, "out_of_range": 0, "repeated": 0, "unexpected": 0,
+                     "misread": False, "signal": False, "private": None, "note": True, "zeros": z})
+    if not rows:
+        return
+    k = rep.get("contracts")
+    if not isinstance(k, dict):
+        k = rep["contracts"] = {"tests": [], "cells_flagged": 0, "line": "table_row", "note": CONTRACT_NOTE}
+    tests = k.setdefault("tests", [])
+    for r in rows:
+        at = max([i for i, t in enumerate(tests) if isinstance(t, dict) and t.get("column") == r["column"]] or [len(tests) - 1])
+        tests.insert(at + 1, r)
+
+
 def _flagged_cells(tests: List[Dict[str, Any]], aux: Dict[str, Any], df: Any, lines: Optional[List[int]],
                    engine: Optional[Dict[str, Any]], hide: Dict[str, str], clean: Any) -> Tuple[str, int]:
     """The download "values the data tests flagged": one row per failing cell, in the visitor's line order.
@@ -4962,6 +5345,30 @@ EXTREMES_MIN_YEARS = 10           # extremes: the highest and lowest of 10 or mo
 AGREEMENT_MIN_DATES = 12          # agreement: 12 dates where both series have a value
 RANK_MIN_YEARS = 2                # rank (series side by side): a first and a last complete year
 COMPARE_MIN_GROUP = 5             # compare: a group needs 5 values, and two groups are needed
+RANK_MIN_ROWS = COMPARE_MIN_GROUP  # rank: an entry whose figure adds up or averages several rows needs 5 of them
+# Groups ranked by an average (rank on a level or a rating, compare): the IMDb-style weighted rating. Each group is
+# ranked by (n * its average + m * the average of every row in the ranking) / (n + m): its own n rows weighed against
+# m rows at the overall average, so an average resting on a few rows is pulled toward the overall one and a large
+# group keeps nearly its own (evaluation preflight, 30 Sep 2026: with the 5-row minimum in place, brands with 5 to 8
+# five-star reviews still topped a ranking of 5,587 reviews). m is the file's own (final review, 30 Sep 2026: an
+# empirical-Bayes m, never a fixed 10): the pooled variance of the rows within a group over the variance of the
+# groups' true averages, by the method of moments on the groups with SHRINK_MIN_ROWS rows or more (the variance of
+# their averages less the average of each one's sampling variance), rounded to whole rows and held to SHRINK_M_MIN to
+# SHRINK_M_MAX; no spread between the groups beyond chance is SHRINK_M_MAX (the most weight on the overall average),
+# and fewer than SHRINK_MIN_GROUPS such groups, or no spread at all, is SHRINK_M, and the sentence says so. The
+# sentence states m. The table shows each group's own average and rows beside the weighted one; a ranking of totals,
+# and a panel's own figures, are not weighted.
+# Why 5 groups (final review, 30 Sep 2026: with 2 groups the estimate was 50, "no more than chance", in a third of
+# files whose groups truly differ): the variance of the groups' true averages is estimated with one fewer degree of
+# freedom than there are groups, so its relative error is about sqrt(2 / (groups - 1)): 100% with 3 groups, 71% with
+# 5. Simulated (100 rows a group, true m 25 and 11, 2,000 files each), the estimate lands within a factor of 2 of the
+# true m in 25 to 29% of files with 2 groups, 37 to 41% with 3 and 54 to 60% with 5, and reads "no more than chance"
+# in 24 to 36%, 11 to 19% and 2 to 6%; 8 groups do better still (66 to 72%) but would leave most small files, a few
+# brands or stores, on the set value.
+SHRINK_M = 10                     # m when it cannot be estimated
+SHRINK_M_MIN, SHRINK_M_MAX = 5, 50
+SHRINK_MIN_ROWS = 5               # the groups m is estimated on have this many rows ...
+SHRINK_MIN_GROUPS = 5             # ... and there are this many of them, at least
 RELATIONSHIP_MIN_ROWS = 10        # relationship: 10 rows with both values
 DISTRIBUTION_MIN_VALUES = 10      # distribution: 10 values
 THEMES_MIN_TEXTS = 20             # themes: 20 non-empty texts
@@ -4969,6 +5376,37 @@ PREDICT_MIN_ROWS = 30             # predict: 30 complete rows ...
 PREDICT_ROWS_PER_TERM = 10        # ... and 10 rows per model term
 PREDICT_BLOCKS = 5                # forward-chained: 5 blocks in date order, the last 4 scored
 YEARS_MIN_SHARE = 0.95            # a number column is the year axis when 95% of its numbers are whole years
+# Zero as a placeholder (evaluation preflight, 30 Sep 2026: StatCan's daily USD rate carries 0 on the weekends before
+# April 2022, and the AI plan's path read those 550 zeros as exchange rates: a long-run trend of 0.0721 CAD a year
+# where the rates themselves give 0.0104, and "18.6% of the values are exactly zero"). A column the plan types as a
+# level (a rate, price, index, balance or ratio) may use 0 for "no value", and then the AI's analyses read its zeros as
+# missing (each sentence counts them and says why, the Data tests card says so in a note row). The engine's own input
+# is never changed. A flow or a count (sales, orders, amounts), where 0 is real, is never read this way.
+# The evidence, never the share of zeros alone (final review, 30 Sep 2026: that rule deleted 0% policy rates held for
+# seven years, paid-off balances and stockouts): the zeros are at least 1% of the numbers and at least 95% of the others
+# are positive, AND in date order (within each series: _series_groups, the same reading for the planner's profile and
+# the analyses) most of them (80%) sit alone or two or three together between non-zero values, never in a run of 5 or
+# more (5 dated zeros in a row are a real period of zero), AND either they are concentrated on one or two days of the
+# week that hold few of the other values (the FX weekends) or the series picks up where it left off after them (the
+# values on either side within 10% of each other, for 80% of the runs and at least 3 separate runs: one zero, or two,
+# is never enough, final review of 30 Sep 2026): the pattern of a day with no value. Random zeros between values that
+# jump about (paid-off balances, stockouts) are real. Only the zeros the evidence describes are read as no value (the
+# note's words hold for every one of them); a zero at the start or end of a series, on a row with no date, or outside
+# the pattern stays 0, and the note counts those apart.
+PLACEHOLDER_ZERO_TYPES = ("level",)
+PLACEHOLDER_ZERO_MIN_SHARE = 0.01
+PLACEHOLDER_POSITIVE_SHARE = 0.95
+PLACEHOLDER_RUN_MAX = 3            # a placeholder sits alone or in a run of 2 or 3 between non-zero values
+PLACEHOLDER_REAL_RUN = 5           # a run of 5 or more zeros in date order is a real period of zero
+PLACEHOLDER_INTERLEAVED = 0.80     # the share of the zeros that must sit in such short runs
+PLACEHOLDER_DAYS_SHARE = 0.80      # the zeros on their one or two commonest weekdays, at least
+PLACEHOLDER_DAYS_OTHER = 0.50      # ... the other values on those weekdays, at most
+PLACEHOLDER_DAYS_MIN = 5           # dated zeros needed to read a weekday pattern
+PLACEHOLDER_RESUME = 0.10          # the values on either side of a run within 10% of each other
+PLACEHOLDER_RESUME_SHARE = 0.80    # ... for this share of the runs
+PLACEHOLDER_RESUME_RUNS = 3        # ... and for this many separate runs, at least
+SERIES_KEY_SHARE = 0.95            # a text column names the series when, with the date, it tells 95% of the rows apart
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _TIME_ANALYSES = ("trend", "extremes", "agreement")
 _NUMERIC_ANALYSES = ("trend", "extremes", "agreement", "rank", "share", "compare", "relationship", "distribution")
 
@@ -4991,6 +5429,183 @@ def _full_years(dates: Any) -> Tuple[List[int], List[int]]:
     periods, need = (d.dt.month, 12) if step < pd.Timedelta(days=60) else (d.dt.quarter, 4)
     held = periods.groupby(d.dt.year).nunique()
     return years, [y for y in years if int(held.get(y, 0)) == need]
+
+
+def _zero_gate(values: Any) -> bool:
+    """The first test of _zero_shape, alone (cheap): the zeros are at least PLACEHOLDER_ZERO_MIN_SHARE of the numbers
+    and at least PLACEHOLDER_POSITIVE_SHARE of the others are positive."""
+    import numpy as np
+    a = np.asarray(values, dtype=float)
+    nums = a[~np.isnan(a)]
+    zeros = int((nums == 0).sum())
+    other = nums[nums != 0]
+    return bool(zeros > 0 and zeros >= PLACEHOLDER_ZERO_MIN_SHARE * len(nums) and len(other) > 0
+                and float((other > 0).mean()) >= PLACEHOLDER_POSITIVE_SHARE)
+
+
+def _series_groups(texts: List[Tuple[str, Any]], dates: Any) -> Optional[Any]:
+    """The series a level's zeros are read within, in date order, the same way for the planner's profile
+    (zeros_missing_if_level) and for the analyses (final review, 30 Sep 2026: the profile read a panel's rows across
+    its entities, the analyses within each, so the hint said no where the analyses dropped the zeros). When the dates
+    repeat (fewer than SERIES_KEY_SHARE of the dated rows have a date of their own), the text column that, with the
+    date, tells SERIES_KEY_SHARE of the dated rows apart, the one with the fewest values (then the first listed): its
+    values, one per row, as the groups. None when the dates alone tell the rows apart (one series) or no column does.
+    texts: (name, the column's values as text, one per row) for each text column the reading may use."""
+    import pandas as pd
+    if dates is None:
+        return None
+    d = pd.to_datetime(pd.Series(list(dates)), errors="coerce")
+    ok = d.notna().to_numpy()
+    n = int(ok.sum())
+    if n < 2 or float((~d[ok].duplicated(keep=False)).mean()) >= SERIES_KEY_SHARE:
+        return None
+    dd = d[ok].to_numpy()
+    best: Optional[Tuple[Tuple[int, int], Any]] = None
+    for pos, (_name, vals) in enumerate(texts):
+        g = pd.Series(vals, dtype=object)
+        if len(g) != len(d):
+            continue
+        g = g.where(g.notna(), "").astype(str)
+        k = int(g[ok].nunique())
+        if k < 2 or k > n // 2:
+            continue
+        pairs = pd.DataFrame({"d": dd, "g": g[ok].to_numpy()})
+        if float((~pairs.duplicated(keep=False)).mean()) >= SERIES_KEY_SHARE and (best is None or (k, pos) < best[0]):
+            best = ((k, pos), g.to_numpy())
+    return best[1] if best is not None else None
+
+
+def _zero_shape(values: Any, dates: Any = None, groups: Any = None) -> Tuple[int, Optional[Dict[str, Any]]]:
+    """(how many of the numbers are exactly 0, the evidence that 0 is a placeholder for "no value", or None when it
+    is a real 0): see PLACEHOLDER_ZERO_TYPES. values: the numbers read (NaN is not a number and is left out); dates:
+    the rows' dates (the order the runs are read in, and the weekdays), or None for the rows' own order; groups: the
+    rows' series (runs are read within each: _series_groups), or None. The evidence: {"kind": "weekdays" or
+    "resumes", "days": the weekday names (weekdays), "zeros": how many zeros are read as no value, "mask": a boolean
+    array over `values` marking exactly those, "kept": {"edge", "undated", "other"}: the other zeros, which stay 0}.
+    Only the zeros the evidence describes are read as no value (final review, 30 Sep 2026: every zero of the column
+    was, the ones the note's words did not fit too): weekdays, the zeros on those days in a short run between
+    non-zero values; resumes, the zeros of a short run between non-zero values that pick up where they left off. A
+    zero at the start or the end of a series (edge), on a row with no date (undated), or anywhere else (other) stays
+    0 and is counted apart."""
+    import numpy as np
+    import pandas as pd
+    a = np.asarray(values, dtype=float)
+    ok = ~np.isnan(a)
+    zeros = int((a[ok] == 0).sum())
+    if not _zero_gate(a):
+        return zeros, None
+    df = pd.DataFrame({"v": a, "i": np.arange(len(a))})
+    undated = 0
+    if dates is not None:
+        df["d"] = pd.to_datetime(pd.Series(list(dates)), errors="coerce").to_numpy()
+        undated = int((ok & (a == 0) & df["d"].isna().to_numpy()).sum())
+    df["g"] = ["" if (x is None or (isinstance(x, float) and x != x)) else str(x) for x in groups] \
+        if groups is not None else ""
+    df = df[ok]
+    if dates is not None:
+        df = df[df["d"].notna()]
+    df = df.sort_values(["g", "d", "i"] if dates is not None else ["g", "i"], kind="mergesort")
+    # each run of zeros: (its length, the value before, the value after, its rows' places in `values`)
+    runs: List[Tuple[int, Optional[float], Optional[float], List[int]]] = []
+    for _g, part in df.groupby("g", sort=True):
+        v = part["v"].to_numpy(dtype=float)
+        at = part["i"].to_numpy(dtype=int)
+        i = 0
+        while i < len(v):
+            if v[i] != 0:
+                i += 1
+                continue
+            j = i
+            while j < len(v) and v[j] == 0:
+                j += 1
+            runs.append((j - i, float(v[i - 1]) if i > 0 else None, float(v[j]) if j < len(v) else None,
+                         [int(x) for x in at[i:j]]))
+            i = j
+    if not runs or max(r[0] for r in runs) >= PLACEHOLDER_REAL_RUN:
+        return zeros, None
+    short = [r for r in runs if r[0] <= PLACEHOLDER_RUN_MAX and r[1] is not None and r[2] is not None
+             and r[1] > 0 and r[2] > 0]
+    if sum(r[0] for r in short) < PLACEHOLDER_INTERLEAVED * sum(r[0] for r in runs):
+        return zeros, None
+    edge = int(sum(r[0] for r in runs if r[1] is None or r[2] is None))
+    drop: List[int] = []
+    kind, days = "", []
+    if dates is not None:
+        dow = pd.Series(df["d"].dt.dayofweek.to_numpy(), index=df["i"].to_numpy())
+        wz = df.loc[df["v"] == 0, "d"].dt.dayofweek.value_counts()
+        wo = df.loc[df["v"] != 0, "d"].dt.dayofweek
+        if int(wz.sum()) >= PLACEHOLDER_DAYS_MIN and len(wo):
+            order = sorted(wz.index.tolist(), key=lambda k: (-int(wz[k]), k))
+            for k in (1, 2):
+                top = sorted(order[:k])
+                on = int(sum(int(wz[d]) for d in top))
+                if on >= PLACEHOLDER_DAYS_SHARE * int(wz.sum()) and float(wo.isin(top).mean()) <= PLACEHOLDER_DAYS_OTHER:
+                    kind, days = "weekdays", [_WEEKDAYS[d] for d in top]
+                    drop = [p for r in short for p in r[3] if int(dow[p]) in top]
+                    break
+    if not kind:
+        resumed = [r for r in short if abs(r[2] - r[1]) <= PLACEHOLDER_RESUME * max(r[1], r[2])]
+        if len(resumed) >= PLACEHOLDER_RESUME_RUNS and len(resumed) >= PLACEHOLDER_RESUME_SHARE * len(short):
+            kind = "resumes"
+            drop = [p for r in resumed for p in r[3]]
+    if not kind or not drop:
+        return zeros, None
+    mask = np.zeros(len(a), dtype=bool)
+    mask[drop] = True
+    return zeros, {"kind": kind, "days": days, "zeros": len(drop), "mask": mask,
+                   "kept": {"edge": edge, "undated": undated, "other": int(zeros - len(drop) - edge - undated)}}
+
+
+def _zero_word(col: Any, unit: Any) -> str:
+    """What a value of the column is, for "a rate of 0 is a placeholder": rate, price, index, balance or ratio when
+    the column's name or unit says so (a unit "per" another, CAD per USD, is a rate), else value."""
+    toks = set(re.split(r"[^a-z]+", ("%s %s" % (col, unit or "")).lower()))
+    for w, forms in (("rate", ("rate", "rates")), ("price", ("price", "prices")), ("index", ("index", "indices", "indexes")),
+                     ("balance", ("balance", "balances")), ("ratio", ("ratio", "ratios"))):
+        if toks & set(forms):
+            return w
+    if "per" in set(re.split(r"[^a-z]+", str(unit or "").lower())) or "/" in str(unit or ""):
+        return "rate"
+    return "value"
+
+
+def _zero_plural(w: str) -> str:
+    return {"index": "index values", "value": "values"}.get(w, w + "s")
+
+
+def _zero_why(zi: Dict[str, Any]) -> str:
+    """The evidence that 0 marks "no value" in words, true of every zero read so (_zero_shape's mask): "they fall on
+    weekends between non-zero rates, the pattern of a day with no value" or "they sit alone or two or three together
+    between non-zero rates that pick up where they left off, the pattern of a missing value"; then the zeros that stay
+    0, counted apart: "; 3 other zero values stay 0 (1 at the start or end of a series, 2 on rows with no date)"."""
+    w = _zero_plural(str(zi.get("word") or "value"))
+    ev = zi.get("evidence") or {}
+    if ev.get("kind") == "weekdays":
+        days = list(ev.get("days") or [])
+        when = "weekends" if days == ["Saturday", "Sunday"] else _listed([d + "s" for d in days])
+        text = "they fall on %s between non-zero %s, the pattern of a day with no value" % (when, w)
+    else:
+        text = ("they sit alone or two or three together between non-zero %s that pick up where they left off, the "
+                "pattern of a missing value" % w)
+    kept = ev.get("kept") or {}
+    parts = [(int(kept.get("edge") or 0), "%s at the start or end of a series"),
+             (int(kept.get("undated") or 0), "%s on %s with no date"),
+             (int(kept.get("other") or 0), "%s outside that pattern")]
+    total = sum(n for n, _f in parts)
+    if total > 0:
+        words = [(f % (format(n, ","), "a row" if n == 1 else "rows") if "%s on %s" in f else f % format(n, ","))
+                 for n, f in parts if n > 0]
+        text += "; %s other zero %s 0 (%s)" % (format(total, ","), "value stays" if total == 1 else "values stay",
+                                              ", ".join(words))
+    return text
+
+
+def _zero_note(col: str, zi: Dict[str, Any]) -> str:
+    """"550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day
+    with no value": the count and the evidence, never a bare "a rate of 0 is a placeholder"; the zeros that stay 0
+    are counted apart (_zero_why)."""
+    n = int(zi["zeros"])
+    return "%s in %s %s not counted: %s" % (_n_values(n, "zero value"), col, "is" if n == 1 else "are", _zero_why(zi))
 
 
 def _date_candidates(plan: Dict[str, Any], layout: Optional[Dict[str, Any]], columns: Any) -> List[str]:
@@ -5043,8 +5658,9 @@ def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[
     percent on the scale its data test chose (_pct_reading); the date column is the engine's dates (or whole
     years read as each year's last day). info: {"kept", "aside", "undated" (kept rows with no date),
     "unread" {column: kept cells the engine could not read as numbers}, "kinds" {column: number|date|text},
-    "mixed" {column: fractions and percents side by side}}. ctx: {"reading", "clean", "hide" {landed: decision},
-    "pct" {column: _pct_reading}}."""
+    "mixed" {column: fractions and percents side by side}, "zeros" {column: {"zeros", "values", "word"}} (a level
+    whose 0 is a placeholder: its zeros are missing in the frame, see PLACEHOLDER_ZERO_TYPES)}. ctx: {"reading",
+    "clean", "hide" {landed: decision}, "pct" {column: _pct_reading}}."""
     import numpy as np
     import pandas as pd
     from northledger.clean import QUARANTINE_COL
@@ -5106,6 +5722,31 @@ def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[
         if c in df.columns and c != date and _texts_of(df, c).replace("", np.nan).nunique() > 1:
             ent = c
             break
+    # a level whose 0 is a placeholder (PLACEHOLDER_ZERO_TYPES, on its evidence: read in date order within each
+    # series, _series_groups, as the planner's profile reads it): the zeros the evidence describes read as missing
+    # here, in the analyses' own copy of the rows, and no other; the engine's table and every download keep them
+    info["zeros"] = {}
+    days = df[date] if date else None
+    series: List[Any] = []                   # the rows' series, worked out once, when a level needs it
+    for h in list(df.columns):
+        if h == date or info["kinds"].get(h) != "number" or h in info["mixed"]:
+            continue
+        st, unit = _col_type(plan, h, layout)
+        if st not in PLACEHOLDER_ZERO_TYPES:
+            continue
+        v = pd.to_numeric(df[h], errors="coerce").astype(float)
+        if not _zero_gate(v.to_numpy()):
+            continue
+        if not series:
+            series.append(_series_groups([(c, _texts_of(df, c).to_numpy()) for c in df.columns
+                                          if c != date and info["kinds"].get(c) == "text"], days))
+        _zeros, ev = _zero_shape(v.to_numpy(), days, series[0])
+        if ev:
+            vv = v.to_numpy().copy()
+            vv[ev["mask"]] = np.nan
+            df[h] = vv
+            info["zeros"][h] = {"zeros": int(ev["zeros"]), "values": int(v.notna().sum()), "word": _zero_word(h, unit),
+                                "evidence": {k: x for k, x in ev.items() if k != "mask"}}
     return df, date, ent, why, info
 
 
@@ -5388,11 +6029,77 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
             "chart": {"kind": "bars", "unit": "%", "series": [{"label": _short_labels([x[0] for x in rows])[r[0]], "value": r[5]} for r in shown]}}
 
 
+def _shrink_m(groups: Any, st: str = "") -> Tuple[int, Dict[str, Any]]:
+    """(m for the weighted averages, how it was found: {"kind": "estimated", "high" (the estimate held to
+    SHRINK_M_MAX), "low" (held to SHRINK_M_MIN), "chance" (the averages differ no more than chance makes them:
+    SHRINK_M_MAX) or "fallback" (SHRINK_M: "why" "few", fewer than SHRINK_MIN_GROUPS groups of SHRINK_MIN_ROWS rows,
+    or "flat", no spread at all), "raw": the estimate}): see SHRINK_M. groups: each group's values (decibels, st
+    "log_scale", are read as the energies _center averages)."""
+    import numpy as np
+    use = []
+    for v in groups:
+        a = np.asarray(v, dtype=float)
+        a = a[~np.isnan(a)]
+        if st == "log_scale":
+            a = 10.0 ** (a / 10.0)
+        if len(a) >= SHRINK_MIN_ROWS:
+            use.append(a)
+    if len(use) < SHRINK_MIN_GROUPS:
+        return SHRINK_M, {"kind": "fallback", "why": "few", "raw": None}
+    dof = float(sum(len(a) - 1 for a in use))
+    within = float(sum(float(((a - a.mean()) ** 2).sum()) for a in use)) / dof
+    means = np.array([a.mean() for a in use])
+    tau2 = float(means.var(ddof=1)) - float(np.mean([within / len(a) for a in use]))
+    if tau2 <= 0:
+        return (SHRINK_M, {"kind": "fallback", "why": "flat", "raw": None}) if within <= 0 else \
+            (SHRINK_M_MAX, {"kind": "chance", "raw": None})
+    raw = within / tau2
+    m = int(math.floor(raw + 0.5))
+    kind = "high" if m > SHRINK_M_MAX else "low" if m < SHRINK_M_MIN else "estimated"
+    return max(SHRINK_M_MIN, min(SHRINK_M_MAX, m)), {"kind": kind, "raw": raw}
+
+
+def _m_words(m: int, how: Dict[str, Any], what: str) -> str:
+    """How m was found, for the sentence: "13 is estimated from how much the brand averages differ against how much
+    rows differ within a brand"."""
+    k = how.get("kind")
+    spread = "how much the %s averages differ against how much rows differ within a %s" % (what, what)
+    if k == "estimated":
+        return "%d is estimated from %s" % (m, spread)
+    if k in ("high", "low"):
+        return "estimated at %s from %s, held to %d" % (_fmt(how.get("raw")), spread, m)
+    if k == "chance":
+        return "%d, the most: the %s averages differ no more than chance alone would make them" % (m, what)
+    if how.get("why") == "flat":
+        return "%d, a set value: the values do not vary at all, so it cannot be estimated" % m
+    return "%d, a set value: fewer than %s %s groups have %d or more rows, too few to estimate it from" % (
+        m, _count_word(SHRINK_MIN_GROUPS), what, SHRINK_MIN_ROWS)
+
+
+def _weighted_average(mean: float, n: int, grand: float, st: str = "", m: float = SHRINK_M) -> float:
+    """The IMDb-style weighted rating a group is ranked by: (n * mean + m * grand) / (n + m), m from _shrink_m.
+    Decibels (st "log_scale") are weighed as the energies _center averages, and turned back into dB."""
+    m = float(m)
+    if st == "log_scale":
+        e = (n * 10.0 ** (mean / 10.0) + m * 10.0 ** (grand / 10.0)) / (n + m)
+        return float(10.0 * math.log10(e))
+    return float((n * mean + m * grand) / (n + m))
+
+
+def _one_row_each(s: Any, dated: bool) -> bool:
+    """True when the rows hold one row per entry and date (with no date, one row per entry), at most 1% of them
+    repeating a pair: a panel, whose each row is the entry's own figure, not one of several averaged or added."""
+    if not len(s):
+        return True
+    return float(s.duplicated(subset=["e", "d"] if dated else ["e"]).mean()) <= 0.01
+
+
 def _a_rank(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
     """Entities ranked by the measure's yearly total (a flow or a count) or yearly average (a level) in the
     latest complete year most of them report (review, 29 Sep 2026: transactions were ranked by the single rows
     of their latest day, "all 1 region entries"); with no date, by the entity's total or average over the
-    file."""
+    file. An entry whose figure is made of several rows needs RANK_MIN_ROWS of them (the entries below are left
+    out and counted in the sentence); a panel's entry (one row per date) is its own figure (_one_row_each)."""
     import pandas as pd
     if not ent and date and len(cols) >= 2:
         return _a_rank_series(df, date, cols, plan, layout)
@@ -5429,37 +6136,103 @@ def _a_rank(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
         g = s.groupby("e")["v"]
         now, then = (g.sum() if how == "sum" else g.mean()), None
         label = "%s %s" % (word, col)
-    top = now.sort_values(ascending=False).head(10)
+    # an entry whose figure adds up or averages several rows (transactions, reviews) is ranked only on
+    # RANK_MIN_ROWS rows or more (evaluation preflight, 30 Sep 2026: ten brands "averaged" 5.0 stars on one review
+    # each); a table with one row per entry and date (a panel: countries by year) ranks each entry's own figure
+    small: List[Any] = []
+    ranked = now
+    one_each = _one_row_each(s, bool(date))
+    if not one_each:
+        n_now = (s[s["y"] == latest] if date else s).groupby("e").size()
+        small = [k for k in now.index if int(n_now.get(k, 0)) < RANK_MIN_ROWS]
+        ranked = now.drop(index=small)
+        if then is not None:
+            n_then = s[s["y"] == back].groupby("e").size()
+            then = then[[k for k in then.index if int(n_then.get(k, 0)) >= RANK_MIN_ROWS]]
+        if ranked.empty:
+            return {"refused": "rank: no %s entry has %d or more rows%s, the fewest a ranked %s may rest on" % (
+                ent, RANK_MIN_ROWS, (" in %d" % latest) if latest is not None else "", word)}
+    # an average made of several rows is ranked by its weighted average (the IMDb-style weighted rating): its own rows
+    # plus m rows at the average of every row in the ranking (the ranked year, or the file), m the file's own
+    # (_shrink_m, on every entry's rows in that scope); a total, and a panel's own figure, rank as they are
+    weigh = how != "sum" and not one_each
+    wt = n_of = None
+    grand, n_scope = 0.0, 0
+    m, m_how = SHRINK_M, {"kind": "fallback", "raw": None}
+    if weigh:
+        scope = s[s["y"] == latest] if date else s
+        n_of = scope.groupby("e").size()
+        grand, n_scope = float(scope["v"].mean()), int(len(scope))
+        m, m_how = _shrink_m([g["v"].to_numpy() for _k, g in scope.groupby("e", sort=True)])
+        wt = pd.Series({k: _weighted_average(float(ranked[k]), int(n_of[k]), grand, "", m) for k in ranked.index},
+                       dtype=float)
+        keys = sorted(ranked.index, key=lambda k: (-float(wt[k]), -int(n_of[k]), str(k)))[:10]
+        top = wt[keys]
+    else:
+        top = ranked.sort_values(ascending=False).head(10)
     total = float(now.sum()) if how == "sum" else 0.0
     rows, bars = [], []
     for k, val in top.items():
         chg = ""
+        own = float(ranked[k])
         if then is not None and k in then.index and then[k]:
-            chg = _fmt(100.0 * (val / then[k] - 1.0)) + "%"
-        rows.append([k, _fmt(val), (_fmt(100.0 * val / total) + "%") if total > 0 else "", chg])
+            chg = _fmt(100.0 * (own / then[k] - 1.0)) + "%"
+        if weigh:
+            rows.append([k, _fmt(val), _fmt(own), format(int(n_of[k]), ","), chg])
+        else:
+            rows.append([k, _fmt(val), (_fmt(100.0 * val / total) + "%") if total > 0 else "", chg])
         bars.append({"label": k, "value": float(val)})
-    head = ", ".join("%s (%s)" % (k, _amt(v, unit)) for k, v in top.head(3).items())
-    share3 = 100.0 * float(top.head(3).sum()) / total if total > 0 else None
-    tail = ("; together %s%% of the total over all %d %s entries" % (_fmt(share3), len(now), ent)) if share3 else ""
-    text = ("In %d the largest %s by %s were %s%s." % (latest, label, ent, head, tail) if latest is not None
-            else "The largest %s values by %s were %s%s." % (label, ent, head, tail))
+    if weigh:
+        head = ", ".join("%s (weighted %s: an average of %s on %s)" % (
+            k, _amt(v, unit), _amt(ranked[k], unit), _n_values(int(n_of[k]), "row")) for k, v in top.head(3).items())
+        text = ("In %d the highest %s by %s, each average weighted by its rows, were %s." % (latest, label, ent, head)
+                if latest is not None else "The highest %s values by %s, each average weighted by its rows, were %s." % (
+                    label, ent, head))
+        text += (" Each %s's average is pulled toward the overall %s (the average of all %s%s) by the equivalent of "
+                 "%d rows at that average (%s), so an average on a few rows counts for less than one on many." % (
+                     ent, _amt(grand, unit), _n_values(n_scope, "row"), (" in %d" % latest) if latest is not None
+                     else "", m, _m_words(m, m_how, ent)))
+    else:
+        head = ", ".join("%s (%s)" % (k, _amt(v, unit)) for k, v in top.head(3).items())
+        share3 = 100.0 * float(top.head(3).sum()) / total if total > 0 else None
+        tail = ("; together %s%% of the total over all %d %s entries" % (_fmt(share3), len(now), ent)) if share3 else ""
+        text = ("In %d the largest %s by %s were %s%s." % (latest, label, ent, head, tail) if latest is not None
+                else "The largest %s values by %s were %s%s." % (label, ent, head, tail))
     if then is not None and len(rows):
         ch = [(k, 100.0 * (now[k] / then[k] - 1.0)) for k in top.index if k in then.index and then[k] > 0]
         if ch:
             fast = max(ch, key=lambda x: x[1])
             text += " Over the 10 years before, the fastest riser among them was %s (%s%%)." % (fast[0], _fmt(fast[1]))
+    if small:
+        text += " %s %s %s with fewer than %d rows%s %s not ranked." % (
+            format(len(small), ","), ent, "entry" if len(small) == 1 else "entries", RANK_MIN_ROWS,
+            (" in %d" % latest) if latest is not None else "", "is" if len(small) == 1 else "are")
     mp = None
-    if 5 <= len(now) <= 300:
-        # every entity's value that year: the page draws a world map when most of the names are countries
-        mp = {"measure": col, "when": str(latest) if latest is not None else "", "values": {str(k): float(v) for k, v in now.items()}}
-    return {"type": "rank", "title": "Largest %s by %s%s" % (col, ent, (" in %d" % latest) if latest is not None else ""),
+    if 5 <= len(ranked) <= 300:
+        # every ranked entity's value that year (the weighted average when the ranking weighs them): the page draws
+        # a world map when most of the names are countries
+        mp = {"measure": col, "when": str(latest) if latest is not None else "",
+              "values": {str(k): float(v) for k, v in (wt if weigh else ranked).items()}}
+    min_rows = ("" if one_each else "; an entry resting on fewer than %d rows%s is not ranked" % (
+        RANK_MIN_ROWS, " that year" if date else ""))
+    weighs = ("; ranked by its average weighted by its rows (the IMDb-style weighted rating: its own rows plus %d rows "
+              "at the average of all rows%s; %s)" % (m, " that year" if date else "", _m_words(m, m_how, ent))
+              if weigh else "")
+    tcols = [ent, "Weighted average", "Average %s" % col, "Rows", "Change over 10 years"] if weigh \
+        else [ent, col, "Share of all", "Change over 10 years"]
+    if rows and not any(r[-1] for r in rows):
+        # no entry has a figure 10 years before: the column would be empty on every row (final review, 30 Sep 2026)
+        tcols, rows = tcols[:-1], [r[:-1] for r in rows]
+    return {"type": "rank", "title": "%s %s by %s%s" % ("Highest average" if weigh else "Largest", col, ent,
+                                                      (" in %d" % latest) if latest is not None else ""),
             "sentence": text, "map": mp,
             "method": (("Each %s entry's %s for each complete calendar year; the latest year at least 80%% of the entries "
-                        "report%s." % (ent, "yearly total (every row added)" if how == "sum" else "yearly average",
-                                       ("; change against 10 years before (%d)" % back) if back is not None else ""))
-                       if date else "Each %s entry's %s over the file." % (
-                           ent, "total (every row added)" if how == "sum" else "average")),
-            "table": {"cols": [ent, col, "Share of all", "Change over 10 years"], "rows": rows},
+                        "report%s%s%s." % (ent, "yearly total (every row added)" if how == "sum" else "yearly average",
+                                           ("; change against 10 years before (%d)" % back) if back is not None else "",
+                                           weighs, min_rows))
+                       if date else "Each %s entry's %s over the file%s%s." % (
+                           ent, "total (every row added)" if how == "sum" else "average", weighs, min_rows)),
+            "table": {"cols": tcols, "rows": rows},
             "chart": {"kind": "bars", "series": bars}}
 
 
@@ -5541,11 +6314,17 @@ def _a_compare(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     if len(keep) < 2:
         return {"refused": "compare: fewer than two groups with %d or more values" % COMPARE_MIN_GROUP}
     rows, bars = [], []
+    # the groups are ranked by their averages weighted by their rows (the IMDb-style weighted rating): each group's
+    # own rows plus m rows at the average of every row compared (every group, shown or not), m the file's own
+    # (_shrink_m, on every group's rows)
+    grand = _center(s["v"].values, st)
+    m, m_how = _shrink_m([g["v"].to_numpy() for _k, g in s.groupby("g", sort=True)], st)
     for g in keep:
         v = s.loc[s["g"] == g, "v"].values
         lo, hi = _boot_ci(v, st)
-        rows.append((g, len(v), _center(v, st), lo, hi, float(np.median(v))))
-    rows.sort(key=lambda r: -r[2])
+        c = _center(v, st)
+        rows.append((g, len(v), c, lo, hi, float(np.median(v)), _weighted_average(c, len(v), grand, st, m)))
+    rows.sort(key=lambda r: (-r[6], -r[1], r[0]))
     top, bot = rows[0], rows[-1]
     rng = np.random.default_rng(20260925)
     a = s.loc[s["g"] == top[0], "v"].values
@@ -5553,20 +6332,42 @@ def _a_compare(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:
     d = [_center(a[rng.integers(0, len(a), len(a))], st) - _center(b[rng.integers(0, len(b), len(b))], st) for _ in range(999)]
     dlo, dhi = float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))
     avg = "energy average" if st == "log_scale" else "average"
-    text = ("By %s, the highest %s %s is %s (%s, 95%% range %s to %s, %d rows) and the lowest %s (%s, %d rows): "
-            "a gap of %s (95%% range %s to %s)%s." % (
-                seg, avg, col, top[0], _amt(top[2], unit), _fmt(top[3]), _fmt(top[4]), top[1], bot[0], _amt(bot[2], unit),
-                bot[1], _diff_amt(top[2] - bot[2], st, unit), _fmt(dlo), _fmt(dhi),
-                "" if dlo > 0 else ", a range that includes no gap at all, so the two may not differ"))
+    if m_how.get("kind") == "chance":
+        # the groups' averages differ no more than chance makes them (_shrink_m): the top and the bottom are picked
+        # out of every group compared, and a gap between the two ends is what chance makes, so no range is offered
+        # as if it could exclude no gap (final review, 30 Sep 2026: "95% range 0.0111 to 0.396" beside "no more than
+        # chance" in 92 of 300 files with no true difference)
+        gap = ("a gap of %s between the top and the bottom of the %d groups, the two ends picked out of them, which "
+               "chance alone can make this wide" % (_diff_amt(top[2] - bot[2], st, unit), len(rows)))
+    else:
+        gap = "a gap of %s (95%% range %s to %s)%s" % (
+            _diff_amt(top[2] - bot[2], st, unit), _fmt(dlo), _fmt(dhi),
+            "" if dlo > 0 else ", a range that includes no gap at all, so the two may not differ")
+    text = ("By %s, with each group's %s %s weighted by its rows, %s ranks highest (%s, 95%% range %s to %s, %s rows; "
+            "weighted %s) and %s lowest (%s, %s rows; weighted %s): %s." % (
+                seg, avg, col, top[0], _amt(top[2], unit), _fmt(top[3]), _fmt(top[4]), format(top[1], ","),
+                _amt(top[6], unit), bot[0], _amt(bot[2], unit), format(bot[1], ","), _amt(bot[6], unit), gap))
+    text += (" Each group's %s is pulled toward the overall %s (the %s of all %s) by the equivalent of %d rows at "
+             "that %s (%s)." % (avg, _amt(grand, unit), avg, _n_values(int(len(s)), "row"), m, avg,
+                                _m_words(m, m_how, seg)))
     if st == "log_scale":
         text += " Decibels are averaged as energy (10^(dB/10)), not as plain numbers."
-    if len(counts) > len(keep):
-        text += " %d smaller groups are not shown." % (len(counts) - len(keep))
+    few = int((counts < COMPARE_MIN_GROUP).sum())
+    more = int((counts >= COMPARE_MIN_GROUP).sum()) - len(keep)
+    if few:
+        text += " %s with fewer than %d rows %s left out." % (_n_values(few, "group"), COMPARE_MIN_GROUP,
+                                                             "is" if few == 1 else "are")
+    if more:
+        text += " %s more with %d or more rows %s not shown (the 12 with the most rows are)." % (
+            _n_values(more, "group"), COMPARE_MIN_GROUP, "is" if more == 1 else "are")
     return {"type": "compare", "title": "%s by %s" % (col, seg), "sentence": text,
-            "method": "Each group's %s with a 95%% bootstrap range (999 resamples); groups with fewer than %d values "
-                      "are left out. An association with the group, not its cause." % (avg, COMPARE_MIN_GROUP),
-            "table": {"cols": [seg, "Rows", avg.capitalize(), "95% range", "Median"],
-                      "rows": [[r[0], format(r[1], ","), _fmt(r[2]), "%s to %s" % (_fmt(r[3]), _fmt(r[4])), _fmt(r[5])] for r in rows]},
+            "method": "Each group's %s with a 95%% bootstrap range (999 resamples), ranked by its %s weighted by its rows "
+                      "(the IMDb-style weighted rating: its own rows plus %d rows at the %s of all rows; %s); groups "
+                      "with fewer than %d values are left out. An association with the group, not its cause." % (
+                          avg, avg, m, avg, _m_words(m, m_how, seg), COMPARE_MIN_GROUP),
+            "table": {"cols": [seg, "Rows", avg.capitalize(), "95% range", "Median", "Weighted %s" % avg],
+                      "rows": [[r[0], format(r[1], ","), _fmt(r[2]), "%s to %s" % (_fmt(r[3]), _fmt(r[4])), _fmt(r[5]),
+                                _fmt(r[6])] for r in rows]},
             "chart": {"kind": "bars", "series": [{"label": r[0], "value": r[2]} for r in rows]}}
 
 
@@ -5834,9 +6635,10 @@ _USES = {"trend": 4, "extremes": 2, "agreement": 2, "compare": 1, "relationship"
 
 
 def _unreadable_note(text: str, used: List[str], unread: Dict[str, int], undated: int = 0,
-                     date: Optional[str] = None) -> str:
+                     date: Optional[str] = None, zeros: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
     """The analysis sentence with the cells it could not count said at its end: "(127 unreadable values in
-    units are not counted)", and, for an analysis over time, "(12 rows with no order_date are not counted)".
+    units are not counted)", for a level whose 0 is a placeholder "(550 zero values in VALUE are not counted: a
+    rate of 0 is a placeholder)", and, for an analysis over time, "(12 rows with no order_date are not counted)".
     The counts are over the rows the engine kept, the rows the analysis read, so the sentence says exactly
     what was left out of what it counted."""
     parts = [(c, int(unread[c])) for c in dict.fromkeys(used) if c != date and unread.get(c)]
@@ -5846,6 +6648,9 @@ def _unreadable_note(text: str, used: List[str], unread: Dict[str, int], undated
                  for i, (c, n) in enumerate(parts)]
         one = len(parts) == 1 and parts[0][1] == 1
         notes.append("%s %s not counted" % (_listed(words), "is" if one else "are"))
+    for c in dict.fromkeys(used):
+        if c != date and (zeros or {}).get(c):
+            notes.append(_zero_note(c, zeros[c]))
     if undated and date:
         notes.append("%s with no %s %s not counted" % (_n_values(int(undated), "row"), date,
                                                       "is" if int(undated) == 1 else "are"))
@@ -5883,7 +6688,7 @@ def _run_analyses(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Di
     raises: a request that cannot run is refused and named. A column the visitor withheld or coded is never
     read: never an axis, a group, a driver or a measure, and a withheld one is never named (it is "a column you
     withheld"). ctx: see _analysis_frame, plus "private" (a function: a file's column name to "withhold",
-    "code" or None)."""
+    "code" or None). Leaves ctx["zeros"]: the frame's placeholder zeros ({column: {"zeros", "values", "word"}})."""
     out, refused = [], []
     asked = [a for a in (plan.get("analyses") or []) if isinstance(a, dict)][:ANALYSES_MAX]
     if not asked:
@@ -5908,6 +6713,7 @@ def _run_analyses(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Di
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         return {"items": [], "refused": ["the analyses could not read the file (%s)" % type(exc).__name__]}
+    ctx["zeros"] = dict(info.get("zeros") or {})          # for the Data tests card's note row (run())
     private = ctx.get("private") or (lambda _n: None)
     roles = {str(c.get("role")): c["name"] for c in plan.get("columns", []) if c.get("name")}
     ent_hidden = next((private(roles[r]) and roles[r] for r in ("entity", "geography") if roles.get(r) and private(roles[r])), None)
@@ -5985,7 +6791,7 @@ def _run_analyses(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Di
             res["method"] = (res.get("method") or "").rstrip() + " Dates from the %s column." % date
         if t != "themes":
             res["sentence"] = _unreadable_note(res.get("sentence") or "", used, info["unread"],
-                                               info["undated"] if dated else 0, date)
+                                               info["undated"] if dated else 0, date, info.get("zeros"))
             for c in dict.fromkeys(used):
                 if c in info["mixed"]:
                     res["sentence"] = res["sentence"].rstrip() + (
@@ -6186,9 +6992,11 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         cdf = None
         sent = data                               # the file as the visitor sent it, for its line numbers
         sent_rows = None                          # (each planned row's place among the visitor's rows, their count)
+        raw_context: Any = None                   # the plan's web searches: items of list terms (_context_queries)
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
+            raw_context = raw_plan.get("context")    # never its old free-text context_queries
             try:
                 import pandas as _pd
                 cols = list(_pd.read_csv(io.BytesIO(data), dtype=str, nrows=0, encoding="utf-8-sig").columns)
@@ -6338,9 +7146,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             for old, new in renamed.items():
                 t = t.replace(old, new) if isinstance(t, str) else t
             return t
+        # the engine's "numbers are stored as text" line is left out: every upload is CSV text (_TEXT_NUMBERS_RE)
         rep["health"] = {"score": _num(th.score),
                          "issues": [pub(_plain(x)) for x in (th.findings or [])
-                                    if _issue_is_safe(x, wh)]}
+                                    if _issue_is_safe(x, wh) and not _is_text_numbers_line(x)]}
 
         # -- cleaning
         rules = _clean.standard_rules(th, as_of=as_of_eff)
@@ -6463,7 +7272,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             try:
                 _PROFILE_CACHE.clear()
                 _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value={
-                    "ok": True, "facts": _profile_facts(reading, list(reading.land) or list(reading.values.columns)),
+                    "ok": True, "facts": _profile_facts(reading, list(reading.land) or list(reading.values.columns),
+                                                        hidden_land),
                     "rows": reading.n, "flagged": [dict(f) for f in flagged],
                     "colmap": dict(getattr(res, "column_map", {}) or {})})
             except Exception:  # noqa: BLE001 - the profile then lands the file itself
@@ -6531,6 +7341,11 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             if plan_review:
                 ai_plan["review"] = plan_review
             rep["ai_plan"] = ai_plan
+            # the web searches, built by the adapter from the plan's items of list terms (never free text, never
+            # anything from the file): what the page sends (an explicit [] means no search); a dropped item is
+            # counted by its reason
+            ai_plan["context_queries"], ai_plan["context_queries_dropped"], ai_plan["context"] = \
+                _context_queries(raw_context)
             # the engine's gate (it refused its own analysis): the analyses stop with it and the planner is not
             # asked again (_gate_state)
             gate = None
@@ -6555,9 +7370,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                             if land is not None and reading.kind(land) == "number":
                                 pct[reading.header(land)] = _pct_reading(reading.numbers(land), reading.texts[land],
                                                                          reading.filled(land))
-                    rep["ai_analyses"] = _run_analyses({"reading": reading, "clean": cr.clean, "hide": hidden_land,
-                                                        "pct": pct, "private": private, "gate": gate},
-                                                       ai_plan, layout)
+                    actx = {"reading": reading, "clean": cr.clean, "hide": hidden_land, "pct": pct, "private": private,
+                            "gate": gate}
+                    rep["ai_analyses"] = _run_analyses(actx, ai_plan, layout)
+                    _zero_note_rows(rep, actx.get("zeros") or {}, contracts_off)
             rep["plan_signals"] = _plan_signals(rep, ai_plan, ai_scrub, gate)
         if plan_review and not ai_plan and not plan_review["approved"]:
             rep["plan_review"] = plan_review
@@ -6565,6 +7381,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                  r.roles.date if (r is not None and not date_withheld) else None)
         if r is not None and not date_withheld:
             _true_headline(rep, r, pub, _date_grain(cr.clean, r.roles.date))
+        rep["scenarios"] = _scenarios(rep, r, cr, hidden_land, reading, ai_plan, pub, date_withheld)
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -6686,6 +7503,175 @@ def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any], scrub: Optional["_N
     if biz and all(f.get("grade") == "NOT_ENOUGH_DATA" for f in biz) and not ana.get("items"):
         out.append({"kind": "no_findings", "detail": "every business finding has too little data to judge"})
     return out[:20]
+
+
+def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], reading: Any, plan: Any, pub: Any,
+               date_withheld: bool) -> Dict[str, Any]:
+    """rep["scenarios"] (design B; engine/nl_scenarios.py): the engine's claims as its gate kept them, the rows its
+    cleaner kept without any column the visitor withheld or coded (the frame the analyses read, by the landed
+    names the claims use), and the plan's column roles and units. The engine's own files are not touched."""
+    refused = ""
+    if r is None:
+        refused = "the engine's business analysis did not run, so there is no claim to break down"
+    elif date_withheld:
+        refused = "the date column is one you withheld, so no change over time is broken down"
+    if refused:
+        return {"basis": None, "items": [], "refused": [refused],
+                "note": "No scenario or contribution figures for this file; the reasons are listed."}
+    try:
+        import nl_scenarios as _ns
+        from northledger.clean import QUARANTINE_COL
+        from northledger.measure import additive_kind
+        clean = cr.clean
+        frame = clean.drop(columns=[c for c in clean.columns if c == QUARANTINE_COL or c in (hidden or {})])
+        claims: Dict[str, Dict[str, Any]] = {}
+        for g in r.gated:
+            fact = getattr(g, "fact", None)
+            key = getattr(fact, "claim_key", None) if fact is not None else None
+            if not key:
+                continue
+            t = getattr(fact, "test", None) or {}
+            claims[str(fact.id)] = {"key": str(key), "total_of": t.get("total_of"), "kind_split": t.get("kind_split"),
+                                    "currency": t.get("currency"), "status_excluded": t.get("status_excluded"),
+                                    "like_for_like_of": t.get("like_for_like_of")}
+        return _ns.build(rep, frame, r.roles.date or None, claims,
+                         plan if isinstance(plan, dict) and plan.get("columns") else None,
+                         reading.landed if reading is not None else None, pub, additive_kind)
+    except Exception as exc:  # noqa: BLE001 - the report stands without the block, and says so
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return {"basis": None, "items": [], "refused": ["the scenarios could not be computed for this file (%s)"
+                                                        % type(exc).__name__],
+                "note": "No scenario or contribution figures for this file; the reasons are listed."}
+
+
+# ----------------------------------------------------------------------------- the report's web searches
+# The AI-written report may cite public sources, found by up to 4 web searches the page sends to the report writer
+# (rep.ai_plan.context_queries; an explicit [] means no search). A search is never free text: not the planner's and
+# never anything from the visitor's file (final review, 30 Sep 2026: a block-list check of free-text searches let
+# names through in a dozen ways, among them a client column typed as a category, accented and "ue" spellings, CJK
+# names, two-letter surnames, cp1252 and "|" files and its own "ordinary words" rule). The plan names what it wants
+# as items of fixed terms, plan.context = at most CONTEXT_MAX of {"indicator", "sector", "region", "years"}, each
+# term from engine/context_terms.json (CONTEXT_TERMS_FILE: generic indicators, industries and places), and the
+# adapter builds each search itself from the list's own spelling of those terms and the years: "[sector] indicator
+# [region] [from] [to]". An item whose indicator is missing or any term is off its list (compared after _term_key),
+# or whose years are not integers from 1900 to 2099 in order, is dropped whole; other keys in an item are ignored.
+# The plan's old free-text context_queries is never read. A term that happens to equal a value in the file (a
+# region column holding "Ontario") is still only a list term. Each dropped item is counted by its reason in
+# ai_plan.context_queries_dropped; ai_plan.context holds the items kept, in the list's spelling.
+CONTEXT_TERMS_FILE = "context_terms.json"
+CONTEXT_MAX = 4                     # searches built from the plan's items, at most
+CONTEXT_READ = 12                   # items read from the plan, at most
+CONTEXT_YEARS = (1900, 2099)
+CQ_NOT_ITEM = "not an item of list terms"
+CQ_INDICATOR = "an indicator not on the list"
+CQ_SECTOR = "a sector not on the list"
+CQ_REGION = "a region not on the list"
+CQ_YEARS = "years that are not a range from 1900 to 2099"
+CQ_MORE = "more than 4 searches"
+CQ_TWICE = "the same search twice"
+CQ_NO_LIST = "the list of search terms could not be read"
+_CONTEXT_TERMS: Dict[str, Any] = {}
+
+
+def _term_key(s: Any) -> str:
+    """A term as the list compares it: NFKD, combining marks (accents) dropped, case-folded, every run of characters
+    that are not letters or digits one space, trimmed ("Côte d'Ivoire" and "cote d ivoire" are one term)."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(s))
+    t = "".join(ch for ch in t if not unicodedata.combining(ch)).casefold()
+    return re.sub(r"[\W_]+", " ", t).strip()
+
+
+def _context_terms() -> Dict[str, Any]:
+    """engine/context_terms.json as the adapter reads it (beside this file, in the pack too): {"version", and for
+    "indicator", "sector" and "region" a map from each term's _term_key to the list's own spelling}, or {} when the
+    file is missing or malformed (then no search is built). Read once."""
+    if "value" in _CONTEXT_TERMS:
+        return _CONTEXT_TERMS["value"]
+    got: Dict[str, Any] = {}
+    try:
+        with open(os.path.join(HERE, CONTEXT_TERMS_FILE), encoding="utf-8") as fh:
+            raw = json.load(fh)
+        maps = {}
+        for field, key in (("indicator", "indicators"), ("sector", "sectors"), ("region", "regions")):
+            terms = raw[key]
+            if not isinstance(terms, list) or not terms or not all(
+                    isinstance(t, str) and t.strip() and t.isascii() and not re.search(r"\d", t) for t in terms):
+                raise ValueError(key)
+            maps[field] = {_term_key(t): t for t in terms}
+        got = dict(maps, version=str(raw.get("version") or ""))
+    except Exception:  # noqa: BLE001 - no list, no search
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        got = {}
+    _CONTEXT_TERMS["value"] = got
+    return got
+
+
+def _context_year(y: Any) -> Optional[int]:
+    """A year of an item: an integer (never a bool) or a string of 4 digits, from 1900 to 2099; else None."""
+    if isinstance(y, bool):
+        return None
+    if isinstance(y, int):
+        v = y
+    elif isinstance(y, str) and re.fullmatch(r"\d{4}", y.strip()):
+        v = int(y.strip())
+    else:
+        return None
+    return v if CONTEXT_YEARS[0] <= v <= CONTEXT_YEARS[1] else None
+
+
+def _context_queries(raw: Any) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+    """(the searches built from plan.context, a reason for each item dropped, the items kept in the list's spelling):
+    see CONTEXT_TERMS_FILE. Anything but a list of items is no search. Every word of a search is a list term or a
+    year: nothing the plan wrote, and nothing from the file, can reach it."""
+    items = raw[:CONTEXT_READ] if isinstance(raw, list) else []
+    if not items:
+        return [], [], []
+    terms = _context_terms()
+    if not terms:
+        return [], [CQ_NO_LIST] * len(items), []
+    queries: List[str] = []
+    dropped: List[str] = []
+    kept: List[Dict[str, Any]] = []
+    for it in items:
+        if not isinstance(it, dict):
+            dropped.append(CQ_NOT_ITEM)
+            continue
+        got: Dict[str, Any] = {}
+        why = ""
+        for field, reason in (("indicator", CQ_INDICATOR), ("sector", CQ_SECTOR), ("region", CQ_REGION)):
+            v = it.get(field)
+            if field != "indicator" and (v is None or (isinstance(v, str) and not v.strip())):
+                continue                            # an optional term left out
+            t = terms[field].get(_term_key(v)) if isinstance(v, str) else None
+            if t is None:
+                why = reason
+                break
+            got[field] = t
+        if not why and it.get("years") not in (None, []):
+            ys = it.get("years")
+            yy = [_context_year(y) for y in ys] if isinstance(ys, list) and 1 <= len(ys) <= 2 else [None]
+            if any(y is None for y in yy) or yy[0] > yy[-1]:
+                why = CQ_YEARS
+            else:
+                got["years"] = [yy[0], yy[-1]]
+        if why:
+            dropped.append(why)
+            continue
+        words = [got.get("sector"), got["indicator"], got.get("region")]
+        if "years" in got:
+            words += [str(got["years"][0])] + ([str(got["years"][1])] if got["years"][1] != got["years"][0] else [])
+        q = " ".join(w for w in words if w)
+        if q in queries:
+            dropped.append(CQ_TWICE)
+        elif len(queries) >= CONTEXT_MAX:
+            dropped.append(CQ_MORE)
+        else:
+            queries.append(q)
+            kept.append(got)
+    return queries, dropped, kept
 
 
 def run_json(csv_bytes: Any, name: str, objective: str = "", decisions: Any = None,

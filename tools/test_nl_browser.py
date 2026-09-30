@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import csv
 import datetime
+import hashlib
 import io
 import json
 import math
@@ -3701,6 +3702,24 @@ def test_final_review_no_ai_payload_holds_the_files_name():
     assert "acme-payroll" not in pj and json.loads(pj)["profile"]["name"] == "[your file]", pj[:200]
 
 
+def test_contract_a_limitation_is_cut_after_the_files_name_is_swapped():
+    # the cross-repo contract test of 30 Sep 2026: each limitation was cut to 240 characters (the worker's cap) BEFORE
+    # "f3_eur.csv" (10 characters) was swapped for "[your file]" (11), so two arrived at 241. Cut after the swap: never
+    # over 240, never through the placeholder, and a line within the cap stays whole
+    rep = NB.run(_email_file(), "f3_eur.csv", "", None, "2026-01-10")
+    assert rep["ok"], rep.get("error")
+    n, name = 240, "f3_eur.csv"
+    texts = ["z" * (n - len(name)) + name,                 # 240 before the swap, 241 after: the cut ends before the placeholder
+             "A short line about " + name + ".",            # within the cap: whole, the placeholder in place
+             "w" * 300 + " " + name,                        # a long line: cut at 240, the name past the cut
+             name + " " + "v" * 300]                        # the placeholder first, then cut at 240
+    rep["limitations"] = [{"kind": "data", "finding_ids": [], "text": t} for t in texts]
+    got = NB.results_for_ai(rep)["limitations"]
+    want = ["z" * (n - len(name)), "A short line about [your file].", "w" * n, ("[your file] " + "v" * 300)[:n]]
+    assert got == want, [(len(x), x[-24:]) for x in got]
+    assert all(len(x) <= n and "f3_eur" not in x and x.count("[") == x.count("[your file]") for x in got), got
+
+
 # ---- option B (owner's decision, 29 Sep 2026): the AI may read a flagged column's real values once the visitor has
 # agreed on the page (src/js/50-try.js: a ticked box names the kept columns). The adapter's part: a kept flagged column
 # is profiled and analysed like any column, a withheld one stays out, and the report writer is told once, in one line
@@ -3762,6 +3781,1782 @@ def test_optin_a_kept_column_is_profiled_and_analysed_like_any_column_and_the_wr
     assert "chose to send" not in json.dumps(bres) and bres["reading"] == "Orders by member of staff.", bres["reading"]
     assert not any(s in json.dumps(bres) for s in _OPTIN_STAFF), "a withheld column's values reached the writer"
 
+
+# ------------------------------------------------------------------ scenarios and contributions (design B)
+# plan/AI-INSIGHTS-DESIGN.md section B, 29 Sep 2026: rep["scenarios"], computed by the adapter from the rows the
+# engine kept, in the engine's own windows, reconciled with the claim's charted monthly values, for the report
+# writer to copy. The ship2 figures below were recomputed independently of the adapter (design B).
+SCEN = os.path.join(HERE, "fixtures", "scenarios")
+SHIP2_NAME = "ship2_privacy_orders.csv"
+SHIP2_AS_OF = "2026-09-29"
+SHIP2_FIXTURE = os.path.join(SCEN, "scenarios-ship2.json")      # the frozen interface the worker is built on
+NOT_RECONCILED = "the breakdown could not be reconciled with the engine's own monthly totals, so it is not shown"
+SC_DERIVED = ("headline", "contribution", "price_volume_mix", "per_unit", "run_rate", "sensitivity", "gap")
+
+
+def _ship2_bytes() -> bytes:
+    with open(os.path.join(SCEN, SHIP2_NAME), "rb") as fh:
+        return fh.read()
+
+
+def _ship2():
+    rep = _run(_ship2_bytes(), SHIP2_NAME, "", None, SHIP2_AS_OF)
+    assert rep["ok"], rep["error"]
+    return rep
+
+
+def _sc(rep):
+    sc = rep.get("scenarios")
+    assert isinstance(sc, dict) and set(sc) == {"basis", "items", "refused", "note"}, \
+        "the report has no scenarios block of the contract's shape: %r" % (sc if sc is None else sorted(sc),)
+    return sc
+
+
+def _sc_items(rep):
+    return {it["id"]: it for it in _sc(rep)["items"]}
+
+
+def _sc_close(a, b, what, rel=1e-9):
+    assert a is not None and b is not None and abs(a - b) <= max(1e-6, rel * abs(b)), (what, a, b)
+
+
+def _mrange(a, b):
+    out, (y, m) = [], (int(a[:4]), int(a[5:7]))
+    while "%04d-%02d" % (y, m) <= b:
+        out.append("%04d-%02d" % (y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def _sc_expected(rep, keep=None):
+    """{item id: value} for every item of the derived groups and the facts, recomputed by this test from
+    downloads.clean_csv alone (its own arithmetic: nothing of the adapter's but the block's choices of claim,
+    windows, segment levels and units column, which other tests check). keep: the claim's own rows (a kind split)."""
+    import pandas as pd
+    sc = _sc(rep)
+    b = sc["basis"]
+    items = _sc_items(rep)
+    date = rep["roles"]["date"]
+    df = pd.read_csv(io.StringIO(rep["downloads"]["clean_csv"]), dtype=str, keep_default_na=False)
+    dd = pd.to_datetime(df[date].where(df[date] != ""), errors="coerce")
+    df["_m"] = dd.dt.strftime("%Y-%m")
+    exp = {"facts.months": float(df["_m"].dropna().nunique()),
+           "facts.dates": float(dd.dropna().dt.strftime("%Y-%m-%d").nunique()),
+           "facts.first": dd.dropna().min().strftime("%Y-%m-%d"), "facts.last": dd.dropna().max().strftime("%Y-%m-%d")}
+    if keep is not None:
+        df = keep(df)
+    measure = None if b["how"] == "count" else b["measure"]
+    if measure:
+        df = df[df[measure] != ""]
+    pm, lm = _mrange(*b["windows"]["prior"]), _mrange(*b["windows"]["latest"])
+    P, L = df[df["_m"].isin(pm)], df[df["_m"].isin(lm)]
+    tot = (lambda x: float(len(x))) if measure is None else (lambda x: math.fsum(float(v) for v in x[measure]))
+    R0, R1 = tot(P), tot(L)
+    exp.update({"headline.prior": R0, "headline.latest": R1, "headline.change": R1 - R0,
+                "run_rate.year": R1, "run_rate.month": R1 / 12.0, "sensitivity.one_pct": R1 / 100.0})
+    if R0 > 0:
+        exp["headline.change_pct"] = 100.0 * (R1 - R0) / R0
+    seg = b["segment"]["column"]
+    units = None
+    if "per_unit.prior" in items:
+        units = [c for c in items["per_unit.prior"]["inputs"]["columns"] if c not in (date, measure)][0]
+    st = {}
+    raw = {}
+    if seg:
+        lv = set(b["segment"]["levels"])
+        lab = lambda x: x[seg].where(x[seg].isin(lv), "other")
+        for g in sorted(set(lab(P)) | set(lab(L))):
+            gp, gl = P[lab(P) == g], L[lab(L) == g]
+            st[g] = {"r0": tot(gp), "r1": tot(gl)}
+            if units:
+                st[g]["u0"] = math.fsum(float(v) for v in gp[units])
+                st[g]["u1"] = math.fsum(float(v) for v in gl[units])
+        # every level's own latest total, a folded one too (the largest is chosen among all of them)
+        for g in sorted(set(L[seg]) - {""}):
+            gl = L[L[seg] == g]
+            raw[g] = {"r1": tot(gl), "u1": math.fsum(float(v) for v in gl[units]) if units else 0.0}
+    slug = {}
+    for it in sc["items"]:
+        if it["group"] == "contribution" and it["id"].endswith(".change"):
+            slug[it["segment"]] = it["id"].split(".")[1]
+    chg = R1 - R0
+    # shares only when the total moved by 1% of its level and every segment moved the way the total did
+    shares = bool(st) and chg != 0 and abs(chg) >= 0.01 * abs(R0) and \
+        not any((v["r1"] - v["r0"]) * chg < 0 or abs(100.0 * (v["r1"] - v["r0"]) / chg) > 100 + 1e-9 for v in st.values())
+    for g, v in st.items():
+        s, c = slug[g], v["r1"] - v["r0"]
+        exp["contribution.%s.prior" % s], exp["contribution.%s.latest" % s] = v["r0"], v["r1"]
+        exp["contribution.%s.change" % s] = c
+        if shares:
+            exp["contribution.%s.share" % s] = 100.0 * c / chg
+        if v["r0"] > 0:
+            exp["contribution.%s.pct" % s] = 100.0 * c / v["r0"]
+    if units:
+        U0 = math.fsum(float(v) for v in P[units])
+        U1 = math.fsum(float(v) for v in L[units])
+        P0, P1 = R0 / U0, R1 / U1
+        exp["per_unit.prior"], exp["per_unit.latest"] = P0, P1
+        if P0 > 0:
+            exp["per_unit.change_pct"] = 100.0 * (P1 - P0) / P0
+        exp["price_volume_mix.volume"] = (U1 - U0) * P0
+        if st and all(v["u0"] > 0 and (v["u1"] > 0 or v["r1"] == 0) for v in st.values()):
+            exp["price_volume_mix.price"] = math.fsum(v["u1"] * (v["r1"] / v["u1"] - v["r0"] / v["u0"])
+                                                      for v in st.values() if v["u1"] > 0)
+            exp["price_volume_mix.mix"] = math.fsum((v["u1"] - U1 * v["u0"] / U0) * v["r0"] / v["u0"] for v in st.values())
+        else:
+            exp["price_volume_mix.price"] = R1 - U1 * P0
+        for g, v in st.items():
+            if v["u0"] > 0:
+                exp["per_unit.%s.prior" % slug[g]] = v["r0"] / v["u0"]
+            if v["u1"] > 0:
+                exp["per_unit.%s.latest" % slug[g]] = v["r1"] / v["u1"]
+            if v["u0"] > 0 and v["u1"] > 0 and v["r0"] > 0:
+                p0, p1 = v["r0"] / v["u0"], v["r1"] / v["u1"]
+                exp["per_unit.%s.change_pct" % slug[g]] = 100.0 * (p1 - p0) / p0
+    exited = set(b["segment"].get("exited") or [])
+    tops = sorted((g for g in raw if raw[g]["r1"] > 0), key=lambda g: (-raw[g]["r1"], g))
+    real = [g for g in st if g != "other" and g not in exited and (not tops or g != tops[0])]
+    if tops and real and R1 > 0:
+        t = raw[tops[0]]
+        for g in real:
+            exp["gap.%s.amount" % slug[g]] = t["r1"] - st[g]["r1"]
+            exp["gap.%s.points" % slug[g]] = 100.0 * (t["r1"] - st[g]["r1"]) / R1
+            if units and st[g]["u1"] > 0 and t["u1"] > 0:
+                pt, pg = t["r1"] / t["u1"], st[g]["r1"] / st[g]["u1"]
+                if pt > pg:
+                    exp["gap.%s.per_unit" % slug[g]] = st[g]["u1"] * (pt - pg)
+    return exp
+
+
+def _sc_check_recomputed(rep, keep=None, where=""):
+    exp = _sc_expected(rep, keep)
+    got = {k: v for k, v in _sc_items(rep).items() if v["group"] in SC_DERIVED + ("facts",)}
+    assert set(got) == set(exp), (where, sorted(set(got) ^ set(exp)))
+    for k, v in exp.items():
+        if isinstance(v, str):
+            assert got[k]["value"] == v, (where, k, got[k]["value"], v)
+        else:
+            _sc_close(got[k]["value"], v, (where, k))
+        assert got[k]["text"] == NB_SC()._fmt_item(got[k]["value"], got[k]["kind"], got[k]["unit"]), (where, k)
+
+
+def NB_SC():
+    import nl_scenarios
+    return nl_scenarios
+
+
+def test_scenarios_ship2_holds_the_figures_recomputed_independently():
+    rep = _ship2()
+    sc = _sc(rep)
+    b = sc["basis"]
+    assert b and b["finding_id"] == "measure.revenue.total.change" and b["measure"] == "revenue" and b["how"] == "total", b
+    assert b["windows"] == {"prior": ["2024-01", "2024-12"], "latest": ["2025-01", "2025-12"]}, b["windows"]
+    assert b["reconciles"] is True and b["grade"] == "WATCH" and b["grade_words"] == "not yet conclusive", b
+    assert b["segment"] == {"column": "region", "levels": ["East", "North", "South", "West"], "folded": [],
+                            "entered": [], "exited": []}, b["segment"]
+    assert b["rows"] == {"prior": 151, "latest": 149, "units_missing": 0}, b["rows"]
+    t = {k: v["text"] for k, v in _sc_items(rep).items()}
+    assert (t["headline.prior"], t["headline.latest"], t["headline.change"]) == ("128,256", "152,214", "+23,958"), t
+    ch = [(it["segment"], it["text"]) for it in sc["items"] if it["group"] == "contribution" and it["id"].endswith(".change")]
+    assert ch == [("East", "+16,220"), ("North", "+7,116"), ("West", "+330"), ("South", "+292")], ch
+    assert t["contribution.east.share"] == "67.7%", t["contribution.east.share"]
+    assert (t["price_volume_mix.price"], t["price_volume_mix.volume"], t["price_volume_mix.mix"]) == \
+        ("+20,527", "+2,051", "+1,380"), [t.get("price_volume_mix." + k) for k in ("price", "volume", "mix")]
+    assert (t["per_unit.prior"], t["per_unit.latest"]) == ("41", "47.9"), (t["per_unit.prior"], t["per_unit.latest"])
+    # review, 30 Sep 2026: "revenue per unit 41 to 47.9 (+16.8%)" lost its "+16.8%" to the worker's guard: no item held it
+    pc = _sc_items(rep)["per_unit.change_pct"]
+    assert pc["text"] == "+16.8%" and (pc["kind"], pc["unit"], pc["group"], pc["grade"], pc["parent_grade"]) == \
+        ("change", "%", "per_unit", None, "WATCH"), pc
+    assert t["per_unit.east.change_pct"] == "+15.4%", t["per_unit.east.change_pct"]
+    assert t["sensitivity.one_pct"] == "1,522", t["sensitivity.one_pct"]
+    assert _sc_items(rep)["per_unit.prior"]["inputs"]["columns"][-1] == "units"
+
+
+def test_scenarios_ship2_is_the_frozen_interface_fixture():
+    # the worker (insight-proxy) is built on this exact block: a change to it is a change to that interface
+    with open(SHIP2_FIXTURE, encoding="utf-8") as fh:
+        want = json.load(fh)
+    got = json.loads(json.dumps(_sc(_ship2()), allow_nan=False))
+    assert got == want, "rep['scenarios'] for %s differs from %s" % (SHIP2_NAME, os.path.basename(SHIP2_FIXTURE))
+
+
+def test_scenarios_every_item_recomputes_from_the_clean_download():
+    _sc_check_recomputed(_ship2(), where="ship2")
+    rep = _run(_sample_bytes(), "sample-messy.csv", "", None, SAMPLE_AS_OF)
+    b = _sc(rep)["basis"]
+    assert b["finding_id"] == "measure.amount.total.rent.change" and b["segment"]["column"] == "property", b
+    _sc_check_recomputed(rep, keep=lambda df: df[df["category"] == "RENT"], where="sample: rent only")
+    _, rep = _v2("three_measures.csv")
+    assert _sc(rep)["basis"]["how"] == "count" and _sc(rep)["basis"]["measure"] == "rows", _sc(rep)["basis"]
+    _sc_check_recomputed(rep, where="three_measures: row count")
+    rep = _case("run3_control.csv", "run3_plan.json")
+    _sc_check_recomputed(rep, where="run3 with its plan")
+
+
+def test_scenarios_contributions_and_price_volume_mix_add_up_to_the_change():
+    for rep in (_ship2(), _run(_sample_bytes(), "sample-messy.csv", "", None, SAMPLE_AS_OF), _v2("three_measures.csv")[1]):
+        it = _sc_items(rep)
+        chg = it["headline.change"]["value"]
+        parts = [v["value"] for k, v in it.items() if v["group"] == "contribution" and k.endswith(".change")]
+        assert parts, rep["input"]["name"]
+        _sc_close(math.fsum(parts), chg, ("contributions", rep["input"]["name"]))
+        pvm = [v["value"] for v in it.values() if v["group"] == "price_volume_mix"]
+        if pvm:
+            _sc_close(math.fsum(pvm), chg, ("price + volume + mix", rep["input"]["name"]))
+    assert len([v for v in _sc_items(_ship2()).values() if v["group"] == "price_volume_mix"]) == 3
+
+
+def test_scenarios_reconcile_with_the_claims_charted_months_or_the_whole_block_is_refused():
+    import copy
+    import nl_scenarios as NS
+    rep = _ship2()
+    b = _sc(rep)["basis"]
+    ch = next(c for c in rep["charts"] if c["type"] == "trend_windows" and c["finding_ids"][0] == b["finding_id"])
+    assert b["windows"] == ch["data"]["windows"], (b["windows"], ch["data"]["windows"])
+    by = dict(zip(ch["data"]["months"], ch["data"]["values"]))
+    it = _sc_items(rep)
+    _sc_close(it["headline.prior"]["value"], math.fsum(by[m] for m in _mrange(*b["windows"]["prior"])), "prior window")
+    _sc_close(it["headline.latest"]["value"], math.fsum(by[m] for m in _mrange(*b["windows"]["latest"])), "latest window")
+    _sc_close(it["run_rate.month"]["value"], ch["data"]["window_means"]["latest"], "the average month")
+    # the same inputs the run hands the block, with one charted month moved: the whole block is refused
+    seen = {}
+    orig = NS.build
+
+    def spy(*a, **k):
+        seen["a"], seen["k"] = a, k
+        return orig(*a, **k)
+    NS.build = spy
+    try:
+        NB.run(_ship2_bytes(), SHIP2_NAME, "", None, SHIP2_AS_OF)
+    finally:
+        NS.build = orig
+    assert "a" in seen, "run() does not build the block with nl_scenarios.build"
+    args = list(seen["a"])
+
+    def moved(delta):
+        r2 = copy.deepcopy(args[0])
+        c2 = next(c for c in r2["charts"] if c["type"] == "trend_windows" and c["finding_ids"][0] == b["finding_id"])
+        c2["data"]["values"][c2["data"]["months"].index("2025-03")] += delta
+        return NS.build(r2, *args[1:], **seen["k"])
+    got = moved(1.0)
+    assert got["items"] == [] and NOT_RECONCILED in got["refused"] and got["basis"]["reconciles"] is False, got
+    assert moved(1e-9)["basis"]["reconciles"] is True          # within 1e-6 of the value: the same total
+
+
+def test_scenarios_only_the_headline_carries_the_claims_grade_and_a_derived_figure_names_it_as_its_parent():
+    # final review, 30 Sep 2026: every derived item carried the claim's grade as its own, so a region that fell 1.63%
+    # inside a CONFIRMED rise read CONFIRMED. The headline (the claim itself) keeps it; a derived item has grade null,
+    # the claim's grade as parent_grade and grade_words saying it is not graded itself
+    f9c = _run(_r4("f9c_confirmed_total.csv"), "f9c_confirmed_total.csv", "", {"__plan__": R4_SALES_PLAN}, R4_AS_OF)
+    cases = [_ship2(), _case("run3_control.csv", "run3_plan.json"), _v2("three_measures.csv")[1], f9c]
+    grades = set()
+    for rep in cases:
+        sc = _sc(rep)
+        f = next(x for x in rep["findings"] if x["id"] == sc["basis"]["finding_id"])
+        assert sc["basis"]["grade"] == f["grade"], (sc["basis"], f["grade"])
+        grades.add(f["grade"])
+        for it in sc["items"]:
+            g = it["group"]
+            if g == "facts":
+                assert (it["grade"], it["parent_grade"], it["grade_words"]) == (None, None, "a fact about the rows, not graded"), it
+            elif g == "forecast":
+                assert it["grade"] == GRADE_OF[rep["forecast"]["verdict"]] == "CONFIRMED" and it["parent_grade"] is None, it
+                assert it["grade_words"] == "the engine's forecast, graded CONFIRMED (usable for planning)", it
+            elif g == "headline":
+                assert (it["grade"], it["parent_grade"]) == (f["grade"], None), (rep["input"]["name"], it)
+                assert it["grade_words"] == "the claim itself, graded %s" % f["grade"], it
+            else:
+                assert (it["grade"], it["parent_grade"]) == (None, f["grade"]), (rep["input"]["name"], it["id"], it["grade"])
+                assert it["grade_words"] == "part of a change graded %s; not graded itself" % f["grade"], it
+    assert grades == {"WATCH", "NOT_ENOUGH_DATA", "CONFIRMED"}, grades
+    # f9c: North and East rose 50% and made the total's CONFIRMED rise; South fell 1.63%, and that is not CONFIRMED
+    it = _sc_items(f9c)
+    assert f9c["scenarios"]["basis"]["grade"] == "CONFIRMED" and it["headline.change"]["grade"] == "CONFIRMED"
+    south = it["contribution.south.pct"]
+    assert south["text"] == "\u22121.63%" and south["grade"] is None and south["parent_grade"] == "CONFIRMED", south
+    assert not any(v["grade"] == "CONFIRMED" for v in it.values() if v["segment"] is not None), "a segment reads CONFIRMED"
+    # the writer receives the same fields 1:1, and the worker keeps every item (a null grade is no grade)
+    out = NB.results_for_ai(f9c)
+    assert out["scenarios"] == _sc(f9c), "results_for_ai changed the scenarios block"
+    v = _proxy_validate(out)
+    if v is not None:
+        assert v["ok"] and len(v["value"]["scenarios"]["items"]) == len(it), v.get("detail")
+        vs = {x["id"]: x for x in v["value"]["scenarios"]["items"]}
+        assert vs["contribution.south.pct"]["grade"] is None and vs["headline.change"]["grade"] == "CONFIRMED"
+
+
+def _orders_with_people(with_region: bool) -> bytes:
+    """26 months of orders sold by four named people (a person's name column: flagged by the adapter's check),
+    with revenue and units, and a region column when asked."""
+    import random as _random
+    rng = _random.Random(20260929)
+    reps = ["Marisol Fairweather", "Tobias Quennell", "Ingrid Halvorsen", "Desmond Achebe"]
+    rows = []
+    for k in range(26):
+        y, m = 2024 + k // 12, k % 12 + 1
+        for i in range(24):
+            u = rng.randint(1, 30)
+            row = ["%04d-%02d-%02d" % (y, m, rng.randint(1, 28)), rng.choice(reps)]
+            if with_region:
+                row.append(rng.choice(["North", "South", "East", "West"]))
+            rows.append(row + ["%.2f" % (u * rng.uniform(30, 50) * (1.1 if k >= 14 else 1.0)), "%d" % u])
+    return _csv(rows, ["order_date", "sales_rep"] + (["region"] if with_region else []) + ["revenue", "units"])
+
+
+def test_scenarios_privacy_a_withheld_coded_or_kept_flagged_segment_gives_no_contributions():
+    names = ["Marisol Fairweather", "Tobias Quennell", "Ingrid Halvorsen", "Desmond Achebe"]
+    words = [w for n in names for w in n.split()]
+    for with_region in (False, True):
+        data = _orders_with_people(with_region)
+        for dec in ("withhold", "code", "keep"):
+            rep = _run(data, "orders_people.csv", "", {"sales_rep": dec}, "2026-03-15")
+            assert rep["ok"], rep["error"]
+            fl = {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}
+            assert fl.get("sales_rep") == dec, (dec, rep["privacy"]["flagged"])
+            sc = _sc(rep)
+            assert sc["basis"] and sc["basis"]["reconciles"], sc
+            seg = sc["basis"]["segment"]["column"]
+            assert seg != "sales_rep" and seg == ("region" if with_region else None), (with_region, dec, seg)
+            contrib = [it for it in sc["items"] if it["group"] == "contribution"]
+            assert bool(contrib) == with_region, (with_region, dec, len(contrib))
+            assert all("sales_rep" not in (it["inputs"]["columns"] or []) for it in sc["items"])
+            if not with_region:
+                assert any(x.startswith("no segment column qualifies") for x in sc["refused"]), sc["refused"]
+            out = NB.results_for_ai(rep)
+            text = json.dumps(sc) + json.dumps(out.get("scenarios")) + json.dumps(out.get("tables"))
+            assert not any(w in text for w in words), (with_region, dec, [w for w in words if w in text])
+
+
+def _scenarios_in_a_fresh_python(seed: str) -> str:
+    """rep["scenarios"] of ship2 as JSON text, from a fresh Python with its own string-hash seed (a set or dict
+    order that leaks into the block differs between two such runs; two runs in one process share a seed)."""
+    code = ("import sys, json\n"
+            "sys.path.insert(0, %r)\nsys.path.insert(0, %r)\n"
+            "import nl_browser\n"
+            "rep = nl_browser.run(open(%r, 'rb').read(), %r, '', None, %r)\n"
+            "sys.stdout.write(json.dumps(rep['scenarios'], allow_nan=False, sort_keys=True))\n"
+            % (ENGINE_ROOT, ADAPTER_DIR, os.path.join(SCEN, SHIP2_NAME), SHIP2_NAME, SHIP2_AS_OF))
+    env = dict(os.environ, PYTHONHASHSEED=seed)
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=300)
+    assert r.returncode == 0, r.stderr[-1200:]
+    return r.stdout
+
+
+def test_scenarios_are_finite_and_the_same_on_every_run():
+    a = NB.run(_ship2_bytes(), SHIP2_NAME, "", None, SHIP2_AS_OF)
+    ta = json.dumps(_sc(a), allow_nan=False, sort_keys=True)
+    assert _scenarios_in_a_fresh_python("1") == ta == _scenarios_in_a_fresh_python("2"), "two runs of one file differ"
+    for rep in (a, _run(_sample_bytes(), "sample-messy.csv", "", None, SAMPLE_AS_OF), _v2("three_measures.csv")[1]):
+        for it in _sc(rep)["items"]:
+            assert it["kind"] in ("amount", "change", "count", "percent", "points", "per_unit", "date"), it
+            if it["kind"] == "date":
+                assert re.match(r"^\d{4}-\d{2}-\d{2}$", it["value"]), it
+            else:
+                assert _is_num(it["value"]), it
+            assert it["text"] and "nan" not in it["text"].lower() and "inf" not in it["text"].lower(), it
+            assert "—" not in it["label"] + it["text"] and "–" not in it["label"], it
+        json.loads(NB.run_json(_ship2_bytes(), SHIP2_NAME, "", None, SHIP2_AS_OF))
+
+
+def test_scenarios_add_up_a_forecast_only_when_it_is_usable_for_planning():
+    _, rep = _v2("three_measures.csv")
+    fc = rep["forecast"]
+    assert fc["available"] and GRADE_OF[fc["verdict"]] == "CONFIRMED", fc["verdict"]
+    it = _sc_items(rep)
+    pts = fc["forecast"]
+    for h in (3, 6, 12):
+        if len(pts) < h:
+            assert not any(k.startswith("forecast.%d." % h) for k in it), (h, len(pts))
+            continue
+        for part, key in (("base", "value"), ("low", "lo"), ("high", "hi")):
+            x = it["forecast.%d.%s" % (h, part)]
+            _sc_close(x["value"], math.fsum(p[key] for p in pts[:h]), (h, part))
+            assert x["grade"] == "CONFIRMED" and x["group"] == "forecast", x
+        for part in ("low", "high"):
+            lab = it["forecast.%d.%s" % (h, part)]["label"]
+            # the wording first, so a reader that cuts a label at 160 characters (the proxy) keeps it
+            assert lab.startswith(part.capitalize() + ": the months' own 80% ranges added up, at least as wide as an "
+                                  "80% range for the total, the next " + str(h) + " months added up"), lab
+    assert "forecast.3.base" in it, sorted(it)
+    rep = _run(_sample_bytes(), "sample-messy.csv", "", None, SAMPLE_AS_OF)
+    assert rep["forecast"]["available"] and GRADE_OF[rep["forecast"]["verdict"]] != "CONFIRMED"
+    assert not any(v["group"] == "forecast" for v in _sc(rep)["items"]), "a forecast not usable for planning was added up"
+    assert any("not yet shown usable" in x for x in _sc(rep)["refused"]), _sc(rep)["refused"]
+
+
+def test_scenarios_run_rate_is_the_latest_12_months_never_three_months_times_four():
+    it = _sc_items(_ship2())
+    rr = sorted(k for k, v in it.items() if v["group"] == "run_rate")
+    assert rr == ["run_rate.month", "run_rate.year"], rr
+    assert not any("annual" in k or "annual" in v["label"].lower() or "3 months" in v["label"] for k, v in it.items()
+                   if v["group"] != "forecast"), [k for k in it if "annual" in k]
+    _sc_close(it["run_rate.year"]["value"], it["headline.latest"]["value"], "run rate a year")
+    _sc_close(it["run_rate.month"]["value"], it["headline.latest"]["value"] / 12.0, "run rate a month")
+    _sc_close(it["sensitivity.one_pct"]["value"], it["headline.latest"]["value"] / 100.0, "each 1%")
+
+
+def _levels_file(levels: int, sparse: str = "") -> bytes:
+    """26 months of orders over `levels` regions; `sparse` names a region with only 3 rows in 2024."""
+    import random as _random
+    rng = _random.Random(7)
+    regs = ["R%02d" % i for i in range(levels)] if not sparse else ["North", "South", "East", "West"]
+    rows = []
+    for k in range(26):
+        y, m = 2024 + k // 12, k % 12 + 1
+        for i in range(30):
+            rows.append(["%04d-%02d-%02d" % (y, m, rng.randint(1, 28)), rng.choice(regs), "%.2f" % rng.uniform(50, 150)])
+        if sparse and (y == 2025 or (y == 2024 and m <= 3)):
+            rows.append(["%04d-%02d-15" % (y, m), sparse, "%.2f" % rng.uniform(50, 150)])
+    return _csv(rows, ["order_date", "region", "revenue"])
+
+
+def test_scenarios_sparse_levels_fold_into_other_and_more_than_12_levels_give_no_breakdown():
+    rep = _run(_levels_file(4, sparse="Remote"), "sparse.csv", "", None, "2026-03-15")
+    sc = _sc(rep)
+    assert sc["basis"]["segment"] == {"column": "region", "levels": ["East", "North", "South", "West"],
+                                      "folded": ["Remote"], "entered": [], "exited": []}, sc["basis"]["segment"]
+    segs = [v["segment"] for v in sc["items"] if v["group"] == "contribution" and v["id"].endswith(".change")]
+    assert sorted(segs) == ["East", "North", "South", "West", "other"], segs
+    assert "Remote" not in json.dumps(sc["items"]), "a folded level has an item of its own"
+    _sc_check_recomputed(rep, where="folded")
+    assert not any(v["group"] == "gap" and v["segment"] == "other" for v in sc["items"]), "a gap to or from other"
+    rep = _run(_levels_file(13), "many.csv", "", None, "2026-03-15")
+    sc = _sc(rep)
+    assert sc["basis"]["reconciles"] and sc["basis"]["segment"]["column"] is None, sc["basis"]["segment"]
+    assert not any(v["group"] in ("contribution", "gap") for v in sc["items"]), [v["id"] for v in sc["items"]]
+    assert any(x.startswith("no segment column qualifies") for x in sc["refused"]), sc["refused"]
+
+
+def test_scenarios_say_why_there_are_none_with_no_dates_or_when_the_gate_trips():
+    _, rep = _v2("no_date.csv")
+    sc = _sc(rep)
+    assert sc["basis"] is None and sc["items"] == [] and sc["note"], sc
+    assert any("no column holds dates" in x for x in sc["refused"]), sc["refused"]
+    _, rep = _v2("rent-roll-tbd.csv")
+    assert rep["story"]["headline"].startswith(NB.GATE_TRIPPED), rep["story"]["headline"]
+    sc = _sc(rep)
+    assert sc["basis"] is None and sc["items"] == [] and any("did not run" in x for x in sc["refused"]), sc
+    rep = _run(b"", "empty.csv")
+    assert not rep["ok"] and _sc(rep) == {"basis": None, "items": [], "refused": [], "note": ""}, rep.get("scenarios")
+
+
+def test_results_for_ai_carries_the_scenarios_one_to_one_and_one_table_the_proxy_keeps():
+    rep = _ship2()
+    out = NB.results_for_ai(rep)
+    json.dumps(out, allow_nan=False)
+    assert out["scenarios"] == _sc(rep), "results_for_ai changed the scenarios block"
+    tab = out["tables"][-1]
+    assert tab["title"] == "Where the change in total revenue came from", tab["title"]
+    assert tab["cols"] == ["region", "12 months before", "Latest 12 months", "Change", "Share of the change",
+                           "Own change"], tab["cols"]
+    it = _sc_items(rep)
+    want = []
+    for v in _sc(rep)["items"]:
+        if v["group"] == "contribution" and v["id"].endswith(".change"):
+            s = v["id"][:-len(".change")]
+            want.append([v["segment"]] + [it[s + "." + k]["text"] if s + "." + k in it else ""
+                                          for k in ("prior", "latest", "change", "share", "pct")])
+    assert tab["rows"] == want and len(want) <= 12, (tab["rows"], want)
+    assert len([t for t in out["tables"] if t["title"].startswith("Where the change")]) == 1
+    # a label that names a withheld column reads "a column you withheld" (safe() on labels), figures unchanged
+    rep2 = json.loads(json.dumps(rep))
+    rep2["scenarios"]["items"][0]["label"] = "customer_name: " + rep2["scenarios"]["items"][0]["label"]
+    o2 = NB.results_for_ai(rep2)["scenarios"]["items"][0]
+    assert o2["label"].startswith(NB.WITHHELD_WORDS) and o2["value"] == rep2["scenarios"]["items"][0]["value"], o2
+    # the file's name never reaches the writer: the forecast label carries it on a usable forecast
+    _, rep3 = _v2("three_measures.csv")
+    o3 = NB.results_for_ai(rep3)["scenarios"]
+    assert "three_measures.csv" not in json.dumps(o3) and "[your file]" in json.dumps(o3), o3["items"][:1]
+    # what the proxy's own validator keeps (insight-proxy/src/report.js), when it is here: the table always; the
+    # block itself once the worker's validateResults carries it
+    got = _proxy_validate(out)
+    if got is not None:
+        assert got["ok"], got
+        assert any(t["title"] == tab["title"] and t["rows"] == tab["rows"] for t in got["value"]["tables"]), \
+            "the proxy dropped the Where the change came from table"
+        if "scenarios" in got["value"]:
+            gi = {x["id"]: x for x in got["value"]["scenarios"]["items"]}
+            assert not [k for k in it if k not in gi], ("the proxy dropped scenario items", [k for k in it if k not in gi])
+            assert all(gi[k]["text"] == v["text"] and gi[k]["value"] == v["value"] for k, v in it.items()), \
+                "the proxy changed a scenario's figure"
+
+
+# ------------------------------------------------------------------ the report's web searches: built from a fixed list
+# (final review, 30 Sep 2026: the block-list check of free-text searches let names through in a dozen ways; a search is
+# now built by the adapter from engine/context_terms.json terms and years only, _context_queries)
+SHIP2_PLAN = {"goal": "How did order revenue develop over 2024 to 2025?", "understanding": "Orders.",
+              "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                          {"name": "region", "semantic_type": "category", "role": "segment"},
+                          {"name": "revenue", "semantic_type": "flow_amount", "role": "target"},
+                          {"name": "units", "semantic_type": "count", "role": "driver"}],
+              "operations": [], "analyses": [], "primary": "revenue"}
+CTX_TERMS = os.path.join(SITE, "engine", "context_terms.json")
+CQ_REASONS = (NB.CQ_NOT_ITEM, NB.CQ_INDICATOR, NB.CQ_SECTOR, NB.CQ_REGION, NB.CQ_YEARS, NB.CQ_MORE, NB.CQ_TWICE)
+
+
+def _terms() -> dict:
+    with open(CTX_TERMS, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _built_from_terms(q: str, it: dict, t: dict) -> bool:
+    """q is exactly the search the list's terms and the years of item `it` build, and each term is on its list."""
+    ys = [str(y) for y in dict.fromkeys(it.get("years") or [])]
+    words = [it.get("sector"), it.get("indicator"), it.get("region")] + ys
+    return (q == " ".join(w for w in words if w) and it.get("indicator") in t["indicators"]
+            and it.get("sector", t["sectors"][0]) in t["sectors"] and it.get("region", t["regions"][0]) in t["regions"]
+            and all(1900 <= int(y) <= 2099 for y in ys))
+
+
+def test_context_terms_list_is_ascii_generic_versioned_and_packed_byte_for_byte():
+    with open(CTX_TERMS, "rb") as fh:
+        raw = fh.read()
+    assert all(b < 128 for b in raw), "engine/context_terms.json is not ASCII"
+    t = json.loads(raw)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}\.\d+", t["version"]), t["version"]
+    assert t["plan_field"]["name"] == "context" and t["plan_field"]["max_items"] == NB.CONTEXT_MAX == 4
+    assert 25 <= len(t["indicators"]) <= 32 and 75 <= len(t["sectors"]) <= 90, (len(t["indicators"]), len(t["sectors"]))
+    for key in ("indicators", "sectors", "regions"):
+        lst = t[key]
+        keys = [NB._term_key(x) for x in lst]
+        assert all(isinstance(x, str) and x == x.strip() and x.isascii() and not re.search(r"\d", x) for x in lst), key
+        assert all(keys) and len(set(keys)) == len(keys), (key, [x for x, k in zip(lst, keys) if keys.count(k) > 1])
+    # the groups, counted in the list's order: every country, Canada's 13 provinces and territories, the US states and
+    # the District of Columbia (Georgia shares the country's entry), at most 50 cities
+    g = t["region_groups"]
+    assert sum(g.values()) == len(t["regions"]), (g, len(t["regions"]))
+    assert g["countries and territories"] >= 195 and g["Canadian provinces and territories"] == 13 and \
+        g["US states and the District of Columbia"] == 50 and g["major cities"] <= 50, g
+    for must, key in ((("consumer price inflation", "retail sales", "consumer spending", "interest rates", "exchange rate",
+                        "unemployment rate", "housing starts", "rental vacancy rate", "e-commerce sales",
+                        "industrial production", "commodity prices", "wage growth"), "indicators"),
+                      (("video games", "consumer electronics", "restaurants", "grocery retail", "rental housing",
+                        "real estate", "banking", "insurance", "software", "logistics", "construction", "healthcare",
+                        "education", "tourism", "automotive", "apparel", "e-commerce", "telecommunications", "energy",
+                        "agriculture"), "sectors"),
+                      (("World", "European Union", "Canada", "United States", "Ontario", "Quebec", "Nunavut", "Georgia",
+                        "California", "District of Columbia", "Toronto", "Cote d'Ivoire", "Japan", "Brazil"), "regions")):
+        assert not [m for m in must if m not in t[key]], (key, [m for m in must if m not in t[key]])
+    brands = ("nintendo", "apple", "amazon", "google", "walmart", "tesla", "uber", "netflix", "starbucks", "microsoft")
+    assert not [s for s in t["sectors"] + t["indicators"] if any(b in s.lower().split() for b in brands)]
+    # packed beside the adapter byte for byte, and read from the zip alone as from the source tree
+    with open(os.path.join(SITE, "engine", "pack.json"), encoding="utf-8") as fh:
+        pack = json.load(fh)
+    entry = [f for f in pack["files"] if f["path"] == "context_terms.json"]
+    assert len(entry) == 1 and entry[0]["sha256"] == hashlib.sha256(raw).hexdigest(), entry
+    tmp = tempfile.mkdtemp(prefix="nl_terms_")
+    try:
+        with zipfile.ZipFile(os.path.join(SITE, "engine", pack["zip"]["file"])) as z:
+            assert z.read("context_terms.json") == raw, "the packed list differs from engine/context_terms.json"
+            z.extractall(tmp)
+        code = ("import sys, json\n"
+                "sys.path[:] = [p for p in sys.path if 'northledger-core' not in p and 'portfolio-website' not in p]\n"
+                "sys.path.insert(0, %r)\n"
+                "import nl_browser as NB\n"
+                "print(json.dumps([NB._context_terms().get('version'), NB._context_queries("
+                "[{'indicator': 'exchange rate', 'region': 'Canada', 'years': [2024, 2025]}])[0]]))\n" % tmp)
+        p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tmp)
+        assert p.returncode == 0, p.stderr[-800:]
+        assert json.loads(p.stdout) == [t["version"], ["exchange rate Canada 2024 2025"]], p.stdout
+    finally:
+        shutil.rmtree(tmp, True)
+    # the planner is told which list the adapter reads
+    with open(SAMPLE, "rb") as fh:
+        prof = NB.profile_for_ai(fh.read(), "sample-messy.csv")
+    assert prof["context_terms_version"] == t["version"], prof.get("context_terms_version")
+
+
+def test_context_searches_are_built_only_from_list_terms_and_years():
+    t = _terms()
+    q, why, kept = NB._context_queries([
+        {"indicator": "consumer price inflation", "region": "Canada", "years": [2024, 2025]},
+        {"sector": "Video Games", "indicator": "SALES growth", "years": [2023]},       # case and spacing: the list's own
+        {"indicator": "retail sales", "region": "Côte d’Ivoire", "years": ["2024", 2024],
+         "query": "Acme Holdings market share", "why": "Zoe Muller"},              # other keys are never read
+        {"indicator": "Acme Holdings market share"},                                   # not an indicator
+        {"indicator": "retail sales", "sector": "Nintendo"},                           # a brand is no sector
+        {"indicator": "retail sales", "region": "Zoe Muller"},                         # a name is no region
+        {"indicator": "retail sales", "years": [1850, 2025]},
+        {"indicator": "retail sales", "years": [2026, 2025]},
+        {"indicator": "retail sales", "years": [True]},
+        "retail sales Canada 2025",                                                    # free text is no item
+        {"sector": "video games"},                                                     # no indicator
+        {"indicator": "consumer price inflation", "region": "canada", "years": [2024, 2025]}])   # built already
+    assert q == ["consumer price inflation Canada 2024 2025", "video games sales growth 2023",
+                 "retail sales Cote d'Ivoire 2024"], q
+    assert why == [NB.CQ_INDICATOR, NB.CQ_SECTOR, NB.CQ_REGION, NB.CQ_YEARS, NB.CQ_YEARS, NB.CQ_YEARS, NB.CQ_NOT_ITEM,
+                   NB.CQ_INDICATOR, NB.CQ_TWICE], why
+    assert kept == [{"indicator": "consumer price inflation", "region": "Canada", "years": [2024, 2025]},
+                    {"sector": "video games", "indicator": "sales growth", "years": [2023, 2023]},
+                    {"indicator": "retail sales", "region": "Cote d'Ivoire", "years": [2024, 2024]}], kept
+    assert all(_built_from_terms(a, b, t) for a, b in zip(q, kept))
+    # at most 4 searches; an empty optional term is left out; years null or [] is no year
+    q, why, _k = NB._context_queries([{"indicator": x, "sector": "", "region": None, "years": []} for x in t["indicators"][:6]])
+    assert q == t["indicators"][:4] and why == [NB.CQ_MORE] * 2, (q, why)
+    for raw in ([], None, "not a list", {"indicator": "retail sales"}, 7):
+        assert NB._context_queries(raw) == ([], [], []), raw
+    assert NB._context_queries([7, None, "  "]) == ([], [NB.CQ_NOT_ITEM] * 3, [])
+    # at most CONTEXT_READ items are read
+    assert len(NB._context_queries([{"indicator": "x"}] * 40)[1]) == NB.CONTEXT_READ
+
+
+def test_context_searches_on_ship2_fx_and_reviews_and_the_old_free_text_is_never_read():
+    t = _terms()
+    # ship2: the customers' names and emails are flagged (kept, withheld or coded); the plan names them, and a region
+    # value of the file that is no list term, in every field, and asks for free-text searches the old way
+    ctx = [{"sector": "e-commerce", "indicator": "sales growth", "region": "United States", "years": [2024, 2025]},
+           {"indicator": "Florian Kettleby"},
+           {"indicator": "consumer spending", "region": "Florian Kettleby", "years": [2025]},
+           {"indicator": "retail sales", "sector": "seraphina.quillfeather32@mailbox.test"},
+           {"indicator": "retail sales", "region": "West", "years": [2024, 2025]},
+           {"indicator": "consumer spending", "region": "United States", "years": [2024, 2025]}]
+    plan = dict(SHIP2_PLAN, context=ctx, context_queries=["Florian Kettleby order history", "US retail sales 2025"])
+    want = ["e-commerce sales growth United States 2024 2025", "consumer spending United States 2024 2025"]
+    for dec in ("keep", "withhold", "code"):
+        rep = _run(_ship2_bytes(), SHIP2_NAME, "", {"__plan__": plan, "customer_name": dec, "email": dec}, SHIP2_AS_OF)
+        assert rep["ok"], rep["error"]
+        ap = rep["ai_plan"]
+        assert ap["context_queries"] == want, (dec, ap["context_queries"])
+        assert ap["context_queries_dropped"] == [NB.CQ_INDICATOR, NB.CQ_REGION, NB.CQ_SECTOR, NB.CQ_REGION], ap
+        assert all(_built_from_terms(q, it, t) for q, it in zip(ap["context_queries"], ap["context"]))
+        txt = json.dumps(ap["context_queries"] + ap["context_queries_dropped"] + ap["context"]).lower()
+        assert not any(w in txt for w in ("kettleby", "florian", "seraphina", "mailbox", "west", "order history")), txt
+    # fx: the Bank of Canada's rate; reviews: a brand file, where a brand is never a sector
+    with open(EVAL_FX, "rb") as fh:
+        fx = fh.read()
+    rep = _run(fx, "fx_usd_cad.csv", "", {"__plan__": dict(EVAL_FX_PLAN, context=[
+        {"indicator": "exchange rate", "region": "Canada", "years": [2017, 2025]},
+        {"indicator": "interest rates", "region": "United States", "years": [2025]}])}, "2026-09-29")
+    assert rep["ai_plan"]["context_queries"] == ["exchange rate Canada 2017 2025", "interest rates United States 2025"], \
+        rep["ai_plan"]["context_queries"]
+    data, _counts = _brand_reviews()
+    rep = _run(data, "brand_ratings.csv", "", {"__plan__": dict(BRAND_PLAN, context=[
+        {"sector": "video games", "indicator": "sales growth", "years": [2022]},
+        {"sector": "consumer electronics", "indicator": "market size", "region": "World", "years": [2022]},
+        {"sector": "G-STORY", "indicator": "sales growth"}, {"indicator": "Elgato market share"}])}, "2026-09-30")
+    ap = rep["ai_plan"]
+    assert ap["context_queries"] == ["video games sales growth 2022", "consumer electronics market size World 2022"], ap
+    assert ap["context_queries_dropped"] == [NB.CQ_SECTOR, NB.CQ_INDICATOR], ap["context_queries_dropped"]
+    # no list at all, or none of its items, means no search: an explicit []; a run with no plan has no ai_plan
+    for cx in ([], None, "not a list", [7, None, "  "]):
+        p = dict(SHIP2_PLAN, context_queries=["US retail sales 2025"])
+        if cx is not None:
+            p["context"] = cx
+        rep = _run(_ship2_bytes(), SHIP2_NAME, "", {"__plan__": p}, SHIP2_AS_OF)
+        assert rep["ai_plan"]["context_queries"] == [], (cx, rep["ai_plan"].get("context_queries"))
+    rep = _run(_ship2_bytes(), SHIP2_NAME, "", None, SHIP2_AS_OF)
+    assert "ai_plan" not in rep, "a run with no plan gains an ai_plan"
+
+
+def test_context_searches_read_no_value_of_a_latin1_semicolon_file():
+    import random as _random
+    rng = _random.Random(12)
+    names = ["Zoë Müller", "René Faßbender", "Anaïs Lefèvre", "Jörg Brandstätter"]
+    rows = ["%04d-%02d-%02d;%s;%s;%s" % (2024 + k // 12, k % 12 + 1, rng.randint(1, 28), rng.choice(names),
+                                        rng.choice(["Nord", "Süd"]), ("%.2f" % rng.uniform(20, 90)).replace(".", ","))
+            for k in range(26) for _ in range(15)]
+    data = ("date;client;region;amount\n" + "\n".join(rows) + "\n").encode("latin-1")
+    plan = {"goal": "g", "columns": [], "operations": [], "primary": "",
+            "context_queries": ["Zoë Müller spending"],
+            "context": [{"indicator": "consumer spending", "region": "Zoë Müller"},
+                        {"indicator": "consumer spending", "region": "Zoe Mueller"},
+                        {"indicator": "retail sales", "region": "Germany", "years": [2025]}]}
+    rep = _run(data, "clients.csv", "", {"__plan__": plan}, "2026-03-15")
+    assert rep["ok"], rep["error"]
+    assert "client" in {f["column"] for f in rep["privacy"]["flagged"]}, rep["privacy"]["flagged"]
+    ap = rep["ai_plan"]
+    assert ap["context_queries"] == ["retail sales Germany 2025"], ap.get("context_queries")
+    assert ap["context_queries_dropped"] == [NB.CQ_REGION, NB.CQ_REGION], ap.get("context_queries_dropped")
+
+
+def test_review5_no_value_from_any_file_column_reaches_a_web_search():
+    # the final review's attack files (tools/fixtures/review5/attack_files.py, all made up): every string the review
+    # sent past the block list, and every name itself, in every field of the plan's items and in its old free-text
+    # list; a value of the file that is a list term (a region column holding Ontario) is fine, as a list term
+    sys.path.insert(0, os.path.join(HERE, "fixtures", "review5"))
+    import attack_files as AF
+    t = _terms()
+    reached, planted, built_n = [], 0, 0
+    for case in AF.cases():
+        vals = sorted({NB._term_key(v) for v in AF.file_values(case.data)} - {""})
+        items = []
+        for s in case.strings:
+            items += [{"indicator": s}, {"indicator": "retail sales", "sector": s}, {"indicator": "retail sales", "region": s},
+                      {"indicator": "retail sales", "region": "Canada", "years": [2025], "query": s, "note": s},
+                      {"indicator": "retail sales", "years": [s]}]
+        planted += len(items)
+        built = []
+        for i in range(0, len(items), NB.CONTEXT_READ):
+            q, why, kept = NB._context_queries(items[i:i + NB.CONTEXT_READ])
+            built += list(zip(q, kept))
+            assert len(q) + len(why) == len(items[i:i + NB.CONTEXT_READ])
+        # the run on the file itself: the same builder, whatever the file holds and whatever the visitor chose
+        plan = {"goal": "g", "columns": case.columns, "operations": [], "analyses": [], "primary": "",
+                "context_queries": list(case.strings[:12]),
+                "context": [{"indicator": "retail sales", "region": s} for s in case.strings[:3]] +
+                           [{"indicator": "retail sales", "region": "Ontario", "years": [2024, 2025]}]}
+        rep = NB.run(case.data, case.name, "", dict(case.decisions, __plan__=plan), AF.AS_OF)
+        assert rep["ok"], (case.name, rep["error"])
+        ap = rep["ai_plan"]
+        assert (ap["context_queries"], ap["context"]) == NB._context_queries(plan["context"])[::2], (case.name, ap)
+        assert "retail sales Ontario 2024 2025" in ap["context_queries"], (case.name, ap["context_queries"])
+        built += list(zip(ap["context_queries"], ap["context"]))
+        built_n += len(built)
+        for q, it in built:
+            assert _built_from_terms(q, it, t), (case.name, q, it)
+            used = [NB._term_key(it[f]) for f in ("sector", "indicator", "region") if it.get(f)]
+            for v in vals:
+                if (" %s " % v) in (" %s " % NB._term_key(q)) and not any(v in u for u in used):
+                    reached.append((case.name, v, q))
+    assert not reached, reached[:10]
+    assert planted == 5 * sum(len(c.strings) for c in AF.cases()) >= 800 and built_n > 0, (planted, built_n)
+
+
+# ------------------------------------------------------------------ the evaluation preflight (30 Sep 2026)
+# The packed engine on real data (.work/eval): the AI plan's path read StatCan's weekend zeros as exchange rates, a
+# brand ranking rested on single reviews, and the scenarios block had no per-unit change for "+16.8%".
+EVAL_FX = os.path.join(HERE, "fixtures", "eval", "fx_usd_cad.csv")     # StatCan 33-10-0036-01 (make_fx.py)
+EVAL_FX_PLAN = {"goal": "How has the Canadian dollar price of one U.S. dollar moved?", "kind": "time_series",
+                "understanding": "The Bank of Canada daily U.S. dollar rate.", "primary": "VALUE",
+                "columns": [{"name": "REF_DATE", "semantic_type": "date", "role": "date", "unit": ""},
+                            {"name": "VALUE", "semantic_type": "level", "role": "target", "unit": "CAD per USD"},
+                            {"name": "STATUS", "semantic_type": "metadata", "role": "metadata", "unit": ""}],
+                "operations": [{"op": "set_aside", "columns": ["STATUS"]}, {"op": "exclude_blank", "column": "VALUE"}],
+                "analyses": [{"type": "trend", "columns": ["VALUE"]}, {"type": "distribution", "columns": ["VALUE"]}]}
+# the note states the evidence, never a bare "a rate of 0 is a placeholder" (final review, 30 Sep 2026)
+ZERO_NOTE_FX = ("(550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern "
+                "of a day with no value)")
+
+
+def _ols_yearly(pairs):
+    """This test's own trend: the OLS slope of each complete calendar year's (all 12 months hold a value) mean
+    on the year, from (YYYY-MM-DD, value) pairs."""
+    vals, months = {}, {}
+    for d, v in pairs:
+        vals.setdefault(int(d[:4]), []).append(v)
+        months.setdefault(int(d[:4]), set()).add(d[5:7])
+    years = sorted(y for y in vals if len(months[y]) == 12)
+    ys = [math.fsum(vals[y]) / len(vals[y]) for y in years]
+    mx, my = math.fsum(years) / len(years), math.fsum(ys) / len(ys)
+    return math.fsum((x - mx) * (y - my) for x, y in zip(years, ys)) / math.fsum((x - mx) ** 2 for x in years)
+
+
+def test_eval_a_rates_placeholder_zeros_are_not_counted_and_its_trend_is_the_rates_own():
+    import pandas as pd
+    with open(EVAL_FX, "rb") as fh:
+        data = fh.read()
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8"))))
+    rates = [(r["REF_DATE"], float(r["VALUE"])) for r in rows if r["VALUE"] and float(r["VALUE"]) != 0]
+    zeros = [r for r in rows if r["VALUE"] and float(r["VALUE"]) == 0]
+    assert (len(rows), len(rates), len(zeros)) == (3526, 2407, 550), (len(rows), len(rates), len(zeros))
+    want = _ols_yearly(rates)                                                   # the rates' own trend
+    as_rates = _ols_yearly(rates + [(r["REF_DATE"], 0.0) for r in zeros])       # the defect: zeros read as rates
+    assert abs(want - 0.0104) < 0.0001 and abs(as_rates - 0.0721) < 0.0001, (want, as_rates)
+    rep = _run(data, "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    assert rep["ok"], rep["error"]
+    A = {a["type"]: a for a in rep["ai_analyses"]["items"]}
+    assert set(A) == {"trend", "distribution"}, (sorted(A), rep["ai_analyses"]["refused"])
+    tr, dist = A["trend"], A["distribution"]
+    slope = float(tr["table"]["rows"][0][3].replace("−", "-"))
+    assert tr["table"]["cols"][3] == "Change per year" and abs(slope - want) <= 0.00005 + 1e-12, (tr["table"], want)
+    assert tr["table"]["rows"][0][1:3] == ["2017 to 2025", "9"], tr["table"]["rows"][0]
+    assert ZERO_NOTE_FX in tr["sentence"] and ZERO_NOTE_FX in dist["sentence"], (tr["sentence"], dist["sentence"])
+    assert "0.0104 CAD per USD per year" in tr["sentence"], tr["sentence"]
+    assert dist["table"]["rows"][0][0] == "2,407" and "exactly zero" not in dist["sentence"], dist
+    q = pd.Series([v for _d, v in rates]).quantile([0.1, 0.25, 0.5, 0.75, 0.9], interpolation="linear").tolist()
+    got = [float(x) for x in dist["table"]["rows"][0][1:]]
+    assert all(abs(g - w) <= 0.005 + 1e-12 for g, w in zip(got, q)), (got, q)
+    # the Data tests card: a note row right after VALUE's own test, never a failure and never a signal
+    tests = rep["contracts"]["tests"]
+    i = [t["column"] for t in tests].index("VALUE")
+    own, note = tests[i], tests[i + 1]
+    assert own["action"] == "passed" and not own.get("note"), own
+    assert note["column"] == "VALUE" and note["note"] is True and note["failed"] == 0 and not note["signal"], note
+    assert (note["zeros"], note["checked"]) == (550, 2957), note
+    assert note["action"] == ("note: 550 zero values in VALUE are not counted by the AI's analyses (they fall on weekends "
+                              "between non-zero rates, the pattern of a day with no value); the engine's own reading is "
+                              "unchanged and the tests changed no value"), note
+    assert "placeholder" not in note["action"], note
+    assert not any(s.get("column") == "VALUE" for s in rep["plan_signals"]), rep["plan_signals"]
+    # the engine's own input is unchanged: it read the plan's 2,957 rows, zeros and all
+    assert rep["cleaning"]["rows_in"] == 2957 and rep["input"]["rows"] == 2957, (rep["cleaning"]["rows_in"], rep["input"]["rows"])
+    clean = pd.read_csv(io.StringIO(rep["downloads"]["clean_csv"]), dtype=str, keep_default_na=False)
+    vcol = next(c for c in clean.columns if c.lower() == "value")
+    assert int((pd.to_numeric(clean[vcol], errors="coerce") == 0).sum()) == 550, "the engine's table lost its zeros"
+    # the report writer reads the note among the data-test lines; the planner's profile counts the zeros
+    out = NB.results_for_ai(rep)
+    assert any("550 zero values in VALUE are not counted" in x for x in out["plan_applied"]), out["plan_applied"]
+    prof = NB.profile_for_ai(data, "fx_usd_cad.csv")
+    pv = next(c for c in prof["columns"] if c["name"] == "VALUE")
+    assert pv["zeros"] == 550 and pv["zeros_missing_if_level"] is True, pv
+    json.loads(NB.run_json(data, "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29"))
+
+
+def _daily_file():
+    """Ten years of daily rows: sales (about 6% of days sell nothing: a real 0), price (a level with 3 zeros in
+    3,653 days: under 1%) and balance (a level that is often negative, with zeros)."""
+    import random as _random
+    rng = _random.Random(20260930)
+    rows, d = [], datetime.date(2016, 1, 1)
+    while d <= datetime.date(2025, 12, 31):
+        k = (d - datetime.date(2016, 1, 1)).days
+        sales = 0.0 if rng.random() < 0.06 else round(rng.uniform(50, 150) * (1 + k / 3653.0), 2)
+        price = 0.0 if k in (100, 1000, 2000) else round(20 + k / 365.0 + rng.uniform(-1, 1), 3)
+        balance = 0.0 if rng.random() < 0.05 else round(rng.uniform(-500, 800), 2)
+        rows.append([d.isoformat(), "%.2f" % sales, "%.3f" % price, "%.2f" % balance])
+        d += datetime.timedelta(days=1)
+    return _csv(rows, ["day", "sales", "price", "balance"])
+
+
+def _daily_plan(sales_type):
+    return {"goal": "How are sales moving?", "primary": "sales",
+            "columns": [{"name": "day", "semantic_type": "date", "role": "date"},
+                        {"name": "sales", "semantic_type": sales_type, "role": "target", "unit": "USD"},
+                        {"name": "price", "semantic_type": "level", "role": "driver", "unit": "USD"},
+                        {"name": "balance", "semantic_type": "level", "role": "driver", "unit": "USD"}],
+            "operations": [],
+            "analyses": [{"type": "distribution", "columns": ["sales"]}, {"type": "trend", "columns": ["sales"]},
+                         {"type": "distribution", "columns": ["price"]}, {"type": "distribution", "columns": ["balance"]}]}
+
+
+def test_eval_a_flows_real_zeros_are_counted_and_the_placeholder_rule_reads_only_a_level():
+    data = _daily_file()
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8"))))
+    n, z = len(rows), sum(1 for r in rows if float(r["sales"]) == 0)
+    assert n == 3653 and 0.05 * n < z < 0.08 * n, (n, z)
+    for st in ("flow_amount", "count"):
+        rep = _run(data, "daily.csv", "", {"__plan__": _daily_plan(st)}, "2026-09-15")
+        assert rep["ok"], rep["error"]
+        items = rep["ai_analyses"]["items"]
+        assert [a["type"] for a in items] == ["distribution", "trend", "distribution", "distribution"], rep["ai_analyses"]
+        sales = items[0]
+        # a day that sold nothing is a real 0: every value counts, and the sentence says how many are zero
+        assert sales["table"]["rows"][0][0] == format(n, ","), (st, sales["table"])
+        assert "%s%% of the values are exactly zero" % NB._fmt(100.0 * z / n) in sales["sentence"], sales["sentence"]
+        blob = json.dumps(rep["ai_analyses"]) + json.dumps(rep.get("contracts"))
+        assert "placeholder" not in blob, (st, [a["sentence"] for a in items])
+        assert not any(t.get("note") for t in rep["contracts"]["tests"]), rep["contracts"]["tests"]
+        # the yearly totals count the zero days as 0: the last year's total is the rows' own sum
+        tr = items[1]
+        last = math.fsum(float(r["sales"]) for r in rows if r["day"].startswith("2025"))
+        yr = [ln for ln in tr["chart"]["series"] if ln["name"] == "sales"][0]
+        assert abs(yr["y"][-1] - last) <= 1e-6 * last, (yr["y"][-1], last)
+    # a level under 1% zeros (price) or with negative values (balance) keeps its zeros too
+    for a in items[2:]:
+        assert a["table"]["rows"][0][0] == format(n, ","), a["table"]
+    # typed a level, the same sales keep their zeros too (final review, 30 Sep 2026): days with nothing sold fall at
+    # random, not on given weekdays, and the sales either side of them jump about rather than pick up where they left
+    # off, so nothing says 0 stands for "no value" (the share of zeros alone deleted real zeros)
+    rep = _run(data, "daily.csv", "", {"__plan__": _daily_plan("level")}, "2026-09-15")
+    sales = rep["ai_analyses"]["items"][0]
+    assert sales["table"]["rows"][0][0] == format(n, ","), sales["table"]
+    assert "not counted" not in sales["sentence"] and not any(t.get("note") for t in rep["contracts"]["tests"]), \
+        sales["sentence"]
+    assert [a["table"]["rows"][0][0] for a in rep["ai_analyses"]["items"][2:]] == [format(n, ",")] * 2
+
+
+def _reviews_file():
+    """Two full years of reviews: two large brands, a mid one, eight brands with 1 to 4 five-star reviews in 2022,
+    and one brand with 5 reviews in 2022 (exactly the minimum)."""
+    import random as _random
+    rng = _random.Random(30)
+    rows = []
+
+    def day(y):
+        return datetime.date(y, 1, 1) + datetime.timedelta(days=rng.randint(0, 364))
+    for y in (2021, 2022):
+        for _ in range(600):
+            rows.append([day(y).isoformat(), "BigCo", str(rng.choice([1, 3, 4, 4, 5, 5]))])
+            rows.append([day(y).isoformat(), "Gigant", str(rng.choice([2, 3, 4, 5, 5]))])
+        for _ in range(40):
+            rows.append([day(y).isoformat(), "MidCo", str(rng.choice([4, 4, 5, 5, 5]))])
+    for i in range(8):
+        for _ in range(1 + i % 4):
+            rows.append([day(2022).isoformat(), "Tiny%d" % i, "5"])
+    for _ in range(5):
+        rows.append([day(2022).isoformat(), "JustFive", "5"])
+    rng.shuffle(rows)
+    return _csv(rows, ["review_date", "brand", "rating"])
+
+
+def test_eval_a_ranking_of_groups_rests_on_5_rows_each_and_counts_the_rest():
+    import pandas as pd
+    data = _reviews_file()
+    plan = {"goal": "Which brands rate best?", "primary": "rating",
+            "columns": [{"name": "review_date", "semantic_type": "date", "role": "date"},
+                        {"name": "brand", "semantic_type": "entity", "role": "entity"},
+                        {"name": "rating", "semantic_type": "rating", "role": "target", "unit": "stars"}],
+            "operations": [],
+            "analyses": [{"type": "rank", "columns": ["brand", "rating"]}, {"type": "compare", "columns": ["rating"], "by": "brand"}]}
+    rep = _run(data, "reviews.csv", "", {"__plan__": plan}, "2026-09-15")
+    assert rep["ok"], rep["error"]
+    A = {a["type"]: a for a in rep["ai_analyses"]["items"]}
+    assert set(A) == {"rank", "compare"}, rep["ai_analyses"]
+    df = pd.read_csv(io.BytesIO(data), dtype=str)
+    n22 = df[df["review_date"].str[:4] == "2022"].groupby("brand").size()
+    rk = A["rank"]
+    named = [r[0] for r in rk["table"]["rows"]]
+    assert named and all(int(n22[b]) >= NB.RANK_MIN_ROWS for b in named), [(b, int(n22[b])) for b in named]
+    assert not any(b.startswith("Tiny") for b in named) and "JustFive" in named, named
+    assert NB.RANK_MIN_ROWS == NB.COMPARE_MIN_GROUP == 5
+    assert "8 brand entries with fewer than 5 rows in 2022 are not ranked." in rk["sentence"], rk["sentence"]
+    assert "an entry resting on fewer than 5 rows that year is not ranked" in rk["method"], rk["method"]
+    assert not any(k.startswith("Tiny") for k in (rk.get("map") or {}).get("values") or {}), rk["map"]
+    cmp_ = A["compare"]
+    assert not any(r[0].startswith("Tiny") for r in cmp_["table"]["rows"]), cmp_["table"]["rows"]
+    assert "8 groups with fewer than 5 rows are left out." in cmp_["sentence"], cmp_["sentence"]
+    # with no date: an entry's figure over the file rests on 5 rows too
+    plan2 = json.loads(json.dumps(plan))
+    plan2["columns"][0] = {"name": "review_date", "semantic_type": "metadata", "role": "metadata"}
+    plan2["analyses"] = plan2["analyses"][:1]
+    rep2 = _run(data, "reviews.csv", "", {"__plan__": plan2}, "2026-09-15")
+    rk2 = rep2["ai_analyses"]["items"][0]
+    assert not any(r[0].startswith("Tiny") for r in rk2["table"]["rows"]), rk2["table"]["rows"]
+    assert "8 brand entries with fewer than 5 rows are not ranked." in rk2["sentence"], rk2["sentence"]
+    # a panel (one row per entry and year) ranks each entry's own figure: the test above of a country panel, and here
+    rows = ["country,year,co2"] + ["C%02d,%d,%d" % (i, y, 100 - i + y - 2000) for i in range(12) for y in range(2000, 2011)]
+    plan3 = {"goal": "Who emits most?", "operations": [{"op": "date_from_year", "column": "year"}],
+             "columns": [{"name": "country", "role": "entity"}, {"name": "year", "role": "date"},
+                         {"name": "co2", "role": "target", "semantic_type": "flow_amount"}],
+             "analyses": [{"type": "rank", "columns": ["country", "co2"]}]}
+    rep3 = _run(("\n".join(rows) + "\n").encode(), "panel.csv", "", {"__plan__": plan3}, "2026-09-15")
+    rk3 = rep3["ai_analyses"]["items"][0]
+    assert [r[0] for r in rk3["table"]["rows"]][:3] == ["C00", "C01", "C02"] and "not ranked" not in rk3["sentence"], rk3
+
+
+def _segments_file(levels=12):
+    """26 months of orders over `levels` regions with revenue and units; the later regions grow faster."""
+    import random as _random
+    rng = _random.Random(11)
+    regs = ["R%02d" % i for i in range(levels)]
+    rows = []
+    for k in range(26):
+        y, m = 2024 + k // 12, k % 12 + 1
+        for i, rg in enumerate(regs):
+            for _ in range(8):
+                u = rng.randint(1, 20)
+                p = rng.uniform(30, 50) * (1 + (0.02 * i if k >= 14 else 0.0))
+                rows.append(["%04d-%02d-%02d" % (y, m, rng.randint(1, 28)), rg, "%.2f" % (u * p), "%d" % u])
+    return _csv(rows, ["order_date", "region", "revenue", "units"])
+
+
+def _proxy_cap(items, max_items):
+    """insight-proxy/src/report.js capScenarioItems(items, max_items), run by Node, when both are here; else None."""
+    report_js = os.path.normpath(os.path.join(SITE, "..", "insight-proxy", "src", "report.js"))
+    node = shutil.which("node")
+    if not node or not os.path.exists(report_js):
+        return None
+    script = ("import { capScenarioItems } from %s;\n"
+              "let s = ''; process.stdin.on('data', (d) => { s += d; });\n"
+              "process.stdin.on('end', () => { const a = JSON.parse(s);"
+              " process.stdout.write(JSON.stringify(capScenarioItems(a.items, a.max).map((x) => x.id))); });\n"
+              ) % json.dumps("file://" + report_js)
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "c.mjs")
+        with open(p, "w") as fh:
+            fh.write(script)
+        out = subprocess.run([node, p], input=json.dumps({"items": items, "max": max_items}), capture_output=True,
+                             text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-600:]
+    return json.loads(out.stdout)
+
+
+def test_scenarios_come_in_the_order_the_workers_cap_keeps_them():
+    # 30 Sep 2026: the worker keeps up to 160 items (capScenarioItems): the core is every group with the per-segment
+    # groups (contribution, per_unit, gap) cut to the 6 segments with the largest |contribution|; the rest follow by
+    # that rank. The adapter's order is the same, so a reader that keeps the first N keeps what the cap keeps.
+    import nl_scenarios as NS
+    assert NS.TOP_SEGMENTS == 6 and NS.PER_SEGMENT == ("contribution", "per_unit", "gap")
+    rep = _run(_segments_file(12), "twelve.csv", "", None, "2026-03-15")
+    assert rep["ok"], rep["error"]
+    sc = _sc(rep)
+    b = sc["basis"]
+    assert b["reconciles"] and b["segment"]["column"] == "region" and len(b["segment"]["levels"]) == 12, b
+    items = sc["items"]
+    _sc_check_recomputed(rep, where="twelve regions")
+    # R00 and R01 fell while the total rose: no share of the change is given (12 items fewer than with shares)
+    assert NS.MIXED_SHARES in sc["refused"] and not any(it["id"].endswith(".share") for it in items), sc["refused"]
+    assert len(items) == 134, (len(items), {g: sum(1 for it in items if it["group"] == g) for g in NS.GROUPS})
+    # the segments ranked by the size of their contribution to the change, independently of the adapter
+    size = {it["segment"]: abs(it["value"]) for it in items if it["group"] == "contribution" and it["id"].endswith(".change")}
+    rank = sorted(size, key=lambda s: (-size[s], s))
+    top = set(rank[:6])
+    ids = [it["id"] for it in items]
+    by = {it["id"]: it for it in items}
+    order = {g: i for i, g in enumerate(NS.GROUPS)}
+    beyond = lambda i: by[i]["group"] in NS.PER_SEGMENT and by[i]["segment"] is not None and by[i]["segment"] not in top
+    core = [i for i in ids if not beyond(i)]
+    assert ids[:len(core)] == core, "the core does not come first"
+    assert [order[by[i]["group"]] for i in core] == sorted(order[by[i]["group"]] for i in core), [by[i]["group"] for i in core]
+    for g in NS.GROUPS:
+        if g != "forecast":
+            assert any(by[i]["group"] == g for i in core), g
+    for seg in top:
+        for g in ("contribution", "per_unit"):
+            assert any(by[i]["group"] == g and by[i]["segment"] == seg for i in core), (g, seg)
+    rest = ids[len(core):]
+    key = [(rank.index(by[i]["segment"]), order[by[i]["group"]]) for i in rest]
+    assert rest and key == sorted(key), "the rest is not segment by segment in the rank of their contributions"
+    assert len(core) == 74 and len(rest) == 60, (len(core), len(rest))
+    # the worker's own cap keeps a prefix of this order at every size it can be cut to (the core always fits in 160)
+    for n in (len(core), len(core) + 10, 120, 130, len(ids)):
+        got = _proxy_cap(items, n)
+        if got is None:
+            break
+        assert got == ids[:n], (n, [i for i in got if i not in ids[:n]][:4])
+    got = _proxy_validate(NB.results_for_ai(rep))
+    if got is not None:
+        assert [x["id"] for x in got["value"]["scenarios"]["items"]] == ids, "the proxy did not keep every item in order"
+    # with 4 segments (ship2) every segment is in the core: every item comes in the order of the groups
+    ids2 = [it for it in _sc(_ship2())["items"]]
+    g2 = [order[it["group"]] for it in ids2]
+    assert g2 == sorted(g2) and len(ids2) == 58, [it["id"] for it in ids2]
+
+
+# a 12-segment file whose report writer's payload is over the budget: an AI plan with six analyses, twelve sales
+# territories with names of 30 to 33 characters (a longer name reads as free text and is withheld), revenue and units
+_TERRITORIES = ["Northern", "Southern", "Eastern", "Western", "Central", "Coastal", "Inland", "Mountain", "Valley", "River",
+                "Lake", "Prairie"]
+TERRITORY_PLAN = {
+    "goal": "Which sales territories drove the change in revenue, and what should the business do about it?",
+    "primary": "revenue",
+    "understanding": "Orders with a date, the sales territory, the revenue in Canadian dollars and the units sold.",
+    "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                {"name": "sales_territory", "semantic_type": "category", "role": "segment"},
+                {"name": "revenue", "semantic_type": "flow_amount", "role": "target", "unit": "CAD"},
+                {"name": "units", "semantic_type": "count", "role": "driver", "unit": "units"}],
+    "operations": [],
+    "analyses": [{"type": "compare", "columns": ["revenue"], "by": "sales_territory"},
+                 {"type": "rank", "columns": ["sales_territory", "revenue"]},
+                 {"type": "relationship", "columns": ["units", "revenue"]},
+                 {"type": "distribution", "columns": ["revenue"]},
+                 {"type": "compare", "columns": ["units"], "by": "sales_territory"},
+                 {"type": "predict", "columns": ["revenue", "units", "sales_territory"]}]}
+
+
+def _territories_file():
+    import random as _random
+    rng = _random.Random(11)
+    rows = []
+    for k in range(26):
+        y, m = 2024 + k // 12, k % 12 + 1
+        for i, w in enumerate(_TERRITORIES):
+            for _ in range(8):
+                u = rng.randint(1, 20)
+                p = rng.uniform(30, 50) * (1 + (0.02 * i if k >= 14 else 0.0))
+                rows.append(["%04d-%02d-%02d" % (y, m, rng.randint(1, 28)), "%s wholesale and retail territory" % w,
+                             "%.2f" % (u * p), "%d" % u])
+    return _csv(rows, ["order_date", "sales_territory", "revenue", "units"])
+
+
+def test_results_for_ai_keeps_under_its_byte_budget_dropping_scenario_items_from_the_tail():
+    # 30 Sep 2026: the worker takes a /report body of at most 96,000 bytes; past 90,000 bytes of results the adapter
+    # drops scenario items from the tail of the cap's order: the facts, then the detail beyond the top 6 segments
+    import nl_scenarios as NS
+    assert NB.RESULTS_MAX_BYTES == 90000
+    rep = _run(_territories_file(), "territories.csv", "", {"__plan__": TERRITORY_PLAN}, "2026-03-15")
+    assert rep["ok"], rep["error"]
+    sc = _sc(rep)
+    assert sc["basis"]["segment"]["column"] == "sales_territory" and len(sc["basis"]["segment"]["levels"]) == 12, sc["basis"]
+    assert len(sc["items"]) == 134 and not rep["privacy"]["flagged"], (len(sc["items"]), rep["privacy"]["flagged"])
+    old = NB.RESULTS_MAX_BYTES
+    NB.RESULTS_MAX_BYTES = 10 ** 9
+    try:
+        whole = NB.results_for_ai(rep)
+    finally:
+        NB.RESULTS_MAX_BYTES = old
+    assert len(json.dumps(whole)) > 90000, "the file no longer exceeds the budget, so this test tests nothing: %d" % len(json.dumps(whole))
+    got = NB.results_for_ai(rep)
+    body = json.dumps(got, allow_nan=False)
+    assert len(body.encode("utf-8")) <= 90000 and len(NB.results_json(rep)) <= 90000, len(body)
+    ids = [it["id"] for it in whole["scenarios"]["items"]]
+    by = {it["id"]: it for it in whole["scenarios"]["items"]}
+    kept = [it["id"] for it in got["scenarios"]["items"]]
+    assert kept == [i for i in ids if i in set(kept)], "the kept items changed order"
+    dropped = [i for i in ids if i not in set(kept)]
+    facts = [i for i in ids if by[i]["group"] == "facts"]
+    assert dropped and set(facts) <= set(dropped), ("the facts go first", dropped)
+    size = {by[i]["segment"]: abs(by[i]["value"]) for i in ids if by[i]["group"] == "contribution" and i.endswith(".change")}
+    rank = sorted(size, key=lambda s: (-size[s], s))
+    tail = [i for i in dropped if i not in facts]
+    assert tail == ids[len(ids) - len(tail):], ("the items dropped are not the tail of the order", tail)
+    assert tail and all(by[i]["group"] in NS.PER_SEGMENT and rank.index(by[i]["segment"]) >= 6 for i in tail), tail
+    # no more than it needs: with the last item dropped put back, the payload is over the budget
+    back = dict(got, scenarios=dict(got["scenarios"], items=[it for it in whole["scenarios"]["items"] if it["id"] in set(kept) | {tail[0]}]))
+    assert len(json.dumps(back)) > 90000, "the budget dropped more than it needed"
+    # the writer is told first, and the "Where the change came from" table is rebuilt from the items kept
+    assert got["scenarios"]["refused"][0] == NB.BUDGET_REFUSED % (len(dropped), "134", "90,000"), got["scenarios"]["refused"][:1]
+    assert got["scenarios"]["refused"][1:] == whole["scenarios"]["refused"]
+    drove = got["tables"][-1]
+    assert drove["title"] == whole["tables"][-1]["title"] and drove["title"].startswith("Where the change"), drove["title"]
+    segs = []
+    for it in got["scenarios"]["items"]:
+        if it["group"] == "contribution" and it["segment"] not in segs:
+            segs.append(it["segment"])
+    assert [r[0] for r in drove["rows"]] == segs[:12] and "Share of the change" not in drove["cols"], drove
+    for k in whole:
+        if k not in ("scenarios", "tables"):
+            assert got[k] == whole[k], k
+    assert got["tables"][:-1] == whole["tables"][:-1] and got["scenarios"]["basis"] == whole["scenarios"]["basis"]
+    # the worker takes it whole: every kept item passes its checks, within its 160-item cap, and the /report body fits
+    v = _proxy_validate(got)
+    if v is not None:
+        assert v["ok"] and [x["id"] for x in v["value"]["scenarios"]["items"]] == kept, v.get("detail")
+    req = json.dumps({"objective": TERRITORY_PLAN["goal"], "results": got, "context_queries": ["x" * 120] * 3})
+    assert len(req.encode("utf-8")) <= 96000, len(req)
+    # a payload under the budget is untouched: the twelve-region file keeps all 134 items, as the report holds them
+    rep2 = _run(_segments_file(12), "twelve.csv", "", None, "2026-03-15")
+    r2 = NB.results_for_ai(rep2)
+    assert len(json.dumps(r2)) <= 90000 and [it["id"] for it in r2["scenarios"]["items"]] == [it["id"] for it in rep2["scenarios"]["items"]]
+    assert not any(str(x).startswith(NB.BUDGET_REFUSED.split("%s", 2)[1].strip()[:20]) for x in r2["scenarios"]["refused"])
+
+
+# ---- groups ranked by an average: the IMDb-style weighted rating (evaluation preflight, 30 Sep 2026)
+EVAL_BRANDS = os.path.join(HERE, "fixtures", "eval", "brand_ratings_2022.csv")   # make_brand_ratings.py: counts only
+BRAND_PLAN = {"goal": "Which brands do customers rate best?", "primary": "rating",
+              "columns": [{"name": "review_date", "semantic_type": "date", "role": "date"},
+                          {"name": "brand", "semantic_type": "entity", "role": "entity"},
+                          {"name": "rating", "semantic_type": "rating", "role": "target", "unit": "stars"},
+                          {"name": "review_no", "semantic_type": "identifier", "role": "key"}],
+              "operations": [],
+              "analyses": [{"type": "rank", "columns": ["brand", "rating"]}, {"type": "compare", "columns": ["rating"], "by": "brand"}]}
+
+
+def _brand_reviews():
+    """(a reviews file standing for the fixture's counts, {brand: [1-star .. 5-star counts]}): one row per review,
+    dated the 15th of each month of 2022 in turn (so a brand with more than 12 reviews has several on one day, as
+    reviews do: not a panel of one row per brand and date), numbered so that no row repeats another."""
+    with open(EVAL_BRANDS, encoding="utf-8", newline="") as fh:
+        counts = {r["brand"]: [int(r["stars_%d" % s]) for s in range(1, 6)] for r in csv.DictReader(fh)}
+    rows, k = [], 0
+    for b in sorted(counts):
+        for star, n in enumerate(counts[b], 1):
+            for _ in range(n):
+                rows.append(["2022-%02d-15" % (k % 12 + 1), b, str(star), "R%05d" % k])
+                k += 1
+    return _csv(rows, ["review_date", "brand", "rating", "review_no"]), counts
+
+
+def test_eval_a_ranking_of_averages_weighs_each_brand_by_its_rows():
+    # the preflight's reviews (5,581 in 2022): with the 5-row minimum, the ranking by the plain average was topped by
+    # brands with 5 to 8 five-star reviews; weighted, each brand's own rows count plus m at the average of all rows,
+    # m the file's own (final review, 30 Sep 2026: an empirical-Bayes m, where it was a fixed 10)
+    data, counts = _brand_reviews()
+    rep = _run(data, "brand_ratings.csv", "", {"__plan__": BRAND_PLAN}, "2026-09-30")
+    assert rep["ok"], rep["error"]
+    assert not rep["privacy"]["flagged"] and rep["cleaning"]["rows_quarantined"] == 0, (rep["privacy"]["flagged"], rep["cleaning"])
+    A = {a["type"]: a for a in rep["ai_analyses"]["items"]}
+    assert set(A) == {"rank", "compare"}, rep["ai_analyses"]
+    n = {b: sum(c) for b, c in counts.items()}
+    tot = {b: sum(s * k for s, k in zip(range(1, 6), c)) for b, c in counts.items()}
+    mean = {b: tot[b] / n[b] for b in counts}
+    N = sum(n.values())
+    grand = sum(tot.values()) / N
+    # m, this test's own: the pooled variance of the ratings within a brand over the variance of the brands' true
+    # averages (the variance of their averages less the average of each one's sampling variance), on the brands with
+    # 5 or more reviews, rounded to whole reviews and held to 5 to 50
+    big = [b for b in counts if n[b] >= 5]
+    within = math.fsum(k * (star - mean[b]) ** 2 for b in big for star, k in zip(range(1, 6), counts[b])) / \
+        math.fsum(n[b] - 1 for b in big)
+    mu = math.fsum(mean[b] for b in big) / len(big)
+    tau2 = math.fsum((mean[b] - mu) ** 2 for b in big) / (len(big) - 1) - math.fsum(within / n[b] for b in big) / len(big)
+    m = min(50, max(5, int(math.floor(within / tau2 + 0.5))))
+    assert N == 5581 and tau2 > 0 and m == 13 and (NB.SHRINK_M_MIN, NB.SHRINK_M_MAX) == (5, 50), (N, tau2, m)
+    ranked = [b for b in counts if n[b] >= 5]
+    w = {b: (n[b] * mean[b] + m * grand) / (n[b] + m) for b in counts}
+    want = sorted(ranked, key=lambda b: (-w[b], -n[b], b))[:10]
+    # the ranking this replaces: by the plain average, 5.0-star brands with 5 to 8 reviews on top
+    plain = sorted(ranked, key=lambda b: (-mean[b], -n[b], b))[:8]
+    assert all(mean[b] == 5.0 and 5 <= n[b] <= 8 for b in plain), [(b, mean[b], n[b]) for b in plain]
+    rk = A["rank"]
+    assert rk["title"] == "Highest average rating by brand in 2022", rk["title"]
+    # no brand has a figure 10 years before 2022: the "Change over 10 years" column is left out, not empty on every row
+    assert rk["table"]["cols"] == ["brand", "Weighted average", "Average rating", "Rows"], rk["table"]["cols"]
+    rows = rk["table"]["rows"]
+    assert [r[0] for r in rows] == want, ([r[0] for r in rows], want)
+    for r in rows:
+        b = r[0]
+        assert r[1:4] == [NB._fmt(w[b]), NB._fmt(mean[b]), format(n[b], ",")], (r, w[b], mean[b], n[b])
+    # the top of the ranking is no longer a 5.0-star brand on 5 to 8 reviews: the first places go to brands with more
+    # reviews (G-STORY, 4.92 on 12; Elgato, 4.91 on 11; KIWI design, 4.42 on 53), the 5.0-star brands on 5 or 6 reviews
+    # leave the top 10, and those on 7 or 8 stay below them (what m = 13 does on this file)
+    assert not any(mean[b] == 5.0 and n[b] <= 8 for b in want[:2]) and all(n[b] > 8 for b in want[:2]), \
+        [(b, mean[b], n[b]) for b in want[:2]]
+    assert not any(mean[b] == 5.0 and n[b] <= 6 for b in want), [(b, mean[b], n[b]) for b in want]
+    assert want[:2] == ["G-STORY", "Elgato"] and plain[:2] != want[:2], (plain[:2], want[:2])
+    assert [x["label"] for x in rk["chart"]["series"]] == want and \
+        all(abs(x["value"] - w[x["label"]]) < 1e-9 for x in rk["chart"]["series"]), rk["chart"]["series"][:2]
+    assert set(rk["map"]["values"]) == set(ranked) and all(abs(rk["map"]["values"][b] - w[b]) < 1e-9 for b in ranked)
+    st = rk["sentence"]
+    assert st.startswith("In 2022 the highest yearly average rating by brand, each average weighted by its rows, were "
+                         "%s (weighted %s stars: an average of %s stars on %s rows)" % (want[0], NB._fmt(w[want[0]]),
+                                                                                       NB._fmt(mean[want[0]]), format(n[want[0]], ","))), st
+    assert ("Each brand's average is pulled toward the overall %s stars (the average of all %s rows in 2022) by the "
+            "equivalent of %d rows at that average (%d is estimated from how much the brand averages differ against how "
+            "much rows differ within a brand), so an average on a few rows counts for less than one on many."
+            % (NB._fmt(grand), format(N, ","), m, m)) in st, st
+    assert want[2] == "KIWI design", want[:3]
+    small = sum(1 for b in counts if n[b] < 5)
+    assert "%s brand entries with fewer than 5 rows in 2022 are not ranked." % format(small, ",") in st, st
+    assert "IMDb-style weighted rating" in rk["method"] and "an entry resting on fewer than 5 rows that year is not ranked" in rk["method"]
+    # compare: the 12 brands with the most rows, ranked by the same weighted average; each one's own average and rows
+    cp = A["compare"]
+    assert cp["table"]["cols"] == ["brand", "Rows", "Average", "95% range", "Median", "Weighted average"], cp["table"]["cols"]
+    got = [r[0] for r in cp["table"]["rows"]]
+    cut = sorted(n.values(), reverse=True)[12]
+    assert len(got) == 12 and all(n[b] >= cut for b in got), [(b, n[b]) for b in got]
+    assert got == sorted(got, key=lambda b: (-w[b], -n[b], b)), [(b, w[b]) for b in got]
+    for r in cp["table"]["rows"]:
+        assert r[1] == format(n[r[0]], ",") and r[2] == NB._fmt(mean[r[0]]) and r[5] == NB._fmt(w[r[0]]), r
+    assert ("Each group's average is pulled toward the overall %s stars (the average of all %s rows) by the equivalent "
+            "of %d rows at that average (%d is estimated from how much the brand averages differ against how much rows "
+            "differ within a brand)." % (NB._fmt(grand), format(N, ","), m, m)) in cp["sentence"], cp["sentence"]
+    assert cp["sentence"].startswith("By brand, with each group's average rating weighted by its rows, %s ranks highest"
+                                     % got[0]), cp["sentence"]
+    # a ranking of totals is not weighted (the transactions test), nor is a panel's own figure: one row per entry a year
+    rows = ["country,year,rate"] + ["C%02d,%d,%.2f" % (i, y, 5.0 - 0.3 * i + 0.01 * (y - 2000)) for i in range(12)
+                                    for y in range(2000, 2011)]
+    plan = {"goal": "Which country has the highest rate?", "operations": [{"op": "date_from_year", "column": "year"}],
+            "columns": [{"name": "country", "role": "entity"}, {"name": "year", "role": "date"},
+                        {"name": "rate", "role": "target", "semantic_type": "level"}],
+            "analyses": [{"type": "rank", "columns": ["country", "rate"]}]}
+    pn = _run(("\n".join(rows) + "\n").encode(), "panel_rate.csv", "", {"__plan__": plan}, "2026-09-15")["ai_analyses"]["items"][0]
+    assert pn["table"]["cols"] == ["country", "rate", "Share of all", "Change over 10 years"], pn["table"]["cols"]
+    assert [r[0] for r in pn["table"]["rows"]][:3] == ["C00", "C01", "C02"] and pn["table"]["rows"][0][1] == "5.1", pn["table"]["rows"][0]
+    assert "weighs" not in pn["sentence"] and "weighted" not in pn["method"], pn["sentence"]
+
+
+# ---- numbers stored as text, which every CSV has (evaluation preflight, 30 Sep 2026)
+def test_eval_numbers_stored_as_text_are_no_issue_and_the_data_health_area_says_the_score_counts_them():
+    from northledger import health as H
+    cases = [("sample-messy.csv", _sample_bytes(), SAMPLE_AS_OF, ["amount"],
+              {"validity": True, "score_min": False, "score_mean": True}),
+             ("twelve.csv", _segments_file(12), "2026-03-15", ["revenue", "units"],
+              {"validity": True, "score_min": True, "score_mean": True})]
+    for name, data, as_of, cols, want in cases:
+        rep = _run(data, name, "", None, as_of)
+        h = rep["health"]
+        # the engine writes the line for every number column of a CSV; the adapter shows and sends none of it
+        texts, _ = _engine_direct(data, name, "", as_of)
+        eng = sorted(set(t.split(":", 1)[0] for t in texts if NB._is_text_numbers_line(t)))
+        assert eng == sorted(cols), (name, eng)
+        assert not any("numbers are stored as text" in x for x in h["issues"]), (name, h["issues"])
+        rfa = NB.results_for_ai(rep)
+        assert not any("stored as text; they will sort" in x for x in rfa["health_issues"]), rfa["health_issues"]
+        tn = h["csv_text_numbers"]
+        assert tn["columns"] == cols and tn["lowers"] == want, (name, tn)
+        # the oracle: the core's own scores with its mark-down undone (health._NUM_AS_TEXT_PENALTY = 0)
+        old = H._NUM_AS_TEXT_PENALTY
+        H._NUM_AS_TEXT_PENALTY = 0.0
+        try:
+            und = NB.run(data, name, "", None, as_of)
+        finally:
+            H._NUM_AS_TEXT_PENALTY = old
+        d1 = {d["name"]: d["score"] for d in h["dimensions"]}
+        d0 = {d["name"]: d["score"] for d in und["health"]["dimensions"]}
+        seen = {"validity": d0["validity"] > d1["validity"], "score_min": und["health"]["score_min"] > h["score_min"],
+                "score_mean": und["health"]["score_mean"] > h["score_mean"]}
+        assert seen == want, (name, seen, d0, d1)
+        assert {k: v for k, v in d0.items() if k != "validity"} == {k: v for k, v in d1.items() if k != "validity"}
+        assert und["health"]["csv_text_numbers"]["note"] == "" and not any(und["health"]["csv_text_numbers"]["lowers"].values())
+        # the core's score is shown as it is; the Data health area says in plain words that it counts them
+        note = tn["note"]
+        assert note.startswith("The score counts numbers stored as text, which every CSV has: ") and \
+            note.endswith(", although the engine reads them as numbers."), note
+        assert ("the weakest dimension here" in note) == want["score_min"], note
+        assert ("which lowers the mean of the five" in note) == (not want["score_min"]), note
+        assert all(c in note for c in cols), note
+        # the writer is told only when the score it is sent (health_score, the weakest dimension) is lowered
+        assert (rfa["health_issues"][:1] == [NB.TEXT_NUMBERS_AI]) == want["score_min"], rfa["health_issues"][:2]
+        assert rfa["health_score"] == h["score"] and len(NB.TEXT_NUMBERS_AI) <= 200
+        v = _proxy_validate(rfa)
+        if v is not None:
+            assert v["ok"] and v["value"]["health_issues"] == rfa["health_issues"], v.get("detail")
+    # a file with no number column: nothing marked down, no note
+    rows = ["day,shop,note"] + ["2025-%02d-%02d,S%d,fine" % (1 + i % 12, 1 + i % 28, i % 3) for i in range(120)]
+    rep = _run(("\n".join(rows) + "\n").encode(), "words.csv", "", None, "2026-09-15")
+    assert rep["health"]["csv_text_numbers"] is None, rep["health"]["csv_text_numbers"]
+
+
+# ------------------------------------------------------------------ the final site review (30 Sep 2026)
+# The reviewer's synthetic files (tools/fixtures/review4: every value made up, emails on example.com, phones in the
+# 555 range): a currency split, placeholder zeros, grades on derived items, the search check, new and closed stores,
+# the basis, shares of a net change, the empirical-Bayes weight and the byte budget.
+R4 = os.path.join(HERE, "fixtures", "review4")
+R4_AS_OF = "2026-01-15"
+R4_SALES_PLAN = {"goal": "How are sales moving by region?", "kind": "transactions", "primary": "revenue",
+                 "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                             {"name": "region", "semantic_type": "category", "role": "segment"},
+                             {"name": "revenue", "semantic_type": "flow_amount", "role": "target", "unit": "CAD"},
+                             {"name": "units", "semantic_type": "count", "role": "driver", "unit": ""}],
+                 "operations": [], "analyses": []}
+
+
+def _r4(name: str) -> bytes:
+    with open(os.path.join(R4, name), "rb") as fh:
+        return fh.read()
+
+
+def _r4_frame(name: str):
+    import pandas as pd
+    return pd.read_csv(os.path.join(R4, name), dtype=str, keep_default_na=False)
+
+
+def _ana(rep, typ, col):
+    """The AI analysis of type `typ` whose title names `col`."""
+    got = [a for a in rep["ai_analyses"]["items"] if a["type"] == typ and col in a["title"]]
+    assert len(got) == 1, (typ, col, [a["title"] for a in rep["ai_analyses"]["items"]], rep["ai_analyses"]["refused"])
+    return got[0]
+
+
+# f3: EUR, USD and GBP amounts in one column, the plan's unit for it "USD", its primary the amount
+R4_EUR_PLAN = {"goal": "How are invoiced amounts moving?", "kind": "transactions", "primary": "amount",
+               "columns": [{"name": "invoice_date", "semantic_type": "date", "role": "date"},
+                           {"name": "currency", "semantic_type": "code", "role": "metadata"},
+                           {"name": "country", "semantic_type": "geography", "role": "segment"},
+                           {"name": "amount", "semantic_type": "flow_amount", "role": "target", "unit": "USD"},
+                           {"name": "units", "semantic_type": "count", "role": "driver", "unit": ""}],
+               "operations": [], "analyses": []}
+
+
+def test_review4_a_claim_in_one_currency_is_in_that_currency_whatever_unit_the_plan_gives():
+    # f3: EUR, USD and GBP amounts in one column, the plan's unit for it "USD". The EUR total read "196,081 USD"
+    plan = R4_EUR_PLAN
+    df = _r4_frame("f3_eur.csv")
+    for prim in ("amount", ""):
+        rep = _run(_r4("f3_eur.csv"), "f3_eur.csv", "", {"__plan__": dict(plan, primary=prim)}, R4_AS_OF)
+        assert rep["ok"], rep["error"]
+        sc = _sc(rep)
+        b = sc["basis"]
+        assert (b["finding_id"], b["measure"], b["unit"]) == ("measure.amount.total.eur.change", "amount", "EUR"), (prim, b)
+        money = [it for it in sc["items"] if it["unit"] not in ("%", "points", "")]
+        assert len(money) > 20 and all(it["unit"] == "EUR" and it["text"].endswith(" EUR") for it in money), \
+            (prim, [(it["id"], it["text"]) for it in money if it["unit"] != "EUR"][:3])
+        out = NB.results_for_ai(rep)
+        assert "USD" not in json.dumps(sc["items"]) + json.dumps(out["tables"][-1]), prim
+        # the figures are the EUR rows' own, recomputed from the clean download
+        _sc_check_recomputed(rep, keep=lambda d: d[d["currency"].str.strip().str.upper() == "EUR"], where="f3 EUR")
+        eur = df[(df["currency"] == "EUR") & (df["invoice_date"].str[:7] >= b["windows"]["latest"][0])
+                 & (df["invoice_date"].str[:7] <= b["windows"]["latest"][1])]
+        _sc_close(_sc_items(rep)["headline.latest"]["value"], math.fsum(float(x) for x in eur["amount"]), "EUR latest")
+
+
+def test_results_for_ai_sends_the_primary_claim_the_report_leads_with():
+    # integration pass, 30 Sep 2026: the PDF's key figures guessed the primary claim from the claims' words; the
+    # adapter now sends it, {id, claim, grade}, its claim the same text as its finding's
+    def check(rep, want_id, words, what):
+        assert rep["ok"], rep["error"]
+        out = NB.results_for_ai(rep)
+        p = out["primary"]
+        f = next(x for x in rep["findings"] if x["id"] == want_id)
+        assert p == {"id": want_id, "claim": f["claim"].replace(rep["input"]["name"], NB.FILE_WORD)[:400],
+                     "grade": f["grade"]}, (what, p)
+        assert p["claim"] in [x["claim"] for x in out["findings"]] and words in p["claim"], (what, p["claim"])
+        assert "row volume" not in p["claim"], what
+        v = _proxy_validate(out)
+        assert v is None or v["ok"], (what, v and v.get("detail"))
+        return out
+    # FX rates: the plan's primary is a rate (a level): no breakdown, and the primary is the average's own claim
+    with open(EVAL_FX, "rb") as fh:
+        fx = _run(fh.read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    out = check(fx, "measure.value.change", "average month of value", "FX")
+    assert out["scenarios"]["basis"] is None, out["scenarios"]["basis"]
+    # f3 EUR: the plan's primary is the amount: the EUR total the scenarios break down, never the row count the engine's
+    # own gate chose as its primary here
+    f3 = _run(_r4("f3_eur.csv"), "f3_eur.csv", "", {"__plan__": R4_EUR_PLAN}, R4_AS_OF)
+    assert f3["primary_metric"]["finding_id"] == "measure.volume.change_pct", f3["primary_metric"]
+    out = check(f3, "measure.amount.total.eur.change", "monthly total of amount in EUR", "f3 EUR")
+    assert out["primary"]["id"] == out["scenarios"]["basis"]["finding_id"], out["scenarios"]["basis"]
+    # f9c: the total the scenarios break down (CONFIRMED), not the engine's average of the same measure
+    f9c = _run(_r4("f9c_confirmed_total.csv"), "f9c_confirmed_total.csv", "", {"__plan__": R4_SALES_PLAN}, R4_AS_OF)
+    assert check(f9c, "measure.revenue.total.change", "monthly total of revenue", "f9c")["primary"]["grade"] == "CONFIRMED"
+    # no claim to lead with: null; a claim about a withheld column: null (its finding is never sent)
+    none = dict(fx, primary_metric=None, scenarios={"basis": None, "items": [], "refused": [], "note": ""})
+    assert NB.results_for_ai(none)["primary"] is None
+    wh = json.loads(json.dumps(f3))
+    wh["privacy"] = dict(wh.get("privacy") or {}, flagged=list((wh.get("privacy") or {}).get("flagged") or [])
+                         + [{"column": "amount", "decision": "withhold"}])
+    got = NB.results_for_ai(wh)
+    assert got["primary"] is None and not any("amount" in x["claim"] for x in got["findings"]), got["primary"]
+
+
+def _loans_file(entity_rows: bool = True) -> bytes:
+    """Eight years of month-end balances for 30 loan accounts (all made up): each is paid down to 0 over 20 to 50
+    months and stays at 0 once paid off (runs of paid-off months), some never finish."""
+    import random as _random
+    rng = _random.Random(47)
+    rows = []
+    accts = []
+    for a in range(30):
+        start = rng.uniform(5000, 50000)
+        accts.append(("L%03d" % a, start, rng.randint(20, 150), rng.randint(0, 20)))
+    for k in range(96):
+        y, m = 2018 + k // 12, k % 12 + 1
+        for name, start, months, delay in accts:
+            t = k - delay
+            bal = start if t < 0 else max(0.0, start * (1 - t / months))
+            rows.append(["%04d-%02d-28" % (y, m), name, "%.2f" % bal])
+    return _csv(rows, ["month_end", "account", "balance"])
+
+
+def test_review4_placeholder_zeros_need_the_pattern_of_a_missing_value_and_real_zeros_stay():
+    # the share of zeros alone read 7 years of a 0% policy rate, paid-off balances and stockouts as "no value"
+    import pandas as pd
+    import nl_scenarios as NS    # noqa: F401  (the engine directory is on the path)
+    plan = {"goal": "How have interest rates and the exchange rate moved?", "kind": "time_series", "primary": "policy_rate",
+            "columns": [{"name": "date", "semantic_type": "date", "role": "date"},
+                        {"name": "policy_rate", "semantic_type": "level", "role": "target", "unit": "%"},
+                        {"name": "mortgage_rate", "semantic_type": "level", "role": "driver", "unit": "%"},
+                        {"name": "usd_cad", "semantic_type": "level", "role": "driver", "unit": "CAD per USD"}],
+            "operations": [], "analyses": [{"type": "distribution", "columns": ["policy_rate"]},
+                                           {"type": "distribution", "columns": ["usd_cad"]}]}
+    data = _r4("f6_rates.csv")
+    df = _r4_frame("f6_rates.csv")
+    pol = df["policy_rate"].astype(float)
+    assert int((pol == 0).sum()) == 336 and len(pol) == 1200
+    rep = _run(data, "f6_rates.csv", "", {"__plan__": plan}, "2025-01-15")
+    assert rep["ok"], rep["error"]
+    # the policy rate at 0% from 2009 to 2015: 336 dated zeros in a row, a real period of zero, every value counted
+    p = _ana(rep, "distribution", "policy_rate")
+    assert p["table"]["rows"][0][0] == "1,200" and p["table"]["rows"][0][3] == NB._fmt(float(pol.median())) == "1.97", p["table"]
+    assert "not counted" not in p["sentence"] and "exactly zero" in p["sentence"], p["sentence"]
+    # the exchange rate's zeros sit alone between rates that pick up where they left off: the pattern of a missing value
+    fx = _ana(rep, "distribution", "usd_cad")
+    zf = int((df["usd_cad"].astype(float) == 0).sum())
+    assert zf == 149 and fx["table"]["rows"][0][0] == format(1200 - zf, ","), fx["table"]
+    assert ("(149 zero values in usd_cad are not counted: they sit alone or two or three together between non-zero "
+            "rates that pick up where they left off, the pattern of a missing value)") in fx["sentence"], fx["sentence"]
+    notes = [t for t in rep["contracts"]["tests"] if t.get("note")]
+    assert [t["column"] for t in notes] == ["usd_cad"] and "placeholder" not in notes[0]["action"], notes
+    prof = {c["name"]: c for c in NB.profile_for_ai(data, "f6_rates.csv")["columns"]}
+    assert prof["policy_rate"]["zeros"] == 336 and prof["policy_rate"]["zeros_missing_if_level"] is False, prof["policy_rate"]
+    assert prof["usd_cad"]["zeros"] == 149 and prof["usd_cad"]["zeros_missing_if_level"] is True, prof["usd_cad"]
+    # the reviewer's balances and stock: 8% of accounts paid off, 5% of items out of stock, at random between values
+    # that jump about: real zeros, every value counted
+    bplan = {"goal": "How are balances and stock levels spread?", "kind": "snapshots", "primary": "account_balance",
+             "columns": [{"name": "snapshot_date", "semantic_type": "date", "role": "date"},
+                         {"name": "product", "semantic_type": "category", "role": "segment"},
+                         {"name": "account_balance", "semantic_type": "level", "role": "target", "unit": "CAD"},
+                         {"name": "units_on_hand", "semantic_type": "level", "role": "driver", "unit": "units"}],
+             "operations": [], "analyses": [{"type": "distribution", "columns": ["account_balance"]},
+                                            {"type": "distribution", "columns": ["units_on_hand"]}]}
+    rep = _run(_r4("bal.csv"), "bal.csv", "", {"__plan__": bplan}, R4_AS_OF)
+    bdf = _r4_frame("bal.csv")
+    assert int((bdf["account_balance"].astype(float) == 0).sum()) > 200 and int((bdf["units_on_hand"].astype(float) == 0).sum()) > 100
+    for col in ("account_balance", "units_on_hand"):
+        a = _ana(rep, "distribution", col)
+        assert a["table"]["rows"][0][0] == "3,000" and "not counted" not in a["sentence"], (col, a["sentence"])
+    assert not any(t.get("note") for t in rep["contracts"]["tests"]), [t["column"] for t in rep["contracts"]["tests"] if t.get("note")]
+    # a loan book: each account paid down to 0 and held there (runs of 5 or more paid-off months), read within each
+    # account (the plan's entity) and across accounts (no entity): real zeros either way
+    data = _loans_file()
+    bal = pd.read_csv(io.BytesIO(data))["balance"]
+    z = int((bal == 0).sum())
+    assert 300 < z < len(bal) - 300, z
+    for ent_role in ("entity", "metadata"):
+        lplan = {"goal": "How are loan balances spread?", "kind": "snapshots", "primary": "balance",
+                 "columns": [{"name": "month_end", "semantic_type": "date", "role": "date"},
+                             {"name": "account", "semantic_type": "identifier" if ent_role == "metadata" else "entity",
+                              "role": ent_role},
+                             {"name": "balance", "semantic_type": "level", "role": "target", "unit": "CAD"}],
+                 "operations": [], "analyses": [{"type": "distribution", "columns": ["balance"]}]}
+        rep = _run(data, "loans.csv", "", {"__plan__": lplan}, R4_AS_OF)
+        a = _ana(rep, "distribution", "balance")
+        assert a["table"]["rows"][0][0] == format(len(bal), ",") and "not counted" not in a["sentence"], (ent_role, a["sentence"])
+    # the rule reads only a level: the FX rates typed a flow keep their zeros (and the level's are the weekends)
+    flow = json.loads(json.dumps(EVAL_FX_PLAN))
+    flow["columns"][1]["semantic_type"] = "flow_amount"
+    with open(EVAL_FX, "rb") as fh:
+        fxd = fh.read()
+    rep = _run(fxd, "fx_usd_cad.csv", "", {"__plan__": flow}, "2026-09-29")
+    d = _ana(rep, "distribution", "VALUE")
+    assert d["table"]["rows"][0][0] == "2,957" and "not counted" not in d["sentence"], d["table"]
+
+
+def test_review4_new_and_closed_segments_are_their_own_rows_and_the_largest_is_chosen_among_all_levels():
+    import nl_scenarios as NS
+    plan = {"goal": "How are store sales moving?", "kind": "transactions", "primary": "sales",
+            "columns": [{"name": "sale_date", "semantic_type": "date", "role": "date"},
+                        {"name": "store", "semantic_type": "category", "role": "segment"},
+                        {"name": "sales", "semantic_type": "flow_amount", "role": "target", "unit": "CAD"},
+                        {"name": "qty", "semantic_type": "count", "role": "driver", "unit": ""}],
+            "operations": [], "analyses": []}
+    rep = _run(_r4("f2_newstore.csv"), "f2_newstore.csv", "", {"__plan__": plan}, R4_AS_OF)
+    assert rep["ok"], rep["error"]
+    sc = _sc(rep)
+    b = sc["basis"]
+    # Uptown opened in the latest 12 months, the Mall closed before them: each its own row, never "other"
+    assert b["segment"] == {"column": "store", "levels": ["Airport", "Downtown", "Harbour", "Mall (closed)", "Uptown (new)"],
+                            "folded": [], "entered": ["Uptown (new)"], "exited": ["Mall (closed)"]}, b["segment"]
+    it = _sc_items(rep)
+    assert not any(v["segment"] == "other" for v in it.values()), "a level of one window was folded into other"
+    df = _r4_frame("f2_newstore.csv")
+    win = lambda w: df[(df["sale_date"].str[:7] >= b["windows"][w][0]) & (df["sale_date"].str[:7] <= b["windows"][w][1])]
+    tot = lambda d, s: math.fsum(float(x) for x in d.loc[d["store"] == s, "sales"])
+    up, mall = it["contribution.uptown_new.change"], it["contribution.mall_closed.change"]
+    _sc_close(up["value"], tot(win("latest"), "Uptown (new)"), "Uptown entered")
+    _sc_close(mall["value"], -tot(win("prior"), "Mall (closed)"), "the Mall exited")
+    assert it["contribution.uptown_new.prior"]["value"] == 0 and "contribution.uptown_new.pct" not in it
+    assert it["contribution.mall_closed.pct"]["text"] == "−100%" and it["contribution.mall_closed.latest"]["value"] == 0
+    assert up["label"] == "Uptown (new) (new in the latest 12 months): its contribution to the change in total sales", up["label"]
+    assert mall["label"].startswith("Mall (closed) (not in the latest 12 months): "), mall["label"]
+    # Harbour and Downtown fell while the total rose: no share of the change, the amounts stay
+    assert not any(k.endswith(".share") for k in it) and NS.MIXED_SHARES in sc["refused"], sc["refused"]
+    # the largest store in the latest 12 months is the new one; the gap never reaches from or to a closed store
+    gaps = [v for v in it.values() if v["group"] == "gap"]
+    assert gaps and all("Uptown (new)'s" in v["label"] and "the largest store by total sales in the latest 12 months"
+                        in v["label"] for v in gaps), [v["label"] for v in gaps][:2]
+    assert it["gap.airport.amount"]["label"] == ("Airport: how far its total sales in the latest 12 months is below Uptown "
+                                                 "(new)'s, the largest store by total sales in the latest 12 months")
+    assert {v["segment"] for v in gaps} == {"Airport", "Downtown", "Harbour"}, {v["segment"] for v in gaps}
+    _sc_close(it["gap.airport.amount"]["value"], tot(win("latest"), "Uptown (new)") - tot(win("latest"), "Airport"), "gap")
+    _sc_check_recomputed(rep, where="f2 new and closed stores")
+    # no mix without a price per unit before for the new store, and no claim that price, volume and mix add up
+    assert "price_volume_mix.mix" not in it and it["price_volume_mix.price"]["assumes"] == NS.PV_ASSUMES == \
+        "price and volume add up to the change", it["price_volume_mix.price"]
+    assert any(x.startswith("the mix effect needs units above zero for every store value in both windows (Uptown (new) is "
+                            "new in the latest 12 months)") for x in sc["refused"]), sc["refused"]
+    assert "The figures are shown rounded; they add up before rounding." in sc["note"], sc["note"]
+    # the writer's table: named rows, the share column left out as no row has one
+    tab = NB.results_for_ai(rep)["tables"][-1]
+    assert tab["title"] == "Where the change in total sales came from", tab["title"]
+    assert tab["cols"] == ["store", "12 months before", "Latest 12 months", "Change", "Own change"], tab["cols"]
+    assert tab["rows"][0][0] == "Uptown (new) (new in the latest 12 months)" and \
+        "Mall (closed) (not in the latest 12 months)" in [r[0] for r in tab["rows"]], tab["rows"]
+    # a small level in both windows still folds into other, and the largest may be one of them: Enterprise, 3 orders the
+    # year before and 4 large ones in the latest 12 months
+    import random as _random
+    rng = _random.Random(9)
+    rows = []
+    for k in range(26):
+        y, m = 2024 + k // 12, k % 12 + 1
+        for i in range(30):
+            rows.append(["%04d-%02d-%02d" % (y, m, rng.randint(1, 28)), rng.choice(["North", "South", "East", "West"]),
+                         "%.2f" % rng.uniform(50, 150)])
+    for d, v in (("2024-04-10", 900), ("2024-06-10", 900), ("2024-08-10", 900), ("2025-04-10", 20000), ("2025-06-10", 20000),
+                 ("2025-08-10", 20000), ("2025-10-10", 20000)):
+        rows.append([d, "Enterprise", "%.2f" % v])
+    rep = _run(_csv(rows, ["order_date", "region", "revenue"]), "enterprise.csv", "", None, "2026-03-15")
+    sc = _sc(rep)
+    assert sc["basis"]["segment"]["folded"] == ["Enterprise"] and "Enterprise" not in sc["basis"]["segment"]["levels"], sc["basis"]
+    gaps = [v for v in sc["items"] if v["group"] == "gap"]
+    assert {v["segment"] for v in gaps} == {"North", "South", "East", "West"} and all(
+        "Enterprise's" in v["label"] and "the largest region by total revenue in the latest 12 months" in v["label"]
+        for v in gaps), [v["label"] for v in gaps][:1]
+    _sc_check_recomputed(rep, where="the largest is a folded level")
+
+
+def test_review4_the_basis_is_the_plans_primary_and_an_average_is_never_read_as_a_row_count():
+    import nl_scenarios as NS
+
+    def plan(prim, tick="count", bal="level"):
+        return {"goal": "How is support work moving?", "kind": "transactions", "primary": prim,
+                "columns": [{"name": "logged_on", "semantic_type": "date", "role": "date"},
+                            {"name": "team", "semantic_type": "category", "role": "segment"},
+                            {"name": "tickets", "semantic_type": tick, "role": "driver", "unit": "tickets"},
+                            {"name": "hours", "semantic_type": "flow_amount", "role": "driver", "unit": "hours"},
+                            {"name": "cost", "semantic_type": "flow_amount", "role": "target", "unit": "CAD"},
+                            {"name": "account_balance", "semantic_type": bal, "role": "driver", "unit": "CAD"}],
+                "operations": [], "analyses": []}
+    data = _r4("f4_counts.csv")
+    # the plan's primary is cost: its total is broken down (it was the ticket count, the first total in the engine's order)
+    rep = _run(data, "f4_counts.csv", "", {"__plan__": plan("cost")}, R4_AS_OF)
+    b = _sc(rep)["basis"]
+    assert (b["finding_id"], b["unit"]) == ("measure.cost.total.change", "CAD"), b
+    assert rep["primary_metric"]["finding_id"] == "measure.cost.change", rep["primary_metric"]
+    _sc_check_recomputed(rep, where="f4 cost")
+    # the plan's primary is a balance (a level): nothing adds up, and the block says so rather than count rows
+    rep = _run(data, "f4_counts.csv", "", {"__plan__": plan("account_balance")}, R4_AS_OF)
+    sc = _sc(rep)
+    assert sc["basis"] is None and sc["refused"][0] == NS.AVERAGE_REFUSED == (
+        "the headline is an average, so it has no parts that add up; see the headline finding"), sc["refused"]
+    assert not any(it["group"] in NB_SC().PER_SEGMENT + ("headline",) for it in sc["items"]), [it["id"] for it in sc["items"]]
+    # the FX rates (a level): refused, where the rows were counted and broken down before
+    with open(EVAL_FX, "rb") as fh:
+        rep = _run(fh.read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    sc = _sc(rep)
+    assert sc["basis"] is None and NS.AVERAGE_REFUSED in sc["refused"], (sc["basis"], sc["refused"])
+    # with no plan, the engine's own primary claim, as before (the ticket file's cost total)
+    rep = _run(data, "f4_counts.csv", "", None, R4_AS_OF)
+    assert _sc(rep)["basis"]["finding_id"] == rep["primary_metric"]["finding_id"] == "measure.cost.total.change"
+
+
+def test_review4_shares_of_a_net_change_are_left_out_when_segments_moved_in_opposite_directions():
+    import nl_scenarios as NS
+    plan = {"goal": "How are sales moving by channel?", "kind": "transactions", "primary": "revenue",
+            "columns": [{"name": "order_date", "semantic_type": "date", "role": "date"},
+                        {"name": "channel", "semantic_type": "category", "role": "segment"},
+                        {"name": "revenue", "semantic_type": "flow_amount", "role": "target", "unit": "USD"},
+                        {"name": "units", "semantic_type": "count", "role": "driver", "unit": "units"}],
+            "operations": [], "analyses": []}
+    rep = _run(_r4("f1_refunds.csv"), "f1_refunds.csv", "", {"__plan__": plan}, R4_AS_OF)
+    sc = _sc(rep)
+    it = _sc_items(rep)
+    ch = {v["segment"]: v["value"] for v in it.values() if v["group"] == "contribution" and v["id"].endswith(".change")}
+    total = it["headline.change"]["value"]
+    # refunds took the marketplace from +33,496 to -20,325: its "share" of a -10,672 change read 504%, the web's -182%
+    assert total < 0 and any(c > 0 for c in ch.values()) and any(c < 0 for c in ch.values()), (total, ch)
+    assert not any(k.endswith(".share") for k in it) and NS.MIXED_SHARES in sc["refused"], sc["refused"]
+    assert NS.MIXED_SHARES == ("shares of the change are not given: segments moved in opposite directions, so shares of "
+                               "the net change would exceed 100%")
+    _sc_close(math.fsum(ch.values()), total, "the amounts still add up")
+    _sc_check_recomputed(rep, where="f1 refunds")
+    assert "Share of the change" not in NB.results_for_ai(rep)["tables"][-1]["cols"]
+
+
+def test_review4_results_for_ai_sends_each_table_once_and_never_goes_over_its_budget():
+    rep = _run(_territories_file(), "territories.csv", "", {"__plan__": TERRITORY_PLAN}, "2026-03-15")
+    old = NB.RESULTS_MAX_BYTES
+    NB.RESULTS_MAX_BYTES = 10 ** 9
+    try:
+        whole = NB.results_for_ai(rep)
+    finally:
+        NB.RESULTS_MAX_BYTES = old
+    # each analysis's table goes once, in tables under the analysis's own title (the worker reads [TABLE:n] and the
+    # figures it accepts from tables; analyses[].table was the same table a second time)
+    assert not any("table" in a for a in whole["analyses"]), [a["title"] for a in whole["analyses"] if "table" in a]
+    with_table = [a for a in rep["ai_analyses"]["items"] if (a.get("table") or {}).get("rows")]
+    assert [t["title"] for t in whole["tables"][:len(with_table)]] == [a["title"] for a in with_table], whole["tables"]
+    assert len(whole["tables"]) == len(with_table) + 1 and whole["tables"][-1]["title"].startswith("Where the change")
+    for a, t in zip(with_table, whole["tables"]):
+        assert t["rows"] == [[str(v)[:80] for v in r][:len(t["cols"])] for r in a["table"]["rows"][:12]], t["title"]
+    v = _proxy_validate(whole)
+    if v is not None:
+        assert v["ok"] and [t["title"] for t in v["value"]["tables"]] == [t["title"] for t in whole["tables"]], v.get("detail")
+    # a budget the scenario items alone cannot meet: every item goes, then the analyses from the last (each with its
+    # chart and its table), and analyses_refused says so first
+    budget = _payload_bytes_of(dict(whole, scenarios=dict(whole["scenarios"], items=[]))) - 9000
+    NB.RESULTS_MAX_BYTES = budget
+    try:
+        got = NB.results_for_ai(rep)
+        NB.RESULTS_MAX_BYTES = 800
+        tiny = NB.results_for_ai(rep)
+    finally:
+        NB.RESULTS_MAX_BYTES = old
+    assert len(json.dumps(got)) <= budget and got["scenarios"]["items"] == [], len(json.dumps(got))
+    titles = [a["title"] for a in whole["analyses"]]
+    k = len(got["analyses"])
+    assert 0 < k < len(titles) and [a["title"] for a in got["analyses"]] == titles[:k], [a["title"] for a in got["analyses"]]
+    assert got["analyses_refused"][0] == NB.BUDGET_ANALYSES % (len(titles) - k, len(titles), format(budget, ",")), got["analyses_refused"]
+    assert got["analyses_refused"][1:] == whole["analyses_refused"], got["analyses_refused"]
+    gone = set(titles[k:])
+    assert not any(t["title"] in gone for t in got["tables"]) and not any(c["title"] in gone for c in got["charts"]), gone
+    assert [t["title"] for t in got["tables"]] == [t["title"] for t in whole["tables"][:-1] if t["title"] not in gone]
+    # nothing can fit: never an oversize payload, never silently: ok false with the reason
+    assert tiny["ok"] is False and "over the report writer's 800-byte budget" in tiny["error"], tiny
+
+
+# ------------------------------------------------------------------ final review 5 (30 Sep 2026): zeros, m and compare
+def _level_plan(date: str, col: str, unit: str, extra=None) -> dict:
+    return {"goal": "How has %s moved?" % col, "primary": col, "operations": [],
+            "columns": [{"name": date, "semantic_type": "date", "role": "date"}] + list(extra or []) +
+                       [{"name": col, "semantic_type": "level", "role": "target", "unit": unit}],
+            "analyses": [{"type": "distribution", "columns": [col]}]}
+
+
+def test_review5_placeholder_zeros_need_three_runs_and_only_the_zeros_the_note_describes_leave():
+    import random as _random
+    d0 = datetime.date(2025, 1, 1)
+    # a price at 19.99 with one, two or three zeros between days that pick up where they left off (over 1% of the
+    # days each time): one zero, or two, is never enough; three separate runs are
+    for zs, gone in (((44,), 0), ((20, 60), 0), ((20, 44, 70), 3)):
+        rows = [[(d0 + datetime.timedelta(k)).isoformat(), "0" if k in zs else "19.99"] for k in range(90)]
+        data = _csv(rows, ["day", "price"])
+        rep = _run(data, "price.csv", "", {"__plan__": _level_plan("day", "price", "USD")}, "2025-06-30")
+        d = _ana(rep, "distribution", "price")
+        assert d["table"]["rows"][0][0] == str(90 - gone), (zs, d["table"])
+        assert ("not counted" in d["sentence"]) == bool(gone), (zs, d["sentence"])
+        prof = {c["name"]: c for c in NB.profile_for_ai(data, "price.csv")["columns"]}
+        assert prof["price"]["zeros"] == len(zs) and prof["price"]["zeros_missing_if_level"] is bool(gone), prof["price"]
+    # a daily rate: 5 zeros alone between rates that pick up where they left off, one on the last day (the edge of the
+    # series) and one on a row with no date: only the 5 are not counted; the other 2 stay 0, and the sentence and the
+    # Data tests note count them apart (it read every zero as missing, with words that fit only the 5)
+    rng = _random.Random(7)
+    rows = []
+    for k in range(120):
+        v = 0.0 if k in (10, 30, 50, 70, 90, 119) else round(1.30 + rng.uniform(-0.004, 0.004), 4)
+        rows.append([(d0 + datetime.timedelta(k)).isoformat(), "%.4f" % v])
+    rows.append(["", "0"])
+    data = _csv(rows, ["day", "rate"])
+    rep = _run(data, "rates.csv", "", {"__plan__": _level_plan("day", "rate", "CAD per USD")}, "2025-06-30")
+    assert rep["ok"] and rep["cleaning"]["rows_clean"] == 121, (rep["error"], rep["cleaning"])
+    d = _ana(rep, "distribution", "rate")
+    words = ("5 zero values in rate are not counted: they sit alone or two or three together between non-zero rates "
+             "that pick up where they left off, the pattern of a missing value; 2 other zero values stay 0 (1 at the "
+             "start or end of a series, 1 on a row with no date)")
+    assert d["table"]["rows"][0][0] == "116" and "(%s)." % words in d["sentence"], (d["table"], d["sentence"])
+    note = [t for t in rep["contracts"]["tests"] if t.get("note")]
+    assert len(note) == 1 and note[0]["zeros"] == 5 and "(%s)" % words.split(": ", 1)[1] in note[0]["action"], note
+    # the frame drops exactly the 5: its zeros left are the edge's and the undated row's
+    r = NB._zero_shape([1.3, 0, 1.3, 1.31, 0, 1.3, 1.3, 0, 1.31, 1.3, 0], ["2025-01-%02d" % i for i in range(1, 11)] + [None])
+    assert r[0] == 4 and r[1]["zeros"] == 3 - 0 and list(r[1]["mask"].nonzero()[0]) == [1, 4, 7], r
+    assert r[1]["kept"] == {"edge": 0, "undated": 1, "other": 0}, r[1]["kept"]
+
+
+def test_review5_the_profile_reads_a_panels_zeros_within_each_series_as_the_analyses_do():
+    # two desks' rates, one row a desk a day, both desks at 0 on the same 3 days: each desk's zeros sit between its own
+    # rates, which pick up where they left off. Read across the desks in date order (the profile's old reading) they
+    # are no pattern (a run of two zeros between 50 and 1.3); read within each desk (the analyses') they are. The
+    # profile and the analyses now read the same series, whatever role the plan gives desk
+    import random as _random
+    rng = _random.Random(3)
+    rows = []
+    d0 = datetime.date(2025, 1, 1)
+    for k in range(90):
+        for s, base in (("North", 1.30), ("South", 50.0)):
+            z = k in (10, 40, 70)
+            rows.append([(d0 + datetime.timedelta(k)).isoformat(), s,
+                         "0" if z else "%.3f" % (base * (1 + rng.uniform(-0.004, 0.004)))])
+    data = _csv(rows, ["day", "desk", "rate"])
+    vals = [float(r[2]) for r in rows]
+    assert NB._zero_shape(vals, [r[0] for r in rows])[1] is None, "read across the desks the zeros show a pattern"
+    for role in ("entity", "segment", "metadata"):
+        plan = _level_plan("day", "rate", "CAD per USD", [{"name": "desk", "semantic_type": "category", "role": role}])
+        rep = _run(data, "desks.csv", "", {"__plan__": plan}, "2025-06-30")
+        d = _ana(rep, "distribution", "rate")
+        assert d["table"]["rows"][0][0] == "174" and "(6 zero values in rate are not counted:" in d["sentence"], (role, d)
+    prof = {c["name"]: c for c in NB.profile_for_ai(data, "desks.csv")["columns"]}
+    assert prof["rate"]["zeros"] == 6 and prof["rate"]["zeros_missing_if_level"] is True, prof["rate"]
+    # the series is the column that, with the date, tells the rows apart; none when the dates alone do
+    g = NB._series_groups([("note", ["x"] * len(rows)), ("desk", [r[1] for r in rows])], [r[0] for r in rows])
+    assert list(g[:4]) == ["North", "South", "North", "South"], g[:4]
+    assert NB._series_groups([("desk", ["A"] * 5)], ["2025-01-0%d" % i for i in range(1, 6)]) is None
+
+
+def test_review5_m_needs_five_groups_and_compare_offers_no_range_for_a_gap_chance_can_make():
+    import numpy as np
+    import pandas as pd
+    plan = {"columns": [{"name": "rating", "semantic_type": "rating", "role": "target"},
+                        {"name": "store", "semantic_type": "category", "role": "segment"}]}
+    # fewer than 5 groups of 5 rows: m is the set value 10, and the sentence says so; 5 groups are estimated
+    rng = np.random.default_rng(4)
+    assert NB.SHRINK_MIN_GROUPS == 5 and NB._shrink_m([rng.normal(i, 1, 40) for i in range(4)]) == \
+        (10, {"kind": "fallback", "why": "few", "raw": None})
+    assert NB._shrink_m([rng.normal(i, 1, 40) for i in range(5)])[1]["kind"] != "fallback"
+    df = pd.DataFrame({"store": np.repeat(["A", "B", "C", "D"], 50), "rating": rng.normal(3.5, 1.0, 200)})
+    out = NB._a_compare(df, None, None, ["rating"], plan, None, by="store")
+    assert ("by the equivalent of 10 rows at that average (10, a set value: fewer than five store groups have 5 or "
+            "more rows, too few to estimate it from).") in out["sentence"], out["sentence"]
+    # 12 stores with no true difference: when the averages differ no more than chance makes them, the gap between the
+    # top and the bottom is said to be the two ends picked out of 12, and no range is offered for it (it read "a gap of
+    # 0.199 (95% range 0.0111 to 0.396)" beside "no more than chance" in 92 of 300 such files)
+    chance = 0
+    for seed in range(40):
+        rng = np.random.default_rng(seed)
+        df = pd.DataFrame({"store": np.repeat(["S%02d" % i for i in range(12)], 200), "rating": rng.normal(3.5, 1.0, 2400)})
+        t = NB._a_compare(df, None, None, ["rating"], plan, None, by="store")["sentence"]
+        gap = t[t.index(": a gap of"):t.index(". Each group")]
+        if "no more than chance" in t:
+            chance += 1
+            assert gap.endswith("between the top and the bottom of the 12 groups, the two ends picked out of them, "
+                                "which chance alone can make this wide") and "range" not in gap, t
+        else:
+            assert "(95% range " in gap, t
+    assert chance >= 5, chance
+
+
+def _payload_bytes_of(x) -> int:
+    return len(json.dumps(x, default=str))
 
 TESTS =[v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

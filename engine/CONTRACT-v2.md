@@ -44,6 +44,7 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
 | `charts` | list | 2 | chart records, §3 |
 | `charts_suppressed` | list | 2 | `{rule, type, why}` for each §5 chart whose rule did not fire (§5 "Suppression") |
 | `llm` | object | 2 | `{used: false, model: null, consent: false, guard: {...}}`; the adapter never calls a model |
+| `scenarios` | object | 2 | the headline claim broken down for the report writer (design B, 29 Sep 2026): `{basis, items[], refused[], note}`, §5.8. Always present; `{basis: null, items: [], refused: [], note: ""}` on a refusal |
 | `summary` | object | 2 | the manager's bottom line (fixer round, 24 Sep 2026): `{lines: [{kind: "moved"|"act"|"plan", text, finding_ids[]}], labels: {finding_id: plain label}, monitoring: [finding_id]}`. `lines` holds at most three sentences built from the engine's facts, every number printed with `narrate.story_number` from a fact the line lists: what moved and why (the primary claim, the steps where what the file covers changed and its like-for-like restatement, a fall since a peak), what to act on (the CONFIRMED business claims, or none), and the planning number (the primary series' forecast, graded). `labels` names each business and forecast claim in the reader's words ("Rent, monthly total", "Ledger lines a month"). `monitoring` lists the claims about the ledger's own line count when the file has a money total: kept off the first screen, the tiles and the bottom line; they stay in the tables and the analyst view |
 
 A refusal (`ok: false`) returns every key with its empty value.
@@ -77,6 +78,7 @@ v1 `score` (**= `score_min`**), `issues`, plus:
 - `sample`: `{method: "all"|"sampled", n, seed: null}`.
 - `columns`: one per landed column: `{name, type, n, flagged, withheld, completeness{k,n,pct,ci}, validity{k,n,pct,ci,dominant_format}, uniqueness{applicable,k,n,pct,ci}, weakest, claim_health, distinct, top_values[[value,count]], numeric{min,median,max}, dates{min,max,order}, quarantined_by_rule{rule: rows}, fixes_by_rule{rule: cells}, safe_for[finding ids]}`. `pct` is 0-100, `ci` a 95% Wilson interval on 0-100. Completeness = non-empty of all rows; validity = values of the column's dominant type of its non-empty values (the claim's validity, `measure._claim_validity`); uniqueness = distinct of non-empty, applicable only to an id-like column. `weakest` is the lowest applicable of the three. `top_values`, `numeric`, `dates` are empty/null for a withheld column; `numeric` and `dates` come from the cleaned table.
 - `missingness`: `{matrix_columns[], by_month[{month, rows, nulls{column: k}}], nullity_corr{columns[], matrix[][], n}, mcar{test: "little", p: null, conclusion}}` over the cleaned table's rows in the analysis window, flagged columns left out. Little's MCAR test is not run in R1.
+- `csv_text_numbers` (30 September 2026): null, or `{columns[], lowers{validity, score_min, score_mean}, note}`. **Decision: the line is dropped, not reworded.** The engine's health check writes "`<col>`: N of N numbers are stored as text; they will sort '10' before '9'." for every number column of a CSV (every file the page reads is CSV text, landed as text) and marks the column's validity down by half (`northledger/health.py`, `_NUM_AS_TEXT_PENALTY`). The line says nothing about this file, and it is not true of the analysis, which reads those values as numbers (the cleaner converts them), so nothing in the report sorts '10' before '9'; a reworded line would still be a non-issue in a list of issues. So the adapter leaves it out of `issues` and out of what it sends the AI (`results_for_ai.health_issues`, which also drops it from a report saved before this rule); no engine file is changed. The core's score is NOT changed: it keeps the mark-down. `columns` names the number columns marked down (never a withheld one); `lowers` says which scores the mark-down lowers, read by undoing it with the engine's own constant and rounding (`health._NUM_AS_TEXT_PENALTY`, `health._pct`) and the cleaner's validity cap as `health.reflect_cleaning` applies it (no counterfactual number is printed). When it lowers the weakest dimension or the mean, `note` says so in plain words and the page prints it in the Data health area (the health tile, the trust strip's Data health line and the analyst view's Quality by dimension): "The score counts numbers stored as text, which every CSV has: validity, the weakest dimension here, is marked down for the numbers in revenue and units, although the engine reads them as numbers." (the mean only: "validity is marked down for the numbers in amount, which lowers the mean of the five"); else `note` is "". It lowers the score on most files: the site's sample's mean reads 87.1 where it would read 88.3 (its weakest dimension is consistency, unaffected), and a clean twelve-region orders file scores 75.0 on its weakest dimension, validity, where it would score 100. When the weakest dimension is lowered (the only score `results_for_ai` sends, `health_score`), the writer's `health_issues` start with one line: "The health score counts numbers stored as text, which every CSV has: it is validity, the weakest dimension here, marked down for them, although the engine reads them as numbers."
 - `accuracy`: `{measured: false, audited_rows: 0, errors: 0, upper95: null, text: "not measured"}`.
 
 ### 2.3 `cleaning`
@@ -175,6 +177,13 @@ the values written without one are fractions only when at least 95% of them lie 
 the chosen scale is out of range. A withheld or coded column's number and date tests are not run (the engine
 reads its codes): `action` says so. Its examples and its cells in `downloads.contract_flagged_csv` read
 `value withheld` or `value coded`; every other example is scrubbed as the download is.
+A level whose 0 the AI's analyses read as "no value" (5.3) gets a note row right after its own test (30 September
+2026): `note: true`, `zeros` (how many), `checked` (the values the analyses read in the column), `failed` 0,
+`signal` false, and `action` (= `brief`) "note: 550 zero values in VALUE are not counted by the AI's analyses (they
+fall on weekends between non-zero rates, the pattern of a day with no value); the engine's own reading is unchanged
+and the tests changed no value" (with, when some zeros stay 0, "; 3 other zero values stay 0 (...)" inside the
+brackets, as 5.3 says). It never fails, never signals the planner and flags no cell; the report writer
+reads it among the data-test lines. A column whose tests the visitor turned off gets no note row.
 
 ### 5.3 `ai_analyses`
 
@@ -197,6 +206,76 @@ cases f and g). The page does not ask again either when a report's `ai_analyses.
 headline is the gate's, whatever signals the report carries.
 A column the visitor withheld or coded is never an axis, a group, a driver or a measure; a withheld one is
 never named ("a column you withheld").
+**Zero as a placeholder (30 September 2026; the evidence rule, final review the same day).** A column the plan
+types `level` (a rate, price, index, balance or ratio) may use 0 for "no value", and the analyses then read its
+zeros as missing, but only on the evidence (the share of zeros alone deleted a 0% policy rate held for seven years,
+paid-off balances and stockouts): the zeros are at least 1% of its values and at least 95% of the others are
+positive; read in date order within each series (with no date, in the rows' order) at least 80% of them sit alone
+or 2 or 3 together between positive values, and no run is 5 or more long (5 dated zeros in a row are a real period
+of zero); and either they fall on one or two days of the week that hold at least 80% of them and at most half of the
+other values (the FX weekends), or the values on either side of a run are within 10% of each other for at least 80%
+of the runs and for at least 3 separate runs (`PLACEHOLDER_RESUME_RUNS`: one zero, or two, is never enough; final
+review, 30 September 2026). Zeros at random between values that jump about are real. **The series (final review, 30
+September 2026):** when the dates repeat (fewer than 95% of the dated rows have a date of their own), the text column
+that, with the date, tells at least 95% of the dated rows apart, the one with the fewest values (then the first); no
+series when the dates alone tell the rows apart or no column does (`_series_groups`); the profile and the analyses
+read it the same way (it was the plan's entity in the analyses and no series in the profile). **Only the zeros the
+evidence describes are read as missing** (it was every zero of the column): on the weekday evidence, the zeros on
+those days in a run of 1 to 3 between positive values; on the other, the zeros of such a run whose values on either
+side are within 10%. A zero at the start or the end of a series, on a row with no date, or outside that pattern
+stays 0 and is counted apart. Each sentence that reads the column says how many it left out and the evidence, true
+of every one of them, never a bare "a rate of 0 is a placeholder": "(550 zero values in VALUE are not counted: they
+fall on weekends between non-zero rates, the pattern of a day with no value)", "(149 zero values in usd_cad are not
+counted: they sit alone or two or three together between non-zero rates that pick up where they left off, the
+pattern of a missing value)" ("rates", "prices", "index values", "balances" or "ratios" when the column's name or unit
+says so, a unit "per" another being a rate; else "values"), then the zeros that stay 0: "; 3 other zero values stay 0
+(1 at the start or end of a series, 2 on rows with no date)" ("outside that pattern" for the rest); the Data tests
+card's note row says the same. The profile's `zeros_missing_if_level` is the same rule on the rows the engine kept,
+in the file's date order and within the same series. The engine's own table, its checks and every download keep the
+zeros. A flow or a count (`flow_amount`, `count`), where 0 is real, and every other type keep
+their zeros.
+**Groups ranked on 5 rows.** `compare` leaves out a group with fewer than 5 values (`COMPARE_MIN_GROUP`) and says
+how many ("8 groups with fewer than 5 rows are left out."), and how many more groups beyond the 12 with the most
+rows are not shown. `rank` ranks an entry whose figure adds up or averages several rows (transactions, reviews)
+only on 5 rows or more in the ranked year (with no date, over the file; `RANK_MIN_ROWS` = `COMPARE_MIN_GROUP`): the
+entries below are left out of the table, the chart and the map, and counted in the sentence ("8 brand entries
+with fewer than 5 rows in 2022 are not ranked."). A panel (one row per entry and date, at most 1% of the rows
+repeating a pair: countries by year) ranks each entry's own figure, with no minimum.
+**Groups ranked by an average are ranked by a weighted average (30 September 2026).** The minimum alone left brands
+with 5 to 8 five-star reviews on top of a ranking of 5,581 reviews. `rank` on an average (a level or a rating; not a
+panel) and `compare` rank each group by the IMDb-style weighted rating `(n * its average + m * the average of every
+row in the ranking) / (n + m)`: its own n rows plus m rows at the overall average (the ranked year's rows, or the
+file's, every entry counted, those under 5 rows too; decibels weighed as energies). **m is the file's own (final
+review, 30 September 2026; it was a fixed 10):** the empirical-Bayes weight, the pooled variance of the rows within a
+group over the variance of the groups' true averages, by the method of moments on the groups with 5 or more rows
+(the variance of their averages, ddof 1, less the average of each one's sampling variance), rounded to whole rows and
+held to 5 to 50 (`SHRINK_M_MIN`, `SHRINK_M_MAX`); when the averages differ no more than chance makes them it is 50,
+and when it cannot be estimated (fewer than 5 groups of 5 rows, `SHRINK_MIN_GROUPS`, or no spread at all) it is
+`SHRINK_M` = 10, and the sentence says so: "(10, a set value: fewer than five brand groups have 5 or more rows, too
+few to estimate it from)". **Why 5 groups (final review, 30 September 2026; it was 2):** the variance of the groups'
+true averages has one fewer degree of freedom than there are groups, a relative error of about sqrt(2 / (groups -
+1)), 100% with 3 groups and 71% with 5; simulated (100 rows a group, true m 25 and 11), the estimate lands within a
+factor of 2 of the truth in 25 to 29% of files with 2 groups, 37 to 41% with 3 and 54 to 60% with 5, and reads "no
+more than chance" in 24 to 36%, 11 to 19% and 2 to 6%. `rank` estimates it on the ranked scope's entries, `compare`
+on its groups. **When the chance reading applies, `compare` never offers a range for the gap** (final review, 30
+September 2026: "a gap of 0.199 (95% range 0.0111 to 0.396)" beside "no more than chance" in 92 of 300 files with no
+true difference): the top and the bottom are the two ends picked out of every group compared, so the sentence reads
+"a gap of 0.199 between the top and the bottom of the 12 groups, the two ends picked out of them, which chance alone
+can make this wide". `rank`'s table is `[<entity>, "Weighted
+average", "Average <measure>", "Rows", "Change over 10 years"]` (the last column left out when no row has a figure 10
+years before), its chart and map carry the weighted averages, its title reads "Highest average <measure> by <entity>
+in <year>", and its sentence names each of the top three's weighted average, own average and rows and states m:
+"Each brand's average is pulled toward the overall 3.84 stars (the average of all 5,581 rows in 2022) by the
+equivalent of 13 rows at that average (13 is estimated from how much the brand averages differ against how much rows
+differ within a brand), so an average on a few rows counts for less than one on many." (a held estimate reads
+"estimated at 524 from ..., held to 50"). `compare` keeps its columns (`Rows`, `Average`, the 95% range, `Median`) and
+adds `Weighted average` last; its rows, its highest and its lowest follow the weighted average; its sentence states
+its m the same way. A ranking of totals (a flow or a count: its sum) and a panel's own figures are not weighted. On
+the preflight's reviews file (2022, m = 13) the top ten are G-STORY (4.92 on 12 reviews, weighted 4.36), Elgato
+(4.91 on 11, 4.33), KIWI design (4.42 on 53, 4.30), Exquisite Gaming and ivoler (5.0 on 8, 4.28), PERFECTSIGHT and
+sisma (4.89 on 9, 4.27), GeekShare (4.69 on 13, 4.26), daydayup (4.59 on 17, 4.26) and Bethesda (4.60 on 15, 4.25);
+the 5.0-star brands on 5 or 6 reviews leave the top 10 (the test fixture: `tools/fixtures/eval/brand_ratings_2022.csv`,
+star counts only). The departments' `compare` there holds m at 50 (estimated at 524).
 
 ### 5.4 `profile_json(data, name, flagged, decisions, as_of)` (the planner's profile)
 
@@ -219,7 +298,14 @@ decisions costs no second landing; any other choice costs one profile pass of th
 `time` and `analysis_limits` are over the rows the engine kept, skip every withheld or coded column before
 choosing, and name only analyses the planner can ask for.
 The profile's `name` is `"[your file]"`, never the file's name (the page's /report payload says the same).
-What a column not flagged (or kept) shows: a number column its `min`, `median` and `max`; a text or date column
+`context_terms_version` is the version of `engine/context_terms.json`, the list the adapter builds the report's web
+searches from (5.8, the web searches): the planner's `plan.context` must use its terms.
+What a column not flagged (or kept) shows: a number column its `min`, `median` and `max`, and, when some of its
+values are exactly 0, `zeros` (how many) and `zeros_missing_if_level` (true when they have the pattern of a missing
+value under 5.3's evidence rule, on the rows the engine kept, in the file's date order and within the same series
+as the analyses read (`_series_groups`, never by a withheld or coded column): typed `level`, the analyses read them
+as missing; a 0% rate held for years, paid-off balances or stockouts at random are false; the worker's profile
+filter must pass both for the planner to see them); a text or date column
 of at most 300 distinct values (median length 60 characters or fewer) its 12 commonest values (`top_values`)
 and, above 12 distinct, every value (`values`), each cut at 60 characters, unless its values look personal
 (`looks_personal: true`); the date column's first and last month (`time`). The page's consent says exactly this.
@@ -267,6 +353,192 @@ A flagged column the visitor kept is not withheld: its name and values go like a
 decision, 29 September 2026) lets the page send one only after the visitor ticks a box that names it; the writer
 is then told so once, at the end of `reading`, in one line that names the kept columns and holds no value: "The
 visitor chose to send these personal columns to the AI: staff_name." With no kept column there is no such line.
+Each analysis's table goes once (final review, 30 September 2026): in `tables`, under the analysis's own title, in
+the analyses' order; `analyses[]` carries `{title, sentence, method}` and no `table` (it was the same table a second
+time; the worker reads `tables` for `[TABLE:n]` and for the figures it accepts, and needs no `analyses[].table`).
+`primary` (integration pass, 30 September 2026) is the claim the report leads with, `{id, claim, grade}`, or null: the
+claim `scenarios` breaks down (its `basis`, the total of the plan's primary column), else the engine's primary claim
+(`primary_metric`: the gate's primary, set from the plan's primary column, so the average when that column is a rate
+or a price and the breakdown is refused), else null. `claim` is the same text as its finding's in `findings`, `grade`
+the report's grade word; a claim about a withheld column is never sent, so `primary` is then null. The PDF's key
+figures lead with it (an FX file's with the average rate, the three-currency f3 file's with the EUR total, never the
+row count the engine's own gate chose there).
+
+### 5.8 `scenarios` and the web searches (design B of `plan/AI-INSIGHTS-DESIGN.md`, 29 September 2026; the searches built from a fixed list, 30 September 2026)
+
+The report writer may quote a figure only when the payload holds it. `scenarios` holds the figures it needed and
+the engine does not state: where the change sits, price against volume against mix, figures per unit, the run
+rate, what each 1% is worth, the gap to the largest segment and the forecast added up. `engine/nl_scenarios.py`
+computes them at the end of `run()`, after the true headline; they are descriptive arithmetic on the rows the
+engine kept (the rows of `downloads.clean_csv`, without any column the visitor withheld or coded), never a
+statistic, and no engine file is changed.
+
+`basis`: `{finding_id, claim, grade, grade_words, measure, how, unit, windows{prior[a,b], latest[a,b]},
+rows{prior, latest, units_missing}, segment{column, levels[], folded[], entered[], exited[]}, reconciles}`, or null
+when no claim is broken down. **The claim (final review, 30 September 2026):** the plan's primary column's total,
+its first in the engine's order (one currency, one kind of row); else the engine's primary claim when it is a total
+or a row count, or, when that is an average, the total of the same measure; with no primary to follow, the first
+total, else the row count. When the primary is a level or an average (the plan types it `level`, `percentage`,
+`log_scale`, `rating`, `ordinal` or `duration`, or the engine's primary is an average with no total of its measure:
+FX rates, a balance, a rating) the block is refused, never read as a row count: `basis` null and `refused` first
+"the headline is an average, so it has no parts that add up; see the headline finding" (the page takes its key
+figures from the primary finding). A total of one kind of row, one currency or without a status the engine leaves
+out is broken down on those same rows (the engine's own conditions); an average or a like-for-like restatement
+never is. `how` is `total` (`measure` the column) or `count` (`measure` "rows"); `unit` is the currency's code when
+the claim is in one currency (the engine's currency split: "EUR" whatever unit the plan gave the column), else the
+AI plan's unit for the measure ("" for none), and every item of the block is in it; `windows` are the claim chart's
+(the latest 12 months against the 12 before); `rows` counts the claim's rows in each window, and `units_missing` the
+rows with no units (null when no units column is read). `segment.levels` are the levels shown (a level with rows in
+only one window among them); `folded` the levels (and "(blank)") folded into "other"; `entered` the levels with rows
+only in the latest window, `exited` those with rows only in the window before.
+
+**Reconciliation.** In every month of both windows the rows' monthly total (or count) equals the claim's charted
+value (`charts[trend.<claim_key>].data.values`) to 1e-6 of the value (at least 1e-6 absolute), or the whole block
+is refused: `items` is empty, `basis.reconciles` false and `refused` holds "the breakdown could not be reconciled
+with the engine's own monthly totals, so it is not shown". The contributions and the price, volume and mix parts
+each add up (math.fsum) to the change to the same tolerance, or that group is left out and says so.
+
+`items[]`: `{id, group, segment, label, value, text, kind, unit, grade, parent_grade, grade_words, assumes,
+inputs{columns[], window, op}}`.
+**Order (30 September 2026): the worker's cap.** The worker keeps up to 160 items (`insight-proxy/src/report.js`
+`capScenarioItems`, `SCENARIO_TOP_SEGMENTS` 6) by this priority, and the adapter writes them in the same order, so
+a reader that keeps the first N items keeps exactly what the cap keeps: the core first, every item of every group in
+the order of `group` (the headline, contributions, price, volume and mix, figures per unit, the run rate, the
+sensitivity, gaps, the forecast, the facts) with the per-segment groups (`contribution`, `per_unit`, `gap`:
+`nl_scenarios.PER_SEGMENT`) cut to the 6 segments with the largest |contribution| (`nl_scenarios.TOP_SEGMENTS`,
+ranked by `nl_scenarios.segment_rank` as the worker ranks them: by the size of the contribution item of kind `change`
+whose unit is not "%", then where the segment first appears); then the rest, segment by segment in that rank, each
+segment's items in the order of `group`. Within a group each part keeps its order (segments by (-|contribution|,
+name)). A file with 12 segments and units whose segments all moved with the total has 146 items: a core of 80 (the
+facts last among them) and 66 more, the 7th to 12th segments' 11 items each (the test's twelve regions moved both
+ways, so they have no share items: 134, a core of 74 and 60 more); with 6 segments or fewer every item is in the core
+(ship2's 58 items come in the order of `group`). The groups: `headline` (the two windows' totals, the change, the change in
+percent), `contribution` (per segment: its two totals, its contribution, its share of the change, its own change in
+percent; a level with rows in only one window is labelled "Uptown (new in the latest 12 months)" or "Mall (not in
+the latest 12 months)", its missing window's total 0 and no own change in percent for one that entered),
+`price_volume_mix` (price at the latest units, volume at the prior price per unit, mix at each segment's prior price
+per unit; they add up to the change; mix only with a segment whose every level has units in the window before, so a
+level that entered leaves out the mix and says so; `assumes` is "price, volume and mix add up to the change", or
+"price and volume add up to the change" with no mix item), `per_unit` (overall and per
+segment: both windows and the change in percent, `per_unit.change_pct` and `per_unit.<segment>.change_pct`, kind
+`change`, unit "%": "revenue per unit 41 to 47.9", "+16.8%"), `run_rate` (the latest 12 months and their average
+month; never a 3-month annualised rate), `sensitivity` (each 1% of the measure over a year at the latest level), `gap` (each segment's distance to
+the largest level in the latest 12 months, chosen among ALL the levels (a folded one or one that entered too) and so
+named in the label ("below Uptown (new)'s, the largest store by total sales in the latest 12 months"), in the measure
+and in percentage points of the total, and, with units, what its units would have made at the largest's price per
+unit when that is higher; never for "other", the largest itself or a level that exited), `forecast`, `facts` (months and
+distinct dates in the kept rows, the first and the last date). `kind` is `amount`, `change`, `count`, `percent`,
+`points`, `per_unit` or `date` (a fact's first or last date: `value` is the date text). `text` is
+`nl_scenarios._fmt_item(value, kind, unit)`, the one function, in the adapter's own formats (`_fmt`, `_amt`,
+`_pct_text`): a rise carries "+", a fall the true minus sign, a change in percent is `kind: change, unit: "%"`, a
+share `kind: percent`. `value` is finite, rounded to 1e-6; an item whose value cannot be formed is absent.
+`window` is `prior`, `latest`, `both` or null. `assumes` is the item's assumption in words (a run rate, a
+sensitivity, a what-if, the price, volume and mix split, a forecast sum), else null.
+
+**Grades (final review, 30 September 2026).** The headline items (`headline.*`: the claim itself) carry the claim's
+`grade`, in the page's words as `findings[].grade` has them (`CONFIRMED`, `WATCH`, `NOT_ENOUGH_DATA`), with
+`parent_grade` null and `grade_words` "the claim itself, graded WATCH". Every derived item (`contribution`,
+`price_volume_mix`, `per_unit`, `run_rate`, `sensitivity`, `gap`) is not graded itself: `grade` null, `parent_grade`
+the claim's grade and `grade_words` "part of a change graded CONFIRMED; not graded itself" (a region that fell 1.63%
+inside a CONFIRMED rise read CONFIRMED before). A forecast item carries the forecast's `grade` ("the engine's
+forecast, graded CONFIRMED (usable for planning)"), a fact `grade` null ("a fact about the rows, not graded"); both
+have `parent_grade` null.
+
+**Guards.** A share of the change needs the total to move by at least 1% of its prior level, and every segment to
+move the way the total did: when any contribution has the opposite sign to the change, or any share would pass 100%,
+no share item is given (the amounts are) and `refused` says "shares of the change are not given: segments moved in
+opposite directions, so shares of the net change would exceed 100%". A segment's own
+change a prior total above zero; a figure per unit units above zero (and units on every row of the claim in both
+windows, none negative). The units column is one of the engine's measures it adds up as units
+(`measure.additive_kind`), for a money total only; with several, the plan's count column or a quantity word
+decides, else none is read.
+
+**The segment column (privacy).** A category, geography or segment column (the plan's role or type, else the
+engine's dimension role) in the kept rows' frame, NOT in `privacy.flagged` at all (whatever the visitor decided: a
+kept column's consent covered the AI report, not a breakdown), never one the plan calls a key, entity,
+identifier, code or free text, never a number column or a column the claim already reads, with 2 to 12 levels
+over the claim's rows in the two windows, at least 2 of them with 5 rows in each window, no level that the report's
+scrubber would change (a phone number or an email address) and no value over 80 characters. A level with rows in
+only one window is its own row (entered or exited: a store that opened, one that closed), never folded; only a level
+in both windows with fewer than 5 of the claim's rows in either folds into "other", as does a blank; the gap group
+never names "other".
+
+**Forecast items** only when `forecast.available` and its grade is CONFIRMED (usable for planning): for 3, 6 and
+12 months (as many as there are points) the sums of the points (`base`) and of their own 80% lows and highs,
+labelled "the months' own 80% ranges added up, at least as wide as an 80% range for the total". A forecast label
+leads with what the sum is ("Low: the months' own 80% ranges added up, ...") and ends with the series and its
+months, so a reader that cuts labels short keeps the meaning. A forecast not usable for planning adds a line to
+`refused` and no item.
+
+`refused[]` says, in plain words, what was not computed and why (no dates, the engine's analysis did not run, the
+date column withheld, the headline an average, no claim that adds up, no segment column, no units, shares of a change
+under 1% or of segments that moved in opposite directions, no mix, a forecast not usable). `note` says what the block
+is, and that the figures are shown rounded and add up before rounding.
+
+**`results_for_ai`** carries `scenarios` 1:1 (the same keys, figures and texts; every word through the same
+`safe()` as every other text, so a withheld column's name reads "a column you withheld" and the file's name
+"[your file]") and appends ONE table to `tables`, after the analyses' tables: "Where the change in <measure> came
+from" (it was "What drove the change in <measure>"), columns `[<segment column>, "12 months before", "Latest 12
+months", "Change", "Share of the change", "Own change"]` less any column no row fills (the shares, when none is
+given), a row per segment (at most 12, a level that entered or exited named so) whose cells are those items' own
+texts. The frozen interface is `tools/fixtures/scenarios/scenarios-ship2.json` (ship2_privacy_orders.csv, analysis
+date 2026-09-29, the personal columns withheld as by default; re-synced 30 September 2026 for the cap's order, the
+same 58 items, and again for `parent_grade`, `grade_words`, `segment.entered`/`exited`, the gap labels and the note),
+and the PDF check's `tools/fixtures/report-pdf/ship2-results-v2.json` carries it whole.
+
+**The byte budget (30 September 2026).** The worker takes a `/report` body of at most 96,000 bytes
+(`REPORT_MAX_BYTES`), which holds `results_for_ai` with the visitor's question and the planner's searches. When
+`results_for_ai` would be over `RESULTS_MAX_BYTES` = 90,000 bytes (its JSON with `\u` escapes, never less than the
+UTF-8 bytes the page sends), scenario items are dropped from the tail of the cap's order until it fits: the facts
+first, then the per-segment detail beyond the top 6 segments (the smallest segment's last item first); only if that
+is not enough do the core's segments go (the sixth, then the fifth, ...) and then whole groups from the end of the
+order. It drops no more than it needs. `scenarios.refused` then starts with "N of the M scenario items are left out
+to keep what the report writer receives under 90,000 bytes: the facts first, then the segments with the smallest
+contributions", and the "Where the change came from" table is rebuilt from the items kept. Never an oversize
+payload (final review, 30 September 2026): with every scenario item gone and the payload still over, the analyses go
+from the last in the plan's order, each with its chart and its table, and `analyses_refused` starts with "N of the M
+analyses are left out to keep what the report writer receives under 90,000 bytes: the last ones in the plan's
+order"; past that (a payload the caps cannot make) the charts, the tables and the findings go from the end, and a
+payload still over is `{ok: false, error}` with the reason, never sent oversize. Everything else is untouched, and a
+payload under the budget carries `scenarios` 1:1. A planned run of a 12-territory orders file with six analyses
+(`tools/test_nl_browser.py`, `_territories_file`) is 98,677 bytes whole and 89,395 after dropping 17 of its 134
+items: the 4 facts and the smallest segments' per-unit and gap items.
+
+**The web searches (`ai_plan.context_queries`; an allow-list by construction, final review, 30 September 2026).**
+The report writer runs these searches on a search engine, where the visitor's consent does not reach, so a search
+is never free text: not the planner's, and never anything from the visitor's file. The block-list check it replaces
+(a free-text `plan.context_queries` vetted against the file) let names through in a dozen ways: a client column typed
+as a category or a segment, a word inside a value, ł ø ı ð and "ue" spellings, CJK names, two-letter surnames, cp1252
+and "|" files, and its own "ordinary words" rule (`tools/fixtures/review5`). Now:
+* **The list** is `engine/context_terms.json` (packed beside the adapter, `CONTEXT_TERMS_FILE`), human-readable and
+  version-stamped (`version`, sent in the profile as `context_terms_version`): `indicators` (30 macro and market
+  indicators: "consumer price inflation", "retail sales", "exchange rate", "housing starts", "sales growth", ...),
+  `sectors` (83 generic industries, never a brand: "video games", "grocery retail", "rental housing", ...) and
+  `regions` (350: world regions, every country and territory by its English short name, Canada's provinces and
+  territories, the US states and the District of Columbia, and 50 major cities; `region_groups` counts each group).
+  Every term is ASCII and holds no digit.
+* **The plan** names what it wants as `plan.context`: at most 4 items (`CONTEXT_MAX`; at most 12 are read),
+  each `{"indicator": <a term from indicators, required>, "sector": <a term from sectors, optional>, "region":
+  <a term from regions, optional>, "years": [from, to] or [year], optional}`. An optional term that is absent, null
+  or an empty string is left out; a year is an integer (a string of 4 digits is read as its integer) from 1900 to
+  2099, `from` not after `to`. Every term is compared after normalising (NFKD, accents dropped, case-folded, every
+  run of characters that are not letters or digits one space, trimmed: "Côte d'Ivoire" is the list's
+  "Cote d'Ivoire"). Other keys in an item are ignored. The plan's old free-text `context_queries` is never read.
+* **The adapter builds each search** itself, from the list's own spelling of the terms and the years only:
+  `[sector] indicator [region] [from] [to]` (the second year only when it differs), joined by single spaces:
+  "consumer price inflation Canada 2024 2025", "video games sales growth 2022". An item whose indicator is missing,
+  or with any term not on its list, or with years that are not a range from 1900 to 2099, is dropped whole, as is
+  one that builds a search already built, or a fifth one. `ai_plan.context_queries` is the list built (an explicit
+  `[]` means no search, also when the plan sent no `context` or no list); `ai_plan.context` the items kept, in the
+  list's spelling, `years` always `[from, to]`; `ai_plan.context_queries_dropped` one reason per item dropped ("an
+  indicator not on the list", "a sector not on the list", "a region not on the list", "years that are not a range
+  from 1900 to 2099", "not an item of list terms", "the same search twice", "more than 4 searches", "the list of
+  search terms could not be read"). A term that happens to equal a value in the file (a region column holding
+  "Ontario") is still only a list term: nothing else from the file can be in a search. The block-list check
+  (`_QueryGuard`) is retired: a search holds only list terms and years, so there is nothing left for it to find.
+* **The page** always sends `context_queries` to /report as an array: `ai_plan.context_queries`, or `[]` when the
+  run has no `ai_plan` (the visitor ran without a plan, or the plan or the profile failed); the plan's own words are
+  never sent. A run with no plan has no `ai_plan`.
 
 ## 6. What this contract does not carry yet (R1)
 

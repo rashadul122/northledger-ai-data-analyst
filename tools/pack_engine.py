@@ -13,6 +13,8 @@ The zip holds exactly what the browser needs and nothing else:
   benchmark/engine_benchmark.json  the forecast part of the benchmark receipt (no local paths),
                             where the engine reads it
   nl_browser.py             the adapter (engine/nl_browser.py)
+  nl_scenarios.py           the adapter's scenario and contribution block (engine/nl_scenarios.py)
+  context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
   nl_pack.json              the engine snapshot the zip was cut from, read by the adapter
 
@@ -101,6 +103,11 @@ def cut_receipt(raw: bytes) -> bytes:
                            "Clopper-Pearson interval: what the adapter's power quote reads"}}
     return (json.dumps(cut, indent=1, sort_keys=True) + "\n").encode("utf-8")
 ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
+                 # the report's scenario and contribution block (design B), imported by nl_browser.run()
+                 "nl_scenarios.py": "nl_scenarios.py",
+                 # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
+                 # beside itself; final review, 30 Sep 2026)
+                 "context_terms.json": "context_terms.json",
                  "nl_stubs/__init__.py": os.path.join("nl_stubs", "__init__.py"),
                  "nl_stubs/resource.py": os.path.join("nl_stubs", "resource.py")}
 SAMPLE = {"file": "sample-messy.csv", "as_of": "2026-09-15",
@@ -324,6 +331,8 @@ def classify(module: str) -> str:
 def imports_report() -> list:
     """Every import in every packed file: (file, line, module, where, source)."""
     packed = {m for m in ENGINE_MODULES}
+    # the adapter's own top-level modules (nl_browser, nl_scenarios), packed beside each other in the zip
+    adapter = {os.path.splitext(arc)[0] for arc in ADAPTER_FILES if "/" not in arc and arc.endswith(".py")}
     rows = []
     for arc, src in members():
         if not arc.endswith(".py"):     # a packed data file imports nothing
@@ -366,6 +375,8 @@ def imports_report() -> list:
                                 "engine, NOT packed: never reached by the adapter")
                 elif m.startswith("nl_stubs"):
                     src_kind = "adapter stub, packed"
+                elif m in adapter:
+                    src_kind = "adapter module, packed"
                 else:
                     src_kind = classify(m)
                 rows.append((arc, node.lineno, m, where(node), src_kind))

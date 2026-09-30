@@ -1,0 +1,45 @@
+
+== 3 real zero sales days between steady days (typed level): 3 separate runs
+   zeros=3 evidence={'kind': 'resumes', 'days': [], 'zeros': 3, 'kept': {'edge': 0, 'undated': 0, 'other': 0}}
+   NOTE: 3 zero values in col are not counted: they sit alone or two or three together between non-zero values that pick up where they left off, the pattern of a missing value
+
+== 3 zero sales days between volatile days
+   zeros=3 evidence=None
+
+== store closed Sundays
+   zeros=17 evidence={'kind': 'weekdays', 'days': ['Sunday'], 'zeros': 17, 'kept': {'edge': 0, 'undated': 0, 'other': 0}}
+   NOTE: 17 zero values in col are not counted: they fall on Sundays between non-zero values, the pattern of a day with no value
+
+== price 19.99, one free-promo day (a single zero is never enough)
+   zeros=1 evidence=None
+
+== price 19.99, two free days (two runs are not enough)
+   zeros=2 evidence=None
+
+== monthly balance paid off once, redrawn to a similar level
+   zeros=1 evidence=None
+
+== FX with 0 on weekends
+   zeros=114 evidence={'kind': 'weekdays', 'days': ['Saturday', 'Sunday'], 'zeros': 114, 'kept': {'edge': 0, 'undated': 0, 'other': 0}}
+   NOTE: 114 zero values in col are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value
+
+== FX weekends, one holiday run of 4 (Sat to Tue): those 4 stay 0
+   zeros=116 evidence={'kind': 'weekdays', 'days': ['Saturday', 'Sunday'], 'zeros': 112, 'kept': {'edge': 0, 'undated': 0, 'other': 4}}
+   NOTE: 112 zero values in col are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value; 4 other zero values stay 0 (4 outside that pattern)
+
+== 5 interleaved zeros + one on the LAST day (the edge stays 0)
+   zeros=6 evidence={'kind': 'resumes', 'days': [], 'zeros': 5, 'kept': {'edge': 1, 'undated': 0, 'other': 0}}
+   NOTE: 5 zero values in col are not counted: they sit alone or two or three together between non-zero rates that pick up where they left off, the pattern of a missing value; 1 other zero value stays 0 (1 at the start or end of a series)
+
+== 3 interleaved dated zeros + 3 zeros on undated rows (the undated stay 0)
+   zeros=6 evidence={'kind': 'resumes', 'days': [], 'zeros': 3, 'kept': {'edge': 0, 'undated': 3, 'other': 0}}
+   NOTE: 3 zero values in col are not counted: they sit alone or two or three together between non-zero rates that pick up where they left off, the pattern of a missing value; 3 other zero values stay 0 (3 on rows with no date)
+
+== panel, read WITHOUT groups (the old profile)
+   zeros=6 evidence=None
+
+   _series_groups picks the series column: ['A', 'B']
+
+== panel, read within the series _series_groups finds (the profile and the analyses, now)
+   zeros=6 evidence={'kind': 'resumes', 'days': [], 'zeros': 6, 'kept': {'edge': 0, 'undated': 0, 'other': 0}}
+   NOTE: 6 zero values in col are not counted: they sit alone or two or three together between non-zero values that pick up where they left off, the pattern of a missing value

@@ -196,7 +196,14 @@ PRIVATE_PLAN = {
                 {"name": "customer_email", "semantic_type": "identifier", "role": "key"},
                 {"name": "notes", "semantic_type": "date", "role": "metadata"},
                 {"name": "staff_name", "semantic_type": "identifier", "role": "key"},
-                {"name": "spend", "semantic_type": "flow_amount", "role": "target", "unit": "currency"}]}
+                {"name": "spend", "semantic_type": "flow_amount", "role": "target", "unit": "currency"}],
+    # the web searches (final review, 30 Sep 2026): items of fixed terms; the adapter builds the one whose terms are
+    # all on engine/context_terms.json and drops the ones that name the kept staff or a coded buyer; the old free-text
+    # list is never read
+    "context": [{"indicator": "consumer spending", "region": "Canada", "years": [2024, 2025]},
+                {"indicator": "retail sales", "region": "Dana Whitfield"},
+                {"sector": "buyer01@example.org", "indicator": "retail sales"}, {"indicator": "Marco Bellini"}],
+    "context_queries": ["Dana Whitfield sales 2024"]}
 PRIVATE_CHOICES = {"customer_email": "code", "notes": "withhold", "staff_name": "keep"}
 
 

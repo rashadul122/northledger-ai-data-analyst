@@ -1,0 +1,3 @@
+no-plan results (44 items): full 27743 bytes; caps swept down to 100: {"orphanGap":0,"overCap":0,"nondeterministic":0,"nothingFits":46}
+gap labels shorter than contribution labels: full 1378 bytes; caps swept down to 100: {"orphanGap":0,"overCap":0,"nondeterministic":0,"nothingFits":0}
+SHARE PASS: no orphan gap, never over the cap, the same result each time

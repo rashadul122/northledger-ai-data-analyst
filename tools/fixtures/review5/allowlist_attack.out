@@ -1,0 +1,73 @@
+list: engine/context_terms.json version 2026-09-30.1: 30 indicators, 83 sectors, 350 regions
+
+== clients_entity.csv (13 attack strings, 65 items planted: 59 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== clients_segment.csv (13 attack strings, 65 items planted: 59 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== northwind.csv (6 attack strings, 30 items planted: 27 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== staff.csv (37 attack strings, 185 items planted: 169 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== emails.csv (13 attack strings, 65 items planted: 59 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== codes.csv (6 attack strings, 30 items planted: 27 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== brands.csv (6 attack strings, 30 items planted: 27 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== accounts_list.csv (8 attack strings, 40 items planted: 36 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== stylists.csv (15 attack strings, 75 items planted: 68 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== stylists_kept.csv (15 attack strings, 75 items planted: 68 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== notes_kept.csv (4 attack strings, 20 items planted: 18 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== cp1252.csv (13 attack strings, 65 items planted: 59 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== pipe.csv (5 attack strings, 25 items planted: 23 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+== accounts_regions.csv (16 attack strings, 80 items planted: 73 dropped)
+   searches built from the planted items: ['retail sales Canada 2025']
+   the run (ok True): the old free-text context_queries ignored; context_queries ['retail sales Ontario 2024 2025']; dropped ['a region not on the list', 'a region not on the list', 'a region not on the list']
+   file values in a search, outside a list term: 0
+
+TOTAL: 850 items planted in 14 files, 92 searches built, 0 names or file values reaching a search

@@ -434,6 +434,24 @@ def split_sections(report_text):
         num = title.split(" ", 1)[0] if title[:1].isdigit() else title
         parts[num] = body.strip()
         parts[title] = body.strip()
+    # the report's newer section names (insight-proxy report.js prompt, 29 Sep 2026) read under the names this
+    # layout renders: "The headline: ...", "What drove it: ..." and each "Other findings: ..." as the numbered
+    # sections 1, 2, 3 ... (only when the report has no numbered section of its own), "In the real world: ..." as
+    # "Current context", "Risks and what the data cannot say" as "Limitations"; the old names still work
+    numbered = any(m.group(1).strip()[:1].isdigit() for m in heads)
+    n = 0
+    for k, m in enumerate(heads):
+        title = m.group(1).strip()
+        body = report_text[m.end(): heads[k + 1].start() if k + 1 < len(heads) else len(report_text)].strip()
+        if _re.match(r"(the headline|what drove it|other findings)\b", title, _re.I) and not numbered:
+            n += 1
+            parts.setdefault(str(n), body)
+        elif _re.match(r"(in the real world|current context)\b", title, _re.I):
+            parts.setdefault("Current context", body)
+        elif _re.match(r"(risks\b|limitations\b|what the data cannot say)", title, _re.I):
+            parts.setdefault("Limitations", body)
+        elif _re.match(r"(what to do|recommendations?)\b", title, _re.I):
+            parts.setdefault("What to do", body)
     return parts
 S = split_sections(rep)
 

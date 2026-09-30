@@ -24,6 +24,14 @@
 #   6 guard      tools/check_try_guard.js: the demo's AI number guard reads numbers exactly as the
 #                owner's proxy does (../insight-proxy when present) and its payload is only
 #                {objective, findings, story} inside the proxy's limits; needs Node, no browser
+#     pdf        tools/check_report_pdf.mjs builds the AI report's PDF with the page's own writer
+#                (src/js/45-report-pdf.js) from tools/fixtures/report-pdf, Letter and A4, and reads each file: the
+#                xref and document info, /Lang, the page size, "Page i of N", the sections in order, live links,
+#                every citation a listed reference, no word outside the margins and no two words overlapping
+#                (poppler's pdftotext -bbox measures them), no "??" standing in for a script the PDF cannot show,
+#                numbers with units right-aligned, no shape off the page, and no withheld value or file name the
+#                reader did not opt in to; plus the final review's cases (tools/fixtures/report-pdf/review4.json);
+#                needs Node and poppler
 #     ui         tools/check_ui.js drives the page in headless Chrome (filters, Esc, drill, phone
 #                layouts at 320 to 390 px, dark theme, accessible names, the "Try it" demo's
 #                refusals, report, AI consent flow and a real engine run of the sample, which
@@ -148,6 +156,14 @@ if command -v node >/dev/null 2>&1; then
   else record guard FAIL "see the GUARD FAIL lines above"; fi
 else
   record guard SKIP "node not found"
+fi
+
+# 6a) the AI report's PDF, written in the visitor's browser: built from the fixtures and read as a reader's file
+if command -v node >/dev/null 2>&1; then
+  if node "$DIR/tools/check_report_pdf.mjs"; then record pdf PASS "the AI report's PDF: structure, sections in order, links and citations, margins and overlaps (poppler), scripts, privacy; Letter and A4"
+  else record pdf FAIL "see the PDF FAIL lines above"; fi
+else
+  record pdf SKIP "node not found"
 fi
 
 # 6b) behaviour in a real browser engine (Playwright), when Node and Playwright are available

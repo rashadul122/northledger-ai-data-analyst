@@ -1112,7 +1112,7 @@ self.onmessage = function (e) {
     if (P && REPORT.__profileDecisions && sorted(m.decisions) !== sorted(REPORT.__profileDecisions)) P = null;
     self.postMessage({ type: 'profiled', id: m.id, profile: P, landed: P ? (REPORT.__landed || null) : null });
   } else if (m.type === 'results') {
-    if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: { charts: [], tables: [] } });
+    if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: REPORT.__resultsJson || { charts: [], tables: [] } });
   } else if (m.type === 'run') {
     var D = (m.options && m.options.decisions) || {}, R = REPORT;
     if (D.__plan__ && D.__plan__.revised && REPORT.__revisedFails) {
@@ -1120,6 +1120,7 @@ self.onmessage = function (e) {
       return;
     }
     if (D.__plan__) { R = JSON.parse(JSON.stringify(REPORT)); R.ai_plan = { goal: D.__plan__.goal, applied: [], refused: [], review: D.__plan_review__ };
+      if (REPORT.__cq !== undefined) R.ai_plan.context_queries = REPORT.__cq;
       R.plan_signals = (REPORT.__signals && !D.__plan__.revised && !D.__plan_review__) ? REPORT.__signals : []; }
     if (D.__plan__ && D.__plan__.columns) {   // echo the data tests the engine would run, for the review-card checks
       var off = D.__contracts_off__ || [];
@@ -1357,10 +1358,14 @@ check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
     await p.close();
     // 4. fallbacks: no plan -> the engine's own rules; no report -> the engine's report and a plain note
     mode = 'down';
+    const before = posts(c2, 'report').length;
     p = await openTry(c2, { stubReport: rep, proxy: 'set', proxyReply: reply });
     await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-go');
     await tryUntil(p, '#try-report:not([hidden])');
     ok(!(await p.isVisible('#try-review-go')) && !(await p.isVisible('#try-plan-edit')), 'a plan card is shown although the planner gave no plan');
+    // H1 (final review, 30 Sep 2026): with no plan the report's searches are still an array, and empty
+    await p.waitForTimeout(800);
+    posts(c2, 'report').slice(before).forEach((r) => { const cq = JSON.parse(r.body).context_queries; ok(Array.isArray(cq) && !cq.length, 'with the plan failed /report was sent context_queries ' + JSON.stringify(cq)); });
     await p.close();
     mode = 'noreport';
     p = await openTry(c2, { stubReport: rep, proxy: 'set', proxyReply: reply });
@@ -1666,7 +1671,7 @@ const DIFF_BASE = { goal: 'How is revenue moving?', kind: 'transactions', unders
   columns: [{ name: 'order_date', semantic_type: 'date', role: 'date' }, { name: 'revenue', semantic_type: 'flow_amount', role: 'target', unit: 'USD' }, { name: 'channel', semantic_type: 'category', role: 'dimension' }],
   operations: [{ op: 'keep_columns', columns: ['order_date', 'channel', 'revenue'] }, { op: 'exclude_rows', column: 'country', values: ['Canada', 'Mexico', 'Brazil', 'Chile', 'Peru', 'Spain', 'World', 'Asia'] }, { op: 'exclude_blank', column: 'order_date' }],
   analyses: [{ type: 'compare', columns: ['revenue', 'cost'], by: 'channel' }, { type: 'trend', columns: ['revenue'] }],
-  context_queries: ['retail sales 2025', 'card fees 2025'] };
+  context: [{ indicator: 'retail sales', years: [2025, 2025] }, { sector: 'payments', indicator: 'market size', years: [2025] }] };
 // [what the case changes, the change (a function of a copy of DIFF_BASE), what the diff must list, exactly]
 const DIFF_CASES = [
   ['nothing', () => {}, []],
@@ -1688,8 +1693,10 @@ const DIFF_CASES = [
     ['channel: role dimension, now group', 'now reads cost as flow_amount (measure), unit USD', 'no longer reads order_date (was date)']],
   ['a column reading\'s type and unit', (b) => { b.columns[1].semantic_type = 'level'; b.columns[1].unit = 'CAD'; }, ['revenue: type flow_amount, now level; unit USD, now CAD']],
   ['the column readings listed in another order', (b) => { b.columns.reverse(); }, []],
-  ['the web searches in another order', (b) => { b.context_queries.reverse(); }, ['the same web searches in another order']],
-  ['a web search swapped', (b) => { b.context_queries = ['card fees 2025', 'bank holidays 2025']; }, ['added the web search "bank holidays 2025"', 'removed the web search "retail sales 2025"']],
+  ['the web searches in another order', (b) => { b.context.reverse(); }, ['the same web searches in another order']],
+  ['a web search swapped', (b) => { b.context = [b.context[1], { indicator: 'interest rates', region: 'Canada', years: [2024, 2025] }]; },
+    ['added the web search "interest rates Canada 2024 2025"', 'removed the web search "retail sales 2025"']],
+  ['the old free-text searches only (never run, so no change)', (b) => { b.context_queries = ['Acme Holdings market share']; }, []],
   ['the AI\'s own words only (changes, quality risks, why)', (b) => { b.changes = ['kept everything']; b.quality_risks = ['few months']; b.columns[0].why = 'dates'; }, []]
 ];
 check('try-plan-diff-lists-every-change-and-reorders-as-reorders', DESK, async (ctx) => {
@@ -1751,6 +1758,8 @@ const PRIVACY_PROMISE = [
   'A column you withhold is left out and never named; for a coded column the AI is told only its name, type and counts, never its values or range.',
   'A flagged column you keep is sent like any other column, values included, but only after you tick the box that names it.',
   'The page flags columns that look personal and can miss some (for example people\'s names under a heading like "Stylist"); if your file has such a column, continue without the AI.',
+  // the web searches (final review, 30 Sep 2026): built by the adapter from fixed terms only (engine/context_terms.json)
+  'The web searches use only general terms such as an indicator, a sector, a country and years, never anything from your file.',
   'Without the AI, nothing leaves this browser.'
 ];
 check('try-consent-text-states-the-privacy-promise', DESK, async (ctx) => {
@@ -1911,6 +1920,12 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   ok(prof.columns.some((c) => c.name === 'staff_name') && prof.analysis_limits && prof.analysis_limits.length && 'time' in prof, 'the adapter profile lacks time, analysis_limits or the columns: ' + JSON.stringify(prof).slice(0, 300));
   rep.__profile = prof; rep.__results = true; rep.__contracts = rep.contracts; rep.__signals = rep.plan_signals || [];
   rep.__landed = fixtureLanded('orders-private'); rep.__profileDecisions = { customer_email: 'code', notes: 'withhold', staff_name: 'keep' };
+  // the web searches (final review, 30 Sep 2026): the adapter built only the item whose terms are all on its list; the
+  // items naming the kept staff or a buyer, and the old free-text list, left nothing; the page sends exactly that list
+  const cq = (rep.ai_plan || {}).context_queries;
+  ok(JSON.stringify(cq) === JSON.stringify(['consumer spending Canada 2024 2025']) && (rep.ai_plan.context_queries_dropped || []).length === 3,
+    'the adapter\'s web searches for orders-private: ' + JSON.stringify(rep.ai_plan && [rep.ai_plan.context_queries, rep.ai_plan.context_queries_dropped]));
+  rep.__cq = cq;
   const scan = rep.privacy.flagged.map((f) => f.column);
   ok(['customer_email', 'notes', 'staff_name'].every((c) => scan.indexOf(c) >= 0), 'the adapter no longer flags the three personal columns: ' + JSON.stringify(scan));
   const plan = { goal: 'How does spend move month by month?', understanding: 'Orders.', quality_risks: [], operations: [], analyses: [], columns: [{ name: 'spend', semantic_type: 'flow_amount', role: 'target' }] };
@@ -1947,6 +1962,10 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   ok(text === rep.downloads.contract_flagged_csv, 'the flagged-cells download is not the adapter\'s text');
   const dlLeak = emails.concat(notes).filter((v) => text.indexOf(v) >= 0);
   ok(!dlLeak.length, 'the adapter\'s flagged-cells download holds a value of a withheld or coded column: ' + JSON.stringify(dlLeak.slice(0, 3)));
+  for (let i = 0; i < 40 && !ctx.__reqs.some((r) => r.url === PROXY_URL + 'report' && r.method === 'POST'); i++) await p.waitForTimeout(250);
+  const rb = ctx.__reqs.filter((r) => r.url === PROXY_URL + 'report' && r.method === 'POST').map((r) => JSON.parse(r.body));
+  ok(rb.length >= 1 && rb.every((b) => JSON.stringify(b.context_queries) === JSON.stringify(cq)), '/report was not sent the adapter\'s web searches: ' + JSON.stringify(rb.map((b) => b.context_queries)));
+  ok(rb.every((b) => !/Dana Whitfield|Marco Bellini|example\.org/.test(JSON.stringify(b.context_queries))), 'a name or an email went into a web search');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });
 
@@ -2012,10 +2031,13 @@ check('try-plan-body-holds-withheld-coded-and-kept-columns-as-chosen', DESK, asy
    card records the choice once; a report made with kept columns warns before a share link is made (a PDF is
    made from a link, so it warns too), and cancel makes none; a share body never carries the file's name; a new
    file starts every choice again. The sentences are stated here independently of the page. */
-const OPTIN_BOX = (names) => 'Send these personal columns to the AI: ' + names.join(', ') + '. Their values (for example people\'s names, emails or ' +
-  'phone numbers) go to DeepSeek, a company based in China, through this site\'s proxy, and may appear in the AI\'s report and in any link you share.';
+// names only in the example: an email or a phone number is coded as it arrives and cannot be kept
+const OPTIN_BOX = (names) => 'Send these personal columns to the AI: ' + names.join(', ') + '. Their values (for example people\'s names) ' +
+  'go to DeepSeek, a company based in China, through this site\'s proxy, and may appear in the AI\'s report and in any link you share.';
 const OPTIN_RECORD = (names) => 'You chose to send these personal columns to the AI: ' + names.join(', ') + '.';
-const SHARE_WARNING = 'This report may contain personal values (names, emails…). Anyone with the link can see them.';
+// a share link always warns (29 Sep 2026 review): in general words when nothing personal was kept
+const SHARE_WARNING = 'This report may contain personal values (people\'s names, for example). Anyone with the link can see them.';
+const SHARE_WARNING_GENERAL = 'This report is built from your file and may contain values from it. Anyone with the link can see them.';
 const STAFF = ['Dana Whitfield', 'Marco Bellini', 'Priya Raman', 'Tomasz Nowak'];
 const SHARE_LINK = PROXY_URL + 'r/abcdefghij0123456789';
 // a stand-in profile that holds every column, the flagged ones marked personal (as a profile that slipped would):
@@ -2037,12 +2059,13 @@ function optinReport(coded) {
   return rep;
 }
 const OPTIN_PLAN = { goal: 'Which member of staff sells most?', understanding: 'Orders.', quality_risks: [], operations: [], analyses: [{ type: 'rank', columns: ['amount'], by: 'Staff Name' }] };
-// the stand-in proxy: /plan, /report and /share (each body told apart by its own keys); shares collects the /share bodies
+// the stand-in proxy: /plan, /report and /share (each body told apart by its own keys: a /share body carries the
+// report and its days, and since 30 Sep 2026 the trimmed results too, so it is told apart first); shares collects them
 function optinReply(shares) {
   return (b) => {
+    if (typeof b.report === 'string' && 'days' in b) { if (shares) shares.push(b); return { status: 200, json: { link: SHARE_LINK, delete_token: 'tok' } }; }
     if (b.profile) return { status: 200, json: { plan: OPTIN_PLAN } };
     if (b.results) return { status: 200, json: { report: 'Dana Whitfield sold most in [your file].', sources: [], model: 'check', repaired: 0 } };
-    if (typeof b.report === 'string' && 'days' in b) { if (shares) shares.push(b); return { status: 200, json: { link: SHARE_LINK, delete_token: 'tok' } }; }
     return { status: 503, json: { error: 'x' } };
   };
 }
@@ -2153,7 +2176,7 @@ check('try-optin-the-report-records-the-columns-sent', DESK, async (ctx) => {
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
-check('try-optin-share-warns-only-for-kept-columns-and-cancel-makes-no-link', DESK, async (ctx) => {
+check('try-share-always-warns-and-cancel-makes-no-link', DESK, async (ctx) => {
   const shares = [];
   let p = await openTry(ctx, { stubReport: optinReport(), proxy: 'set', proxyReply: optinReply(shares) });
   await keptRun(p, ['staff_name']);
@@ -2164,13 +2187,10 @@ check('try-optin-share-warns-only-for-kept-columns-and-cancel-makes-no-link', DE
   await p.click('#try-share-no');
   await p.waitForTimeout(400);
   ok(!proxyPosts(ctx, 'share').length && !shares.length && /No link was made/.test(await warn()), 'cancel made a link, or does not say none was made');
-  // the PDF is made from a link: it warns the same way, and cancel makes none
+  // the PDF is made in this browser: no warning, no link, no /share request (tools/check_ui.js try-pdf-* checks the file)
   await p.click('#try-pdf');
-  await tryUntil(p, '#try-share-out .try-share-warn');
-  ok((await warn()).indexOf(SHARE_WARNING) >= 0, 'the PDF makes a link with no warning');
-  await p.click('#try-share-no');
-  await p.waitForTimeout(400);
-  ok(!proxyPosts(ctx, 'share').length, 'cancel on the PDF made a link');
+  await p.waitForTimeout(600);
+  ok(!(await p.$('#try-share-out .try-share-warn')) && !proxyPosts(ctx, 'share').length && !shares.length, 'Download PDF asked for a share link, or warned as one');
   await p.click('#try-share');
   await tryUntil(p, '#try-share-out .try-share-warn');
   await p.click('#try-share-yes');
@@ -2178,15 +2198,20 @@ check('try-optin-share-warns-only-for-kept-columns-and-cancel-makes-no-link', DE
   ok(proxyPosts(ctx, 'share').length === 1 && shares.length === 1, proxyPosts(ctx, 'share').length + ' /share requests after the visitor agreed (want 1)');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
   await p.close();
-  // nothing kept: the link is made at once, with no warning
+  // nothing kept: the link still warns, in general words (any report is built from the file), and is made on yes
   const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
   try {
     p = await openTry(c2, { stubReport: optinReport(), proxy: 'set', proxyReply: optinReply() });
     await optinStep(p); await p.click('#try-pd-go');
     await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
     await p.click('#try-share');
+    await tryUntil(p, '#try-share-out .try-share-warn');
+    const w2 = ((await p.textContent('#try-share-out')) || '').replace(/\s+/g, ' ');
+    ok(w2.indexOf(SHARE_WARNING_GENERAL) >= 0 && w2.indexOf(SHARE_WARNING) < 0 && !proxyPosts(c2, 'share').length,
+      'with nothing kept the share step does not warn in general words first: ' + w2);
+    await p.click('#try-share-yes');
     await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
-    ok(!(await p.$('#try-share-out .try-share-warn')) && proxyPosts(c2, 'share').length === 1, 'a report with nothing kept warns before its link, or made no link');
+    ok(proxyPosts(c2, 'share').length === 1, proxyPosts(c2, 'share').length + ' /share requests after yes (want 1)');
     ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
   } finally { await c2.close(); }
 });
@@ -2198,13 +2223,362 @@ check('try-share-body-names-no-file', DESK, async (ctx) => {
   await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
   ok(/Dana Whitfield sold most in sample-messy\.csv/.test(await p.textContent('#try-ai-report .ai-rep-body')), 'the report on screen does not put the file\'s name back');
   await p.click('#try-share');
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
   await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
   const B = proxyPosts(ctx, 'share').map((r) => r.body);
   ok(B.length === 1, B.length + ' /share requests');
   const b = JSON.parse(B[0]);
   ok(JSON.stringify(b.input) === JSON.stringify({ name: '[your file]' }), 'the share body\'s input is not "[your file]": ' + JSON.stringify(b.input));
+  ok(JSON.stringify(b.kept) === '[]' && b.repaired === 0, 'with nothing kept the body does not say so ([]), or lacks the honesty count: ' + JSON.stringify({ kept: b.kept, repaired: b.repaired }));
   ok(!/sample-messy|orders\.csv/.test(B[0]), 'the share body names the file: ' + B[0].slice(0, 300));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+/* ------------------------------------------------------------ the AI report's PDF, made in this browser (29 Sep 2026)
+   "Download PDF" writes the PDF here (src/js/45-report-pdf.js): a download, no /share request, bytes that start
+   %PDF; the cover says which personal columns the visitor sent; the paper follows their pick (Letter or A4); the
+   file's name is on it only when they tick the box. tools/check_report_pdf.mjs checks the file itself. */
+const PDF_FX = path.join(SITE_DIR, 'tools', 'fixtures', 'report-pdf');
+const pdfFixture = (f) => JSON.parse(fs.readFileSync(path.join(PDF_FX, f), 'utf8'));
+// the words a PDF shows (its text operators, WinAnsi decoded), and its page size
+function pdfWords(buf) {
+  const s = Buffer.from(buf).toString('latin1'), map = { '\x91': "'", '\x92': "'", '\x93': '"', '\x94': '"', '\x96': '-', '\x97': '-', '\x95': '*', '\x85': '...' };
+  const text = [...s.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)].map((m) => m[1].replace(/\\([()\\])/g, '$1').replace(/[\x85\x91-\x97]/g, (c) => map[c] || c)).join(' ');
+  const mb = (s.match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/) || []).slice(1).join('x');
+  return { text, media: mb, head: s.slice(0, 5) };
+}
+// the stand-in proxy with the ship2 report in the new sections (its engine results, scenarios included, come from the worker)
+function pdfReply(o) {
+  const resp = pdfFixture('ship2-response-v2.json');
+  return (b) => {
+    if (typeof b.report === 'string' && 'days' in b) return { status: 200, json: { link: SHARE_LINK, delete_token: 'tok' } };
+    if (b.profile) return { status: 200, json: { plan: OPTIN_PLAN } };
+    if (b.results) return { status: 200, json: Object.assign({ report: resp.report, sources: resp.sources, model: resp.model, repaired: resp.repaired, removed_figures: resp.removed_figures }, o || {}) };
+    return { status: 503, json: { error: 'x' } };
+  };
+}
+function pdfReport() { const rep = optinReport(); rep.__resultsJson = pdfFixture('ship2-results-v2.json').results; return rep; }
+async function downloadPdf(p) {
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), p.click('#try-pdf')]);
+  return { name: dl.suggestedFilename(), bytes: fs.readFileSync(await dl.path()) };
+}
+
+check('try-pdf-downloads-in-this-browser-with-no-share-request', DESK, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await keptRun(p, ['staff_name']);
+  const before = toProxy(ctx).length;
+  const d = await downloadPdf(p);
+  const w = pdfWords(d.bytes), today = await p.evaluate(() => { const t = new Date(), z = (n) => (n < 10 ? '0' : '') + n; return t.getFullYear() + '-' + z(t.getMonth() + 1) + '-' + z(t.getDate()); });
+  ok(w.head === '%PDF-', 'the download is not a PDF: it starts ' + JSON.stringify(w.head));
+  ok(d.name === 'NorthLedger report - ' + today + '.pdf', 'the download is named ' + JSON.stringify(d.name));
+  ok(toProxy(ctx).length === before && !proxyPosts(ctx, 'share').length, 'Download PDF sent a request: ' + JSON.stringify(toProxy(ctx).slice(before).map((r) => r.url)));
+  // the cover says the visitor sent a personal column, and names it
+  ok(/PERSONAL COLUMNS/.test(w.text) && /Sent to the AI at the reader's choice: staff_name/.test(w.text), 'the cover does not say which personal columns were sent: ' + w.text.slice(0, 600));
+  ok(/Page 1 of \d+/.test(w.text) && /EXECUTIVE SUMMARY/.test(w.text) && /PART 3 . SCENARIOS/.test(w.text) && /RUN RATE, A YEAR/.test(w.text), 'the PDF lacks its footer, sections or scenario cards');
+  ok(!/sample-messy/.test(w.text) && !/sample-messy/.test(d.bytes.toString('latin1')), 'the PDF names the file without the visitor asking');
+  ok(/Saved as .NorthLedger report/.test(await p.textContent('#try-share-out')) && /nothing was sent/.test(await p.textContent('#try-share-out')), 'the page does not say the PDF was saved and nothing sent');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { acceptDownloads: true });
+
+check('try-pdf-paper-toggle-and-file-name-opt-in', DESK, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  // the default follows the browser's region (this context is en-US: Letter), and says it before the click
+  ok(await p.isChecked('#try-ai-report input[name="try-pdf-paper"][value="letter"]'), 'Letter is not the default for an en-US browser');
+  let d = await downloadPdf(p);
+  ok(pdfWords(d.bytes).media === '612x792', 'the Letter PDF is ' + pdfWords(d.bytes).media + ' pt');
+  await p.check('#try-ai-report input[name="try-pdf-paper"][value="a4"]');
+  d = await downloadPdf(p);
+  ok(pdfWords(d.bytes).media === '595.28x841.89', 'the A4 choice made a ' + pdfWords(d.bytes).media + ' pt PDF');
+  ok(!/sample-messy/.test(d.bytes.toString('latin1')) && !/sample-messy/.test(d.name), 'without the tick the file name is on the PDF or its name');
+  await p.check('#try-pdf-name');
+  d = await downloadPdf(p);
+  ok(/ - sample-messy\.pdf$/.test(d.name) && /sample-messy\.csv/.test(pdfWords(d.bytes).text), 'with the tick the file name is not on the PDF and its name: ' + d.name);
+  ok(!toProxy(ctx).some((r) => /\/share$/.test(r.url)), 'a PDF made a /share request');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { acceptDownloads: true });
+
+// an in-app browser (Instagram, Telegram...) ignores a download: the PDF opens in a tab instead, still with no request
+check('try-pdf-in-an-in-app-browser-opens-the-file', DESK, async (ctx) => {
+  const c = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce', acceptDownloads: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 350.0.0.0' });
+  try {
+    const p = await openTry(c, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+    await optinStep(p); await p.click('#try-pd-go');
+    await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+    let downloaded = false; p.on('download', () => { downloaded = true; });
+    const before = toProxy(c).length;
+    const [pop] = await Promise.all([p.waitForEvent('popup', { timeout: 10000 }), p.click('#try-pdf')]);
+    ok(/^blob:/.test(pop.url()) && !downloaded, 'the in-app path did not open the PDF itself: ' + pop.url());
+    ok(/opened in a new tab/.test(await p.textContent('#try-share-out')) && await p.$('#try-share-out a[href^="blob:"]'), 'the page does not say the PDF opened, or offers no link to it');
+    ok(toProxy(c).length === before, 'the in-app PDF sent a request');
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  } finally { await c.close(); }
+});
+
+// the honesty check's count: on the AI report card, and in the analyst view with the figures the sentences carried
+check('try-ai-report-says-how-many-sentences-were-removed', DESK, async (ctx) => {
+  const rep = fixture('sample'); rep.__profile = true; rep.__results = true;
+  const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: [], operations: [], analyses: [] };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan } }
+    : { status: 200, json: { report: 'Rent rose in the East.\n## Executive summary\n- Rent rose.', sources: [], model: 'check', repaired: 2, removed_figures: ['1.8 times', '17'] } } });
+  await p.click('#try-sample');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-msg:not([hidden])');
+  await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  const d = await p.evaluate(() => { const t = document.querySelector('#try-ai-report .ai-rep-trust'), a = document.getElementById('nl2-ai-audit');
+    return { n: t && t.getAttribute('data-removed'), t: t ? t.textContent : '', a: a ? a.textContent : null, hidden: a ? a.hidden : true }; });
+  ok(d.n === '2' && /Honesty check: 2 sentences removed/.test(d.t), 'the trust note does not lead with the count: ' + d.t);
+  // a figure may be the engine's or a cited source's (the worker's guard): never "every figure matches the engine's own"
+  const head = await p.textContent('#try-ai-report .ai-rep-head');
+  ok(/neither computed by the engine nor quoted from a source cited in the same sentence/.test(d.t) && !/matches the engine|engine never computed/.test(d.t) &&
+    /Figures by the engine or quoted from the sources it cites/.test(head), 'the trust note still says every figure is the engine\'s: ' + d.t + ' / ' + head);
+  ok(!d.hidden && /2 sentences removed \(figures: 1\.8 times, 17\)/.test(d.a || ''), 'the analyst view does not say how many sentences were removed and their figures: ' + d.a);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the web searches /report may run (final review, 30 Sep 2026): exactly the adapter's list, built from fixed terms
+// (engine/nl_browser.py _context_queries), always an array: [] when the engine sent none; never the plan's own words
+check('try-report-sends-the-adapter-vetted-searches', DESK, async (ctx) => {
+  const plan = Object.assign({}, OPTIN_PLAN, { context_queries: ['plan query one', 'plan query two'],
+    context: [{ indicator: 'retail sales', region: 'Canada', years: [2025] }] });
+  const bodies = [];
+  const reply = (b) => {
+    if (b.profile) return { status: 200, json: { plan } };
+    if (b.results) { bodies.push(b); return { status: 200, json: { report: 'A report.', sources: [], model: 'check', repaired: 0 } }; }
+    return { status: 503, json: { error: 'x' } };
+  };
+  for (const [cq, want] of [[[], []], [['retail sales Canada 2025'], ['retail sales Canada 2025']], [undefined, []], [null, []]]) {
+    const rep = optinReport(); if (cq !== undefined) rep.__cq = cq;
+    const c = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+    try {
+      const p = await openTry(c, { stubReport: rep, proxy: 'set', proxyReply: reply });
+      await optinStep(p); await p.click('#try-pd-go');
+      await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+      const got = bodies[bodies.length - 1].context_queries;
+      ok(Array.isArray(got) && JSON.stringify(got) === JSON.stringify(want), 'with the adapter\'s list ' + JSON.stringify(cq) + ' /report was sent ' + JSON.stringify(got) + ' (want ' + JSON.stringify(want) + ')');
+      ok(JSON.stringify(bodies[bodies.length - 1]).indexOf('plan query') < 0, 'the plan\'s own search words went to /report');
+      ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+    } finally { await c.close(); }
+  }
+});
+
+// the new report sections read cleanly on screen, and "Scenarios" carries the engine's own cards
+check('try-ai-report-new-sections-and-scenario-cards', DESK, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  const d = await p.evaluate(() => ({ k: Array.from(document.querySelectorAll('#try-ai-report .ai-sec-k')).map((e) => e.textContent),
+    cards: Array.from(document.querySelectorAll('#try-ai-report .ai-scen-card')).map((e) => e.textContent.replace(/\s+/g, ' ')),
+    order: Array.from(document.querySelectorAll('#try-ai-report h4.ai-sec')).map((e) => e.textContent.slice(0, 24)) }));
+  ok(d.k.indexOf('The headline') === 0 && d.k.indexOf('What drove it') > 0 && d.k.indexOf('In the real world') > 0, 'the section labels are not shown: ' + JSON.stringify(d.k));
+  ok(d.cards.length >= 3 && /Run rate, a year\s*152,214/i.test(d.cards[0]) && /from a WATCH change/.test(d.cards[0]), 'the scenario cards are missing or wrong: ' + JSON.stringify(d.cards.slice(0, 2)));
+  const iS = d.order.findIndex((t) => /^Scenarios/.test(t)), iT = d.order.findIndex((t) => /^What to do/.test(t));
+  ok(iS > 0 && iT > iS, 'Scenarios is not before What to do: ' + JSON.stringify(d.order));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+/* ------------------------------------------------------------ the final review of 30 Sep 2026: the AI report's page side
+   A figure derived from a graded change (a run rate, a what-if) carries a neutral "from a CONFIRMED change", never the
+   grade's own pill; a table the AI already placed in its scenarios is not drawn again; the engine's figures go under
+   whatever heading the PDF calls scenarios; the Save-as-PDF cover says what went to the AI; a /share body carries what
+   the shared PDF needs; a gallery entry's PDF and link carry that entry's own question. */
+// the ship2 results with every derived item in the adapter's new form: grade null, its parent claim's grade as parent_grade
+function parentGradeResults(grade) {
+  const res = JSON.parse(JSON.stringify(pdfFixture('ship2-results-v2.json').results));
+  res.scenarios.items.forEach((x) => { if (['contribution', 'price_volume_mix', 'per_unit', 'run_rate', 'sensitivity', 'gap'].indexOf(x.group) >= 0) { x.parent_grade = grade; x.grade = null; } });
+  return res;
+}
+const GAP_MD = '| Region | Below the largest | Share gap | What if at the largest\'s rate per unit |\n|---|---|---|---|\n| West | 1 | 2 | 3 |';
+check('try-ai-report-scenarios-derived-figures-and-no-repeated-table', DESK, async (ctx) => {
+  const report = pdfFixture('ship2-response-v2.json').report.replace(/^## Scenarios$/m, '## Scenarios\n' + GAP_MD);
+  const rep = optinReport(); rep.__resultsJson = parentGradeResults('CONFIRMED');
+  let p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: pdfReply({ report }) });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  const d = await p.evaluate(() => {
+    const C = Array.from(document.querySelectorAll('#try-ai-report .ai-scen-card'));
+    return { n: C.length, pills: C.filter((c) => c.querySelector('.ai-scen-g')).length,
+      from: C.map((c) => { const f = c.querySelector('.ai-scen-from'); return f ? f.textContent : ''; }),
+      gaps: Array.from(document.querySelectorAll('#try-ai-report table')).filter((t) => Array.from(t.querySelectorAll('th')).some((th) => th.textContent.trim() === 'Below the largest')).length };
+  });
+  ok(d.n >= 3 && d.pills === 0 && d.from.every((t) => t === 'from a CONFIRMED change'), 'a derived figure wears a grade pill, or does not say "from a CONFIRMED change": ' + JSON.stringify(d));
+  ok(d.gaps === 1, 'the gap table the AI placed in its scenarios is drawn ' + d.gaps + ' times');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await p.close();
+  // a scenarios section under another heading ("Outlook and what-ifs") still carries the engine's own cards, once
+  const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+  try {
+    const r2 = pdfFixture('ship2-response-v2.json').report.replace(/^## Scenarios$/m, '## Outlook and what-ifs').replace(/^## What to do$/m, '## Scenario risks\n- One more.\n## What to do');
+    p = await openTry(c2, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply({ report: r2 }) });
+    await optinStep(p); await p.click('#try-pd-go');
+    await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+    const e = await p.evaluate(() => ({ wraps: document.querySelectorAll('#try-ai-report .ai-scen-wrap').length, cards: document.querySelectorAll('#try-ai-report .ai-scen-card').length }));
+    ok(e.wraps === 1 && e.cards >= 3, 'the engine\'s scenario figures are not under "Outlook and what-ifs" exactly once: ' + JSON.stringify(e));
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  } finally { await c2.close(); }
+});
+
+// the Save-as-PDF cover after a run with the AI: never "nothing was uploaded"; it names what went to the AI
+check('try-save-as-pdf-cover-says-what-went-to-the-ai', DESK, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await keptRun(p, ['staff_name']);
+  await p.evaluate(() => { window.print = () => { const c = document.querySelector('.tr-print-cover'); window.__cover = c ? c.textContent.replace(/\s+/g, ' ') : ''; }; });
+  await p.click('#try-report [data-act="print"]');
+  await p.waitForTimeout(150);
+  const cov = await p.evaluate(() => window.__cover);
+  ok(cov && !/nothing was uploaded/.test(cov), 'after a run with the AI the cover says nothing was uploaded: ' + cov);
+  ok(/the file itself was never uploaded/.test(cov) && /Sent to the AI/.test(cov) && /summary of the file's columns \(never its rows\) and the engine's results went to an AI model/.test(cov) && /staff_name/.test(cov),
+    'the cover does not say what went to the AI, or which personal column: ' + cov);
+  ok(!/none by an AI/.test(cov), 'the cover says no AI was involved: ' + cov);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the /share body carries what the shared PDF is written from, and the writer, given it, never says it is missing
+check('try-share-body-carries-what-the-shared-pdf-needs', DESK, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await keptRun(p, ['staff_name']);
+  await p.click('#try-share');
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
+  await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
+  const B = proxyPosts(ctx, 'share').map((r) => r.body);
+  ok(B.length === 1, B.length + ' /share requests');
+  const b = JSON.parse(B[0]), resp = pdfFixture('ship2-response-v2.json');
+  ok(b.repaired === resp.repaired && JSON.stringify(b.kept) === JSON.stringify(['staff_name']), 'the body lacks the honesty check\'s count or the kept columns: ' + JSON.stringify({ repaired: b.repaired, kept: b.kept }));
+  const R = b.results, bytes = Buffer.byteLength(JSON.stringify(R || null), 'utf8');
+  ok(R && R.partial === true && R.scenarios && R.scenarios.items.length > 0 && R.scenarios.items.length <= 60 && bytes <= 20000 && !('charts' in R) && !('tables' in R),
+    'the body\'s results are not the trimmed key figures and scenario items (' + bytes + ' bytes): ' + JSON.stringify(R).slice(0, 200));
+  ok(!/sample-messy/.test(B[0]), 'the share body names the file');
+  // the worker's shared PDF, from exactly these fields (insight-proxy: NLReportPdf.model(the stored share, shared: true))
+  const W = require(path.join(SITE_DIR, 'src', 'js', '45-report-pdf.js'));
+  const m = W.model({ report: b.report, sources: b.sources, model: b.model, goal: b.goal, charts: b.charts, tables: b.tables, results: b.results, kept: b.kept, repaired: b.repaired, shared: true, date: new Date(2026, 8, 30) });
+  const w = pdfWords(W.build(m, { paper: 'letter' })).text;
+  ok(!/were not kept|saved before the personal columns|saved before the engine|doesn.t carry the engine/.test(w), 'the shared PDF says its results or kept columns are missing although the body carries them');
+  ok(/RUN RATE, A YEAR/.test(w) && /staff_name/.test(w) && /removed 2 sentences/.test(w), 'the shared PDF lacks the scenario cards, the kept column or the honesty count');
+  // every item keeps its value (the worker checks an item's text against its value and drops one without)
+  ok(R.scenarios.items.every((x) => (x.kind === 'date' ? typeof x.value === 'string' : typeof x.value === 'number' && isFinite(x.value))),
+    'a shared scenario item has no value: ' + JSON.stringify(R.scenarios.items.filter((x) => typeof x.value !== 'number')[0] || null));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// the /share body keeps under the page's cap, 115,000 bytes (the worker refuses a body over 130,000 bytes whole): the
+// engine's results give way first, trimmed to the room left; a report too large even without them is never sent, and
+// the visitor reads why (integration pass, 30 Sep 2026)
+check('try-share-body-keeps-under-the-worker-cap', DESK, async (ctx) => {
+  const resp = pdfFixture('ship2-response-v2.json'), W = require(path.join(SITE_DIR, 'src', 'js', '45-report-pdf.js'));
+  const filler = (n) => 'The engine read the file in the browser and kept every figure it could check against its own totals. '.repeat(Math.ceil(n / 100) + 1).slice(0, n);
+  const utf8 = (s) => Buffer.byteLength(s, 'utf8');
+  // 1. over the cap even without the engine's results: no /share request, and a plain reason
+  const F1 = 125000;
+  let p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply({ report: resp.report + '\n' + filler(F1) }) });
+  await keptRun(p, ['staff_name']);
+  ok(await p.evaluate(() => window.NLTry.SHARE_BODY_MAX) === 115000, 'the page\'s share cap is not 115,000 bytes');
+  await p.click('#try-share');
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
+  await p.waitForFunction(() => /too large for a link/.test(document.getElementById('try-share-out').textContent));
+  const msg = (await p.textContent('#try-share-out')).trim();
+  ok(proxyPosts(ctx, 'share').length === 0, 'a /share request was made for a body over the cap');
+  const kb = Number(((msg.match(/too large for a link: ([\d,]+) KB/) || [])[1] || '0').replace(/,/g, ''));
+  ok(/^The link could not be made\. This report is too large for a link: [\d,]+ KB, and a link holds at most 115 KB\. Nothing was sent\. Download the PDF to pass it on instead\.$/.test(msg) && kb > 115,
+    'the visitor is not told why no link was made: ' + msg);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await p.close();
+  // 2. a body that fits only with the engine's results trimmed: about 8,000 bytes left for them (the body without them
+  // is read from the first message, to the KB above)
+  const base = kb * 1000 - F1 - 2, F2 = 115000 - 8000 - base - 2;
+  const report2 = resp.report + '\n' + filler(F2);
+  const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+  try {
+    p = await openTry(c2, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply({ report: report2 }) });
+    await keptRun(p, ['staff_name']);
+    await p.click('#try-share');
+    await tryUntil(p, '#try-share-out .try-share-warn');
+    await p.click('#try-share-yes');
+    await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
+    const B = proxyPosts(c2, 'share').map((r) => r.body);
+    ok(B.length === 1, B.length + ' /share requests (want 1)');
+    const res = pdfFixture('ship2-results-v2.json').results, b = JSON.parse(B[0]), full = W.shareResults(res);
+    ok(utf8(B[0]) <= 115000 && b.report === report2, 'the /share body is ' + utf8(B[0]) + ' bytes, or its report was cut');
+    // trimmed by the worker's priority to the room the body left (its cap less the body without them, the last key),
+    // never from the tail (the contract test of 30 Sep 2026: the tail cut lost the run rate, the sensitivity and the
+    // gaps): exactly the writer's own trim to that room, in the adapter's order, and no item of the full share left out
+    // that would still have fit
+    const got = b.results, kept = got && got.scenarios ? got.scenarios.items : [], ids = kept.map((x) => x.id);
+    const room = 115000 - utf8(JSON.stringify(Object.assign({}, b, { results: undefined }))) - utf8(',"results":');
+    const pos = ids.map((id) => res.scenarios.items.findIndex((x) => x.id === id));
+    const fits = full.scenarios.items.filter((x) => ids.indexOf(x.id) < 0).filter((x) => {
+      const g = JSON.parse(JSON.stringify(got)); g.scenarios.items = full.scenarios.items.filter((y) => y.id === x.id || ids.indexOf(y.id) >= 0);
+      return utf8(JSON.stringify(g)) <= room;
+    });
+    ok(got && got.partial === true && ids.length > 0 && ids.length < full.scenarios.items.length && utf8(JSON.stringify(got)) <= room &&
+      JSON.stringify(got) === JSON.stringify(W.shareResults(res, room)) && pos.every((x, i) => x >= 0 && (!i || x > pos[i - 1])) && !fits.length,
+      'the engine\'s results were not trimmed by priority to the room left (' + room + ' bytes): ' + ids.length + ' of ' + full.scenarios.items.length +
+      ' items' + (fits.length ? '; left out though they fit: ' + fits.map((x) => x.id).join(', ') : ''));
+    ok(['run_rate', 'sensitivity'].every((g) => kept.some((x) => x.group === g)) && !kept.some((x) => x.group === 'facts' || (x.group === 'per_unit' && typeof x.segment === 'string')),
+      'the room of about 8,000 bytes did not go to the run rate and the sensitivity before the facts and the segments\' figures per unit: ' + ids.join(', '));
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  } finally { await c2.close(); }
+});
+
+// a report reopened from the gallery: its PDF and its link carry the question it answered, not the one on the page now
+check('try-gallery-pdf-and-link-use-the-entry-s-own-question', DESK, async (ctx) => {
+  const resp = pdfFixture('ship2-response-v2.json'), res = pdfFixture('ship2-results-v2.json').results, OLDQ = 'How did refunds move by channel last year?';
+  const saved = {}; Object.keys(res).forEach((k) => { if (k !== 'charts' && k !== 'tables') saved[k] = res[k]; });
+  const entry = { t: 1727700000000, title: 'An older report', goal: OLDQ, file: 'older.csv', model: 'check', report: 'An older report on refunds\n' + resp.report.split('\n').slice(1).join('\n'),
+    sources: resp.sources, share: '', del: '', charts: res.charts.slice(0, 6), tables: res.tables.slice(0, 8), kept: [], results: saved, repaired: 1, removed_figures: [] };
+  await ctx.addInitScript((e) => { try { localStorage.setItem('nl_try_reports_v1', JSON.stringify([e])); } catch (x) { /* the check below fails */ } }, entry);
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  await p.waitForFunction(() => document.querySelectorAll('.try-prev-item').length === 2);
+  const older = p.locator('.try-prev-item').nth(1);
+  ok(/refunds/.test(await older.textContent()), 'the seeded report is not the second gallery entry');
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), older.locator('.pv-pdf').click()]);
+  const text = pdfWords(fs.readFileSync(await dl.path())).text;
+  ok(text.indexOf(OLDQ) >= 0 && text.indexOf(OPTIN_PLAN.goal) < 0, 'the reopened report\'s PDF does not ask its own question: ' + text.slice(0, 400));
+  await older.locator('.pv-share').click();
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
+  await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
+  const B = proxyPosts(ctx, 'share').map((r) => JSON.parse(r.body));
+  ok(B.length === 1 && B[0].goal === OLDQ && /^An older report/.test(B[0].report), 'the reopened report\'s link does not carry its own question: ' + JSON.stringify(B.map((x) => x.goal)));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { acceptDownloads: true });
+
+// on a phone the consent box sits right after the Keep choices, and a polite live note says it appeared
+check('try-optin-phone-consent-box-follows-the-choices-and-is-announced', PHONE, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: optinReport(), proxy: 'set', proxyReply: optinReply() });
+  await optinStep(p);
+  await p.check('#try-pd input[data-col="staff_name"][value="keep"]');
+  const d = await p.evaluate(() => {
+    const box = document.getElementById('try-pd-send'), fs = Array.from(document.querySelectorAll('#try-pd fieldset.pd-col')), last = fs[fs.length - 1];
+    const said = document.getElementById('try-pd-send-said'), keep = document.querySelector('#try-pd input[data-col="staff_name"][value="keep"]');
+    return { after: box && box.previousElementSibling === last, gap: box.getBoundingClientRect().top - last.getBoundingClientRect().bottom,
+      live: said && said.getAttribute('aria-live'), said: said ? said.textContent : '', dist: box.getBoundingClientRect().top - keep.getBoundingClientRect().top, vh: innerHeight };
+  });
+  ok(d.after && d.gap < 40, 'the consent box does not follow the Keep choices: ' + JSON.stringify(d));
+  ok(d.dist < d.vh, 'the consent box is more than a screen below the Keep choice (' + Math.round(d.dist) + ' px)');
+  ok(d.live === 'polite' && /box to tick/.test(d.said) && /staff_name/.test(d.said), 'the box is not announced: ' + JSON.stringify(d.said));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { mobile: true });
+
+// a column coded as it arrived (an email or phone number) cannot be kept: the plan's profile reads Keep as Code
+check('try-plan-profile-honours-coded-as-it-arrived', DESK, async (ctx) => {
+  const p = await openTry(ctx, {});
+  const got = await p.evaluate(() => {
+    const prof = { ok: true, name: 'f.csv', rows: 10, columns_total: 2, columns: [
+      { name: 'order_date', filled: 10, distinct: 10, numeric_share: 0, date_share: 1, looks_personal: false },
+      { name: 'customer_email', filled: 10, distinct: 8, numeric_share: 0, date_share: 0, top_values: ['a@example.org'], values: ['a@example.org'], looks_personal: true, privacy_flag: 'email; coded as it arrived' }] };
+    const fl = [{ column: 'customer_email', kind: 'email; coded as it arrived' }];
+    return { out: window.NLTry.planProfile(prof, fl, { customer_email: 'keep' }), wh: window.NLTry.planWithheld(prof, fl, { customer_email: 'keep' }) };
+  });
+  const col = got.out.columns.filter((c) => c.name === 'customer_email')[0];
+  ok(col && col.looks_personal === true && !('values' in col) && !('top_values' in col), 'a column coded as it arrived went as kept, values included: ' + JSON.stringify(col));
+  ok(!got.wh.length, 'it is withheld instead of coded: ' + JSON.stringify(got.wh));
 });
 
 check('try-optin-a-new-file-resets-the-choices-and-the-tick', DESK, async (ctx) => {
@@ -2486,6 +2860,9 @@ async function managerMatches(p, rep) {
       charts: Array.from(M ? M.querySelectorAll('[data-chart]') : []).map((x) => x.getAttribute('data-chart')),
       trust: Array.from(M ? M.querySelectorAll('.nl2-trust li[data-layer]') : []).map((li) => [li.getAttribute('data-layer'), t(li)]),
       settle: t(M && M.querySelector('.nl2-settle')), fanNote: t(M && M.querySelector('[data-chart^="fan."] .nl2-fignote')),
+      healthTile: !!document.querySelector('#try-report .tr-kpi.tr-health'),
+      textNum: t(document.querySelector('#try-report .tr-kpi.tr-health .tr-textnum')),
+      issues: Array.from(document.querySelectorAll('#try-report .tr-kpi.tr-health .tr-issues li')).map((li) => t(li)),
       text: M ? M.innerText : '' };
   });
   ok(d.mShown && d.aHidden && /Manager/.test(d.tab || ''), 'the manager view is not the default view (' + JSON.stringify([d.mShown, d.aHidden, d.tab]) + ')');
@@ -2547,6 +2924,16 @@ async function managerMatches(p, rep) {
   ok(/Power/.test(tr.power || ''), 'trust strip, power: ' + tr.power);
   ok(/not measured/.test(tr.tipping || ''), 'trust strip, tipping point: ' + tr.tipping);
   ok((tr.health || '').indexOf(rep.health.score_min.toFixed(1)) >= 0 && (tr.health || '').indexOf(rep.health.weakest) >= 0, 'trust strip, weakest dimension: ' + tr.health);
+  // numbers stored as text, which every CSV has (30 Sep 2026): the engine's line is never an issue, and when its
+  // mark-down lowers a score the Data health area says so in plain words (the trust strip, and the health tile)
+  const TN = rep.health.csv_text_numbers, TNW = 'the score counts numbers stored as text, which every csv has';   // compared lower-cased
+  ok(!(rep.health.issues || []).concat(d.issues || []).some((x) => /numbers are stored as text; they will sort/.test(x)), 'a health issue still says the numbers are stored as text');
+  if (TN && TN.note) {
+    ok(TN.note.toLowerCase().indexOf(TNW) === 0 && (tr.health || '').indexOf(squash(TN.note)) >= 0, 'trust strip: the mark-down for numbers stored as text is not said: ' + tr.health);
+    if (d.healthTile) ok(d.textNum === squash(TN.note), 'the health tile does not say the score counts numbers stored as text: ' + d.textNum);
+  } else {
+    ok((tr.health || '').toLowerCase().indexOf(TNW) < 0 && !d.textNum, 'the Data health area speaks of numbers stored as text though no score is lowered: ' + tr.health);
+  }
   rep.findings.filter((f) => f.grade === 'WATCH' && (f.kind === 'business' || f.kind === 'forecast') && f.watch && f.watch.settle).forEach((f) => {
     ok((d.settle || '').indexOf(squash(f.watch.settle)) >= 0, 'what would settle ' + f.id + ' is not shown');
   });
@@ -2991,25 +3378,45 @@ for (const scheme of ['light', 'dark']) {
 
 check('try-v2-save-as-pdf-prints-both-views-as-a-paper', DESK, async (ctx) => {
   const { p, rep } = await openV2(ctx, 'sales-ledger');
+  const title0 = await p.title();
   await p.evaluate(() => { window.print = () => {
-    const A = document.getElementById('nl2-analyst'), M = document.getElementById('nl2-manager');
+    const A = document.getElementById('nl2-analyst'), M = document.getElementById('nl2-manager'), R = document.getElementById('try-report');
     const shown = (e) => !!e && getComputedStyle(e).display !== 'none';
+    const rule = document.getElementById('nl-print-page');
     window.__printed = { cls: document.body.classList.contains('print-try'), m: shown(M), a: shown(A),
       drawn: Array.from(A.querySelectorAll('figure[data-chart] .viz')).filter((v) => !v.querySelector('svg, table')).length,
-      figs: A.querySelectorAll('figure[data-chart]').length, closed: document.querySelectorAll('#try-report details:not([open])').length }; }; });
+      figs: A.querySelectorAll('figure[data-chart]').length, closed: document.querySelectorAll('#try-report details:not([open])').length,
+      cover: R.firstElementChild && R.firstElementChild.className === 'tr-print-cover' ? R.firstElementChild.textContent : '',
+      title: document.title, rule: rule ? rule.textContent : '', wbr: document.querySelectorAll('#try-report .nl2 code wbr').length }; }; });
   await p.click('#try-report [data-act="print"]');
   await p.waitForTimeout(150);
   const pr = await p.evaluate(() => window.__printed);
-  ok(pr && pr.cls && pr.m && pr.a && pr.figs > 0 && pr.drawn === 0 && pr.closed === 0, 'while printing: ' + JSON.stringify(pr));
+  ok(pr && pr.cls && pr.m && pr.a && pr.figs > 0 && pr.drawn === 0 && pr.closed === 0, 'while printing: ' + JSON.stringify(pr).slice(0, 300));
+  // the paper version: a cover, the report's own title (never the file's name) as the browser's file name, and the
+  // running header with "Page X of Y" as an @page rule that exists only while printing
+  ok(/NorthLedger Insights/i.test(pr.cover) && /Confidential/.test(pr.cover) && pr.cover.indexOf(rep.input.name) < 0, 'no print cover, or it names the file: ' + pr.cover.slice(0, 200));
+  ok(/nothing was uploaded/.test(pr.cover) && !/Sent to the AI/.test(pr.cover), 'a run without the AI does not say nothing was uploaded: ' + pr.cover.slice(0, 300));
+  ok(/^NorthLedger report - \d{4}-\d\d-\d\d$/.test(pr.title), 'the title while printing is not "NorthLedger report - <date>": ' + pr.title);
+  ok(/counter\(pages\)/.test(pr.rule) && /NORTHLEDGER INSIGHTS/.test(pr.rule) && /@page :first/.test(pr.rule), 'no running header and "Page X of Y" while printing: ' + pr.rule.slice(0, 200));
+  ok(pr.wbr > 0, 'long machine ids do not break at their dots and underscores on paper');
+  const after = await p.evaluate(() => ({ title: document.title, cover: !!document.querySelector('.tr-print-cover'), rule: !!document.getElementById('nl-print-page'), wbr: document.querySelectorAll('#try-report .nl2 code wbr').length }));
+  ok(after.title === title0 && !after.cover && !after.rule && !after.wbr, 'the page did not go back after printing: ' + JSON.stringify(after));
   await p.evaluate(() => document.body.classList.add('print-try'));
   await p.emulateMedia({ media: 'print' });
   const css = await p.evaluate(() => {
     const vis = (s) => Array.from(document.querySelectorAll(s)).filter((e) => getComputedStyle(e).display !== 'none').length;
+    const sec = (k) => getComputedStyle(document.querySelector('#nl2-analyst section.nl2-sec[data-sec="' + k + '"]')).breakBefore;
+    const lastTh = document.querySelector('#nl2-analyst table.nl2-ftab[data-cols="analyst"] thead th:last-child');
     return { views: vis('.nl2-views'), links: vis('#try-report .nl2-link'), tbl: vis('#try-report .tbl-btn'), m: vis('#nl2-manager'), a: vis('#nl2-analyst'),
-      figBreak: getComputedStyle(document.querySelector('#nl2-analyst figure[data-chart]')).breakInside, secBreak: getComputedStyle(document.querySelector('#nl2-analyst section.nl2-sec[data-sec="data"]')).breakBefore };
+      figBreak: getComputedStyle(document.querySelector('#nl2-analyst figure[data-chart]')).breakInside, summary: sec('summary'), data: sec('data'), appendix: sec('appendix'),
+      layout: [getComputedStyle(document.getElementById('try-report')).display, getComputedStyle(document.querySelector('#try-report .nl2')).display, getComputedStyle(document.getElementById('nl2-analyst')).display],
+      lead: vis('#try-report .tr-head-compact'), settle: lastTh ? getComputedStyle(lastTh).display : 'none' };
   });
   ok(!css.views && !css.links && !css.tbl && css.m && css.a, 'print shows the view switch or buttons, or leaves a view out: ' + JSON.stringify(css));
-  ok(css.figBreak === 'avoid' && css.secBreak === 'page', 'print can split a chart, or the paper sections do not start on a new page: ' + JSON.stringify(css));
+  ok(css.figBreak === 'avoid' && css.summary === 'page' && css.appendix === 'page' && css.data !== 'page',
+    'print can split a chart, or a page break is forced for other than the major parts: ' + JSON.stringify(css));
+  ok(css.layout.every((d) => d === 'block'), 'the report prints as a grid (the next card lands over the last pages): ' + JSON.stringify(css.layout));
+  ok(!css.lead && css.settle === 'none', 'print keeps the near-empty lead card or the repeated "What would settle it" column: ' + JSON.stringify(css));
   ok(rep.charts.length > 0 && !p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 

@@ -1095,6 +1095,20 @@ FALSE_PROMISES = (
      "not whenever an AI reads the summary", False),
     (r"(?:share|shared) links? (?:never|cannot|can ?not|does not|do not) (?:holds?|contains?|shows?|carry|carries) (?:a |any )?personal",
      "a report made with kept columns can quote their values, and a share link stores that report", False),
+    # final review, 30 Sep 2026: the AI-written report may quote a figure from a source cited in the same sentence (the
+    # worker's guard lets it through), so its figures are the engine's OR a cited source's, never "all the engine's"
+    (r"every figure (?:in this report )?(?:matches the engine.{1,2}s own|was computed by the NorthLedger engine from the reader.{1,2}s own file, in their browser\.)|"
+     r"every figure was checked against the engine.{1,2}s own (?:computed )?results",
+     "the AI-written report may quote a figure from a source cited in the same sentence; the honesty check lets "
+     "through a figure the engine computed or a cited source prints", False),
+    # final review, 30 Sep 2026: a web search is built by the adapter from fixed terms only (engine/context_terms.json,
+    # engine/nl_browser.py _context_queries); nothing the AI writes and nothing from the file is ever searched
+    (r"(?:web )?search(?:es)? (?:are|is) (?:written|worded|phrased) by the AI|the AI (?:writes|words|phrases) (?:its own |the )?(?:web )?search",
+     "every web search is built by the adapter from fixed terms (engine/context_terms.json); the AI only picks the "
+     "terms, it never writes a search", False),
+    (r"search(?:es)? (?:are|is) (?:checked|vetted|screened) against (?:your|the) file",
+     "no search is vetted against the file any more: each is built from fixed terms only, so nothing from the file "
+     "can be in it", False),
 )
 
 

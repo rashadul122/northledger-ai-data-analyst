@@ -319,7 +319,8 @@
     out.push(['power', '<b>Power:</b> ' + (pw ? esc(pw) : 'not measured for the primary claim.')]);
     out.push(['tipping', '<b>Sensitivity to the set-aside rows:</b> how far they would have to differ from the kept rows to change an answer is not measured in this release.']);
     out.push(['health', '<b>Data health:</b> the weakest dimension, ' + esc(h.weakest || 'n/a') + ', scores ' + (h.score_min === null ? 'n/a' : Number(h.score_min).toFixed(1)) + ' of 100; the engine\'s Data Health Score (the mean of the five) is ' +
-      (h.score_mean === null ? 'n/a' : Number(h.score_mean).toFixed(1)) + '. Accuracy against the source: ' + esc((h.accuracy && h.accuracy.measured) ? 'measured' : 'not measured') + '.']);
+      (h.score_mean === null ? 'n/a' : Number(h.score_mean).toFixed(1)) + '. ' + (h.csv_text_numbers && h.csv_text_numbers.note ? esc(h.csv_text_numbers.note) + ' ' : '') +
+      'Accuracy against the source: ' + esc((h.accuracy && h.accuracy.measured) ? 'measured' : 'not measured') + '.']);
     return out;
   }
   // one line for the first screen; the layers sit under it
@@ -507,7 +508,8 @@
       ['recs', 'Recommendations'], ['repro', 'Reproducibility'], ['appendix', 'Appendix: set-aside rows and the evidence ledger']];
     var S = {};
     var pm = r.primary_metric, F = byId(r);
-    S.summary = (pm ? '<p>The primary claim is <b>' + esc(F[pm.finding_id] ? F[pm.finding_id].claim : pm.finding_id) + '</b>, graded ' + grade(pm.grade) + '.</p>' : '<p>No claim was tested as the primary metric in this run.</p>') +
+    // the AI-written report's honesty check, filled in by N.aiAudit when that report arrives (50-try.js)
+    S.summary = '<p class="nl2-ai-audit note" id="nl2-ai-audit" role="note" hidden></p>' + (pm ? '<p>The primary claim is <b>' + esc(F[pm.finding_id] ? F[pm.finding_id].claim : pm.finding_id) + '</b>, graded ' + grade(pm.grade) + '.</p>' : '<p>No claim was tested as the primary metric in this run.</p>') +
       (r.summary && r.summary.lines && r.summary.lines.length ? '<p class="nl2-engine-bottom"><b>Every graded claim, as the engine lists it:</b> ' + esc(r.story.headline) + '</p>' : '') +
       '<p class="note">The engine\'s own narrative follows; every figure in it is a checked fact. The findings table in section 4 carries each test.</p>' + parts.story;
     S.data = dl([
@@ -517,7 +519,8 @@
       ['Analysis window', P.window ? esc(P.window.start + ' to ' + P.window.end) : 'none (no date column the engine could use)'],
       ['Health sample', esc(h.sample ? (h.sample.method === 'all' ? 'every row (' + num(h.sample.n, 0) + ')' : 'a sample of ' + num(h.sample.n, 0) + ' rows') : 'n/a')]
     ]) + parts.rolesPriv + parts.cleaning + (CH['cleaning.before_after'] ? fig(CH['cleaning.before_after'], 'a', r) : '') +
-      '<h4>Quality by dimension</h4><p>The weakest dimension, <b>' + esc(h.weakest || 'n/a') + '</b>, scores ' + esc(h.score_min === null ? 'n/a' : Number(h.score_min).toFixed(1)) + '; the engine\'s Data Health Score (the mean of the five) is ' + esc(h.score_mean === null ? 'n/a' : Number(h.score_mean).toFixed(1)) + '.</p>' + dims(r) +
+      '<h4>Quality by dimension</h4><p>The weakest dimension, <b>' + esc(h.weakest || 'n/a') + '</b>, scores ' + esc(h.score_min === null ? 'n/a' : Number(h.score_min).toFixed(1)) + '; the engine\'s Data Health Score (the mean of the five) is ' + esc(h.score_mean === null ? 'n/a' : Number(h.score_mean).toFixed(1)) + '.' +
+      (h.csv_text_numbers && h.csv_text_numbers.note ? ' ' + esc(h.csv_text_numbers.note) : '') + '</p>' + dims(r) +
       '<h4>Quality by column</h4>' + coltab(r) + (CH.missingness ? fig(CH.missingness, 'a', r) : '') +
       '<p class="note">Accuracy, whether the values match the world: ' + esc((h.accuracy && h.accuracy.text) || 'not measured') + '.</p>';
     S.methods = methods(r);
@@ -683,6 +686,14 @@
         if (rr && rr.querySelector('.nl2-hl')) { clear(rr.parentNode || rr); var live = document.getElementById('nl2-live'); if (live) live.textContent = 'Highlight cleared.'; }
       });
     }
+  };
+  // the analyst view's line on the AI-written report: how many sentences the honesty check removed, and the figures
+  // they carried (the /report answer's repaired and removed_figures, in 50-try.js's words); '' hides it
+  N.aiAudit = function (words) {
+    var p = document.getElementById('nl2-ai-audit');
+    if (!p) return;
+    p.textContent = words ? 'The AI-written report above this one: ' + words + ' by the honesty check, which lets a figure through only when the engine computed it or a source cited in the same sentence prints it.' : '';
+    p.hidden = !words;
   };
   // before printing: both views on the page, every chart drawn at the width it has, every row shown;
   // returns what puts the page back

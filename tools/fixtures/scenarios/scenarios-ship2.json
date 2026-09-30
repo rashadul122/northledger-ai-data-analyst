@@ -1,0 +1,1380 @@
+{
+ "basis": {
+  "finding_id": "measure.revenue.total.change",
+  "claim": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+  "grade": "WATCH",
+  "grade_words": "not yet conclusive",
+  "measure": "revenue",
+  "how": "total",
+  "unit": "",
+  "windows": {
+   "prior": [
+    "2024-01",
+    "2024-12"
+   ],
+   "latest": [
+    "2025-01",
+    "2025-12"
+   ]
+  },
+  "rows": {
+   "prior": 151,
+   "latest": 149,
+   "units_missing": 0
+  },
+  "segment": {
+   "column": "region",
+   "levels": [
+    "East",
+    "North",
+    "South",
+    "West"
+   ],
+   "folded": [],
+   "entered": [],
+   "exited": []
+  },
+  "reconciles": true
+ },
+ "items": [
+  {
+   "id": "headline.prior",
+   "group": "headline",
+   "segment": null,
+   "label": "Total revenue, the 12 months before",
+   "value": 128256.1,
+   "text": "128,256",
+   "kind": "amount",
+   "unit": "",
+   "grade": "WATCH",
+   "parent_grade": null,
+   "grade_words": "the claim itself, graded WATCH",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "prior",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "headline.latest",
+   "group": "headline",
+   "segment": null,
+   "label": "Total revenue, the latest 12 months",
+   "value": 152213.93,
+   "text": "152,214",
+   "kind": "amount",
+   "unit": "",
+   "grade": "WATCH",
+   "parent_grade": null,
+   "grade_words": "the claim itself, graded WATCH",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "latest",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "headline.change",
+   "group": "headline",
+   "segment": null,
+   "label": "Change in total revenue, the latest 12 months against the 12 before",
+   "value": 23957.83,
+   "text": "+23,958",
+   "kind": "change",
+   "unit": "",
+   "grade": "WATCH",
+   "parent_grade": null,
+   "grade_words": "the claim itself, graded WATCH",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "both",
+    "op": "latest - prior"
+   }
+  },
+  {
+   "id": "headline.change_pct",
+   "group": "headline",
+   "segment": null,
+   "label": "Change in total revenue, in percent of the 12 months before",
+   "value": 18.679681,
+   "text": "+18.7%",
+   "kind": "change",
+   "unit": "%",
+   "grade": "WATCH",
+   "parent_grade": null,
+   "grade_words": "the claim itself, graded WATCH",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "contribution.east.prior",
+   "group": "contribution",
+   "segment": "East",
+   "label": "East: total revenue, the 12 months before",
+   "value": 28396.38,
+   "text": "28,396",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "prior",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.east.latest",
+   "group": "contribution",
+   "segment": "East",
+   "label": "East: total revenue, the latest 12 months",
+   "value": 44616.75,
+   "text": "44,617",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.east.change",
+   "group": "contribution",
+   "segment": "East",
+   "label": "East: its contribution to the change in total revenue",
+   "value": 16220.37,
+   "text": "+16,220",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "latest - prior"
+   }
+  },
+  {
+   "id": "contribution.east.share",
+   "group": "contribution",
+   "segment": "East",
+   "label": "East: its share of the change in total revenue",
+   "value": 67.703836,
+   "text": "67.7%",
+   "kind": "percent",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "share of the change"
+   }
+  },
+  {
+   "id": "contribution.east.pct",
+   "group": "contribution",
+   "segment": "East",
+   "label": "East: its own change in total revenue, in percent",
+   "value": 57.12126,
+   "text": "+57.1%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "contribution.north.prior",
+   "group": "contribution",
+   "segment": "North",
+   "label": "North: total revenue, the 12 months before",
+   "value": 35234.32,
+   "text": "35,234",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "prior",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.north.latest",
+   "group": "contribution",
+   "segment": "North",
+   "label": "North: total revenue, the latest 12 months",
+   "value": 42350.45,
+   "text": "42,350",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.north.change",
+   "group": "contribution",
+   "segment": "North",
+   "label": "North: its contribution to the change in total revenue",
+   "value": 7116.13,
+   "text": "+7,116",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "latest - prior"
+   }
+  },
+  {
+   "id": "contribution.north.share",
+   "group": "contribution",
+   "segment": "North",
+   "label": "North: its share of the change in total revenue",
+   "value": 29.702732,
+   "text": "29.7%",
+   "kind": "percent",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "share of the change"
+   }
+  },
+  {
+   "id": "contribution.north.pct",
+   "group": "contribution",
+   "segment": "North",
+   "label": "North: its own change in total revenue, in percent",
+   "value": 20.196587,
+   "text": "+20.2%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "contribution.west.prior",
+   "group": "contribution",
+   "segment": "West",
+   "label": "West: total revenue, the 12 months before",
+   "value": 32178.85,
+   "text": "32,179",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "prior",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.west.latest",
+   "group": "contribution",
+   "segment": "West",
+   "label": "West: total revenue, the latest 12 months",
+   "value": 32508.44,
+   "text": "32,508",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.west.change",
+   "group": "contribution",
+   "segment": "West",
+   "label": "West: its contribution to the change in total revenue",
+   "value": 329.59,
+   "text": "+330",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "latest - prior"
+   }
+  },
+  {
+   "id": "contribution.west.share",
+   "group": "contribution",
+   "segment": "West",
+   "label": "West: its share of the change in total revenue",
+   "value": 1.375709,
+   "text": "1.4%",
+   "kind": "percent",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "share of the change"
+   }
+  },
+  {
+   "id": "contribution.west.pct",
+   "group": "contribution",
+   "segment": "West",
+   "label": "West: its own change in total revenue, in percent",
+   "value": 1.024244,
+   "text": "+1.02%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "contribution.south.prior",
+   "group": "contribution",
+   "segment": "South",
+   "label": "South: total revenue, the 12 months before",
+   "value": 32446.55,
+   "text": "32,447",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "prior",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.south.latest",
+   "group": "contribution",
+   "segment": "South",
+   "label": "South: total revenue, the latest 12 months",
+   "value": 32738.29,
+   "text": "32,738",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "contribution.south.change",
+   "group": "contribution",
+   "segment": "South",
+   "label": "South: its contribution to the change in total revenue",
+   "value": 291.74,
+   "text": "+292",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "latest - prior"
+   }
+  },
+  {
+   "id": "contribution.south.share",
+   "group": "contribution",
+   "segment": "South",
+   "label": "South: its share of the change in total revenue",
+   "value": 1.217723,
+   "text": "1.2%",
+   "kind": "percent",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "share of the change"
+   }
+  },
+  {
+   "id": "contribution.south.pct",
+   "group": "contribution",
+   "segment": "South",
+   "label": "South: its own change in total revenue, in percent",
+   "value": 0.89914,
+   "text": "+0.899%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "price_volume_mix.price",
+   "group": "price_volume_mix",
+   "segment": null,
+   "label": "Price effect: the change in revenue per unit, at the latest 12 months' units",
+   "value": 20526.705008,
+   "text": "+20,527",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "price, volume and mix add up to the change",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "price effect"
+   }
+  },
+  {
+   "id": "price_volume_mix.volume",
+   "group": "price_volume_mix",
+   "segment": null,
+   "label": "Volume effect: the change in units, at the revenue per unit of the 12 months before",
+   "value": 2051.441139,
+   "text": "+2,051",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "price, volume and mix add up to the change",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "volume effect"
+   }
+  },
+  {
+   "id": "price_volume_mix.mix",
+   "group": "price_volume_mix",
+   "segment": null,
+   "label": "Mix effect: the shift of units between region values, each at its own revenue per unit of the 12 months before",
+   "value": 1379.683853,
+   "text": "+1,380",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "price, volume and mix add up to the change",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "mix effect"
+   }
+  },
+  {
+   "id": "per_unit.prior",
+   "group": "per_unit",
+   "segment": null,
+   "label": "Revenue per unit (revenue / units), the 12 months before",
+   "value": 41.028823,
+   "text": "41",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "units"
+    ],
+    "window": "prior",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.latest",
+   "group": "per_unit",
+   "segment": null,
+   "label": "Revenue per unit (revenue / units), the latest 12 months",
+   "value": 47.9263,
+   "text": "47.9",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "units"
+    ],
+    "window": "latest",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.change_pct",
+   "group": "per_unit",
+   "segment": null,
+   "label": "Change in revenue per unit (revenue / units), in percent of the 12 months before",
+   "value": 16.811298,
+   "text": "+16.8%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "units"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "per_unit.east.prior",
+   "group": "per_unit",
+   "segment": "East",
+   "label": "East: revenue per unit (revenue / units), the 12 months before",
+   "value": 44.789243,
+   "text": "44.8",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "prior",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.east.latest",
+   "group": "per_unit",
+   "segment": "East",
+   "label": "East: revenue per unit (revenue / units), the latest 12 months",
+   "value": 51.699594,
+   "text": "51.7",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.east.change_pct",
+   "group": "per_unit",
+   "segment": "East",
+   "label": "East: its own change in revenue per unit (revenue / units), in percent",
+   "value": 15.428596,
+   "text": "+15.4%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "per_unit.north.prior",
+   "group": "per_unit",
+   "segment": "North",
+   "label": "North: revenue per unit (revenue / units), the 12 months before",
+   "value": 42.348942,
+   "text": "42.3",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "prior",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.north.latest",
+   "group": "per_unit",
+   "segment": "North",
+   "label": "North: revenue per unit (revenue / units), the latest 12 months",
+   "value": 48.734695,
+   "text": "48.7",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.north.change_pct",
+   "group": "per_unit",
+   "segment": "North",
+   "label": "North: its own change in revenue per unit (revenue / units), in percent",
+   "value": 15.078895,
+   "text": "+15.1%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "per_unit.west.prior",
+   "group": "per_unit",
+   "segment": "West",
+   "label": "West: revenue per unit (revenue / units), the 12 months before",
+   "value": 40.073288,
+   "text": "40.1",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "prior",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.west.latest",
+   "group": "per_unit",
+   "segment": "West",
+   "label": "West: revenue per unit (revenue / units), the latest 12 months",
+   "value": 46.045949,
+   "text": "46",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.west.change_pct",
+   "group": "per_unit",
+   "segment": "West",
+   "label": "West: its own change in revenue per unit (revenue / units), in percent",
+   "value": 14.904346,
+   "text": "+14.9%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "per_unit.south.prior",
+   "group": "per_unit",
+   "segment": "South",
+   "label": "South: revenue per unit (revenue / units), the 12 months before",
+   "value": 37.860618,
+   "text": "37.9",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "prior",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.south.latest",
+   "group": "per_unit",
+   "segment": "South",
+   "label": "South: revenue per unit (revenue / units), the latest 12 months",
+   "value": 44.360827,
+   "text": "44.4",
+   "kind": "per_unit",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "per unit"
+   }
+  },
+  {
+   "id": "per_unit.south.change_pct",
+   "group": "per_unit",
+   "segment": "South",
+   "label": "South: its own change in revenue per unit (revenue / units), in percent",
+   "value": 17.168785,
+   "text": "+17.2%",
+   "kind": "change",
+   "unit": "%",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "both",
+    "op": "percent change"
+   }
+  },
+  {
+   "id": "run_rate.year",
+   "group": "run_rate",
+   "segment": null,
+   "label": "Run rate: total revenue over the latest 12 months",
+   "value": 152213.93,
+   "text": "152,214",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "the latest 12 months repeat unchanged",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "latest",
+    "op": "sum"
+   }
+  },
+  {
+   "id": "run_rate.month",
+   "group": "run_rate",
+   "segment": null,
+   "label": "Run rate: total revenue in the average month of the latest 12 months",
+   "value": 12684.494167,
+   "text": "12,684",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "the latest 12 months repeat unchanged",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "latest",
+    "op": "latest / 12"
+   }
+  },
+  {
+   "id": "sensitivity.one_pct",
+   "group": "sensitivity",
+   "segment": null,
+   "label": "Each 1% of total revenue, over a year at the latest 12 months' level",
+   "value": 1522.1393,
+   "text": "1,522",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "a change of 1% held for a whole year, at the latest 12 months' level",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue"
+    ],
+    "window": "latest",
+    "op": "latest / 100"
+   }
+  },
+  {
+   "id": "gap.north.amount",
+   "group": "gap",
+   "segment": "North",
+   "label": "North: how far its total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+   "value": 2266.3,
+   "text": "2,266",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "gap to the largest"
+   }
+  },
+  {
+   "id": "gap.north.points",
+   "group": "gap",
+   "segment": "North",
+   "label": "North: how far its share of total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+   "value": 1.488891,
+   "text": "1.49 percentage points",
+   "kind": "points",
+   "unit": "points",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "gap in share of the total"
+   }
+  },
+  {
+   "id": "gap.north.per_unit",
+   "group": "gap",
+   "segment": "North",
+   "label": "What if North's units of the latest 12 months had sold at East's revenue per unit (the largest region by total revenue in the latest 12 months): the extra revenue",
+   "value": 2576.497567,
+   "text": "+2,576",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "its units unchanged, each at the largest's revenue per unit",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "what-if"
+   }
+  },
+  {
+   "id": "gap.west.amount",
+   "group": "gap",
+   "segment": "West",
+   "label": "West: how far its total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+   "value": 12108.31,
+   "text": "12,108",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "gap to the largest"
+   }
+  },
+  {
+   "id": "gap.west.points",
+   "group": "gap",
+   "segment": "West",
+   "label": "West: how far its share of total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+   "value": 7.954798,
+   "text": "7.95 percentage points",
+   "kind": "points",
+   "unit": "points",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "gap in share of the total"
+   }
+  },
+  {
+   "id": "gap.west.per_unit",
+   "group": "gap",
+   "segment": "West",
+   "label": "What if West's units of the latest 12 months had sold at East's revenue per unit (the largest region by total revenue in the latest 12 months): the extra revenue",
+   "value": 3991.473673,
+   "text": "+3,991",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "its units unchanged, each at the largest's revenue per unit",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "what-if"
+   }
+  },
+  {
+   "id": "gap.south.amount",
+   "group": "gap",
+   "segment": "South",
+   "label": "South: how far its total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+   "value": 11878.46,
+   "text": "11,878",
+   "kind": "amount",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "gap to the largest"
+   }
+  },
+  {
+   "id": "gap.south.points",
+   "group": "gap",
+   "segment": "South",
+   "label": "South: how far its share of total revenue in the latest 12 months is below East's, the largest region by total revenue in the latest 12 months",
+   "value": 7.803793,
+   "text": "7.8 percentage points",
+   "kind": "points",
+   "unit": "points",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region"
+    ],
+    "window": "latest",
+    "op": "gap in share of the total"
+   }
+  },
+  {
+   "id": "gap.south.per_unit",
+   "group": "gap",
+   "segment": "South",
+   "label": "What if South's units of the latest 12 months had sold at East's revenue per unit (the largest region by total revenue in the latest 12 months): the extra revenue",
+   "value": 5416.010695,
+   "text": "+5,416",
+   "kind": "change",
+   "unit": "",
+   "grade": null,
+   "parent_grade": "WATCH",
+   "grade_words": "part of a change graded WATCH; not graded itself",
+   "assumes": "its units unchanged, each at the largest's revenue per unit",
+   "inputs": {
+    "columns": [
+     "order_date",
+     "revenue",
+     "region",
+     "units"
+    ],
+    "window": "latest",
+    "op": "what-if"
+   }
+  },
+  {
+   "id": "facts.months",
+   "group": "facts",
+   "segment": null,
+   "label": "Months with a dated row the engine kept",
+   "value": 24.0,
+   "text": "24",
+   "kind": "count",
+   "unit": "",
+   "grade": null,
+   "parent_grade": null,
+   "grade_words": "a fact about the rows, not graded",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date"
+    ],
+    "window": null,
+    "op": "count distinct months"
+   }
+  },
+  {
+   "id": "facts.dates",
+   "group": "facts",
+   "segment": null,
+   "label": "Distinct dates in the rows the engine kept",
+   "value": 267.0,
+   "text": "267",
+   "kind": "count",
+   "unit": "",
+   "grade": null,
+   "parent_grade": null,
+   "grade_words": "a fact about the rows, not graded",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date"
+    ],
+    "window": null,
+    "op": "count distinct dates"
+   }
+  },
+  {
+   "id": "facts.first",
+   "group": "facts",
+   "segment": null,
+   "label": "The first date in the rows the engine kept",
+   "value": "2024-01-01",
+   "text": "2024-01-01",
+   "kind": "date",
+   "unit": "",
+   "grade": null,
+   "parent_grade": null,
+   "grade_words": "a fact about the rows, not graded",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date"
+    ],
+    "window": null,
+    "op": "min"
+   }
+  },
+  {
+   "id": "facts.last",
+   "group": "facts",
+   "segment": null,
+   "label": "The last date in the rows the engine kept",
+   "value": "2025-12-30",
+   "text": "2025-12-30",
+   "kind": "date",
+   "unit": "",
+   "grade": null,
+   "parent_grade": null,
+   "grade_words": "a fact about the rows, not graded",
+   "assumes": null,
+   "inputs": {
+    "columns": [
+     "order_date"
+    ],
+    "window": null,
+    "op": "max"
+   }
+  }
+ ],
+ "refused": [],
+ "note": "Descriptive arithmetic on the rows the engine kept, in the engine's own comparison windows (the latest 12 months against the 12 before); the monthly totals of these rows match the engine's own charted series. The headline figures carry the claim's grade; a figure derived from them is not graded itself and names the grade of the change it is part of. A contribution says where the change sits, not what caused it, and a what-if is arithmetic, not a forecast. The figures are shown rounded; they add up before rounding."
+}

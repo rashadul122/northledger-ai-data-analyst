@@ -1,0 +1,1017 @@
+{
+ "_note": "Captured 29 Sep 2026 from the ship2 privacy run (.work/live-e2e/ship2): the results the page posted to /report and the answer. The file is invented (every name and email in it is made up).",
+ "results": {
+  "ok": true,
+  "input": {
+   "name": "[your file]",
+   "rows": 300,
+   "columns": 4
+  },
+  "goal": "How did order revenue and volume develop over 2024\u20132025, and how much does order value differ by region and by the number of units sold?",
+  "reading": "This is an order-level sales file of 300 orders placed between January 2024 and December 2025, with one row per order. Each row records the order date, the sales region it belongs to, the revenue the order brought in, and how many units it contained. The dates span 24 months (267 distinct dates), so the grain is a single transaction rather than a monthly or regional total. Revenue is a continuous money amount while units is a bounded integer count.",
+  "quality_risks": [
+   "No currency is stated anywhere in the file; all revenue figures are assumed to be in one consistent currency.",
+   "Only 24 months and 2 calendar years are covered, so long-run trends, multi-year extremes and seasonality beyond two cycles cannot be established.",
+   "Every revenue value is distinct (300 distinct of 300 rows), so this is raw order grain \u2014 mixing it with monthly or regional totals would double-count.",
+   "Revenue is right-skewed with a long tail of large orders, so a few big transactions can move regional averages; medians are safer.",
+   "With only region, date and units as context, nothing separates product mix, customer type or discounting from a genuine regional difference.",
+   "Units top out at 40 and are integers, which may indicate a capped or binned field rather than an exact item count."
+  ],
+  "plan_applied": [
+   "kept the 4 columns the goal needs, set aside 2 others"
+  ],
+  "plan_refused": [],
+  "findings": [
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
+    "value": -1.3245033112582831,
+    "why": "No change of at least the 5% bar is shown: a 1.3% fall in the average month, latest 12 months against the 12 before (95% interval -2.4% to +1.8%; built to hold the true change 95% of the time; in simulated series with strong momentum, which"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the monthly total of revenue, latest 12 months against the 12 before",
+    "value": 18.67968073253438,
+    "why": "No change of at least the 5% bar is shown: an 18.7% rise in the average month, latest 12 months against the 12 before (95% interval -32.1% to +86.2%; built to hold the true change 95% of the time; in simulated series with strong momentum, w"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the monthly total of units, latest 12 months against the 12 before",
+    "value": 1.5994881637875835,
+    "why": "No change of at least the 5% bar is shown: a 1.6% rise in the average month, latest 12 months against the 12 before (95% interval -51.6% to +65.2%; built to hold the true change 95% of the time; in simulated series with strong momentum, whi"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the average month of revenue, latest 12 months against the 12 before",
+    "value": 19.058056110942474,
+    "why": "No change of at least the 5% bar is shown: a 19.1% rise in the average month, latest 12 months against the 12 before (95% interval -24.9% to +113.9%; built to hold the true change 95% of the time; in simulated series with strong momentum, w"
+   },
+   {
+    "verdict": "WATCH",
+    "kind": "business",
+    "claim": "Change in the average month of units, latest 12 months against the 12 before",
+    "value": 1.7860469083894657,
+    "why": "No change of at least the 5% bar is shown: a 1.8% rise in the average month, latest 12 months against the 12 before (95% interval -31.4% to +47.3%; built to hold the true change 95% of the time; in simulated series with strong momentum, whi"
+   },
+   {
+    "verdict": "INSUFFICIENT",
+    "kind": "forecast",
+    "claim": "Months of history available to forecast monthly total revenue in [your file]",
+    "value": 24,
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   },
+   {
+    "verdict": "INSUFFICIENT",
+    "kind": "forecast",
+    "claim": "Months of history available to forecast monthly rows in [your file]",
+    "value": 24,
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   },
+   {
+    "verdict": "INSUFFICIENT",
+    "kind": "forecast",
+    "claim": "Months of history available to forecast monthly total units in [your file]",
+    "value": 24,
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   }
+  ],
+  "analyses": [
+   {
+    "title": "revenue by region",
+    "sentence": "By region, the highest average revenue is North (1,034, 95% range 917 to 1,158, 75 rows) and the lowest West (840, 77 rows): a gap of 194 (95% range 17.3 to 387).",
+    "method": "Each group's average with a 95% bootstrap range (999 resamples); groups with fewer than 5 values are left out. An association with the group, not its cause.",
+    "table": {
+     "cols": [
+      "region",
+      "Rows",
+      "Average",
+      "95% range",
+      "Median"
+     ],
+     "rows": [
+      [
+       "North",
+       "75",
+       "1,034",
+       "917 to 1,158",
+       "1,186"
+      ],
+      [
+       "East",
+       "71",
+       "1,028",
+       "896 to 1,151",
+       "1,033"
+      ],
+      [
+       "South",
+       "77",
+       "847",
+       "738 to 950",
+       "791"
+      ],
+      [
+       "West",
+       "77",
+       "840",
+       "721 to 965",
+       "781"
+      ]
+     ]
+    }
+   },
+   {
+    "title": "units and revenue",
+    "sentence": "Across 300 rows, higher units goes with higher revenue, strongly (Spearman 0.976, 95% range 0.969 to 0.981). An association, not a cause.",
+    "method": "Spearman rank correlation (it reads any steady rise or fall, not only a straight line); 95% range by the Fisher transform with the Spearman correction.",
+    "table": {
+     "cols": [
+      "Rows",
+      "Spearman",
+      "95% range"
+     ],
+     "rows": [
+      [
+       "300",
+       "0.976",
+       "0.969 to 0.981"
+      ]
+     ]
+    }
+   },
+   {
+    "title": "How revenue is spread",
+    "sentence": "revenue: half the 300 values lie between 476 and 1,370 (median 926); one in ten is below 208 and one in ten above 1,664.",
+    "method": "Percentiles of every value; the bars count values in equal-width bins.",
+    "table": {
+     "cols": [
+      "Values",
+      "10th",
+      "25th",
+      "Median",
+      "75th",
+      "90th"
+     ],
+     "rows": [
+      [
+       "300",
+       "208",
+       "476",
+       "926",
+       "1,370",
+       "1,664"
+      ]
+     ]
+    }
+   },
+   {
+    "title": "Largest revenue by region in 2025",
+    "sentence": "In 2025 the largest yearly total revenue by region were East (44,617), North (42,350), South (32,738); together 78.6% of the total over all 4 region entries.",
+    "method": "Each region entry's yearly total (every row added) for each complete calendar year; the latest year at least 80% of the entries report. Dates from the order_date column.",
+    "table": {
+     "cols": [
+      "region",
+      "revenue",
+      "Share of all",
+      "Change over 10 years"
+     ],
+     "rows": [
+      [
+       "East",
+       "44,617",
+       "29.3%",
+       ""
+      ],
+      [
+       "North",
+       "42,350",
+       "27.8%",
+       ""
+      ],
+      [
+       "South",
+       "32,738",
+       "21.5%",
+       ""
+      ],
+      [
+       "West",
+       "32,508",
+       "21.4%",
+       ""
+      ]
+     ]
+    }
+   },
+   {
+    "title": "What predicts revenue",
+    "sentence": "A straight-line model of revenue from units, region, trained on earlier dates and scored on the 4 later blocks, predicts them with R squared 0.949 and a typical error of 91.1, against 475 for the mean of its training rows. units carries most of it (R squared falls by 0.949 without it). An association the model learned, not a cause.",
+    "method": "Least squares on 300 complete rows (0 of 300 dropped: none); categories as one column per value (their commonest value is the base); scored out of sample by forward-chaining: the rows sorted by order_date and cut into 5 blocks, each of the last 4 predicted by a model trained only on the blocks befor",
+    "table": {
+     "cols": [
+      "Driver",
+      "R squared lost without it",
+      "Effect (per unit, or against the base value)"
+     ],
+     "rows": [
+      [
+       "units",
+       "0.949",
+       "per unit 44.7"
+      ],
+      [
+       "region",
+       "0.0139",
+       "South \u221243.4; North 56.7; East 122"
+      ],
+      [
+       "Typical held-out error (MAE)",
+       "91.1",
+       "against 475 for the mean of the training rows"
+      ],
+      [
+       "Rows",
+       "300 of 300 used, 240 scored",
+       "dropped: none"
+      ]
+     ]
+    }
+   }
+  ],
+  "charts": [
+   {
+    "kind": "bars",
+    "title": "revenue by region",
+    "series": [
+     {
+      "label": "North",
+      "value": 1034.4636
+     },
+     {
+      "label": "East",
+      "value": 1028.3539436619715
+     },
+     {
+      "label": "South",
+      "value": 846.5563636363638
+     },
+     {
+      "label": "West",
+      "value": 840.0946753246754
+     }
+    ]
+   },
+   {
+    "kind": "scatter",
+    "title": "units and revenue",
+    "x_name": "units",
+    "y_name": "revenue",
+    "points": [
+     [
+      5,
+      209.75
+     ],
+     [
+      4,
+      152.15
+     ],
+     [
+      36,
+      1607.73
+     ],
+     [
+      19,
+      856
+     ],
+     [
+      16,
+      602.32
+     ],
+     [
+      37,
+      1287.54
+     ],
+     [
+      14,
+      544.2
+     ],
+     [
+      12,
+      449.19
+     ],
+     [
+      5,
+      179.14
+     ],
+     [
+      5,
+      198.29
+     ],
+     [
+      10,
+      434.61
+     ],
+     [
+      31,
+      1314.34
+     ],
+     [
+      20,
+      756.94
+     ],
+     [
+      32,
+      1311.55
+     ],
+     [
+      1,
+      36.59
+     ],
+     [
+      36,
+      1486.2
+     ],
+     [
+      16,
+      612.4
+     ],
+     [
+      30,
+      1283.78
+     ],
+     [
+      31,
+      1152.49
+     ],
+     [
+      22,
+      870.61
+     ],
+     [
+      37,
+      1737.65
+     ],
+     [
+      23,
+      1063.83
+     ],
+     [
+      1,
+      42.13
+     ],
+     [
+      40,
+      1627.7
+     ],
+     [
+      16,
+      767.71
+     ],
+     [
+      15,
+      615.19
+     ],
+     [
+      5,
+      222.36
+     ],
+     [
+      20,
+      817.54
+     ],
+     [
+      17,
+      712.02
+     ],
+     [
+      36,
+      1499.29
+     ],
+     [
+      30,
+      1237.9
+     ],
+     [
+      38,
+      1522.92
+     ],
+     [
+      37,
+      1633.96
+     ],
+     [
+      2,
+      76.5
+     ],
+     [
+      39,
+      1529.34
+     ],
+     [
+      5,
+      209.52
+     ],
+     [
+      21,
+      1033.78
+     ],
+     [
+      10,
+      405.71
+     ],
+     [
+      39,
+      1761.7
+     ],
+     [
+      35,
+      1265.51
+     ],
+     [
+      5,
+      194.33
+     ],
+     [
+      9,
+      358.5
+     ],
+     [
+      13,
+      592.6
+     ],
+     [
+      32,
+      1213.51
+     ],
+     [
+      27,
+      1090.95
+     ],
+     [
+      6,
+      257.44
+     ],
+     [
+      6,
+      239.57
+     ],
+     [
+      20,
+      786.77
+     ],
+     [
+      40,
+      1443.77
+     ],
+     [
+      19,
+      691.63
+     ],
+     [
+      12,
+      419.75
+     ],
+     [
+      2,
+      78.05
+     ],
+     [
+      36,
+      1579.53
+     ],
+     [
+      34,
+      1406.93
+     ],
+     [
+      9,
+      331.99
+     ],
+     [
+      8,
+      301.27
+     ],
+     [
+      23,
+      924.9
+     ],
+     [
+      18,
+      739.26
+     ],
+     [
+      34,
+      1246.89
+     ],
+     [
+      33,
+      1436.93
+     ],
+     [
+      19,
+      925.12
+     ],
+     [
+      14,
+      579.99
+     ],
+     [
+      36,
+      1336.42
+     ],
+     [
+      11,
+      412.35
+     ],
+     [
+      11,
+      410.36
+     ],
+     [
+      31,
+      1304.5
+     ],
+     [
+      38,
+      1430.26
+     ],
+     [
+      33,
+      1409.67
+     ],
+     [
+      30,
+      1230.76
+     ],
+     [
+      32,
+      1327.19
+     ],
+     [
+      33,
+      1370.31
+     ],
+     [
+      35,
+      1546.66
+     ],
+     [
+      10,
+      411
+     ],
+     [
+      34,
+      1210.15
+     ],
+     [
+      6,
+      274.07
+     ],
+     [
+      23,
+      1032.94
+     ],
+     [
+      15,
+      621.4
+     ],
+     [
+      6,
+      244.08
+     ],
+     [
+      19,
+      766.41
+     ],
+     [
+      17,
+      675.59
+     ],
+     [
+      32,
+      1252.7
+     ],
+     [
+      24,
+      1029.29
+     ],
+     [
+      35,
+      1491.25
+     ],
+     [
+      15,
+      677.14
+     ],
+     [
+      8,
+      366.79
+     ],
+     [
+      19,
+      753.81
+     ],
+     [
+      16,
+      604.61
+     ],
+     [
+      33,
+      1476.51
+     ],
+     [
+      1,
+      44.4
+     ],
+     [
+      14,
+      528.8
+     ],
+     [
+      24,
+      935.11
+     ],
+     [
+      31,
+      1350.28
+     ],
+     [
+      20,
+      995.29
+     ],
+     [
+      30,
+      1143.83
+     ],
+     [
+      25,
+      1141.99
+     ],
+     [
+      24,
+      946.67
+     ],
+     [
+      16,
+      660.34
+     ],
+     [
+      3,
+      113.29
+     ],
+     [
+      27,
+      936.96
+     ],
+     [
+      2,
+      96.41
+     ],
+     [
+      34,
+      1335.2
+     ],
+     [
+      25,
+      1156.43
+     ],
+     [
+      17,
+      736.86
+     ],
+     [
+      15,
+      721.43
+     ],
+     [
+      9,
+      384.58
+     ],
+     [
+      17,
+      694.67
+     ],
+     [
+      1,
+      42.37
+     ],
+     [
+      10,
+      463.7
+     ],
+     [
+      39,
+      1594.72
+     ],
+     [
+      3,
+      127.07
+     ],
+     [
+      32,
+      1362.5
+     ],
+     [
+      18,
+      657.74
+     ],
+     [
+      11,
+      533.45
+     ],
+     [
+      38,
+      1417.23
+     ],
+     [
+      3,
+      129.51
+     ],
+     [
+      22,
+      994.65
+     ],
+     [
+      21,
+      810.03
+     ],
+     [
+      14,
+      583.3
+     ],
+     [
+      14,
+      587.72
+     ],
+     [
+      1,
+      38.01
+     ]
+    ]
+   },
+   {
+    "kind": "bars",
+    "title": "How revenue is spread",
+    "series": [
+     {
+      "label": "36.6 to 208",
+      "value": 30
+     },
+     {
+      "label": "208 to 380",
+      "value": 27
+     },
+     {
+      "label": "380 to 551",
+      "value": 31
+     },
+     {
+      "label": "551 to 723",
+      "value": 35
+     }
+    ]
+   },
+   {
+    "kind": "bars",
+    "title": "Largest revenue by region in 2025",
+    "series": [
+     {
+      "label": "East",
+      "value": 44616.75
+     },
+     {
+      "label": "North",
+      "value": 42350.45
+     },
+     {
+      "label": "South",
+      "value": 32738.29
+     },
+     {
+      "label": "West",
+      "value": 32508.44
+     }
+    ]
+   },
+   {
+    "kind": "bars",
+    "title": "What predicts revenue",
+    "series": [
+     {
+      "label": "units",
+      "value": 0.9489474320582366
+     },
+     {
+      "label": "region",
+      "value": 0.01394083209868513
+     }
+    ]
+   }
+  ],
+  "tables": [
+   {
+    "title": "revenue by region",
+    "cols": [
+     "region",
+     "Rows",
+     "Average",
+     "95% range",
+     "Median"
+    ],
+    "rows": [
+     [
+      "North",
+      "75",
+      "1,034",
+      "917 to 1,158",
+      "1,186"
+     ],
+     [
+      "East",
+      "71",
+      "1,028",
+      "896 to 1,151",
+      "1,033"
+     ],
+     [
+      "South",
+      "77",
+      "847",
+      "738 to 950",
+      "791"
+     ],
+     [
+      "West",
+      "77",
+      "840",
+      "721 to 965",
+      "781"
+     ]
+    ]
+   },
+   {
+    "title": "units and revenue",
+    "cols": [
+     "Rows",
+     "Spearman",
+     "95% range"
+    ],
+    "rows": [
+     [
+      "300",
+      "0.976",
+      "0.969 to 0.981"
+     ]
+    ]
+   },
+   {
+    "title": "How revenue is spread",
+    "cols": [
+     "Values",
+     "10th",
+     "25th",
+     "Median",
+     "75th",
+     "90th"
+    ],
+    "rows": [
+     [
+      "300",
+      "208",
+      "476",
+      "926",
+      "1,370",
+      "1,664"
+     ]
+    ]
+   },
+   {
+    "title": "Largest revenue by region in 2025",
+    "cols": [
+     "region",
+     "revenue",
+     "Share of all",
+     "Change over 10 years"
+    ],
+    "rows": [
+     [
+      "East",
+      "44,617",
+      "29.3%",
+      ""
+     ],
+     [
+      "North",
+      "42,350",
+      "27.8%",
+      ""
+     ],
+     [
+      "South",
+      "32,738",
+      "21.5%",
+      ""
+     ],
+     [
+      "West",
+      "32,508",
+      "21.4%",
+      ""
+     ]
+    ]
+   },
+   {
+    "title": "What predicts revenue",
+    "cols": [
+     "Driver",
+     "R squared lost without it",
+     "Effect (per unit, or against the base value)"
+    ],
+    "rows": [
+     [
+      "units",
+      "0.949",
+      "per unit 44.7"
+     ],
+     [
+      "region",
+      "0.0139",
+      "South \u221243.4; North 56.7; East 122"
+     ],
+     [
+      "Typical held-out error (MAE)",
+      "91.1",
+      "against 475 for the mean of the training rows"
+     ],
+     [
+      "Rows",
+      "300 of 300 used, 240 scored",
+      "dropped: none"
+     ]
+    ]
+   }
+  ],
+  "analyses_refused": [],
+  "story": {
+   "headline": "Total revenue +18.7%, graded WATCH; volume -1.3% on the year before, graded WATCH; total units +1.6%, graded WATCH; average revenue +19.1%, graded WATCH; average units +1.8%, graded WATCH.",
+   "what_happened": [
+    "The monthly total of revenue moved from 128,256 in the year before to 152,214 in the latest year, a change of +18.7%. The same test's interval for the change runs from -32.1% to +86.2%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the mode",
+    "The monthly total of units moved from 3,126 in the year before to 3,176 in the latest year, a change of +1.6%. The same test's interval for the change runs from -51.6% to +65.2%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can u",
+    "Row volume changed by -1.3% in the latest year (149 rows) against the year before (151 rows). The same test's interval for the change runs from -2.4% to +1.8%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can underestimate, it he",
+    "Average revenue (the average month) moved from 853.6 in the year before to 1,016.3 in the latest year, a change of +19.1%. The same test's interval for the change runs from -24.9% to +113.9%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which th",
+    "Average units (the average month) moved from 20.8 in the year before to 21.2 in the latest year, a change of +1.8%. The same test's interval for the change runs from -31.4% to +47.3%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model ",
+    "The most common region value is 'South', with 25.7% of rows."
+   ],
+   "why": [
+    "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+   ],
+   "what_to_do": [
+    "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+   ],
+   "whats_next": [
+    "No forecast of monthly total revenue in [your file]: 24 months of history is too short to replay and check one.",
+    "No forecast of monthly rows in [your file]: 24 months of history is too short to replay and check one.",
+    "No forecast of monthly total units in [your file]: 24 months of history is too short to replay and check one."
+   ],
+   "cannot_answer": [
+    "The data cannot support this claim: Months of history available to forecast monthly rows in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) o",
+    "The data cannot support this claim: Months of history available to forecast monthly total revenue in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more m",
+    "The data cannot support this claim: Months of history available to forecast monthly total units in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more mon"
+   ]
+  },
+  "forecast": {},
+  "health_score": 65.3,
+  "health_issues": [
+   "Newest row in order_date is 2025-12-30, 273 days old as of 2026-09-29.",
+   "revenue: 300 of 300 numbers are stored as text; they will sort '10' before '9'.",
+   "units: 300 of 300 numbers are stored as text; they will sort '10' before '9'."
+  ],
+  "cleaning": {
+   "rows_in": 300,
+   "rows_clean": 300,
+   "rows_quarantined": 0,
+   "fixes": [
+    "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+    "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+    "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+   ]
+  },
+  "limitations": [
+   "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+   "The data cannot support this claim: Months of history available to forecast monthly rows in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so ",
+   "The data cannot support this claim: Months of history available to forecast monthly total revenue in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn f",
+   "The data cannot support this claim: Months of history available to forecast monthly total units in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn fro",
+   "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+   "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+  ]
+ },
+ "objective": "",
+ "context_queries": [
+  "average order value retail benchmark 2024 2025 by region",
+  "US retail sales growth by region 2024 2025 trend"
+ ]
+}

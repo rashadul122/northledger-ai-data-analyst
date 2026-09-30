@@ -1198,6 +1198,7 @@
       return base;
     });
   }
+  function arrived(f) { return !!f && String(f.kind || '').indexOf(CODED) >= 0; }
   function planSplit(profile, flagged, decisions, landedMap) {
     var fl = (flagged || []).filter(function (f) { return f && typeof f.column === 'string' && f.column; });
     var dec = decisions || {}, byName = {}, withheld = [], coded = [], lm = landedMap && typeof landedMap === 'object' ? landedMap : {};
@@ -1210,18 +1211,25 @@
         (!exact && fl.filter(function (x) { return x.column === land[i]; })[0]) || fl.filter(function (x) { return slug(x.column) === slug(c.name); })[0];
       var d = !f && !c.privacy_flag ? 'none' : String((f && dec[f.column]) || dec[c.name] || 'withhold');
       if (['withhold', 'code', 'keep', 'none'].indexOf(d) < 0) d = 'withhold';
+      // an email or phone column the engine coded as it arrived cannot be kept as it is: Keep reads as Code, as the
+      // adapter reads it (engine/nl_browser.py CODED_ON_ARRIVAL), whatever the decisions say
+      if (d === 'keep' && (arrived(f) || String(c.privacy_flag || '').indexOf(CODED) >= 0)) d = 'code';
       byName[c.name] = d;
       if (d === 'withhold') { add(withheld, c.name); if (f) add(withheld, f.column); }
       if (d === 'code') { add(coded, c.name); if (f) add(coded, f.column); }
     });
-    fl.forEach(function (f) { if (String(dec[f.column] || 'withhold') === 'withhold') add(withheld, f.column); });
+    fl.forEach(function (f) {
+      var d = String(dec[f.column] || 'withhold');
+      if (d === 'withhold') add(withheld, f.column);
+      else if (d === 'keep' && arrived(f)) add(coded, f.column);
+    });
     // every spelling of a flagged column's name: the file's own header beside the landed name ("Date Of Birth"
     // and date_of_birth), from the worker's map, so a withheld one is kept out under either
     Object.keys(lm).forEach(function (h) {
       var f = fl.filter(function (x) { return x.column === String(lm[h]); })[0];
       if (!f) return;
       var d = String(dec[f.column] || 'withhold');
-      if (d === 'code') add(coded, h);
+      if (d === 'code' || (d === 'keep' && arrived(f))) add(coded, h);
       else if (d !== 'keep') add(withheld, h);
     });
     return { byName: byName, withheld: withheld, coded: coded };
@@ -1287,11 +1295,48 @@
         !T.namesWithheld(x.detail, w) && !T.namesWithheld(x.column, w);
     });
   };
+  // The web searches /report may run: the adapter's list, rep.ai_plan.context_queries, each built by the adapter
+  // from the plan's items of fixed terms (engine/context_terms.json: an indicator, a sector, a region and years;
+  // engine/nl_browser.py _context_queries), never free text and never anything from the file. Always an array: []
+  // (no search) when the engine sent none, the visitor ran without a plan, or the plan or the profile failed; the
+  // plan's own words (its old context_queries) are never sent (final review, 30 Sep 2026)
+  T.contextQueries = function (rep) {
+    var ap = rep && rep.ai_plan;
+    return ap && Array.isArray(ap.context_queries) ? ap.context_queries.filter(function (q) { return typeof q === 'string' && q.trim(); }).slice(0, 4) : [];
+  };
+  // one of the plan's search items as the adapter builds its search, "[sector] indicator [region] [from] [to]", in the
+  // plan's own words (the plan-change list shows what the AI asked for; the adapter drops a term off its list)
+  T.contextWords = function (it) {
+    var w = function (v) { return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : ''; };
+    var y = it && Array.isArray(it.years) ? it.years.slice(0, 2).map(String) : [];
+    if (y.length === 2 && y[0] === y[1]) y = y.slice(0, 1);
+    return [w(it && it.sector), w(it && it.indicator), w(it && it.region)].concat(y).filter(Boolean).join(' ');
+  };
+  // the share warning (29 Sep 2026 review): a link always warns, since any report is built from the visitor's
+  // file; a report made with kept personal columns (or saved before they were recorded) says so
+  T.SHARE_WARN_GENERAL = 'This report is built from your file and may contain values from it. Anyone with the link can see them.';
+  T.SHARE_WARN_PERSONAL = 'This report may contain personal values (people\'s names, for example). Anyone with the link can see them.';
+  T.shareWarning = function (kept) { return !Array.isArray(kept) || kept.length ? T.SHARE_WARN_PERSONAL : T.SHARE_WARN_GENERAL; };
+  // the most a /share body may hold (the worker's cap is 130,000 bytes, insight-proxy/src/share.js SHARE_MAX_BYTES; this
+  // keeps 15,000 below it, see shareBody), and what the visitor reads when a report is over it even without the
+  // engine's results
+  T.SHARE_BODY_MAX = 115000;
+  T.shareTooLarge = function (bytes) {
+    return 'This report is too large for a link: ' + Math.ceil(bytes / 1000).toLocaleString('en-US') + ' KB, and a link holds at most ' +
+      Math.floor(T.SHARE_BODY_MAX / 1000) + ' KB. Nothing was sent. Download the PDF to pass it on instead.';
+  };
+  // the honesty check's count, in words: the /report answer's repaired (sentences removed) and removed_figures
+  T.removedWords = function (j) {
+    var n = j && typeof j.repaired === 'number' && j.repaired >= 0 ? j.repaired : null;
+    if (n === null) return '';
+    var figs = j && Array.isArray(j.removed_figures) ? j.removed_figures.filter(function (x) { return typeof x === 'string' || typeof x === 'number'; }).map(String).slice(0, 20) : [];
+    return (n === 0 ? 'No sentence removed' : n + ' sentence' + (n === 1 ? '' : 's') + ' removed') + (n > 0 && figs.length ? ' (figures: ' + figs.join(', ') + ')' : '');
+  };
 
   /* ------------------------------------------------------------ "What changed" between two plans */
   // Computed, never quoted (live probe, 29 Sep 2026: the AI said it "added compare of revenue by channel",
   // which the first plan already had). Every field the engine runs or the report states: the goal, the
-  // kind of data, what the AI read, the headline measure, the web searches (context_queries), each
+  // kind of data, what the AI read, the headline measure, the web searches (the plan's context items), each
   // column's reading (semantic_type, unit, role), each step with all its columns and values, and the
   // analyses (type, columns, by). The same items in another order are a reorder, never a removal and an
   // addition. Not compared: the AI's own words about the plan (why, changes, quality_risks,
@@ -1385,8 +1430,9 @@
     da.added.forEach(function (y) { out.push('added the analysis ' + anKey(y)); });
     da.removed.forEach(function (x) { out.push('removed the analysis ' + anKey(x)); });
     if (da.reordered) out.push('the same analyses in another order');
-    // the web searches the report writer will run
-    var dq = listDiff(a.context_queries, b.context_queries, String);
+    // the web searches the report writer will run: the plan's items of list terms, as the adapter builds them
+    var cx = function (p) { return (Array.isArray(p.context) ? p.context : []).filter(function (x) { return x && typeof x === 'object'; }).map(T.contextWords); };
+    var dq = listDiff(cx(a), cx(b), String);
     dq.added.forEach(function (s) { out.push('added the web search ' + q(String(s))); });
     dq.removed.forEach(function (s) { out.push('removed the web search ' + q(String(s))); });
     if (dq.reordered) out.push('the same web searches in another order');
@@ -1490,7 +1536,7 @@
     var LIM = T.limits();
     Array.prototype.forEach.call(document.querySelectorAll('[data-needs-ai]'), function (n) { n.hidden = !CFG.ai_proxy_url; });   // AI wording notes follow the same switch
     var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [],
-      aiCharts: [], aiTables: [], shareUrl: '', delToken: '', question: '',
+      aiCharts: [], aiTables: [], aiResults: null, shareUrl: '', delToken: '', question: '', prevFile: '',
       kept: [], sendKey: '' };                       // the flagged columns the visitor agreed to send (option B), and the list the box names
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
@@ -1664,7 +1710,7 @@
     // the box a kept column puts on the step (option B): required, unticked, and naming the columns it sends
     function sendWords(kept) {
       return esc('Send these personal columns to the AI: ') + kept.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(', ') +
-        esc('. Their values (for example people\'s names, emails or phone numbers) go to DeepSeek, a company based in China, through this site\'s proxy, and may appear in the AI\'s report and in any link you share.');
+        esc('. Their values (for example people\'s names) go to DeepSeek, a company based in China, through this site\'s proxy, and may appear in the AI\'s report and in any link you share.');
     }
     // The visitor's AI choice (26 Sep 2026 flow, consent restored 29 Sep 2026): nothing reaches the proxy unless
     // they press "Continue with the AI". Shown on the personal-data step, or alone when nothing was flagged.
@@ -1680,10 +1726,15 @@
       'The page flags columns that look personal and can miss some (for example people\'s names under a heading like "Stylist"); if your file has such a column, continue without the AI.',
       'The engine runs the plan straight away, and the AI corrects its plan once if the engine finds a problem a new plan could fix (never when it had to set aside too many rows); you can change the plan afterwards.',
       'The engine\'s results (findings, figures and tables; never rows) then go back for the AI to write the report, which may look up public sources on the web.',
+      'The web searches use only general terms such as an indicator, a sector, a country and years, never anything from your file.',
       'Without the AI, nothing leaves this browser.'];
-    function aiChoiceHtml() {
-      return '<p class="pd-ai-note">' + esc(AI_CONSENT.join(' ')) + '</p>' +
-        '<div class="pd-send" id="try-pd-send" hidden></div>' +
+    // the consent box sits right after the Keep choices (on a phone the long AI note used to push it a screen
+    // below them), with a polite live note that says it appeared and where (review of 29 Sep 2026)
+    function sendBoxHtml() {
+      return '<div class="pd-send" id="try-pd-send" hidden></div><p class="sr" id="try-pd-send-said" role="status" aria-live="polite"></p>';
+    }
+    function aiChoiceHtml(withBox) {
+      return (withBox ? sendBoxHtml() : '') + '<p class="pd-ai-note">' + esc(AI_CONSENT.join(' ')) + '</p>' +
         '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with the AI</button> ' +
         '<button type="button" class="btn btn-ghost" id="try-pd-noai">Continue without AI</button>' +
         '<p class="note pd-why" id="try-pd-why" hidden>Continue with the AI is off until you tick the box above. Continue without AI sends nothing.</p></div>';
@@ -1701,9 +1752,12 @@
       if (!box || !go) return;
       var kept = keptCols(), key = kept.join('\n');
       if (key !== S.sendKey) {
+        var was = !!S.sendKey;
         S.sendKey = key;
         box.innerHTML = kept.length ? '<p class="pd-send-ok"><input type="checkbox" id="try-pd-send-ok" required aria-required="true">' +
           '<label for="try-pd-send-ok">' + sendWords(kept) + '</label></p>' : '';
+        var said = $('try-pd-send-said');
+        if (said) said.textContent = kept.length ? (was ? 'The box to tick now names: ' : 'A box to tick appeared right below these choices: to send ') + kept.join(', ') + (was ? '.' : ' to the AI, tick it before you continue with the AI.') : (was ? 'No column is kept now, so no box needs ticking.' : '');
       }
       box.hidden = !kept.length;
       var ok = sendOk();
@@ -1734,7 +1788,7 @@
     }
     function askAiChoice() {
       S.sendKey = '';
-      el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' + aiChoiceHtml();
+      el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' + aiChoiceHtml(true);
       el.pd.hidden = false;
       syncSend();
       wireAiChoice(function () { return null; });
@@ -1758,7 +1812,7 @@
               return '<label class="pd-opt"><input type="radio" name="pd-' + i + '" value="' + c[0] + '"' + (c[0] === 'withhold' ? ' checked' : '') + (off ? ' disabled' : '') + ' data-col="' + esc(f.column) + '"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
             }).join('') + '</div>' + (coded ? '<p class="pd-note">Already coded as it arrived: an email address or phone number cannot be kept as it is, so Keep is not offered.</p>' : '') + '</fieldset>';
         }).join('') +
-        (CFG.ai_proxy_url ? aiChoiceHtml() : '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>');
+        (CFG.ai_proxy_url ? aiChoiceHtml(true) : '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>');
       el.pd.hidden = false;
       var pdDecisions = function () {
         var d = {};
@@ -2253,7 +2307,7 @@
         S.seq += 1; S.useAi = false; S.name = name; S.asOf = asOf || null; S.objective = S.question; S.report = null;
         // a new file starts every personal-data choice again (option B): no column kept, no box ticked, and the last
         // file's AI report off the screen (it stays in "Your previous reports")
-        S.kept = []; S.sendKey = ''; S.aiReport = null;
+        S.kept = []; S.sendKey = ''; S.aiReport = null; S.liveAi = null; S.liveT = 0;
         var lastAi = document.getElementById('try-ai-report');
         if (lastAi) lastAi.hidden = true;
         // the file's SHA-256 (hex): the plan cache key and nothing else, never the bytes
@@ -2264,7 +2318,7 @@
               S.fileHash = Array.from(new Uint8Array(dg)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
             }, function () { /* the digest refused: the plan runs uncached, the old behaviour */ });
           }
-        } catch (e) { /* no crypto.subtle (a plain http: page): the old behaviour */ } S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.shareUrl = ''; S.delToken = '';   // the question box carries the visitor's typed question as the objective
+        } catch (e) { /* no crypto.subtle (a plain http: page): the old behaviour */ } S.ai = null; S.aiNote = ''; S.aiRaw = false; S.aiRed = []; S.aiCharts = []; S.aiTables = []; S.aiResults = null; S.prevFile = ''; S.shareUrl = ''; S.delToken = '';   // the question box carries the visitor's typed question as the objective
         el.runName.textContent = name;
         drawStages();
         el.run.hidden = false;
@@ -2380,10 +2434,11 @@
         // real figures at the [CHART:n]/[TABLE:n] markers the report places
         if (pl && Array.isArray(pl.charts)) S.aiCharts = pl.charts;
         if (pl && Array.isArray(pl.tables)) S.aiTables = pl.tables;
+        // the results the report is written from, kept for this report's PDF (built in this browser, 45-report-pdf.js)
+        S.aiResults = pl || null;
         fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: S.objective, results: pl,
-            context_queries: (S.plan && Array.isArray(S.plan.context_queries) && S.plan.context_queries.length) ? S.plan.context_queries.slice(0, 4) : undefined }),
+          body: JSON.stringify({ objective: S.objective, results: pl, context_queries: T.contextQueries(rep) }),
           credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
           .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
           .then(function (j) {
@@ -2391,7 +2446,8 @@
             if (seq !== S.seq) return;
             if (!j || !j.report) throw new Error('no report');
             j.kept = (S.kept || []).slice();          // the flagged columns this report was made with (the share warning)
-            S.aiReport = j;
+            j.goal = (rep && rep.ai_plan && rep.ai_plan.goal) || S.objective || '';   // the question it answers (its PDF, its link)
+            S.aiReport = j; S.liveAi = j;             // liveAi: the AI report of the engine report on the page (the analyst line)
             drawAiReport(j);
             savePrev(j);
             setStage('report', 'done');
@@ -2424,28 +2480,45 @@
       // results_for_ai); the name comes back only here, in this browser (a share link keeps the placeholder)
       var html = aiReportHtml(String(j.report || '').split(FILE_WORD).join(S.name || FILE_WORD));
       var srcs = j.sources || [];
-      // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden.
-      // A repaired sentence carried a figure the engine never computed; it was deleted before shipping.
-      var trust = (typeof j.repaired === 'number' && j.repaired > 0)
-        ? '<p class="ai-rep-trust" role="note">\u2713 Honesty check: ' + j.repaired + ' sentence' + (j.repaired === 1 ? '' : 's') +
-          ' carrying a figure the engine never computed ' + (j.repaired === 1 ? 'was' : 'were') + ' removed before this report was shown.</p>'
-        : '<p class="ai-rep-trust" role="note">\u2713 Honesty check: every figure in this report matches the engine\'s own computed results.</p>';
+      // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden, with the count
+      // first. A figure passes only when the engine computed it or a source the same sentence cites prints it (the
+      // worker's guard, insight-proxy/src/figures.js); a removed sentence carried one that was neither (final review,
+      // 30 Sep 2026: the note said all figures were the engine's, which was false beside a cited source's figure)
+      var n = typeof j.repaired === 'number' && j.repaired >= 0 ? j.repaired : null;
+      var trust = '<p class="ai-rep-trust" role="note"' + (n === null ? '' : ' data-removed="' + n + '"') + '>\u2713 Honesty check: ' +
+        (n === null ? 'every figure was checked before this report was shown: each was computed by the engine or quoted from a source cited in the same sentence.'
+          : n === 0 ? '0 sentences removed; every figure was computed by the engine or quoted from a source cited in the same sentence.'
+            : n + ' sentence' + (n === 1 ? '' : 's') + ' removed before this report was shown: ' + (n === 1 ? 'it' : 'each') + ' carried a figure that was neither computed by the engine nor quoted from a source cited in the same sentence. Every figure left is one or the other.') + '</p>';
+      var paper = pdfPaper();
       card.innerHTML = '<div class="ai-rep-head"><h3>The AI-written report</h3>' +
-        '<p class="note">Figures by the engine, words by ' + esc(j.model || 'the AI') + ', outside claims cited [S1]\u2026; every figure was checked against the engine\'s own results.</p></div>' +
+        '<p class="note">Figures by the engine or quoted from the sources it cites [S1]\u2026, words by ' + esc(j.model || 'the AI') + '; every figure was checked against the engine\'s results or the source cited beside it.</p></div>' +
         trust +
         '<div class="ai-rep-body">' + html + '</div>' +
         (srcs.length ? '<div class="ai-rep-srcs"><b>Sources</b><ol>' + srcs.map(function (s, i) {
           return '<li><a href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.title || ('Source ' + (i + 1))) + '</a></li>';
         }).join('') + '</ol></div>' : '') +
         '<div class="ai-rep-actions"><button type="button" class="btn btn-primary" id="try-share">Shareable link</button>' +
-        '<button type="button" class="btn btn-ghost" id="try-pdf">Download PDF</button>' +
+        '<button type="button" class="btn btn-ghost" id="try-pdf" aria-describedby="try-pdf-note">Download PDF</button>' +
         '<span class="try-share-out" id="try-share-out" hidden></span></div>' +
+        // the PDF is made here, in this browser: its paper and whether it carries the file's name are the visitor's
+        '<fieldset class="ai-pdf-opts"><legend>PDF options</legend>' +
+          '<span class="ai-pdf-paper" role="radiogroup" aria-label="Paper size"><span class="ai-pdf-lab" aria-hidden="true">Paper</span>' +
+          '<label><input type="radio" name="try-pdf-paper" value="letter"' + (paper === 'letter' ? ' checked' : '') + '> Letter</label>' +
+          '<label><input type="radio" name="try-pdf-paper" value="a4"' + (paper === 'a4' ? ' checked' : '') + '> A4</label></span>' +
+          '<label class="ai-pdf-name"><input type="checkbox" id="try-pdf-name"> Include my file name</label>' +
+          '<p class="note" id="try-pdf-note">The PDF is made in this browser and nothing is sent. It leaves your file\'s name off unless you tick the box.</p></fieldset>' +
         '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
       var share = document.getElementById('try-share');
-      if (share) share.addEventListener('click', doShare);
+      if (share) share.addEventListener('click', function () { doShare(); });
       var pdf = document.getElementById('try-pdf');
-      if (pdf) pdf.addEventListener('click', doPdf);
+      if (pdf) pdf.addEventListener('click', function () { doPdf(); });
+      Array.prototype.forEach.call(card.querySelectorAll('input[name="try-pdf-paper"]'), function (r) {
+        r.addEventListener('change', function () { if (r.checked) S.pdfPaper = r.value; });
+      });
+      // the analyst view says it too, with the figures the check removed (52-nl2-report.js), for the engine
+      // report it was written from only (a report reopened from the gallery may be another file's)
+      if (window.NL2 && window.NL2.aiAudit) window.NL2.aiAudit(j === S.liveAi ? T.removedWords(j) : '');
       goTo(card, true);
     }
 
@@ -2467,6 +2540,11 @@
         }
         tbl = [];
       };
+      // the engine's scenario figures go once, under the first section the PDF's own rules call scenarios ("Scenarios",
+      // "Outlook", "What if": NLReportPdf.sectionKind), so the page and the PDF put them in the same place
+      var inScen = false, scenDone = false;
+      var isScen = function (hd) { return window.NLReportPdf && window.NLReportPdf.sectionKind ? window.NLReportPdf.sectionKind(hd) === 'scen' : /^scenarios?\b/i.test(hd); };
+      var endScen = function () { if (inScen) { close(); if (tbl.length) flush(); if (!scenDone) out.push(scenHtml()); scenDone = true; inScen = false; } };
       String(text || '').split(/\n/).forEach(function (L) {
         var mk = L.trim().match(/^\[(CHART|TABLE):(\d+)\]$/);
         if (mk) {
@@ -2480,7 +2558,7 @@
         }
         if (/^\|/.test(L)) { close(); tbl.push(L); return; }
         if (tbl.length) flush();
-        if (/^##\s/.test(L)) { close(); out.push('<h4>' + esc2(L.replace(/^##\s*/, '')) + '</h4>'); }
+        if (/^##\s/.test(L)) { endScen(); close(); var hd = L.replace(/^##\s*/, ''); out.push(secHead(hd)); inScen = isScen(hd); }
         else if (/^[-*]\s/.test(L)) { if (open !== 'ul') { close(); out.push('<ul>'); open = 'ul'; } out.push('<li>' + esc2(L.replace(/^[-*]\s*/, '')) + '</li>'); }
         else if (/^\d+\.\s/.test(L)) { if (open !== 'ol') { close(); out.push('<ol>'); open = 'ol'; } out.push('<li>' + esc2(L.replace(/^\d+\.\s*/, '')) + '</li>'); }
         else if (L.trim() === '') close();
@@ -2488,12 +2566,48 @@
       });
       close();
       if (tbl.length) flush();
+      endScen();
       // [Sn] citations link to the sources the worker returned
       var srcs = (S.aiReport && S.aiReport.sources) || [];
       return out.join('\n').replace(/\[S(\d+)\]/g, function (m, n) {
         var s = srcs[Number(n) - 1];
         return s && s.link ? ' <a class="cite" href="' + esc2(s.link) + '" target="_blank" rel="noopener">[' + n + ']</a>' : '[' + n + ']';
       });
+    }
+
+    // a section heading of the report (insight-proxy report.js): "The headline: ...", "What drove it: ...",
+    // "In the real world: ..." show their fixed name as a small label over the title; an older "3 Title" its number
+    function secHead(hd) {
+      var m = hd.match(/^(The headline|What drove it|Other findings|In the real world):\s*(.+)$/i), n = hd.match(/^(\d+)\s+(.+)$/);
+      if (m) return '<h4 class="ai-sec"><span class="ai-sec-k">' + esc(m[1]) + '</span> ' + esc(m[2]) + '</h4>';
+      if (n) return '<h4 class="ai-sec"><span class="ai-sec-n">' + esc(n[1]) + '</span> ' + esc(n[2]) + '</h4>';
+      return '<h4 class="ai-sec">' + esc(hd) + '</h4>';
+    }
+    // under the report's scenarios section: the engine's own scenario figures (the blocks the PDF draws, from
+    // NLReportPdf.model, which reads the AI's report too), or the engine's reason for none; every value is the engine's
+    // text, none computed here. Only the engine's blocks: a table the AI already placed in its scenarios is not drawn
+    // again (final review, 30 Sep 2026). A figure derived from a graded change (a run rate, a what-if) carries a
+    // neutral "from a CONFIRMED change", never the grade's own pill (the adapter's parent_grade).
+    function scenHtml() {
+      if (!window.NLReportPdf || !S.aiResults) return '';
+      var ar = S.aiReport || {};
+      var parts = window.NLReportPdf.model({ report: String(ar.report || ''), sources: ar.sources || [], results: S.aiResults, name: S.prevFile || S.name, showName: true }).parts;
+      var bl = ((parts[2] && parts[2].blocks) || []).filter(function (b) { return b.engine; }), h = '';
+      var gw = { CONFIRMED: 'CONFIRMED', RECOMMEND: 'CONFIRMED', WATCH: 'WATCH', INSUFFICIENT: 'NOT ENOUGH DATA', NOT_ENOUGH_DATA: 'NOT ENOUGH DATA' };
+      bl.forEach(function (b) {
+        if (b.type === 'h2') h += '<h5 class="ai-scen-h">' + esc(b.text) + '</h5>';
+        else if (b.type === 'cards') h += '<div class="ai-scen" role="list">' + b.items.map(function (k) {
+          var g = gw[String(k.grade || '').toUpperCase()] || '', pg = gw[String(k.parent || '').toUpperCase()] || '';
+          return '<div class="ai-scen-card' + (k.strong ? ' ai-scen-main' : '') + '" role="listitem"><p class="ai-scen-k">' + esc(k.name) + '</p><p class="ai-scen-v">' + esc(k.value) + '</p>' +
+            '<p class="ai-scen-l">' + esc(k.unit || '') + '</p>' + (k.assumption ? '<p class="ai-scen-a">Assumes ' + esc(k.assumption) + '</p>' : '') +
+            (g ? '<span class="ai-scen-g" data-grade="' + esc(g) + '">' + esc(g) + '</span>'
+              : pg ? '<span class="ai-scen-from" data-parent-grade="' + esc(pg) + '">from a ' + esc(pg) + ' change</span>' : '') + '</div>';
+        }).join('') + '</div>';
+        else if (b.type === 'table') h += tableFig(b.table);
+        else if (b.type === 'noscenarios') h += '<p class="ai-scen-none" role="note"><b>No scenarios:</b> ' + esc(b.reason) + '</p>';
+        else if (b.type === 'p' && b.wide) h += '<p class="note">' + esc(b.text) + '</p>';
+      });
+      return h ? '<div class="ai-scen-wrap">' + h + '</div>' : '';
     }
 
     // the engine-drawn figure a [CHART:n] marker becomes (anaChart draws the SVG; the payload
@@ -2523,20 +2637,35 @@
       try { return JSON.parse(localStorage.getItem(PREV_KEY) || '[]'); } catch (e) { return []; }
     }
     function storePrev(list) {
-      try { localStorage.setItem(PREV_KEY, JSON.stringify(list.slice(0, 12))); } catch (e) { /* private mode: the gallery just stays empty */ }
+      // a full browser store drops the saved engine results first (older reports first), never the reports
+      var tries = [list.slice(0, 12), list.slice(0, 12).map(function (x, i) { return i ? Object.assign({}, x, { results: null }) : x; }),
+        list.slice(0, 12).map(function (x) { return Object.assign({}, x, { results: null }); })];
+      for (var i = 0; i < tries.length; i++) {
+        try { localStorage.setItem(PREV_KEY, JSON.stringify(tries[i])); return; } catch (e) { /* too big, or private mode: try smaller, then the gallery stays empty */ }
+      }
     }
     function savePrev(j) {
       if (!j || !j.report) return;
       var title = String(j.report || '').split(/\n/)[0].slice(0, 160) || 'Report';
-      var goal = (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
+      var goal = typeof j.goal === 'string' ? j.goal : (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '';
       var entry = { t: Date.now(), title: title, goal: goal.slice(0, 300), file: S.name, model: j.model || '',
-        report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 12), share: S.shareUrl || '', del: S.delToken || '',
-        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8), kept: Array.isArray(j.kept) ? j.kept.slice(0, 60) : [] };
+        report: String(j.report || '').slice(0, 28000), sources: (j.sources || []).slice(0, 20), share: S.shareUrl || '', del: S.delToken || '',
+        charts: S.aiCharts.slice(0, 6), tables: S.aiTables.slice(0, 8), kept: Array.isArray(j.kept) ? j.kept.slice(0, 60) : [],
+        // what the PDF of a saved report is made from: the engine's results (their charts and tables are saved above)
+        // and the honesty check's count; in this browser only, like the rest of the entry
+        results: resultsToSave(S.aiResults), repaired: typeof j.repaired === 'number' ? j.repaired : undefined,
+        removed_figures: Array.isArray(j.removed_figures) ? j.removed_figures.slice(0, 20) : undefined };
       var list = loadPrev().filter(function (x) { return x && x.t !== entry.t; });
       list.unshift(entry);
       storePrev(list);
-      S.prevT = entry.t;
+      S.prevT = entry.t; S.liveT = entry.t;
       drawPrev();
+    }
+    function resultsToSave(r) {
+      if (!r || typeof r !== 'object') return null;
+      var o = {};
+      Object.keys(r).forEach(function (k) { if (k !== 'charts' && k !== 'tables') o[k] = r[k]; });
+      return o;
     }
     function drawPrev() {
       if (!el.prev) return;
@@ -2573,9 +2702,15 @@
     function openPrev(x) {
       S.aiCharts = (x.charts || []).slice(0, 6);
       S.aiTables = (x.tables || []).slice(0, 8);
+      // the engine's results it was written from (a report saved before they were kept has none: its PDF says so)
+      S.aiResults = x.results && typeof x.results === 'object' ? Object.assign({}, x.results, { charts: S.aiCharts, tables: S.aiTables }) : null;
+      S.prevFile = x.file || '';
       // kept: the flagged columns it was made with; a report saved before that was recorded has none (unknown), and
       // its share link is warned about as one that may hold personal values
-      S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '', kept: Array.isArray(x.kept) ? x.kept : undefined };
+      // goal: the question that report answered (its PDF's cover and its link say it, not the question now on the page)
+      S.aiReport = { report: x.report, sources: x.sources || [], model: x.model || '', kept: Array.isArray(x.kept) ? x.kept : undefined,
+        repaired: x.repaired, removed_figures: x.removed_figures, goal: typeof x.goal === 'string' ? x.goal : undefined };
+      if (x.t === S.liveT && S.report) S.liveAi = S.aiReport;
       S.shareUrl = x.share || '';
       S.delToken = x.del || '';
       S.prevT = x.t;
@@ -2632,46 +2767,80 @@
       else doPdf();
     }
 
-    // Before any link (option B): a report made with flagged columns the visitor kept may hold their values, so the
-    // share step says so and makes the link only when the visitor agrees; cancel makes none. The PDF is made from a
-    // link, so it asks the same. A report saved before the kept columns were recorded is asked about too (unknown).
-    var SHARE_WARN = 'This report may contain personal values (names, emails\u2026). Anyone with the link can see them.';
-    function shareRisk() { var k = S.aiReport && S.aiReport.kept; return !Array.isArray(k) || k.length > 0; }
-    function askShare(out, onLink) {
-      var pdf = typeof onLink === 'function', rep = S.aiReport;
+    // Before any link: the share step always warns (review of 29 Sep 2026: a report built from the visitor's file may
+    // quote values from it even when nothing personal was kept) and makes the link only when the visitor agrees;
+    // cancel makes none. A report made with kept personal columns, or saved before they were recorded, says so.
+    // POST /share is made only here, from the "Shareable link" button: the PDF is made in this browser (doPdf).
+    function askShare(out) {
+      var rep = S.aiReport;
       out.hidden = false;
-      out.innerHTML = '<span class="try-share-warn" role="alert">' + (pdf ? esc('The PDF is made from a shareable link. ') : '') + '<b>' + esc(SHARE_WARN) + '</b></span> ' +
-        '<button type="button" class="btn btn-primary btn-sm" id="try-share-yes">' + (pdf ? 'Make the link and the PDF' : 'Make the link') + '</button> ' +
+      out.innerHTML = '<span class="try-share-warn" role="alert"><b>' + esc(T.shareWarning(rep && rep.kept)) + '</b></span> ' +
+        '<button type="button" class="btn btn-primary btn-sm" id="try-share-yes">Make the link</button> ' +
         '<button type="button" class="btn btn-ghost btn-sm" id="try-share-no">Cancel</button>';
-      $('try-share-yes').addEventListener('click', function () { if (S.aiReport === rep) doShare(onLink, true); });
+      $('try-share-yes').addEventListener('click', function () { if (S.aiReport === rep) doShare(true); });
       $('try-share-no').addEventListener('click', function () {
         out.textContent = 'No link was made.';
-        var back = $(pdf ? 'try-pdf' : 'try-share');
+        var back = $('try-share');
         if (back) back.focus();
       });
       try { $('try-share-no').focus({ preventScroll: true }); } catch (e) { $('try-share-no').focus(); }
     }
+    // the question a report answered: its own (a gallery entry reopened keeps its question), else the live run's
+    function reportGoal(rep) { return rep && typeof rep.goal === 'string' ? rep.goal : (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || ''; }
+    // The /share body's size (integration pass, 30 Sep 2026): the worker refuses a body over 130,000 bytes whole, and a
+    // stored record over the same (insight-proxy/src/share.js SHARE_MAX_BYTES), so the page never sends one over
+    // T.SHARE_BODY_MAX, 115,000: the 15,000 between them is room for what the worker adds to what it stores (the
+    // deletion hash and the expiry, and its rebuild of the results, which may take 24,000 bytes where the page sends at
+    // most 20,000). The engine's results give way first: trimmed to the room left
+    // (NLReportPdf.shareResults with a byte cap), else left out (the shared PDF then says it lacks them). A body still
+    // over the cap without them is not sent: { over: its bytes } and the visitor is told why (T.shareTooLarge).
+    var SHARE_BODY_MAX = T.SHARE_BODY_MAX;
+    function utf8Bytes(s) { return new TextEncoder().encode(s).length; }
+    function shareBody(rep) {
+      var body = {
+        // never the file's name (option B review, 29 Sep 2026: the file's name and its fingerprint went with every
+        // link, and the name is the viewer's title): the placeholder the report itself uses stands in
+        input: { name: FILE_WORD },
+        goal: reportGoal(rep),
+        report: rep.report, sources: rep.sources || [], model: rep.model || '', days: 7,
+        // the engine-drawn figures the report's [CHART:n]/[TABLE:n] markers point at: without
+        // them the shared link showed the words without the illustrations (live finding,
+        // 28 Sep 2026: the viewer was ready to draw them, the page never sent them)
+        charts: rep.charts || S.aiCharts || [],
+        tables: rep.tables || S.aiTables || [],
+        // what the shared PDF is written from (final review, 30 Sep 2026: the worker's PDF of a link said the results
+        // were not kept and the personal columns not recorded): the honesty check's count; the kept columns, names only
+        // ([] when the visitor kept none; left out for an older report that did not record them; each is named in the
+        // report already); and the engine's results trimmed by the PDF writer (below: NLReportPdf.shareResults, the key
+        // figures and at most 60 scenario items, at most 20 KB and the room the body leaves, never the file's name)
+        repaired: typeof rep.repaired === 'number' ? rep.repaired : undefined,
+        kept: Array.isArray(rep.kept) ? rep.kept.slice(0, 60) : undefined
+      };
+      var text = JSON.stringify(body), bytes = utf8Bytes(text);
+      if (bytes > SHARE_BODY_MAX) return { over: bytes };
+      if (S.aiResults && window.NLReportPdf && window.NLReportPdf.shareResults) {
+        var room = SHARE_BODY_MAX - bytes - utf8Bytes(',"results":');
+        var R = room > 0 ? window.NLReportPdf.shareResults(S.aiResults, room) : null;
+        if (R) {
+          body.results = R;
+          var withR = JSON.stringify(body);
+          if (utf8Bytes(withR) <= SHARE_BODY_MAX) return { text: withR };
+        }
+      }
+      return { text: text };
+    }
     // share: POST /share with the finished report, then show the link
-    function doShare(onLink, agreed) {
+    function doShare(agreed) {
       var out = document.getElementById('try-share-out');
       if (!S.aiReport || !out) return;
-      if (agreed !== true && shareRisk()) return askShare(out, onLink);
+      if (agreed !== true) return askShare(out);
       out.hidden = false;
+      var sb = shareBody(S.aiReport);
+      if (sb.over) { out.textContent = 'The link could not be made. ' + T.shareTooLarge(sb.over); return; }
       out.textContent = 'Making the link\u2026';
       fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/share', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // never the file's name (option B review, 29 Sep 2026: the file's name and its fingerprint went with every
-          // link, and the name is the viewer's title): the placeholder the report itself uses stands in
-          input: { name: FILE_WORD },
-          goal: (S.report && S.report.ai_plan && S.report.ai_plan.goal) || S.objective || '',
-          report: S.aiReport.report, sources: S.aiReport.sources || [], model: S.aiReport.model || '', days: 7,
-          // the engine-drawn figures the report's [CHART:n]/[TABLE:n] markers point at: without
-          // them the shared link showed the words without the illustrations (live finding,
-          // 28 Sep 2026: the viewer was ready to draw them, the page never sent them)
-          charts: (S.aiReport && S.aiReport.charts) || S.aiCharts || [],
-          tables: (S.aiReport && S.aiReport.tables) || S.aiTables || [],
-        }),
+        body: sb.text,
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
         .then(function (j) {
@@ -2695,29 +2864,60 @@
             var cp = navigator.clipboard && navigator.clipboard.writeText(j.link);
             if (cp && cp.then) cp.then(function () { out.appendChild(document.createTextNode(' \u00b7 copied')); }, function () { /* the link is shown */ });
           } catch (e4) { /* clipboard needs a gesture; the link is shown */ }
-          if (typeof onLink === 'function') onLink(j.link);
         })
         .catch(function (e) { out.textContent = 'The link could not be made: ' + String(e && e.message ? e.message : 'try again'); });
     }
 
-    // PDF: print the AI report card only (a print stylesheet hides the rest of the page).
-    // Never call window.print() from an embedded page (the Hermes preview pane is an Electron
-    // <webview>: printing from the guest kills/reloads it). Embedded pages open the report in a
-    // real system browser tab instead, where the print dialog works; a top-level page prints.
+    // "Download PDF" (29 Sep 2026): the report's PDF is written here, in this browser, by the canonical writer
+    // (src/js/45-report-pdf.js): no /share request and nothing sent. It is made from the AI's report, the engine's
+    // results it was written from (S.aiResults, saved with each gallery entry) and the visitor's choices: the paper
+    // (Letter in the US, Canada and Mexico, else A4, or as they pick) and the file's name only if they tick the box.
+    // An in-app browser (Telegram, Instagram, LinkedIn...) may ignore a download: the PDF opens in a tab there, and
+    // when even that is blocked the page says what to do.
+    function pdfPaper() {
+      if (S.pdfPaper === 'letter' || S.pdfPaper === 'a4') return S.pdfPaper;
+      var langs = [];
+      try { langs = [navigator.language].concat(navigator.languages || []); langs.push(Intl.DateTimeFormat().resolvedOptions().locale); } catch (e) { /* no locale: Letter */ }
+      return window.NLReportPdf ? window.NLReportPdf.paperFor(langs) : 'letter';
+    }
+    var IN_APP = /FBAN|FBAV|FB_IAB|Instagram|Line\/|Telegram|LinkedInApp|MicroMessenger|Snapchat|Twitter|musical_ly|; wv\)/i;
+    var lastPdfUrl = '';
     function doPdf() {
-      var card = document.getElementById('try-ai-report');
-      if (!card) return;
-      var out = document.getElementById('try-share-out');
-      // The worker answers GET /r/<slug>.pdf with real PDF bytes (owner's ask, 28 Sep 2026:
-      // window.print dies inside in-app browsers and popups get blocked there; a direct file
-      // link saves straight to the phone). The share slug is made first if none exists.
-      var openPdf = function (link) {
-        var pdfUrl = String(link).replace(/\/$/, '') + '.pdf';
-        if (out) { out.hidden = false; out.textContent = ''; var a = document.createElement('a'); a.href = pdfUrl; a.textContent = 'The PDF is opening; tap here if nothing happened'; a.target = '_blank'; a.rel = 'noopener'; out.appendChild(a); }
-        window.open(pdfUrl, '_blank', 'noopener');
-      };
-      if (S.shareUrl) { openPdf(S.shareUrl); return; }
-      doShare(function (link) { openPdf(link); });
+      var out = document.getElementById('try-share-out'), rep = S.aiReport;
+      if (!rep || !out || !window.NLReportPdf) return;
+      var W = window.NLReportPdf, now = new Date(), named = !!($('try-pdf-name') && $('try-pdf-name').checked), file = S.prevFile || S.name || '';
+      var bytes, name;
+      try {
+        var m = W.model({ report: rep.report, sources: rep.sources || [], model: rep.model || '', repaired: rep.repaired, removed_figures: rep.removed_figures,
+          results: S.aiResults, charts: S.aiCharts, tables: S.aiTables, kept: rep.kept, name: file, showName: named, date: now,
+          goal: reportGoal(rep) });
+        bytes = W.build(m, { paper: pdfPaper() });
+        name = W.fileName(now, named ? file : '');
+      } catch (e) {
+        out.hidden = false; out.textContent = 'The PDF could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
+        return;
+      }
+      if (lastPdfUrl) { try { URL.revokeObjectURL(lastPdfUrl); } catch (e2) { /* already gone */ } }
+      var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      lastPdfUrl = url;
+      out.hidden = false; out.textContent = '';
+      var a = document.createElement('a');
+      a.href = url; a.download = name; a.textContent = 'Open the PDF'; a.target = '_blank'; a.rel = 'noopener';
+      var said = document.createElement('span');
+      if (!IN_APP.test(navigator.userAgent || '') && 'download' in a) {
+        var dl = document.createElement('a');
+        dl.href = url; dl.download = name; dl.hidden = true;
+        document.body.appendChild(dl); dl.click(); dl.remove();
+        said.textContent = 'Saved as \u201c' + name + '\u201d (' + Math.max(1, Math.round(bytes.length / 1024)) + ' KB), made in this browser; nothing was sent. If no download started: ';
+      } else {
+        // an in-app browser ignores a.download: open the PDF itself, or say how to save it
+        var w = null;
+        try { w = window.open(url, '_blank'); } catch (e3) { w = null; }
+        said.textContent = w ? 'The PDF opened in a new tab (made in this browser; nothing was sent). If it did not: '
+          : 'This in-app browser blocked the download. Open this page in your phone\'s browser (Safari or Chrome) to save the PDF, or try: ';
+      }
+      out.appendChild(said);
+      out.appendChild(a);
     }
 
     // what a visitor can do about the reasons rows were set aside (plain steps, no figures)
@@ -2868,6 +3068,8 @@
           (sc === null ? '<span class="k-val kv-sm">Not scored</span><span class="k-sub">the engine could not score this file</span>'
             : '<span class="k-val">' + num(sc, 1) + '<small>/100</small></span><span class="tr-meter" aria-hidden="true"><i style="width:' + Math.max(0, Math.min(100, sc)).toFixed(1) + '%"></i></span>') +
           (v2h && typeof r.health.score_mean === 'number' ? '<span class="k-sub">the engine\'s Data Health Score, the mean of the five: ' + num(r.health.score_mean, 1) + '</span>' : '') +
+          // the engine marks down numbers stored as text, which every CSV has: said in plain words when it lowers a score
+          (v2h && r.health.csv_text_numbers && r.health.csv_text_numbers.note ? '<span class="tr-textnum">' + esc(r.health.csv_text_numbers.note) + '</span>' : '') +
           (r.health.issues.length ? '<details class="tr-issues"><summary>' + plural(r.health.issues.length, 'issue', 'issues') + ' found</summary>' + list(r.health.issues) + '</details>' : '') + '</div>' +
         '<div class="tr-kpi"><span class="k-lab">Rows kept after cleaning</span><span class="k-val">' + num(c.rows_clean, 0) + '</span><span class="k-sub">of ' + num(c.rows_in, 0) + ' in; ' + num(c.rows_quarantined, 0) + ' set aside' +
           (lost === 0 ? ', none lost' : lost > 0 ? ', ' + num(lost, 0) + ' removed by the fixes' : '') + '</span></div>' +
@@ -2947,33 +3149,6 @@
         esc(T.partNote(S.ai.chk, part)) + ' The engine\'s findings and story ' + where + ' are the record.</p>';
       return '<h4>' + esc(TG.REGISTERS[part].title) + '</h4><div class="tr-ai-text" data-part="' + part + '">' + T.summaryHtml(S.ai.chk[part], S.ai.body, part, S.aiRed) + '</div>';
     }
-    // the offer: what is sent, the consent and the button (drawn where the visitor acts). In the manager
-    // view (inCard) it is short, under the bottom line: the essentials in one paragraph, the list of
-    // placeholders, the preview and the fine print one click away, and the consent and button in view.
-    function aiOffer(r, inCard) {
-      var red = T.aiRedactions(r), payload = JSON.stringify(T.aiPayload(r, S.objective, S.aiRaw), null, 2), MAXL = 12;
-      var swap = red.length ? '<div class="tr-ai-swap"><p>' + (S.aiRaw ? 'You chose to send these as they are:' : 'These are sent as placeholders; the summaries are shown here with them put back, in this browser only:') + '</p><ul>' +
-        red.slice(0, MAXL).map(function (x) { return '<li>' + esc(x.label) + ' <code>' + esc(x.value) + '</code>' + (S.aiRaw ? '' : ' as <code>' + esc(x.placeholder) + '</code>') + '</li>'; }).join('') +
-        (red.length > MAXL ? '<li>and ' + num(red.length - MAXL, 0) + ' more, listed in the preview</li>' : '') + '</ul>' +
-        '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-raw"' + (S.aiRaw ? ' checked' : '') + '> Send them as they are instead</label></div>' : '';
-      var scan = '<p class="note">The personal-data scan reads column names and the shape of values, so a name under a neutral heading can be missed: read the preview before you agree. DeepSeek is run from China and handles what it receives under its own privacy policy, published on deepseek.com.</p>';
-      var preview = '<details class="more"><summary>Exactly what is sent</summary><pre class="snip" id="try-ai-preview">' + esc(payload) + '</pre></details>';
-      var rule = '<p class="note">The model writes only the words: every figure, grade and quoted value is put in by this page from the engine\'s findings. A summary that writes a number, a grade, a cause or confidence wording of its own, uses words its finding does not use, or sets a figure or a grade beside another finding\'s words, is set aside, and this page says which one and why. Each summary is judged on its own: one that passes is shown even when the other is set aside, and the engine\'s story always stays.</p>';
-      var go = '<div class="tr-ai-go"><button type="button" class="btn btn-ghost" id="try-ai-go" disabled>Write the AI summaries</button><span class="note" id="try-ai-status" role="status"></span></div>';
-      var what = (S.objective ? 'your question exactly as you typed it, ' : '') + 'each finding\'s id, claim, verdict and value, and the engine\'s story';
-      if (inCard) {
-        return '<div class="tr-ai" style="margin-top:0;padding-top:0;border-top:0"><h4>Optional: AI summaries of this report</h4>' +
-          '<p>An AI model (DeepSeek, run from China), through the site owner\'s proxy, can word this report as a short executive summary, shown here, and a technical summary, shown in the Analyst view. It writes only the words: every figure and grade is put in by this page from the engine\'s findings. It receives ' + what +
-          ', which name your column headings; never your rows or your file' + (red.length && !S.aiRaw ? ', and the values quoted from your data go as placeholders' : '') + '.</p>' +
-          '<details class="more tr-ai-fine"><summary>What is sent, and where it goes: read before you agree</summary>' +
-            '<p>It receives exactly what “Exactly what is sent” shows, and nothing else. The proxy adds its instructions and a list of markers for the figures in that text.</p>' + swap + scan + preview + rule + '</details>' +
-          '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send what “What is sent” lists to the AI model</label>' + go + '</div>';
-      }
-      return '<div class="tr-ai"><h4>Optional: AI summaries</h4>' +
-        '<p>An AI model (DeepSeek), through the site owner\'s proxy, can write a short executive summary and a technical summary of these findings. It receives exactly what “Exactly what is sent” shows, and nothing else: ' +
-        what + '. Those name your column headings; your rows and your file are not sent. The proxy adds its instructions and a list of markers for the figures in that text.</p>' +
-        swap + scan + preview + '<label class="tr-ai-ok"><input type="checkbox" id="try-ai-ok"> I agree to send the data above to the AI model</label>' + go + rule + '</div>';
-    }
     // report v2: the AI summaries are asked for and read in the manager view, right under the bottom line
     // (#try-ai-m): the executive summary there, the technical one in the analyst view's summary section
     // (#try-story), each view saying where the other part is. v1 keeps both under the engine's story.
@@ -3007,19 +3182,6 @@
       } else if (CFG.ai_proxy_url) h += '';
       box.innerHTML = h;
       if (mgr) drawAIManager(mgr);
-      var ok = document.getElementById('try-ai-ok'), go = document.getElementById('try-ai-go'), raw = document.getElementById('try-ai-raw');
-      if (ok && go) {
-        ok.addEventListener('change', function () { go.disabled = !ok.checked; });
-        go.addEventListener('click', function () { if (ok.checked) askAI(go); });
-      }
-      if (raw) raw.addEventListener('change', function () {
-        S.aiRaw = raw.checked;
-        var fold = raw.closest('details'), open = !!(fold && fold.open);   // the manager view keeps it in the fine print
-        drawStory();
-        var again = document.getElementById('try-ai-raw');
-        if (again && open && again.closest('details')) again.closest('details').open = true;
-        if (again) again.focus();
-      });
     }
     // from one view to the other part of the AI summaries (report v2)
     function aiSwitch(view) {
@@ -3028,55 +3190,49 @@
       var to = view === 'analyst' ? (document.querySelector('#try-story .tr-ai-sum') || document.getElementById('nl2-s-summary')) : document.getElementById('try-ai-m');
       if (to) { to.setAttribute('tabindex', '-1'); goTo(to, true); }
     }
-    function askAI(go) {
-      var st = document.getElementById('try-ai-status');
-      var body = T.aiPayload(S.report, S.objective, S.aiRaw), red = S.aiRaw ? [] : T.aiRedactions(S.report);
-      var FALLBACK = ' Only the engine\'s story is shown.';
-      go.disabled = true;
-      if (st) st.textContent = 'Asking the AI model (it thinks before it writes, so this takes one to two minutes)…';
-      var ctrl = window.AbortController ? new AbortController() : null;
-      // the proxy runs DeepSeek in thinking mode at its highest effort (25 Sep 2026): measured 15-100 s a request
-      // (longer with the AI plan's analyses), with PART_DEADLINE_MS 140 s in the proxy, so the page waits longer
-      var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 170000);
-      fetch(CFG.ai_proxy_url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
-        .then(function (res) {
-          return res.json().catch(function () { return null; }).then(function (ans) {
-            if (res.ok) return ans;
-            var err = new Error('the proxy answered ' + res.status);
-            err.status = res.status; err.ans = ans && typeof ans === 'object' ? ans : {};
-            throw err;
-          });
-        })
-        .then(function (ans) {
-          clearTimeout(timer);
-          var chk = T.checkSummaries(ans, body);      // the same guard as the proxy, part by part, on what this page sent
-          if (!chk.ok) {
-            S.aiNote = 'The AI summaries were set aside. ' + (T.partsNote(chk) || 'Nothing usable came back.') + FALLBACK;
-            S.ai = null;
-          } else { S.ai = { chk: chk, body: body }; S.aiRed = red; S.aiNote = ''; }
-          drawStory();
-          // the summary appears where the button was: move the reader's focus there, not the page
-          var sum = document.querySelector('#try-ai-m .tr-ai-sum');
-          if (sum) { sum.setAttribute('tabindex', '-1'); try { sum.focus({ preventScroll: true }); } catch (e3) { sum.focus(); } }
-        })
-        .catch(function (e) {
-          clearTimeout(timer);
-          var a = (e && e.ans) || {};
-          if (e && e.status === 429) S.aiNote = 'The AI model is busy right now (the proxy answered 429), so no summaries were written. Try again in a minute.' + FALLBACK;
-          else if (a.error === 'rejected_wording' && a.rejected && typeof a.rejected === 'object') {
-            // the per-part proxy: every part refused (or not written), each named with its reasons
-            var none = T.checkSummaries({ rejected: a.rejected, unavailable: a.unavailable }, body);
-            S.aiNote = 'The AI summaries were set aside (the proxy answered ' + e.status + '). ' + T.partsNote(none) + FALLBACK;
-          } else if (a.error === 'rejected_wording' && (a.part === 'executive' || a.part === 'technical')) {
-            S.aiNote = 'The AI summaries were set aside (the proxy answered ' + e.status + '): the ' + a.part + ' summary ' + T.reasonText(Array.isArray(a.reasons) ? a.reasons : []) + '.' + FALLBACK;
-          } else S.aiNote = 'The AI summaries are not available right now (' + (e && e.name === 'AbortError' ? 'no answer in time' : (e && e.message || 'no answer')) + ').' + FALLBACK;
-          drawStory();
-        });
+    // "Save as PDF": every finding and every folded detail open while the browser prints, then the page goes back
+    // as it was. The paper version (29 Sep 2026) gets a cover, a running header and a "Page X of Y" footer (an @page
+    // rule added only while printing, so the site's own print is untouched) and a title that names the report, not
+    // the file, as the browser's suggested file name.
+    function printCover(r) {
+      var c = document.createElement('section');
+      c.className = 'tr-print-cover';
+      c.setAttribute('aria-hidden', 'true');
+      var head = (r.summary && r.summary.lines && r.summary.lines[0] && r.summary.lines[0].text) || (r.story && r.story.headline) || 'Data report';
+      var dd = function (k, v) { return '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>'; };
+      // what left this browser, said only as far as it is true (final review, 30 Sep 2026: the cover said "nothing was
+      // uploaded" after a run with the AI, whose plan and report are on the printed pages): the file never leaves it; with
+      // the AI, a summary of its columns and the engine's results went to the AI model, and any personal column the
+      // visitor chose to send went with its values
+      var aiRep = document.getElementById('try-ai-report'), aiShown = !!(aiRep && !aiRep.hidden && S.aiReport);
+      var ai = planOn() || aiShown || !!S.ai, kept = ai && Array.isArray(S.kept) ? S.kept : [];
+      c.innerHTML = '<p class="k">NorthLedger Insights <span>Data report</span></p><h1></h1><dl>' +
+        dd('Subject', 'Your file (its name is in the report below)') +
+        dd('Data', num(r.input.rows, 0) + ' rows \u00d7 ' + num(r.input.columns, 0) + ' columns; analysed in this browser; ' + (ai ? 'the file itself was never uploaded' : 'nothing was uploaded')) +
+        (ai ? dd('Sent to the AI', 'A summary of the file\'s columns (never its rows) and the engine\'s results went to an AI model (DeepSeek) through this site\'s proxy' +
+          (kept.length ? ', with the values of the personal columns the reader chose to send: ' + kept.join(', ') : '') + '.') : '') +
+        dd('Prepared', new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })) +
+        dd('Prepared by', ai ? 'The NorthLedger engine, in this browser (every figure in its findings, computed from the file), and an AI model (the plan' +
+          (aiShown ? ', and the AI-written report, whose figures are the engine\'s or quoted from a source it cites)' : ')')
+          : 'The NorthLedger engine, in this browser: every figure computed from the file, none by an AI') +
+        dd('Engine', r.engine.snapshot + ' ' + r.engine.version) + '</dl>' +
+        '<p class="conf">Confidential. Made in the reader\'s browser from their own file; ' + (ai ? 'the file itself was never uploaded, and what went to the AI is named above' : 'nothing was uploaded') + '. Not reviewed by a person.</p>';
+      c.querySelector('h1').textContent = head;
+      return c;
     }
-
-    // "Save as PDF": every finding and every folded detail open while the browser prints, then
-    // the page goes back as it was
+    function printPageRule(title) {
+      var st = document.createElement('style');
+      st.id = 'nl-print-page';
+      var q = function (t) { return '"' + String(t).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ') + '"'; };
+      var short = String(title).length > 70 ? String(title).slice(0, 70).replace(/\s+\S*$/, '') + '\u2026' : String(title);
+      st.textContent = '@media print { @page { size: auto; margin: 0.8in 0.7in 0.85in;' +
+        ' @top-left { content: "NORTHLEDGER INSIGHTS \\00B7  DATA REPORT"; font: 700 7pt/1 Helvetica, Arial, sans-serif; letter-spacing: .1em; color: #0a5c52; }' +
+        ' @top-right { content: ' + q(short) + '; font: 7.5pt/1 Helvetica, Arial, sans-serif; color: #56646f; }' +
+        ' @bottom-left { content: "Confidential \\00B7  made in the reader\'s browser from their own file; not reviewed by a person"; font: 7pt/1 Helvetica, Arial, sans-serif; color: #56646f; }' +
+        ' @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 700 7.5pt/1 Helvetica, Arial, sans-serif; color: #16232e; } }' +
+        ' @page :first { @top-left { content: none; } @top-right { content: none; } } }';
+      return st;
+    }
     function printReport() {
       var undo = [], v2 = el.report.querySelector('.nl2');
       if (v2 && window.NL2) undo.push(window.NL2.preparePrint(v2));
@@ -3084,6 +3240,22 @@
       if (aiCard && !S.ai && !aiCard.hidden) { aiCard.hidden = true; undo.push(function () { aiCard.hidden = false; }); }
       Array.prototype.forEach.call(el.report.querySelectorAll('.tr-flist li[hidden]'), function (li) { li.hidden = false; undo.push(function () { li.hidden = true; }); });
       Array.prototype.forEach.call(el.report.querySelectorAll('details:not([open])'), function (d) { d.open = true; undo.push(function () { d.open = false; }); });
+      // on paper a long machine id (measure.revenue.total.change) breaks after its dots and underscores, not mid-word
+      Array.prototype.forEach.call(el.report.querySelectorAll('.nl2 code'), function (c) {
+        var t = c.textContent;
+        if (t.length < 16 || !/[._]/.test(t) || c.children.length) return;
+        var h0 = c.innerHTML;
+        c.innerHTML = esc(t).replace(/([._])/g, '$1<wbr>');
+        undo.push(function () { c.innerHTML = h0; });
+      });
+      if (S.report) {
+        var cover = printCover(S.report), rule = printPageRule((cover.querySelector('h1') || {}).textContent || 'Data report'), title0 = document.title;
+        el.report.insertBefore(cover, el.report.firstChild);
+        document.head.appendChild(rule);
+        var d0 = new Date(), z = function (n) { return (n < 10 ? '0' : '') + n; };   // the visitor's own date, not UTC's
+        document.title = 'NorthLedger report - ' + d0.getFullYear() + '-' + z(d0.getMonth() + 1) + '-' + z(d0.getDate());
+        undo.push(function () { cover.remove(); rule.remove(); document.title = title0; });
+      }
       var done = false, restore = function () {
         if (done) return;
         done = true;

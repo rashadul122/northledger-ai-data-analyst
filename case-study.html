@@ -691,6 +691,8 @@ pre.snip { background: var(--bg); border: 1px solid var(--hairline); border-radi
 .tr-kpi { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--hairline); background: var(--surface); min-width: 0; }
 .tr-kpi .k-val { line-height: 1.15; overflow-wrap: anywhere; }
 .tr-kpi .k-val small { font-size: 14px; font-weight: 650; color: var(--muted); margin-left: 2px; }
+/* the engine's mark-down for numbers stored as text, which every CSV has: a note under the health score */
+.tr-kpi .tr-textnum { font-size: 12px; line-height: 1.35; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
 .tr-meter { display: block; height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; margin: 6px 0 2px; }
 .tr-meter i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 .tr-issues { margin-top: 6px; font-size: 13.5px; }
@@ -1014,10 +1016,13 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 @media print {
   /* "Save as PDF" in the demo: the manager page first, then the analyst paper, each section on a new page */
   body.print-try .nl2-views, body.print-try .nl2-link, body.print-try .nl2-toc, body.print-try .nl2-ask, body.print-try .nl2-more, body.print-try .nl2-chips { display: none !important; }
-  body.print-try .nl2-panel[hidden] { display: grid !important; }
+  body.print-try .nl2-panel, body.print-try .nl2-panel[hidden] { display: block !important; }
   body.print-try .nl2-grid { display: block !important; }
   body.print-try .nl2-grid > * { margin-bottom: 12px; }
-  body.print-try .nl2-sec { break-before: page; border: 0 !important; padding: 0 !important; }
+  /* a new page only for the major parts: the analyst paper, its results and its appendix (29 Sep 2026: a page per
+     section left half-empty pages) */
+  body.print-try .nl2-sec { break-before: auto; border: 0 !important; padding: 0 !important; margin-top: 18px; }
+  body.print-try .nl2-sec[data-sec="summary"], body.print-try .nl2-sec[data-sec="results"], body.print-try .nl2-sec[data-sec="appendix"] { break-before: page; margin-top: 0; }
   body.print-try .nl2-box, body.print-try .nl2 .tscroll { max-height: none !important; overflow: visible !important; }
   body.print-try .nl2-tile, body.print-try .nl2-decision > li, body.print-try .nl2-settle-list > li, body.print-try .nl2-trustcard, body.print-try .nl2-method { break-inside: avoid; }
   body.print-try .nl2-bottomcard { box-shadow: none; }
@@ -1172,6 +1177,68 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .try-ana-chart svg { max-width: 100%; height: auto; }
 .try-ana details { margin-top: 6px; }
 
+/* the AI-written report's sections (29 Sep 2026): the fixed part of a heading ("The headline", "What drove it") as a
+   small label over its title, an older numbered heading's number in the accent colour */
+.ai-rep-body h4.ai-sec { margin: 22px 0 6px; font-size: 1.05rem; line-height: 1.35; }
+.ai-sec-k { display: block; font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--accent-ink); margin-bottom: 2px; }
+.ai-sec-n { color: var(--accent-ink); margin-right: 4px; }
+/* the engine's scenario figures under "Scenarios": the same cards the PDF draws */
+.ai-scen-wrap { margin: 10px 0 4px; }
+.ai-scen-h { margin: 14px 0 6px; font-size: .95rem; color: var(--ink); }
+.ai-scen { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; }
+.ai-scen-card { position: relative; padding: 12px 12px 10px; border: 1px solid var(--hairline); border-top: 3px solid var(--hairline); border-radius: 10px; background: var(--surface); min-width: 0; }
+.ai-scen-card.ai-scen-main { border-top-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.ai-rep-body .ai-scen-card p { margin: 0; }
+.ai-scen-k { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.ai-rep-body .ai-scen-card .ai-scen-v { margin: 4px 0 2px; font-size: 1.45rem; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ai-scen-l { font-size: 12.5px; color: var(--muted); }
+.ai-rep-body .ai-scen-card .ai-scen-a { margin-top: 6px; font-size: 13px; }
+.ai-scen-g { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 750; letter-spacing: .06em; padding: 1px 7px; border-radius: 6px; border: 1px solid currentColor; color: var(--series-3); }
+.ai-scen-g[data-grade="CONFIRMED"] { color: var(--accent-ink); }
+.ai-scen-g[data-grade="NOT ENOUGH DATA"] { color: var(--muted); border-style: dashed; }
+/* a figure derived from a graded change has no grade of its own: a neutral outline, never the grade's colour */
+.ai-scen-from { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--hairline); color: var(--muted); }
+.ai-scen-none { margin: 10px 0; padding: 10px 12px; border: 1px dashed var(--muted); border-radius: 10px; font-size: 14px; }
+/* the PDF's options, beside its button: the paper and whether the file's name is on it */
+.ai-pdf-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 10px 0 0; padding: 8px 12px; border: 1px solid var(--hairline); border-radius: 10px; font-size: 14px; min-width: 0; }
+.ai-pdf-opts legend { padding: 0 4px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ai-pdf-paper { display: inline-flex; align-items: center; gap: 12px; }
+.ai-pdf-lab { font-weight: 650; color: var(--ink); }
+.ai-pdf-opts label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.ai-pdf-opts input { accent-color: var(--accent); }
+.ai-pdf-opts .note { flex-basis: 100%; margin: 0; }
+@media (max-width: 560px) { .ai-pdf-opts label { min-height: 44px; } }
+.nl2-ai-audit { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); border-radius: 6px; }
+/* "Save as PDF" of the engine's report (29 Sep 2026): a cover, the report laid out as blocks (Chrome placed the next
+   card at the grid's unfragmented height, over the last pages), long tables sampled, the lead card's facts on the
+   cover. The running header and "Page X of Y" are an @page rule 50-try.js adds only while printing. */
+.tr-print-cover { display: none; }
+@media print {
+  body.print-try .tr-print-cover { display: block !important; break-after: page; padding-top: 1.1in; font-family: Helvetica, Arial, sans-serif; color: #16232e; }
+  .tr-print-cover .k { display: inline-block; margin: 0; padding-bottom: 8px; border-bottom: 2px solid #0b7366; font: 700 8pt/1 Helvetica, Arial, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #0a5c52; }
+  .tr-print-cover .k span { color: #56646f; margin-left: 10px; }
+  .tr-print-cover h1 { font: 700 24pt/1.2 Helvetica, Arial, sans-serif; color: #16232e; margin: 28px 0 24px; max-width: 90%; }
+  .tr-print-cover dl { display: grid; grid-template-columns: 1.3in 1fr; gap: 6px 12px; margin: 0; padding: 10px 0; border-top: 1px solid #d9d5cb; border-bottom: 1px solid #d9d5cb; font-size: 9.5pt; }
+  .tr-print-cover dt { font: 700 7pt/1.6 Helvetica, Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #56646f; }
+  .tr-print-cover dd { margin: 0; }
+  .tr-print-cover .conf { margin-top: 1.4in; padding: 10px 14px; background: #f4f2ec; border-left: 3px solid #0b7366; font-size: 8.5pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.print-try .try-report, body.print-try .nl2 { display: block !important; }
+  body.print-try .try-report > *, body.print-try .nl2 > *, body.print-try .nl2-panel > * { margin-bottom: 14px; }
+  body.print-try .tr-head-compact { display: none !important; }
+  body.print-try .nl2 code { overflow-wrap: anywhere; word-break: normal; hyphens: none; }
+  body.print-try thead { display: table-header-group; }
+  body.print-try h3, body.print-try h4 { break-after: avoid; }
+  body.print-try p, body.print-try li { orphans: 2; widows: 2; }
+  /* the appendix samples its long lists; the full lists are in the downloads */
+  body.print-try .nl2-setaside tbody tr:nth-child(n+11), body.print-try .nl2-ledger tbody tr:nth-child(n+16) { display: none; }
+  body.print-try .nl2-box:has(.nl2-setaside tbody tr:nth-child(11))::after, body.print-try .nl2-box:has(.nl2-ledger tbody tr:nth-child(16))::after {
+    content: "The first rows only on paper; the full list is in the download."; display: block; padding-top: 4px; font-style: italic; font-size: 8pt; color: #56646f; }
+  /* the analyst results table: "What would settle it" is repeated under Recommendations, so paper drops it */
+  body.print-try .nl2-ftab[data-cols="analyst"] th:last-child, body.print-try .nl2-ftab[data-cols="analyst"] td:last-child { display: none; }
+  body.print-try .nl2-ftab[data-cols="analyst"] thead th:nth-child(1) { width: 30%; }
+  body.print-try .ai-pdf-opts { display: none !important; }
+}
+
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
 .cs h2 { font-size: 20px; margin: 28px 0 8px; color: var(--ink); }
@@ -1188,7 +1255,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-30 01:43:59 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-09-30 14:47:52 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

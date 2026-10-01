@@ -1,0 +1,25 @@
+{
+ "version": "2026-10-01.1",
+ "what": "Publisher flag codes, read by engine/nl_structure.py. A code's kind names what the publisher says it means; which codes stand for a missing value is learned from the file itself (a code whose rows have a blank measure), never from this list. A signature is only a hint that a file comes from that publisher. A code not listed reads 'unrecognised flag'.",
+ "publishers": {
+  "statcan": {
+   "signature": ["REF_DATE", "DGUID", "VECTOR", "COORDINATE", "STATUS"],
+   "codes": {"x": "suppressed", "..": "not_available", "...": "not_applicable", "F": "too_unreliable",
+             "E": "use_with_caution", "A": "quality_excellent", "B": "quality_very_good", "C": "quality_good",
+             "D": "quality_acceptable", "r": "revised", "p": "preliminary"}
+  },
+  "eurostat": {
+   "signature": ["TIME_PERIOD", "OBS_VALUE", "OBS_FLAG"],
+   "embedded": true,
+   "codes": {":": "not_available", "c": "confidential", "p": "provisional", "e": "estimated", "b": "break",
+             "u": "low_reliability", "z": "not_applicable"}
+  },
+  "ons": {
+   "codes": {"c": "confidential", "x": "not_available", "[x]": "not_available", "[c]": "confidential",
+             "[z]": "not_applicable", "[u]": "low_reliability"}
+  },
+  "generic": {
+   "codes": {"..": "not_available", "-": "not_available", "n/a": "not_available", "*": "suppressed"}
+  }
+ }
+}

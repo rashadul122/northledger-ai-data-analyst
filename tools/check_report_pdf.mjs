@@ -653,6 +653,75 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   expect('FX history cap', !!histGone && histGone.it.some((x) => x.group === 'forecast'),
     'the history did not go before the forecast: ' + JSON.stringify(histGone && histGone.it.map((x) => x.id)));
 
+  // ---- the final evaluation's cases (1 Oct 2026): final5-results.json (make_final5.py: the packed engine on the FX
+  // fixture and on the SYNTHETIC reviews). The live PDFs drew 4 of the FX histogram's 12 bins (the payload's cap), a
+  // line of a level (1.25 to 1.40 CAD per USD) on an axis from 0, a health score of 0.0 with nothing saying why, and no
+  // word of the 6,694 reviews the AI plan set aside. Now: every bar, and past 8 bars a row a bar with each label whole;
+  // a line's value axis spans its data; the health tile says what set the score (and Appendix A's table); a step of the
+  // plan that set aside a tenth of the rows or more is said in "About this report" (the cover), and every such step
+  // with its count, share, reason and the engine's check under "Rows the AI plan set aside" in Appendix A.
+  const F5 = J('final5-results.json');
+  const f5Report = (title, n) => [title, '## Executive summary', '- The engine read the file and checked every figure.',
+    '## The headline: what the engine found', 'The figures below come from the engine.'].concat(Array.from({ length: n }, (_, i) => '[CHART:' + (i + 1) + ']'))
+    .concat(['## What to do', '1. Read the figures with the rows the plan set aside in mind.', '## Risks and what the data cannot say', '- The data are observational.']).join('\n');
+  const f5Inp = (key) => {
+    const R = F5.runs[key].results;
+    return inp(R, f5Report(key === 'fx' ? 'The rate over nine years' : 'What the reviews say', R.charts.length),
+      { name: F5.runs[key].csv.split('/').pop(), charts: R.charts, tables: R.tables, kept: key === 'reviews' ? ['review_text'] : [] });
+  };
+  // the text a reader follows across a page break, the running header and the footer left out; and a part of it
+  const body = (r) => r.texts.map((ts, i) => ts.filter((q) => q.y > 45 && (i === 0 || q.y < r.media[1] - 45)).map((q) => q.s).join(' ')).join(' ');
+  const bodyBetween = (r, a, b) => { const t = body(r), i = t.indexOf(a), j = t.indexOf(b, i + 1); return i < 0 ? '' : plainText(t.slice(i, j < 0 ? t.length : j)).replace(/\s+/g, ' '); };
+  // the numbers printed left of a figure's plot (its value axis) under the caption that holds `title`
+  const axisOf = (r, title) => {
+    for (const ts of r.texts) {
+      const cap = ts.findIndex((t) => t.s.indexOf(title) >= 0 && t.f === 'F2');
+      if (cap < 0) continue;
+      const fig = ts.filter((t) => /^Figure \d+\./.test(t.s)).filter((t) => Math.abs(t.y - ts[cap].y) < 1)[0] || ts[cap];
+      return ts.filter((t) => t.size === 7 && t.x < fig.x + 44 && t.y < ts[cap].y - 10 && t.y > ts[cap].y - 230 && /^[-\u2212]?[\d,]*\.?\d+$/.test(t.s))
+        .map((t) => Number(t.s.replace(/,/g, '').replace('\u2212', '-'))).filter((v) => Math.abs(v) < 1800);   // not the first year under the axis
+    }
+    return null;
+  };
+  for (const paper of ['letter', 'a4']) {
+    const fx = F5.runs.fx.results, rv = F5.runs.reviews.results;
+    const rf = check4('final evaluation: FX, ' + paper, f5Inp('fx'), paper, { name: 'fx_usd_cad' });
+    const bins = fx.charts.filter((c) => c.kind === 'bars')[0];
+    const runs = rf.texts.reduce((a, ts) => a.concat(ts.map((t) => t.s)), []);
+    const lost = bins.series.filter((s) => runs.indexOf(s.label) < 0).map((s) => s.label);
+    expect('final evaluation FX ' + paper, bins.series.length === 12 && !lost.length, 'the histogram does not print its 12 bins, each label whole: missing ' + JSON.stringify(lost));
+    const ax = axisOf(rf, 'Long-run');
+    const ys = fx.charts.filter((c) => c.kind === 'line')[0].series[0].y;
+    expect('final evaluation FX ' + paper, ax && ax.length >= 3 && ax.indexOf(0) < 0 && Math.min.apply(null, ax) > 1 && Math.min.apply(null, ax) <= Math.min.apply(null, ys) &&
+      Math.max.apply(null, ax) >= Math.max.apply(null, ys), 'the trend line\'s value axis does not span its data (' + Math.min.apply(null, ys).toFixed(3) + ' to ' +
+      Math.max.apply(null, ys).toFixed(3) + '): ticks ' + JSON.stringify(ax));
+    const t = plainText(body(rf)).replace(/\s+/g, ' ');
+    expect('final evaluation FX ' + paper, t.indexOf(plainText('out of 100: ' + fx.health_explain)) >= 0 && t.indexOf(plainText('what set the health score ' + fx.health_explain)) >= 0,
+      'the health tile or the data table does not say what set the score: ' + fx.health_explain);
+    // "About this report" (on the cover when it fits, else first after it) and Appendix A's "How this report was made"
+    const about = (x) => x.indexOf('about this report');
+    expect('final evaluation FX ' + paper, about(t) >= 0 && t.indexOf(plainText(fx.plan_row_drops[0].notice), about(t)) >= 0 &&
+      bodyBetween(rf, 'APPENDIX A', 'APPENDIX B').indexOf(plainText(fx.plan_row_drops[0].notice)) >= 0,
+    '"About this report" does not say the plan set aside ' + fx.plan_row_drops[0].rows + ' rows');
+    const ap = bodyBetween(rf, 'APPENDIX A', 'APPENDIX B');
+    expect('final evaluation FX ' + paper, ap.indexOf('rows the ai plan set aside') >= 0 && ap.indexOf(plainText(fx.plan_row_drops[0].text)) >= 0 &&
+      ap.indexOf('rows in the file 3,526') >= 0 && ap.indexOf('rows the ai plan set aside 569 (16.1%)') >= 0, 'Appendix A does not list the step that set rows aside: ' + ap.slice(0, 600));
+    const rr = check4('final evaluation: reviews, review_text kept, ' + paper, f5Inp('reviews'), paper, { name: 'reviews_synthetic', kept: ['review_text'] });
+    const tr = plainText(body(rr)).replace(/\s+/g, ' ');
+    expect('final evaluation reviews ' + paper, tr.indexOf(plainText('out of 100: ' + rv.health_explain)) >= 0 && /^0 because the newest row is 3\.5 years old \(the timeliness check\)/.test(rv.health_explain),
+      'the health tile does not say the score is 0 because the newest row is 3.5 years old: ' + rv.health_explain);
+    expect('final evaluation reviews ' + paper, about(tr) >= 0 && tr.indexOf(plainText(rv.plan_row_drops[0].notice), about(tr)) >= 0 && /none of these rows duplicates a kept row/.test(rv.plan_row_drops[0].notice),
+      '"About this report" does not say the plan set aside the department, its reason and the engine\'s check: ' + tr.slice(0, 500));
+    const apr = bodyBetween(rr, 'APPENDIX A', 'APPENDIX B');
+    expect('final evaluation reviews ' + paper, apr.indexOf(plainText(rv.plan_row_drops[0].text)) >= 0 && /compared on every column but department/.test(apr),
+      'Appendix A does not give the step, its reason and the engine\'s check: ' + apr.slice(0, 600));
+    // the department chart keeps every group the engine compared, the lowest among them
+    const dept = W.model(f5Inp('reviews')).parts.reduce((a, p) => a.concat(p.blocks), []).filter((b) => b.type === 'chart' && b.chart && /by department/.test(b.chart.title || ''))[0];
+    const want = rv.analyses.filter((a) => /by department/.test(a.title))[0];
+    const low = (want.sentence.match(/ and (.+?) lowest \(/) || [])[1];
+    expect('final evaluation reviews ' + paper, dept && dept.chart.series.length === 5 && dept.chart.series.some((s) => s.label === low),
+      'the department chart does not carry its 5 groups and the lowest one the text names (' + low + ')');
+  }
   // ---- the chart registry (wave 2B, 30 Sep 2026): the records of tools/fixtures/viz/spec.json drawn by kind
   // (fixtures/report-pdf/viz-results.json and viz-response.json, made by make_viz_fixtures.py): the 10-chart report
   // (every kind, 12 long segment labels, suppressed cells, a 10 x 12 diverging grid, a Pareto whose k80 lies beyond its

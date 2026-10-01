@@ -5890,6 +5890,236 @@ def test_review5_m_needs_five_groups_and_compare_offers_no_range_for_a_gap_chanc
     assert chance >= 5, chance
 
 
+# ------------------------------------------------------------------ the final evaluation (1 Oct 2026)
+# The live page on the evaluation's two files (.work/eval/out/final-2026-10-01/SCORECARD-draft.md): results_for_ai cut
+# every chart's series to its first 4 (the FX histogram sent 4 of its 12 bins, 598 of 2,407 rates; the reviews "rating
+# by department" dropped Computers, the lowest department, which the text beside it names); the AI plan set aside the
+# whole "All Electronics" department (6,694 rows, 19.8%) as "an umbrella department overlapping the specific ones",
+# which was false, and nothing said so; the health score read 0.0 with nothing saying why (the newest row was 3.5 years
+# old); the plan's reading was cut mid-word ("one dist"). The tests use the StatCan FX fixture and the SYNTHETIC reviews
+# file (tools/fixtures/eval), never the research-licensed review rows.
+FINAL5_UMBRELLA = ("'All Electronics' reads as an umbrella department overlapping the specific ones, so it was excluded; "
+                   "if it held unique reviews they are not covered.")
+FINAL5_PLAN = {
+    "goal": "What do customers praise and complain about, and how do the departments compare?", "kind": "text_corpus",
+    "understanding": "Product reviews, one row per review, with a 1-5 star rating, a department and a brand.",
+    "primary": "rating",
+    "columns": [{"name": "review_date", "semantic_type": "date", "role": "date"},
+                {"name": "rating", "semantic_type": "rating", "role": "target", "unit": "stars"},
+                {"name": "verified_purchase", "semantic_type": "boolean", "role": "segment"},
+                {"name": "helpful_votes", "semantic_type": "count", "role": "driver"},
+                {"name": "department", "semantic_type": "category", "role": "segment"},
+                {"name": "brand", "semantic_type": "entity", "role": "entity"},
+                {"name": "review_title", "semantic_type": "free_text", "role": "metadata"},
+                {"name": "review_text", "semantic_type": "free_text", "role": "driver"}],
+    "operations": [{"op": "exclude_rows", "column": "department", "values": ["All Electronics"]},
+                   {"op": "set_aside", "columns": ["review_title"]}],
+    "analyses": [{"type": "compare", "columns": ["rating"], "by": "department"},
+                 {"type": "themes", "columns": ["review_text"]}],
+    "quality_risks": [FINAL5_UMBRELLA, "Ratings are skewed high, so averages sit near the ceiling."]}
+
+
+def _final5_rows():
+    with open(EVAL_REVIEWS, encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def _final5_reviews(plan=None, dec=None):
+    d = dict(dec if dec is not None else {"review_text": "keep"}, __plan__=plan if plan is not None else FINAL5_PLAN)
+    rep = _run(open(EVAL_REVIEWS, "rb").read(), "reviews_synthetic.csv", "", d, "2026-09-30")
+    assert rep["ok"], rep["error"]
+    return rep
+
+
+def test_final5_results_for_ai_sends_every_bar_and_caps_only_the_lines():
+    # FX: the distribution's 12 bins, every one of them, adding up to the 2,407 rates (the live payload sent 4)
+    rep = _run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    assert rep["ok"], rep["error"]
+    dist = next(a for a in rep["ai_analyses"]["items"] if a["type"] == "distribution")
+    bins = dist["chart"]["series"]
+    assert len(bins) == 12 and sum(b["value"] for b in bins) == 2407, (len(bins), sum(b["value"] for b in bins))
+    out = NB.results_for_ai(rep)
+    sent = next(c for c in out["charts"] if c.get("kind") == "bars" and c["title"] == dist["title"])
+    assert [(s["label"], s["value"]) for s in sent["series"]] == [(b["label"], float(b["value"])) for b in bins], sent
+    line = next(c for c in out["charts"] if c.get("kind") == "line")
+    assert len(line["series"]) == 1 and len(line["series"][0]["x"]) == 9, line
+    # the synthetic reviews, all six departments (no row dropped): the compare analysis's bars keep every group, the
+    # lowest among them, whom its sentence names
+    rows = _final5_rows()
+    depts = sorted(set(r["department"] for r in rows))
+    assert len(depts) == 6, depts
+    rep = _final5_reviews(dict(FINAL5_PLAN, operations=[{"op": "set_aside", "columns": ["review_title"]}]))
+    cmp_ = next(a for a in rep["ai_analyses"]["items"] if a["type"] == "compare")
+    labels = [s["label"] for s in cmp_["chart"]["series"]]
+    low = cmp_["table"]["rows"][-1][0]
+    assert sorted(labels) == depts and labels[-1] == low and (" and %s lowest (" % low) in cmp_["sentence"], (labels, low)
+    sent = next(c for c in NB.results_for_ai(rep)["charts"] if c.get("kind") == "bars" and c["title"] == cmp_["title"])
+    assert [s["label"] for s in sent["series"]] == labels, [s["label"] for s in sent["series"]]
+    # the caps: a line chart's series are lines (at most 4 drawn); a bar chart's series are its bars (at most
+    # LEGACY_BARS_MAX, the analyses' own caps are 12); a scatter's points stay a sample of 120
+    many = {"ok": True, "ai_plan": {"goal": "g"}, "findings": [], "ai_analyses": {"items": [
+        {"title": "lines", "sentence": "s", "method": "m",
+         "chart": {"kind": "line", "series": [{"name": "s%d" % i, "x": [1, 2], "y": [1.0, 2.0]} for i in range(6)]}},
+        {"title": "bars", "sentence": "s", "method": "m",
+         "chart": {"kind": "bars", "series": [{"label": "b%d" % i, "value": float(i)} for i in range(30)]}},
+        {"title": "points", "sentence": "s", "method": "m",
+         "chart": {"kind": "scatter", "points": [[float(i), float(i)] for i in range(400)]}}]}}
+    ch = {c["title"]: c for c in NB.results_for_ai(many)["charts"]}
+    assert NB.LEGACY_LINES_MAX == 4 and NB.LEGACY_BARS_MAX == 24 and NB.LEGACY_POINTS_MAX == 120
+    assert len(ch["lines"]["series"]) == 4 and len(ch["bars"]["series"]) == 24 and len(ch["points"]["points"]) == 120, \
+        {k: len(v.get("series") or v.get("points")) for k, v in ch.items()}
+
+
+def _final5_repeats(rows, col, gone_value, skip=()):
+    """This test's own count: the rows whose `col` is gone_value that equal another row on every column but `col`
+    and `skip` (values trimmed)."""
+    cols = [c for c in rows[0] if c != col and c not in skip]
+    keys = {tuple(r[c].strip() for c in cols) for r in rows if r[col] != gone_value}
+    return sum(1 for r in rows if r[col] == gone_value and tuple(r[c].strip() for c in cols) in keys)
+
+
+def test_final5_a_plan_step_that_sets_rows_aside_is_disclosed_with_its_reason_and_checked():
+    rows = _final5_rows()
+    n = len(rows)
+    gone = sum(1 for r in rows if r["department"] == "All Electronics")
+    pct = 100.0 * gone / n
+    assert 10 <= pct < 25, pct
+    share = "%.1f%%" % pct
+    reps = _final5_repeats(rows, "department", "All Electronics")
+    check = "none of these rows duplicates a kept row" if not reps else "%s of these rows duplicate a kept row" % reps
+    rep = _final5_reviews()
+    ap = rep["ai_plan"]
+    # the step's own line says how many and what share
+    assert ap["applied"][0] == "dropped %s rows (%s) where department is one of 1 values (%s rows left)" % (
+        format(gone, ","), share, format(n - gone, ",")), ap["applied"]
+    drops = ap["row_drops"]
+    assert [(d["op"], d["column"], d["rows"], d["of"]) for d in drops] == [("exclude_rows", "department", gone, n)], drops
+    d = drops[0]
+    assert abs(d["pct"] - pct) < 1e-9 and d["reason"] == FINAL5_UMBRELLA and d["check"] == check, d
+    # the reason claims an overlap, so the engine checked it: every column but the step's own compared
+    assert d["compared"] == ["review_date", "rating", "verified_purchase", "helpful_votes", "brand", "review_title",
+                             "review_text"], d["compared"]
+    assert d["text"] == ("Set aside %s rows (%s of the file's %s) where department is All Electronics. The plan's "
+                         "reason: %s The engine checked: %s (compared on every column but department)."
+                         % (format(gone, ","), share, format(n, ","), FINAL5_UMBRELLA, check)), d["text"]
+    assert d["notice"] == "The AI plan set aside %s rows (%s): %s The engine checked: %s." % (
+        format(gone, ","), share, FINAL5_UMBRELLA, check), d["notice"]
+    # from 10% of the rows the step is a plan signal ("other", which the worker accepts): the one re-plan may keep them
+    sig = [s for s in rep["plan_signals"] if s["kind"] == "other"]
+    assert sig == [{"kind": "other", "column": "department",
+                    "detail": "the plan's filter set aside %s of %s rows (%s); keep them unless the goal needs them "
+                              "excluded; %s" % (format(gone, ","), format(n, ","), share, check)}], rep["plan_signals"]
+    # the report writer's facts: the step's line with its share, the notice first among the limitations, and the
+    # whole disclosure for the PDF (results.plan_row_drops)
+    out = NB.results_for_ai(rep)
+    assert out["plan_applied"][0] == ap["applied"][0], out["plan_applied"]
+    # the writer's limitation, at most 240 characters (the worker's cap): the count, the engine's check, then the
+    # plan's reason, cut at a word
+    lim = NB._cut_words("The AI plan set aside %s rows (%s); the engine checked: %s. Its reason: %s" % (
+        format(gone, ","), share, check, FINAL5_UMBRELLA), NB.LIMITATION_MAX)
+    assert out["limitations"][0] == lim and len(lim) <= 240, out["limitations"][:1]
+    assert out["plan_row_drops"] == [{"rows": gone, "of": n, "pct": d["pct"], "text": d["text"], "notice": d["notice"]}], \
+        out["plan_row_drops"]
+    v = _proxy_validate(out)
+    assert v is None or (v["value"]["limitations"][0] == lim and v["value"]["plan_applied"][0] == ap["applied"][0]), v
+    # a step under 10% is disclosed but neither a signal nor a limitation; a reason that claims no overlap is not
+    # checked; a step with no reason says so
+    small = dict(FINAL5_PLAN, operations=[{"op": "exclude_rows", "column": "department", "values": ["Software"]}],
+                 quality_risks=["The Software department is out of scope for this question, so it was excluded."])
+    rep2 = _final5_reviews(small)
+    sw = sum(1 for r in rows if r["department"] == "Software")
+    d2 = rep2["ai_plan"]["row_drops"][0]
+    assert (d2["rows"], d2["check"], d2["compared"], d2["notice"]) == (sw, "", [], ""), d2
+    assert d2["reason"] == "The Software department is out of scope for this question, so it was excluded.", d2
+    assert not [s for s in rep2["plan_signals"] if s["kind"] == "other"] and \
+        not any("The AI plan set aside" in x for x in NB.results_for_ai(rep2)["limitations"]), rep2["plan_signals"]
+    rep3 = _final5_reviews(dict(FINAL5_PLAN, quality_risks=[]))
+    d3 = rep3["ai_plan"]["row_drops"][0]
+    assert d3["reason"] == "" and d3["check"] == "" and d3["notice"] == (
+        "The AI plan set aside %s rows (%s) and gave no reason." % (format(gone, ","), share)), d3
+    assert "The plan gave no reason." in d3["text"], d3["text"]
+
+
+def test_final5_the_overlap_check_counts_real_repeats_and_skips_an_id_column():
+    # an "All" group whose rows repeat other groups' rows (a true umbrella), each row with its own id: the id column
+    # is left out of the comparison (named like a key, its values distinct), the group's own column too
+    base = [["R%04d" % i, "2025-%02d-%02d" % (1 + i % 12, 1 + i % 28), ["North", "South", "East"][i % 3],
+             str(1 + (i * 7) % 5), "item %d" % (i % 37)] for i in range(240)]
+    copies = [["R%04d" % (500 + j)] + base[j * 7][1:2] + ["All"] + base[j * 7][3:] for j in range(30)]
+    own = [["R%04d" % (700 + j), "2025-06-%02d" % (1 + j), "All", "3", "unique %d" % j] for j in range(20)]
+    data = _csv(base + copies + own, ["review_id", "day", "region", "stars", "text"])
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8"))))
+    want = _final5_repeats(rows, "region", "All", skip=("review_id",))
+    assert want == 30, want
+    plan = {"goal": "How do regions rate?", "kind": "survey",
+            "columns": [{"name": "day", "semantic_type": "date", "role": "date"},
+                        {"name": "region", "semantic_type": "category", "role": "segment"},
+                        {"name": "stars", "semantic_type": "rating", "role": "target"}],
+            "operations": [{"op": "exclude_rows", "column": "region", "values": ["All"]}],
+            "quality_risks": ["The All region repeats rows of the other regions, so it was excluded."]}
+    rep = NB.run(data, "regions.csv", "", {"__plan__": plan}, "2026-01-15")
+    assert rep["ok"], rep["error"]
+    d = rep["ai_plan"]["row_drops"][0]
+    assert (d["rows"], d["of"]) == (50, 290) and d["compared"] == ["day", "stars", "text"], d
+    assert d["check"] == "30 of these rows (60.0%) duplicate a kept row", d["check"]
+    assert d["text"].endswith("The engine checked: 30 of these rows (60.0%) duplicate a kept row (compared on every "
+                              "column but region and review_id)."), d["text"]
+
+
+def test_final5_the_health_score_says_what_set_it():
+    rep = _final5_reviews()
+    h = rep["health"]
+    dims = {x["name"]: x for x in h["dimensions"] if x["applicable"]}
+    assert h["weakest"] == "timeliness" and h["score_min"] == 0.0, (h["weakest"], h["score_min"])
+    others = [x["score"] for k, x in dims.items() if k != "timeliness"]
+    avg = ("%.1f" % (math.fsum(others) / len(others))).rstrip("0").rstrip(".")
+    age = (datetime.date(2026, 9, 30) - datetime.date(2023, 3, 31)).days
+    assert age == 1279, age
+    assert h["explain"] == ("0 because the newest row is 3.5 years old (the timeliness check); the other checks "
+                            "averaged %s." % avg), h["explain"]
+    out = NB.results_for_ai(rep)
+    assert out["health_explain"] == h["explain"] and out["health_issues"][0] == "The health score is " + h["explain"], \
+        out["health_issues"][:2]
+    # a fresh file: the weakest dimension says why too, and the writer's issues do not repeat it when it is close
+    fx = _run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    hx = fx["health"]
+    assert hx["explain"].startswith(("%.1f" % hx["score_min"]).rstrip("0").rstrip(".") + " because ") and \
+        ("(the %s check)" % hx["weakest"]) in hx["explain"], hx["explain"]
+    # the core's score is unchanged: the minimum and the mean are the engine's own
+    assert h["score"] == h["score_min"] and h["score_mean"] == round(math.fsum(x["score"] for x in dims.values()) / len(dims), 1)
+    # every dimension has its words, and a score of 100 on every check says so
+    for name, why in (("completeness", "of the cells are empty or a placeholder"), ("uniqueness", "repeat another row"),
+                      ("validity", "do not read as their column's main type"),
+                      ("consistency", "write the same value with different case or spacing")):
+        dd = [dict(x, score=(62.5 if x["name"] == name else 100.0), applicable=True) for x in h["dimensions"]]
+        got = NB._health_explain(dd, 62.5, name, {"duplicate_rows": 12, "rows": 400, "id_like": False,
+                                                  "newest": None, "future": None})
+        assert got.startswith("62.5 because ") and why in got and "the other checks averaged 100." in got, (name, got)
+    assert NB._health_explain([dict(x, score=100.0, applicable=True) for x in h["dimensions"]], 100.0, "completeness",
+                              {}) == "100: every check the engine ran scored 100."
+
+
+def test_final5_the_plans_reading_is_cut_at_a_word_never_mid_word():
+    words = ("The Bank of Canada daily U.S. dollar rate, one row per calendar day, with blank values on holidays and "
+             "weekend zeros before April 2022. ") * 6
+    long_ = (words + "every other column is a fixed code with one distinct value.").strip()
+    assert len(long_) > 700
+    rep = _final5_reviews(dict(FINAL5_PLAN, understanding=long_, goal=("How do departments compare? " * 25).strip()))
+    u, g = rep["ai_plan"]["understanding"], rep["ai_plan"]["goal"]
+    for got, whole, n in ((u, long_, 600), (g, ("How do departments compare? " * 25).strip(), 600)):
+        assert len(got) <= n and got.endswith("…"), (len(got), got[-30:])
+        head = got[:-1]
+        assert whole.startswith(head) and whole[len(head)] in " ,.;", (head[-20:], whole[len(head):][:10])
+    # the reading the report writer receives, with the kept columns' sentence after it, is cut at a word too
+    saved = {"ok": True, "findings": [], "ai_plan": {"goal": "g", "understanding": long_[:800]},
+             "privacy": {"flagged": [{"column": "review_text", "kind": "free text", "decision": "keep"}]}}
+    r = NB.results_for_ai(saved)["reading"]
+    told = NB.OPTED_IN % "review_text"
+    assert r.endswith(" " + told) and len(r) <= 800, (len(r), r[-120:])
+    head = r[:-len(told) - 1]
+    assert head.endswith("…") and long_.startswith(head[:-1]) and long_[len(head) - 1] in " ,.;", head[-40:]
+
+
 def _payload_bytes_of(x) -> int:
     return len(json.dumps(x, default=str))
 

@@ -29,6 +29,11 @@ rules the report draws from the data's roles:
   viz-hostile-header  120 orders whose second column is headed <img src=x onerror=alert(1)>, run with an AI plan
                      that asks for a Pareto of that column (3 levels): the engine refuses it, and the refusal names the
                      column as the file does (rep.viz.refused[].columns), which the page must print as text
+  reviews-plan-drop  the SYNTHETIC reviews (tools/fixtures/eval/reviews_synthetic.csv) run with an AI plan that sets
+                     aside the "All Electronics" department (17.3% of the rows) on an "umbrella ... overlapping" reason,
+                     review_text kept and its theme chart asked for (the final evaluation, 1 Oct 2026): the report
+                     carries ai_plan.row_drops (the notice, the reason, the engine's check), health.explain (its newest
+                     row is 3.5 years old) and the theme chart of the kept text
   orders-private     240 orders with a buyer's email, a free-text note and the member of staff, run
                      with an AI plan (PRIVATE_PLAN) and the choices code / withhold / keep: the
                      coded email and the kept staff name fail their tests (the withheld note's date
@@ -250,6 +255,28 @@ HOSTILE_PLAN = {
     "charts": [{"kind": "pareto", "columns": [HOSTILE, "amount"], "why": "Which kind carries the amount."}]}
 
 
+# The AI plan the reviews-plan-drop run is given (the live reviews plan's step, cut to the synthetic file's columns)
+DROP_PLAN = {
+    "goal": "What do customers praise and complain about, and how do the departments compare?", "kind": "text_corpus",
+    "understanding": "Product reviews, one row per review, with a 1-5 star rating, a department and a brand.",
+    "primary": "rating",
+    "columns": [{"name": "review_date", "semantic_type": "date", "role": "date"},
+                {"name": "rating", "semantic_type": "rating", "role": "target", "unit": "stars"},
+                {"name": "verified_purchase", "semantic_type": "boolean", "role": "segment"},
+                {"name": "helpful_votes", "semantic_type": "count", "role": "driver"},
+                {"name": "department", "semantic_type": "category", "role": "segment"},
+                {"name": "brand", "semantic_type": "entity", "role": "entity"},
+                {"name": "review_title", "semantic_type": "free_text", "role": "metadata"},
+                {"name": "review_text", "semantic_type": "free_text", "role": "driver"}],
+    "operations": [{"op": "exclude_rows", "column": "department", "values": ["All Electronics"]},
+                   {"op": "set_aside", "columns": ["review_title"]}],
+    "analyses": [{"type": "compare", "columns": ["rating"], "by": "department"},
+                 {"type": "themes", "columns": ["review_text"]}],
+    "quality_risks": ["'All Electronics' reads as an umbrella department overlapping the specific ones, so it was "
+                      "excluded; if it held unique reviews they are not covered."],
+    "charts": [{"kind": "theme_rating_heatmap", "columns": ["review_text", "rating"], "why": "Which words the low ratings use."}]}
+
+
 def write_hostile(out):
     """viz-hostile-header.csv: 120 invented orders over 24 months; the second column's header is markup."""
     import csv as _csv
@@ -338,6 +365,21 @@ def main(argv=None):
     else:
         print("%-18s %d charts (%d from the chart registry, %d refused), %d findings" % (name, len(rep["charts"]), len(rep["viz"]["charts"]),
               len(rep["viz"]["refused"]), len(rep["findings"])))
+    # the final evaluation (1 Oct 2026): a plan step that sets a sixth of the rows aside, a stale file, a kept text
+    name = "reviews-plan-drop"
+    try:
+        rep = nl_browser.run(open(os.path.join(SITE, "tools", "fixtures", "eval", "reviews_synthetic.csv"), "rb").read(),
+                             "reviews_synthetic.csv", "", {"__plan__": DROP_PLAN, "review_text": "keep"}, "2026-09-30")
+        if not rep.get("ok"):
+            rep = {"__fixture_error": "the planned run failed: %s" % rep.get("error")}
+        elif not (rep.get("ai_plan") or {}).get("row_drops") or not rep["health"].get("explain"):
+            rep = {"__fixture_error": "the run disclosed no row drop or no health explanation"}
+    except Exception as e:
+        rep = {"__fixture_error": "the planned run raised %s: %s" % (type(e).__name__, e)}
+    with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f)
+    print("%-18s %s" % (name, rep.get("__fixture_error") or "%d row drop(s)" % len(rep["ai_plan"]["row_drops"])),
+          file=sys.stderr if "__fixture_error" in rep else sys.stdout)
     # a header that is markup, in a chart the engine refuses (the chart review of 30 Sep 2026)
     name = "viz-hostile-header"
     write_hostile(a.out)

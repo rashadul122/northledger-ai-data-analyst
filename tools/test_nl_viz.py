@@ -566,9 +566,14 @@ def test_theme_rating_heatmap_counts_the_themes_words_by_rating_and_all_is_the_a
     _grid_equal(rec, values, n, lambda x: NB._fmt(x) + "%", "sequential")
     assert [r[-1] for r in rec["data"]["text"]] == [table[w][2] for w in rec["data"]["rows"]], "'all' is not the analysis"
     assert rec["anchors"] == ["analysis:%d" % (rep["ai_analyses"]["items"].index(ana) + 1)], rec["anchors"]
-    # the review text is flagged (free text) and kept by the visitor: still never charted
-    ref = [r for r in _viz(rep)["refused"] if r["chart"] == "theme_rating_heatmap"]
-    assert ref and ref[0]["why"] == _nv().R_PERSONAL, ref
+    # the review text is flagged (free text) and kept by the visitor, who ticked the box that sends it to the AI (an AI
+    # plan ran): option B (owner, 1 Oct 2026), the theme chart reads it as its text, with every name protection
+    # (test_final5_the_theme_chart_reads_a_kept_free_text_column_with_every_name_protection)
+    got = [c for c in _viz(rep)["charts"] if c["chart"] == "theme_rating_heatmap"]
+    assert [c["inputs"]["columns"] for c in got] == [["review_title", "rating"], ["review_text", "rating"]], \
+        ([c["inputs"]["columns"] for c in got], _viz(rep)["refused"])
+    assert not [r for r in _viz(rep)["refused"] if r["chart"] == "theme_rating_heatmap"], _viz(rep)["refused"]
+    assert not _check(got[1]), _check(got[1])[:3]
 
 
 def test_correlation_heatmap_is_the_corr_chart_and_recomputes():
@@ -1213,6 +1218,90 @@ def test_review_names_are_never_themes_under_withhold_code_and_keep():
         want = sum(1 for t in texts if w in ({" ".join(p) for p in zip(_tokens(t), _tokens(t)[1:])} if " " in w
                                              else set(_tokens(t))))
         assert int(c.replace(",", "")) == want, (w, c, want)
+
+
+def _final5_reviews_bytes():
+    """The synthetic reviews (fixtures/eval/make_reviews.py) with people in them, all invented here: a customer_name
+    column (flagged by its name) whose surname "fairweather" some texts write in lower case, a given name in lower case
+    ("emily", engine/first_names.txt), a word the texts always capitalise mid-sentence ("Quillon"), and a complaint that
+    sits in the low ratings ("It stopped working after a week.")."""
+    import pandas as pd
+    df = pd.read_csv(REVIEWS, dtype=str, keep_default_na=False)
+    people = ["Marisol Fairweather", "Tobias Quennell", "Ingrid Vasquez", "Odalys Brightwater", "Kenji Arborfield"]
+    df.insert(1, "customer_name", [people[i % len(people)] for i in range(len(df))])
+    rng = random.Random(20261001)
+    texts = []
+    for i, (t, r) in enumerate(zip(df["review_text"], df["rating"])):
+        extra = []
+        if r in ("1", "2") and rng.random() < 0.7:
+            extra.append("It stopped working after a week.")
+        if i % 7 == 0:
+            extra.append("thanks to fairweather at the help desk.")
+        if i % 9 == 0:
+            extra.append("my sister emily loves it.")
+        if i % 8 == 0:
+            extra.append("Ask for Quillon at the counter.")
+        texts.append(" ".join([t] + extra))
+    df["review_text"] = texts
+    return df.to_csv(index=False).encode("utf-8")
+
+
+FINAL5_THEME_PLAN = dict(REVIEWS_PLAN, analyses=[{"type": "themes", "columns": ["review_text"]}],
+                         columns=REVIEWS_PLAN["columns"] + [{"name": "review_text", "semantic_type": "free_text",
+                                                             "role": "driver"}],
+                         charts=[{"kind": "theme_rating_heatmap", "columns": ["review_text", "rating"],
+                                  "why": "What the low ratings complain about."}])
+FINAL5_PEOPLE = {"marisol", "fairweather", "tobias", "quennell", "ingrid", "vasquez", "odalys", "brightwater", "kenji",
+                 "arborfield", "emily", "quillon"}
+
+
+def test_final5_the_theme_chart_reads_a_kept_free_text_column_with_every_name_protection():
+    # option B (owner, 1 Oct 2026): the AI may read a personal column the visitor keeps and agrees to send (the page's
+    # ticked box; an AI plan runs only after it). The final evaluation's reviews kept review_text, and the AI's
+    # theme_rating_heatmap on it was refused ("a personal column is never charted"), so "what do customers complain
+    # about" had no answer by rating. The theme chart (only it, and only as its text) may now read such a column, with
+    # every name protection: the tokens of every OTHER flagged column's values, the given names, a word the texts write
+    # as a name. A withheld or coded text is never read, and a kept column never plays another part.
+    data = _final5_reviews_bytes()
+    for dec in ("withhold", "code", "keep"):
+        rep = NB.run(data, "reviews_people.csv", "", {"__plan__": FINAL5_THEME_PLAN, "review_text": "keep",
+                                                      "customer_name": dec}, "2026-09-30")
+        assert rep["ok"], rep["error"]
+        got = {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}
+        assert got.get("review_text") == "keep" and got.get("customer_name") == dec, got
+        recs = [c for c in _viz(rep)["charts"] if c["chart"] == "theme_rating_heatmap"]
+        assert len(recs) == 1, (dec, _viz(rep)["refused"])
+        rec = recs[0]
+        assert rec["inputs"]["columns"] == ["review_text", "rating"] and not _check(rec), (rec["inputs"], _check(rec)[:3])
+        # a real complaint theme, and where it sits: the low ratings
+        rows, cols = rec["data"]["rows"], rec["data"]["cols"]
+        assert "stopped working" in rows, (dec, rows)
+        sw = rec["data"]["values"][rows.index("stopped working")]
+        assert sw[cols.index("1")] > 5 * sw[cols.index("5")], (cols, sw)
+        # no person's name: not a token of the other flagged column, not a given name, not a word written as a name
+        ana = next(a for a in rep["ai_analyses"]["items"] if a["type"] == "themes")
+        words = _words(rows) | _words(r[0] for r in ana["table"]["rows"])
+        assert not words & FINAL5_PEOPLE, (dec, sorted(words & FINAL5_PEOPLE))
+        # the chart counts the analysis's own words (its 'all' column is the analysis)
+        assert [r[-1] for r in rec["data"]["text"]] == [r[2] for r in ana["table"]["rows"] if r[0] in rows], dec
+        res = NB.results_for_ai(rep)
+        sent = [c for c in res["charts"] if isinstance(c, dict) and c.get("chart") == "theme_rating_heatmap"]
+        blob = json.dumps(res["charts"] + res["tables"] + res["analyses"], ensure_ascii=False).lower()
+        assert len(sent) == 1 and not [n for n in FINAL5_PEOPLE if re.search(r"(?<![a-z])%s(?![a-z])" % n, blob)], dec
+    # a withheld or coded text is never read; a kept column never plays the rating's part (nor any other chart's)
+    for dec in ("withhold", "code"):
+        rep = NB.run(data, "reviews_people.csv", "", {"__plan__": FINAL5_THEME_PLAN, "review_text": dec,
+                                                      "customer_name": "withhold"}, "2026-09-30")
+        ref = [r for r in _viz(rep)["refused"] if r["chart"] == "theme_rating_heatmap"]
+        assert ref and ref[0]["why"] == _nv().R_PERSONAL and not [c for c in _viz(rep)["charts"]
+                                                                 if c["chart"] == "theme_rating_heatmap"], (dec, ref)
+    plan = dict(FINAL5_THEME_PLAN, charts=[{"kind": "theme_rating_heatmap", "columns": ["review_text", "customer_name"],
+                                            "why": "x"},
+                                           {"kind": "crosstab_heatmap", "columns": ["department", "customer_name"], "why": "x"}])
+    rep = NB.run(data, "reviews_people.csv", "", {"__plan__": plan, "review_text": "keep", "customer_name": "keep"},
+                 "2026-09-30")
+    assert [r["why"] for r in _viz(rep)["refused"]] == [_nv().R_PERSONAL] * 2 and \
+        not [c for c in _viz(rep)["charts"] if c["chosen_by"] == "ai"], _viz(rep)["refused"]
 
 
 def test_the_engine_never_picks_themes_or_a_pareto_of_an_untyped_text_column():

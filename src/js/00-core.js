@@ -57,6 +57,16 @@
     for (; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
     return out;
   };
+  // a line chart's value range (final evaluation, 1 Oct 2026: an exchange rate of 1.25 to 1.40 drawn from 0 read as a
+  // flat line): the lowest and highest values with `pad` of their span either side (default 7%), and 0 only when the
+  // data cross it or come within a quarter of their own span of it. Bars keep their zero baseline. The PDF writer
+  // (src/js/45-report-pdf.js lineSpan) uses the same rule.
+  U.lineSpan = function (lo, hi, pad) {
+    var span = hi - lo, p = (span || Math.abs(hi) || 1) * (pad === undefined ? 0.07 : pad), a = lo - p, b = hi + p;
+    if (lo >= 0 && (lo <= 0.25 * span || a < 0)) a = 0;
+    if (hi <= 0 && (-hi <= 0.25 * span || b > 0)) b = 0;
+    return [a, b];
+  };
   U.svg = function (w, h, label, body) {
     return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" role="img" aria-label="' + U.esc(label) +
       '"><title>' + U.esc(label) + '</title>' + body + '</svg>';

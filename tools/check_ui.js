@@ -2829,7 +2829,8 @@ const FX_NAMES = ['sample', 'rent-roll', 'sales-ledger', 'web-analytics', 'cafe-
 // every file the checks read: each report, the profile the page would send /plan for it, and the planned
 // orders-private run (its CSV too, for the personal values that must never show)
 const FX_FILES = FX_NAMES.concat(['orders-private']).map((n) => n + '.json').concat(FX_NAMES.concat(['orders-private']).map((n) => n + '.profile.json'),
-  FX_NAMES.concat(['orders-private']).map((n) => n + '.landed.json'), ['orders-private.csv', 'sales-ledger-charts.json', 'viz-hostile-header.json']);
+  FX_NAMES.concat(['orders-private']).map((n) => n + '.landed.json'), ['orders-private.csv', 'sales-ledger-charts.json', 'viz-hostile-header.json',
+    'reviews-plan-drop.json']);
 let FX_DIR = null;
 function fixtureProfile(name) { fixture(name); return JSON.parse(fs.readFileSync(path.join(FX_DIR, name + '.profile.json'), 'utf8')); }
 function fixtureLanded(name) { fixture(name); return JSON.parse(fs.readFileSync(path.join(FX_DIR, name + '.landed.json'), 'utf8')); }
@@ -3978,6 +3979,60 @@ check('viz-screenshots', DESK, async (ctx) => {
     }
   }
   console.log('   ' + n + ' screenshots in ' + dir);
+});
+
+/* ------------------------------------------------------------ the final evaluation (1 Oct 2026), page side
+   The live page drew the first 10 bars of an analysis chart (the payload had cut them to 4), and nothing on it said the
+   AI plan had set aside a fifth of the reviews, or why the health score read 0.0. Now the AI report draws every bar the
+   engine sent and a line whose value axis spans its data; the plan card lists each step that set rows aside with its
+   count, share, reason and the engine's check; the bottom line says so when a step set aside a tenth of the rows or
+   more; the trust strip's Data health line says what set the score; and the theme chart of the kept review_text is
+   drawn (option B). */
+check('try-final5-plan-card-bottom-line-and-health-say-what-happened', DESK, async (ctx) => {
+  const rep = fixture('reviews-plan-drop');
+  ok(!rep.__fixture_error, 'the adapter could not make the reviews-plan-drop run (tools/make_ui_fixtures.py): ' + rep.__fixture_error);
+  const { p } = await openV2(ctx, null, rep);
+  const d = await p.evaluate(() => {
+    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : '';
+    return { drops: Array.from(document.querySelectorAll('#try-plan-card .try-plan-drops li')).map(t),
+      steps: Array.from(document.querySelectorAll('#try-plan-card li')).map(t),
+      bl: Array.from(document.querySelectorAll('#nl2-manager .nl2-bottomcard .nl2-plandrop')).map(t),
+      health: t(document.querySelector('#nl2-manager .nl2-trust li[data-layer="health"]')),
+      figs: Array.from(document.querySelectorAll('#nl2-manager figure')).map((f) => t(f.querySelector('figcaption, h4, .nl2-figtitle')) || t(f).slice(0, 80)).join(' | '),
+      text: t(document.getElementById('try-report')) };
+  });
+  const D = rep.ai_plan.row_drops;
+  ok(D.length === 1 && d.drops.length === 1 && d.drops[0] === squash(D[0].text), 'the plan card does not list the step that set rows aside: ' + JSON.stringify(d.drops));
+  ok(/^Set aside 445 rows \(17\.3% of the file's 2,565\) where department is All Electronics\. The plan's reason: /.test(d.drops[0]) &&
+    /The engine checked: none of these rows duplicates a kept row \(compared on every column but department\)\.$/.test(d.drops[0]), 'the disclosure lacks its count, share, reason or check: ' + d.drops[0]);
+  ok(d.steps.some((x) => /^dropped 445 rows \(17\.3%\) where department is one of 1 value/.test(x)), 'the step\'s own line does not give its share: ' + JSON.stringify(d.steps.slice(0, 6)));
+  ok(d.bl.length === 1 && d.bl[0] === squash(D[0].notice) && /^The AI plan set aside 445 rows \(17\.3%\): /.test(d.bl[0]), 'the bottom line does not say the plan set aside a sixth of the rows: ' + JSON.stringify(d.bl));
+  ok(d.health.indexOf(squash(rep.health.explain.replace(/[.\s]+$/, ''))) >= 0 && /0 because the newest row is 3\.5 years old \(the timeliness check\)/.test(d.health),
+    'the Data health line does not say what set the score: ' + d.health);
+  ok(d.text.indexOf('What the review_text texts say, by rating') >= 0, 'the theme chart of the kept review_text is not drawn: ' + d.figs.slice(0, 300));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+check('try-final5-ai-report-draws-every-bar-and-a-line-that-spans-its-data', DESK, async (ctx) => {
+  const fx = pdfFixture('final5-results.json').runs.fx.results;
+  const rep = optinReport(); rep.__resultsJson = fx;
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: pdfReply({ charts: fx.charts, tables: fx.tables }) });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  const figs = await p.evaluate(() => Array.from(document.querySelectorAll('#try-ai-report .ai-rep-figure')).map((f) => ({
+    cap: (f.querySelector('figcaption') || {}).textContent || '', bars: f.querySelectorAll('svg rect.mk').length,
+    ticks: Array.from(f.querySelectorAll('svg text')).filter((x) => x.getAttribute('text-anchor') === 'end').map((x) => x.textContent) })));
+  const bins = fx.charts.filter((c) => c.kind === 'bars')[0], line = fx.charts.filter((c) => c.kind === 'line')[0];
+  const fb = figs.filter((f) => f.cap === bins.title)[0], fl = figs.filter((f) => f.cap === line.title)[0];
+  ok(fb && fb.bars === 12, 'the histogram does not draw its 12 bars: ' + JSON.stringify(fb && fb.bars));
+  const ys = line.series[0].y, tk = fl ? fl.ticks.map((x) => Number(String(x).replace(/,/g, '').replace('\u2212', '-'))) : [];
+  ok(fl && tk.length >= 3 && tk.indexOf(0) < 0 && Math.min.apply(null, tk) > 1 && Math.min.apply(null, tk) >= Math.min.apply(null, ys) - 0.05 &&
+    Math.max.apply(null, tk) <= Math.max.apply(null, ys) + 0.05, 'the trend line\'s value axis does not span its data (' + Math.min.apply(null, ys).toFixed(3) + ' to ' +
+    Math.max.apply(null, ys).toFixed(3) + '): ticks ' + JSON.stringify(fl && fl.ticks));
+  // the shared rule: a level far from 0 spans its data; data near 0 or crossing it take 0 in
+  const sp = await p.evaluate(() => [window.NLU.lineSpan(1.25, 1.4), window.NLU.lineSpan(5, 100), window.NLU.lineSpan(-3, 10), window.NLU.lineSpan(-10, -1)]);
+  ok(sp[0][0] > 1.2 && sp[0][1] < 1.42 && sp[1][0] === 0 && sp[2][0] < -3 && sp[2][1] > 10 && sp[3][1] === 0, 'U.lineSpan: ' + JSON.stringify(sp));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
 /* ------------------------------------------------------------ runner */

@@ -84,6 +84,15 @@ v1 `score` (**= `score_min`**), `issues`, plus:
 - `columns`: one per landed column: `{name, type, n, flagged, withheld, completeness{k,n,pct,ci}, validity{k,n,pct,ci,dominant_format}, uniqueness{applicable,k,n,pct,ci}, weakest, claim_health, distinct, top_values[[value,count]], numeric{min,median,max}, dates{min,max,order}, quarantined_by_rule{rule: rows}, fixes_by_rule{rule: cells}, safe_for[finding ids]}`. `pct` is 0-100, `ci` a 95% Wilson interval on 0-100. Completeness = non-empty of all rows; validity = values of the column's dominant type of its non-empty values (the claim's validity, `measure._claim_validity`); uniqueness = distinct of non-empty, applicable only to an id-like column. `weakest` is the lowest applicable of the three. `top_values`, `numeric`, `dates` are empty/null for a withheld column; `numeric` and `dates` come from the cleaned table.
 - `missingness`: `{matrix_columns[], by_month[{month, rows, nulls{column: k}}], nullity_corr{columns[], matrix[][], n}, mcar{test: "little", p: null, conclusion}}` over the cleaned table's rows in the analysis window, flagged columns left out. Little's MCAR test is not run in R1.
 - `csv_text_numbers` (30 September 2026): null, or `{columns[], lowers{validity, score_min, score_mean}, note}`. **Decision: the line is dropped, not reworded.** The engine's health check writes "`<col>`: N of N numbers are stored as text; they will sort '10' before '9'." for every number column of a CSV (every file the page reads is CSV text, landed as text) and marks the column's validity down by half (`northledger/health.py`, `_NUM_AS_TEXT_PENALTY`). The line says nothing about this file, and it is not true of the analysis, which reads those values as numbers (the cleaner converts them), so nothing in the report sorts '10' before '9'; a reworded line would still be a non-issue in a list of issues. So the adapter leaves it out of `issues` and out of what it sends the AI (`results_for_ai.health_issues`, which also drops it from a report saved before this rule); no engine file is changed. The core's score is NOT changed: it keeps the mark-down. `columns` names the number columns marked down (never a withheld one); `lowers` says which scores the mark-down lowers, read by undoing it with the engine's own constant and rounding (`health._NUM_AS_TEXT_PENALTY`, `health._pct`) and the cleaner's validity cap as `health.reflect_cleaning` applies it (no counterfactual number is printed). When it lowers the weakest dimension or the mean, `note` says so in plain words and the page prints it in the Data health area (the health tile, the trust strip's Data health line and the analyst view's Quality by dimension): "The score counts numbers stored as text, which every CSV has: validity, the weakest dimension here, is marked down for the numbers in revenue and units, although the engine reads them as numbers." (the mean only: "validity is marked down for the numbers in amount, which lowers the mean of the five"); else `note` is "". It lowers the score on most files: the site's sample's mean reads 87.1 where it would read 88.3 (its weakest dimension is consistency, unaffected), and a clean twelve-region orders file scores 75.0 on its weakest dimension, validity, where it would score 100. When the weakest dimension is lowered (the only score `results_for_ai` sends, `health_score`), the writer's `health_issues` start with one line: "The health score counts numbers stored as text, which every CSV has: it is validity, the weakest dimension here, marked down for them, although the engine reads them as numbers."
+- `explain` (1 October 2026): what set the score, in plain words, naming no column: the weakest dimension, why, and the
+  other checks' average, e.g. "0 because the newest row is 3.5 years old (the timeliness check); the other checks
+  averaged 96.4." (`nl_browser._health_explain`: the newest row's age and the future-dated rows from the engine's own
+  timeliness lines, the exact duplicate rows, the numbers-stored-as-text mark-down when that is what lowers validity);
+  "100: every check the engine ran scored 100." when every check scored 100; "" with no score. The core's score is
+  unchanged. The page prints it on the health tile and in the trust strip's Data health line; `results_for_ai` sends it
+  as `health_explain` (for the PDF's health tile and data table) and, when the weakest dimension sits 10 points or more
+  under the others' average and the numbers-stored-as-text line does not already say why, first among
+  `health_issues` ("The health score is 0 because ...").
 - `accuracy`: `{measured: false, audited_rows: 0, errors: 0, upper95: null, text: "not measured"}`.
 
 ### 2.3 `cleaning`
@@ -209,6 +218,21 @@ not asked again: a plan cannot make an unreadable cell readable, and the one cha
 the unreadable column aside and reading another, is the wrong-axis result the gate exists to prevent (review
 cases f and g). The page does not ask again either when a report's `ai_analyses.gate.over` is true or its
 headline is the gate's, whatever signals the report carries.
+**Rows the plan sets aside (`ai_plan.row_drops`, 1 October 2026).** Every plan step that sets rows aside
+(`exclude_rows`, `keep_rows`, `exclude_blank`, and `date_from_year`'s rows before 1900) is one item `{op, column, rows,
+of (the file's rows), pct, reason, check, compared, text, notice}`; its line in `ai_plan.applied` gives its share
+("dropped 6,694 rows (19.8%) where ..."). `reason` is the plan's own words: the first quality risk that names one of the
+step's values, else one that names its column beside a word for setting rows aside; "" when none does. When the
+reason claims the rows repeat or overlap others (duplicate, overlap, double count, repeat, umbrella, already counted),
+the engine checks it: `check` says how many set-aside rows equal a kept row on every column but the step's own and the
+key-like ones (`compared`), each value trimmed ("none of these rows duplicates a kept row", or "N of these rows (x%)
+duplicate a kept row"); else `check` is "". `text` is the whole disclosure (the plan card, the PDF's Appendix A);
+`notice`, from 10% of the rows (`PLAN_DROP_NOTICE_PCT`), is one line for the summary ("The AI plan set aside 6,694 rows
+(19.8%): <reason> The engine checked: ..."; else ""), which the page prints under the bottom line and the PDF in "About
+this report". From 10% of the rows the step is also a plan signal of kind `other` with its column and the detail
+"the plan's filter set aside 6,694 of 33,878 rows (19.8%); keep them unless the goal needs them excluded" (with the
+check), so the one re-plan may keep the rows. A step's values are named only when they are 1 to 3 short values of a
+column the visitor did not withhold or code.
 A column the visitor withheld or coded is never an axis, a group, a driver or a measure; a withheld one is
 never named ("a column you withheld").
 **Zero as a placeholder (30 September 2026; the evidence rule, final review the same day).** A column the plan
@@ -350,6 +374,16 @@ its codes, which are equal exactly where the file's values are: the column only 
 apart, as they are in the file (the health's duplicate count equals the file's own).
 
 ### 5.7 `results_json` / `results_for_ai` (the report writer, and the charts and tables a share link carries)
+
+The analyses' own charts (1 October 2026): a line chart's series are its lines, at most 4 (`LEGACY_LINES_MAX`); a bar
+chart's series are its bars, every one up to 24 (`LEGACY_BARS_MAX`; one cap of 4 for both sent 4 of the FX histogram's
+12 bins); a scatter keeps a sample of 120 points. The worker's `sanitizeLegacyChart` still cuts any series list to 4.
+`plan_row_drops` carries each item of `ai_plan.row_drops` as `{rows, of, pct, text, notice}` for the PDF; the writer
+reads the steps' shares in `plan_applied`, and a step of 10% or more first among the `limitations`, at most 240
+characters: "The AI plan set aside 6,694 rows (19.8%); the engine checked: none of these rows duplicates a kept row. Its
+reason: ..." (a reason that carries a figure is left to `quality_risks`: the guard reads a limitation's figures as the
+engine's). `reading` is cut at a word with an ellipsis, never mid-word (so is the plan's `understanding` and `goal`, at
+600 characters, when the plan is read).
 
 No text names a withheld column (a finding, health issue, fix or limitation about one is left out; any other
 mention reads "a column you withheld"), no withheld column's data test line is sent, and no text quotes a cell
@@ -710,8 +744,15 @@ drawing, no sideways page scroll; the narrow layouts are in the spec's `phone_fi
   size limit". spec.json records the decision as `caps.HEATMAP_BYTES` (12,000, same version), and validate_spec.py's
   `check_record` applies `HEATMAP_BYTES` to a heatmap and `CHART_BYTES` to every other kind.
 - *The rows*: every chart reads the rows of `downloads.clean_csv` (the frame the engine's own charts read), without
-  every flagged column; a kept one too. So the theme × rating heatmap never reads a free-text column the engine flagged
-  (it flags every free-text column, so a kept review text is refused "a personal column is never charted"); it reads an
+  every flagged column; a kept one too, with one exception (option B, the owner's decision of 1 October 2026: the AI
+  may read the personal columns the visitor keeps). The theme × rating heatmap's text may be a column the scan flagged
+  as free text that the visitor kept, when an AI plan ran (the page runs one only after the visitor ticks the box that
+  names the column): `nl_viz.Ctx.kept_text`, never a column whose values look like people's names, and never in any
+  other part or chart (the rating, and every other chart's columns, are refused "a personal column is never charted"
+  when flagged). Its words keep every name protection: the tokens of every other flagged column's values
+  (`Scrubber.flag_tokens_by`, as the themes analysis of the same column reads them: `Ctx.names_but`), the given names
+  (`engine/first_names.txt`) and the words the texts write as a name mid-sentence. A withheld or coded text is never
+  read. The chart limits count such a kept text for this chart only. Otherwise it reads an
   unflagged column the plan types `free_text` (or, with no plan entry, one of more than 300 values or a median over 60
   characters). Its rows are the themes analysis's words and phrases (`_a_themes` on the same texts, and equal to the
   plan's own themes analysis of that column when it ran); after the rating columns it has an `all` column, the themes

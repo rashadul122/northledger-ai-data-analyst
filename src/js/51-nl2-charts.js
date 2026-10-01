@@ -63,13 +63,13 @@
   C.fmt = { num: num, vfmt: vfmt, val: val, ci: ci, sgn1: sgn1, sgnD: sgnD, pct1: pct1, share0: share0, share1: share1, pval: pval, mon: mon };
 
   /* ------------------------------------------------------------ shared pieces */
-  function domain(vals, zeroFloor) {
+  // a series' value axis: its data with 8% padding, and 0 only when the data cross it or come within a quarter of their
+  // own span of it (U.lineSpan, the rule the PDF's line charts follow: final evaluation, 1 Oct 2026); a series of values
+  // at or above 0 never gets an axis below 0 (every caller asks for that floor)
+  function domain(vals) {
     var v = vals.filter(function (x) { return x !== null && x !== undefined && isFinite(x); });
     if (!v.length) return [0, 1];
-    var lo = Math.min.apply(null, v), hi = Math.max.apply(null, v), pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.1 || 1;
-    var a = lo - pad, b = hi + pad;
-    if (zeroFloor && lo >= 0 && a < 0) a = 0;
-    return [a, b];
+    return U.lineSpan(Math.min.apply(null, v), Math.max.apply(null, v), 0.08);
   }
   function yAxis(y, d, L, R) {
     var b = '', tk = U.ticks(d[0], d[1], 5), step = tk.length > 1 ? Math.abs(tk[1] - tk[0]) : 1;

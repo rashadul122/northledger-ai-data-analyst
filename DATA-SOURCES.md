@@ -7,7 +7,7 @@ downloaded once, on purpose, and recorded; nothing on this site refreshes itself
 
 This file is written by `build.py` from `data/rentsafe_meta.json`, `data/fred/SOURCES.json` and the
 replay manifest inside `agent-demo.html`, so its counts and checksums are the ones the page uses.
-Built 2026-09-30 20:37:59 UTC.
+Built 2026-10-01 01:20:40 UTC.
 
 ## The main page: RentSafeTO report, scorecard and analyses
 

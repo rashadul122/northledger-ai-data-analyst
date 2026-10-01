@@ -2037,7 +2037,9 @@
       if (isVizChart(ch)) { var o = window.NLV ? window.NLV.draw(ch, W) : null; return o ? (o.html || '') : ''; }
       var H = 230, L = 58, R = W - 12, T0 = 26, Bt = H - 28, b = '';
       if (ch.kind === 'bars') {
-        var items = (ch.series || []).slice(0, 10), bh = 22, LB = Math.min(170, Math.round(W * 0.34));
+        // every bar the engine sent (at most 24: engine/nl_browser.py LEGACY_BARS_MAX; a distribution's 12 bins, a
+        // compare's 12 groups), never the first 10 only
+        var items = (ch.series || []).slice(0, 24), bh = 22, LB = Math.min(170, Math.round(W * 0.34));
         H = T0 + items.length * (bh + 6) + 6;
         var vs = items.map(function (d) { return d.value; }), unit = ch.unit || '';
         var mx = Math.max.apply(null, vs.concat([0])), mn = Math.min.apply(null, vs.concat([0]));
@@ -2070,9 +2072,10 @@
       ser.forEach(function (s0) { xsAll = xsAll.concat(s0.x); ysAll = ysAll.concat(s0.y); });
       fits.forEach(function (f) { ysAll.push(f.y0, f.y1); });
       if (!xsAll.length) return '';
-      var x0 = Math.min.apply(null, xsAll), x1 = Math.max.apply(null, xsAll), lo = Math.min.apply(null, ysAll), hi = Math.max.apply(null, ysAll), pad = (hi - lo) * 0.06 || 1;
-      var x = U.scale(x0, x1, L, R), y = U.scale(lo - pad, hi + pad, Bt, T0);
-      U.ticks(lo - pad, hi + pad, 5).forEach(function (t) {
+      // the value axis spans the data, and 0 only when the data cross or near it (U.lineSpan; the PDF draws the same)
+      var x0 = Math.min.apply(null, xsAll), x1 = Math.max.apply(null, xsAll), yd = U.lineSpan(Math.min.apply(null, ysAll), Math.max.apply(null, ysAll));
+      var x = U.scale(x0, x1, L, R), y = U.scale(yd[0], yd[1], Bt, T0);
+      U.ticks(yd[0], yd[1], 5).forEach(function (t) {
         b += '<line class="gridl" x1="' + L + '" x2="' + R + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"/>' + U.txt(L - 6, y(t) + 4, axis(t), 'lab', 'end');
       });
       U.ticks(x0, x1, Math.max(2, Math.floor((R - L) / 70))).forEach(function (t) { if (t % 1 === 0) b += U.txt(x(t), H - 8, String(t), 'lab', 'middle'); });
@@ -2264,6 +2267,10 @@
     function optinHtml() {
       return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You chose to send these personal columns to the AI: ' + S.kept.join(', ') + '.') + '</p>' : '';
     }
+    // the AI plan's steps that set rows aside, as the adapter disclosed them (rep.ai_plan.row_drops)
+    function rowDrops(p) {
+      return p && Array.isArray(p.row_drops) ? p.row_drops.filter(function (d) { return d && typeof d.text === 'string' && d.text; }) : [];
+    }
     function drawPlan(rep) {
       var p = rep && rep.ai_plan, c = el.planCard, optin = optinHtml();
       if (!c) return;
@@ -2279,6 +2286,9 @@
         '</div>' + optin +
         ((p.quality_risks || []).length ? '<div class="try-plan-risks"><h4>What could mislead this goal</h4>' + li(p.quality_risks) + '</div>' : '') +
         ((p.applied || []).length ? '<h4>Steps the engine ran</h4>' + li(p.applied) : '') +
+        // every step that set rows aside: how many, their share of the file's rows, the plan's reason and the engine's
+        // check of it (engine/nl_browser.py _row_drops; final evaluation, 1 Oct 2026)
+        (rowDrops(p).length ? '<h4>Rows the plan set aside</h4><ul class="try-plan-drops">' + rowDrops(p).map(function (d) { return '<li>' + esc(d.text) + '</li>'; }).join('') + '</ul>' : '') +
         ((p.refused || []).length ? '<h4>Steps refused</h4>' + li(p.refused) : '') +
         (alts ? '<h4>Other questions this data can answer</h4><div class="try-plan-alts">' + alts + '</div><p class="note">Pick one to run the report again with that goal.</p>' : '') +
         (p.review ? '<p class="try-plan-review">You approved this plan' + (function (r) { var e = []; if (r.goal_edited) e.push('you edited the goal');
@@ -3166,6 +3176,8 @@
           (sc === null ? '<span class="k-val kv-sm">Not scored</span><span class="k-sub">the engine could not score this file</span>'
             : '<span class="k-val">' + num(sc, 1) + '<small>/100</small></span><span class="tr-meter" aria-hidden="true"><i style="width:' + Math.max(0, Math.min(100, sc)).toFixed(1) + '%"></i></span>') +
           (v2h && typeof r.health.score_mean === 'number' ? '<span class="k-sub">the engine\'s Data Health Score, the mean of the five: ' + num(r.health.score_mean, 1) + '</span>' : '') +
+          // what set the score, in plain words (health.explain: final evaluation, 1 Oct 2026)
+          (r.health.explain ? '<span class="tr-hexplain">' + esc(r.health.explain) + '</span>' : '') +
           // the engine marks down numbers stored as text, which every CSV has: said in plain words when it lowers a score
           (v2h && r.health.csv_text_numbers && r.health.csv_text_numbers.note ? '<span class="tr-textnum">' + esc(r.health.csv_text_numbers.note) + '</span>' : '') +
           (r.health.issues.length ? '<details class="tr-issues"><summary>' + plural(r.health.issues.length, 'issue', 'issues') + ' found</summary>' + list(r.health.issues) + '</details>' : '') + '</div>' +

@@ -177,6 +177,19 @@
     for (var v = a; v <= b + step / 2; v += step) t.push(Math.round(v / step) * step);
     return { ticks: t, lo: a, hi: b > a ? b : a + step, step: step };
   }
+  // a line chart's value range: its lowest and highest values with LINE_PAD of their span either side, and 0 only when
+  // the data cross it or come within NEAR_ZERO of their own span of it (the page's U.lineSpan, src/js/00-core.js)
+  var LINE_PAD = 0.07, NEAR_ZERO = 0.25;
+  function lineSpan(lo, hi) {
+    var span = hi - lo, pad = (span || Math.abs(hi) || 1) * LINE_PAD, a = lo - pad, b = hi + pad;
+    if (lo >= 0 && (lo <= NEAR_ZERO * span || a < 0)) a = 0;
+    if (hi <= 0 && (-hi <= NEAR_ZERO * span || b > 0)) b = 0;
+    return [a, b];
+  }
+  // a share of the rows as the adapter prints one (nl_browser._pct_text): two decimals under 1%, else one
+  function fmtShare(p) { return (Math.abs(p) < 1 ? p.toFixed(2) : p.toFixed(1)) + '%'; }
+  // a bar chart of more than HBARS_FROM bars is drawn across, HBAR_ROW points a bar
+  var HBARS_FROM = 8, HBAR_ROW = 14;
   function cap1(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
   function utf16hex(s) { var h = 'FEFF'; s = String(s); for (var i = 0; i < s.length; i++) h += ('000' + s.charCodeAt(i).toString(16).toUpperCase()).slice(-4); return '<' + h + '>'; }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
@@ -431,6 +444,10 @@
   Doc.prototype.kpis = function (list) {
     if (!list.length) return;
     var n = list.length, gap = 10, w = (this.CW - gap * (n - 1)) / n, h = 92, self = this;
+    // a tile whose words must be read whole (k.whole: the health score's reason) takes the lines it needs, and every
+    // tile grows with it; any other tile's words keep to two lines
+    var subL = list.map(function (k) { var l = k.sub ? wrapTokens(tokens(k.sub, 'R', COL.muted), 7, w - 16) : []; return k.whole ? l : l.slice(0, 2); });
+    list.forEach(function (k, i) { if (k.whole) h = Math.max(h, 60 + (subL[i].length - 1) * 8.5 + 12 + (gradeOf(k.grade) ? 20 : 0)); });
     this.need(h + 14);
     var top = this.y;
     list.forEach(function (k, i) {
@@ -441,7 +458,7 @@
       var v = enc(k.value), vs = 19;
       while (tw(v, vs, 'B') > w - 16 && vs > 11) vs -= 1;
       self.text(v, x + 8, top - 47, vs, 'B', COL.ink);
-      if (k.sub) wrapTokens(tokens(k.sub, 'R', COL.muted), 7, w - 16).slice(0, 2).forEach(function (ln, j) { self.drawLine(ln, x + 8, top - 60 - j * 8.5, 7); });
+      subL[i].forEach(function (ln, j) { self.drawLine(ln, x + 8, top - 60 - j * 8.5, 7); });
       if (g) self.badge(g, x + 8, top - h + 9);
     });
     this.y = top - h - 14;
@@ -452,8 +469,11 @@
     meta = meta || {};
     var v = vizOf(c);
     if (v) return this.vizFigure(v, meta);        // a chart registry record (below): its own drawer, or its table
-    var bars = c.kind === 'bars';
-    var h = bars && (c.series || []).length > 6 ? 220 : 170, self = this;
+    var bars = c.kind === 'bars', nb = bars ? (c.series || []).filter(function (s) { return s && pv(s.value); }).length : 0;
+    // more than HBARS_FROM bars (a distribution's 12 bins, 12 groups: final evaluation, 1 Oct 2026) run across, one
+    // row a bar, each label whole beside its bar; fewer stand up as before
+    var across = nb > HBARS_FROM;
+    var h = across ? 16 + nb * HBAR_ROW + (meta.yTitle ? 14 : 4) : bars && (c.series || []).length > 6 ? 220 : 170, self = this;
     var legend = !bars && (c.series || []).filter(function (s) { return s && s.x && s.y && s.name; }).length > 1;
     var noteLines = wrapTokens(tokens(meta.source || '', 'I', COL.muted), 7.5, this.CW);
     var total = 22 + h + 30 + (legend ? 14 : 0) + noteLines.length * 10.5;
@@ -465,7 +485,7 @@
     if (tl[0]) this.drawLine(tl[0], this.L + tw(cap, 9, 'B'), this.y - 9, 9);
     this.y -= 22;
     var top = this.y, bottom = top - h;
-    if (bars) this.bars(c, top, bottom, meta); else this.xy(c, top, bottom, meta);
+    if (across) this.hbars(c, top, bottom, meta); else if (bars) this.bars(c, top, bottom, meta); else this.xy(c, top, bottom, meta);
     this.y = bottom - 30;
     if (legend) {
       var lx = this.L + 44;
@@ -504,13 +524,42 @@
     });
     if (meta.xTitle) { var xt = enc(words(meta.xTitle, 90)); this.text(xt, x0 + (x1 - x0) / 2 - tw(xt, 7, 'I') / 2, pb - 24, 7, 'I', COL.muted); }
   };
+  // many bars, across: a row a bar, its label beside it (whole in a label column up to a third of the width, else ended
+  // with an ellipsis), the value after the bar's end, a zero line when a value is negative
+  Doc.prototype.hbars = function (c, top, bottom, meta) {
+    var ss = (c.series || []).filter(function (s) { return s && pv(s.value); }), self = this;
+    if (!ss.length) return;
+    var vals = ss.map(function (s) { return s.value; }), lo = Math.min(0, Math.min.apply(null, vals)), hi = Math.max(0, Math.max.apply(null, vals));
+    if (!(hi > lo)) hi = lo + 1;
+    var labs = ss.map(function (s) { return enc(String(s.label || s.name || '')); });
+    var vls = ss.map(function (s) { return enc(fmtVal(s.value)); });
+    var vw = Math.max.apply(null, vls.map(function (v) { return tw(v, 7.5, 'B'); }));
+    var LW = Math.min(this.CW * 0.34, Math.max.apply(null, labs.map(function (l) { return tw(l, 7.5, 'R'); })) + 8);
+    var x0 = this.L + LW + (lo < 0 ? vw + 6 : 0), x1 = this.L + this.CW - vw - 8;
+    var X = function (v) { return x0 + (v - lo) / (hi - lo) * (x1 - x0); }, z = X(0), y = top - 10;
+    if (meta.yTitle) { this.text(enc(words(meta.yTitle, 90)), this.L, top - 4, 7, 'I', COL.muted); y -= 10; }
+    ss.forEach(function (s, i) {
+      var yb = y - (i + 1) * HBAR_ROW + 2.5, xv = X(s.value), w = Math.max(0.5, Math.abs(xv - z)), lab = labs[i];
+      while (tw(lab, 7.5, 'R') > LW - 8 && lab.length > 3) lab = lab.slice(0, -2) + '\x85';
+      self.text(lab, self.L + LW - 8 - tw(lab, 7.5, 'R'), yb + 1.5, 7.5, 'R', COL.body);
+      self.rect(Math.min(xv, z), yb, w, HBAR_ROW - 5, COL.series[0]);
+      var vl = vls[i], vx = s.value < 0 ? xv - 4 - tw(vl, 7.5, 'B') : xv + 4;
+      self.text(vl, vx, yb + 1.5, 7.5, 'B', COL.ink);
+    });
+    if (lo < 0) this.line(z, y + 2, z, y - ss.length * HBAR_ROW, COL.axis, 0.6);
+  };
   Doc.prototype.xy = function (c, top, bottom, meta) {
     var pts = [], self = this;
     (c.series || []).forEach(function (s) { if (s && s.x && s.y) for (var i = 0; i < Math.min(s.x.length, s.y.length); i++) if (pv(s.x[i]) && pv(s.y[i])) pts.push([s.x[i], s.y[i]]); });
     (c.points || []).forEach(function (p) { if (p && pv(p[0]) && pv(p[1])) pts.push(p); });
     if (!pts.length) return;
     var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; });
-    var tx = niceTicks(Math.min.apply(null, xs), Math.max.apply(null, xs), 6), ty = niceTicks(Math.min(0, Math.min.apply(null, ys)), Math.max.apply(null, ys), 4);
+    // a line's value axis spans its data (lineSpan: an exchange rate of 1.25 to 1.40 drawn from 0 was a flat line,
+    // final evaluation, 1 Oct 2026); a scatter keeps its zero
+    var line = c.kind !== 'scatter' && !(c.points || []).length;
+    if (line) (c.fits || []).forEach(function (f) { if (f && pv(f.y0) && pv(f.y1)) ys.push(f.y0, f.y1); });
+    var span = line ? lineSpan(Math.min.apply(null, ys), Math.max.apply(null, ys)) : [Math.min(0, Math.min.apply(null, ys)), Math.max.apply(null, ys)];
+    var tx = niceTicks(Math.min.apply(null, xs), Math.max.apply(null, xs), 6), ty = niceTicks(span[0], span[1], 4);
     var x0 = this.L + 44, x1 = this.L + this.CW - 6, pt = top - 14, pb = bottom + 4, L = this.L, R = this.L + this.CW;
     var X = function (v) { return x0 + (v - tx.lo) / (tx.hi - tx.lo) * (x1 - x0); }, Y = function (v) { return pb + (v - ty.lo) / (ty.hi - ty.lo) * (pt - pb); };
     ty.ticks.forEach(function (t) { self.line(x0, Y(t), x1, Y(t), t === 0 ? COL.axis : COL.grid, t === 0 ? 0.8 : 0.5); var lb = enc(fmtTick(t, ty.step)); self.text(lb, x0 - 6 - tw(lb, 7, 'R'), Y(t) - 2.5, 7, 'R', COL.muted); });
@@ -1625,7 +1674,11 @@
       }
     }
     if (!kfs.length || latest || pct) biz.filter(function (f) { return f !== lead && f !== basisF; }).slice(0, kpis.length ? 1 : 3).forEach(function (f) { var t = tileOf(f); if (t.value) kpis.push(t); });
-    if (R && isFinite(R.health_score) && R.health_score !== null && kpis.length < 4) kpis.push({ label: 'Data health score', value: Number(R.health_score).toFixed(1), sub: 'out of 100, from the engine\'s own checks' });
+    // the health score's tile says what set it (results.health_explain: final evaluation, 1 Oct 2026, "0.0" for a clean
+    // file whose newest row was 3.5 years old, with nothing saying why)
+    var hx = R && typeof R.health_explain === 'string' ? R.health_explain.trim() : '';
+    if (R && isFinite(R.health_score) && R.health_score !== null && kpis.length < 4) kpis.push(hx ? { label: 'Data health score', value: Number(R.health_score).toFixed(1), sub: 'Out of 100: ' + hx, whole: true }
+      : { label: 'Data health score', value: Number(R.health_score).toFixed(1), sub: 'out of 100, from the engine\'s own checks' });
 
     // ---- Part 1: what drove it (the headline, what drove it, other findings, and any section no other part takes)
     var p1 = [], n1 = 0;
@@ -1768,6 +1821,10 @@
     if (kept && kept.length) notice += ' The reader chose to send these personal columns to the AI: ' + kept.join(', ') + '; this report may contain their values.';
     else if (!kept) notice += inp.shared ? ' This shared copy does not record which personal columns, if any, were sent to the AI, so it may contain personal values.'
       : ' This report was saved before the personal columns sent with it were recorded, so it may contain personal values.';
+    // a step of the AI plan that set aside a tenth of the rows or more (results.plan_row_drops[].notice, the adapter's
+    // _row_drops): said here, on the cover and in Appendix A, so no reader takes the figures for the whole file
+    var drops = R && Array.isArray(R.plan_row_drops) ? R.plan_row_drops.filter(function (d) { return d && typeof d === 'object' && typeof d.text === 'string' && d.text; }) : [];
+    drops.forEach(function (d) { if (typeof d.notice === 'string' && d.notice) notice += ' ' + d.notice; });
     var removed = Array.isArray(inp.removed_figures) ? inp.removed_figures.map(String).filter(Boolean).slice(0, 20) : [];
 
     // ---- Appendix A: method and data quality; Appendix B: references
@@ -1776,12 +1833,18 @@
     if (R) {
       if (R.partial) pa.push({ type: 'p', text: 'This shared copy carries the engine\'s key figures and scenario figures, not its full results.', size: 8.5 });
       if (R.reading) pa.push({ type: 'h2', num: '', text: 'The data', id: 'm-data' }, { type: 'p', text: R.reading });
+      // every step of the AI plan that set rows aside: its count, its share of the file's rows, the plan's reason and
+      // the engine's check of it (the adapter's words)
+      if (drops.length) pa.push({ type: 'h2', num: '', text: 'Rows the AI plan set aside', id: 'm-drops' }, { type: 'bullets', items: drops.map(function (d) { return d.text; }) });
       var cl = R.cleaning || {}, drows = [];
+      var dropN = drops.reduce(function (a, d) { return a + (isFinite(d.rows) ? Number(d.rows) : 0); }, 0), fileN = drops.length && isFinite(drops[0].of) ? Number(drops[0].of) : 0;
+      if (dropN && fileN) drows.push(['Rows in the file', fileN.toLocaleString('en-US')], ['Rows the AI plan set aside', dropN.toLocaleString('en-US') + ' (' + fmtShare(100 * dropN / fileN) + ')']);
       if (rows !== undefined && rows !== null) drows.push(['Rows read', Number(cl.rows_in !== undefined && cl.rows_in !== null ? cl.rows_in : rows).toLocaleString('en-US')]);
       if (cl.rows_clean !== undefined && cl.rows_clean !== null) drows.push(['Rows analysed', Number(cl.rows_clean).toLocaleString('en-US')]);
       if (cl.rows_quarantined !== undefined && cl.rows_quarantined !== null) drows.push(['Rows set aside', Number(cl.rows_quarantined).toLocaleString('en-US')]);
       if (cols) drows.push(['Columns', String(cols)]);
       if (isFinite(R.health_score) && R.health_score !== null) drows.push(['Data health score (0 to 100)', Number(R.health_score).toFixed(1)]);
+      if (hx && isFinite(R.health_score) && R.health_score !== null) drows.push(['What set the health score', hx]);
       if (drows.length) pa.push({ type: 'table', table: { title: 'The data and its cleaning', cols: ['Item', 'Value'], rows: drows }, source: srcNote('') });
       if (Array.isArray(cl.fixes) && cl.fixes.length) pa.push({ type: 'h2', num: '', text: 'What the cleaning did', id: 'm-clean' }, { type: 'bullets', items: cl.fixes.map(String) });
       if (Array.isArray(R.health_issues) && R.health_issues.length) pa.push({ type: 'h2', num: '', text: 'Data health issues', id: 'm-issues' }, { type: 'bullets', items: R.health_issues.map(String) });

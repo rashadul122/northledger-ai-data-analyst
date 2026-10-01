@@ -425,7 +425,7 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         "timings": [],
         "privacy": {"flagged": []},
         "health": {"score": None, "issues": [], "score_min": None, "score_mean": None, "weakest": None,
-                   "csv_text_numbers": None,
+                   "csv_text_numbers": None, "explain": "",
                    "dimensions": [], "sample": {"method": "all", "n": 0, "seed": None}, "columns": [],
                    "missingness": {"matrix_columns": [], "by_month": [],
                                    "nullity_corr": {"columns": [], "matrix": [], "n": 0},
@@ -872,6 +872,99 @@ def _text_numbers(th: Any, dims: Dict[str, Any], score_min: Any, score_mean: Any
             "validity, the weakest dimension here, is marked down" if lowers["score_min"] else "validity is marked down",
             where or "the number columns", "" if lowers["score_min"] else ", which lowers the mean of the five")
     return {"columns": names, "lowers": lowers, "note": note}
+
+
+# health.explain (final evaluation, 1 Oct 2026): the reviews PDF printed "Data health score 0.0" for a file whose other
+# checks scored 99.6 to 100, because its newest row was 3.5 years old, and nothing said so. The score is the weakest
+# dimension (CONTRACT-v2 §4.2); the explanation names it, says why in plain words, and gives the other checks' average.
+# The core's score is unchanged. The writer's health issues start with it (HEALTH_EXPLAIN_AI) when the weakest dimension
+# sits HEALTH_EXPLAIN_GAP points or more under the others' average, unless the numbers-stored-as-text line already says
+# why (_text_numbers).
+HEALTH_EXPLAIN_AI = "The health score is %s"
+HEALTH_EXPLAIN_GAP = 10.0
+_NEWEST_RE = re.compile(r"^Newest row in .+ is \d{4}-\d{2}-\d{2}, (\d+) days old as of \d{4}-\d{2}-\d{2}\.?$")
+_FUTURE_RE = re.compile(r"^(\d+) of (\d+) dated rows are in the future")
+
+
+def _score_words(v: float) -> str:
+    """A score as a sentence gives it: one decimal, a whole number without its ".0" (0, 99.9, 100)."""
+    return ("%.1f" % float(v)).rstrip("0").rstrip(".")
+
+
+def _age_words(days: int) -> str:
+    if days >= 365:
+        y = _score_words(days / 365.25)
+        return "1 year" if y == "1" else "%s years" % y
+    if days >= 60:
+        return "%d months" % int(round(days / 30.4375))
+    return "%d days" % days
+
+
+def _health_info(th: Any, ev: Dict[str, Any], idlike: bool) -> Dict[str, Any]:
+    """What the engine's own checks found, for _health_explain: exact duplicate rows, the rows, an id-like column that
+    repeats, the newest row's age in days and the future-dated rows (the engine's own lines, health._timeliness)."""
+    dup = ev.get("duplicate_rows")
+    info: Dict[str, Any] = {"duplicate_rows": int(float(dup["value"])) if dup else None,
+                            "rows": int(getattr(th, "n_rows", 0) or 0), "id_like": bool(idlike), "newest": None,
+                            "future": None}
+    for line in getattr(th, "findings", None) or []:
+        t = _plain(line)
+        m = _NEWEST_RE.match(t)
+        if m:
+            info["newest"] = int(m.group(1))
+        m = _FUTURE_RE.match(t)
+        if m:
+            info["future"] = (int(m.group(1)), int(m.group(2)))
+    return info
+
+
+def _health_explain(dims: List[Dict[str, Any]], score_min: Any, weakest: Any, info: Dict[str, Any],
+                    tn: Optional[Dict[str, Any]] = None) -> str:
+    """health.explain: the dimension that set the score and why, e.g. "0 because the newest row is 3.5 years old (the
+    timeliness check); the other checks averaged 99.9."; "" with no score. No column is named."""
+    appl = [d for d in dims if d.get("applicable") and d.get("score") is not None]
+    if score_min is None or not appl:
+        return ""
+    if all(float(d["score"]) >= 100.0 for d in appl):
+        return "%s: every check the engine ran scored 100." % _score_words(score_min)
+    w = str(weakest or "")
+    if w == "timeliness":
+        parts = []
+        age, fut = info.get("newest"), info.get("future")
+        if age is not None and age > 30:
+            parts.append("the newest row is %s old" % _age_words(int(age)))
+        if fut and fut[0]:
+            parts.append("%s of %s dated rows are dated after the analysis date" % (format(fut[0], ","), format(fut[1], ",")))
+        why = " and ".join(parts) or "the dates are not recent"
+    elif w == "completeness":
+        why = "%s of the cells are empty or a placeholder" % _pct_text(100.0 - float(score_min))
+    elif w == "uniqueness":
+        k, n = info.get("duplicate_rows"), info.get("rows")
+        why = ("%s rows (%s) repeat another row exactly" % (format(int(k), ","), _pct_text(100.0 * k / n)) if k and n
+               else "a column named like a key repeats some of its values" if info.get("id_like")
+               else "some rows repeat another row")
+    elif w == "validity":
+        # the numbers-stored-as-text mark-down (_text_numbers) when it is what lowers this score, else the values
+        why = ("the check marks down numbers stored as text, which every CSV has, although the engine reads them as numbers"
+               if tn and (tn.get("lowers") or {}).get("score_min") else "some values do not read as their column's main type")
+    elif w == "consistency":
+        why = "some columns write the same value with different case or spacing"
+    else:
+        why = "it is the lowest of the engine's checks"
+    s = "%s because %s (the %s check)" % (_score_words(score_min), why, w or "lowest")
+    others = [float(d["score"]) for d in appl if d.get("name") != w]
+    if others:
+        s += "; the other checks averaged %s" % _score_words(math.fsum(others) / len(others))
+    return s + "."
+
+
+def _health_gap(health: Dict[str, Any]) -> float:
+    """How far the weakest dimension sits under the other checks' average (0 when there is nothing to compare)."""
+    appl = [d for d in health.get("dimensions") or [] if isinstance(d, dict) and d.get("applicable")
+            and isinstance(d.get("score"), (int, float))]
+    w, lo = health.get("weakest"), health.get("score_min")
+    others = [float(d["score"]) for d in appl if d.get("name") != w]
+    return (math.fsum(others) / len(others) - float(lo)) if others and isinstance(lo, (int, float)) else 0.0
 
 
 def _exact_duplicates(db_path: str, table: str) -> int:
@@ -2228,6 +2321,8 @@ class _V2:
         h["score"] = h["score_min"]                         # §4.2: the v1 key now carries the min
         # the mark-down for numbers stored as text, which every CSV has: which score it lowers, in plain words
         h["csv_text_numbers"] = _text_numbers(th, dims, h["score_min"], h["score_mean"], set(self.withheld), self.pub)
+        # what set the score, in plain words (final evaluation, 1 Oct 2026; _health_explain)
+        h["explain"] = _health_explain(out, h["score_min"], h["weakest"], _health_info(th, ev, idlike), h["csv_text_numbers"])
         h["sample"] = {"method": "sampled" if th.sampled else "all", "n": int(th.n_rows), "seed": None}
         h["accuracy"] = dict(ACCURACY_NOT_MEASURED)
         claim_h = _ms.column_claim_health(th)
@@ -4341,8 +4436,14 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 if ch.get(k):
                     c2[k] = safe(ch[k], 60)
             if isinstance(ch.get("series"), list):
+                # a line chart's series are its lines (at most LEGACY_LINES_MAX drawn); a bar chart's are its bars,
+                # every one up to LEGACY_BARS_MAX (final evaluation, 1 Oct 2026: one cap of 4 for both sent 4 of the
+                # FX histogram's 12 bins, and dropped the lowest department the text beside the chart named)
+                cap = LEGACY_BARS_MAX if str(ch.get("kind") or "") == "bars" else LEGACY_LINES_MAX
                 ser = []
-                for s in ch["series"][:4]:
+                for s in ch["series"]:
+                    if len(ser) >= cap:
+                        break
                     if isinstance(s, dict) and isinstance(s.get("x"), list) and isinstance(s.get("y"), list):
                         n = min(len(s["x"]), len(s["y"]), 60)
                         ser.append({"name": safe(s.get("name") or s.get("label") or "", 80),
@@ -4354,7 +4455,7 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                     c2["series"] = ser
             if isinstance(ch.get("points"), list):
                 pts = []
-                for p in ch["points"][:120]:
+                for p in ch["points"][:LEGACY_POINTS_MAX]:
                     if isinstance(p, (list, tuple)) and len(p) >= 2 and all(isinstance(v, (int, float)) for v in p[:2]):
                         pts.append([float(p[0]), float(p[1])])
                 if pts:
@@ -4500,10 +4601,32 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     h_issues = [x for x in health.get("issues") or [] if not scrub.names(x) and not _is_text_numbers_line(x)]
     if tn.get("note") and (tn.get("lowers") or {}).get("score_min"):
         h_issues = [TEXT_NUMBERS_AI] + h_issues
-    reading = safe(plan.get("understanding") or "", 800)
+    elif health.get("explain") and _health_gap(health) >= HEALTH_EXPLAIN_GAP:
+        # what set a score far under the other checks, first (_health_explain: it names no column)
+        h_issues = [_cut_words(HEALTH_EXPLAIN_AI % health["explain"], 200)] + h_issues
+    # the steps of the plan that set rows aside (_row_drops): the notice of one that set aside PLAN_DROP_NOTICE_PCT or
+    # more of the rows leads the limitations. The guard reads a limitation's figures as the engine's, so a reason that
+    # carries a figure of the planner's own is left to the risks the plan named (sent as quality_risks)
+    drops = [d for d in plan.get("row_drops") or [] if isinstance(d, dict) and isinstance(d.get("rows"), int)]
+
+    def writer_notice(d: Dict[str, Any]) -> str:
+        # within the worker's 240 characters: the count and share, the engine's check, then the plan's reason, cut at a
+        # word (the whole reason is among the risks the plan named)
+        if not d.get("notice"):
+            return ""
+        n = "The AI plan set aside %s rows (%s)" % (format(int(d["rows"]), ","), _pct_text(float(d.get("pct") or 0)))
+        if d.get("check"):
+            n += "; the engine checked: %s" % d["check"]
+        reason = str(d.get("reason") or "").strip()
+        n += (". Its reason: " + reason) if reason and not re.search(r"\d", reason) else \
+            ". Its reason is among the risks the plan named." if reason else ". The plan gave no reason."
+        return _cut_words(safe(n, 4 * LIMITATION_MAX), LIMITATION_MAX)
+    drop_notes = [x for x in (writer_notice(d) for d in drops) if x]
+    # the reading at most 800 characters (the worker's cap), cut at a word with an ellipsis, never mid-word
+    reading = _cut_words(safe(plan.get("understanding") or "", 4000), 800)
     if kept:
         told = (OPTED_IN % ", ".join(kept))[:400]
-        reading = (reading[:max(0, 799 - len(told))].rstrip() + " " + told).strip()
+        reading = (_cut_words(reading, max(0, 799 - len(told))).rstrip() + " " + told).strip()
 
     # the applied steps carry real figures (rows left after a filter, series count after a
     # reshape): the writer may quote them, so they must be in the payload as findings of the run
@@ -4525,14 +4648,21 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         "story": story,
         "forecast": fc,
         "health_score": _num(health.get("score")),
+        # what set the score (health.explain), for the PDF's health tile; the writer reads it in health_issues
+        "health_explain": safe(health.get("explain") or "", 400),
         "health_issues": [safe(x, 200) for x in h_issues][:6],
+        # each step of the plan that set rows aside, whole, for the PDF's data section and notice (the worker keeps only
+        # the keys it knows: the writer reads the steps in plan_applied and the notice among the limitations)
+        "plan_row_drops": [{"rows": int(d["rows"]), "of": int(d.get("of") or 0), "pct": float(d.get("pct") or 0),
+                            "text": safe(d.get("text") or "", 1200), "notice": safe(d.get("notice") or "", 800)}
+                           for d in drops[:8]],
         "cleaning": {"rows_in": clean.get("rows_in"), "rows_clean": clean.get("rows_clean"),
                      "rows_quarantined": clean.get("rows_quarantined"),
                      "fixes": [safe(x.get("what") or x, 160) for x in clean.get("fixes") or []
                                if isinstance(x, dict) and not scrub.names(x.get("what")) and not scrub.names(x.get("column"))][:6]},
         # cut to LIMITATION_MAX only after the file's name is swapped for FILE_WORD (final, below)
-        "limitations": [safe(x.get("text") or x, 4 * LIMITATION_MAX) for x in rep.get("limitations") or []
-                        if isinstance(x, dict) and not scrub.names(x.get("text"))][:6],
+        "limitations": (drop_notes + [safe(x.get("text") or x, 4 * LIMITATION_MAX) for x in rep.get("limitations") or []
+                                      if isinstance(x, dict) and not scrub.names(x.get("text"))])[:6],
         "scenarios": scenarios,
         # the claim the report leads with ({id, claim, grade} or null): the PDF's key figures read it exactly
         "primary": _primary_for_ai(rep, safe, scrub),
@@ -4550,6 +4680,15 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         return dict(o, analyses=ana, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []])
     return _within_budget(out, final, drove_of, n_tables, links)
 
+
+# The analyses' own charts as results_for_ai sends them (final evaluation, 1 Oct 2026): a line chart's series are its
+# lines, at most LEGACY_LINES_MAX; a bar chart's series are its bars, at most LEGACY_BARS_MAX (the analyses draw at most
+# 12: a distribution's bins, a compare's groups, the themes' words); a scatter's points, a sample of LEGACY_POINTS_MAX.
+# (insight-proxy/src/charts.js sanitizeLegacyChart still cuts every series list to 4: the worker's own cap, for the
+# proxy's next pass.)
+LEGACY_LINES_MAX = 4
+LEGACY_BARS_MAX = 24
+LEGACY_POINTS_MAX = 120
 
 # Each limitation the report writer receives, in characters: the worker's cap (insight-proxy/src/report.js
 # validateResults, limitations 240). Cut after the file's name is swapped for FILE_WORD: cut before, a name shorter
@@ -4765,7 +4904,10 @@ def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[
     if not isinstance(plan, dict):
         return {}, ["the plan is not an object"]
     have = set(columns)
-    out: Dict[str, Any] = {k: str(plan.get(k) or "")[:600] for k in ("goal", "understanding", "kind")}
+    # the goal and the reading cut at a word with an ellipsis (final evaluation, 1 Oct 2026: the plan card and the
+    # PDF read "...every other column is a fixed code with one dist")
+    out: Dict[str, Any] = {k: _cut_words(str(plan.get(k) or ""), 600) for k in ("goal", "understanding")}
+    out["kind"] = str(plan.get("kind") or "")[:600]
     out["goal_candidates"] = [str(x)[:200] for x in (plan.get("goal_candidates") or [])[:3] if str(x).strip()]
     out["quality_risks"] = [str(x)[:240] for x in (plan.get("quality_risks") or [])[:6]]
     out["columns"] = []
@@ -4821,6 +4963,141 @@ def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[
     return out, refused
 
 
+# ----------------------------------------------------------------------------- rows the AI plan sets aside
+# The final evaluation (1 Oct 2026): the reviews plan set aside the whole "All Electronics" department, 6,694 of 33,878
+# rows (19.8%), as "an umbrella department overlapping the specific ones", which was false (none of those reviews
+# repeats a review of another department), and nothing in the report said how many rows went or why. Every plan step
+# that sets rows aside (exclude_rows, keep_rows, exclude_blank, and date_from_year's rows before 1900) is now disclosed
+# with its count, its share of the file's rows and the plan's own reason: the quality risk that names one of the step's
+# values, else one that names its column with a word for setting rows aside (_drop_reason). The plan card shows it
+# (ai_plan.row_drops), the report writer reads it (plan_applied carries the share; from PLAN_DROP_NOTICE_PCT the step's
+# notice leads the limitations) and the PDF prints it (results.plan_row_drops). From PLAN_DROP_NOTICE_PCT of the rows
+# the step is also a plan signal (kind "other"), so the one re-plan may keep the rows. When the reason says the rows
+# repeat or overlap others (_OVERLAP_CLAIM), the engine checks it (_repeats_kept): how many set-aside rows equal a kept
+# row on every column but the step's own and the key-like ones (an id: named like a key, its values nearly all
+# different, as the engine's health reads one), each value trimmed.
+PLAN_DROP_NOTICE_PCT = 10.0
+_DROP_WORDS = re.compile(r"(?i)\b(?:exclud\w*|drop\w*|remov\w*|set aside|filter\w*|left out|omit\w*|discard\w*|"
+                         r"blank\w*|empty|missing)\b")
+_OVERLAP_CLAIM = re.compile(r"(?i)\b(?:duplicat\w*|overlap\w*|double[- ]count\w*|repeat\w*|counted twice|umbrella|"
+                            r"already (?:counted|included|covered))")
+_KEY_SUFFIXES = ("id", "_id", "key", "_key", "uuid", "_uuid", "pk", "_pk")      # northledger.health._ID_NAME_SUFFIXES
+_KEY_DISTINCT = 0.90                                                             # northledger.health._ID_DISTINCT_THRESHOLD
+
+
+def _drop_reason(plan: Dict[str, Any], op: Dict[str, Any]) -> str:
+    """The plan's own words for a step that sets rows aside: the first quality risk that names one of the step's values,
+    else the first that names its column beside a word for setting rows aside; "" when none does."""
+    risks = [str(x) for x in plan.get("quality_risks") or [] if str(x).strip()]
+    col = str(op.get("column") or "")
+    vals = [str(v).strip() for v in (op.get("values") or [])[:50] if len(str(v).strip()) >= 2]
+    for r in risks:
+        if any(v.casefold() in r.casefold() for v in vals):
+            return r
+    if col:
+        rx = re.compile(r"(?i)(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(col))
+        for r in risks:
+            if rx.search(r) and _DROP_WORDS.search(r):
+                return r
+    return ""
+
+
+def _key_like(df: Any, col: str) -> bool:
+    """A column named like a key whose filled values are nearly all different (the engine's id-like rule)."""
+    if not str(col).strip().lower().replace(" ", "_").endswith(_KEY_SUFFIXES):
+        return False
+    s = df[col].str.strip()
+    s = s[s != ""]
+    return bool(len(s)) and s.nunique() / float(len(s)) > _KEY_DISTINCT
+
+
+def _repeats_kept(gone: Any, kept: Any, skip: Iterable[str]) -> Tuple[Optional[int], List[str]]:
+    """(how many rows of `gone` equal a row of `kept` on every column but `skip`, the columns compared); (None, []) when
+    no column is left to compare. Exact after trimming; hashed first, each hit then compared value by value."""
+    import pandas as pd
+    cols = [c for c in gone.columns if c not in set(skip)]
+    if not cols:
+        return None, []
+    if not len(gone) or not len(kept):
+        return 0, cols
+    g = gone[cols].apply(lambda s: s.str.strip())
+    k = kept[cols].apply(lambda s: s.str.strip())
+    hg = pd.util.hash_pandas_object(g, index=False).values
+    hk = pd.util.hash_pandas_object(k, index=False).values
+    hit = pd.Series(hg).isin(set(hk.tolist())).values
+    if not hit.any():
+        return 0, cols
+    near = pd.Series(hk).isin(set(hg[hit].tolist())).values
+    keys = set(k[near].itertuples(index=False, name=None))
+    return sum(1 for t in g[hit].itertuples(index=False, name=None) if t in keys), cols
+
+
+def _drop_record(kind: str, op: Dict[str, Any], plan: Dict[str, Any], df: Any, drop: Any, n_in: int) -> Dict[str, Any]:
+    """One step's record for _row_drops: {op, column, values, rows, of, reason, repeats, compared}; `drop` is the mask
+    of the rows it sets aside, over `df` (the file's rows the steps before it kept)."""
+    col = str(op.get("column") or "")
+    reason = _drop_reason(plan, op) if kind != "date_from_year" else "the engine reads dates from 1900 on"
+    rec = {"op": kind, "column": col, "values": [str(v) for v in (op.get("values") or [])[:500]],
+           "rows": int(drop.sum()), "of": int(n_in), "reason": reason, "repeats": None, "compared": []}
+    if reason and _OVERLAP_CLAIM.search(reason) and rec["rows"]:
+        typed = {str(c.get("name")) for c in plan.get("columns") or [] if isinstance(c, dict)
+                 and c.get("semantic_type") == "identifier"}
+        keys = [c for c in df.columns if c != col and (c in typed or _key_like(df, c))]
+        n, cols = _repeats_kept(df[drop], df[~drop], [col] + keys)
+        rec["repeats"], rec["compared"], rec["keys"] = n, cols, keys
+    return rec
+
+
+def _or_words(vals: List[str]) -> str:
+    return vals[0] if len(vals) == 1 else "%s or %s" % (", ".join(vals[:-1]), vals[-1])
+
+
+def _row_drops(drops: List[Dict[str, Any]], private: Any) -> List[Dict[str, Any]]:
+    """ai_plan.row_drops: each step that set rows aside, {op, column, rows, of, pct, reason, check, compared, text,
+    notice}: `text` the full disclosure (the plan card, the PDF), `notice` the one line for the report's summary and the
+    PDF's notice (from PLAN_DROP_NOTICE_PCT of the rows, else ""). A step's values are named only when they are 1 to 3
+    short values of a column the visitor did not withhold or code (the planner saw them in its profile)."""
+    out = []
+    for d in drops or []:
+        n, of, col = int(d["rows"]), int(d["of"]), d["column"]
+        if not n or not of:
+            continue
+        pct = 100.0 * n / of
+        vals = d.get("values") or []
+        named = not (private(col) if col else None) and 1 <= len(vals) <= 3 and all(0 < len(v) <= 40 for v in vals)
+        if d["op"] == "exclude_blank":
+            where = "where %s is blank" % col
+        elif d["op"] == "date_from_year":
+            where = "dated before 1900 in %s" % col
+        elif d["op"] == "exclude_rows":
+            where = ("where %s is %s" % (col, _or_words(vals))) if named else \
+                "where %s is one of %s" % (col, _n_values(len(vals)))
+        else:
+            where = ("where %s is not %s" % (col, _or_words(vals))) if named else \
+                "where %s is none of the %s kept" % (col, _n_values(len(vals)))
+        k = d.get("repeats")
+        check = "" if k is None else ("none of these rows duplicates a kept row" if k == 0 else
+                                      "%s of these rows (%s) %s a kept row" % (format(k, ","), _pct_text(100.0 * k / n),
+                                                                             "duplicates" if k == 1 else "duplicate"))
+        but = [x for x in [col] + list(d.get("keys") or []) if x]
+        reason = str(d.get("reason") or "").strip()
+        rs = reason if reason.endswith((".", "!", "?")) else (reason + "." if reason else "")
+        text = "Set aside %s rows (%s of the file's %s) %s. %s" % (
+            format(n, ","), _pct_text(pct), format(of, ","), where,
+            ("The plan's reason: " + rs) if rs else "The plan gave no reason.")
+        if check:
+            text += " The engine checked: %s (compared on every column but %s)." % (check, _listed(but))
+        notice = ""
+        if pct >= PLAN_DROP_NOTICE_PCT:
+            notice = ("The AI plan set aside %s rows (%s): %s" % (format(n, ","), _pct_text(pct), rs)) if rs else \
+                "The AI plan set aside %s rows (%s) and gave no reason." % (format(n, ","), _pct_text(pct))
+            if check:
+                notice += " The engine checked: %s." % check
+        out.append({"op": d["op"], "column": col, "rows": n, "of": of, "pct": pct, "reason": reason, "check": check,
+                    "compared": list(d.get("compared") or []), "text": text, "notice": notice})
+    return out
+
+
 def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any], Optional[Dict[str, Any]]]:
     """Run the plan's operations on the file. Returns the bytes, what was applied (and refused), and
     the long-table layout when long_to_wide ran."""
@@ -4828,6 +5105,10 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
     df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
     n_in = len(df)
     applied, refused, decisions = [], [], {}
+    drops: List[Dict[str, Any]] = []          # the steps that set rows aside (_row_drops)
+
+    def share(k: int) -> str:
+        return _pct_text(100.0 * k / n_in) if n_in else "0%"
     layout = None
     # row filters read the file's own columns, so they run before any column is set aside
     # the units of a long table, read before any column is set aside (a plan may set UOM aside first)
@@ -4855,11 +5136,17 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
             elif kind in ("exclude_rows", "keep_rows"):
                 vals = set(str(v) for v in op["values"][:500])
                 m = df[op["column"]].isin(vals)
-                before = len(df)
-                df = df[~m] if kind == "exclude_rows" else df[m]
-                applied.append("%s %s rows where %s is one of %d values (%s rows left)"
-                               % ("dropped" if kind == "exclude_rows" else "kept", format(before - len(df) if kind == "exclude_rows" else len(df), ","),
-                                  op["column"], len(vals), format(len(df), ",")))
+                drop = m if kind == "exclude_rows" else ~m
+                drops.append(_drop_record(kind, op, plan, df, drop, n_in))
+                df = df[~drop]
+                # each step's line says how many rows it set aside and what share of the file's rows that is
+                # (final evaluation, 1 Oct 2026: see _row_drops)
+                if kind == "exclude_rows":
+                    applied.append("dropped %s rows (%s) where %s is one of %d values (%s rows left)" % (
+                        format(int(drop.sum()), ","), share(int(drop.sum())), op["column"], len(vals), format(len(df), ",")))
+                else:
+                    applied.append("kept %s rows where %s is one of %d values and set aside the other %s (%s)" % (
+                        format(len(df), ","), op["column"], len(vals), format(int(drop.sum()), ","), share(int(drop.sum()))))
             elif kind == "exclude_blank":
                 c = op.get("column")
                 if c not in df.columns:
@@ -4869,8 +5156,10 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
                 if not blank.any() or blank.all():
                     refused.append("exclude_blank: %s has %s blank" % (c, "no" if not blank.any() else "every value"))
                     continue
+                drops.append(_drop_record(kind, op, plan, df, blank, n_in))
                 df = df[~blank]
-                applied.append("dropped %s rows where %s is blank (%s rows left)" % (format(int(blank.sum()), ","), c, format(len(df), ",")))
+                applied.append("dropped %s rows (%s) where %s is blank (%s rows left)" % (
+                    format(int(blank.sum()), ","), share(int(blank.sum())), c, format(len(df), ",")))
             elif kind == "date_from_year":
                 c = op["column"]
                 y = pd.to_numeric(df[c], errors="coerce")
@@ -4879,8 +5168,10 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
                     continue
                 old = y < 1900
                 if old.any():
+                    drops.append(_drop_record(kind, op, plan, df, old, n_in))
                     df, y = df[~old], y[~old]
-                    applied.append("set aside %s rows before 1900 (the engine's dates start there)" % format(int(old.sum()), ","))
+                    applied.append("set aside %s rows (%s) before 1900 (the engine's dates start there)" % (
+                        format(int(old.sum()), ","), share(int(old.sum()))))
                 df.insert(0, "date", y.astype("Int64").astype(str) + "-12-31")
                 df = df.drop(columns=[c])
                 applied.append("read %s as the date (the year's last day)" % c)
@@ -4913,7 +5204,7 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
     # positions: each row's place among the file's data rows (the filters keep pandas' index), so a data
     # test can name the visitor's own line; a reshaped long table has no such place
     return df.to_csv(index=False).encode("utf-8"), {"applied": applied, "refused": refused, "decisions": decisions,
-                                                    "rows_in": n_in,
+                                                    "rows_in": n_in, "drops": drops,
                                                     "positions": None if layout else [int(i) for i in df.index]}, layout
 
 
@@ -7505,6 +7796,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         sent = data                               # the file as the visitor sent it, for its line numbers
         sent_rows = None                          # (each planned row's place among the visitor's rows, their count)
         raw_context: Any = None                   # the plan's web searches: items of list terms (_context_queries)
+        plan_drops: List[Dict[str, Any]] = []     # the plan's steps that set rows aside (_row_drops)
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
@@ -7516,6 +7808,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 data, applied, layout = _apply_plan(data, ai_plan)
                 sent_rows = (applied.get("positions"), applied.get("rows_in"))
                 ai_plan["applied"] = applied["applied"]
+                plan_drops = list(applied.get("drops") or [])
                 if ai_plan.get("primary") and layout is not None:
                     ai_plan["refused"] = list(ai_plan.get("refused") or [])
                     ai_plan["primary"] = ""          # the value column became one column per series: lead with a series
@@ -7868,6 +8161,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             if plan_review:
                 ai_plan["review"] = plan_review
             rep["ai_plan"] = ai_plan
+            # every step that set rows aside, with its count, share and the plan's reason (_row_drops)
+            ai_plan["row_drops"] = _row_drops(plan_drops, private)
             # the web searches, built by the adapter from the plan's items of list terms (never free text, never
             # anything from the file): what the page sends (an explicit [] means no search); a dropped item is
             # counted by its reason
@@ -7913,7 +8208,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["scenarios"] = _scenarios(rep, r, cr, hidden_land, reading, ai_plan, pub, date_withheld, goal)
         # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
         # record in rep["charts"]
-        rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
+        rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens,
+                          scrub.flag_tokens_by)
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8028,6 +8324,20 @@ def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any], scrub: Optional["_N
             out.append({"kind": "contract_failed", "column": str(t.get("column")), "detail": safe(str(t.get("problem")))[:200]})
     for x in plan.get("refused") or []:
         out.append({"kind": "layout_refused" if str(x).startswith("long_to_wide") else "op_refused", "detail": safe(str(x))[:200]})
+    # a step that set aside PLAN_DROP_NOTICE_PCT or more of the file's rows (final evaluation, 1 Oct 2026: a fifth of
+    # the reviews went on a false "overlap"): the one re-plan may keep them; the engine's check of the plan's reason
+    # goes too
+    for d in plan.get("row_drops") or []:
+        if not isinstance(d, dict):
+            continue
+        n, of = int(d.get("rows") or 0), int(d.get("of") or 0)
+        if not of or 100.0 * n / of < PLAN_DROP_NOTICE_PCT:
+            continue
+        detail = "the plan's filter set aside %s of %s rows (%s); keep them unless the goal needs them excluded" % (
+            format(n, ","), format(of, ","), _pct_text(100.0 * n / of))
+        if d.get("check"):
+            detail += "; " + str(d["check"])
+        out.append({"kind": "other", "column": str(d.get("column") or ""), "detail": safe(detail)[:200]})
     ana = rep.get("ai_analyses") or {}
     # an analysis refusal is feedback only while the engine's own analysis ran (refused for another reason, no
     # new plan makes it run either)
@@ -8081,14 +8391,15 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
 
 
 def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",
-         names: Any = frozenset()) -> Dict[str, Any]:
+         names: Any = frozenset(), names_by: Any = None) -> Dict[str, Any]:
     """rep["viz"] (engine/nl_viz.py, CONTRACT §5.9): the charts the AI plan chose, each checked and built from the rows
     the engine kept, or the engine's own picks; every refusal with its reason. The report stands without them. names:
-    the exact tokens of every flagged column's values (Scrubber.flag_tokens)."""
+    the exact tokens of every flagged column's values (Scrubber.flag_tokens); names_by: the same by landed column
+    (Scrubber.flag_tokens_by), so the theme chart of a kept text leaves out every other column's (nl_viz.Ctx.names_but)."""
     try:
         import nl_viz as _nv
         return _nv.build(rep, {"r": r, "reading": reading, "plan": plan if isinstance(plan, dict) else None,
-                               "pub": pub, "goal": goal, "names": names})
+                               "pub": pub, "goal": goal, "names": names, "names_by": names_by or {}})
     except Exception as exc:  # noqa: BLE001 - the report stands without the charts, and says so
         if os.environ.get("NL_BROWSER_STRICT"):
             raise

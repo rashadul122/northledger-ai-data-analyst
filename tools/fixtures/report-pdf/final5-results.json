@@ -1,0 +1,2661 @@
+{
+ "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset); results = nl_browser.results_json, whole. Two runs:   fx       tools/fixtures/eval/fx_usd_cad.csv (StatCan 33-10-0036-01, the U.S. dollar rate) at 2026-09-29, the plan of            make_fx_history.py: a trend (a line of a level, 1.25 to 1.40 CAD per USD) and a distribution (12 bins); the            plan's exclude_blank sets aside 569 of the 3,526 rows (16.1%).   reviews  tools/fixtures/eval/reviews_synthetic.csv (SYNTHETIC, make_reviews.py; never the research-licensed review            rows) at 2026-09-30, review_text kept: the plan sets aside the \"All Electronics\" department (445 of 2,565            rows, 17.3%) on an \"umbrella ... overlapping\" reason the engine checks (none of the rows repeats a kept row),            compares the rating by department (5 groups left) and asks for the theme chart of the kept review_text; the            newest row is 1,279 days old, so the health score is 0 and says why.",
+ "made_with": "tools/fixtures/report-pdf/make_final5.py (the packed engine, run natively)",
+ "engine_snapshot": "19ec81d19e0d",
+ "zip_sha256": "ce43397776cc237be96215cbabe684f6b868a6e572d5163b410e2ef5a0080a52",
+ "runs": {
+  "fx": {
+   "csv": "tools/fixtures/eval/fx_usd_cad.csv",
+   "csv_sha256": "557089f911ac13f6ab5793cf3ac91a5be8404088be7072704a0cb438cc9ccdee",
+   "as_of": "2026-09-29",
+   "decisions": {},
+   "plan": {
+    "goal": "How has the Canadian dollar price of one U.S. dollar moved?",
+    "kind": "time_series",
+    "understanding": "The Bank of Canada daily U.S. dollar rate.",
+    "primary": "VALUE",
+    "columns": [
+     {
+      "name": "REF_DATE",
+      "semantic_type": "date",
+      "role": "date",
+      "unit": ""
+     },
+     {
+      "name": "VALUE",
+      "semantic_type": "level",
+      "role": "target",
+      "unit": "CAD per USD"
+     },
+     {
+      "name": "STATUS",
+      "semantic_type": "metadata",
+      "role": "metadata",
+      "unit": ""
+     }
+    ],
+    "operations": [
+     {
+      "op": "set_aside",
+      "columns": [
+       "STATUS"
+      ]
+     },
+     {
+      "op": "exclude_blank",
+      "column": "VALUE"
+     }
+    ],
+    "analyses": [
+     {
+      "type": "trend",
+      "columns": [
+       "VALUE"
+      ]
+     },
+     {
+      "type": "distribution",
+      "columns": [
+       "VALUE"
+      ]
+     }
+    ],
+    "quality_risks": [
+     "VALUE is blank on 569 rows marked '..' (no rate that day); those rows were excluded."
+    ]
+   },
+   "results": {
+    "ok": true,
+    "input": {
+     "name": "[your file]",
+     "rows": 2957,
+     "columns": 2
+    },
+    "goal": "How has the Canadian dollar price of one U.S. dollar moved?",
+    "reading": "The Bank of Canada daily U.S. dollar rate.",
+    "quality_risks": [
+     "VALUE is blank on 569 rows marked '..' (no rate that day); those rows were excluded."
+    ],
+    "plan_applied": [
+     "dropped 569 rows (16.1%) where VALUE is blank (2,957 rows left)",
+     "set aside STATUS",
+     "data test on VALUE (level): note: 550 zero values in VALUE are not counted by the AI's analyses (they fall on weekends between non-zero rates, the pattern of a day with no value); the engine's own rea"
+    ],
+    "plan_refused": [],
+    "findings": [
+     {
+      "verdict": "WATCH",
+      "kind": "business",
+      "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
+      "value": 0.40485829959514774,
+      "why": "No change of at least the 5% bar is shown: a 0.4% rise in the average month, latest 12 months against the 12 before (95% interval -2.5% to +2.7%; built to hold the true change 95% of the time; in simulated series with strong momentum, which"
+     },
+     {
+      "verdict": "WATCH",
+      "kind": "business",
+      "claim": "Change in the average month of value, latest 12 months against the 12 before",
+      "value": -0.7325944129509026,
+      "why": "A 0.7% fall in the average month, latest 12 months against the 12 before (95% interval -5.2% to +7.8%; built to hold the true change 95% of the time; in simulated series with strong momentum, which the model can underestimate, it held it le"
+     },
+     {
+      "verdict": "WATCH",
+      "kind": "forecast",
+      "claim": "Forecast of monthly rows in [your file] for 2026-09",
+      "value": 20.0,
+      "why": "No method beat the simple rule of repeating the same month from last year when we replayed the last 24 months: the champion IS that rule. Use it as a guide, not a plan."
+     }
+    ],
+    "analyses": [
+     {
+      "title": "Long-run trend",
+      "sentence": "VALUE rose by 0.0104 CAD per USD per year over 2017 to 2025 (its yearly average; 95% range 0.00329 to 0.0175) (550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value).",
+      "method": "Least-squares line through each complete calendar year's value (yearly average); the 95% range uses Newey-West errors, because one year's value leans on the year before. Dates from the REF_DATE column."
+     },
+     {
+      "title": "How VALUE is spread",
+      "sentence": "VALUE: half the 2,407 values lie between 1.29 and 1.37 CAD per USD (median 1.33); one in ten is below 1.26 and one in ten above 1.39 (550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value).",
+      "method": "Percentiles of every value; the bars count values in equal-width bins."
+     }
+    ],
+    "charts": [
+     {
+      "kind": "line",
+      "title": "Long-run trend",
+      "x_label": "year",
+      "series": [
+       {
+        "name": "VALUE",
+        "x": [
+         2017.0,
+         2018.0,
+         2019.0,
+         2020.0,
+         2021.0,
+         2022.0,
+         2023.0,
+         2024.0,
+         2025.0
+        ],
+        "y": [
+         1.2985819277108435,
+         1.2957432,
+         1.3269128000000001,
+         1.3414513944223108,
+         1.2535261044176707,
+         1.3013433198380566,
+         1.3496685483870967,
+         1.3697995983935745,
+         1.3975778225806452
+        ]
+       }
+      ],
+      "fits": [
+       {
+        "name": "VALUE trend",
+        "recent": false,
+        "x0": 2017.0,
+        "y0": 1.284496777515585,
+        "x1": 2025.0,
+        "y1": 1.3676376037622333
+       }
+      ]
+     },
+     {
+      "kind": "bars",
+      "title": "How VALUE is spread",
+      "series": [
+       {
+        "label": "1.2 to 1.23",
+        "value": 37.0
+       },
+       {
+        "label": "1.23 to 1.25",
+        "value": 79.0
+       },
+       {
+        "label": "1.25 to 1.27",
+        "value": 236.0
+       },
+       {
+        "label": "1.27 to 1.29",
+        "value": 246.0
+       },
+       {
+        "label": "1.29 to 1.31",
+        "value": 215.0
+       },
+       {
+        "label": "1.31 to 1.33",
+        "value": 377.0
+       },
+       {
+        "label": "1.33 to 1.35",
+        "value": 354.0
+       },
+       {
+        "label": "1.35 to 1.37",
+        "value": 407.0
+       },
+       {
+        "label": "1.37 to 1.4",
+        "value": 234.0
+       },
+       {
+        "label": "1.4 to 1.42",
+        "value": 125.0
+       },
+       {
+        "label": "1.42 to 1.44",
+        "value": 72.0
+       },
+       {
+        "label": "1.44 to 1.46",
+        "value": 25.0
+       }
+      ]
+     },
+     {
+      "id": "viz.1.calendar_heatmap",
+      "chart": "calendar_heatmap",
+      "kind": "heatmap",
+      "title": "VALUE month on month, 2017 to 2026",
+      "subtitle": "Change in the month's average VALUE from the month before, in percent; 550 zero values read as no value",
+      "section": "headline",
+      "supports": "Change in the average month of value, latest 12 months against the 12 before",
+      "anchors": [
+       "finding:measure.value.change"
+      ],
+      "grade": null,
+      "parent_grade": null,
+      "chosen_by": "engine",
+      "why": "Chosen by the engine: month (across) by year (down) of the measure, on the engine's date column",
+      "measure": {
+       "label": "VALUE",
+       "unit": "%",
+       "kind": "change_pct"
+      },
+      "data": {
+       "rows": [
+        "2017",
+        "2018",
+        "2019",
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+       ],
+       "cols": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec"
+       ],
+       "values": [
+        [
+         null,
+         -0.648073,
+         2.1299,
+         0.401718,
+         1.241312,
+         -2.270882,
+         -4.581842,
+         -0.661825,
+         -2.554372,
+         2.620079,
+         1.302999,
+         0.013072
+        ],
+        [
+         -2.68679,
+         1.277832,
+         2.745098,
+         -1.539957,
+         1.10505,
+         1.983169,
+         0.011607,
+         -0.677173,
+         -0.035698,
+         -0.206964,
+         1.466888,
+         1.753443
+        ],
+        [
+         -0.974119,
+         -0.717398,
+         1.231385,
+         0.071242,
+         0.60796,
+         -1.27606,
+         -1.401749,
+         1.346692,
+         -0.278488,
+         -0.383122,
+         0.371707,
+         -0.506844
+        ],
+        [
+         -0.645116,
+         1.521502,
+         5.017807,
+         0.755113,
+         -0.627102,
+         -3.002082,
+         -0.382413,
+         -2.048005,
+         0.045721,
+         -0.101156,
+         -1.108721,
+         -1.993279
+        ],
+        [
+         -0.653234,
+         -0.20018,
+         -0.983101,
+         -0.619023,
+         -2.956607,
+         0.760209,
+         2.538525,
+         0.593679,
+         0.540018,
+         -1.849857,
+         1.069077,
+         1.7847
+        ],
+        [
+         -1.396286,
+         0.795387,
+         -0.455908,
+         -0.235976,
+         1.776098,
+         -0.30072,
+         1.052706,
+         -0.207317,
+         3.071335,
+         2.860296,
+         -1.831662,
+         1.065753
+        ],
+        [
+         -1.252462,
+         0.213062,
+         1.723887,
+         -1.440403,
+         0.260168,
+         -1.718312,
+         -0.551017,
+         2.048973,
+         0.367334,
+         1.343564,
+         -0.053376,
+         -2.031695
+        ],
+        [
+         -0.047612,
+         0.568364,
+         0.286279,
+         0.992084,
+         -0.024932,
+         0.266901,
+         0.045215,
+         -0.447957,
+         -0.772132,
+         1.540306,
+         1.599335,
+         1.900557
+        ],
+        [
+         1.033123,
+         -0.600978,
+         0.404161,
+         -2.581109,
+         -0.916413,
+         -1.344731,
+         0.126748,
+         0.810417,
+         0.225692,
+         1.148328,
+         0.452138,
+         -1.798522
+        ],
+        [
+         -0.175952,
+         -0.925039,
+         0.486084,
+         0.269074,
+         -0.225025,
+         2.311274,
+         0.476553,
+         -1.481777,
+         null,
+         null,
+         null,
+         null
+        ]
+       ],
+       "text": [
+        [
+         "",
+         "−0.648%",
+         "+2.13%",
+         "+0.402%",
+         "+1.24%",
+         "−2.27%",
+         "−4.58%",
+         "−0.662%",
+         "−2.55%",
+         "+2.62%",
+         "+1.3%",
+         "+0.0131%"
+        ],
+        [
+         "−2.69%",
+         "+1.28%",
+         "+2.75%",
+         "−1.54%",
+         "+1.11%",
+         "+1.98%",
+         "+0.0116%",
+         "−0.677%",
+         "−0.0357%",
+         "−0.207%",
+         "+1.47%",
+         "+1.75%"
+        ],
+        [
+         "−0.974%",
+         "−0.717%",
+         "+1.23%",
+         "+0.0712%",
+         "+0.608%",
+         "−1.28%",
+         "−1.4%",
+         "+1.35%",
+         "−0.278%",
+         "−0.383%",
+         "+0.372%",
+         "−0.507%"
+        ],
+        [
+         "−0.645%",
+         "+1.52%",
+         "+5.02%",
+         "+0.755%",
+         "−0.627%",
+         "−3%",
+         "−0.382%",
+         "−2.05%",
+         "+0.0457%",
+         "−0.101%",
+         "−1.11%",
+         "−1.99%"
+        ],
+        [
+         "−0.653%",
+         "−0.2%",
+         "−0.983%",
+         "−0.619%",
+         "−2.96%",
+         "+0.76%",
+         "+2.54%",
+         "+0.594%",
+         "+0.54%",
+         "−1.85%",
+         "+1.07%",
+         "+1.78%"
+        ],
+        [
+         "−1.4%",
+         "+0.795%",
+         "−0.456%",
+         "−0.236%",
+         "+1.78%",
+         "−0.301%",
+         "+1.05%",
+         "−0.207%",
+         "+3.07%",
+         "+2.86%",
+         "−1.83%",
+         "+1.07%"
+        ],
+        [
+         "−1.25%",
+         "+0.213%",
+         "+1.72%",
+         "−1.44%",
+         "+0.26%",
+         "−1.72%",
+         "−0.551%",
+         "+2.05%",
+         "+0.367%",
+         "+1.34%",
+         "−0.0534%",
+         "−2.03%"
+        ],
+        [
+         "−0.0476%",
+         "+0.568%",
+         "+0.286%",
+         "+0.992%",
+         "−0.0249%",
+         "+0.267%",
+         "+0.0452%",
+         "−0.448%",
+         "−0.772%",
+         "+1.54%",
+         "+1.6%",
+         "+1.9%"
+        ],
+        [
+         "+1.03%",
+         "−0.601%",
+         "+0.404%",
+         "−2.58%",
+         "−0.916%",
+         "−1.34%",
+         "+0.127%",
+         "+0.81%",
+         "+0.226%",
+         "+1.15%",
+         "+0.452%",
+         "−1.8%"
+        ],
+        [
+         "−0.176%",
+         "−0.925%",
+         "+0.486%",
+         "+0.269%",
+         "−0.225%",
+         "+2.31%",
+         "+0.477%",
+         "−1.48%",
+         "",
+         "",
+         "",
+         ""
+        ]
+       ],
+       "tier": [
+        [
+         0,
+         -2,
+         3,
+         1,
+         2,
+         -3,
+         -3,
+         -2,
+         -3,
+         3,
+         2,
+         1
+        ],
+        [
+         -3,
+         2,
+         3,
+         -3,
+         2,
+         3,
+         1,
+         -2,
+         -1,
+         -1,
+         3,
+         3
+        ],
+        [
+         -2,
+         -2,
+         2,
+         1,
+         2,
+         -2,
+         -3,
+         2,
+         -1,
+         -1,
+         1,
+         -1
+        ],
+        [
+         -2,
+         3,
+         3,
+         2,
+         -2,
+         -3,
+         -1,
+         -3,
+         1,
+         -1,
+         -2,
+         -3
+        ],
+        [
+         -2,
+         -1,
+         -2,
+         -2,
+         -3,
+         2,
+         3,
+         2,
+         1,
+         -3,
+         2,
+         3
+        ],
+        [
+         -3,
+         2,
+         -1,
+         -1,
+         3,
+         -1,
+         2,
+         -1,
+         3,
+         3,
+         -3,
+         2
+        ],
+        [
+         -2,
+         1,
+         3,
+         -3,
+         1,
+         -3,
+         -1,
+         3,
+         1,
+         2,
+         -1,
+         -3
+        ],
+        [
+         -1,
+         2,
+         1,
+         2,
+         -1,
+         1,
+         1,
+         -1,
+         -2,
+         3,
+         3,
+         3
+        ],
+        [
+         2,
+         -2,
+         1,
+         -3,
+         -2,
+         -2,
+         1,
+         2,
+         1,
+         2,
+         1,
+         -3
+        ],
+        [
+         -1,
+         -2,
+         1,
+         1,
+         -1,
+         3,
+         1,
+         -3,
+         0,
+         0,
+         0,
+         0
+        ]
+       ],
+       "n": [
+        [
+         0,
+         19,
+         19,
+         19,
+         19,
+         22,
+         20,
+         20,
+         20,
+         20,
+         21,
+         19
+        ],
+        [
+         19,
+         19,
+         19,
+         21,
+         21,
+         21,
+         21,
+         21,
+         19,
+         19,
+         21,
+         19
+        ],
+        [
+         19,
+         19,
+         19,
+         21,
+         21,
+         20,
+         20,
+         21,
+         20,
+         20,
+         20,
+         20
+        ],
+        [
+         20,
+         19,
+         19,
+         21,
+         20,
+         20,
+         22,
+         20,
+         20,
+         21,
+         20,
+         20
+        ],
+        [
+         20,
+         19,
+         19,
+         21,
+         20,
+         20,
+         21,
+         21,
+         20,
+         20,
+         20,
+         21
+        ],
+        [
+         20,
+         19,
+         19,
+         20,
+         20,
+         21,
+         19,
+         19,
+         20,
+         20,
+         20,
+         20
+        ],
+        [
+         20,
+         19,
+         19,
+         19,
+         19,
+         22,
+         20,
+         20,
+         20,
+         20,
+         20,
+         19
+        ],
+        [
+         19,
+         20,
+         20,
+         20,
+         22,
+         20,
+         20,
+         21,
+         19,
+         19,
+         20,
+         20
+        ],
+        [
+         20,
+         19,
+         19,
+         21,
+         21,
+         21,
+         21,
+         20,
+         20,
+         20,
+         19,
+         19
+        ],
+        [
+         21,
+         19,
+         19,
+         20,
+         20,
+         20,
+         22,
+         20,
+         0,
+         0,
+         0,
+         0
+        ]
+       ],
+       "scale": "diverging",
+       "legend": [
+        {
+         "tier": -3,
+         "text": "−4.58% to −1.35%"
+        },
+        {
+         "tier": -2,
+         "text": "−1.35% to −0.551%"
+        },
+        {
+         "tier": -1,
+         "text": "−0.551% to 0%"
+        },
+        {
+         "tier": 1,
+         "text": "0% to +0.551%"
+        },
+        {
+         "tier": 2,
+         "text": "+0.551% to +1.35%"
+        },
+        {
+         "tier": 3,
+         "text": "+1.35% to +5.02%"
+        }
+       ],
+       "row_label": "Year",
+       "col_label": "Month"
+      },
+      "table": {
+       "cols": [
+        "Year",
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec"
+       ],
+       "rows": [
+        [
+         "2017",
+         "",
+         "−0.648%",
+         "+2.13%",
+         "+0.402%",
+         "+1.24%",
+         "−2.27%",
+         "−4.58%",
+         "−0.662%",
+         "−2.55%",
+         "+2.62%",
+         "+1.3%",
+         "+0.0131%"
+        ],
+        [
+         "2018",
+         "−2.69%",
+         "+1.28%",
+         "+2.75%",
+         "−1.54%",
+         "+1.11%",
+         "+1.98%",
+         "+0.0116%",
+         "−0.677%",
+         "−0.0357%",
+         "−0.207%",
+         "+1.47%",
+         "+1.75%"
+        ],
+        [
+         "2019",
+         "−0.974%",
+         "−0.717%",
+         "+1.23%",
+         "+0.0712%",
+         "+0.608%",
+         "−1.28%",
+         "−1.4%",
+         "+1.35%",
+         "−0.278%",
+         "−0.383%",
+         "+0.372%",
+         "−0.507%"
+        ],
+        [
+         "2020",
+         "−0.645%",
+         "+1.52%",
+         "+5.02%",
+         "+0.755%",
+         "−0.627%",
+         "−3%",
+         "−0.382%",
+         "−2.05%",
+         "+0.0457%",
+         "−0.101%",
+         "−1.11%",
+         "−1.99%"
+        ],
+        [
+         "2021",
+         "−0.653%",
+         "−0.2%",
+         "−0.983%",
+         "−0.619%",
+         "−2.96%",
+         "+0.76%",
+         "+2.54%",
+         "+0.594%",
+         "+0.54%",
+         "−1.85%",
+         "+1.07%",
+         "+1.78%"
+        ],
+        [
+         "2022",
+         "−1.4%",
+         "+0.795%",
+         "−0.456%",
+         "−0.236%",
+         "+1.78%",
+         "−0.301%",
+         "+1.05%",
+         "−0.207%",
+         "+3.07%",
+         "+2.86%",
+         "−1.83%",
+         "+1.07%"
+        ],
+        [
+         "2023",
+         "−1.25%",
+         "+0.213%",
+         "+1.72%",
+         "−1.44%",
+         "+0.26%",
+         "−1.72%",
+         "−0.551%",
+         "+2.05%",
+         "+0.367%",
+         "+1.34%",
+         "−0.0534%",
+         "−2.03%"
+        ],
+        [
+         "2024",
+         "−0.0476%",
+         "+0.568%",
+         "+0.286%",
+         "+0.992%",
+         "−0.0249%",
+         "+0.267%",
+         "+0.0452%",
+         "−0.448%",
+         "−0.772%",
+         "+1.54%",
+         "+1.6%",
+         "+1.9%"
+        ],
+        [
+         "2025",
+         "+1.03%",
+         "−0.601%",
+         "+0.404%",
+         "−2.58%",
+         "−0.916%",
+         "−1.34%",
+         "+0.127%",
+         "+0.81%",
+         "+0.226%",
+         "+1.15%",
+         "+0.452%",
+         "−1.8%"
+        ],
+        [
+         "2026",
+         "−0.176%",
+         "−0.925%",
+         "+0.486%",
+         "+0.269%",
+         "−0.225%",
+         "+2.31%",
+         "+0.477%",
+         "−1.48%",
+         "",
+         "",
+         "",
+         ""
+        ]
+       ]
+      },
+      "summary": "The largest rise on the month before is Mar 2020 (+5.02%) and the largest fall Jul 2017 (−4.58%).",
+      "suppressed": {
+       "cells": 0,
+       "why": ""
+      },
+      "source": "The rows the engine kept, by REF_DATE month; each month's average equals the engine's own charted series",
+      "inputs": {
+       "columns": [
+        "VALUE",
+        "REF_DATE"
+       ],
+       "rows": 2407,
+       "months": [
+        "2017-01",
+        "2026-08"
+       ],
+       "op": "VALUE averaged by calendar month, percent change from the month before"
+      }
+     }
+    ],
+    "tables": [
+     {
+      "title": "Long-run trend",
+      "cols": [
+       "Series",
+       "Years",
+       "Points",
+       "Change per year",
+       "95% range",
+       "Last 30 years"
+      ],
+      "rows": [
+       [
+        "VALUE",
+        "2017 to 2025",
+        "9",
+        "0.0104",
+        "0.00329 to 0.0175",
+        ""
+       ]
+      ]
+     },
+     {
+      "title": "How VALUE is spread",
+      "cols": [
+       "Values",
+       "10th",
+       "25th",
+       "Median",
+       "75th",
+       "90th"
+      ],
+      "rows": [
+       [
+        "2,407",
+        "1.26",
+        "1.29",
+        "1.33",
+        "1.37",
+        "1.39"
+       ]
+      ]
+     }
+    ],
+    "analyses_refused": [],
+    "story": {
+     "headline": "Volume +0.4% on the year before, graded WATCH; average value -0.7%, graded WATCH; monthly rows in [your file] forecast at 20 rows for 2026-09.",
+     "what_happened": [
+      "Row volume changed by +0.4% in the latest year (248 rows) against the year before (247 rows). The same test's interval for the change runs from -2.5% to +2.7%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can underestimate, it he",
+      "Average value (the average month) moved from 1.396 in the year before to 1.386 in the latest year, a change of -0.7%. The same test's interval for the change runs from -5.2% to +7.8%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model "
+     ],
+     "why": [
+      "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+     ],
+     "what_to_do": [
+      "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+     ],
+     "whats_next": [
+      "monthly rows in [your file] for 2026-09: 20 rows (80% range 16 to 22). By 2027-08: 20 (80% range 19 to 22).",
+      "Method: repeat the same month from last year, chosen because it had the lowest error when we replayed the last 24 months, forecasting each from what was known at the time. Over that replay it missed by 3.6% on average across every horizon: by 4.0% one month ahead and by 3.0% at the furthest month ah",
+      "Its month-ahead 80% range held in 23 of 24 replayed months, each range built only from errors known at the time. This forecast did not clear the confidence gate: watch it, do not act on it yet."
+     ],
+     "cannot_answer": []
+    },
+    "forecast": {
+     "available": true,
+     "series": "monthly rows in [your file]",
+     "verdict": "not yet shown usable",
+     "champion": "repeat the same month from last year",
+     "coverage": "23 of 24 replayed months inside the 80% range",
+     "baseline_won": true,
+     "reason": "No method beat the simple rule of repeating the same month from last year when we replayed the last 24 months: the champion IS that rule. Use it as a guide, not a plan.",
+     "points": [
+      {
+       "date": "2026-09",
+       "value": 20.0,
+       "lo": 15.8,
+       "hi": 21.9
+      },
+      {
+       "date": "2026-10",
+       "value": 22.0,
+       "lo": 19.1,
+       "hi": 24.0
+      },
+      {
+       "date": "2026-11",
+       "value": 19.0,
+       "lo": 17.3,
+       "hi": 20.5
+      },
+      {
+       "date": "2026-12",
+       "value": 21.0,
+       "lo": 18.4,
+       "hi": 23.5
+      },
+      {
+       "date": "2027-01",
+       "value": 21.0,
+       "lo": 19.2,
+       "hi": 22.5
+      },
+      {
+       "date": "2027-02",
+       "value": 19.0,
+       "lo": 17.2,
+       "hi": 20.6
+      },
+      {
+       "date": "2027-03",
+       "value": 22.0,
+       "lo": 19.8,
+       "hi": 24.2
+      },
+      {
+       "date": "2027-04",
+       "value": 20.0,
+       "lo": 18.3,
+       "hi": 22.0
+      },
+      {
+       "date": "2027-05",
+       "value": 20.0,
+       "lo": 17.9,
+       "hi": 22.0
+      },
+      {
+       "date": "2027-06",
+       "value": 22.0,
+       "lo": 19.9,
+       "hi": 24.2
+      },
+      {
+       "date": "2027-07",
+       "value": 22.0,
+       "lo": 20.5,
+       "hi": 23.9
+      },
+      {
+       "date": "2027-08",
+       "value": 20.0,
+       "lo": 18.6,
+       "hi": 21.6
+      }
+     ]
+    },
+    "health_score": 75.0,
+    "health_explain": "75 because the check marks down numbers stored as text, which every CSV has, although the engine reads them as numbers (the validity check); the other checks averaged 100.",
+    "health_issues": [
+     "The health score counts numbers stored as text, which every CSV has: it is validity, the weakest dimension here, marked down for them, although the engine reads them as numbers."
+    ],
+    "plan_row_drops": [
+     {
+      "rows": 569,
+      "of": 3526,
+      "pct": 16.137266023823027,
+      "text": "Set aside 569 rows (16.1% of the file's 3,526) where VALUE is blank. The plan's reason: VALUE is blank on 569 rows marked '..' (no rate that day); those rows were excluded.",
+      "notice": "The AI plan set aside 569 rows (16.1%): VALUE is blank on 569 rows marked '..' (no rate that day); those rows were excluded."
+     }
+    ],
+    "cleaning": {
+     "rows_in": 2957,
+     "rows_clean": 2957,
+     "rows_quarantined": 0,
+     "fixes": [
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+     ]
+    },
+    "limitations": [
+     "The AI plan set aside 569 rows (16.1%). Its reason is among the risks the plan named.",
+     "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+     "the past errors behind the 80% ranges move together from month to month (lag-1 autocorrelation up to 0.36), so they carry the information of fewer independent errors (as few as about 18); the ranges for 1 of 12 months ahead were widened, by",
+     "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+     "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that.",
+     "Accuracy, whether the values match reality, is not measured: no rows were checked against their source."
+    ],
+    "scenarios": {
+     "basis": null,
+     "items": [
+      {
+       "id": "history_range.m12.windows",
+       "group": "history_range",
+       "segment": null,
+       "label": "In the 104 past 12-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change in the monthly average of value ran from −0.0635 CAD per USD (1 in 10 lower) to +0.0785 CAD per USD (1 in 10 higher); the middle was +0.0162 CAD per USD. This is history, not a forecast.",
+       "value": 104.0,
+       "text": "104",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "count of 12-month windows"
+       }
+      },
+      {
+       "id": "history_range.m12.p10",
+       "group": "history_range",
+       "segment": null,
+       "label": "The monthly average of value: the 10th percentile of its changes over the 104 past 12-month windows (1 in 10 was lower), Jan 2017 to Aug 2026; history, not a forecast",
+       "value": -0.063493,
+       "text": "−0.0635 CAD per USD",
+       "kind": "change",
+       "unit": "CAD per USD",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "p10 of 12-month changes"
+       }
+      },
+      {
+       "id": "history_range.m12.p50",
+       "group": "history_range",
+       "segment": null,
+       "label": "The monthly average of value: the middle (median) of its changes over the 104 past 12-month windows, Jan 2017 to Aug 2026; history, not a forecast",
+       "value": 0.016249,
+       "text": "+0.0162 CAD per USD",
+       "kind": "change",
+       "unit": "CAD per USD",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "p50 of 12-month changes"
+       }
+      },
+      {
+       "id": "history_range.m12.p90",
+       "group": "history_range",
+       "segment": null,
+       "label": "The monthly average of value: the 90th percentile of its changes over the 104 past 12-month windows (1 in 10 was higher), Jan 2017 to Aug 2026; history, not a forecast",
+       "value": 0.078455,
+       "text": "+0.0785 CAD per USD",
+       "kind": "change",
+       "unit": "CAD per USD",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "p90 of 12-month changes"
+       }
+      },
+      {
+       "id": "history_range.m12.rose",
+       "group": "history_range",
+       "segment": null,
+       "label": "Share of the 104 past 12-month windows in which the monthly average of value rose, Jan 2017 to Aug 2026; history, not a forecast",
+       "value": 65.384615,
+       "text": "65.4%",
+       "kind": "percent",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "share of 12-month windows that rose"
+       }
+      },
+      {
+       "id": "history_range.m3.windows",
+       "group": "history_range",
+       "segment": null,
+       "label": "In the 113 past 3-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change in the monthly average of value ran from −0.0402 CAD per USD (1 in 10 lower) to +0.0472 CAD per USD (1 in 10 higher); the middle was +0.00393 CAD per USD. This is history, not a forecast.",
+       "value": 113.0,
+       "text": "113",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "count of 3-month windows"
+       }
+      },
+      {
+       "id": "history_range.m3.p10",
+       "group": "history_range",
+       "segment": null,
+       "label": "The monthly average of value: the 10th percentile of its changes over the 113 past 3-month windows (1 in 10 was lower), Jan 2017 to Aug 2026; history, not a forecast",
+       "value": -0.04016,
+       "text": "−0.0402 CAD per USD",
+       "kind": "change",
+       "unit": "CAD per USD",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "p10 of 3-month changes"
+       }
+      },
+      {
+       "id": "history_range.m3.p50",
+       "group": "history_range",
+       "segment": null,
+       "label": "The monthly average of value: the middle (median) of its changes over the 113 past 3-month windows, Jan 2017 to Aug 2026; history, not a forecast",
+       "value": 0.003927,
+       "text": "+0.00393 CAD per USD",
+       "kind": "change",
+       "unit": "CAD per USD",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "p50 of 3-month changes"
+       }
+      },
+      {
+       "id": "history_range.m3.p90",
+       "group": "history_range",
+       "segment": null,
+       "label": "The monthly average of value: the 90th percentile of its changes over the 113 past 3-month windows (1 in 10 was higher), Jan 2017 to Aug 2026; history, not a forecast",
+       "value": 0.047192,
+       "text": "+0.0472 CAD per USD",
+       "kind": "change",
+       "unit": "CAD per USD",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "p90 of 3-month changes"
+       }
+      },
+      {
+       "id": "history_range.m3.rose",
+       "group": "history_range",
+       "segment": null,
+       "label": "Share of the 113 past 3-month windows in which the monthly average of value rose, Jan 2017 to Aug 2026; history, not a forecast",
+       "value": 53.982301,
+       "text": "54.0%",
+       "kind": "percent",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+       "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+       "inputs": {
+        "columns": [
+         "ref_date",
+         "value"
+        ],
+        "window": "history",
+        "op": "share of 3-month windows that rose"
+       }
+      },
+      {
+       "id": "facts.months",
+       "group": "facts",
+       "segment": null,
+       "label": "Months with a dated row the engine kept",
+       "value": 116.0,
+       "text": "116",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "ref_date"
+        ],
+        "window": null,
+        "op": "count distinct months"
+       }
+      },
+      {
+       "id": "facts.dates",
+       "group": "facts",
+       "segment": null,
+       "label": "Distinct dates in the rows the engine kept",
+       "value": 2957.0,
+       "text": "2,957",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "ref_date"
+        ],
+        "window": null,
+        "op": "count distinct dates"
+       }
+      },
+      {
+       "id": "facts.first",
+       "group": "facts",
+       "segment": null,
+       "label": "The first date in the rows the engine kept",
+       "value": "2017-01-03",
+       "text": "2017-01-03",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "ref_date"
+        ],
+        "window": null,
+        "op": "min"
+       }
+      },
+      {
+       "id": "facts.last",
+       "group": "facts",
+       "segment": null,
+       "label": "The last date in the rows the engine kept",
+       "value": "2026-08-31",
+       "text": "2026-08-31",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "ref_date"
+        ],
+        "window": null,
+        "op": "max"
+       }
+      }
+     ],
+     "refused": [
+      "the headline is an average, so it has no parts that add up; see the headline finding",
+      "the forecast is not yet shown usable, so it is not added up into scenarios"
+     ],
+     "note": "No scenario or contribution figures for this file; the reasons are listed. The historical range items (group history_range) say how much the monthly average moved in the file's own past windows: facts about the past, not a forecast and not graded."
+    },
+    "primary": {
+     "id": "measure.value.change",
+     "claim": "Change in the average month of value, latest 12 months against the 12 before",
+     "grade": "WATCH"
+    }
+   }
+  },
+  "reviews": {
+   "csv": "tools/fixtures/eval/reviews_synthetic.csv",
+   "csv_sha256": "469fe5be83f2cd069adfa441e86b906550d08d459cccffc14288c26a9cad2cdb",
+   "as_of": "2026-09-30",
+   "decisions": {
+    "review_text": "keep"
+   },
+   "plan": {
+    "goal": "What do customers praise and complain about, and how do the departments compare?",
+    "kind": "text_corpus",
+    "understanding": "Product reviews, one row per review, with a 1-5 star rating, a department and a brand.",
+    "primary": "rating",
+    "columns": [
+     {
+      "name": "review_date",
+      "semantic_type": "date",
+      "role": "date"
+     },
+     {
+      "name": "rating",
+      "semantic_type": "rating",
+      "role": "target",
+      "unit": "stars"
+     },
+     {
+      "name": "verified_purchase",
+      "semantic_type": "boolean",
+      "role": "segment"
+     },
+     {
+      "name": "helpful_votes",
+      "semantic_type": "count",
+      "role": "driver"
+     },
+     {
+      "name": "department",
+      "semantic_type": "category",
+      "role": "segment"
+     },
+     {
+      "name": "brand",
+      "semantic_type": "entity",
+      "role": "entity"
+     },
+     {
+      "name": "review_title",
+      "semantic_type": "free_text",
+      "role": "metadata"
+     },
+     {
+      "name": "review_text",
+      "semantic_type": "free_text",
+      "role": "driver"
+     }
+    ],
+    "operations": [
+     {
+      "op": "exclude_rows",
+      "column": "department",
+      "values": [
+       "All Electronics"
+      ]
+     },
+     {
+      "op": "set_aside",
+      "columns": [
+       "review_title"
+      ]
+     }
+    ],
+    "analyses": [
+     {
+      "type": "compare",
+      "columns": [
+       "rating"
+      ],
+      "by": "department"
+     },
+     {
+      "type": "themes",
+      "columns": [
+       "review_text"
+      ]
+     }
+    ],
+    "quality_risks": [
+     "'All Electronics' reads as an umbrella department overlapping the specific ones, so it was excluded; if it held unique reviews they are not covered.",
+     "Ratings are skewed high, so averages sit near the ceiling."
+    ],
+    "charts": [
+     {
+      "kind": "theme_rating_heatmap",
+      "columns": [
+       "review_text",
+       "rating"
+      ],
+      "why": "Which words the low ratings use."
+     }
+    ]
+   },
+   "results": {
+    "ok": true,
+    "input": {
+     "name": "[your file]",
+     "rows": 2120,
+     "columns": 7
+    },
+    "goal": "What do customers praise and complain about, and how do the departments compare?",
+    "reading": "Product reviews, one row per review, with a 1-5 star rating, a department and a brand. The visitor chose to send these personal columns to the AI: review_text.",
+    "quality_risks": [
+     "'All Electronics' reads as an umbrella department overlapping the specific ones, so it was excluded; if it held unique reviews they are not covered.",
+     "Ratings are skewed high, so averages sit near the ceiling."
+    ],
+    "plan_applied": [
+     "dropped 445 rows (17.3%) where department is one of 1 values (2,120 rows left)",
+     "set aside review_title"
+    ],
+    "plan_refused": [],
+    "findings": [
+     {
+      "verdict": "WATCH",
+      "kind": "business",
+      "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
+      "value": -42.52275682704811,
+      "why": "A 42.5% fall in the average month, latest 12 months against the 12 before (95% interval -46.1% to -38.3%; built to hold the true change 95% of the time; in simulated series with strong momentum, which the model can underestimate, it held it"
+     },
+     {
+      "verdict": "WATCH",
+      "kind": "business",
+      "claim": "Change in the average month of rating, latest 12 months against the 12 before",
+      "value": -1.67939842401924,
+      "why": "No change of at least the 5% bar is shown: a 1.7% fall in the average month, latest 12 months against the 12 before (95% interval -3.9% to +1.3%; built to hold the true change 95% of the time; in simulated series with strong momentum, which"
+     },
+     {
+      "verdict": "WATCH",
+      "kind": "business",
+      "claim": "Change in the average month of helpful_votes, latest 12 months against the 12 before",
+      "value": 6.8819033233082365,
+      "why": "No change of at least the 5% bar is shown: a 6.9% rise in the average month, latest 12 months against the 12 before (95% interval -8.8% to +22.2%; built to hold the true change 95% of the time; in simulated series with strong momentum, whic"
+     },
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "forecast",
+      "claim": "Forecast of monthly rows in [your file] for 2023-04",
+      "value": 35.33078812706642,
+      "why": "The data stops at 2023-03, but the analysis date is 2026-09-30: a forecast of 2023-04 is history, not a plan."
+     }
+    ],
+    "analyses": [
+     {
+      "title": "rating by department",
+      "sentence": "By department, with each group's average rating weighted by its rows, Toys & Games ranks highest (4.38 stars, 95% range 4.11 to 4.61, 76 rows; weighted 4.34 stars) and Video Games lowest (4.27 stars, 1,162 rows; weighted 4.27 stars): a gap of 0.108 stars between the top and the bottom of the 5 groups, the two ends picked out of them, which chance alone can make this wide. Each group's average is pulled toward the overall 4.29 stars (the average of all 2,120 rows) by the equivalent of 50 rows at that average (50, the most: the department averages differ no more than chance alone would make them).",
+      "method": "Each group's average with a 95% bootstrap range (999 resamples), ranked by its average weighted by its rows (the IMDb-style weighted rating: its own rows plus 50 rows at the average of all rows; 50, the most: the department averages differ no more than chance alone would make them); groups with…"
+     },
+     {
+      "title": "What the review_text texts talk about",
+      "sentence": "Across 2,120 texts in review_text, the words most often used are 'minutes' (7.69%), 'setup' (7.69%), 'ten' (7.69%), 'took' (7.69%), 'controller' (6.98%), 'customer' (6.98%); the most frequent phrases are 'setup took' (7.69%), 'ten minutes' (7.69%), 'took ten' (7.69%), 'controller feels' (6.98%). Counts of words, not a reading of meaning.",
+      "method": "Share of texts that use each word or two-word phrase at least once; common words (the, and, very) are left out. Names, emails and phone numbers are withheld before this step, and a word that is a person's name is never a theme (a word of a flagged column's values, a given name, or a word the texts…"
+     }
+    ],
+    "charts": [
+     {
+      "kind": "bars",
+      "title": "rating by department",
+      "series": [
+       {
+        "label": "Toys & Games",
+        "value": 4.381578947368421
+       },
+       {
+        "label": "Computers",
+        "value": 4.295774647887324
+       },
+       {
+        "label": "Software",
+        "value": 4.3076923076923075
+       },
+       {
+        "label": "Cell Phones & Accessories",
+        "value": 4.294520547945205
+       },
+       {
+        "label": "Video Games",
+        "value": 4.273666092943201
+       }
+      ]
+     },
+     {
+      "kind": "bars",
+      "title": "What the review_text texts talk about",
+      "unit": "%",
+      "series": [
+       {
+        "label": "minutes",
+        "value": 7.688679245283019
+       },
+       {
+        "label": "setup",
+        "value": 7.688679245283019
+       },
+       {
+        "label": "ten",
+        "value": 7.688679245283019
+       },
+       {
+        "label": "took",
+        "value": 7.688679245283019
+       },
+       {
+        "label": "controller",
+        "value": 6.981132075471698
+       },
+       {
+        "label": "customer",
+        "value": 6.981132075471698
+       },
+       {
+        "label": "feels",
+        "value": 6.981132075471698
+       },
+       {
+        "label": "fuss",
+        "value": 6.981132075471698
+       },
+       {
+        "label": "hand",
+        "value": 6.981132075471698
+       },
+       {
+        "label": "replaced",
+        "value": 6.981132075471698
+       }
+      ]
+     },
+     {
+      "id": "viz.1.theme_rating_heatmap",
+      "chart": "theme_rating_heatmap",
+      "kind": "heatmap",
+      "title": "What the review_text texts say, by rating",
+      "subtitle": "The share of each rating's texts that use the word; the 12 words and phrases used in 3 or more texts; 'all' is the themes analysis",
+      "section": "other",
+      "supports": "What the review_text texts talk about",
+      "anchors": [
+       "analysis:2"
+      ],
+      "grade": null,
+      "parent_grade": null,
+      "chosen_by": "ai",
+      "why": "Which words the low ratings use.",
+      "measure": {
+       "label": "texts using the word",
+       "unit": "%",
+       "kind": "share_pct"
+      },
+      "data": {
+       "rows": [
+        "minutes",
+        "setup",
+        "ten",
+        "took",
+        "controller",
+        "customer",
+        "feels",
+        "fuss",
+        "hand",
+        "replaced",
+        "setup took",
+        "ten minutes"
+       ],
+       "cols": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "all"
+       ],
+       "values": [
+        [
+         6.666667,
+         8.433735,
+         5.670103,
+         8.607595,
+         7.756024,
+         7.688679
+        ],
+        [
+         6.666667,
+         8.433735,
+         5.670103,
+         8.607595,
+         7.756024,
+         7.688679
+        ],
+        [
+         6.666667,
+         8.433735,
+         5.670103,
+         8.607595,
+         7.756024,
+         7.688679
+        ],
+        [
+         6.666667,
+         8.433735,
+         5.670103,
+         8.607595,
+         7.756024,
+         7.688679
+        ],
+        [
+         5,
+         8.433735,
+         6.701031,
+         7.848101,
+         6.85241,
+         6.981132
+        ],
+        [
+         6.666667,
+         4.819277,
+         9.793814,
+         6.075949,
+         7.003012,
+         6.981132
+        ],
+        [
+         5,
+         8.433735,
+         6.701031,
+         7.848101,
+         6.85241,
+         6.981132
+        ],
+        [
+         6.666667,
+         4.819277,
+         9.793814,
+         6.075949,
+         7.003012,
+         6.981132
+        ],
+        [
+         5,
+         8.433735,
+         6.701031,
+         7.848101,
+         6.85241,
+         6.981132
+        ],
+        [
+         6.666667,
+         4.819277,
+         9.793814,
+         6.075949,
+         7.003012,
+         6.981132
+        ],
+        [
+         6.666667,
+         8.433735,
+         5.670103,
+         8.607595,
+         7.756024,
+         7.688679
+        ],
+        [
+         6.666667,
+         8.433735,
+         5.670103,
+         8.607595,
+         7.756024,
+         7.688679
+        ]
+       ],
+       "text": [
+        [
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "5%",
+         "8.43%",
+         "6.7%",
+         "7.85%",
+         "6.85%",
+         "6.98%"
+        ],
+        [
+         "6.67%",
+         "4.82%",
+         "9.79%",
+         "6.08%",
+         "7%",
+         "6.98%"
+        ],
+        [
+         "5%",
+         "8.43%",
+         "6.7%",
+         "7.85%",
+         "6.85%",
+         "6.98%"
+        ],
+        [
+         "6.67%",
+         "4.82%",
+         "9.79%",
+         "6.08%",
+         "7%",
+         "6.98%"
+        ],
+        [
+         "5%",
+         "8.43%",
+         "6.7%",
+         "7.85%",
+         "6.85%",
+         "6.98%"
+        ],
+        [
+         "6.67%",
+         "4.82%",
+         "9.79%",
+         "6.08%",
+         "7%",
+         "6.98%"
+        ],
+        [
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ]
+       ],
+       "tier": [
+        [
+         1,
+         3,
+         1,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         1,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         1,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         1,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         2,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         1,
+         3,
+         1,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         2,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         1,
+         3,
+         1,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         2,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         1,
+         3,
+         1,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         1,
+         3,
+         2,
+         2
+        ],
+        [
+         1,
+         3,
+         1,
+         3,
+         2,
+         2
+        ]
+       ],
+       "n": [
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ],
+        [
+         120,
+         83,
+         194,
+         395,
+         1328,
+         2120
+        ]
+       ],
+       "scale": "sequential",
+       "legend": [
+        {
+         "tier": 1,
+         "text": "4.82% to 6.69%"
+        },
+        {
+         "tier": 2,
+         "text": "6.69% to 7.76%"
+        },
+        {
+         "tier": 3,
+         "text": "7.76% to 9.79%"
+        }
+       ],
+       "row_label": "word",
+       "col_label": "rating"
+      },
+      "table": {
+       "cols": [
+        "word",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "all"
+       ],
+       "rows": [
+        [
+         "minutes",
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "setup",
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "ten",
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "took",
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "controller",
+         "5%",
+         "8.43%",
+         "6.7%",
+         "7.85%",
+         "6.85%",
+         "6.98%"
+        ],
+        [
+         "customer",
+         "6.67%",
+         "4.82%",
+         "9.79%",
+         "6.08%",
+         "7%",
+         "6.98%"
+        ],
+        [
+         "feels",
+         "5%",
+         "8.43%",
+         "6.7%",
+         "7.85%",
+         "6.85%",
+         "6.98%"
+        ],
+        [
+         "fuss",
+         "6.67%",
+         "4.82%",
+         "9.79%",
+         "6.08%",
+         "7%",
+         "6.98%"
+        ],
+        [
+         "hand",
+         "5%",
+         "8.43%",
+         "6.7%",
+         "7.85%",
+         "6.85%",
+         "6.98%"
+        ],
+        [
+         "replaced",
+         "6.67%",
+         "4.82%",
+         "9.79%",
+         "6.08%",
+         "7%",
+         "6.98%"
+        ],
+        [
+         "setup took",
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ],
+        [
+         "ten minutes",
+         "6.67%",
+         "8.43%",
+         "5.67%",
+         "8.61%",
+         "7.76%",
+         "7.69%"
+        ]
+       ]
+      },
+      "summary": "'minutes' is the commonest word, in 7.69% of all texts. It is used most in the rating 4 texts (8.61%) and least in the rating 3 texts (5.67%).",
+      "suppressed": {
+       "cells": 0,
+       "why": ""
+      },
+      "source": "The themes analysis's words, counted again by rating on the same texts; each word's texts add up to its count in the analysis",
+      "inputs": {
+       "columns": [
+        "review_text",
+        "rating"
+       ],
+       "rows": 2120,
+       "months": [
+        "2020-01",
+        "2023-03"
+       ],
+       "op": "share of each rating's texts that use the word at least once"
+      }
+     }
+    ],
+    "tables": [
+     {
+      "title": "rating by department",
+      "cols": [
+       "department",
+       "Rows",
+       "Average",
+       "95% range",
+       "Median",
+       "Weighted average"
+      ],
+      "rows": [
+       [
+        "Toys & Games",
+        "76",
+        "4.38",
+        "4.11 to 4.61",
+        "5",
+        "4.34"
+       ],
+       [
+        "Computers",
+        "710",
+        "4.3",
+        "4.21 to 4.38",
+        "5",
+        "4.3"
+       ],
+       [
+        "Software",
+        "26",
+        "4.31",
+        "3.77 to 4.73",
+        "5",
+        "4.29"
+       ],
+       [
+        "Cell Phones & Accessories",
+        "146",
+        "4.29",
+        "4.1 to 4.48",
+        "5",
+        "4.29"
+       ],
+       [
+        "Video Games",
+        "1,162",
+        "4.27",
+        "4.21 to 4.34",
+        "5",
+        "4.27"
+       ]
+      ]
+     },
+     {
+      "title": "What the review_text texts talk about",
+      "cols": [
+       "Word or phrase",
+       "Texts",
+       "Share of texts"
+      ],
+      "rows": [
+       [
+        "minutes",
+        "163",
+        "7.69%"
+       ],
+       [
+        "setup",
+        "163",
+        "7.69%"
+       ],
+       [
+        "ten",
+        "163",
+        "7.69%"
+       ],
+       [
+        "took",
+        "163",
+        "7.69%"
+       ],
+       [
+        "controller",
+        "148",
+        "6.98%"
+       ],
+       [
+        "customer",
+        "148",
+        "6.98%"
+       ],
+       [
+        "feels",
+        "148",
+        "6.98%"
+       ],
+       [
+        "fuss",
+        "148",
+        "6.98%"
+       ],
+       [
+        "hand",
+        "148",
+        "6.98%"
+       ],
+       [
+        "replaced",
+        "148",
+        "6.98%"
+       ],
+       [
+        "setup took",
+        "163",
+        "7.69%"
+       ],
+       [
+        "ten minutes",
+        "163",
+        "7.69%"
+       ]
+      ]
+     }
+    ],
+    "analyses_refused": [],
+    "story": {
+     "headline": "Volume -42.5% on the year before, graded WATCH; average helpful_votes +6.9%, graded WATCH; average rating -1.7%, graded WATCH.",
+     "what_happened": [
+      "Row volume changed by -42.5% in the latest year (442 rows) against the year before (769 rows). The same test's interval for the change runs from -46.1% to -38.3%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can underestimate, it",
+      "Average helpful_votes (the average month) moved from 1.330 in the year before to 1.422 in the latest year, a change of +6.9%. The same test's interval for the change runs from -8.8% to +22.2%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which t",
+      "Average rating (the average month) moved from 4.317 in the year before to 4.244 in the latest year, a change of -1.7%. The same test's interval for the change runs from -3.9% to +1.3%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model",
+      "The most common department value is 'Video Games', with 54.8% of rows.",
+      "The most common verified_purchase value is 'yes', with 88.1% of rows."
+     ],
+     "why": [
+      "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+     ],
+     "what_to_do": [
+      "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+     ],
+     "whats_next": [
+      "No forecast of monthly rows in [your file] is offered: the data stops at 2023-03, before the analysis date (2026-09), so a forecast of 2023-04 would be history, not a plan."
+     ],
+     "cannot_answer": [
+      "The data cannot support this claim: Forecast of monthly rows in [your file] for 2023-04. Why: The data stops at 2023-03, but the analysis date is 2026-09-30: a forecast of 2023-04 is history, not a plan. What would settle it: Data up to the month before the analysis date; then this forecas"
+     ]
+    },
+    "forecast": {},
+    "health_score": 0.0,
+    "health_explain": "0 because the newest row is 3.5 years old (the timeliness check); the other checks averaged 96.4.",
+    "health_issues": [
+     "The health score is 0 because the newest row is 3.5 years old (the timeliness check); the other checks averaged 96.4.",
+     "Newest row in review_date is 2023-03-30, 1280 days old as of 2026-09-30."
+    ],
+    "plan_row_drops": [
+     {
+      "rows": 445,
+      "of": 2565,
+      "pct": 17.348927875243664,
+      "text": "Set aside 445 rows (17.3% of the file's 2,565) where department is All Electronics. The plan's reason: 'All Electronics' reads as an umbrella department overlapping the specific ones, so it was excluded; if it held unique reviews they are not covered. The engine checked: none of these rows duplicates a kept row (compared on every column but department).",
+      "notice": "The AI plan set aside 445 rows (17.3%): 'All Electronics' reads as an umbrella department overlapping the specific ones, so it was excluded; if it held unique reviews they are not covered. The engine checked: none of these rows duplicates a kept row."
+     }
+    ],
+    "cleaning": {
+     "rows_in": 2120,
+     "rows_clean": 2120,
+     "rows_quarantined": 0,
+     "fixes": [
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently"
+     ]
+    },
+    "limitations": [
+     "The AI plan set aside 445 rows (17.3%); the engine checked: none of these rows duplicates a kept row. Its reason: 'All Electronics' reads as an umbrella department overlapping the specific ones, so it was excluded; if it held unique…",
+     "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+     "horizon shortened to 1 month(s): a longer one would leave fewer than 12 backtest months with a band",
+     "The data cannot support this claim: Forecast of monthly rows in [your file] for 2023-04. Why: The data stops at 2023-03, but the analysis date is 2026-09-30: a forecast of 2023-04 is history, not a plan. What would settle it: Data up to the",
+     "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+     "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+    ],
+    "scenarios": {
+     "basis": null,
+     "items": [
+      {
+       "id": "facts.months",
+       "group": "facts",
+       "segment": null,
+       "label": "Months with a dated row the engine kept",
+       "value": 39.0,
+       "text": "39",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "review_date"
+        ],
+        "window": null,
+        "op": "count distinct months"
+       }
+      },
+      {
+       "id": "facts.dates",
+       "group": "facts",
+       "segment": null,
+       "label": "Distinct dates in the rows the engine kept",
+       "value": 1126.0,
+       "text": "1,126",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "review_date"
+        ],
+        "window": null,
+        "op": "count distinct dates"
+       }
+      },
+      {
+       "id": "facts.first",
+       "group": "facts",
+       "segment": null,
+       "label": "The first date in the rows the engine kept",
+       "value": "2020-01-01",
+       "text": "2020-01-01",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "review_date"
+        ],
+        "window": null,
+        "op": "min"
+       }
+      },
+      {
+       "id": "facts.last",
+       "group": "facts",
+       "segment": null,
+       "label": "The last date in the rows the engine kept",
+       "value": "2023-03-30",
+       "text": "2023-03-30",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "review_date"
+        ],
+        "window": null,
+        "op": "max"
+       }
+      }
+     ],
+     "refused": [
+      "the headline is an average, so it has no parts that add up; see the headline finding"
+     ],
+     "note": "No scenario or contribution figures for this file; the reasons are listed."
+    },
+    "primary": {
+     "id": "measure.rating.change",
+     "claim": "Change in the average month of rating, latest 12 months against the 12 before",
+     "grade": "WATCH"
+    }
+   }
+  }
+ }
+}

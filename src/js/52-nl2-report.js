@@ -361,7 +361,9 @@
     var pmF = r.primary_metric && F[r.primary_metric.finding_id], pw = pmF ? powerText(pmF, r) : '';
     out.push(['power', '<b>Power:</b> ' + (pw ? esc(pw) : 'not measured for the primary claim.')]);
     out.push(['tipping', '<b>Sensitivity to the set-aside rows:</b> how far they would have to differ from the kept rows to change an answer is not measured in this release.']);
-    out.push(['health', '<b>Data health:</b> the weakest dimension, ' + esc(h.weakest || 'n/a') + ', scores ' + (h.score_min === null ? 'n/a' : Number(h.score_min).toFixed(1)) + ' of 100; the engine\'s Data Health Score (the mean of the five) is ' +
+    // what set the score, in plain words (health.explain: final evaluation, 1 Oct 2026)
+    out.push(['health', '<b>Data health:</b> the weakest dimension, ' + esc(h.weakest || 'n/a') + ', scores ' + (h.score_min === null ? 'n/a' : Number(h.score_min).toFixed(1)) + ' of 100' +
+      (h.explain ? ': ' + esc(String(h.explain).replace(/[.\s]+$/, '')) + '. The engine' : '; the engine') + '\'s Data Health Score (the mean of the five) is ' +
       (h.score_mean === null ? 'n/a' : Number(h.score_mean).toFixed(1)) + '. ' + (h.csv_text_numbers && h.csv_text_numbers.note ? esc(h.csv_text_numbers.note) + ' ' : '') +
       'Accuracy against the source: ' + esc((h.accuracy && h.accuracy.measured) ? 'measured' : 'not measured') + '.']);
     return out;
@@ -416,8 +418,12 @@
     var bl = SL.length ? '<div class="nl2-bottom" data-summary="1">' + SL.map(function (l, i) {
       return (i === 0 ? '<h3 class="nl2-bl" ' : '<p class="nl2-bl" ') + 'data-kind="' + esc(l.kind) + '" data-findings="' + esc((l.finding_ids || []).join(' ')) + '">' + esc(l.text) + (i === 0 ? '</h3>' : '</p>');
     }).join('') + '</div>' : '<h3 class="nl2-bottom">' + esc(r.story.headline) + '</h3>';
+    // a step of the AI plan that set aside a tenth of the rows or more (ai_plan.row_drops[].notice, the adapter's words:
+    // final evaluation, 1 Oct 2026): said beside the bottom line, so no one takes its figures for the whole file
+    var drops = ((r.ai_plan && Array.isArray(r.ai_plan.row_drops)) ? r.ai_plan.row_drops : []).filter(function (d) { return d && typeof d.notice === 'string' && d.notice; });
     var h = '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +
+      drops.map(function (d) { return '<p class="note nl2-plandrop">' + esc(d.notice) + '</p>'; }).join('') +
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
     // the optional AI summaries (50-try.js) sit right under the bottom line, where the visitor reads and asks
     h += (parts && parts.ai) || '';

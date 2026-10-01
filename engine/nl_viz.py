@@ -392,8 +392,11 @@ def _grid_table(row_label: str, rows: List[str], cols: List[str], text: List[Lis
 class Ctx:
     """What every chart reads: the rows the engine kept exactly as the visitor downloads them (downloads.clean_csv,
     text cells, the frame the engine's own charts are computed from), without EVERY flagged column (withheld, coded
-    or kept: a kept column's consent covered the AI report, not a chart), the engine's date column and each row's
-    month, the plan's column entries by landed name, the engine's claims, its charts, and the AI's analyses."""
+    or kept), the engine's date column and each row's month, the plan's column entries by landed name, the engine's
+    claims, its charts, and the AI's analyses. One exception, option B (owner, 1 Oct 2026: the AI may read the personal
+    columns the visitor keeps): a column the scan flagged as free text, which the visitor kept and agreed to send to
+    the AI (the page's ticked box; an AI plan runs only after it), may be the theme chart's text, and nothing else in
+    any chart (kept_text)."""
 
     def __init__(self, rep: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         self.rep = rep
@@ -429,6 +432,14 @@ class Ctx:
         # the exact tokens of every flagged column's values (withheld, coded or kept: Scrubber.flag_tokens); a level
         # that holds one is never printed (_label_ok) and no theme word is one
         self.names = frozenset(ctx.get("names") or ())
+        # the same tokens by landed column (Scrubber.flag_tokens_by): a kept text's own words are its themes, so the
+        # theme chart reads every OTHER flagged column's tokens (names_but), as the themes analysis does
+        self.names_by = {str(k): frozenset(v) for k, v in dict(ctx.get("names_by") or {}).items()}
+        # option B: the flagged columns the scan read as free text that the visitor kept, when an AI plan ran (the
+        # page runs one only after the box naming them is ticked); read from the download only for the theme chart
+        self.kept_free = {str(f.get("column")) for f in self.flagged if f.get("decision") == "keep"
+                          and str(f.get("kind") or "") == "free text"} if self.plan else set()
+        self._kept_frame: Any = None
         # the words of a withheld column's name: a theme word that is one is left out, so a record never names it
         self.withheld_words = frozenset(w for c in self.withheld_land for src in (c, self.header(c))
                                         for w in NB._theme_tokens(src) if w)
@@ -470,8 +481,41 @@ class Ctx:
 
     def texts(self, land: str) -> Any:
         if land not in self._txt:
-            self._txt[land] = self.frame[land].astype(str).str.strip()
+            src = self.frame if land in self.frame.columns else self.kept_frame()
+            self._txt[land] = src[land].astype(str).str.strip()
         return self._txt[land]
+
+    # -- option B: a kept free-text column, for the theme chart's text only
+    def kept_frame(self) -> Any:
+        """The download with the kept free-text columns (kept_free) too, row for row the frame; None without one."""
+        if self._kept_frame is None and self.kept_free:
+            self._kept_frame = NB._download_frame((self.rep.get("downloads") or {}).get("clean_csv") or "",
+                                                  self.flag_land - self.kept_free)
+        return self._kept_frame
+
+    def kept_text(self, name: Any) -> Optional[str]:
+        """The landed name of `name` when it is a kept free-text column the theme chart may read (kept_free, in the
+        download, its values not people's names), else None."""
+        if not self.kept_free:
+            return None
+        n = str(name)
+        keys = [n, NB._engine_slug(n)] + ([self.reading.landed(n)] if self.reading is not None else [])
+        land = next((k for k in keys if k and k in self.kept_free), None)
+        kf = self.kept_frame()
+        if land is None or kf is None or land not in kf.columns or len(kf) != len(self.frame):
+            return None
+        t = self.texts(land)
+        if NB._looks_like_names(t[t != ""].unique().tolist()[:2000], self.header(land)):
+            return None
+        return land
+
+    def names_but(self, land: str) -> FrozenSet[str]:
+        """The tokens of every flagged column's values but those of `land` (the file's name for it or its landed one):
+        what the themes analysis leaves out when it reads `land` (nl_browser._names_but)."""
+        if not self.names_by:
+            return self.names
+        own = {land, self.header(land), NB._engine_slug(self.header(land))}
+        return frozenset().union(*[v for k, v in self.names_by.items() if k not in own])
 
     def ptype(self, land: str) -> str:
         return str((self.plan_by.get(land) or {}).get("semantic_type") or "")
@@ -526,7 +570,10 @@ class Ctx:
     def free_text(self, land: str) -> bool:
         """Free text: the plan types it free_text, or (no plan entry) its values are too many or too long for a
         category (the profile's rule: more than 300 distinct values, or a median of more than 60 characters)."""
-        if land not in self.columns or self.numeric(land) or land == self.date:
+        if land in self.kept_free:
+            if not (self.plan_by.get(land) or {}).get("semantic_type") in (None, "", "free_text"):
+                return False
+        elif land not in self.columns or self.numeric(land) or land == self.date:
             return False
         st = self.ptype(land)
         if st:
@@ -694,6 +741,11 @@ def limits(facts: List[Dict[str, Any]], priv: Dict[str, Any], time: Optional[Dic
     texts = [f for f in usable if f.get("kind") == "text" and f["landed"] != tland and not f.get("personal_shape")
              and int(f.get("filled") or 0) >= THEME_MIN_TEXTS
              and (st(f) == "free_text" if st(f) else "top_values" not in f)]
+    # option B (Ctx.kept_text): a column the scan flagged as free text that the visitor kept may be the theme chart's
+    # text (the profile names a kept column already); listed after the unflagged ones, never counted for another chart
+    texts += [f for f in facts if (priv.get(f["header"]) or ("", ""))[0] == "keep" and
+              (priv.get(f["header"]) or ("", ""))[1] == "free text" and f.get("kind") == "text" and f["landed"] != tland
+              and int(f.get("filled") or 0) >= THEME_MIN_TEXTS and st(f) in ("", "free_text")]
     ratings = [f for f in usable if is_rating(f)]
     if detail is not None:
         detail.update(usable={f["landed"]: f for f in usable}, cats=[f["landed"] for f in cats])
@@ -842,14 +894,15 @@ def _label_tokens(s: Any) -> FrozenSet[str]:
     return frozenset(t for t in NB._value_tokens([s]) if len(t) >= 2 and re.search(r"[^\W\d_]", t))
 
 
-def _label_ok(ctx: Ctx, s: str, level: Optional[str] = None) -> bool:
+def _label_ok(ctx: Ctx, s: str, level: Optional[str] = None, names: Optional[FrozenSet[str]] = None) -> bool:
     """A level may be printed: 1 to 80 characters, the report's scrubber leaves it as it is (no phone number, email
     address or withheld value in it), and no token of it is a token of a flagged column's values (withheld, coded or
     kept: the exact set, ctx.names; review of the chart registry, 30 Sep 2026: the scrubber looks only for a value of 6
     or more characters, so a first name went through). `level`: the value itself when s decorates it ("East (new)")."""
     if not (0 < len(s) <= LABEL_MAX and ctx.pub(s) == s):
         return False
-    return not (ctx.names and _label_tokens(s if level is None else level) & ctx.names)
+    nm = ctx.names if names is None else names       # names: the theme chart's own set (Ctx.names_but)
+    return not (nm and _label_tokens(s if level is None else level) & nm)
 
 
 def _names_check(ctx: Ctx, land: str) -> None:
@@ -1732,7 +1785,10 @@ def _b_theme(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
     import pandas as pd
     th, rh = ctx.header(tcol), ctx.header(rcol)
     df = pd.DataFrame({th: ctx.texts(tcol)})
-    res = NB._a_themes(df, None, None, [th], {"columns": []}, None, names=ctx.names)
+    # every flagged column's tokens but the text's own (a kept text's words are its themes: Ctx.names_but), as the
+    # plan's themes analysis of the same column reads them; for an unflagged text, every flagged column's
+    names = ctx.names_but(tcol)
+    res = NB._a_themes(df, None, None, [th], {"columns": []}, None, names=names)
     if res.get("refused"):
         raise Refused(str(res["refused"]))
     words = [(r[0], int(str(r[1]).replace(",", "")), r[2]) for r in res["table"]["rows"]]
@@ -1743,7 +1799,7 @@ def _b_theme(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
         theirs = [(r[0], int(str(r[1]).replace(",", ""))) for r in (ctx.analyses[ana_i].get("table") or {}).get("rows") or []]
         if theirs != [(w, c) for w, c, _t in words]:
             raise Refused("the themes analysis of %s counted other words than this chart reads" % th)
-    words = [w for w in words if _label_ok(ctx, w[0]) and not (set(w[0].split()) & ctx.withheld_words)][:THEME_WORDS]
+    words = [w for w in words if _label_ok(ctx, w[0], names=names) and not (set(w[0].split()) & ctx.withheld_words)][:THEME_WORDS]
     if not words:
         raise Refused("the themes analysis found no word used in 3 or more texts")
     levels = ctx.rating_levels(rcol)
@@ -1751,7 +1807,7 @@ def _b_theme(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
     rv = ctx.nums(rcol)
     has = txt != ""
     n_all = int(has.sum())
-    drop = NB._theme_drop([t for t in txt.tolist() if t], ctx.names)
+    drop = NB._theme_drop([t for t in txt.tolist() if t], names)
     toks = txt[has].map(lambda t: NB._theme_tokens(t, drop))
     wsets = toks.map(lambda tk: set(w for w in tk if w))
     psets = toks.map(NB._theme_pairs)
@@ -2199,12 +2255,15 @@ def validate_directive(ctx: Ctx, item: Dict[str, Any], lim: Dict[str, Dict[str, 
         return chart, [], R_MENU
     if not _args_fit(chart, len(cols)):
         return chart, [], R_ARGS % REGISTRY[chart]["args_text"]
-    if any(ctx.is_flagged(c) for c in cols):
+    # option B (Ctx.kept_text): the theme chart's text may be a kept free-text column; every other flagged column, and
+    # a flagged column in any other part or chart, is refused
+    kept = ctx.kept_text(cols[0]) if chart == "theme_rating_heatmap" and cols else None
+    if any(ctx.is_flagged(c) for c in (cols[1:] if kept else cols)):
         return chart, [], R_PERSONAL
     lands = []
-    for c in cols:
-        land = ctx.landed(c)
-        if land is None or land not in ctx.columns:
+    for i, c in enumerate(cols):
+        land = kept if (i == 0 and kept) else ctx.landed(c)
+        if land is None or (land not in ctx.columns and not (i == 0 and kept)):
             return chart, [], R_MISSING
         lands.append(land)
     for land, role in zip(lands, _roles(chart, len(lands))):
@@ -2214,7 +2273,8 @@ def validate_directive(ctx: Ctx, item: Dict[str, Any], lim: Dict[str, Dict[str, 
     if len(set(lands)) != len(lands):
         return chart, [], "the same column twice"
     lm = lim.get(chart) or {}
-    if lm and not lm.get("ok"):
+    # the chart limits never count a flagged column: a kept text's chart is checked by its build (20 texts or more)
+    if lm and not lm.get("ok") and not kept:
         why = str(lm.get("why") or "")
         if chart == "pareto":
             why = _pareto_refusal(ctx, lands[0], why)

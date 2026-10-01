@@ -1,0 +1,599 @@
+{
+ "fixed_b": {
+  "formulas": {
+   "recalled": {
+    "source": "the design note (WAVE4-A-DESIGN.md 3, T1), from memory",
+    "text": "cv(b) = 1.96 + 2.9694 b + 0.4160 b^2 - 0.5324 b^3"
+   },
+   "secondary": {
+    "source": "R. Susmel, University of Houston, lecture notes ec1-13 (2025), citing Kiefer and Vogelsang (2005)",
+    "text": "cv(b) = 1.96 + 2.9694 b + 0.416 b^2 - 0.05324 b^3"
+   }
+  },
+  "max_abs_gap": {
+   "recalled": {
+    "mean": 0.0358,
+    "trend_slope": 0.9302
+   },
+   "secondary": {
+    "mean": 0.515,
+    "trend_slope": 0.7426
+   }
+  },
+  "n": 1000,
+  "note": "Neither version of the cubic could be checked against Kiefer and Vogelsang (2005) itself. Against the simulated fixed-b limit for the mean, the recalled version is off by up to 0.036 and the secondary source's by up to 0.515; for a linear trend's slope, the case a trend test needs, the limit is far above both (by up to 0.930 and 0.743): fixed-b limits depend on the deterministic regressors, and the cubic is not the trend case's. The engine does not use it; the bootstrap's own size is measured in trend_size instead.",
+  "reps": 40000,
+  "simulated_95pct_abs_t": [
+   {
+    "b": 0.1,
+    "formula_recalled": 2.2606,
+    "formula_secondary": 2.261,
+    "mean": 2.2357,
+    "trend_slope": 2.5131
+   },
+   {
+    "b": 0.2,
+    "formula_recalled": 2.5663,
+    "formula_secondary": 2.5701,
+    "mean": 2.5386,
+    "trend_slope": 3.0437
+   },
+   {
+    "b": 0.3,
+    "formula_recalled": 2.8739,
+    "formula_secondary": 2.8868,
+    "mean": 2.8532,
+    "trend_slope": 3.5152
+   },
+   {
+    "b": 0.5,
+    "formula_recalled": 3.4822,
+    "formula_secondary": 3.542,
+    "mean": 3.4716,
+    "trend_slope": 4.2846
+   },
+   {
+    "b": 0.7,
+    "formula_recalled": 4.0598,
+    "formula_secondary": 4.2242,
+    "mean": 4.0491,
+    "trend_slope": 4.9144
+   },
+   {
+    "b": 1.0,
+    "formula_recalled": 4.813,
+    "formula_secondary": 5.2922,
+    "mean": 4.7772,
+    "trend_slope": 5.7432
+   }
+  ],
+  "tolerance": 0.05,
+  "used": false,
+  "verified": {
+   "recalled": {
+    "mean": true,
+    "trend_slope": false
+   },
+   "secondary": {
+    "mean": false,
+    "trend_slope": false
+   }
+  }
+ },
+ "master_seed": 20261001,
+ "procedure_sha256": "4c13baf0931e912fa4af6707b8f54301afb9be9dd61848ec0651a96710babc5b",
+ "script": "tools/sim_trend_size.py",
+ "script_sha256": "76bb4cb752bb93f033c0d6610adff54ad26e346f1981cc8ca2163ab63dc86ab3",
+ "series_per_cell": 2000,
+ "test": {
+  "B": 999,
+  "alpha": 0.05,
+  "name": "Prais-Winsten AR(1) slope, parametric bootstrap under no trend, random-walk screen",
+  "rho_range": [
+   -0.5,
+   0.95
+  ],
+  "seed": 20261001,
+  "size_max": 0.075
+ },
+ "trend_size": {
+  "cells": [
+   {
+    "claims": 0.002,
+    "n": 8,
+    "newey_west": 0.2265,
+    "newey_west_mcse": 0.0094,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0355,
+    "size_mcse": 0.0041,
+    "unrestricted": 0.0935
+   },
+   {
+    "claims": 0.003,
+    "n": 8,
+    "newey_west": 0.2605,
+    "newey_west_mcse": 0.0098,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.0415,
+    "size_mcse": 0.0045,
+    "unrestricted": 0.1105
+   },
+   {
+    "claims": 0.004,
+    "n": 8,
+    "newey_west": 0.3565,
+    "newey_west_mcse": 0.0107,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.0455,
+    "size_mcse": 0.0047,
+    "unrestricted": 0.1385
+   },
+   {
+    "claims": 0.0125,
+    "n": 8,
+    "newey_west": 0.422,
+    "newey_west_mcse": 0.011,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.054,
+    "size_mcse": 0.0051,
+    "unrestricted": 0.149
+   },
+   {
+    "claims": 0.0205,
+    "n": 8,
+    "newey_west": 0.5015,
+    "newey_west_mcse": 0.0112,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.061,
+    "size_mcse": 0.0054,
+    "unrestricted": 0.1955
+   },
+   {
+    "claims": 0.0005,
+    "n": 9,
+    "newey_west": 0.2155,
+    "newey_west_mcse": 0.0092,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0405,
+    "size_mcse": 0.0044,
+    "unrestricted": 0.0815
+   },
+   {
+    "claims": 0.0015,
+    "n": 9,
+    "newey_west": 0.254,
+    "newey_west_mcse": 0.0097,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.047,
+    "size_mcse": 0.0047,
+    "unrestricted": 0.094
+   },
+   {
+    "claims": 0.0025,
+    "n": 9,
+    "newey_west": 0.3255,
+    "newey_west_mcse": 0.0105,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.038,
+    "size_mcse": 0.0043,
+    "unrestricted": 0.1025
+   },
+   {
+    "claims": 0.0045,
+    "n": 9,
+    "newey_west": 0.401,
+    "newey_west_mcse": 0.011,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.0415,
+    "size_mcse": 0.0045,
+    "unrestricted": 0.1295
+   },
+   {
+    "claims": 0.02,
+    "n": 9,
+    "newey_west": 0.497,
+    "newey_west_mcse": 0.0112,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0555,
+    "size_mcse": 0.0051,
+    "unrestricted": 0.1785
+   },
+   {
+    "claims": 0.0005,
+    "n": 10,
+    "newey_west": 0.2025,
+    "newey_west_mcse": 0.009,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0525,
+    "size_mcse": 0.005,
+    "unrestricted": 0.0815
+   },
+   {
+    "claims": 0.0025,
+    "n": 10,
+    "newey_west": 0.259,
+    "newey_west_mcse": 0.0098,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.0475,
+    "size_mcse": 0.0048,
+    "unrestricted": 0.0945
+   },
+   {
+    "claims": 0.001,
+    "n": 10,
+    "newey_west": 0.3085,
+    "newey_west_mcse": 0.0103,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.0505,
+    "size_mcse": 0.0049,
+    "unrestricted": 0.101
+   },
+   {
+    "claims": 0.0085,
+    "n": 10,
+    "newey_west": 0.396,
+    "newey_west_mcse": 0.0109,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.0595,
+    "size_mcse": 0.0053,
+    "unrestricted": 0.132
+   },
+   {
+    "claims": 0.0245,
+    "n": 10,
+    "newey_west": 0.4835,
+    "newey_west_mcse": 0.0112,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0575,
+    "size_mcse": 0.0052,
+    "unrestricted": 0.176
+   },
+   {
+    "claims": 0.0,
+    "n": 12,
+    "newey_west": 0.1705,
+    "newey_west_mcse": 0.0084,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.035,
+    "size_mcse": 0.0041,
+    "unrestricted": 0.0625
+   },
+   {
+    "claims": 0.0,
+    "n": 12,
+    "newey_west": 0.2075,
+    "newey_west_mcse": 0.0091,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.029,
+    "size_mcse": 0.0038,
+    "unrestricted": 0.065
+   },
+   {
+    "claims": 0.004,
+    "n": 12,
+    "newey_west": 0.2875,
+    "newey_west_mcse": 0.0101,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.0265,
+    "size_mcse": 0.0036,
+    "unrestricted": 0.0695
+   },
+   {
+    "claims": 0.008,
+    "n": 12,
+    "newey_west": 0.3685,
+    "newey_west_mcse": 0.0108,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.044,
+    "size_mcse": 0.0046,
+    "unrestricted": 0.104
+   },
+   {
+    "claims": 0.0165,
+    "n": 12,
+    "newey_west": 0.4735,
+    "newey_west_mcse": 0.0112,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0525,
+    "size_mcse": 0.005,
+    "unrestricted": 0.1315
+   },
+   {
+    "claims": 0.0,
+    "n": 15,
+    "newey_west": 0.1515,
+    "newey_west_mcse": 0.008,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0335,
+    "size_mcse": 0.004,
+    "unrestricted": 0.05
+   },
+   {
+    "claims": 0.0,
+    "n": 15,
+    "newey_west": 0.2,
+    "newey_west_mcse": 0.0089,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.0385,
+    "size_mcse": 0.0043,
+    "unrestricted": 0.0535
+   },
+   {
+    "claims": 0.0015,
+    "n": 15,
+    "newey_west": 0.251,
+    "newey_west_mcse": 0.0097,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.039,
+    "size_mcse": 0.0043,
+    "unrestricted": 0.06
+   },
+   {
+    "claims": 0.002,
+    "n": 15,
+    "newey_west": 0.343,
+    "newey_west_mcse": 0.0106,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.04,
+    "size_mcse": 0.0044,
+    "unrestricted": 0.0805
+   },
+   {
+    "claims": 0.011,
+    "n": 15,
+    "newey_west": 0.434,
+    "newey_west_mcse": 0.0111,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0495,
+    "size_mcse": 0.0049,
+    "unrestricted": 0.095
+   },
+   {
+    "claims": 0.0,
+    "n": 19,
+    "newey_west": 0.122,
+    "newey_west_mcse": 0.0073,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.046,
+    "size_mcse": 0.0047,
+    "unrestricted": 0.0545
+   },
+   {
+    "claims": 0.0,
+    "n": 19,
+    "newey_west": 0.179,
+    "newey_west_mcse": 0.0086,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.038,
+    "size_mcse": 0.0043,
+    "unrestricted": 0.048
+   },
+   {
+    "claims": 0.0005,
+    "n": 19,
+    "newey_west": 0.221,
+    "newey_west_mcse": 0.0093,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.047,
+    "size_mcse": 0.0047,
+    "unrestricted": 0.0635
+   },
+   {
+    "claims": 0.001,
+    "n": 19,
+    "newey_west": 0.3155,
+    "newey_west_mcse": 0.0104,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.0415,
+    "size_mcse": 0.0045,
+    "unrestricted": 0.075
+   },
+   {
+    "claims": 0.01,
+    "n": 19,
+    "newey_west": 0.425,
+    "newey_west_mcse": 0.0111,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0485,
+    "size_mcse": 0.0048,
+    "unrestricted": 0.1065
+   },
+   {
+    "claims": 0.0005,
+    "n": 30,
+    "newey_west": 0.125,
+    "newey_west_mcse": 0.0074,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0575,
+    "size_mcse": 0.0052,
+    "unrestricted": 0.061
+   },
+   {
+    "claims": 0.0005,
+    "n": 30,
+    "newey_west": 0.143,
+    "newey_west_mcse": 0.0078,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.0405,
+    "size_mcse": 0.0044,
+    "unrestricted": 0.044
+   },
+   {
+    "claims": 0.0005,
+    "n": 30,
+    "newey_west": 0.217,
+    "newey_west_mcse": 0.0092,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.0545,
+    "size_mcse": 0.0051,
+    "unrestricted": 0.064
+   },
+   {
+    "claims": 0.001,
+    "n": 30,
+    "newey_west": 0.2865,
+    "newey_west_mcse": 0.0101,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.0505,
+    "size_mcse": 0.0049,
+    "unrestricted": 0.0635
+   },
+   {
+    "claims": 0.003,
+    "n": 30,
+    "newey_west": 0.3915,
+    "newey_west_mcse": 0.0109,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0325,
+    "size_mcse": 0.004,
+    "unrestricted": 0.07
+   },
+   {
+    "claims": 0.0,
+    "n": 60,
+    "newey_west": 0.0955,
+    "newey_west_mcse": 0.0066,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0705,
+    "size_mcse": 0.0057,
+    "unrestricted": 0.0705
+   },
+   {
+    "claims": 0.0,
+    "n": 60,
+    "newey_west": 0.115,
+    "newey_west_mcse": 0.0071,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.0575,
+    "size_mcse": 0.0052,
+    "unrestricted": 0.0585
+   },
+   {
+    "claims": 0.0,
+    "n": 60,
+    "newey_west": 0.1495,
+    "newey_west_mcse": 0.008,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.0615,
+    "size_mcse": 0.0054,
+    "unrestricted": 0.063
+   },
+   {
+    "claims": 0.0,
+    "n": 60,
+    "newey_west": 0.2135,
+    "newey_west_mcse": 0.0092,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.052,
+    "size_mcse": 0.005,
+    "unrestricted": 0.0595
+   },
+   {
+    "claims": 0.001,
+    "n": 60,
+    "newey_west": 0.3625,
+    "newey_west_mcse": 0.0107,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.0605,
+    "size_mcse": 0.0053,
+    "unrestricted": 0.073
+   },
+   {
+    "claims": 0.0,
+    "n": 120,
+    "newey_west": 0.076,
+    "newey_west_mcse": 0.0059,
+    "rho": 0.0,
+    "series": 2000,
+    "size": 0.0595,
+    "size_mcse": 0.0053,
+    "unrestricted": 0.0595
+   },
+   {
+    "claims": 0.0,
+    "n": 120,
+    "newey_west": 0.0945,
+    "newey_west_mcse": 0.0065,
+    "rho": 0.2,
+    "series": 2000,
+    "size": 0.0635,
+    "size_mcse": 0.0055,
+    "unrestricted": 0.0625
+   },
+   {
+    "claims": 0.0,
+    "n": 120,
+    "newey_west": 0.1075,
+    "newey_west_mcse": 0.0069,
+    "rho": 0.4,
+    "series": 2000,
+    "size": 0.055,
+    "size_mcse": 0.0051,
+    "unrestricted": 0.055
+   },
+   {
+    "claims": 0.0,
+    "n": 120,
+    "newey_west": 0.1575,
+    "newey_west_mcse": 0.0081,
+    "rho": 0.6,
+    "series": 2000,
+    "size": 0.051,
+    "size_mcse": 0.0049,
+    "unrestricted": 0.0515
+   },
+   {
+    "claims": 0.0,
+    "n": 120,
+    "newey_west": 0.284,
+    "newey_west_mcse": 0.0101,
+    "rho": 0.8,
+    "series": 2000,
+    "size": 0.051,
+    "size_mcse": 0.0049,
+    "unrestricted": 0.057
+   }
+  ]
+ },
+ "what": "Simulated sizes of the report's trend test (engine/nl_inference.trend_test) and of the Newey-West range it replaced, on no-trend AR(1) series; the method text quotes the nearest cell (CONTRACT-v2.md 5.11)."
+}

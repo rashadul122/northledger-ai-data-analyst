@@ -1996,10 +1996,23 @@
       var k = segKey(i);
       return items[i].group === 'gap' && !!k && !!contribOf[k] && contribOf[k].every(function (c) { return gone['i' + c]; });
     };
+    // kept whatever the cap (integration pass, 1 Oct 2026: a shared PDF lost them, so it said nothing of the rows the AI
+    // plan set aside or of what set the health score): each step of the plan that set rows aside, whole (the adapter's
+    // words, at most 8, as results_for_ai sends them), what set the health score, and the plan's row noun
+    var drops = (Array.isArray(R.plan_row_drops) ? R.plan_row_drops : []).filter(function (d) { return d && typeof d === 'object' && typeof d.text === 'string' && d.text; }).slice(0, 8).map(function (d) {
+      var o = { rows: isFinite(d.rows) ? Number(d.rows) : 0, of: isFinite(d.of) ? Number(d.of) : 0, pct: isFinite(d.pct) ? Number(d.pct) : 0, text: str(d.text, 1200) };
+      if (typeof d.notice === 'string' && d.notice) o.notice = str(d.notice, 800);
+      return o;
+    });
+    var hx = typeof R.health_explain === 'string' ? R.health_explain.trim() : '';
+    var rn = typeof R.row_noun === 'string' && /^[a-z]{3,20}$/.test(R.row_noun) ? R.row_noun : '';
     var render = function () {
       var out = { partial: true };
       if (R.input && typeof R.input === 'object') out.input = { rows: R.input.rows, columns: R.input.columns };
       if (isFinite(R.health_score) && R.health_score !== null) out.health_score = R.health_score;
+      if (hx) out.health_explain = str(hx, 400);
+      if (drops.length) out.plan_row_drops = drops;
+      if (rn) out.row_noun = rn;
       if (R.cleaning && typeof R.cleaning === 'object') out.cleaning = { rows_in: R.cleaning.rows_in, rows_clean: R.cleaning.rows_clean, rows_quarantined: R.cleaning.rows_quarantined };
       if (R.primary && !gone.primary) out.primary = R.primary;
       out.findings = findings.filter(function (_, i) { return !gone['f' + i]; });

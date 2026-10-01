@@ -1321,6 +1321,13 @@
   // 190,000 bytes since the chart registry: 130,000 for the rest and SHARE_CHARTS_MAX_BYTES for the charts; see
   // shareBody), and what the visitor reads when a report is over it even without the engine's results
   T.SHARE_BODY_MAX = 171000;
+  // the plan's row noun as the report writer's results carry it (results.row_noun): one lowercase word of 3 to 20
+  // letters a to z, the shape the worker keeps (insight-proxy/src/figures.js rowNounOf, which also refuses units and
+  // stop words); anything else is not sent
+  T.rowNoun = function (plan) {
+    var w = plan && typeof plan === 'object' && typeof plan.row_noun === 'string' ? plan.row_noun.trim().toLowerCase() : '';
+    return /^[a-z]{3,20}$/.test(w) ? w : '';
+  };
   // the charts a link holds: the worker's own budget (share.js SHARE_CHARTS_MAX_BYTES, 60,000 bytes of JSON, whole
   // records from the start). The page keeps the same budget and says what it left out (review of the chart registry,
   // 30 Sep 2026: the worker dropped charts past it and nothing said so)
@@ -2473,6 +2480,12 @@
       // the distilled results come from the engine worker itself (results_for_ai, packed in the
       // zip): ask it over the postMessage bridge, then POST them to the proxy's /report
       function postIt(pl) {
+        // the plan's row noun (wave 3: one lowercase word naming what one row is, "review"), copied from the plan that
+        // ran into results.row_noun: the worker's count-noun check reads it and its plural as words for rows
+        // (insight-proxy/src/figures.js rowNounOf, which also refuses a unit such as "day"), so "9,897 reviews" of the
+        // engine's rows keeps its figure. Only the one word; a saved report and a share link keep it with the results
+        var rn = T.rowNoun(S.plan);
+        if (pl && typeof pl === 'object' && rn) pl = Object.assign({}, pl, { row_noun: rn });
         // the engine's charts and tables ride along in the distilled results: the page draws the
         // real figures at the [CHART:n]/[TABLE:n] markers the report places
         if (pl && Array.isArray(pl.charts)) S.aiCharts = pl.charts;

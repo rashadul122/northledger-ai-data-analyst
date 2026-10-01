@@ -4038,6 +4038,53 @@ check('try-final5-ai-report-draws-every-bar-and-a-line-that-spans-its-data', DES
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
+// the plan's row noun (integration pass, 1 Oct 2026): the page copies plan.row_noun into the results it sends to /report
+// (results.row_noun: the worker's count-noun check reads it and its plural as words for rows), and a share link's results
+// keep it, with every step of the plan that set rows aside and what set the health score, which the worker's shared PDF
+// prints (the share's copy of the results lost both before); a row noun that is not one lowercase word is never sent
+check('try-report-results-carry-the-row-noun-and-a-share-keeps-the-plan-disclosure', DESK, async (ctx) => {
+  const rv = pdfFixture('final5-results.json').runs.reviews.results;
+  const go = async (c, noun) => {
+    const rep = optinReport(); rep.__resultsJson = rv;
+    const base = pdfReply({ charts: rv.charts, tables: rv.tables });
+    const p = await openTry(c, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan: Object.assign({}, OPTIN_PLAN, { row_noun: noun }) } } : base(b) });
+    await optinStep(p); await p.click('#try-pd-go');
+    await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+    return p;
+  };
+  const p = await go(ctx, 'review');
+  const B = proxyPosts(ctx, 'report').map((r) => JSON.parse(r.body));
+  ok(B.length === 1 && B[0].results && B[0].results.row_noun === 'review', 'the /report results do not carry the plan\'s row noun: ' + JSON.stringify(B.map((b) => b.results && b.results.row_noun)));
+  ok(B[0].results.health_explain === rv.health_explain && JSON.stringify(B[0].results.plan_row_drops) === JSON.stringify(rv.plan_row_drops), 'the /report results lost the plan\'s set-aside rows or the health explanation');
+  await p.click('#try-share');
+  await tryUntil(p, '#try-share-out .try-share-warn');
+  await p.click('#try-share-yes');
+  await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
+  const S = proxyPosts(ctx, 'share').map((r) => JSON.parse(r.body));
+  ok(S.length === 1 && S[0].results, S.length + ' /share requests, or none with results');
+  const R = S[0].results, want = rv.plan_row_drops.map((d) => ({ rows: d.rows, of: d.of, pct: d.pct, text: d.text, notice: d.notice }));
+  ok(R.row_noun === 'review' && R.health_explain === rv.health_explain && JSON.stringify(R.plan_row_drops) === JSON.stringify(want),
+    'the share\'s results do not keep the row noun, the health explanation or the plan\'s set-aside rows: ' + JSON.stringify({ row_noun: R.row_noun, health_explain: R.health_explain, drops: R.plan_row_drops }).slice(0, 400));
+  // the worker's shared PDF, from exactly this body (insight-proxy: NLReportPdf.model(the stored share, shared: true))
+  const W = require(path.join(SITE_DIR, 'src', 'js', '45-report-pdf.js')), b = S[0];
+  const m = W.model({ report: b.report, sources: b.sources, model: b.model, goal: b.goal, charts: b.charts, tables: b.tables, results: b.results, kept: b.kept, repaired: b.repaired, shared: true, date: new Date(2026, 9, 1) });
+  const w = pdfWords(W.build(m, { paper: 'letter' })).text.replace(/\s+/g, ' ');
+  ok(w.indexOf(squash(rv.plan_row_drops[0].notice)) >= 0 && /rows the ai plan set aside/i.test(w) && w.indexOf(squash(rv.plan_row_drops[0].text)) >= 0,
+    'the shared PDF does not say the plan set rows aside: ' + w.slice(0, 300));
+  ok(w.indexOf(squash(rv.health_explain)) >= 0, 'the shared PDF does not say what set the health score: ' + rv.health_explain);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  // a row noun that is not one lowercase word of 3 to 20 letters (a to z) is not sent
+  for (const bad of ['Reviews!', 'customer review', 'ab']) {
+    const c = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+    try {
+      const q = await go(c, bad);
+      const B2 = proxyPosts(c, 'report').map((r) => JSON.parse(r.body));
+      ok(B2.length === 1 && !('row_noun' in B2[0].results), 'the row noun ' + JSON.stringify(bad) + ' was sent: ' + JSON.stringify(B2.map((x) => x.results.row_noun)));
+      ok(!q.__errs.length, 'page error: ' + q.__errs[0]);
+    } finally { await c.close(); }
+  }
+});
+
 /* ------------------------------------------------------------ runner */
 (async () => {
   const browser = await playwright.chromium.launch({ executablePath: CHROME, headless: true });

@@ -731,6 +731,27 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     expect('final evaluation reviews ' + paper, dept && dept.chart.series.length === 5 && dept.chart.series.some((s) => s.label === low),
       'the department chart does not carry its 5 groups and the lowest one the text names (' + low + ')');
   }
+  // a share link's copy of the results (NLReportPdf.shareResults, the page's) keeps every step of the plan that set rows
+  // aside, what set the health score and the plan's row noun (integration pass, 1 Oct 2026: the copy lost the first two,
+  // so a shared PDF said nothing of them), whatever its cap; the worker's shared PDF prints them
+  {
+    const rv = F5.runs.reviews.results, sr = W.shareResults(Object.assign({}, rv, { row_noun: 'review' }));
+    const want = rv.plan_row_drops.map((d) => ({ rows: d.rows, of: d.of, pct: d.pct, text: d.text, notice: d.notice }));
+    expect('final evaluation, a shared copy', sr && sr.partial === true && sr.row_noun === 'review' && sr.health_explain === rv.health_explain &&
+      JSON.stringify(sr.plan_row_drops) === JSON.stringify(want), 'shareResults does not keep the plan\'s set-aside rows, the health explanation or the row noun: ' +
+      JSON.stringify(sr && { row_noun: sr.row_noun, health_explain: sr.health_explain, drops: sr.plan_row_drops }).slice(0, 300));
+    const tight = W.shareResults(Object.assign({}, rv, { row_noun: 'review' }), 4000);
+    expect('final evaluation, a shared copy', !tight || (tight.row_noun === 'review' && JSON.stringify(tight.plan_row_drops) === JSON.stringify(want)),
+      'under a tight cap shareResults cut the disclosure before the scenario items');
+    const bad = ['Reviews', 'two words', 'ab', 7].map((x) => W.shareResults(Object.assign({}, rv, { row_noun: x })));
+    expect('final evaluation, a shared copy', bad.every((x) => x && !('row_noun' in x)), 'shareResults kept a row noun that is not one lowercase word of 3 to 20 letters');
+    const rs = check4('final evaluation: reviews, a shared copy, letter', Object.assign(f5Inp('reviews'), { results: sr, shared: true }), 'letter',
+      { name: 'reviews_synthetic', kept: ['review_text'] });
+    const ts = plainText(body(rs)).replace(/\s+/g, ' '), apx = bodyBetween(rs, 'APPENDIX A', 'APPENDIX B');
+    expect('final evaluation, a shared copy', ts.indexOf(plainText(rv.plan_row_drops[0].notice)) >= 0 && apx.indexOf(plainText(rv.plan_row_drops[0].text)) >= 0 &&
+      ts.indexOf(plainText(rv.health_explain)) >= 0, 'the shared PDF does not say the plan set rows aside or what set the health score');
+  }
+
   // ---- the chart registry (wave 2B, 30 Sep 2026): the records of tools/fixtures/viz/spec.json drawn by kind
   // (fixtures/report-pdf/viz-results.json and viz-response.json, made by make_viz_fixtures.py): the 10-chart report
   // (every kind, 12 long segment labels, suppressed cells, a 10 x 12 diverging grid, a Pareto whose k80 lies beyond its

@@ -4684,8 +4684,7 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
 # The analyses' own charts as results_for_ai sends them (final evaluation, 1 Oct 2026): a line chart's series are its
 # lines, at most LEGACY_LINES_MAX; a bar chart's series are its bars, at most LEGACY_BARS_MAX (the analyses draw at most
 # 12: a distribution's bins, a compare's groups, the themes' words); a scatter's points, a sample of LEGACY_POINTS_MAX.
-# (insight-proxy/src/charts.js sanitizeLegacyChart still cuts every series list to 4: the worker's own cap, for the
-# proxy's next pass.)
+# (insight-proxy/src/charts.js sanitizeLegacyChart keeps the same caps since the integration pass of 1 Oct 2026.)
 LEGACY_LINES_MAX = 4
 LEGACY_BARS_MAX = 24
 LEGACY_POINTS_MAX = 120

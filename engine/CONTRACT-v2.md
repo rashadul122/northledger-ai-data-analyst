@@ -383,13 +383,21 @@ apart, as they are in the file (the health's duplicate count equals the file's o
 
 The analyses' own charts (1 October 2026): a line chart's series are its lines, at most 4 (`LEGACY_LINES_MAX`); a bar
 chart's series are its bars, every one up to 24 (`LEGACY_BARS_MAX`; one cap of 4 for both sent 4 of the FX histogram's
-12 bins); a scatter keeps a sample of 120 points. The worker's `sanitizeLegacyChart` still cuts any series list to 4.
+12 bins); a scatter keeps a sample of 120 points. The worker's `sanitizeLegacyChart` keeps the same caps (the integration
+pass, 1 October 2026; it cut any series list to 4 before).
 `plan_row_drops` carries each item of `ai_plan.row_drops` as `{rows, of, pct, text, notice}` for the PDF; the writer
 reads the steps' shares in `plan_applied`, and a step of 10% or more first among the `limitations`, at most 240
 characters: "The AI plan set aside 6,694 rows (19.8%); the engine checked: none of these rows duplicates a kept row. Its
 reason: ..." (a reason that carries a figure is left to `quality_risks`: the guard reads a limitation's figures as the
 engine's). `reading` is cut at a word with an ellipsis, never mid-word (so is the plan's `understanding` and `goal`, at
 600 characters, when the plan is read).
+
+`row_noun` (the integration pass, 1 October 2026) is not the adapter's: the page adds it to the results it posts to
+/report, copied from the plan that ran (`plan.row_noun`, one lowercase word of 3 to 20 letters a to z naming what one row
+is, "review"; anything else is not sent: src/js/50-try.js `T.rowNoun`), and the worker's count-noun check reads it and its
+plural as words for rows. A share link's copy of the results (src/js/45-report-pdf.js `shareResults`) keeps, whatever its
+cap, `row_noun`, `health_explain` and every `plan_row_drops` item `{rows, of, pct, text, notice}`, so the worker's shared
+PDF says what set the health score and which rows the plan set aside.
 
 No text names a withheld column (a finding, health issue, fix or limitation about one is left out; any other
 mention reads "a column you withheld"), no withheld column's data test line is sent, and no text quotes a cell

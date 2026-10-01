@@ -51,6 +51,8 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
 | `llm` | object | 2 | `{used: false, model: null, consent: false, guard: {...}}`; the adapter never calls a model |
 | `scenarios` | object | 2 | the headline claim broken down for the report writer (design B, 29 Sep 2026): `{basis, items[], refused[], note}`, §5.8. Always present; `{basis: null, items: [], refused: [], note: ""}` on a refusal |
 | `summary` | object | 2 | the manager's bottom line (fixer round, 24 Sep 2026): `{lines: [{kind: "moved"|"act"|"plan", text, finding_ids[]}], labels: {finding_id: plain label}, monitoring: [finding_id]}`. `lines` holds at most three sentences built from the engine's facts, every number printed with `narrate.story_number` from a fact the line lists: what moved and why (the primary claim, the steps where what the file covers changed and its like-for-like restatement, a fall since a peak), what to act on (the CONFIRMED business claims, or none), and the planning number (the primary series' forecast, graded). `labels` names each business and forecast claim in the reader's words ("Rent, monthly total", "Ledger lines a month"); an average of a measure the AI plan reads is named from its column and the plan's own words for it, its `label` when the plan gives one and its unit when that names a real unit ("Average value (CAD per USD), the average month", "Average USD/CAD exchange rate (CAD per USD), ..."), never from a value in the file (a long table with one series names it after its value column, never after a column that holds one value throughout: the live FX file's rate was "canada", from GEO). `monitoring` lists the claims about the ledger's own line count when the file has a money total: kept off the first screen, the tiles and the bottom line; they stay in the tables and the analyst view |
+| `estimand` | object or null | 2 | WAVE 4 (track A1, 1 October 2026): what the headline IS, for a file read by its structure (§5.10); null otherwise. `{text, slice[{dim, member, role, why}], measure{label, uom, scale, scale_applied, type, aggregation}, comparison{latest[a,b], prior[a,b]}, figures{prior, latest, change, change_pct}: {value, text} (base units, the file's scale applied; `prior`/`latest` also carry `months`), sum_checks[{dim, total, parts, by, complete_cells, within_tolerance, max_rel_residual, unallocated_latest{value, text}, unallocated_prior{value, text}, verdict}], excluded[{what, dim, why}], plan_source: "engine_default"\|"ai"\|"ai_corrected", slice_id, reconciles, corrections[], inference}` (`inference` is track A2's, null here). `text`: "Canada · Retail trade [44-45] · Total retail sales · Unadjusted; dollars (file in thousands ×1,000); 12-month totals Aug 2025–Jul 2026 vs Aug 2024–Jul 2025". `reconciles` is true when the slice's monthly values equal the engine's charted series to 1e-6 (the headline claim's trend chart). The page and the PDF print it first; `results_for_ai` sends it first |
+| `structure` | object or null | 2 | the table's structure (§5.10, `nl_structure.public`): `{kind, usable, reason, version, publisher, official, series, months, rows, date, measure, metadata[], flag_column, dims[], slices[], breakdowns[], flags, corrections[], hash, detect_seconds, slice{id, where, column}, file_health}`; null for a file read as before (a business export whose members add up, a panel with no relation, a file with no dimension). A table refused for its structure (`kind: "cube_incomplete"`) carries it with the reason |
 
 A refusal (`ok: false`) returns every key with its empty value.
 
@@ -121,6 +123,13 @@ v1 `id, claim, verdict, why, kind, value`, plus:
 | `posterior` | `{shown: false, p_exceeds_bar: null, calibration_ref: null}` |
 | `power` | `{at_bar: null, bar, months_to_80pct: null, nearest, routed, routed_rule, design}`; `routed_rule` `{kind: "total"|"count", rows_a_month, effective_rows_a_month, line}` names the rule that holds the claim at WATCH, else null: `nearest` is the receipt's power cell (a true 20% change planted) nearest the claim's months, noise, estimated momentum and, for a volume, rows a month, by `gate.nearest_benchmark_cell` (cell fields as above, percent); `routed` true when the claim is held at WATCH by rule, so no power applies |
 | `needed_to_upgrade`, `columns_read`, `verified`, `tested_times` (null), `chart_ids`, `trace` | the engine's settle text; the columns the claim reads; whether the ledger re-ran it; the charts that show it; fact ids |
+
+**A table read by its structure (WAVE 4, §5.10).** Its findings are the engine's own on the slice it chose (the headline
+series: one row a month, the measure in base units, named "Total retail sales" or "<label> total" so the engine adds it
+up): a change claim about that series and its forecast, never a claim about the table's row count (465 rows a month is
+the table's layout) and never a data-quality finding on its metadata or flag columns (those are in
+`structure.file_health.dropped`). A business claim's `estimand` field keeps its v2 meaning (`ratio_of_average_month`); what
+the headline is in the reader's terms is the top-level `estimand` (§1).
 
 ### 2.5 `forecast`
 
@@ -345,6 +354,21 @@ of at most 300 distinct values (median length 60 characters or fewer) its 12 com
 and, above 12 distinct, every value (`values`), each cut at 60 characters, unless its values look personal
 (`looks_personal: true`); the date column's first and last month (`time`). The page's consent says exactly this.
 
+**`profile.structure` (WAVE 4, track A1, 1 October 2026).** For a table read by its structure (§5.10) the profile adds
+`structure` = `nl_structure.profile_block`: `{kind: "cube", publisher, series, months, date, measure{column, type, uom,
+scale}, metadata[] (column names the profile shows), flag_column, dims[{column, role, members, total?, parts?, depths?,
+nsa?, sa?, component_of?, components?, alternatives?}], slices[{id, use, where{column: member or "*"}, default?}],
+breakdowns[{id, dim, parts, depth}], rules[]}`, at most 6,000 bytes (`PROFILE_CAP`, JSON with no spaces, UTF-8); trimmed in
+order: the rules, the drill-down slices and breakdowns, the member maps; past that the block is dropped (never the
+profile). Privacy: only dimensions the profile shows (never a withheld or coded column, which the structure never read),
+and only member strings that column's own `values`/`top_values` already hold, cut at 60 characters as the profile cuts
+them; a member not there is left out. Slice ids match `^S\d{1,2}$`, breakdown ids `^B\d{1,2}$`. The plan may name
+`"slice": "S1"`, `"breakdowns": ["B1", "B2"]` (at most 4) and `"momentum_slice"`; `_validate_plan` keeps an id only
+when the cached structure holds it, and with a slice id a `keep_rows`/`exclude_rows`/`exclude_blank` on a structure
+dimension is ignored with a note in `ai_plan.refused` ("keep_rows on Type was ignored: the slice S2 chooses the table's
+rows"). Retail (465 series): 1,993 bytes, S1 headline, S2 momentum (seasonally adjusted), S3 component (e-commerce), B1
+GEO (13 parts), B2 NAICS depth 1 (9 parts).
+
 ### 5.5 The adapter's personal-column check
 
 On top of the engine's scan (never instead of it): a column the scan did not flag joins `privacy.flagged`, with
@@ -367,6 +391,27 @@ column of one person's name is flagged. Its `kind` is `person's name`, `email`, 
 number` or `street address`. It is registered as the engine registers a flagged column (a pending row in its
 column register), so the engine's own decide, code and withhold apply to it. A column of names under a heading
 the check does not know ("Stylist") can still be missed, and the page says so before anything is sent.
+
+**A category is not free text: `privacy.released` (WAVE 4, the lead's amendment AM1, 1 October 2026).** The engine's scan
+flags any column of 20 or more different wordy values as free text, so an official table's industry column (30 NAICS
+labels, each on 1,185 rows) was withheld and the table read as nonsense. Before any decision (`_decide_and_guard`), the
+adapter lifts that flag (`_release_categories`) only when ALL hold: the scan's only reason is free text (its `kinds` are
+empty: no value shape and no name hint); at most 300 different values (`RELEASE_MAX_DISTINCT`) and at most 5% of its
+filled cells (`RELEASE_MAX_SHARE`); every label on 5 rows or more (`RELEASE_MIN_REPEAT`); its values do not look like
+people's names (`_looks_like_names`, and fewer than 30% of its labels name-shaped by `_name_shaped`: 1 to 4 capitalised
+words of letters with none of a category's glue words, whatever list of given names is at hand; "Oskar Lucia Brennan
+Tanaka" under "Stylist" stays flagged); its name does not say it holds people (`_person_hint`); and its name is not
+sensitive (AM1, `SENSITIVE_HEADER`: diagnos, condition, disease, illness, medic, health, symptom, treatment, drug,
+religio, faith, ethnic, race, nationality, citizenship, gender, sex, sexual, orientation, disab, pregnan, criminal,
+offence/offense, convict, union, political, party, vote, salary, wage, income, debt, credit, immigra, visa: health,
+religion, ethnicity and the like are sensitive even when categorical). A release deletes the column's row from the
+engagement's column register (runtime state, never engine code) and is recorded as `privacy.released[{column (landed),
+header, distinct, rows, min_repeat, text, why}]`, `text` "Read as a category, not personal data: <header> (<n> labels)".
+The visitor can still withhold it: a `withhold` or `code` decision for it (by its header or landed name) keeps the flag
+and that decision. The page's consent step shows every released column in those words with Use (default) and Withhold
+(src/js/50-try.js `releasedHtml`; `tools/check_ui.js` try-released-category-*); a withhold reaches the run and changes the
+plan key (`T.planKeyText`, which counts a released column's withhold as a choice), and the worker re-runs (engine/worker.js
+`onRun`) and re-profiles (`onProfile`) for it; Use sends no choice. `privacy.released` is `[]` when nothing was released.
 
 ### 5.6 A withheld column drives no cleaning rule
 
@@ -419,6 +464,15 @@ row count the engine's own gate chose there; since the live baseline of 30 Septe
 claim too, §1). Each analysis's `sentence` and `method` go whole, or cut after the last whole word that fits the
 worker's caps (700 and 300 characters, `ANALYSIS_TEXT_MAX`) with an ellipsis, never inside a word, a figure or the
 "[your file]" placeholder (`_cut_words`; a method note once arrived as "...trained only on the blocks befor").
+
+**The estimand first (WAVE 4, 1 October 2026).** `results_for_ai` starts `{ok, estimand, structure, input, goal, ...}`:
+`estimand` is the report's `estimand` (§1) with every text through the same `safe()` (`_estimand_for_ai`: text, slice
+`{dim, member, why}`, measure, comparison, figures `{value, text}`, sum_checks `{dim, total, parts, verdict,
+unallocated_latest}`, excluded `{what, why}`, plan_source, inference), or null; `structure` is its summary
+(`_structure_for_ai`: kind, usable, publisher, series, months, dims `{column, role, members, total, parts, nsa, sa,
+depths}`, slice, reason, flags `{column, by_kind, quality_of_headline}`, corrections `{dim, kind}`), or null. Every figure in
+them is also a scenario item (§5.8), so the worker's guard can index it. Then the forecast audit and the trend tests
+(track A2).
 
 ### 5.8 `scenarios` and the web searches (design B of `plan/AI-INSIGHTS-DESIGN.md`, 29 September 2026; the searches built from a fixed list, 30 September 2026)
 
@@ -812,6 +866,151 @@ drawing, no sideways page scroll; the narrow layouts are in the spec's `phone_fi
   Under the byte budget they go from the end after the scenario items and before any analysis; the scenario items'
   estimate leaves out the "Where the change came from" table's rows, so once it fits, the items dropped last come back
   while the payload still fits (it drops no more than it needs).
+
+**§5.8, a table read by its structure: `basis.source: "structure"` (WAVE 4, track A1, 1 October 2026;
+`nl_scenarios.build_structure`).** The block breaks down the slice's own series by the structure, never by raw rows.
+`basis`: `{source: "structure", finding_id, claim, grade, grade_words, measure (the slice's column), how ("total" for a flow
+or a count, else "average"), unit (the table's unit of measure), windows, slice{dim: member}, slice_id, breakdowns[{id, dim,
+key, parent, parts, depth, shares_given, unallocated{prior, latest, contribution}}], estimand (its text), reconciles}`.
+Items: `headline.{prior, latest, change, change_pct}` (the estimand's figures and texts, the claim's grade); per
+breakdown (at most 4: the plan's `breakdowns`, else every one) and part, in group `contribution`, segment = the member:
+`contribution.<dim>.<member>` (its contribution to the change, kind change), `growth.<dim>.<member>` (its own change in
+percent, kind change, unit "%", only when its 24 months are all published), `share_level.<dim>.<member>` (its share of the
+latest window, kind percent), `share_change.<dim>.<member>` (its share of the change, only when every part moved the way
+the total did: else `refused` says so, MIXED_SHARES); and `contribution.<dim>.unallocated`, the total less its published
+parts (the publisher's suppressed cells) as a change, its `assumes` naming both windows' unallocated amounts. `<dim>` is
+`nl_scenarios.dim_key` (an acronym in brackets, "naics", else the slug, "geo"); `<member>` is `member_keys` (its code,
+"455", "44_45", "459a", else its slug, "ontario"). The forecast items as before; `facts.{months, first, last}` of the
+headline series. Texts are the estimand's (`nl_structure.money`: "$834.7B", "+$10.2B", "−$144.7M", a figure that rounds
+to zero unsigned, "$0.0B"; `nl_structure.pct`: "+3.2%"), not `_fmt_item`. Grades: headline items carry the claim's grade;
+every derived item has grade null, the claim's grade as `parent_grade`, and for an official table `grade_words`
+"descriptive arithmetic on published totals; part of a change graded WATCH, not graded itself". Reconciliation: the
+slice's monthly values equal the engine's charted series to 1e-6 (`estimand.reconciles`), or the whole block is refused
+(NOT_RECONCILED); each breakdown's parts and unallocated add up (math.fsum) to the change to 1e-6, or that breakdown is left
+out with a reason. A rate or an index has no contributions: "a rate is never added or averaged across members: each
+member's own rate is published, and the headline is the published aggregate, so there are no contributions". The writer's
+table (`nl_scenarios.table`) for a structure basis is the first breakdown: `[<dim>, "Contribution to the change", "Share
+of the change", "Own change", "Share of the latest year"]` less any column no row fills. Retail: 75 items (4 headline, 13
+GEO and 9 NAICS parts with contribution, growth and share_level, 2 unallocated, 3 facts; no share of the change: the
+Northwest Territories and furniture moved against the total).
+
+**§5.9, a table read by its structure (WAVE 4).** *Segments by size:* `Ctx.levels(land, measure)` orders a category's
+levels by the size of the chart's measure: the sum of |measure| over the latest 12 months for a flow or a count, rows ×
+|mean| for a level; then rows; then name (it was rows, then name); `_top_levels` passes the chart's measure for the change
+heatmap and the crosstab, so the 11 largest levels are shown and the rest folded into "other". The group ranges keep the
+compare analysis's selection (the 12 groups with the most rows) because they must equal its table. *Structure charts*
+(`nl_viz._build_structure`, in the slice's run): a `contribution_waterfall` per breakdown from the structure's scenario
+items: the 10 largest parts by |contribution|, the rest folded into "other parts (n)", then an "unallocated (suppressed
+cells)" step, the totals first and last; `basis.split` "segment" with `basis.column` the dimension; the table `[Step,
+Contribution, Own change]` carries each part's growth; `source` begins "structure:"; `inputs.rows` null (each part rests
+on its 12 published months in each window). The record keeps the frozen spec's shape (spec.json: a step and `basis` take
+no other key), so the design's `basis.source` and per-step `growth_pct` live in `source` and the table until the spec
+(track C) adds them. A plan's `contribution_waterfall` of a structure dimension is that waterfall (chosen_by "ai"); a
+plan's heatmap of a table of series is refused ("each cell of a table of series is one published figure, under the 5 rows a
+shown cell needs; the structure's breakdowns show where the change sits": SMALL_CELL counts rows, and a published series
+has one a month), and any other chart of a structure dimension is refused ("rows of a table of series mix totals and parts:
+the structure's breakdowns show GEO instead"). A table refused for its structure (`structure.kind` "cube_incomplete"), or
+one whose slice could not run, gets no chart over its raw rows: `viz.refused` holds `{chart: "all", why: "rows of a table
+of series mix totals and parts"}`.
+
+### 5.10 Structure (WAVE 4, track A1: `engine/nl_structure.py`, `plan/WAVE4-A-DESIGN.md` sections 1, 2 and 4)
+
+An official table (StatCan 20-10-0056-01: 465 series × 79 months, one row each) holds totals beside their parts, an
+adjusted copy beside the unadjusted one and components beside their parents; adding its rows counts the same dollar three
+times. `nl_structure.detect(reading, hidden)` reads what the table is from the engine's own reading after the visitor's
+decisions (a withheld or coded column is never read: `hidden`), by behaviour (names are hints), within a 1-second timer
+(`BUDGET_S`; 0.14 s native on the retail file, 0.04 s on a synthetic 40,320-row cube).
+
+*Roles of columns.* The date: the column with the most dates the engine reads. The measure: the number that moves, VALUE/
+OBS_VALUE a hint; a cell the engine could not read is parsed for an embedded publisher flag ("123.4 p", ":", "[x]").
+Metadata by behaviour: `constant` (UOM, SCALAR_FACTOR, DECIMALS), `empty` (SYMBOL, TERMINATED), `series_id` (1:1 with the
+dimensions' key, or a metadata-named column: VECTOR), `alias` (1:1 with one dimension: DGUID with GEO), `flag` (at most 20
+short codes, with blanks, or a code whose rows have a blank measure: STATUS), `unit`, `other`. A series id or an alias is
+never a dimension: a withheld NAICS is never rebuilt from VECTOR. Dimensions: the text columns left with 2 to 400 members
+(at most 8). The date and the dimensions must tell the rows apart (at most 1% repeat), else `kind: "cube_incomplete"` for an
+official table (a publisher's signature from `engine/flag_vocab.json`, or 3 or more metadata-named columns) and
+`"not_cube"` for a business file; a business file with a second measure column is `"not_cube"` (read as before).
+
+*Relations, per dimension, on the unadjusted cells* (another dimension's adjusted copy left out). A sum-check of a total T
+against parts P: on the cells where T has a value and every part has a row, the residual r = T − Σ(parts with a value);
+tolerance `max(0.5 × 10^-DECIMALS × factor × (|P| + 1), 1e-6 × |T|)` (half a unit of the last published digit, in base
+units, per term; DECIMALS from the metadata, else from the values); it passes on 95% or more of the complete cells, 6 or
+more of them over 3 or more months, and, for a non-negative flow, no incomplete cell's r below −tolerance (an incomplete
+cell's r is the UNALLOCATED, suppressed share). Search: (1) flat: the 3 most dominant members (the share of cells where a
+member is at least every other) and any named as a total (total, all, overall, grand, aggregate, combined; a range code
+[44-45]; _T, TOTAL, _Z) against every other member but the alternatives named "excluding/except/ex./less/without/other
+than" outside brackets; (2) a hierarchy from codes (a bracket suffix, a leading code, dotted codes: a member's parent is
+the most specific code that contains it, a prefix or a range), each family sum-checked and a failing family repaired by
+dropping its deepest-coded members (459 = 459A + 459B); (3) a hierarchy without codes: for each parent, the most dominant
+first (at most 30), the members it bounds in 99% of its cells (at most 22, the largest), a meet-in-the-middle subset sum on
+a 3-cell fingerprint (2^11 subsets a half), each match verified on every cell, the coarsest verified partition (0.5 s at
+most); (4) a member left out of the tree: an alternative total (named so, or the total less one or two tree members), else
+a component of the smallest verified member that bounds it everywhere, a coded one within its code-ancestor's subtree,
+the nearest before it in the publisher's own order (Cannabis retailers [459993] under Miscellaneous retailers [459B]); (5)
+no partition but one member bounds the others in an official table or under a total's name: `components` (`measure` when
+the dimension or its members name measures: Sales); (6) a rate or an index (Percent, rate, per N; index, NNNN=100) is
+never summed or averaged across members (AM4): its published aggregate is the member inside the others' range in 99% of
+the cells that is named as a total or comes first (`rate_aggregate`); (7) nothing verified: an official table reads one
+member (`single`: the total-named one, else the most covered and dominant), a business export adds its members up
+(`flat_additive`, read as before). An adjusted pair is found first, by behaviour: two members (of a dimension of 2 to 4)
+whose calendar-year totals agree within 3% and one three times as seasonal (the variance of its month means, detrended
+by a centred 2×12 average, of the logs) is the unadjusted copy (`adjustment`, `nsa`, `sa`); whether the adjusted parts
+of each partition add up to the adjusted total is recorded (`sa_adds_up`: retail's do). A dimension whose unit of measure
+changes with its members (dollars beside units, an index on two bases) is a `measure` dimension with `unit_of`: each slice
+fixes one member, never mixed. Roles: partition | hierarchy | adjustment | measure | components | rate_aggregate | single |
+flat_additive | constant | unresolved.
+
+*Measure type and scale.* From the unit: a currency is a flow (a stock under inventories, outstanding, balance, holdings,
+assets, debt, stock), persons or a number a count (a stock under employment, population, labour force), percent, rate or
+per N a rate, index or NNNN=100 an index; with no unit, the engine's own additive kind of the measure's name. Months: a
+flow or a count is added up, anything else averaged. SCALAR_FACTOR ("thousands"), SCALAR_ID (3) or UNIT_MULT (6) is applied
+row by row, so every figure is in base units ("$864.0B").
+
+*Usable, and the slices.* A table with a relation (partition, hierarchy, adjustment, components, rate_aggregate) is read
+by its structure (`usable`); a panel with no relation and at most 60 series is `"panel_no_relations"` and read side by
+side by the long-table layout as before (the FX files); past 60 series it is read one member at a time. S1, the headline:
+the root of each partition or hierarchy, the unadjusted copy, a measure dimension's total-named (else currency, else
+first) member, the components' parent, the rate's aggregate, rule 7's single member; a flat-additive dimension "*" (added
+up). S2 momentum: S1 with the adjusted copy. Then components, alternatives and other measures (S3...; at most 12).
+Breakdowns (B1...): each partition or hierarchy whose S1 member is its root, its root's children (a hierarchy at depth 1),
+the other dimensions at S1; none for a rate or an index.
+
+*The run* (`nl_browser.run`). The fast path: before the AI plan is applied, the structure the scan's run or the planner's
+profile pass found under these same choices (`_PROFILE_CACHE`; a plan's run that finds none runs the profile pass once);
+a plan is validated against it (slice ids), its rows are checked (`check_rows`) and the slice runs. The hook, between the
+audit (`run_loop`) and the business analysis (`run_analyze`): the reading built early from the audit's cleaning (reused
+afterwards), the structure detected and cached with the profile's facts. A usable structure runs the whole engine on the
+slice (`_run_slice`: `nl_structure.slice_bytes`, the date and one measure column in base units, one row a month; a flow's
+column is named so the engine adds it up: "Total retail sales", "<label> total", a count "<label> count", a level "value")
+and returns that report with the file's own `input` (name, bytes, rows, columns, sha256) and `input.layout = {layout:
+"structured cube slice", slice, where, column, rows_in, rows_out, series}`, its `privacy` (flagged and released), its
+health in `structure.file_health` (`{score, issues, dropped, rows_in, rows_clean, rows_quarantined, note}`: the engine's
+issues on the whole file less those on metadata and flag columns, the core's score unchanged), the plan as applied to the
+file (`ai_plan`, with `structure_slice{id, where, plan_source, column}`), and the timings of both runs added up. A
+limitation leads the list ("This file is a statistical table: 36,735 rows, 465 series over 79 months ... the report reads
+one series ...") and a cleaning step `structure_slice` says so. Retail, planner off: 15 to 22 s native (it was 29 s; the 12 s
+audit of the whole file stays, the 13 s business analysis of 36,735 rows becomes 0.4 s on 79), 0.14 s of it the structure.
+
+*A plan's rows* (`check_rows(S, positions)`): the series the plan's kept rows map to, per dimension: `total_with_parts`
+(a member kept with an ancestor), `two_adjustments`, `component_with_parent`, `alt_with_total`, `mixed_units`,
+`rate_members` (several members of a rate or an index), `unverified_members` (several of a `single` dimension). A
+violation replaces the plan's rows with the default slice: `estimand.plan_source` "ai_corrected", `structure.corrections`
+the violations, a line in `ai_plan.refused`, and `plan_signals` empty (a correction is never sent back to the planner). A
+plan's slice id is the AI's choice ("ai"); rows that form a slice are too; a plan that sets no rows aside reads the
+default ("engine_default"). The plan's analyses that read only the measure and the date run on the slice; one that
+groups or filters by a structure dimension is refused ("compare: it reads GEO, a dimension of a table of series whose
+rows mix totals and parts; the structure's breakdowns answer it"); `long_to_wide` is not needed.
+
+*The refusal.* A table whose readable columns cannot tell its rows apart (`cube_incomplete`: a dimension withheld or set
+aside) gets no business analysis: the story's headline is "The business analysis did not run: the date and the columns
+the engine may read (GEO, Sales, Adjustments) do not tell the rows apart: 34,365 of 36,735 rows repeat a date and a
+series, so a column that names the series is withheld or set aside." and no chart reads its rows.
+
+*Flags* (`structure.flags`): `{column, publisher, by_kind{kind: rows}, codes{code: {kind, rows, blank_measure, missing}},
+unrecognised[], blank_without_flag, quality_of_headline{code: months}}`; a code's kind is the publisher's
+(`engine/flag_vocab.json`, versioned), and which codes stand for a missing value is learned from the file (90% of its rows
+blank). Retail: `by_kind {suppressed: 5430, not_available: 533, too_unreliable: 162}`, `quality_of_headline {A: 45, "": 34}`.
+`structure.hash` is a deterministic hash of what was detected.
 
 ## 6. What this contract does not carry yet (R1)
 

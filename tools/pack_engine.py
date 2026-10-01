@@ -78,6 +78,10 @@ ENGINE_EXTRA = {"benchmark/engine_benchmark.json": os.path.join(ENGINE_ROOT, "be
 
 POWER_CELL_KEYS = ("name", "claim", "role", "gated", "months", "cv", "phi", "level", "shift", "seasonal",
                    "white_sd")
+# T2 (wave 4): what the adapter's interval-coverage quote reads (engine/nl_inference.py coverage_cells): every change
+# condition's planted change, its 95% intervals' coverage, their Wilson interval and the coverage by momentum bucket
+COVERAGE_CELL_KEYS = POWER_CELL_KEYS + ("amount_sd", "trend", "outlier_months", "missing_months")
+COVERAGE_BUCKETS = ("phi_hat < 0.5", "0.5 <= phi_hat < 0.8", "phi_hat >= 0.8")
 
 
 def cut_receipt(raw: bytes) -> bytes:
@@ -95,14 +99,27 @@ def cut_receipt(raw: bytes) -> bytes:
                                    "phi_hat_mean": r.get("phi_hat_mean"),
                                    "clopper_pearson95": r.get("clopper_pearson95")}
                                   for r in (full.get("results") or {}).get("change") or []
-                                  if (r.get("cell") or {}).get("role") == "alt"]},
+                                  if (r.get("cell") or {}).get("role") == "alt"],
+                       # the conditions whose intervals were scored (nl_inference.coverage_cells), values unchanged
+                       "change_coverage": [
+                           {"cell": {k: (r.get("cell") or {}).get(k) for k in COVERAGE_CELL_KEYS},
+                            "phi_hat_mean": r.get("phi_hat_mean"), "n_with_interval": r.get("n_with_interval"),
+                            "interval_coverage": r.get("interval_coverage"),
+                            "interval_coverage_wilson95": r.get("interval_coverage_wilson95"),
+                            "interval_coverage_by_diagnostic": {
+                                k: v for k, v in (r.get("interval_coverage_by_diagnostic") or {}).items()
+                                if k in COVERAGE_BUCKETS}}
+                           for r in (full.get("results") or {}).get("change") or []
+                           if r.get("interval_coverage") is not None]},
            "cut": {"by": "portfolio-website/tools/pack_engine.py",
                    "from": "northledger-core/benchmark/engine_benchmark.json",
                    "from_sha256": _sha(raw),
                    "kept": "decision_code_snapshot and results.forecast, unchanged: what "
                            "northledger.forecast.coverage_evidence reads; and, of results.change, "
                            "the power cells' names, conditions, k of n, mean estimated momentum and "
-                           "Clopper-Pearson interval: what the adapter's power quote reads"}}
+                           "Clopper-Pearson interval: what the adapter's power quote reads; and, as change_coverage, "
+                           "every change condition's interval coverage (overall, Wilson, by momentum bucket): what "
+                           "the adapter's interval-coverage quote reads"}}
     return (json.dumps(cut, indent=1, sort_keys=True) + "\n").encode("utf-8")
 ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the report's scenario and contribution block (design B), imported by nl_browser.run()
@@ -110,6 +127,11 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the charts chosen from the data (the chart registry, CONTRACT §5.9), imported by nl_browser.run(),
                  # _validate_plan, profile_for_ai and results_for_ai
                  "nl_viz.py": "nl_viz.py",
+                 # the report's inference (wave 4, track A2): the trend test, interval coverage, history n_eff, the
+                 # forecast audit and official aggregates, imported by nl_browser and nl_scenarios
+                 "nl_inference.py": "nl_inference.py",
+                 # the trend test's simulated sizes (tools/sim_trend_size.py), read by nl_inference beside itself
+                 "inference_tables.json": "inference_tables.json",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",

@@ -441,7 +441,10 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
                      "backtest": {"mape": None, "mase": None, "coverage": None},
                      "band": None, "coverage": None, "baseline_test": None, "models": [],
                      "break": None, "interventions": [], "forecastability": None,
-                     "decision_edge": None},
+                     "decision_edge": None,
+                     # P0-13 (wave 4): the shown forecast's rolling-origin back-test and its verdict, and the row
+                     # count a table's layout or the calendar fixes, which is not forecast (CONTRACT 2.5, 5.11)
+                     "audit": None, "trusted": None, "row_forecast_dropped": None},
         "story": {"headline": "", "what_happened": [], "why": [], "what_to_do": [],
                   "whats_next": [], "cannot_answer": []},
         "downloads": {"clean_csv": "", "quarantine_csv": "", "ledger_json": ""},
@@ -651,6 +654,8 @@ wandering wanders warning wasted watched watching weakest wearing wednesday week
 weighed weighs weighted weights whatever whenever wherever whether whitening whitespace whoever wholly widened
 widening widens widest window windows winter wireless withheld withhold withholds within without wonderful
 worded wording worked worker workers working worthless writer writes writing written yearly yellow yields
+adjacent autocorrelation autocorrelations bootstrap demeaned ending estimator leaning margin overlap preliminary
+publisher residuals revised revisions steeper taking
 """.split())
 
 
@@ -1722,16 +1727,56 @@ def _ledger_text(paths: Dict[str, str], scrub: Scrubber, engine: Dict[str, str])
     return json.dumps(scrub.clean_tree(safe(doc)), indent=1, allow_nan=False)
 
 
-def _forecast_block(r: Any, db_path: str, story_next: List[str]) -> Dict[str, Any]:
+def _row_artifact(r: Any, db_path: str, row_s: Any, layout: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Why the monthly row count is no business series (P0-13, nl_inference.row_series_artifact), or None: its
+    months all hold the same number of rows (a cube, a one-row-a-month slice), the file is a long table read one
+    column per series, or each row is one date (a daily rate: the rows a month are the calendar's days)."""
+    import nl_inference as _ni
     from northledger import forecast as _fc
     from northledger._sqlite import connect_ro
+    con = connect_ro(db_path)
+    try:
+        counts = [_num(v) for m, v in _fc.read_series(con, row_s.sql) if m is not None]
+        per_month: List[Tuple[int, int]] = []
+        tname = getattr(getattr(r.measure, "table", None), "name", None)
+        if tname:
+            per_month = [(int(a), int(b)) for _m, a, b in con.execute(
+                'SELECT _month, COUNT(*), COUNT(DISTINCT _d) FROM "%s" WHERE _month IS NOT NULL GROUP BY _month'
+                % str(tname).replace('"', '""'))]
+    except Exception:  # noqa: BLE001 - without the counts the row forecast stands as the engine made it
+        return None
+    finally:
+        con.close()
+    got = _ni.row_series_artifact(counts, per_month, layout)
+    if got is not None:
+        got.update(series=str(row_s.label), slug=str(row_s.slug))
+    return got
+
+
+def _forecast_block(r: Any, db_path: str, story_next: List[str],
+                    layout: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The forecast block (v1 keys and P0-13's): the engine's first forecast series, never a row count that the
+    table's layout or the calendar fixes (row_forecast_dropped: when no other series was forecast, the block is not
+    available and says why); `audit` is nl_inference.forecast_audit of the series shown (or dropped), `trusted`
+    its verdict. _V2 reads the same series (r._nl_forecast_slug)."""
+    from northledger import forecast as _fc
+    from northledger._sqlite import connect_ro
+    import nl_inference as _ni
     block = blank_report()["forecast"]
     series = list(getattr(r.measure, "series", []) or [])
     if not series:
         reasons = list(getattr(r.measure, "unmeasured", []) or [])
         block["reason"] = _plain(reasons[0]) if reasons else "No monthly series was found to forecast."
         return block
-    s = next((x for x in series if x.slug in r.forecasts), series[0])
+    row_s = next((x for x in series if x.slug == "monthly_rows"), None)
+    dropped = _row_artifact(r, db_path, row_s, layout) if row_s is not None else None
+    block["row_forecast_dropped"] = dropped
+    s = next((x for x in series if x.slug in r.forecasts and not (dropped and x.slug == "monthly_rows")), None) \
+        or next((x for x in series if x.slug in r.forecasts), series[0])
+    try:
+        r._nl_forecast_slug = s.slug
+    except AttributeError:  # pragma: no cover - the engine's result is a plain dataclass
+        pass
     block["label"] = str(s.label)                 # the series' plain label, for the AI report writer
     con = connect_ro(db_path)
     try:
@@ -1744,6 +1789,19 @@ def _forecast_block(r: Any, db_path: str, story_next: List[str]) -> Dict[str, An
     verdicts = {g.fact.id: g.gate for g in r.gated}
     gate = verdicts.get("forecast.%s.next" % s.slug) or verdicts.get("forecast.%s.history_months" % s.slug)
     block["verdict"] = gate.verdict if gate is not None else None
+    if fr is not None:
+        # P0-13: the forecast shown, back-tested at rolling origins against seasonal naive (the core is unchanged)
+        try:
+            months, values = _fc.prepare_series(rows, fill=getattr(s, "fill", "zero") or "zero")
+            block["audit"] = _ni.forecast_audit(months, values, fr)
+            block["audit"]["series"] = str(s.label)
+            block["trusted"] = bool(block["audit"]["trusted"])
+        except Exception:  # noqa: BLE001 - the audit is an addition; the engine's forecast stands without it
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
+    if dropped and s.slug == "monthly_rows":
+        block["reason"] = "No forecast of the rows a month is shown: %s." % dropped["reason"]
+        return block
     if fr is None:
         line = next((x for x in story_next if s.label in x or s.slug.replace("_", " ") in x), "")
         block["reason"] = _plain(line) or (_plain(gate.reason) if gate is not None else
@@ -1765,6 +1823,26 @@ def _forecast_block(r: Any, db_path: str, story_next: List[str]) -> Dict[str, An
     block["forecast"] = [{"month": str(p["month"]), "value": _num(p.get("point")),
                           "lo": _num(p.get("lo80")), "hi": _num(p.get("hi80"))} for p in fr.forward]
     return block
+
+
+def _demote_row_forecast_lines(lines: List[str], dropped: Optional[Dict[str, Any]], labels: List[str]) -> List[str]:
+    """The story's "what's next" with a dropped row forecast (P0-13) said in one line: the engine's lines from the
+    row series' own first line up to the next forecast series' first line become "No forecast of ... is shown: why"."""
+    if not dropped:
+        return lines
+    out: List[str] = []
+    skip = False
+    for x in lines:
+        if x.startswith(dropped["series"]) or x.startswith("No forecast of %s" % dropped["series"]):
+            if not skip:
+                out.append("No forecast of %s is shown: %s." % (dropped["series"], dropped["reason"]))
+            skip = True
+            continue
+        if skip and any(x.startswith(lb) for lb in labels if lb != dropped["series"]):
+            skip = False
+        if not skip:
+            out.append(x)
+    return out
 
 
 # --------------------------------------------------------------------------- contract v2
@@ -1927,7 +2005,10 @@ class _V2:
         if ana is not None:
             series = list(getattr(ana.measure, "series", []) or [])
             if series:
-                s = next((x for x in series if x.slug in ana.forecasts), series[0])
+                # the series _forecast_block shows (never a row count the layout or the calendar fixes, P0-13)
+                want = getattr(ana, "_nl_forecast_slug", None)
+                s = next((x for x in series if x.slug == want), None) or \
+                    next((x for x in series if x.slug in ana.forecasts), series[0])
                 self.slug, self.fr = s.slug, ana.forecasts.get(s.slug)
         w = (ana.measure.to_dict().get("window") if ana is not None else None) or None
         self.window = {"start": w["start"], "end": w["end"]} if w and w.get("start") else None
@@ -2071,6 +2152,67 @@ class _V2:
             rec = None
         self._full_receipt = rec
         return rec
+
+    def interval_coverage_for(self, fact: Any) -> Optional[Dict[str, Any]]:
+        """T2 (wave 4): the measured coverage of a change claim's 95% interval in the benchmark condition nearest it,
+        matched as the gate matches the cell it quotes (the claim's own type, months, noise, estimated momentum,
+        seasonality and, for a count or a total, its (effective) rows a month), within the claim's momentum bucket
+        (nl_inference.interval_coverage). None when no receipt measured this code or the claim has no diagnostics."""
+        import nl_inference as _ni
+        from northledger import gate as _gate
+        t = getattr(fact, "test", None) or {}
+        if not (t.get("n") and t.get("sigma_hat") is not None and t.get("phi_hat") is not None):
+            return None
+        rec = self.full_receipt()
+        if rec is None:
+            return None
+        seas = t.get("seasonal")
+        cov = _ni.interval_coverage(rec, _gate.claim_type(fact), float(t["n"]), float(t["sigma_hat"]),
+                                    float(t["phi_hat"]), _claim_level(fact)[0], None if seas is None else bool(seas))
+        if cov is None:
+            return None
+        return {k: (_num(v) if isinstance(v, float) else v) for k, v in cov.items()}
+
+    def coverage_words(self) -> None:
+        """T2 / AM5: the core's promise that an interval was "built to hold the true change 95% of the time" becomes
+        what the benchmark measured for the condition nearest the claim, in the finding's why, its WATCH reason and
+        the story's sentence about that interval ("labelled 95%; coverage not measured ..." without a receipt)."""
+        import nl_inference as _ni
+        from northledger import gate as _gate
+        from northledger.narrate import story_number as SN
+        story_tag = "It was " + _gate.interval_caution(types.SimpleNamespace(effect_ci_low=0.0, test={}),
+                                                       with_level=False) + "."
+        by_range: List[Tuple[str, str]] = []
+        for f in self.rep["findings"]:
+            g = self.gated.get(f["id"])
+            eff = f.get("effect") or {}
+            if g is None or eff.get("ci") is None or f.get("estimand") != "ratio_of_average_month":
+                continue
+            core = _gate.interval_caution(g.fact)
+            if not core:
+                continue
+            ours = _ni.coverage_clause(eff.get("coverage"), eff.get("level"))
+            for key in ("why",):
+                if isinstance(f.get(key), str):
+                    f[key] = f[key].replace(core, ours)
+            if f.get("watch") and isinstance(f["watch"].get("reason"), str):
+                f["watch"]["reason"] = f["watch"]["reason"].replace(core, ours)
+            lo, hi = self.gated.get(f["id"] + ".ci_low"), self.gated.get(f["id"] + ".ci_high")
+            if lo is not None and hi is not None:
+                by_range.append(("from %s to %s" % (SN(lo.fact.value, lo.fact.unit, signed=True),
+                                                    SN(hi.fact.value, hi.fact.unit, signed=True)),
+                                 _ni.coverage_sentence(eff.get("coverage"), eff.get("level"))))
+        st = self.rep["story"]
+        for k in ("what_happened", "why", "whats_next"):
+            lines = []
+            for x in st.get(k) or []:
+                if story_tag in x:
+                    hit = [sent for rng, sent in by_range if rng in x]
+                    x = x.replace(story_tag, hit[0] if len(set(hit)) == 1 else
+                                  "It is a 95% interval by construction; its measured coverage is stated with the "
+                                  "finding.")
+                lines.append(x)
+            st[k] = lines
 
     def power_for(self, fact: Any) -> Optional[Dict[str, Any]]:
         """The measured power nearest a tested change claim: the receipt's cells where a true
@@ -2470,7 +2612,9 @@ class _V2:
                                         ("next_month_value", "month") if is_fc else (None, None))
             trace = [f["id"]]
             eff = {"estimate": _num(fact.value), "ci": None, "level": None, "ci_fcr": None, "fcr_level": None,
-                   "method": "", "scale": fact.unit, "unit": None, "note": None}
+                   "method": "", "scale": fact.unit, "unit": None, "note": None, "coverage": None}
+            f["inference"] = None                 # T4: an official aggregate's record (_official_inference)
+            f["layout_artifact"] = False          # P0-13: a row count the layout or the calendar fixes
             if is_fc and f["id"].endswith(".next") and not fact.unit and \
                     self.value_scale(slug=f["id"][len("forecast."):-len(".next")]):
                 # the forecast of a money total: whole units on the page
@@ -2489,6 +2633,8 @@ class _V2:
                 if fact.effect_ci_level is not None and not no_ratio:
                     eff.update(ci=[_num(fact.effect_ci_low), _num(fact.effect_ci_high)],
                                level=_num(fact.effect_ci_level), method=fact.effect_ci_method)
+                    # T2: how often such an interval held the true change in the benchmark's nearest condition
+                    eff["coverage"] = self.interval_coverage_for(fact)
                 if fact.effect_ci_adj_level is not None and not no_ratio:
                     eff.update(ci_fcr=[_num(fact.effect_ci_adj_low), _num(fact.effect_ci_adj_high)],
                                fcr_level=_num(fact.effect_ci_adj_level))
@@ -2545,6 +2691,12 @@ class _V2:
                                level=_num((fr_o.config.get("band", 0.8)) if fr_o is not None else 0.8),
                                method=str(fr_o.config.get("band_method", "")) if fr_o is not None else "")
                     trace += [lo.fact.id, hi.fact.id]
+            dropped = self.rep["forecast"].get("row_forecast_dropped") or {}
+            if is_fc and dropped and f["id"].startswith("forecast.%s." % dropped.get("slug")):
+                # P0-13: a row count the table's layout or the calendar fixes: no point and no range reach a reader
+                f["layout_artifact"] = True
+                eff.update(estimate=None, ci=None, level=None, method="",
+                           note="not offered: %s" % self.pub(dropped.get("reason") or ""))
             if is_fc and f["id"].endswith(".next") and f["grade"] == "NOT_ENOUGH_DATA" and eff["estimate"] is not None:
                 # any other series' forecast the engine does not offer: no point and no range either
                 eff.update(estimate=None, ci=None, level=None, method="",
@@ -2603,6 +2755,7 @@ class _V2:
             f["tested_times"] = None
             f["chart_ids"] = []
             f["trace"] = trace
+        self.coverage_words()
         by_col: Dict[str, List[str]] = {}
         for f in self.rep["findings"]:
             for c in f["columns_read"]:
@@ -2804,7 +2957,7 @@ class _V2:
         # the file has no business claim at all. A forecast that is not offered has no tile.
         mon = set(rep["summary"]["monitoring"])
         biz = [f for f in fnd if f["kind"] in ("business", "forecast") and f["effect"]["estimate"] is not None
-               and f["id"] not in mon]
+               and f["id"] not in mon and not f.get("layout_artifact")]
         pool = biz or [f for f in fnd if f["kind"] == "data_quality"]
         # within one strength of evidence, the primary claim's own story first: the claim, its
         # like-for-like restatement and its forecast (fixer round, 24 Sep 2026)
@@ -3420,7 +3573,16 @@ class _V2:
             slug = (getattr(pm.fact, "test", None) or {}).get("series_slug")
         fid = "forecast.%s.next" % slug if slug else ("forecast.%s.next" % self.slug if self.slug else None)
         fcf = F.get(fid) if fid else None
-        if fcf is not None and fid not in sm["monitoring"]:
+        if fcf is not None and fcf.get("layout_artifact") and self.slug and fid != "forecast.%s.next" % self.slug:
+            # P0-13: the planning number is the series the forecast block shows, never a row count the layout fixes
+            fid = "forecast.%s.next" % self.slug
+            fcf = F.get(fid)
+        audit = self.rep["forecast"].get("audit") or {}
+        shown = fid == "forecast.%s.next" % self.slug
+        failed = audit.get("status") == "fails" and shown
+        # P0-13: "plan on it" only for a forecast whose back-test passed (trusted); the engine's grade stands
+        untested = shown and not audit.get("trusted")
+        if fcf is not None and fid not in sm["monitoring"] and not fcf.get("layout_artifact"):
             fact = self.gated[fid].fact
             month = _mon(fact.claim.rsplit(" for ", 1)[-1])
             lo, hi = self.gated.get(fid + ".lo80"), self.gated.get(fid + ".hi80")
@@ -3437,7 +3599,17 @@ class _V2:
                 pt = SN(float(fact.value), fact.unit)
                 rng = (" (80%% range %s to %s)" % (SN(float(lo.fact.value), lo.fact.unit), SN(float(hi.fact.value), hi.fact.unit))
                        if lo is not None and hi is not None and fcf["effect"]["ci"] else "")
-                if fcf["grade"] == "CONFIRMED":
+                if failed:
+                    # P0-13: the engine's grade stands, labelled; the back-test of the shown range failed
+                    text = ("The %s forecast for %s is about %s%s; the engine graded it %s, but that grade is not "
+                            "trusted: the back-test of its range failed, so it is no plan." % (
+                                low, month, pt, rng, fcf["grade"].replace("_", " ")))
+                elif fcf["grade"] == "CONFIRMED" and untested:
+                    text = ("The %s forecast for %s is about %s%s; the engine graded it CONFIRMED, but %s, so use it "
+                            "as a guide rather than a plan." % (
+                                low, month, pt, rng, "its back-test neither passed nor failed the range"
+                                if audit.get("horizons") else "it has too few months to be back-tested"))
+                elif fcf["grade"] == "CONFIRMED":
                     text = "Plan on about %s for %s in %s%s." % (pt, low, month, rng)
                 else:
                     text = ("The %s forecast for %s is about %s%s; it is not yet shown to beat a simple rule, "
@@ -4405,6 +4577,11 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 d[k] = v
         if f.get("why"):
             d["why"] = safe(f["why"], 240)
+        cov = ((f.get("effect") or {}).get("coverage")) if isinstance(f.get("effect"), dict) else None
+        if isinstance(cov, dict) and _num(cov.get("measured")) is not None:
+            # T2: the interval's measured coverage (the numbers the why quotes), for the writer and its guard
+            d["interval_coverage"] = {"measured": _num(cov.get("measured")), "lo": _num(cov.get("lo")),
+                                      "hi": _num(cov.get("hi"))}
         findings.append(d)
 
     analyses = []
@@ -4576,6 +4753,11 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             fc["baseline_won"] = f["baseline_won"]
         if f.get("reason"):
             fc["reason"] = safe(f["reason"], 200)
+        au = f.get("audit") if isinstance(f.get("audit"), dict) else None
+        if au and au.get("horizons"):
+            # P0-13: the back-test of the range shown, and whether the engine's grade is trusted
+            fc["audit"] = {"label": safe(au.get("label"), 200), "status": str(au.get("status") or ""),
+                           "trusted": bool(au.get("trusted")), "grade_label": safe(au.get("grade_label"), 120)}
         fwd = f.get("forecast") or []
         if isinstance(fwd, list) and fwd:
             # the writer must be able to QUOTE a forecast figure: the engine's full floats
@@ -6568,9 +6750,18 @@ def _period_values(df: Any, date: str, ent: Optional[str], col: str, how: str):
 
 
 def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
+    """The long-run trend of each named series' complete calendar years (T1, wave 4: plan/WAVE4-A-DESIGN.md 3).
+    The slope, its 95% range and the direction come from nl_inference.trend_test (Prais-Winsten AR(1) GLS, a
+    parametric bootstrap under no trend, a random-walk screen); the Newey-West range it replaces (_hac_slope, kept
+    as the size simulation's reference) found a trend in 22% to 50% of 9-year series that had none
+    (tools/sim_trend_size.py). A direction is claimed ("rose", "fell") only on the test's verdict, and the method
+    text quotes the simulated size of the condition nearest the lead series. `test` is the lead series' record,
+    `tests` every series'."""
     import numpy as np
-    rows, lines, sentences, fits = [], [], [], []
+    import nl_inference as _ni
+    rows, lines, sentences, fits, tests = [], [], [], [], []
     grains = []
+    pword = "year"
     for col in cols[:4]:
         st, unit = _col_type(plan, col, layout)
         y, grain = _period_values(df, date, ent, col, _how(st))
@@ -6578,45 +6769,65 @@ def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
             continue
         grains.append(grain)
         yrs = np.asarray(y.index, float)
-        b, se, lag = _hac_slope(yrs, y.values)
-        tc = _tcrit(len(y) - 2)
+        rec = _ni.trend_test(yrs, y.values)
+        rec["series"] = col
+        tests.append(rec)
+        b = float(rec["slope"]) if rec["slope"] is not None else float(np.polyfit(yrs, y.values, 1)[0])
         per = 10.0 if yrs.max() - yrs.min() >= 20 else 1.0
         pword = "decade" if per == 10.0 else "year"
         span_txt = "%d to %d" % (int(yrs.min()), int(yrs.max()))
-        lo, hi = (b - tc * se) * per, (b + tc * se) * per
+        lo, hi = ((rec["ci"][0] * per, rec["ci"][1] * per) if rec["ci"][0] is not None else (None, None))
+        rng = ("95%% range %s to %s" % (_fmt(lo), _fmt(hi))) if lo is not None else "no range"
+        if rec["why"] == "exact_line":
+            rng = "every year lies on the line"
         recent = None
         if yrs.max() - yrs.min() >= 60:
             m = yrs >= yrs.max() - 29
-            rb, rse, _ = _hac_slope(yrs[m], y.values[m])
-            recent = (rb, rse, int(yrs[m].min()), _tcrit(int(m.sum()) - 2))
+            rr = _ni.trend_test(yrs[m], y.values[m])
+            if rr["slope"] is not None:
+                recent = (rr, int(yrs[m].min()))
         what = ("its %s" % grain) if not ent else grain
-        if lo <= 0 <= hi:
+        v = rec["verdict"]
+        if v in ("rising", "falling"):
+            text = ("%s rose by %s per %s over %s (%s; %s)" if v == "rising" else
+                    "%s fell by %s per %s over %s (%s; %s)") % (
+                col, _diff_amt(abs(b * per), st, unit), pword, span_txt, what, rng)
+        elif v == "no_settled_direction" and rec["why"] == "constant":
+            text = "%s is the same in every year over %s (%s)" % (col, span_txt, what)
+        elif v == "no_settled_direction":
             # the range includes no change at all: no direction is claimed (review M8, 29 Sep 2026)
             text = ("%s shows no clear rise or fall over %s: %s moves by %s per %s, with a 95%% range of %s to %s, "
                     "which includes no change" % (col, span_txt, what, _diff_amt(b * per, st, unit), pword,
                                                   _fmt(lo), _fmt(hi)))
         else:
-            text = ("%s rose by %s per %s over %s (%s; 95%% range %s to %s)" if b > 0 else
-                    "%s fell by %s per %s over %s (%s; 95%% range %s to %s)") % (
-                col, _diff_amt(abs(b * per), st, unit), pword, span_txt, what, _fmt(lo), _fmt(hi))
+            why = ("a series that wanders with no trend at all (a random walk) moves this steadily in about %s of "
+                   "100 cases like this one" % _fmt(100.0 * float(rec["p_random_walk"]), 2)
+                   if rec["why"] == "random_walk" else
+                   "the test's false-alarm rate on simulated series like this one is above the 7.5% it is held to"
+                   if rec["why"] == "size_above_limit" else
+                   "the test's false-alarm rate is not measured for series like this one"
+                   if rec["why"] == "size_not_measured" else "no test applies to these values")
+            text = ("%s moves by %s per %s over %s (%s; %s), but no direction is claimed: %s"
+                    % (col, _diff_amt(b * per, st, unit), pword, span_txt, what, rng, why))
         if recent:
-            rb, rse, r0, rtc = recent
+            rr, r0 = recent
             text += "; since %d the pace is %s per decade (%s to %s)" % (
-                r0, _diff_amt(rb * per, st, unit), _fmt((rb - rtc * rse) * per), _fmt((rb + rtc * rse) * per))
-            if (rb - rtc * rse) > (b + tc * se):
+                r0, _diff_amt(rr["slope"] * per, st, unit), _fmt(rr["ci"][0] * per), _fmt(rr["ci"][1] * per))
+            if rr["ci"][0] is not None and hi is not None and rr["ci"][0] * per > hi:
                 text += ", faster than the whole record"
         sentences.append(text + ".")
-        rows.append([col, span_txt, str(len(y)), _fmt(b * per), "%s to %s" % (_fmt(lo), _fmt(hi)),
-                     (_fmt(recent[0] * per) if recent else "")])
+        rows.append([col, span_txt, str(len(y)), _fmt(b * per), ("%s to %s" % (_fmt(lo), _fmt(hi))) if lo is not None
+                     else "", (_fmt(recent[0]["slope"] * per) if recent else "")])
         lines.append({"name": col, "x": [int(v) for v in yrs], "y": [float(v) for v in y.values]})
         c0 = float(np.mean(y.values)) - b * float(np.mean(yrs))
         fits.append({"name": col + " trend", "x0": int(yrs.min()), "x1": int(yrs.max()),
                      "y0": c0 + b * yrs.min(), "y1": c0 + b * yrs.max()})
         if recent:
-            m = yrs >= recent[2]
-            c1 = float(np.mean(y.values[m])) - recent[0] * float(np.mean(yrs[m]))
-            fits.append({"name": col + " since %d" % recent[2], "x0": recent[2], "x1": int(yrs.max()),
-                         "y0": c1 + recent[0] * recent[2], "y1": c1 + recent[0] * yrs.max(), "recent": True})
+            m = yrs >= recent[1]
+            rb = float(recent[0]["slope"])
+            c1 = float(np.mean(y.values[m])) - rb * float(np.mean(yrs[m]))
+            fits.append({"name": col + " since %d" % recent[1], "x0": recent[1], "x1": int(yrs.max()),
+                         "y0": c1 + rb * recent[1], "y1": c1 + rb * yrs.max(), "recent": True})
     if not sentences:
         return {"refused": "trend: no series with %d or more complete years of values" % TREND_MIN_YEARS}
     if len(cols) > 4:
@@ -6629,10 +6840,14 @@ def _a_trend(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
         if base:
             f["name"] = short[base] + f["name"][len(base):]
     return {"type": "trend", "title": "Long-run trend", "sentence": " ".join(sentences),
-            "method": "Least-squares line through each complete calendar year's value (%s); the 95%% range uses "
-                      "Newey-West errors, because one year's value leans on the year before." % "; ".join(dict.fromkeys(grains)),
+            "method": "A line through each complete calendar year's value (%s), fitted allowing for one year leaning on "
+                      "the year before (Prais-Winsten); its 95%% range and its direction come from %s simulated series "
+                      "with no trend and the same momentum, and a direction is claimed only when the line is steeper "
+                      "than 95%% of them and than 95%% of random walks. %s"
+                      % ("; ".join(dict.fromkeys(grains)), format(_ni.TREND_B, ","), _ni.size_words(tests[0])),
             "table": {"cols": ["Series", "Years", "Points", "Change per " + pword, "95% range", "Last 30 years"], "rows": rows},
-            "chart": {"kind": "line", "x_label": "year", "series": lines, "fits": fits}}
+            "chart": {"kind": "line", "x_label": "year", "series": lines, "fits": fits},
+            "test": tests[0], "tests": tests}
 
 
 def _a_extremes(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
@@ -7776,8 +7991,6 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
                      % ", ".join(lay["constant_set_aside"]))
     if lay.get("lead"):
         parts.append("The report leads with %s: %s." % (lay["lead"], lay["lead_why"]))
-    parts.append("The forecast in this release counts dates a month; a forecast of each series' own level "
-                 "is not in this release.")
     rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": " ".join(parts)})
     fixes = rep.setdefault("cleaning", {}).setdefault("fixes", [])
     fixes.insert(0, {"rule": "long_to_wide", "column": lay["series_column"] or lay["value_column"],
@@ -7789,6 +8002,85 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
                          "what": "Exact zeros on Saturdays and Sundays in series that are otherwise always positive "
                                  "read as empty: they mark days with no value, not a value of zero"})
     rep.setdefault("input", {})["layout"] = lay
+
+
+def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional[Dict[str, Any]],
+                        hidden: Iterable[str]) -> None:
+    """T4 (wave 4, plan/WAVE4-A-DESIGN.md 3): an official aggregate is described, not tested. findings[].inference
+    is set on the business change claims about the published measure (never a row count) when (1) the file's header
+    holds a publisher's signature columns (nl_inference.publisher_of), (2) the headline is the root of every
+    additive dimension: with track A1's structure, its slice member of each partition or hierarchy is that
+    dimension's total; without it, the engine read no dimension of two or more values (the other text columns hold
+    one value each), or a long table one column per series (each series analysed on its own), and (3) no column
+    publishes sampling errors (a "Statistics" dimension with standard errors). The engine still grades the claim;
+    the record says what that grade is a grade of. A1 calls this again on the inner report of a structured slice,
+    after copying its structure onto it."""
+    import nl_inference as _ni
+    for f in rep.get("findings") or []:
+        f.setdefault("inference", None)
+    st = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
+    pubr = _ni.publisher_of(header)
+    if pubr is None and st and st.get("publisher"):
+        pubr = {"key": str(st["publisher"]), "name": str(st["publisher"]), "columns": []}
+    if pubr is None:
+        return
+    hide = set(str(h) for h in hidden)
+    cols = [{"name": c.get("name"), "values": [v for v, _n in (c.get("top_values") or [])]}
+            for c in (rep.get("health") or {}).get("columns") or []] + [{"name": h} for h in header]
+    if _ni.publishes_errors(cols):
+        return
+    if st:
+        sl = {str(x.get("dim")): str(x.get("member")) for x in ((rep.get("estimand") or {}).get("slice") or [])}
+        for d in st.get("dims") or []:
+            if d.get("role") in ("partition", "hierarchy") and sl.get(str(d.get("column"))) != str(d.get("total")):
+                return
+        why_total = "the headline is the total of %s (sum-check)" % " and ".join(
+            str(d.get("column")) for d in st.get("dims") or [] if d.get("role") in ("partition", "hierarchy")) \
+            if any(d.get("role") in ("partition", "hierarchy") for d in st.get("dims") or []) else \
+            "the headline is one published series"
+    elif layout:
+        why_total = "a long table read one column per series: the headline is one published series (%s)" % \
+            str(layout.get("lead") or "")
+    else:
+        if (rep.get("roles") or {}).get("dimensions"):
+            return
+        ones = [c for c, why in ((rep.get("roles") or {}).get("excluded") or {}).items()
+                if "fewer than two values" in str(why) and c not in hide]
+        why_total = ("the headline is the one published series (%s %s one value throughout)"
+                     % (" and ".join(ones), "holds" if len(ones) == 1 else "each hold")) if ones else \
+            "the headline is the one published series"
+    led: Dict[str, Any] = {}
+    try:
+        for x in (json.loads(rep["downloads"]["ledger_json"]).get("analysis_ledger") or []):
+            led[str(x.get("id"))] = x
+    except (ValueError, KeyError, TypeError, AttributeError):
+        led = {}
+    flag = next((c for c in (rep.get("health") or {}).get("columns") or []
+                 if _pnorm(c.get("name")) in ("status", "obsstatus", "obsflag") and c.get("name") not in hide), None)
+    quality, revisions = None, ""
+    if flag is not None:
+        codes = {str(v): int(n) for v, n in (flag.get("top_values") or [])}
+        quality = {"column": str(flag["name"]), "codes": codes}
+        rv, pr = codes.get("r", 0), codes.get("p", 0)
+        revisions = ("the file marks %d value%s revised and %d preliminary" % (rv, "" if rv == 1 else "s", pr)
+                     if rv or pr else "the file marks no value as revised or preliminary")
+    else:
+        revisions = "revisions are not stated in what the engine read (the file's status column is not among them)"
+    m = (st or {}).get("measure") or {}
+    for f in rep.get("findings") or []:
+        if f.get("kind") != "business" or f.get("estimand") != "ratio_of_average_month" \
+                or f["id"].startswith("measure.volume") or f.get("parent_id"):
+            continue
+        base = f["id"][:-len(".change")] if f["id"].endswith(".change") else f["id"].rsplit(".", 1)[0]
+        total = ".total." in f["id"]
+        prior = next((led[k]["value"] for k in (base + ".prior12_mean", base + ".prior12") if k in led), None)
+        latest = next((led[k]["value"] for k in (base + ".last12_mean", base + ".last12") if k in led), None)
+        words = ("a %s in %s" % (m.get("type") or "measure", m.get("uom") or "its own units")) if m else \
+            ("a total of the published values" if total else "a published level, averaged by month")
+        f["inference"] = _ni.official_inference(
+            pubr, hide, why_total, words,
+            {"change_pct": _num(f.get("value")), "prior": _num(prior), "latest": _num(latest)},
+            (f.get("test") or {}).get("n_months"), "sum" if total else "mean", quality, revisions)
 
 
 def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict[str, Any]] = None,
@@ -8080,13 +8372,19 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             rep["roles"] = {"date": r.roles.date or None, "measures": list(r.roles.measures),
                             "dimensions": list(r.roles.dimensions),
                             "excluded": dict(r.roles.excluded)}
-            rep["forecast"] = _forecast_block(r, eng.db_path, story["whats_next"])
+            rep["forecast"] = _forecast_block(r, eng.db_path, story["whats_next"], layout)
+            story["whats_next"] = _demote_row_forecast_lines(
+                story["whats_next"], rep["forecast"].get("row_forecast_dropped"),
+                [str(x.label) for x in (getattr(r.measure, "series", []) or [])]) or [_narrate.NO_FORECAST_LINE]
         for k in ("what_happened", "why", "what_to_do", "whats_next", "cannot_answer"):
             story[k] = [pub(x) for x in story[k]]
         story["headline"] = pub(story["headline"])
         rep["forecast"]["reason"] = pub(rep["forecast"]["reason"])
         if rep["forecast"].get("label"):
             rep["forecast"]["label"] = pub(rep["forecast"]["label"])
+        for k in ("audit", "row_forecast_dropped"):          # P0-13: the series they name, scrubbed as the label is
+            if isinstance(rep["forecast"].get(k), dict) and rep["forecast"][k].get("series"):
+                rep["forecast"][k]["series"] = pub(rep["forecast"][k]["series"])
         rep["roles"]["excluded"] = {k: pub(v) for k, v in rep["roles"]["excluded"].items()}
 
         # -- downloads: withheld columns never leave, not even in a quarantine reason
@@ -8217,6 +8515,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
         if layout:
             _layout_notes(rep, layout)
+        # T4: an official aggregate is described, not tested (the header as the visitor sent it)
+        try:
+            import pandas as _pd_h
+            _hdr = [str(c) for c in _pd_h.read_csv(io.BytesIO(sent), dtype=str, nrows=0, encoding="utf-8-sig").columns]
+        except Exception:  # noqa: BLE001 - no header, no publisher signature
+            _hdr = []
+        _official_inference(rep, _hdr, layout, [c for c, d in hidden_land.items()] + names_withheld)
         if ai_plan:
             if plan_review:
                 ai_plan["review"] = plan_review

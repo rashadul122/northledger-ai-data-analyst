@@ -1,0 +1,378 @@
+{
+ "what": "The two AI plans of the final evaluation's live FX run (1 Oct 2026), verbatim: the page's /plan response bodies' `plan` (.work/eval/out/final-2026-10-01/quant-fx/requests/01_plan-response.json and 02_plan-response.json; the second is the re-plan after the engine's signals, and the plan the report ran). The file they read is the StatCan 33-10-0036-01 U.S. dollar series (tools/fixtures/eval/fx_usd_cad.csv, rebuilt to the published 15 columns by tools/test_nl_browser.py _fx_published). Public data (Statistics Canada Open Licence); no personal data.",
+ "model": "deepseek-flash",
+ "plan_1": {
+  "goal": "How has the Canadian dollar moved against the US dollar since 2017, and what should a Canadian importer expect next?",
+  "goal_candidates": [
+   "Where does the latest CAD/USD rate sit against its 2017–2026 average, and how wide has its trading band been?",
+   "How differently did the loonie behave in 2017–2019, 2020–2021 and 2022–2026, and which stretch moved fastest?",
+   "What does the month-by-year pattern of the CAD/USD rate say about seasonality?",
+   "How did the CAD/USD rate react around the 2020 pandemic shock and the 2022 rate-hike cycle?",
+   "What 12-month range should a Canadian importer budget for, based on the full 2017–2026 distribution of the rate?",
+   "How reliable is a time-based forecast of the CAD/USD rate when tested on held-out recent dates?"
+  ],
+  "kind": "time_series_panel",
+  "understanding": "This is Statistics Canada's daily noon exchange rate for the U.S. dollar in Canadian dollars, one row per calendar date from January 2017 to August 2026. Each row is a single day: 2,957 of the 3,526 dates carry an observed rate, while the rest are weekend and statutory-holiday non-observations recorded as 0 or left blank with STATUS '..'. VALUE is a level — Canadian dollars per one US dollar — so a rise means a weaker Canadian dollar and costlier US imports for a Canadian importer. Only one geography (Canada) and one currency pair are present, so this is a single long daily series rather than a panel.",
+  "columns": [
+   {
+    "name": "REF_DATE",
+    "semantic_type": "date",
+    "role": "date",
+    "unit": "",
+    "why": "Daily observation date, 2017-01 to 2026-08 (3,526 distinct days)."
+   },
+   {
+    "name": "VALUE",
+    "semantic_type": "level",
+    "role": "target",
+    "unit": "CAD",
+    "why": "CAD per 1 USD daily average rate; 0s and blanks are non-observation days, not real zeros."
+   },
+   {
+    "name": "GEO",
+    "semantic_type": "geography",
+    "role": "geography",
+    "unit": "",
+    "why": "Constant 'Canada' — fixes the region of the series."
+   },
+   {
+    "name": "Type of currency",
+    "semantic_type": "metadata",
+    "role": "metadata",
+    "unit": "",
+    "why": "Names the series: U.S. dollar, daily average."
+   },
+   {
+    "name": "STATUS",
+    "semantic_type": "code",
+    "role": "metadata",
+    "unit": "",
+    "why": "'..' flags the 569 dates with no observation; blank on real observations."
+   },
+   {
+    "name": "DGUID",
+    "semantic_type": "code",
+    "role": "key",
+    "unit": "",
+    "why": "Statistics Canada geographic identifier, constant."
+   },
+   {
+    "name": "UOM",
+    "semantic_type": "metadata",
+    "role": "metadata",
+    "unit": "",
+    "why": "Unit label 'Dollars', constant."
+   },
+   {
+    "name": "UOM_ID",
+    "semantic_type": "code",
+    "role": "key",
+    "unit": "",
+    "why": "Numeric code for the unit, constant 81."
+   },
+   {
+    "name": "SCALAR_FACTOR",
+    "semantic_type": "metadata",
+    "role": "metadata",
+    "unit": "",
+    "why": "Scaling label 'units', constant — no scaling needed."
+   },
+   {
+    "name": "SCALAR_ID",
+    "semantic_type": "code",
+    "role": "key",
+    "unit": "",
+    "why": "Scaling code, constant 0."
+   },
+   {
+    "name": "VECTOR",
+    "semantic_type": "identifier",
+    "role": "key",
+    "unit": "",
+    "why": "Statistics Canada vector id v111666248, constant."
+   },
+   {
+    "name": "COORDINATE",
+    "semantic_type": "code",
+    "role": "key",
+    "unit": "",
+    "why": "Cube coordinate, constant 1.25."
+   },
+   {
+    "name": "SYMBOL",
+    "semantic_type": "code",
+    "role": "set_aside",
+    "unit": "",
+    "why": "Empty on every row."
+   },
+   {
+    "name": "TERMINATED",
+    "semantic_type": "code",
+    "role": "set_aside",
+    "unit": "",
+    "why": "Empty on every row."
+   },
+   {
+    "name": "DECIMALS",
+    "semantic_type": "metadata",
+    "role": "metadata",
+    "unit": "",
+    "why": "Constant 4 — precision of the reported rate."
+   }
+  ],
+  "operations": [
+   {
+    "op": "exclude_blank",
+    "column": "VALUE"
+   },
+   {
+    "op": "keep_columns",
+    "columns": [
+     "REF_DATE",
+     "VALUE",
+     "GEO",
+     "Type of currency"
+    ]
+   },
+   {
+    "op": "set_aside",
+    "columns": [
+     "DGUID",
+     "UOM",
+     "UOM_ID",
+     "SCALAR_FACTOR",
+     "SCALAR_ID",
+     "VECTOR",
+     "COORDINATE",
+     "STATUS",
+     "SYMBOL",
+     "TERMINATED",
+     "DECIMALS"
+    ]
+   }
+  ],
+  "analyses": [
+   {
+    "type": "trend",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "The long-run direction and pace of the CAD/USD rate since 2017 — the core of the question."
+   },
+   {
+    "type": "distribution",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "How wide the rate's band is, so an importer can budget a realistic CAD-per-USD range."
+   },
+   {
+    "type": "predict",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "A forward-looking signal for the coming months, scored on dates the model did not see."
+   }
+  ],
+  "primary": "VALUE",
+  "changes": [],
+  "quality_risks": [
+   "550 values are exactly 0 and 569 are blank: these are weekend/holiday non-observations, not a rate of zero — reading them as real would drag every average down.",
+   "The final month (2026-08) is likely partial, so any latest-value or recent-average figure covers fewer days than earlier months.",
+   "VALUE is CAD per 1 USD, so an increase means a weaker Canadian dollar and more expensive US goods; the direction is easy to misread as 'the dollar strengthening'.",
+   "The span covers very different regimes (2017–2019, the 2020 shock, the 2022 rate-hike cycle), so a single straight-line forecast understates how abruptly the rate can shift.",
+   "Every row is the same country and currency, so any apparent cross-entity comparison in the file would be meaningless."
+  ],
+  "context": [
+   {
+    "indicator": "exchange rate",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   },
+   {
+    "indicator": "interest rates",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   },
+   {
+    "indicator": "oil prices",
+    "years": [
+     2017,
+     2026
+    ]
+   },
+   {
+    "indicator": "consumer price inflation",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   }
+  ],
+  "charts": [
+   {
+    "kind": "calendar_heatmap",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "Month across by year down shows the CAD/USD regime shifts and any seasonal pattern at a glance."
+   }
+  ]
+ },
+ "plan_2": {
+  "goal": "How has the Canadian dollar moved against the US dollar since 2017, and what should a Canadian importer expect next?",
+  "goal_candidates": [
+   "How wide has the CAD/USD range been since 2017, and how often has the rate sat near its weakest levels?",
+   "In which months and years has the loonie been strongest or weakest — is there a seasonal pattern an importer could time purchases around?",
+   "Has the CAD/USD rate been drifting weaker since 2017, and at what pace?",
+   "How does the latest rate compare with the 2017-2026 average and median — is the loonie cheap or expensive by its own history?",
+   "What level should a Canadian importer budget for a purchase next quarter: the latest rate, the long-run average, or the weak-end of the range?",
+   "How much day-to-day noise sits around the monthly trend in the exchange rate, and what does that mean for fixing a price?"
+  ],
+  "kind": "time_series_panel",
+  "understanding": "A Statistics Canada / Bank of Canada daily-average exchange-rate table holding a single series: the US dollar priced in Canadian dollars from January 2017 to August 2026. Each row is one calendar day; VALUE is that day's average rate in CAD per USD (roughly 1.25-1.46). 569 rows carry no value at all (STATUS '..', weekends/holidays) and 550 values are placeholder zeros, which the engine reads as gaps because the column is a level with zeros_missing_if_level set. GEO and Type of currency are constant labels (Canada; U.S. dollar, daily average) and every other column is a fixed code with one distinct value.",
+  "columns": [
+   {
+    "name": "REF_DATE",
+    "semantic_type": "date",
+    "role": "date",
+    "unit": "",
+    "why": "daily date stamp; the file's whole timeline"
+   },
+   {
+    "name": "VALUE",
+    "semantic_type": "level",
+    "role": "target",
+    "unit": "CAD",
+    "why": "the daily-average rate in Canadian dollars per US dollar — the number the question is about"
+   },
+   {
+    "name": "GEO",
+    "semantic_type": "geography",
+    "role": "geography",
+    "unit": "",
+    "why": "constant label: the series is Canada"
+   },
+   {
+    "name": "Type of currency",
+    "semantic_type": "metadata",
+    "role": "metadata",
+    "unit": "",
+    "why": "constant label: U.S. dollar, daily average (CAD per USD)"
+   },
+   {
+    "name": "STATUS",
+    "semantic_type": "code",
+    "role": "metadata",
+    "unit": "",
+    "why": "marks '..' on rows where VALUE is blank; holds nothing once blanks are dropped"
+   }
+  ],
+  "operations": [
+   {
+    "op": "exclude_blank",
+    "column": "VALUE"
+   },
+   {
+    "op": "keep_columns",
+    "columns": [
+     "REF_DATE",
+     "VALUE",
+     "GEO",
+     "Type of currency"
+    ]
+   },
+   {
+    "op": "set_aside",
+    "columns": [
+     "DGUID",
+     "UOM",
+     "UOM_ID",
+     "SCALAR_FACTOR",
+     "SCALAR_ID",
+     "VECTOR",
+     "COORDINATE",
+     "STATUS",
+     "SYMBOL",
+     "TERMINATED",
+     "DECIMALS"
+    ]
+   }
+  ],
+  "analyses": [
+   {
+    "type": "trend",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "long-run pace of the loonie, by decade and over the last years the file covers"
+   },
+   {
+    "type": "distribution",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "how wide the 2017-2026 range has been and where the latest rate sits inside it"
+   }
+  ],
+  "primary": "VALUE",
+  "changes": [],
+  "quality_risks": [
+   "VALUE holds 550 placeholder zeros and 569 blanks (STATUS '..'): weekend/holiday days with no rate. Typed as a level, the engine reads each 0 as a gap, so the series must never be averaged with those zeros counted as real values.",
+   "VALUE is Canadian dollars per US dollar, a daily-average reference rate: a rise means the loonie weakens. An importer reading a rising line as 'the dollar going up' will get the direction backwards.",
+   "The coverage ends in August 2026, so the final year is partial (eight months) and its averages and changes are not comparable with full calendar years.",
+   "This is one daily-average reference rate with no bid/ask spread or bank fees, so an importer's actual conversion cost sits above it.",
+   "All remaining columns (UOM, UOM_ID, SCALAR_FACTOR, SCALAR_ID, COORDINATE, DECIMALS) are constants with a single distinct value and carry no signal — using any of them as a driver would produce meaningless output."
+  ],
+  "context": [
+   {
+    "indicator": "exchange rate",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   },
+   {
+    "indicator": "interest rates",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   },
+   {
+    "indicator": "consumer price inflation",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   },
+   {
+    "indicator": "imports",
+    "region": "Canada",
+    "years": [
+     2017,
+     2026
+    ]
+   }
+  ],
+  "charts": [
+   {
+    "kind": "calendar_heatmap",
+    "columns": [
+     "VALUE"
+    ],
+    "why": "month across, year down: shows the seasonal swings and the drift in the rate an importer can plan purchases around"
+   }
+  ]
+ }
+}

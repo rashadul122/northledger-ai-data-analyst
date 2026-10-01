@@ -220,7 +220,7 @@ cases f and g). The page does not ask again either when a report's `ai_analyses.
 headline is the gate's, whatever signals the report carries.
 **Rows the plan sets aside (`ai_plan.row_drops`, 1 October 2026).** Every plan step that sets rows aside
 (`exclude_rows`, `keep_rows`, `exclude_blank`, and `date_from_year`'s rows before 1900) is one item `{op, column, rows,
-of (the file's rows), pct, reason, check, compared, text, notice}`; its line in `ai_plan.applied` gives its share
+of (the file's rows), pct, valued, reason, check, compared, text, notice}`; its line in `ai_plan.applied` gives its share
 ("dropped 6,694 rows (19.8%) where ..."). `reason` is the plan's own words: the first quality risk that names one of the
 step's values, else one that names its column beside a word for setting rows aside; "" when none does. When the
 reason claims the rows repeat or overlap others (duplicate, overlap, double count, repeat, umbrella, already counted),
@@ -229,10 +229,16 @@ key-like ones (`compared`), each value trimmed ("none of these rows duplicates a
 duplicate a kept row"); else `check` is "". `text` is the whole disclosure (the plan card, the PDF's Appendix A);
 `notice`, from 10% of the rows (`PLAN_DROP_NOTICE_PCT`), is one line for the summary ("The AI plan set aside 6,694 rows
 (19.8%): <reason> The engine checked: ..."; else ""), which the page prints under the bottom line and the PDF in "About
-this report". From 10% of the rows the step is also a plan signal of kind `other` with its column and the detail
-"the plan's filter set aside 6,694 of 33,878 rows (19.8%); keep them unless the goal needs them excluded" (with the
-check), so the one re-plan may keep the rows. A step's values are named only when they are 1 to 3 short values of a
-column the visitor did not withhold or code.
+this report". `valued` (read from 10% of the rows, else null) is how many of the rows hold a usable value of the plan's
+primary measure: filled (not blank, not one of the engine's placeholder words), a number by the engine's reader in a
+column it reads as numbers, and not a 0 the analyses read as no value (a level's placeholder zeros); every row when the
+plan names no primary measure. When the `valued` rows reach 10% of the file's rows (the integration pass, 1 October
+2026: the FX plan's 569 rows with a blank VALUE are 16.1% of the file but hold no rate, and asked for a re-plan that
+could change nothing) the step is also a plan signal of kind `other` with its column and the detail "the plan's filter
+set aside 6,694 of 33,878 rows (19.8%); keep them unless the goal needs them excluded" (with ", N of them (x% of the
+rows) with a value in <primary>" after the share when not every row holds one, and the check), so the one re-plan may
+keep the rows. A step whose rows hold no usable value is disclosed as above and never a signal. A step's values are named only when they are 1 to 3 short values of a column the
+visitor did not withhold or code.
 A column the visitor withheld or coded is never an axis, a group, a driver or a measure; a withheld one is
 never named ("a column you withheld").
 **Zero as a placeholder (30 September 2026; the evidence rule, final review the same day).** A column the plan

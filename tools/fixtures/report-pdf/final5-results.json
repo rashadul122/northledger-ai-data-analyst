@@ -2,7 +2,7 @@
  "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset); results = nl_browser.results_json, whole. Two runs:   fx       tools/fixtures/eval/fx_usd_cad.csv (StatCan 33-10-0036-01, the U.S. dollar rate) at 2026-09-29, the plan of            make_fx_history.py: a trend (a line of a level, 1.25 to 1.40 CAD per USD) and a distribution (12 bins); the            plan's exclude_blank sets aside 569 of the 3,526 rows (16.1%).   reviews  tools/fixtures/eval/reviews_synthetic.csv (SYNTHETIC, make_reviews.py; never the research-licensed review            rows) at 2026-09-30, review_text kept: the plan sets aside the \"All Electronics\" department (445 of 2,565            rows, 17.3%) on an \"umbrella ... overlapping\" reason the engine checks (none of the rows repeats a kept row),            compares the rating by department (5 groups left) and asks for the theme chart of the kept review_text; the            newest row is 1,279 days old, so the health score is 0 and says why.",
  "made_with": "tools/fixtures/report-pdf/make_final5.py (the packed engine, run natively)",
  "engine_snapshot": "19ec81d19e0d",
- "zip_sha256": "ce43397776cc237be96215cbabe684f6b868a6e572d5163b410e2ef5a0080a52",
+ "zip_sha256": "772ba3035dc918eb641f8d7597e7cf63344c71cb57222c0c091f5dfeff928896",
  "runs": {
   "fx": {
    "csv": "tools/fixtures/eval/fx_usd_cad.csv",

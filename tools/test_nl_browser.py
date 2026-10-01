@@ -4598,6 +4598,8 @@ def test_eval_a_rates_placeholder_zeros_are_not_counted_and_its_trend_is_the_rat
                               "between non-zero rates, the pattern of a day with no value); the engine's own reading is "
                               "unchanged and the tests changed no value"), note
     assert "placeholder" not in note["action"], note
+    # (nor is the plan's own step on VALUE, which sets aside the 569 rows with no rate: rows with no usable value of the
+    # measure are disclosed, never a signal; test_integ_fx_live_plan_replay_...)
     assert not any(s.get("column") == "VALUE" for s in rep["plan_signals"]), rep["plan_signals"]
     # the engine's own input is unchanged: it read the plan's 2,957 rows, zeros and all
     assert rep["cleaning"]["rows_in"] == 2957 and rep["input"]["rows"] == 2957, (rep["cleaning"]["rows_in"], rep["input"]["rows"])
@@ -6118,6 +6120,173 @@ def test_final5_the_plans_reading_is_cut_at_a_word_never_mid_word():
     assert r.endswith(" " + told) and len(r) <= 800, (len(r), r[-120:])
     head = r[:-len(told) - 1]
     assert head.endswith("…") and long_.startswith(head[:-1]) and long_[len(head) - 1] in " ,.;", head[-40:]
+
+
+# ------------------------------------------------------------------ the integration pass (1 Oct 2026)
+# The plan-drop signal (kind "other") asked the AI for a new plan on the FX file only because its plan set aside the
+# 569 rows whose VALUE is blank: rows with no usable value of the measure cannot be analysed whatever the plan says, so
+# the re-plan call bought nothing and cost the visitor its latency. Every step that sets rows aside is still disclosed
+# (the plan card, the PDF, the writer); only the rows that hold a usable value of the plan's primary measure count
+# toward the signal (row_drops[].valued), against the same threshold (PLAN_DROP_NOTICE_PCT).
+FX_LIVE_PLANS = os.path.join(HERE, "fixtures", "eval", "fx_live_plans_2026-10-01.json")
+# StatCan table 33-10-0036-01's U.S. dollar series as published: the columns around REF_DATE, VALUE and STATUS hold one
+# value throughout (checked against .work/eval/data/quant_fx_usd.csv, the file the live run read)
+FX_PUBLISHED = (("GEO", "Canada"), ("DGUID", "2021A000011124"), ("Type of currency", "U.S. dollar, daily average"),
+                ("UOM", "Dollars"), ("UOM_ID", "81"), ("SCALAR_FACTOR", "units"), ("SCALAR_ID", "0"),
+                ("VECTOR", "v111666248"), ("COORDINATE", "1.25"))
+# the live reviews run's file and plan: research-licensed rows that never enter the repository, read in place when
+# this machine has them (.work is git-ignored); the test says so and checks nothing when they are absent
+LIVE_REVIEWS = os.path.join(SITE, ".work", "eval", "data", "qual_amazon_vg_reviews.csv")
+LIVE_REVIEWS_PLAN = os.path.join(SITE, ".work", "eval", "out", "final-2026-10-01", "qual-reviews", "requests",
+                                 "01_plan-response.json")
+
+
+def _fx_published() -> bytes:
+    """The FX fixture rebuilt to the published file's 15 columns and quoting (every field quoted), row for row: the
+    file the live FX run read."""
+    with open(EVAL_FX, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n", quoting=csv.QUOTE_ALL)
+    head = ["REF_DATE"] + [k for k, _v in FX_PUBLISHED] + ["VALUE", "STATUS", "SYMBOL", "TERMINATED", "DECIMALS"]
+    w.writerow(head)
+    for r in rows:
+        w.writerow([r["REF_DATE"]] + [v for _k, v in FX_PUBLISHED] + [r["VALUE"], r["STATUS"], "", "", "4"])
+    return buf.getvalue().encode("utf-8")
+
+
+def test_integ_fx_live_plan_replay_discloses_the_blank_rows_and_asks_for_no_new_plan():
+    data = _fx_published()
+    live = os.path.join(SITE, ".work", "eval", "data", "quant_fx_usd.csv")
+    if os.path.exists(live):
+        with open(live, "rb") as fh:
+            assert fh.read() == data, "_fx_published no longer rebuilds the live run's file"
+    with open(FX_LIVE_PLANS, encoding="utf-8") as fh:
+        plans = json.load(fh)
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8"))))
+    blank = sum(1 for r in rows if not r["VALUE"].strip())
+    assert (len(rows), blank) == (3526, 569), (len(rows), blank)
+    share = "%.1f%%" % (100.0 * blank / len(rows))
+    for key in ("plan_1", "plan_2"):
+        rep = _run(data, "quant_fx_usd.csv", "", {"__plan__": plans[key]}, "2026-09-29")
+        assert rep["ok"], rep["error"]
+        ap = rep["ai_plan"]
+        # disclosed as before: the step's line with its share, its item with the count, the share and the plan's
+        # reason, the summary's notice, the writer's limitation and the PDF's list
+        assert "dropped 569 rows (%s) where VALUE is blank (2,957 rows left)" % share in ap["applied"], ap["applied"]
+        d, = ap["row_drops"]
+        assert (d["op"], d["column"], d["rows"], d["of"], d["valued"]) == ("exclude_blank", "VALUE", 569, 3526, 0), d
+        assert d["text"].startswith("Set aside 569 rows (%s of the file's 3,526) where VALUE is blank. " % share), d["text"]
+        assert d["notice"].startswith("The AI plan set aside 569 rows (%s)" % share), d["notice"]
+        out = NB.results_for_ai(rep)
+        assert out["plan_row_drops"] == [{"rows": 569, "of": 3526, "pct": d["pct"], "text": d["text"],
+                                          "notice": d["notice"]}], out["plan_row_drops"]
+        assert out["limitations"][0].startswith("The AI plan set aside 569 rows (%s)" % share), out["limitations"][:1]
+        # but no row of them holds a rate, so the step is no signal: the plan the report ran asks for nothing, and the
+        # first plan only for its refused analysis (the live run's own re-plan reason)
+        assert not [s for s in rep["plan_signals"] if s["kind"] == "other"], rep["plan_signals"]
+    assert rep["plan_signals"] == [], rep["plan_signals"]
+    first = _run(data, "quant_fx_usd.csv", "", {"__plan__": plans["plan_1"]}, "2026-09-29")
+    assert [s["kind"] for s in first["plan_signals"]] == ["analysis_refused"], first["plan_signals"]
+
+
+def test_integ_reviews_live_plan_replay_still_signals_the_all_electronics_drop():
+    if not (os.path.exists(LIVE_REVIEWS) and os.path.exists(LIVE_REVIEWS_PLAN)):
+        print("    (no check: the live reviews file is not on this machine; it is research-licensed and never in "
+              "the repository)")
+        return
+    with open(LIVE_REVIEWS_PLAN, encoding="utf-8") as fh:
+        plan = json.load(fh)["plan"]
+    with open(LIVE_REVIEWS, "rb") as fh:
+        data = fh.read()
+    rep = NB.run(data, "qual_amazon_vg_reviews.csv", "", {"review_text": "keep", "__plan__": plan}, "2026-09-30")
+    assert rep["ok"], rep["error"]
+    drops = rep["ai_plan"]["row_drops"]
+    d = drops[0]
+    assert (d["op"], d["column"], d["rows"], d["of"], d["valued"]) == ("exclude_rows", "department", 6694, 33878, 6694), d
+    assert d["text"].startswith("Set aside 6,694 rows (19.8% of the file's 33,878) where department is All "
+                                "Electronics. "), d["text"]
+    # every one of those reviews holds a star rating, the plan's measure: the step is still the one signal
+    sig = [s for s in rep["plan_signals"] if s["kind"] == "other"]
+    assert sig == [{"kind": "other", "column": "department",
+                    "detail": "the plan's filter set aside 6,694 of 33,878 rows (19.8%); keep them unless the goal "
+                              "needs them excluded; none of these rows duplicates a kept row"}], rep["plan_signals"]
+    # the plan's small step (the blank brands, 0.23%) is disclosed and never read for a signal
+    assert [(x["op"], x["column"], x["valued"]) for x in drops[1:]] == [("exclude_blank", "brand", None)], drops[1:]
+
+
+def _integ_sales(online_filled: int, blank_elsewhere: int = 0, money: bool = True):
+    """400 days of revenue by region: 300 rows across four regions, then 100 "Online" rows of which the first
+    `online_filled` hold a revenue; `blank_elsewhere` of the regional rows have a blank revenue. Revenue is written
+    with a thousands comma ("1,234.50") when `money`, which the plain number reader cannot read and the engine's can."""
+    rows = []
+    day = datetime.date(2025, 1, 1)
+    for i in range(400):
+        online = i % 4 == 3
+        region = "Online" if online else ["North", "South", "East"][i % 4]
+        v = 1000 + (i * 37) % 900 + 0.5
+        filled = (sum(1 for j in range(i) if j % 4 == 3) < online_filled) if online else \
+            (sum(1 for j in range(i) if j % 4 != 3) >= blank_elsewhere)
+        cell = (format(v, ",.2f") if money else "%.2f" % v) if filled else ""
+        rows.append([(day + datetime.timedelta(days=i)).isoformat(), region, cell])
+    return _csv(rows, ["day", "region", "revenue"])
+
+
+INTEG_PLAN = {"goal": "How has revenue moved by region?", "kind": "time_series", "primary": "revenue",
+              "understanding": "Daily revenue by region.",
+              "columns": [{"name": "day", "semantic_type": "date", "role": "date"},
+                          {"name": "region", "semantic_type": "category", "role": "segment"},
+                          {"name": "revenue", "semantic_type": "amount", "role": "target", "unit": "EUR"}],
+              "operations": [{"op": "exclude_rows", "column": "region", "values": ["Online"]}],
+              "quality_risks": ["The Online region is a separate channel, so it was excluded."]}
+
+
+def test_integ_a_filter_counts_toward_the_signal_only_the_rows_that_hold_a_value():
+    def run(data, plan):
+        rep = NB.run(data, "sales.csv", "", {"__plan__": plan}, "2026-03-01")
+        assert rep["ok"], rep["error"]
+        d, = rep["ai_plan"]["row_drops"]
+        return rep, d, [s for s in rep["plan_signals"] if s["kind"] == "other"]
+    # the filter sets aside 100 of 400 rows (25%), 50 of them with a revenue (12.5% of the file): a signal, which
+    # says how many of the rows hold a value
+    rep, d, sig = run(_integ_sales(50), INTEG_PLAN)
+    assert (d["rows"], d["of"], d["valued"]) == (100, 400, 50), d
+    assert d["notice"] == "The AI plan set aside 100 rows (25.0%): The Online region is a separate channel, so it was " \
+                          "excluded.", d["notice"]
+    assert sig == [{"kind": "other", "column": "region",
+                    "detail": "the plan's filter set aside 100 of 400 rows (25.0%), 50 of them (12.5% of the rows) "
+                              "with a value in revenue; keep them unless the goal needs them excluded"}], sig
+    # the same step when only 20 of them hold a revenue (5% of the file): disclosed alike, never a signal
+    rep, d, sig = run(_integ_sales(20), INTEG_PLAN)
+    assert (d["rows"], d["valued"]) == (100, 20) and d["notice"].startswith("The AI plan set aside 100 rows (25.0%)"), d
+    assert not sig and NB.results_for_ai(rep)["limitations"][0].startswith("The AI plan set aside 100 rows (25.0%)"), \
+        rep["plan_signals"]
+    # every Online row holds a revenue, written plainly: all 100 count
+    rep, d, sig = run(_integ_sales(100, money=False), INTEG_PLAN)
+    assert d["valued"] == 100 and sig and sig[0]["detail"].startswith(
+        "the plan's filter set aside 100 of 400 rows (25.0%); keep them"), sig
+    # a plan that names no measure counts rows, so every row it sets aside counts
+    rep, d, sig = run(_integ_sales(20), dict(INTEG_PLAN, primary=""))
+    assert d["valued"] == 100 and len(sig) == 1, (d, sig)
+    # the rows whose revenue is blank (a fifth of the file): disclosed, never a signal
+    blank_plan = dict(INTEG_PLAN, operations=[{"op": "exclude_blank", "column": "revenue"}],
+                      quality_risks=["revenue is blank on some days, so those rows were excluded."])
+    rep, d, sig = run(_integ_sales(100, blank_elsewhere=80), blank_plan)
+    assert (d["op"], d["rows"], d["valued"]) == ("exclude_blank", 80, 0) and d["notice"] and not sig, (d, sig)
+    # zeros the analyses read as no value (the FX file's 550 weekend zeros, typed a level) are no usable value either
+    zero_plan = dict(EVAL_FX_PLAN, operations=[{"op": "exclude_rows", "column": "VALUE", "values": ["0.0000"]}])
+    with open(EVAL_FX, "rb") as fh:
+        rep = NB.run(fh.read(), "fx_usd_cad.csv", "", {"__plan__": zero_plan}, "2026-09-29")
+    assert rep["ok"], rep["error"]
+    d, = rep["ai_plan"]["row_drops"]
+    assert (d["rows"], d["valued"]) == (550, 0) and not [s for s in rep["plan_signals"] if s["kind"] == "other"], \
+        (d, rep["plan_signals"])
+    # a real 0 (a level the plan does not type, here an amount) is a value
+    rep = NB.run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "",
+                 {"__plan__": dict(zero_plan, columns=[dict(c, semantic_type="amount") if c["name"] == "VALUE" else c
+                                                        for c in zero_plan["columns"]])}, "2026-09-29")
+    d, = rep["ai_plan"]["row_drops"]
+    assert d["valued"] == 550 and [s["kind"] for s in rep["plan_signals"] if s["kind"] == "other"] == ["other"], d
 
 
 def _payload_bytes_of(x) -> int:

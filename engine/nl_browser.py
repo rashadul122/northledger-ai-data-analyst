@@ -5032,13 +5032,70 @@ def _repeats_kept(gone: Any, kept: Any, skip: Iterable[str]) -> Tuple[Optional[i
     return sum(1 for t in g[hit].itertuples(index=False, name=None) if t in keys), cols
 
 
+def _valued_rows(plan: Dict[str, Any], df: Any, drop: Any) -> int:
+    """How many of the rows a step sets aside (`drop`, a mask over `df`) hold a usable value of the plan's primary
+    measure, the only rows whose loss can change what the report measures (integration pass, 1 Oct 2026: the FX plan's
+    exclude_blank on VALUE set aside 569 rows with no rate at all and cost a re-plan call). A usable value is filled (not
+    blank and not one of the engine's placeholder words) and, in a column whose filled values the engine reads as
+    numbers (clean.NUMERIC_DOMINANCE of them or more), a number by the engine's own reader; a 0 the analyses read as no
+    value (the placeholder evidence of _zero_shape, for a primary the plan types a level) is not one. Every row counts
+    when the plan names no primary measure (the headline then counts rows)."""
+    import numpy as np
+    import pandas as pd
+    from northledger import clean as _clean
+    drop = np.asarray(drop, dtype=bool)
+    prim = str(plan.get("primary") or "")
+    if not prim or prim not in df.columns:
+        return int(drop.sum())
+    s = df[prim]
+    filled = _filled_text(s).to_numpy()
+    n_f = int(filled.sum())
+    if not n_f:
+        return 0
+    txt = s.astype(str).str.strip()
+    nums = pd.to_numeric(txt.where(filled), errors="coerce").to_numpy(dtype=float)
+    slow = filled & np.isnan(nums)
+    raw = txt.to_numpy(dtype=object)
+    dec = _clean._decimal_convention(raw[slow]) if slow.any() else "."
+    units = _clean.column_units(prim)
+
+    def engine_read(at: Any) -> None:
+        nums[at] = [_clean._coerce_numeric_detail(v, True, dec, units)[0] for v in raw[at]]
+    # a number column (the engine's own bar, estimated from at most 400 of the values the plain reader could not read)
+    idx = np.flatnonzero(slow)
+    probe = idx[np.linspace(0, len(idx) - 1, min(len(idx), 400)).astype(int)] if len(idx) else idx
+    if len(probe):
+        engine_read(probe)
+    hit = float((~np.isnan(nums[probe])).mean()) if len(probe) else 0.0
+    if (n_f - len(idx)) + hit * len(idx) < _clean.NUMERIC_DOMINANCE * n_f:
+        return int((drop & filled).sum())
+    rest = np.flatnonzero(slow & drop & np.isnan(nums))
+    if len(rest):
+        engine_read(rest)
+    usable = filled & ~np.isnan(nums)
+    types = {str(c.get("name")): str(c.get("semantic_type") or "") for c in plan.get("columns") or []
+             if isinstance(c, dict)}
+    if types.get(prim) in PLACEHOLDER_ZERO_TYPES and bool((usable & drop & (nums == 0)).any()):
+        dcol = next((str(c.get("name")) for c in plan.get("columns") or [] if isinstance(c, dict)
+                     and c.get("role") == "date" and str(c.get("name")) in df.columns and str(c.get("name")) != prim), None)
+        dates = pd.to_datetime(df[dcol].where(_filled_text(df[dcol])), errors="coerce") if dcol else None
+        _z, ev = _zero_shape(np.where(usable, nums, np.nan), dates)
+        if ev:
+            usable = usable & ~np.asarray(ev["mask"], dtype=bool)
+    return int((usable & drop).sum())
+
+
 def _drop_record(kind: str, op: Dict[str, Any], plan: Dict[str, Any], df: Any, drop: Any, n_in: int) -> Dict[str, Any]:
-    """One step's record for _row_drops: {op, column, values, rows, of, reason, repeats, compared}; `drop` is the mask
-    of the rows it sets aside, over `df` (the file's rows the steps before it kept)."""
+    """One step's record for _row_drops: {op, column, values, rows, of, valued, reason, repeats, compared}; `drop` is
+    the mask of the rows it sets aside, over `df` (the file's rows the steps before it kept). `valued` (_valued_rows) is
+    read for a step that sets aside PLAN_DROP_NOTICE_PCT of the file's rows or more (none under it can be a signal),
+    else None."""
     col = str(op.get("column") or "")
     reason = _drop_reason(plan, op) if kind != "date_from_year" else "the engine reads dates from 1900 on"
+    rows = int(drop.sum())
+    valued = _valued_rows(plan, df, drop) if rows and n_in and 100.0 * rows / n_in >= PLAN_DROP_NOTICE_PCT else None
     rec = {"op": kind, "column": col, "values": [str(v) for v in (op.get("values") or [])[:500]],
-           "rows": int(drop.sum()), "of": int(n_in), "reason": reason, "repeats": None, "compared": []}
+           "rows": rows, "of": int(n_in), "valued": valued, "reason": reason, "repeats": None, "compared": []}
     if reason and _OVERLAP_CLAIM.search(reason) and rec["rows"]:
         typed = {str(c.get("name")) for c in plan.get("columns") or [] if isinstance(c, dict)
                  and c.get("semantic_type") == "identifier"}
@@ -5053,10 +5110,12 @@ def _or_words(vals: List[str]) -> str:
 
 
 def _row_drops(drops: List[Dict[str, Any]], private: Any) -> List[Dict[str, Any]]:
-    """ai_plan.row_drops: each step that set rows aside, {op, column, rows, of, pct, reason, check, compared, text,
-    notice}: `text` the full disclosure (the plan card, the PDF), `notice` the one line for the report's summary and the
-    PDF's notice (from PLAN_DROP_NOTICE_PCT of the rows, else ""). A step's values are named only when they are 1 to 3
-    short values of a column the visitor did not withhold or code (the planner saw them in its profile)."""
+    """ai_plan.row_drops: each step that set rows aside, {op, column, rows, of, pct, valued, reason, check, compared,
+    text, notice}: `text` the full disclosure (the plan card, the PDF), `notice` the one line for the report's summary
+    and the PDF's notice (from PLAN_DROP_NOTICE_PCT of the rows, else ""), `valued` how many of the rows hold a usable
+    value of the plan's primary measure (_valued_rows; None under PLAN_DROP_NOTICE_PCT), which alone decides the plan
+    signal (_plan_signals). A step's values are named only when they are 1 to 3 short values of a column the visitor
+    did not withhold or code (the planner saw them in its profile)."""
     out = []
     for d in drops or []:
         n, of, col = int(d["rows"]), int(d["of"]), d["column"]
@@ -5093,7 +5152,9 @@ def _row_drops(drops: List[Dict[str, Any]], private: Any) -> List[Dict[str, Any]
                 "The AI plan set aside %s rows (%s) and gave no reason." % (format(n, ","), _pct_text(pct))
             if check:
                 notice += " The engine checked: %s." % check
-        out.append({"op": d["op"], "column": col, "rows": n, "of": of, "pct": pct, "reason": reason, "check": check,
+        valued = d.get("valued")
+        out.append({"op": d["op"], "column": col, "rows": n, "of": of, "pct": pct,
+                    "valued": None if valued is None else int(valued), "reason": reason, "check": check,
                     "compared": list(d.get("compared") or []), "text": text, "notice": notice})
     return out
 
@@ -8324,17 +8385,24 @@ def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any], scrub: Optional["_N
             out.append({"kind": "contract_failed", "column": str(t.get("column")), "detail": safe(str(t.get("problem")))[:200]})
     for x in plan.get("refused") or []:
         out.append({"kind": "layout_refused" if str(x).startswith("long_to_wide") else "op_refused", "detail": safe(str(x))[:200]})
-    # a step that set aside PLAN_DROP_NOTICE_PCT or more of the file's rows (final evaluation, 1 Oct 2026: a fifth of
-    # the reviews went on a false "overlap"): the one re-plan may keep them; the engine's check of the plan's reason
-    # goes too
+    # a step whose set-aside rows that hold a usable value of the plan's primary measure (row_drops[].valued) are
+    # PLAN_DROP_NOTICE_PCT or more of the file's rows (final evaluation, 1 Oct 2026: a fifth of the reviews went on a
+    # false "overlap"): the one re-plan may keep them; the engine's check of the plan's reason goes too. Rows with no
+    # usable value cannot be analysed whatever the plan says (integration pass, 1 Oct 2026: the FX plan's 569 rows with
+    # a blank VALUE cost a re-plan call), so they are disclosed (row_drops[].text, .notice) but never a signal.
     for d in plan.get("row_drops") or []:
         if not isinstance(d, dict):
             continue
         n, of = int(d.get("rows") or 0), int(d.get("of") or 0)
-        if not of or 100.0 * n / of < PLAN_DROP_NOTICE_PCT:
+        v = n if d.get("valued") is None else int(d["valued"])
+        if not of or 100.0 * v / of < PLAN_DROP_NOTICE_PCT:
             continue
-        detail = "the plan's filter set aside %s of %s rows (%s); keep them unless the goal needs them excluded" % (
-            format(n, ","), format(of, ","), _pct_text(100.0 * n / of))
+        detail = "the plan's filter set aside %s of %s rows (%s)" % (format(n, ","), format(of, ","),
+                                                                    _pct_text(100.0 * n / of))
+        if v < n:
+            detail += ", %s of them (%s of the rows) with a value in %s" % (
+                format(v, ","), _pct_text(100.0 * v / of), str(plan.get("primary") or "the measure"))
+        detail += "; keep them unless the goal needs them excluded"
         if d.get("check"):
             detail += "; " + str(d["check"])
         out.append({"kind": "other", "column": str(d.get("column") or ""), "detail": safe(detail)[:200]})

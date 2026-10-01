@@ -449,14 +449,28 @@ def test_calendar_recomputes_from_the_download_and_matches_the_trend_series():
         assert rec["anchors"] == ["finding:" + next(c for c in rep["charts"] if c["id"] == key)["finding_ids"][0]]
 
 
+def _size_order(df, col, measure, date="order_date"):
+    """WAVE 4, segments by size (nl_viz.Ctx.levels with the chart's measure): a flow's levels by the sum of |measure| over
+    the latest 12 months, then by rows, then by name (they were by rows, then name). Without a measure: by rows."""
+    rows = df[col].value_counts()
+    size = {}
+    if measure is not None:
+        mon = df[date].str[:7]
+        last = sorted(set(mon))[-1]
+        keep = mon >= NB._shift_month(last, -11)
+        v = _num(df[measure]).abs()
+        ok = keep & v.notna()
+        size = v[ok].groupby(df[col][ok]).sum().to_dict()
+    return sorted(rows.index, key=lambda k: (-size.get(k, 0.0), -rows[k], k))
+
+
 def test_change_heatmap_recomputes_and_its_levels_add_up_to_the_engine_series():
     rep = _case("stores_ai")
     rec = _rec(rep, "change_heatmap")
     df = _clean(rep)
     mon = df["order_date"].str[:7]
     v = _num(df["revenue"])
-    lv = df["store"].value_counts()
-    levels = sorted(lv.index, key=lambda k: (-lv[k], k))
+    levels = _size_order(df, "store", "revenue")
     assert rec["data"]["rows"] == levels, rec["data"]["rows"]
     months = sorted(set(mon))
     cols = [m for m in NB._month_range(months[0], months[-1]) if NB._shift_month(m, -12) >= months[0]][-24:]
@@ -496,9 +510,8 @@ def test_crosstab_recomputes_suppresses_under_5_and_prints_no_margins():
     df = _clean(rep)
     for rec, a, b, measure in ((recs[0], "store", "channel", "revenue"), (recs[1], "channel", "stars", None)):
         ga, gb = df[a], df[b]
-        la = sorted(ga.value_counts().index, key=lambda k: (-ga.value_counts()[k], k))
-        lb = sorted(gb.unique(), key=lambda x: float(x)) if b == "stars" else \
-            sorted(gb.value_counts().index, key=lambda k: (-gb.value_counts()[k], k))
+        la = _size_order(df, a, measure)
+        lb = sorted(gb.unique(), key=lambda x: float(x)) if b == "stars" else _size_order(df, b, measure)
         assert rec["data"]["rows"] == la and rec["data"]["cols"] == lb, (rec["data"]["rows"], rec["data"]["cols"])
         v = _num(df[measure]) if measure else None
         values, n = [], []

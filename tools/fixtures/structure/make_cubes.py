@@ -312,7 +312,10 @@ def category_long(rows: int = 1000, labels: int = 30, header: str = "Industry se
     first = ["Marisol", "Jonah", "Priya", "Tomasz", "Aiko", "Kwame", "Lucia", "Dmitri", "Fatima", "Oskar"]
     last = ["Fairweather", "Okafor", "Lindqvist", "Moreau", "Tanaka", "Haddad", "Novak", "Silva", "Brennan", "Kowalski"]
     if names:
-        vals = ["%s %s" % (first[i % 10], last[(i * 3 + 1) % 10]) for i in range(labels)]
+        # four-word names (a given name, a middle name, two family names): long enough for the engine's scan to read the
+        # column as free text, so the privacy release is asked about it
+        vals = ["%s %s %s %s" % (first[i % 10], first[(i // 10 + 3) % 10], last[(i % 10 + i // 10) % 10],
+                                 last[(i // 10 + 5) % 10]) for i in range(labels)]
     else:
         vals = ["Segment %02d: %s" % (i, "services for regional %s and allied trades" % ("retail" if i % 2 else "wholesale"))
                 for i in range(labels)]

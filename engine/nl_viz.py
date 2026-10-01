@@ -551,11 +551,28 @@ class Ctx:
         t = self.texts(land)
         return [str(x) for x in t[t != ""].unique()]
 
-    def levels(self, land: str) -> List[Tuple[str, int]]:
-        """(level, rows) of a category over the kept rows, most rows first (then by name); blanks left out."""
+    def levels(self, land: str, measure: Optional[str] = None) -> List[Tuple[str, int]]:
+        """(level, rows) of a category over the kept rows, blanks left out, largest first (WAVE 4: segments by size, not
+        by how many rows they have): with a measure, by the sum of |measure| over the latest 12 months for a flow or a
+        count, or rows x |mean| for a level; then by rows; then by name. Without one (a chart that counts rows), by rows."""
         t = self.texts(land)
-        vc = t[t != ""].value_counts()
-        return sorted(((str(k), int(v)) for k, v in vc.items()), key=lambda kv: (-kv[1], kv[0]))
+        filled = t != ""
+        vc = t[filled].value_counts()
+        size: Dict[str, float] = {}
+        if measure is not None and measure in self.columns and measure != land:
+            v = self.nums(measure)
+            ok = filled & v.notna()
+            if self.is_flow(measure):
+                if self.month is not None:
+                    ms = sorted(m for m in self.month.dropna().unique())
+                    if ms:
+                        ok = ok & (self.month >= NB._shift_month(ms[-1], -11)) & self.month.notna()
+                size = {str(k): float(x) for k, x in v[ok].abs().groupby(t[ok]).sum().items()}
+            else:
+                g = v[ok].groupby(t[ok])
+                size = {str(k): float(n) * abs(float(mu)) for k, n, mu in zip(g.count().index, g.count().values,
+                                                                              g.mean().values)}
+        return sorted(((str(k), int(v)) for k, v in vc.items()), key=lambda kv: (-size.get(kv[0], 0.0), -kv[1], kv[0]))
 
     def rating_levels(self, land: str) -> Optional[List[float]]:
         """The whole-number levels of a rating column (2 to 10 of them), in their order, or None."""
@@ -1520,10 +1537,10 @@ def _fit(make: Callable[[int], Dict[str, Any]], steps: int) -> Dict[str, Any]:
     raise Refused(R_SIZE)
 
 
-def _top_levels(ctx: Ctx, land: str, keep: int) -> Tuple[List[str], Any]:
-    """(the rows' labels: the `keep`-1 levels with the most rows and "other", or every level when there are at most
-    `keep`; each row's group, None for a blank)."""
-    lv = ctx.levels(land)
+def _top_levels(ctx: Ctx, land: str, keep: int, measure: Optional[str] = None) -> Tuple[List[str], Any]:
+    """(the rows' labels: the `keep`-1 largest levels (by the chart's measure: Ctx.levels) and "other", or every level
+    when there are at most `keep`; each row's group, None for a blank)."""
+    lv = ctx.levels(land, measure)
     names = [g for g, _n in lv]
     top = names if len(names) <= keep else names[:keep - 1]
     t = ctx.texts(land)
@@ -1547,7 +1564,7 @@ def _b_change(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
             raise Refused("no category column")
     flow = ctx.is_flow(land)
     _names_check(ctx, seg)
-    labels, grp = _top_levels(ctx, seg, CROSS_ROWS)
+    labels, grp = _top_levels(ctx, seg, CROSS_ROWS, land)
     if not SEGMENT_LEVELS[0] <= len(labels) <= SEGMENT_LEVELS[1]:
         raise Refused("%s has %s" % (ctx.header(seg), _plural(len(labels), "level")))
     for g in labels:
@@ -1663,13 +1680,13 @@ def _b_crosstab(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
     _names_check(ctx, a)
     if rl is None:
         _names_check(ctx, b)
-    ra, ga = _top_levels(ctx, a, CROSS_ROWS)
+    ra, ga = _top_levels(ctx, a, CROSS_ROWS, land)
     if rl is not None:
         rb = [_fmt(x) for x in rl]
         nb = ctx.nums(b)
         gb = nb.map(lambda x: None if x != x else _fmt(float(x)))
     else:
-        rb, gb = _top_levels(ctx, b, CROSS_COLS)
+        rb, gb = _top_levels(ctx, b, CROSS_COLS, land)
     if len(ra) < 2 or len(rb) < 2:
         raise Refused("each column needs 2 or more levels")
     for g in ra + rb:
@@ -2361,11 +2378,152 @@ def _built(ctx: Ctx, chart: str, lands: Optional[List[str]]) -> Dict[str, Any]:
         raise Refused("the chart could not be built for this file (%s)" % type(exc).__name__)
 
 
+# --------------------------------------------------------------------------- a statistical table's charts
+# WAVE 4, track A1 (plan/WAVE4-A-DESIGN.md section 2(10)). A table read by its structure (nl_structure) is charted from
+# its published parts, never its raw rows: a contribution waterfall per breakdown (the headline's verified parts, the
+# largest first, the smaller ones folded into "other parts", and the UNALLOCATED step: the total less its published
+# parts, the suppressed share), its table carrying each part's own change. The record keeps the frozen spec's shape
+# (basis.split "segment", no key the spec does not know): the record's source says it is the structure's, and each part
+# rests on its 12 published months in each window. A heatmap is not drawn from published series: each cell would be
+# one published figure, under the 5 rows a shown cell needs (SMALL_CELL), so a plan's heatmap of a structure dimension
+# is refused with that reason. A chart over a table's raw rows (a table whose structure could not be used) is refused:
+# its rows mix totals and parts.
+R_CUBE_ROWS = "rows of a table of series mix totals and parts"
+R_CUBE_HEAT = ("each cell of a table of series is one published figure, under the 5 rows a shown cell needs; the "
+               "structure's breakdowns show where the change sits")
+STRUCTURE_WATERFALL_PARTS = 10          # the largest parts shown; the rest folded into "other parts", then unallocated
+
+
+def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[str, Dict[str, Any]],
+                           basis: Dict[str, Any], findings: Dict[str, Any]) -> Dict[str, Any]:
+    key = bd["key"]
+    pre = "contribution.%s." % key
+    parts = [it for iid, it in items.items() if iid.startswith(pre) and not iid.endswith(".unallocated")]
+    if len(parts) < 2:
+        raise Refused("the breakdown has fewer than two parts")
+    unal = items.get(pre + "unallocated")
+    hp, hl, hc = items.get("headline.prior"), items.get("headline.latest"), items.get("headline.change")
+    if not hp or not hl or not hc or unal is None:
+        raise Refused(R_RECON)
+    parts.sort(key=lambda it: (-abs(float(it["value"])), str(it["segment"])))
+    shown, rest = parts[:STRUCTURE_WATERFALL_PARTS], parts[STRUCTURE_WATERFALL_PARTS:]
+    growth = {str(it["segment"]): it for iid, it in items.items() if iid.startswith("growth.%s." % key)}
+    steps = [(str(it["segment"])[:LABEL_MAX], float(it["value"]), str(it["text"])) for it in shown]
+    if rest:
+        v = math.fsum(float(it["value"]) for it in rest)
+        steps.append(("other parts (%d)" % len(rest), v, _money_like(v, str(hc["text"]))))
+    steps.append(("unallocated (suppressed cells)", float(unal["value"]), str(unal["text"])))
+    bs = {"split": "segment", "finding_id": basis.get("finding_id"), "column": str(bd["dim"])[:120],
+          "prior": list(basis["windows"]["prior"]), "latest": list(basis["windows"]["latest"])}
+    data = _waterfall_data(("12 months before", float(hp["value"]), str(hp["text"])), steps,
+                           ("Latest 12 months", float(hl["value"]), str(hl["text"])),
+                           (float(hc["value"]), str(hc["text"])), bs)
+    _check_waterfall(data)
+    measure = str(basis.get("measure") or "the total")
+    what = str(basis.get("estimand") or measure).split(";")[0]
+    grade = basis.get("grade")
+    big = shown[:2]
+    lead = " and ".join("%s %s" % (it["segment"], it["text"]) for it in big)
+    summary = ("%s went from %s in the 12 months before to %s in the latest 12 months, a change of %s (descriptive "
+               "arithmetic on published totals). The largest contributions by %s: %s; the unallocated part (the total "
+               "less its published parts) is %s. Where the change sits, not what caused it." % (
+                   _cut(what, 120), hp["text"], hl["text"], hc["text"], bd["dim"], lead, unal["text"]))
+    rows = [["12 months before", str(hp["text"]), ""]]
+    for it in shown:
+        g = growth.get(str(it["segment"]))
+        rows.append([str(it["segment"]), str(it["text"]), str(g["text"]) if g else "n/a"])
+    if rest:
+        rows.append([steps[len(shown)][0], steps[len(shown)][2], ""])
+    rows.append(["unallocated (suppressed cells)", str(unal["text"]), ""])
+    rows.append(["Latest 12 months", str(hl["text"]), ""])
+    fid = str(basis.get("finding_id") or "")
+    anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.prior"] + \
+        ["scenario:" + str(it["id"]) for it in shown] + ["scenario:" + str(unal["id"]), "scenario:headline.latest",
+                                                         "scenario:headline.change"]
+    return _record(
+        "contribution_waterfall", "Where the change in %s came from, by %s" % (_cut(measure, 60), bd["dim"]),
+        "%s, %s to %s against %s to %s: each published part's contribution (the parts of %s, sum-checked)" % (
+            _cut(what, 60), basis["windows"]["prior"][0], basis["windows"]["prior"][1], basis["windows"]["latest"][0],
+            basis["windows"]["latest"][1], bd["parent"]),
+        "drove", str((findings.get(fid) or {}).get("claim") or what), anchors, None, grade,
+        {"label": measure, "unit": "", "kind": "amount"}, data,
+        {"cols": ["Step", "Contribution", "Own change"], "rows": rows}, summary,
+        (0, "%d smaller parts folded into 'other parts'" % len(rest) if rest else ""),
+        "structure: the published parts of %s by %s (each total checked against its parts); the unallocated step is the "
+        "total less its published parts" % (bd["parent"], bd["dim"]),
+        {"columns": [measure, str(bd["dim"])], "rows": None, "months": [basis["windows"]["prior"][0],
+                                                                         basis["windows"]["latest"][1]],
+         "op": "each part's 12-month total in each window, from the table's own series"})
+
+
+def _money_like(v: float, like: str) -> str:
+    """A figure written as the headline's change is ("+$1.2B"): its currency sign and suffix."""
+    import nl_structure as NST
+    S = {"measure": {"type": "flow", "currency": like.lstrip("+" + MINUS).startswith("$"), "uom": "Dollars"}}
+    return NST.money(v, S, signed=True)
+
+
+def _build_structure(rep: Dict[str, Any], ctx_in: Dict[str, Any], viz: Dict[str, Any]) -> Dict[str, Any]:
+    """The charts of a table read by its structure: a waterfall per breakdown; a plan's chart of a structure dimension is
+    the structure's own when one matches, else refused with its reason."""
+    sc = rep.get("scenarios") or {}
+    basis = sc.get("basis") or {}
+    items = {str(it.get("id")): it for it in sc.get("items") or [] if isinstance(it, dict)}
+    findings = {str(f.get("id")): f for f in rep.get("findings") or [] if isinstance(f, dict)}
+    built: Dict[str, Dict[str, Any]] = {}
+    if basis.get("source") == "structure":
+        for bd in basis.get("breakdowns") or []:
+            try:
+                built[str(bd["dim"])] = _b_structure_waterfall(rep, bd, items, basis, findings)
+            except Refused as exc:
+                viz["refused"].append({"chart": "contribution_waterfall", "columns": [str(bd["dim"])],
+                                       "why": _cut(str(exc), 300), "chosen_by": "engine"})
+    S = (ctx_in.get("structure") or {}).get("S") or {}
+    dims = {d["column"] for d in S.get("dims") or []}
+    chosen_ai: Dict[str, str] = {}
+    plan = ctx_in.get("plan") if isinstance(ctx_in.get("plan"), dict) else {}
+    for it in (plan.get("charts") or [])[:PLAN_CHARTS_READ]:
+        chart = str(it.get("kind") or "")
+        cols = [str(c) for c in it.get("columns") or []]
+        hit = [c for c in cols if c in dims]
+        ref = {"chart": chart[:40], "columns": cols[:12], "why": "", "chosen_by": "ai"}
+        if chart == "contribution_waterfall" and hit and hit[0] in built:
+            chosen_ai[hit[0]] = str(it.get("why") or "")
+            continue
+        if chart in ("change_heatmap", "calendar_heatmap", "crosstab_heatmap"):
+            ref["why"] = R_CUBE_HEAT
+        elif hit:
+            ref["why"] = "%s: %s" % (R_CUBE_ROWS, "the structure's breakdowns show %s instead" % hit[0])
+        else:
+            ref["why"] = "the chart reads the table's rows, which mix totals and parts; the headline series is charted " \
+                         "by the engine's own trend chart"
+        viz["refused"].append(ref)
+    for dim, rec in built.items():
+        if len(viz["charts"]) >= VIZ_MAX:
+            break
+        if dim in chosen_ai:
+            _place(viz, rec, "ai", str(chosen_ai[dim]) or "the plan asked where the change came from by %s" % dim)
+        else:
+            _place(viz, rec, "engine", ENGINE_WHY + "where the change in the headline came from, by the table's own "
+                                                    "published parts of %s" % dim)
+    viz["chosen_by"] = "ai" if chosen_ai else ("engine" if viz["charts"] else "none")
+    rep["charts"] = list(rep.get("charts") or []) + v2_records(viz)
+    drop_driver_line(rep, viz)
+    return viz
+
+
 def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
     """rep["viz"] = {version, charts, refused, chosen_by}, and each record appended to rep["charts"] as a rule "V"
     record. ctx_in: {"r" (the engine's analysis, for its claims), "reading", "plan" (the validated AI plan), "pub" (the
-    report's scrubber), "goal"}."""
+    report's scrubber), "goal", "structure" (a table read by its structure: its slice's run)}."""
     viz = blank()
+    if ctx_in.get("structure") is not None:
+        return _build_structure(rep, ctx_in, viz)
+    st = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
+    if st is not None and (st.get("kind") == "cube_incomplete" or (st.get("kind") == "cube" and st.get("usable"))):
+        # a table of series read row by row (its structure could not be used): no chart averages or totals its rows
+        viz["refused"].append({"chart": "all", "columns": [], "why": R_CUBE_ROWS, "chosen_by": "engine"})
+        return viz
     if not (rep.get("downloads") or {}).get("clean_csv"):
         return viz
     ctx = Ctx(rep, dict(ctx_in, claims=claims_of(ctx_in.get("r"))))

@@ -1094,6 +1094,8 @@ def table(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     the latest 12 months)"), and a column no row fills (the shares, when none is given) is left out. None when
     there are no contributions."""
     basis = (sc or {}).get("basis") or {}
+    if basis.get("source") == "structure":
+        return _structure_table(sc)
     segb = basis.get("segment") or {}
     col = segb.get("column")
     entered = [str(x) for x in segb.get("entered") or []]
@@ -1122,3 +1124,206 @@ def table(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     use = [0] + [j for j in range(1, len(cols)) if any(r[j] for r in rows)]
     return {"title": "Where the change in %s came from" % what, "cols": [cols[j] for j in use],
             "rows": [[r[j] for j in use] for r in rows]}
+
+
+# --------------------------------------------------------------------------- a statistical table's breakdown
+# WAVE 4, track A1 (plan/WAVE4-A-DESIGN.md section 4, "Scenario items"). A table read by its structure (nl_structure)
+# is broken down by the structure, never by its raw rows: the headline is the slice's own series (Canada, all retail,
+# total sales, unadjusted), and each verified partition of an additive dimension at the headline's root gives a
+# breakdown (B1: the 13 provinces of Canada; B2: the 9 store types at the first level of NAICS), its parts at the
+# headline's other members. Items: headline.{prior, latest, change, change_pct}; per part contribution.<dim>.<member>
+# (its contribution to the change), growth.<dim>.<member> (its own change, when its 24 months are all published),
+# share_level.<dim>.<member> (its share of the latest window) and share_change.<dim>.<member> (only when every part moved
+# the way the total did); and contribution.<dim>.unallocated, the total less its parts with a value (the publisher's
+# suppressed cells), so the parts and the unallocated add up to the change exactly. The slice's monthly values must equal
+# the engine's charted series (the estimand's reconciliation) or the whole block is refused. Texts are the estimand's
+# (nl_structure.money, "$864.0B", "+$10.2B"; nl_structure.pct, "+3.2%").
+STRUCTURE_GRADE_WORDS = "descriptive arithmetic on published totals"
+STRUCTURE_NOTE = ("Descriptive arithmetic on the table's own published series, in the engine's comparison windows (the "
+                  "latest 12 months against the 12 before): the headline is the series the table's structure chooses, and "
+                  "each breakdown's parts are that total's verified parts (each total checked against its parts). The "
+                  "unallocated part is the total less the parts the publisher shows (its suppressed cells); the parts and "
+                  "the unallocated add up to the change exactly. A contribution says where the change sits, not what "
+                  "caused it.")
+RATE_REFUSED = ("a %s is never added or averaged across members: each member's own %s is published, and the headline "
+                "is the published aggregate, so there are no contributions")
+
+
+def dim_key(header: str) -> str:
+    """A dimension's short id part: an acronym in brackets ("NAICS" of "North American ... (NAICS)"), else its slug."""
+    m = re.search(r"\(([A-Za-z][A-Za-z0-9]{1,11})\)\s*$", str(header))
+    if m:
+        return m.group(1).lower()
+    return re.sub(r"[^a-z0-9]+", "_", str(header).lower()).strip("_")[:24] or "dim"
+
+
+def member_keys(labels: List[str]) -> Dict[str, str]:
+    """Each member's id part: its code when it carries one ("455", "44_45", "459a"), else its slug; unique."""
+    import nl_structure as NST
+    out: Dict[str, str] = {}
+    used: set = set()
+    for lb in labels:
+        c = NST._label_code(lb)
+        base = re.sub(r"[^a-z0-9]+", "_", (c or lb).lower()).strip("_")[:24] or "member"
+        s, k = base, 1
+        while s in used:
+            k += 1
+            s = "%s_%d" % (base, k)
+        used.add(s)
+        out[lb] = s
+    return out
+
+
+def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """rep["scenarios"] for a table read by its structure (basis.source "structure")."""
+    import nl_structure as NST
+    S, where = inner["S"], inner["where"]
+    est = rep.get("estimand") or {}
+    out = blank()
+    refused: List[str] = out["refused"]
+    win = {"prior": list(est["comparison"]["prior"]), "latest": list(est["comparison"]["latest"])}
+    meas = NST.slice_type(S, where)
+    S_local = dict(S, measure=dict(S["measure"], **meas))
+    prim = (rep.get("primary_metric") or {}).get("finding_id")
+    head = next((f for f in rep.get("findings") or [] if f.get("id") == prim and f.get("kind") == "business"), None) or \
+        next((f for f in rep.get("findings") or [] if f.get("kind") == "business"
+              and not str(f.get("id") or "").startswith("measure.volume")), None)
+    grade = (head or {}).get("grade")
+    official = bool(S.get("official"))
+    col = str(inner.get("column") or S["measure"]["column"])
+    basis = {"source": "structure", "finding_id": (head or {}).get("id"), "claim": (head or {}).get("claim"),
+             "grade": grade, "grade_words": "the claim itself, graded %s" % grade if grade else None,
+             "measure": col, "how": "total" if meas["type"] in ("flow", "count") else "average", "unit": meas.get("uom") or "",
+             "windows": win, "slice": dict(where), "slice_id": inner.get("slice_id"), "breakdowns": [],
+             "estimand": est.get("text"), "reconciles": bool(est.get("reconciles"))}
+    out["basis"] = basis
+    if est.get("reconciles") is False:
+        out["items"] = []
+        refused.append(NOT_RECONCILED)
+        out["note"] = NOTE_REFUSED
+        return out
+    items: List[Dict[str, Any]] = []
+    fig = est.get("figures") or {}
+    ext = "the latest 12 months against the 12 before"
+    what = (est.get("text") or col).split(";")[0]
+
+    def item(iid: str, group: str, label: str, value: Any, kind: str, text: str, grade_own: Optional[str],
+             segment: Optional[str] = None, unit: str = "", window: Optional[str] = None, op: str = "",
+             assumes: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        it = _item(iid, group, label, value, kind, unit, grade_own, [col], window, op, segment, assumes)
+        if it is None:
+            return None
+        it["text"] = text
+        if group not in ("headline", "forecast", "facts") and official:
+            it["grade_words"] = "%s; part of a change graded %s, not graded itself" % (STRUCTURE_GRADE_WORDS, grade) \
+                if grade else STRUCTURE_GRADE_WORDS
+        return it
+    for key, label, kind, unit, win_k, op in (
+            ("prior", "%s, the 12 months before (%s to %s)" % (what, win["prior"][0], win["prior"][1]), "amount", "",
+             "prior", "sum of the slice's months" if meas["type"] in ("flow", "count") else "mean of the slice's months"),
+            ("latest", "%s, the latest 12 months (%s to %s)" % (what, win["latest"][0], win["latest"][1]), "amount", "",
+             "latest", "sum of the slice's months" if meas["type"] in ("flow", "count") else "mean of the slice's months"),
+            ("change", "Change in %s, %s" % (what, ext), "change", "", "both", "latest less prior"),
+            ("change_pct", "Change in %s in percent, %s" % (what, ext), "change", "%", "both", "latest / prior - 1")):
+        f = fig.get(key) or {}
+        it = item("headline.%s" % key, "headline", label, f.get("value"), kind, f.get("text") or "", grade,
+                  unit=unit, window=win_k, op=op)
+        if it is not None:
+            items.append(it)
+    if meas["type"] in ("rate", "index"):
+        refused.append(RATE_REFUSED % (meas["type"], meas["type"]))
+    else:
+        chosen = [b for b in (plan or {}).get("breakdowns") or []] if plan else []
+        bds = [b for b in S.get("breakdowns") or [] if not chosen or b["id"] in chosen][:NST.BREAKDOWNS_MAX]
+        for bd in bds:
+            res = NST.breakdown(S_local, bd, where, win)
+            if res is None:
+                refused.append("the breakdown by %s could not be formed in the comparison windows" % bd["dim"])
+                continue
+            if not res["reconciles"]:
+                refused.append("the breakdown by %s does not add up to the change, so it is not shown" % bd["dim"])
+                continue
+            dk = dim_key(bd["dim"])
+            mk = member_keys(bd["parts"])
+            basis["breakdowns"].append({"id": bd["id"], "dim": bd["dim"], "key": dk, "parent": bd["parent"],
+                                        "parts": len(bd["parts"]), "depth": bd.get("depth", 1),
+                                        "shares_given": res["shares_given"],
+                                        "unallocated": {k: NST._r(v) for k, v in res["unallocated"].items()}})
+            ref = res["latest"]
+            for p in res["parts"]:
+                m, seg = mk[p["member"]], p["member"]
+                for iid, label, value, kind, text, unit, op in (
+                        ("contribution.%s.%s" % (dk, m), "%s: contribution to the change in %s, %s" % (seg, what, ext),
+                         p["contribution"], "change", NST.money(p["contribution"], S_local, signed=True, ref=None), "",
+                         "the part's latest window less its window before"),
+                        ("growth.%s.%s" % (dk, m), "%s: its own change in percent, %s" % (seg, ext),
+                         p["growth_pct"], "change", NST.pct(p["growth_pct"]), "%", "latest / prior - 1"),
+                        ("share_level.%s.%s" % (dk, m), "%s: share of %s in the latest 12 months" % (seg, what),
+                         p["share_level_pct"], "percent", NST.pct(p["share_level_pct"], signed=False), "",
+                         "the part's latest window / the total's"),
+                        ("share_change.%s.%s" % (dk, m), "%s: share of the change in %s" % (seg, what),
+                         p["share_change_pct"], "percent", NST.pct(p["share_change_pct"], signed=False), "",
+                         "the part's contribution / the change")):
+                    it = item(iid, "contribution", label, value, kind, text, grade, segment=seg, unit=unit,
+                              window="both", op=op)
+                    if it is not None:
+                        items.append(it)
+            u = res["unallocated"]
+            it = item("contribution.%s.unallocated" % dk, "contribution",
+                      "Unallocated within %s: %s less its published parts (suppressed cells), its change, %s"
+                      % (bd["dim"], bd["parent"], ext), u["contribution"], "change",
+                      NST.money(u["contribution"], S_local, signed=True, ref=ref), grade, segment="unallocated (%s)" % bd["dim"],
+                      window="both", op="the change less the parts' contributions",
+                      assumes="the total less the parts the publisher shows: %s in the latest 12 months, %s before"
+                              % (NST.money(u["latest"], S_local, ref=ref), NST.money(u["prior"], S_local, ref=ref)))
+            if it is not None:
+                items.append(it)
+            if not res["shares_given"]:
+                refused.append(MIXED_SHARES + " (%s)" % bd["dim"])
+        if not S.get("breakdowns"):
+            refused.append("no dimension of the table has a verified total at the headline's members, so there is no "
+                           "breakdown")
+    fc_items, fc_refused = _forecast_items(rep)
+    items.extend(fc_items)
+    refused.extend(fc_refused)
+    months, vals = NST._monthly(S_local, where)
+    have = [m for m, v in zip(months, vals) if v == v]
+    if have:
+        for it in (item("facts.months", "facts", "Months with a value in the headline series", float(len(have)), "count",
+                        format(len(have), ","), None, op="count months"),
+                   item("facts.first", "facts", "The first month of the headline series", have[0], "date", have[0], None,
+                        op="min"),
+                   item("facts.last", "facts", "The last month of the headline series", have[-1], "date", have[-1], None,
+                        op="max")):
+            if it is not None:
+                items.append(it)
+    out["items"] = _ordered(items)
+    out["note"] = STRUCTURE_NOTE
+    return out
+
+
+def _structure_table(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The writer's table for a structure breakdown: the first breakdown's parts, each cell an item's own text."""
+    basis = (sc or {}).get("basis") or {}
+    bds = basis.get("breakdowns") or []
+    if not bds:
+        return None
+    bd = bds[0]
+    pre = ".%s." % bd["key"]
+    by: Dict[Tuple[str, str], str] = {}
+    seen: List[str] = []
+    for it in (sc or {}).get("items") or []:
+        iid = str(it.get("id") or "")
+        grp = iid.split(".", 1)[0]
+        if pre not in iid or grp not in ("contribution", "growth", "share_change", "share_level"):
+            continue
+        g = str(it.get("segment") or "")
+        if g not in seen:
+            seen.append(g)
+        by[(g, grp)] = it.get("text") or ""
+    rows = [[g] + [by.get((g, k), "") for k in ("contribution", "share_change", "growth", "share_level")]
+            for g in seen[:12]]
+    cols = [str(bd["dim"]), "Contribution to the change", "Share of the change", "Own change", "Share of the latest year"]
+    use = [0] + [j for j in range(1, len(cols)) if any(r[j] for r in rows)]
+    return {"title": "Where the change in %s came from" % str(basis.get("estimand") or basis.get("measure") or "")
+            .split(";")[0][:120], "cols": [cols[j] for j in use], "rows": [[r[j] for j in use] for r in rows]}

@@ -110,6 +110,11 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the charts chosen from the data (the chart registry, CONTRACT §5.9), imported by nl_browser.run(),
                  # _validate_plan, profile_for_ai and results_for_ai
                  "nl_viz.py": "nl_viz.py",
+                 # the semantic layer of a statistical table (WAVE 4, track A1: CONTRACT §5.10), imported by nl_browser.run(),
+                 # profile_for_ai, _validate_plan, nl_scenarios.build_structure and nl_viz
+                 "nl_structure.py": "nl_structure.py",
+                 # the publisher flag codes nl_structure reads beside itself (STATUS x, .., F; Eurostat's embedded flags)
+                 "flag_vocab.json": "flag_vocab.json",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",

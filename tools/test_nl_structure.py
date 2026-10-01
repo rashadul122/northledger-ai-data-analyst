@@ -274,6 +274,168 @@ def test_10a_a_withheld_dimension_makes_the_cube_incomplete_and_is_never_read():
     assert "health_region" not in json.dumps(NS.public(S))
 
 
+# ----------------------------------------------------------------------------- end to end: the adapter's run
+def _run(data: bytes, name: str, decisions=None, objective: str = ""):
+    NB._PROFILE_CACHE.clear()
+    rep = NB.run(data, name, objective, decisions or {}, AS_OF)
+    assert rep["ok"], rep["error"]
+    return rep
+
+
+def _items(rep):
+    return {it["id"]: it for it in rep["scenarios"]["items"]}
+
+
+def test_e2e_a_cube_is_read_as_its_headline_slice_with_the_estimand_and_reconciled_parts():
+    rep = _run(MC.partition(0.10), "regions.csv")
+    est = rep["estimand"]
+    assert est and est["plan_source"] == "engine_default" and est["reconciles"] is True, est
+    assert rep["input"]["rows"] == 6 * len(MC.MONTHS) and rep["input"]["layout"]["layout"] == NB.STRUCTURE_LAYOUT
+    assert rep["structure"]["kind"] == "cube" and rep["structure"]["dims"][0]["role"] == "partition"
+    # the headline figures are the Total's own published series, in base units (thousands x 1,000)
+    df = pd.read_csv(io.BytesIO(MC.partition(0.10)), dtype=str)
+    tot = df[df.GEO == "Total"].set_index("REF_DATE").VALUE.astype(float) * 1000
+    lat, pri = est["comparison"]["latest"], est["comparison"]["prior"]
+    want = (tot[(tot.index >= lat[0]) & (tot.index <= lat[1])].sum(), tot[(tot.index >= pri[0]) & (tot.index <= pri[1])].sum())
+    assert (est["figures"]["latest"]["value"], est["figures"]["prior"]["value"]) == want, (est["figures"], want)
+    it = _items(rep)
+    parts = [v["value"] for k, v in it.items() if k.startswith("contribution.geo.") and k != "contribution.geo.unallocated"]
+    assert len(parts) == 5 and abs(sum(parts) + it["contribution.geo.unallocated"]["value"] - it["headline.change"]["value"]) \
+        <= 1e-6 * abs(est["figures"]["latest"]["value"]), it.keys()
+    want_u, _n = MC.partition_suppressed_sum()
+    assert abs(it["contribution.geo.unallocated"]["value"] - want_u) < 1e-3, (it["contribution.geo.unallocated"], want_u)
+    assert rep["scenarios"]["basis"]["source"] == "structure"
+    # the row count is never the headline and nothing reads the table's raw rows
+    assert not any(f["id"].startswith("measure.volume") for f in rep["findings"]), [f["id"] for f in rep["findings"]]
+    out = NB.results_for_ai(rep)
+    assert list(out)[:3] == ["ok", "estimand", "structure"], list(out)[:4]
+    json.dumps(rep, allow_nan=False)
+
+
+def test_e2e_10_a_withheld_dimension_refuses_the_business_analysis_with_a_reason():
+    rep = _run(MC.health_region(), "health.csv")
+    fl = {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}
+    assert fl.get("health_region") == "withhold" and not rep["privacy"]["released"], rep["privacy"]
+    assert rep["structure"]["kind"] == "cube_incomplete", rep.get("structure")
+    assert rep["story"]["headline"].startswith(NB.GATE_TRIPPED) and "tell the rows apart" in rep["story"]["headline"], \
+        rep["story"]["headline"]
+    assert not [f for f in rep["findings"] if f["kind"] == "business"], [f["id"] for f in rep["findings"]]
+    assert rep["estimand"] is None and rep["scenarios"]["items"] == []
+    assert "Health region number" not in json.dumps(NB.results_for_ai(rep))
+
+
+def test_e2e_11_a_business_file_with_no_total_is_read_as_before():
+    data = MC.business_export(total_rows=False)
+    rep = _run(data, "sales.csv")
+    try:
+        NB.STRUCTURE_ON = False
+        old = _run(data, "sales.csv")
+    finally:
+        NB.STRUCTURE_ON = True
+    assert rep["estimand"] is None and old["estimand"] is None
+    pick = lambda r: (r["story"], [(f["id"], f["value"], f["grade"]) for f in r["findings"]], r["scenarios"]["items"],
+                      [c["id"] for c in r["charts"]], r["downloads"]["clean_csv"])
+    assert pick(rep) == pick(old)
+
+
+def test_e2e_13_a_category_is_released_names_and_free_text_stay_flagged_and_the_visitor_can_withhold():
+    rep = _run(MC.category_long(), "segments.csv")
+    rel = rep["privacy"]["released"]
+    assert [r["column"] for r in rel] == ["industry_segment"] and rel[0]["distinct"] == 30, rel
+    assert rel[0]["text"] == "Read as a category, not personal data: Industry segment (30 labels)", rel[0]
+    assert not rep["privacy"]["flagged"], rep["privacy"]
+    rep = _run(MC.category_long(header="Stylist", names=True), "stylists.csv")
+    assert not rep["privacy"]["released"] and [f["column"] for f in rep["privacy"]["flagged"]] == ["stylist"], rep["privacy"]
+    rep = _run(MC.category_long(rows=5000, labels=5000), "notes.csv")
+    assert not rep["privacy"]["released"] and [f["column"] for f in rep["privacy"]["flagged"]] == ["industry_segment"]
+    # AM1: a sensitive header is never released, categorical or not
+    rep = _run(MC.category_long(header="Health condition"), "conditions.csv")
+    assert not rep["privacy"]["released"] and [f["column"] for f in rep["privacy"]["flagged"]] == ["health_condition"]
+    # the visitor may still withhold a released column: it is then flagged and withheld, its values in no download
+    rep = _run(MC.category_long(), "segments.csv", {"Industry segment": "withhold"})
+    assert not rep["privacy"]["released"] and rep["privacy"]["flagged"] == [
+        {"column": "industry_segment", "kind": "free text", "decision": "withhold"}], rep["privacy"]
+    assert "Segment 07" not in rep["downloads"]["clean_csv"]
+
+
+def test_e2e_14_a_plan_that_keeps_one_adjustment_but_mixes_regions_is_corrected():
+    data = MC.adjusted()
+    plan = {"goal": "How did sales change?", "columns": [{"name": "VALUE", "semantic_type": "flow_amount", "role": "target"}],
+            "operations": [{"op": "keep_rows", "column": "Type", "values": ["A"]}], "primary": "VALUE",
+            "analyses": [{"type": "compare", "columns": ["VALUE"], "by": "GEO", "why": "regions"}]}
+    rep = _run(data, "adjusted.csv", {"__plan__": plan})
+    est = rep["estimand"]
+    assert est["plan_source"] == "ai_corrected", est["plan_source"]
+    kinds = {(c["dim"], c["kind"]) for c in rep["structure"]["corrections"]}
+    assert ("GEO", "total_with_parts") in kinds, kinds
+    assert rep["plan_signals"] == [] and rep["ai_plan"]["structure_slice"]["plan_source"] == "ai_corrected"
+    assert any("default slice" in x for x in rep["ai_plan"]["refused"]), rep["ai_plan"]["refused"]
+    assert any(x.startswith("compare: it reads GEO") for x in rep["ai_analyses"]["refused"]), rep["ai_analyses"]
+    # the same plan naming the slice id: the AI's choice, the row filter on a structure dimension ignored
+    rep = _run(data, "adjusted.csv", {"__plan__": dict(plan, slice="S2")})
+    assert rep["estimand"]["plan_source"] == "ai" and rep["estimand"]["slice_id"] == "S2", rep["estimand"]["slice_id"]
+    assert any("keep_rows on Type was ignored" in x for x in rep["ai_plan"]["refused"]), rep["ai_plan"]["refused"]
+
+
+def test_e2e_the_profile_carries_the_structure_block_within_its_cap_and_only_profile_values():
+    data = MC.hierarchy()
+    NB._PROFILE_CACHE.clear()
+    prof = NB.profile_for_ai(data, "h.csv", decisions={})
+    st = prof.get("structure")
+    assert st and st["kind"] == "cube" and len(json.dumps(st, separators=(",", ":")).encode()) <= NS.PROFILE_CAP, st
+    vals = {c["name"]: set(c.get("values") or c.get("top_values") or []) for c in prof["columns"]}
+    for s in st["slices"]:
+        assert NS.SLICE_ID.match(s["id"])
+        for col, m in s["where"].items():
+            assert m == "*" or m in vals[col], (col, m)
+    assert any(d["role"] == "hierarchy" for d in st["dims"]) and st["slices"][0]["default"] is True
+
+
+def test_acceptance_statcan_retail_planner_off_and_an_unadjusted_only_plan():
+    path = _dev_file(STATCAN_REL)
+    if path is None:
+        print("    SKIP: the StatCan dev file is not beside this checkout (%s)" % STATCAN_REL)
+        return
+    data = open(path, "rb").read()
+    t0 = time.perf_counter()
+    rep = _run(data, os.path.basename(path), {})
+    took = time.perf_counter() - t0
+    est = rep["estimand"]
+    F = est["figures"]
+    assert (F["prior"]["text"], F["latest"]["text"], F["change_pct"]["text"]) == ("$834.7B", "$864.0B", "+3.5%"), F
+    assert F["change"]["text"] == "+$29.3B" and est["reconciles"] is True and est["plan_source"] == "engine_default"
+    it = _items(rep)
+    geo = sorted(((k, v) for k, v in it.items() if k.startswith("contribution.geo.") and not k.endswith("unallocated")),
+                 key=lambda kv: -kv[1]["value"])
+    assert [(k.split(".")[-1], v["text"]) for k, v in geo[:3]] == [("ontario", "+$10.2B"), ("quebec", "+$6.2B"),
+                                                                   ("alberta", "+$5.9B")], geo[:3]
+    assert abs(it["contribution.geo.unallocated"]["value"]) < 0.05e9
+    for c in est["sum_checks"]:
+        assert abs(c["unallocated_latest"]["value"]) < 0.05e9, c
+    nai = sorted(((k, v) for k, v in it.items() if k.startswith("contribution.naics.") and not k.endswith("unallocated")),
+                 key=lambda kv: -kv[1]["value"])
+    assert [(k.split(".")[-1], v["text"]) for k, v in nai[:3]] == [("455", "+$8.1B"), ("456", "+$6.6B"),
+                                                                   ("457", "+$6.1B")], nai[:3]
+    assert len(nai) == 9 and abs(sum(v["value"] for _k, v in nai) + it["contribution.naics.unallocated"]["value"]
+                                 - F["change"]["value"]) < 1.0
+    rel = [r["header"] for r in rep["privacy"]["released"]]
+    assert rel == ["North American Industry Classification System (NAICS)"], rep["privacy"]
+    assert [f["column"] for f in rep["privacy"]["flagged"]] == ["coordinate"], rep["privacy"]
+    assert rep["structure"]["flags"]["by_kind"] == {"suppressed": 5430, "not_available": 533, "too_unreliable": 162}
+    assert not any("status" in f["id"] for f in rep["findings"]), [f["id"] for f in rep["findings"]]
+    assert not any("status" in x.lower() for x in rep["health"]["issues"] + rep["structure"]["file_health"]["issues"])
+    assert not any(f["id"].startswith("forecast.monthly_rows") for f in rep["findings"]), "a row forecast"
+    assert not any(c.get("chart") == "group_ranges" for c in rep["viz"]["charts"])
+    assert rep["input"]["rows"] == 36735 and rep["input"]["columns"] == 17
+    print("    statcan planner off: %.1f s native" % took)
+    plan = {"goal": "How did retail sales change?", "primary": "VALUE",
+            "columns": [{"name": "VALUE", "semantic_type": "flow_amount", "role": "target"}],
+            "operations": [{"op": "keep_rows", "column": "Adjustments", "values": ["Unadjusted"]}]}
+    rep = _run(data, os.path.basename(path), {"__plan__": plan})
+    assert rep["estimand"]["plan_source"] == "ai_corrected" and rep["estimand"]["figures"]["latest"]["text"] == "$864.0B"
+    assert {c["dim"] for c in rep["structure"]["corrections"]} >= {"GEO"}, rep["structure"]["corrections"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

@@ -722,13 +722,24 @@ def slice_type(S: Dict[str, Any], where: Dict[str, Any]) -> Dict[str, Any]:
     return {"uom": m.get("uom"), "type": m["type"], "currency": m.get("currency"), "aggregation": m["aggregation"]}
 
 
+PANEL_MAX_SERIES = 60           # nl_browser's long-table layout reads at most this many series side by side
+
+
 def _usable(S: Dict[str, Any]) -> bool:
-    """Slice the table when adding its rows would be wrong: a verified total, an adjusted copy, a measure dimension,
-    components, a rate's aggregate, or an official table read one member at a time."""
-    roles = [d["role"] for d in S["dims"]]
-    if any(r in ("partition", "hierarchy", "adjustment", "measure", "components", "rate_aggregate") for r in roles):
+    """Slice the table when adding its rows would be wrong: a relation between members (a verified total, an adjusted
+    copy, components, a rate's published aggregate). A panel with no relation (currencies in two units, an official
+    table whose members only differ) is read side by side by the long-table layout, as before, when it has at most 60
+    series (kind "panel_no_relations"); past that, the layout cannot, and the table is read one member at a time."""
+    rel = [d for d in S["dims"] if d["role"] in ("partition", "hierarchy", "adjustment", "components", "rate_aggregate")
+           or (d["role"] == "measure" and not d.get("mixed_units"))]
+    if rel:
         return True
-    if any(r == "single" for r in roles):
+    if any(d["role"] in ("single", "measure") for d in S["dims"]):
+        if int(S.get("series") or 0) <= PANEL_MAX_SERIES:
+            S["kind"] = "panel_no_relations"
+            S["reason"] = ("no member of the table is a total, a part or an adjusted copy of another: its %d series are "
+                           "read side by side" % int(S.get("series") or 0))
+            return False
         return True
     return False
 
@@ -848,7 +859,9 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     nonneg = _nonneg(S)
     dom = _dominance(A)
     M = len(labels)
-    alts_label = {m for m in range(M) if _ALT_HINT.search(labels[m])}
+    # "excluding" outside brackets names an alternative total ("Retail trade excluding gasoline"); inside them it defines
+    # a member ("Supermarkets and other grocery retailers (except convenience retailers) [44511]")
+    alts_label = {m for m in range(M) if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", labels[m]))}
     hint = [m for m in range(M) if _TOTAL_HINT.search(labels[m]) or (_label_code(labels[m]) or "").count("-") == 1
             and _RANGE.match(_label_code(labels[m]) or "")]
     order = list(np.argsort(-dom, kind="stable"))
@@ -1709,6 +1722,8 @@ def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Opti
                 break
         if body is None:
             body = "%.0f" % x if x >= 1 else "%.3g" % x
+    if not re.search(r"[1-9]", body):
+        v = 0.0                               # rounds to zero: no sign ("$0.0B", never "−$0.0B")
     sign = ("+" if v > 0 else "−" if v < 0 else "") if signed else ("−" if v < 0 else "")
     unit = ""
     if not cur and S["measure"].get("currency"):
@@ -1944,13 +1959,14 @@ def structure_hash(S: Dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(walk(keep), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
 
 
-def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: int = PROFILE_CAP
-                  ) -> Optional[Dict[str, Any]]:
+def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: int = PROFILE_CAP,
+                  columns: Optional[Iterable[str]] = None) -> Optional[Dict[str, Any]]:
     """profile.structure for the planner (at most `cap` bytes): only the dimensions the profile shows, and only member
     strings that column's own profile values hold (cut at 60 characters, as the profile cuts them). Trimmed in order:
     the rules, the drill-downs, the member lists; else dropped (None)."""
     if not S or not S.get("usable"):
         return None
+    cols_all = set(str(c) for c in columns) if columns is not None else None
 
     def mem(col: str, x: Any) -> Optional[str]:
         if x is None:
@@ -2034,11 +2050,11 @@ def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: i
     out = {"kind": "cube", "publisher": S.get("publisher"), "series": S.get("series"), "months": S.get("months"),
            "date": S["date"]["column"],
            "measure": {"column": m["column"], "type": m["type"], "uom": m.get("uom"), "scale": m.get("scale")},
-           "metadata": [x["column"] for x in S.get("metadata") or [] if x["column"] in values_of or x["class"] in
-                        ("constant", "empty", "flag", "series_id", "alias")],
+           "metadata": [x["column"] for x in S.get("metadata") or [] if cols_all is None or x["column"] in cols_all][:20],
            "flag_column": (S.get("flags") or {}).get("column"),
            "dims": dims, "slices": slices, "breakdowns": bds, "rules": rules}
-    out["metadata"] = [c for c in out["metadata"] if c in values_of or True][:20]
+    if cols_all is not None and out["flag_column"] not in cols_all:
+        out["flag_column"] = None
 
     def size(o: Any) -> int:
         return len(json.dumps(o, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))

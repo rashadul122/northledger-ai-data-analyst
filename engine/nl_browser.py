@@ -105,7 +105,7 @@ VIZ_VERSION = "2026-09-30.1"            # the chart registry's frozen interface 
 REPORT_KEYS = ("ok", "error", "engine", "input", "timings", "privacy", "health", "cleaning",
                "roles", "findings", "forecast", "story", "downloads",
                "contract_version", "primary_metric", "tests_run", "methods", "limitations",
-               "reproducibility", "charts", "charts_suppressed", "llm", "summary")
+               "reproducibility", "charts", "charts_suppressed", "llm", "summary", "structure", "estimand")
 GRADE = {"RECOMMEND": "CONFIRMED", "WATCH": "WATCH", "INSUFFICIENT": "NOT_ENOUGH_DATA"}
 MANAGER_MAX_CHARTS = 6              # §5: at most six manager displays by default: the headline tiles and
                                     # the findings table count, so at most four are drawn as charts
@@ -423,7 +423,7 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
                    "restated_since_previous": None, "benchmark": _blank_benchmark()},
         "input": {"name": name, "bytes": len(data), "rows": 0, "columns": 0, "sha256": sha},
         "timings": [],
-        "privacy": {"flagged": []},
+        "privacy": {"flagged": [], "released": []},
         "health": {"score": None, "issues": [], "score_min": None, "score_mean": None, "weakest": None,
                    "csv_text_numbers": None, "explain": "",
                    "dimensions": [], "sample": {"method": "all", "n": 0, "seed": None}, "columns": [],
@@ -468,6 +468,10 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         "scenarios": {"basis": None, "items": [], "refused": [], "note": ""},
         # the charts chosen from the data (the chart registry, engine/nl_viz.py; CONTRACT §5.9): nothing built yet
         "viz": {"version": VIZ_VERSION, "charts": [], "refused": [], "chosen_by": "none"},
+        # a statistical table's structure (engine/nl_structure.py; CONTRACT §5.10) and what the headline is (§1): null
+        # for a file that is not read by its structure
+        "structure": None,
+        "estimand": None,
     }
 
 
@@ -1536,13 +1540,122 @@ def _neutralize_withheld(db_path: str, table: str, columns: List[str]) -> List[s
     return codes
 
 
-def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any) -> Tuple[List[Dict[str, str]], List[str], "Scrubber"]:
-    """The decide stage, the same for a run and for the planner's profile: the adapter's personal-column check
-    adds what the engine's scan missed (a pending decision in the engine's own column register, as a column
-    its scan flagged gets), every flagged column takes the visitor's decision or withhold, and each withheld
-    column's values are read for the scrubber and then landed as codes no cleaning rule reads. Returns
-    (privacy.flagged, the withheld columns, the scrubber)."""
+# --------------------------------------------------------------------------- a category is not free text
+# WAVE 4 (plan/WAVE4-A-DESIGN.md section 2(9), with the lead's amendment AM1). The engine's scan calls any column with 20
+# or more different wordy values "free text" (intake._is_free_text), so an official table's industry column (30 NAICS
+# labels, each on 1,185 rows) was withheld and the table read as nonsense. The adapter releases such a column, and only
+# when ALL of these hold: the scan's only reason is free text (no value looked like an email, a phone number or any other
+# personal shape); it has at most 300 different values, at most 5% of its filled cells; every label repeats at least 5
+# times; its values do not look like people's names (_looks_like_names) and its name does not say it holds people
+# (_person_hint); and its name is not a sensitive category (AM1: health, religion, ethnicity and the like are sensitive
+# even when categorical). A release deletes the column's row from the engagement's column register (runtime state, never
+# engine code), so the engine reads it like any column, and is recorded in privacy.released. The page's consent step
+# shows every released column ("Read as a category, not personal data: <column> (<n> labels)") and the visitor can still
+# withhold it: a withhold or code decision for it keeps the flag.
+RELEASE_MAX_DISTINCT = 300
+RELEASE_MAX_SHARE = 0.05
+RELEASE_MIN_REPEAT = 5
+SENSITIVE_HEADER = re.compile(
+    r"(?i)diagnos|condition|disease|illness|medic|health|symptom|treatment|drug|religio|faith|ethnic|race|"
+    r"nationality|citizenship|gender|sex\b|sexual|orientation|disab|pregnan|criminal|offen[cs]e|convict|union|"
+    r"political|party|vote|salary|wage|income|debt|credit|immigra|visa")
+RELEASED_WORDS = "Read as a category, not personal data: %s (%s labels)"
+RELEASE_NAME_SHARE = 0.30
+_LABEL_GLUE = frozenset(("and", "of", "the", "for", "or", "with", "in", "on", "to", "at", "by", "from", "other", "all",
+                         "total", "except", "excluding", "not", "nec", "n.e.c", "&"))
+
+
+def _name_shaped(v: str) -> bool:
+    """A label that reads like a person's name whatever list of given names is at hand ("Oskar Lucia Brennan Tanaka",
+    "Marisol Fairweather"): 1 to 4 words of letters as _person_value reads them, each word capitalised (or every word in
+    one case), and none of a category label's glue words ("Food and beverage retailers")."""
+    if not _person_value(v):
+        return False
+    words = [w for w in " ".join(str(v).replace(",", " ").split()).split(" ") if w]
+    if any(w.casefold().strip(".") in _LABEL_GLUE for w in words):
+        return False
+    caps = [w[:1].isupper() for w in words if w[:1].isalpha()]
+    return bool(caps) and (all(caps) or not any(caps) or all(w.isupper() for w in words))
+
+
+def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict[str, Any]]:
+    """The free-text flags the adapter lifts (see above), as privacy.released: [{column, header, distinct, rows, min_repeat,
+    why}]. Runs before any decision, so a released column is never withheld or coded by default."""
     import sqlite3
+    colmap = dict(getattr(res, "column_map", {}) or {})
+    head = {str(v): str(k) for k, v in colmap.items()}
+    chosen: Dict[str, str] = {}
+    for k, v in dict(decisions or {}).items():
+        if str(k).startswith("__"):
+            continue
+        d = str(v or "").strip().lower()
+        chosen[str(k)] = d
+        if str(k) in colmap:
+            chosen[colmap[str(k)]] = d
+    con = sqlite3.connect(eng.db_path)
+    try:
+        rows = con.execute("SELECT column_name, kinds FROM %s WHERE table_name = ? ORDER BY rowid" % E.COLUMNS_TABLE,
+                           (res.table,)).fetchall()
+    finally:
+        con.close()
+    out: List[Dict[str, Any]] = []
+    nulls = _null_tokens()
+    for col, kinds in rows:
+        col = str(col)
+        header = head.get(col, col)
+        if chosen.get(col) in ("withhold", "code") or chosen.get(header) in ("withhold", "code"):
+            continue
+        if _kind_of(col, kinds or "", res) != _REASON_LABEL["free_text"]:
+            continue
+        if any(k.strip() and not k.strip().startswith("named_") for k in str(kinds or "").split(",")):
+            continue                                  # a value shape the scan matched: never released
+        if str(kinds or "").strip() or SENSITIVE_HEADER.search(header) or _person_hint(_header_tokens(header), header)[0]:
+            continue                                  # its name was a hint (named_...), is sensitive (AM1) or says people
+        con = sqlite3.connect(eng.db_path)
+        try:
+            qc = '"%s"' % col.replace('"', '""')
+            vc = con.execute("SELECT %s, COUNT(*) FROM %s WHERE %s IS NOT NULL GROUP BY %s" % (
+                qc, '"%s"' % str(res.table).replace('"', '""'), qc, qc)).fetchall()
+        finally:
+            con.close()
+        counts: Dict[str, int] = {}
+        for v, n in vc:
+            t = " ".join(str(v).split())
+            if t.lower() in nulls:
+                continue
+            counts[t] = counts.get(t, 0) + int(n)
+        filled = sum(counts.values())
+        if not counts or len(counts) > RELEASE_MAX_DISTINCT or len(counts) > RELEASE_MAX_SHARE * filled:
+            continue
+        least = min(counts.values())
+        if least < RELEASE_MIN_REPEAT:
+            continue
+        if _looks_like_names(list(counts), header) or \
+                sum(1 for x in counts if _name_shaped(x)) >= RELEASE_NAME_SHARE * len(counts):
+            continue                                  # people's names, whatever their header (AM1: "Stylist")
+        con = sqlite3.connect(eng.db_path)
+        try:
+            con.execute("DELETE FROM %s WHERE table_name = ? AND column_name = ?" % E.COLUMNS_TABLE, (res.table, col))
+            con.commit()
+        finally:
+            con.close()
+        out.append({"column": col, "header": header, "distinct": len(counts), "rows": filled, "min_repeat": least,
+                    "text": RELEASED_WORDS % (header, format(len(counts), ",")),
+                    "why": ("a category: %s labels, each on %s rows or more; the scan read it as free text only because "
+                            "it holds 20 or more different values" % (format(len(counts), ","), format(least, ",")))})
+    return out
+
+
+def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any
+                      ) -> Tuple[List[Dict[str, str]], List[str], "Scrubber", List[Dict[str, Any]]]:
+    """The decide stage, the same for a run and for the planner's profile: a free-text flag on a plain category is
+    lifted (_release_categories, unless the visitor withheld or coded it), the adapter's personal-column check adds
+    what the engine's scan missed (a pending decision in the engine's own column register, as a column its scan
+    flagged gets), every flagged column takes the visitor's decision or withhold, and each withheld column's values
+    are read for the scrubber and then landed as codes no cleaning rule reads. Returns (privacy.flagged, the withheld
+    columns, the scrubber, privacy.released)."""
+    import sqlite3
+    released = _release_categories(E, eng, res, decisions)
     colmap = dict(getattr(res, "column_map", {}) or {})
     con = sqlite3.connect(eng.db_path)
     try:
@@ -1586,7 +1699,7 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any) -> Tuple[List[
     sc = Scrubber(values + codes, free_values)
     sc.flag_tokens_by = by
     sc.flag_tokens = frozenset().union(*by.values()) if by else frozenset()
-    return flagged, withheld, sc
+    return flagged, withheld, sc, released
 
 
 # --------------------------------------------------------------------------- translation
@@ -3906,7 +4019,8 @@ def _profile_facts(R: "_Reading", headers: List[str], hidden: Iterable[str] = ()
     return out
 
 
-def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: Optional[str] = None) -> Dict[str, Any]:
+def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: Optional[str] = None,
+                         structure: bool = True) -> Dict[str, Any]:
     """The engine lands the file, the decide stage runs as a run's does (_decide_and_guard: the adapter's
     personal-column check, the visitor's decisions, a withheld column landed as codes, a coded one coded), and
     the engine profiles and cleans it (its own code); its reading gives the profile's facts, so the planner
@@ -3932,7 +4046,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         eng = E.open_engagement(os.path.join(tmp, "engagement"), create=True)
         res = E.land(eng, src)
         colmap = dict(getattr(res, "column_map", {}) or {})
-        flagged, _withheld, _scrub = _decide_and_guard(E, eng, res, decisions)
+        flagged, _withheld, _scrub, released = _decide_and_guard(E, eng, res, decisions)
         hidden = [str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("decision") != "keep"]
         try:
             as_of = _dt.date.fromisoformat(str(as_of)[:10]).isoformat() if as_of else _dt.date.today().isoformat()
@@ -3948,8 +4062,18 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         headers = list(R.land) or list(R.values.columns)
         facts = _profile_facts(R, headers, hidden)
         import nl_viz as _nv
-        return {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap,
-                "viz_stats": _nv.profile_stats(R, facts)}
+        out = {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap, "released": released,
+               "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
+        if structure and STRUCTURE_ON:
+            S = _structure_detect(R, hidden)
+            out[_PROFILE_CACHE_STRUCTURE] = S
+            if S is not None:
+                withheld = {str(f["column"]) for f in flagged if f.get("decision") == "withhold"}
+                cleaning = {"rows_in": int(cr.total_in), "rows_clean": int(cr.rows_clean),
+                            "rows_quarantined": int(cr.rows_quarantined)}
+                out["file_health"] = _file_health(th.score, th.findings or [], S, withheld,
+                                                  lambda t: public_text(_scrub.clean(t), res.table, name), cleaning)
+        return out
     except Exception as exc:  # noqa: BLE001 - the profile is an aid; the page runs without it
         intake_error = getattr(sys.modules.get("northledger.intake"), "IntakeError", Refusal)
         if os.environ.get("NL_BROWSER_STRICT") and not isinstance(exc, (Refusal, intake_error)):
@@ -4000,7 +4124,15 @@ def _same_choices(got: Dict[str, Any], decisions: Any) -> bool:
     fl = got.get("flagged")
     if not isinstance(fl, list):
         return False
-    return _effective_decisions(fl, dict(got.get("colmap") or {}), decisions) == {f["column"]: f["decision"] for f in fl}
+    colmap = dict(got.get("colmap") or {})
+    # a released category the visitor now withholds or codes was read under other choices (_release_categories)
+    for r in got.get("released") or []:
+        for k, v in dict(decisions or {}).items():
+            if str(k) in (r.get("column"), r.get("header"), colmap.get(str(k), "\0")) and \
+                    str(v or "").strip().lower() in ("withhold", "code") and \
+                    (str(k) == r.get("column") or str(k) == r.get("header") or colmap.get(str(k)) == r.get("column")):
+                return False
+    return _effective_decisions(fl, colmap, decisions) == {f["column"]: f["decision"] for f in fl}
 
 
 def _merged_flags(got: Dict[str, Any], flagged: Any) -> Dict[str, Dict[str, Any]]:
@@ -4098,6 +4230,20 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
         elif d == "keep":
             info["looks_personal"] = False
         cols.append(info)
+    # a statistical table's structure (nl_structure.profile_block, CONTRACT §5.4): its dimensions' roles, the slice ids and
+    # the breakdown ids the plan may name, at most 6,000 bytes; only the columns shown here, and only member strings that
+    # a column's own values below already hold (a coded or personal-looking column has none)
+    structure_block = None
+    S_prof = got.get(_PROFILE_CACHE_STRUCTURE)
+    if STRUCTURE_ON and S_prof is not None and S_prof.get("usable"):
+        try:
+            values_of = {c["name"]: list(c.get("values") or []) + list(c.get("top_values") or []) for c in cols
+                         if not c.get("looks_personal") and ("values" in c or "top_values" in c)}
+            structure_block = _ns().profile_block(S_prof, values_of, columns=[c["name"] for c in cols])
+        except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
+            structure_block = None
     # never the file's name (final review, 29 Sep 2026: "private_mix.csv" reached the planner): it says what the
     # file is about and whose it is, as the /report payload's "[your file]" stands in for it (src/js/50-try.js)
     out = {"ok": True, "name": FILE_WORD, "rows": int(got.get("rows") or 0), "columns": cols,
@@ -4120,6 +4266,8 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         out["chart_limits"] = []
+    if structure_block is not None:
+        out["structure"] = structure_block
     return out
 
 
@@ -4358,6 +4506,48 @@ def _primary_for_ai(rep: Dict[str, Any], safe: Any, scrub: Any) -> Optional[Dict
         return {"id": str(fid)[:120], "claim": safe(f.get("claim"), 400),
                 "grade": str(f.get("grade") or f.get("verdict") or "")[:20]}
     return None
+
+
+def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
+    """rep["estimand"] for the report writer: every figure with its text, the slice and what was left out, its words made
+    safe as every other text (never a withheld column's name)."""
+    if not isinstance(est, dict):
+        return None
+    out = {"text": safe(est.get("text"), 400),
+           "slice": [{"dim": safe(x.get("dim"), 120), "member": safe(x.get("member") if isinstance(x.get("member"), str)
+                                                                      else json.dumps(x.get("member")), 120),
+                      "why": safe(x.get("why"), 200)} for x in est.get("slice") or [] if isinstance(x, dict)][:8],
+           "measure": {k: (est.get("measure") or {}).get(k) for k in ("label", "uom", "scale", "scale_applied", "type",
+                                                                      "aggregation")},
+           "comparison": est.get("comparison"),
+           "figures": {k: {"value": (v or {}).get("value"), "text": safe((v or {}).get("text"), 40)}
+                       for k, v in (est.get("figures") or {}).items() if isinstance(v, dict)},
+           "sum_checks": [{"dim": safe(c.get("dim"), 120), "total": safe(c.get("total"), 120), "parts": c.get("parts"),
+                           "verdict": c.get("verdict"),
+                           "unallocated_latest": {"value": (c.get("unallocated_latest") or {}).get("value"),
+                                                  "text": safe((c.get("unallocated_latest") or {}).get("text"), 40)}}
+                          for c in est.get("sum_checks") or [] if isinstance(c, dict)][:8],
+           "excluded": [{"what": safe(x.get("what"), 120), "why": safe(x.get("why"), 200)}
+                        for x in est.get("excluded") or [] if isinstance(x, dict)][:8],
+           "plan_source": est.get("plan_source"), "inference": est.get("inference")}
+    return out
+
+
+def _structure_for_ai(st: Any, safe: Any) -> Optional[Dict[str, Any]]:
+    """The structure's summary for the writer: the dimensions and their roles, the slice, the flags' counts."""
+    if not isinstance(st, dict) or not st.get("kind"):
+        return None
+    dims = [{k: (safe(d[k], 120) if isinstance(d.get(k), str) else d[k])
+             for k in ("column", "role", "members", "total", "parts", "nsa", "sa", "depths") if k in d}
+            for d in st.get("dims") or [] if isinstance(d, dict)][:8]
+    fl = st.get("flags") if isinstance(st.get("flags"), dict) else None
+    return {"kind": st.get("kind"), "usable": st.get("usable"), "publisher": st.get("publisher"),
+            "series": st.get("series"), "months": st.get("months"), "dims": dims,
+            "slice": st.get("slice"), "reason": safe(st.get("reason") or "", 300),
+            "flags": {"column": fl.get("column"), "by_kind": fl.get("by_kind"),
+                      "quality_of_headline": fl.get("quality_of_headline")} if fl else None,
+            "corrections": [{"dim": safe(c.get("dim"), 120), "kind": c.get("kind")} for c in st.get("corrections") or []
+                            if isinstance(c, dict)][:6]}
 
 
 def results_for_ai(rep: Any) -> Dict[str, Any]:
@@ -4632,6 +4822,9 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     # reshape): the writer may quote them, so they must be in the payload as findings of the run
     out = {
         "ok": True,
+        # what the headline is, first (a table read by its structure: CONTRACT §1, §5.10), then the structure's summary
+        "estimand": _estimand_for_ai(rep.get("estimand"), safe),
+        "structure": _structure_for_ai(rep.get("structure"), safe),
         "input": {"name": (rep.get("input") or {}).get("name"),
                   "rows": (rep.get("input") or {}).get("rows"),
                   "columns": (rep.get("input") or {}).get("columns")},
@@ -4897,8 +5090,12 @@ def _clean_plan_review(raw: Any) -> Optional[Dict[str, Any]]:
             "at": str(raw.get("at") or "")[:40]}
 
 
-def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[str]]:
-    """The plan cut down to what is valid, and the reasons for each part refused."""
+def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = None
+                   ) -> Tuple[Dict[str, Any], List[str]]:
+    """The plan cut down to what is valid, and the reasons for each part refused. With a statistical table's structure
+    (nl_structure, the profile's structure block), the plan may name a slice id ("S1"), up to 4 breakdown ids ("B1") and
+    a momentum slice: kept only when the structure holds them; with a slice id, a row filter on a structure dimension is
+    ignored, with a note (the slice chooses the rows)."""
     refused: List[str] = []
     if not isinstance(plan, dict):
         return {}, ["the plan is not an object"]
@@ -4959,6 +5156,34 @@ def _validate_plan(plan: Any, columns: List[str]) -> Tuple[Dict[str, Any], List[
     out["primary"] = prim if prim in have else ""
     if prim and prim not in have:
         refused.append("the headline measure %s is not a column" % str(prim)[:60])
+    if S is not None and S.get("usable"):
+        import nl_structure as _nst
+        sids = {x["id"] for x in S.get("slices") or []}
+        bids = {x["id"] for x in S.get("breakdowns") or []}
+        sl = plan.get("slice")
+        if isinstance(sl, str) and _nst.SLICE_ID.match(sl) and sl in sids:
+            out["slice"] = sl
+        elif sl not in (None, ""):
+            refused.append("the slice %s is not one of the table's slices (%s)" % (str(sl)[:12], ", ".join(sorted(sids))))
+        ms = plan.get("momentum_slice")
+        if isinstance(ms, str) and _nst.SLICE_ID.match(ms) and ms in sids:
+            out["momentum_slice"] = ms
+        bd = plan.get("breakdowns")
+        if isinstance(bd, list):
+            keep = [b for b in bd if isinstance(b, str) and _nst.BREAKDOWN_ID.match(b) and b in bids]
+            out["breakdowns"] = list(dict.fromkeys(keep))[:_nst.BREAKDOWNS_MAX]
+            if len(keep) < len(bd):
+                refused.append("breakdown ids the table does not have were ignored")
+        if out.get("slice"):
+            dims = {d["column"] for d in S.get("dims") or []}
+            kept_ops = []
+            for op in out["operations"]:
+                if op.get("op") in ("keep_rows", "exclude_rows", "exclude_blank") and op.get("column") in dims:
+                    refused.append("%s on %s was ignored: the slice %s chooses the table's rows" % (
+                        op["op"], op["column"], out["slice"]))
+                    continue
+                kept_ops.append(op)
+            out["operations"] = kept_ops
     return out, refused
 
 
@@ -7791,6 +8016,316 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
     rep.setdefault("input", {})["layout"] = lay
 
 
+# ----------------------------------------------------------------------------- the structure of a statistical table
+# WAVE 4, track A1 (plan/WAVE4-A-DESIGN.md sections 1, 2 and 4; engine/nl_structure.py). An official table holds totals
+# beside their parts, an adjusted copy beside the unadjusted one and components beside their parents: the engine added
+# its 36,735 rows and averaged 465 series. The structure is read from the engine's own reading after the visitor's
+# decisions (a withheld column is never read) and before the business analysis, at two levels:
+#   1. the fast path: the structure the scan's run (or the planner's profile) found under these same choices, looked up
+#      before the AI plan is applied (the plan's row choices are then checked against it: check_rows);
+#   2. the hook between the audit (run_loop) and the business analysis (run_analyze): the reading built early, the
+#      structure detected and cached with the profile's facts.
+# A usable structure is analysed as ONE series, the slice the structure chooses (the headline: the root of every
+# hierarchy, the unadjusted copy, a measure's total), by running the whole engine on that slice (_run_slice: date and
+# one measure column in base units); the report carries the file's privacy, rows and health, the structure and the
+# estimand. A table whose readable columns cannot tell its rows apart (a dimension withheld) is refused with a plain
+# reason; a business file whose members simply add up (N/S/E/W) and a panel with no relation are read as before.
+STRUCTURE_ON = True                        # the tests switch it off to prove a business file is read as before
+STRUCTURE_BUDGET_S = 1.0
+STRUCTURE_LAYOUT = "structured cube slice"
+_PROFILE_CACHE_STRUCTURE = "structure"
+
+
+def _ns() -> Any:
+    import nl_structure
+    return nl_structure
+
+
+def _structure_cached(sha: str, decisions: Any) -> Optional[Dict[str, Any]]:
+    """The structure the last reading of these bytes found, when it ran under these choices; else None."""
+    got = _PROFILE_CACHE.get("value") if _PROFILE_CACHE.get("sha") == sha else None
+    if not got or not got.get("ok") or not _same_choices(got, decisions):
+        return None
+    return got.get(_PROFILE_CACHE_STRUCTURE)
+
+
+def _structure_detect(reading: Any, hidden: Any) -> Optional[Dict[str, Any]]:
+    try:
+        return _ns().detect(reading, set(hidden or ()), budget_s=STRUCTURE_BUDGET_S)
+    except Exception:  # noqa: BLE001 - the structure is an aid; the file is then read as before
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return None
+
+
+def _file_health(score: Any, findings: Iterable[Any], S: Dict[str, Any], withheld: Set[str], pub: Any,
+                 cleaning: Dict[str, Any]) -> Dict[str, Any]:
+    """structure.file_health: the engine's health of the whole file, its issues without the findings on a table's
+    metadata and flag columns (an empty SYMBOL column, the letter case of STATUS codes, a constant UOM): those columns
+    describe the series, they are not data. The core's score is unchanged."""
+    meta = {str(m.get("landed")) for m in S.get("metadata") or [] if m.get("class") in
+            ("constant", "empty", "flag", "series_id", "alias", "unit", "other")}
+    kept, dropped = [], []
+    for x in findings or []:
+        if not _issue_is_safe(x, withheld) or _is_text_numbers_line(x):
+            continue
+        line = pub(_plain(x))
+        col = line.split(":", 1)[0].strip() if ":" in line else ""
+        (dropped if col in meta else kept).append(line)
+    return {"score": _num(score), "issues": kept, "dropped": dropped,
+            "rows_in": cleaning.get("rows_in"), "rows_clean": cleaning.get("rows_clean"),
+            "rows_quarantined": cleaning.get("rows_quarantined"),
+            "note": ("the health of the whole file; findings on the table's metadata and flag columns (%s) are left out: "
+                     "they describe the series, they are not data" % ", ".join(sorted(
+                         m["column"] for m in S.get("metadata") or [] if m.get("landed") in meta))[:300]) if meta else ""}
+
+
+def _outer_of(got: Dict[str, Any], rep: Dict[str, Any]) -> Dict[str, Any]:
+    """What the slice's report takes from the file (the fast path: the cached reading's)."""
+    inp = dict(rep.get("input") or {})
+    inp["rows"] = int(got.get("rows") or 0)
+    inp["columns"] = int(got.get("columns") or len(got.get("colmap") or {}) or 0)
+    return {"input": inp, "flagged": [dict(f) for f in got.get("flagged") or []],
+            "released": [dict(x) for x in got.get("released") or []], "file_health": got.get("file_health")}
+
+
+def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], released: List[Dict[str, Any]],
+                colmap: Dict[str, str], S: Dict[str, Any], audit: Any, wh_list: List[str], rep: Dict[str, Any],
+                name: str, pub_lite: Any) -> Dict[str, Any]:
+    """Cache the reading's profile facts with the structure (the planner's profile and a plan's run read them next) and
+    return what the slice's report takes from the file."""
+    import nl_viz as _nv
+    hidden = {str(f["column"]): str(f["decision"]) for f in flagged if f.get("decision") != "keep"}
+    cr = audit.clean
+    cleaning = {"rows_in": int(cr.total_in), "rows_clean": int(cr.rows_clean), "rows_quarantined": int(cr.rows_quarantined)}
+    fh = _file_health(audit.health.score, audit.health.findings or [], S, set(wh_list), pub_lite, cleaning)
+    value: Dict[str, Any] = {"ok": True, "rows": reading.n, "flagged": [dict(f) for f in flagged],
+                             "released": [dict(x) for x in released], "colmap": dict(colmap or {}),
+                             _PROFILE_CACHE_STRUCTURE: S, "file_health": fh, "columns": int(rep["input"].get("columns") or 0)}
+    try:
+        pfacts = _profile_facts(reading, list(reading.land) or list(reading.values.columns), hidden)
+        value.update(facts=pfacts, viz_stats=_nv.profile_stats(reading, pfacts))
+    except Exception:  # noqa: BLE001 - the profile then lands the file itself
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        value["ok"] = False
+    _PROFILE_CACHE.clear()
+    _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value=value)
+    inp = dict(rep["input"])
+    return {"input": inp, "flagged": value["flagged"], "released": value["released"], "file_health": fh}
+
+
+def _long_has_structure(data: bytes) -> bool:
+    """Whether a long table the layout pass would turn into one column per series holds totals beside their parts (or
+    an adjusted copy): a quick reading of the file's text (dates as dates, numbers as numbers), only to decide not to
+    reshape it; the structure itself is read after landing, from the engine's reading, without a withheld column."""
+    try:
+        import numpy as np
+        import pandas as pd
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig")
+        land = {h: _engine_slug(h) for h in df.columns}
+        if len(set(land.values())) < len(land):
+            return False
+        texts = df.rename(columns=land)
+        values = texts.copy().astype(object)
+        for c in values.columns:
+            t = texts[c].str.strip()
+            f = t[t != ""]
+            if not len(f):
+                continue
+            num = pd.to_numeric(f.str.replace(",", "", regex=False), errors="coerce")
+            if num.notna().mean() >= 0.95:
+                values[c] = pd.to_numeric(t.str.replace(",", "", regex=False), errors="coerce")
+            elif f.str.match(r"^\d{4}-\d{2}(?:-\d{2})?$").mean() >= 0.95:
+                values[c] = pd.to_datetime(t.where(t != ""), errors="coerce")
+        R = _Reading(values, texts, np.ones(len(df), bool), land, {})
+        S = _ns().detect(R, (), budget_s=0.3)
+        return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components")
+                                             for d in S.get("dims") or [])
+    except Exception:  # noqa: BLE001 - the layout pass then reads it as before
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return False
+
+
+def _private_of(got: Dict[str, Any]) -> Any:
+    """private(name) for the fast path, from the cached reading's flags: "withhold" or "code" for a flagged column the
+    visitor did not keep (by its landed name, its header or its slug), else None (as run()'s own private())."""
+    hidden = {str(f["column"]): str(f["decision"]) for f in got.get("flagged") or [] if f.get("decision") != "keep"}
+    colmap = dict(got.get("colmap") or {})
+
+    def private(name: Any) -> Optional[str]:
+        if name is None or not hidden:
+            return None
+        n = str(name)
+        for k in (n, colmap.get(n), _engine_slug(n)):
+            if k and k in hidden:
+                return hidden[k]
+        return None
+    return private
+
+
+def _structure_plan(S: Dict[str, Any], ai_plan: Dict[str, Any], positions: Any, row_steps: bool
+                    ) -> Tuple[Dict[str, Any], str, str, List[Dict[str, Any]]]:
+    """(the slice's where, its id, the plan's part in it, the corrections): the plan's slice id; else, when the plan set
+    rows aside, the slice its kept rows form, or the default slice when they mix a total with its parts, both adjusted
+    copies, a component with its parent or units (ai_corrected, never sent back as a plan signal); else the default."""
+    NS = _ns()
+    sid = str(ai_plan.get("slice") or "")
+    s = NS.slice_by_id(S, sid) if sid else None
+    if s is not None:
+        return dict(s["where"]), s["id"], "ai", []
+    if row_steps:
+        viol = NS.check_rows(S, positions)
+        if viol:
+            return dict(S["default"]), "S1", "ai_corrected", viol
+        where = NS.plan_where(S, positions)
+        same = next((x for x in S["slices"] if x["where"] == where), None)
+        return where, (same["id"] if same else "plan"), "ai", []
+    return dict(S["default"]), "S1", "engine_default", []
+
+
+def _inner_plan(ai_plan: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any], col: str, raw_context: Any
+                ) -> Tuple[Dict[str, Any], List[str]]:
+    """The AI plan as the slice's run reads it: the plan's goal and words, the date and the slice's measure column
+    (typed by the structure: a flow or a count adds up, anything else is a level), the analyses that read only the
+    measure and the date, and the charts; an analysis that groups or filters by a structure dimension is refused (its
+    rows would mix totals and parts; the breakdowns answer it)."""
+    NS = _ns()
+    st = NS.slice_type(S, where)
+    stype = {"flow": "flow_amount", "count": "count"}.get(st["type"], "level")
+    mh, dh = S["measure"]["column"], S["date"]["column"]
+    pcs = {str(c.get("name")): c for c in ai_plan.get("columns") or [] if isinstance(c, dict)}
+    pv = pcs.get(mh) or {}
+    cols = [{"name": dh, "semantic_type": "date", "role": "date"},
+            {"name": col, "semantic_type": stype, "role": "target", "unit": str(pv.get("unit") or "")}]
+    if pv.get("label"):
+        cols[1]["label"] = pv["label"]
+    rename = {mh: col, col: col, dh: dh}
+    analyses, refused = [], []
+    dims = {d["column"] for d in S["dims"]}
+    for a in ai_plan.get("analyses") or []:
+        cs = [str(c) for c in a.get("columns") or []]
+        if cs and all(c in rename for c in cs) and not a.get("by"):
+            analyses.append(dict(a, columns=[rename[c] for c in cs]))
+        else:
+            used = [c for c in cs + ([a["by"]] if a.get("by") else []) if c in dims]
+            refused.append("%s: %s" % (a.get("type"), (
+                "it reads %s, a dimension of a table of series whose rows mix totals and parts; the structure's "
+                "breakdowns answer it" % ", ".join(used[:2])) if used else
+                "it reads columns the slice does not carry (the analysis runs on the headline series)"))
+    charts = []
+    for c in ai_plan.get("charts") or []:
+        cs = [str(x) for x in c.get("columns") or []]
+        charts.append(dict(c, columns=[rename.get(x, x) for x in cs]))
+    out = {k: ai_plan.get(k) for k in ("goal", "understanding", "kind", "goal_candidates", "quality_risks")}
+    out.update(columns=cols, operations=[], analyses=analyses, charts=charts, primary=col, context=raw_context)
+    return out, refused
+
+
+def _structure_notes(rep: Dict[str, Any], S: Dict[str, Any], est: Dict[str, Any], info: Dict[str, Any]) -> None:
+    """Say how the table was read: the limitations' first line and a cleaning step."""
+    roles = "; ".join("%s: %s" % (d["column"], d["role"].replace("_", " ")) for d in S["dims"] if d["role"] != "constant")
+    text = ("This file is a statistical table: %s rows, %s series over %s months (%s). Adding its rows would count the "
+            "same value more than once, so the report reads one series, the headline the structure chooses: %s. "
+            "Each total was checked against its parts." % (
+                format(int(S.get("rows") or 0), ","), format(int(S.get("series") or 0), ","),
+                format(int(S.get("months") or 0), ","), roles, est.get("text") or ""))
+    rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": text})
+    rep.setdefault("cleaning", {}).setdefault("fixes", []).insert(0, {
+        "rule": "structure_slice", "column": S["measure"]["column"], "count": int(S.get("rows") or 0),
+        "what": "A statistical table read as one series: %s rows to %s monthly values of %s (base units, the file's "
+                "scale applied)" % (format(int(S.get("rows") or 0), ","), format(int(info.get("rows") or 0), ","),
+                                     info.get("column"))})
+
+
+def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_source: str,
+               corrections: List[Dict[str, Any]], *, name: str, objective: str, as_of: Optional[str],
+               ai_plan: Optional[Dict[str, Any]], raw_context: Any, outer: Dict[str, Any],
+               timings: Dict[str, float]) -> Optional[Dict[str, Any]]:
+    """The engine's whole run on the slice (date and one measure column, base units), then the file's own figures put
+    back: its rows, columns, size and hash, its privacy decisions and releases, its health (structure.file_health), the
+    plan as applied to the file. None when the slice cannot be run (the caller reads the file as before)."""
+    NS = _ns()
+    body, info = NS.slice_bytes(S, where)
+    if info["rows"] < 2:
+        return None
+    inner_dec: Dict[str, Any] = {"__structure_inner__": {"S": S, "where": where, "slice_id": slice_id,
+                                                         "plan_source": plan_source, "corrections": corrections,
+                                                         "column": info["column"], "info": info}}
+    refused_analyses: List[str] = []
+    if ai_plan:
+        inner_dec["__plan__"], refused_analyses = _inner_plan(ai_plan, S, where, info["column"], raw_context)
+    rep = run(body, name, objective if objective != DEFAULT_OBJECTIVE else "", inner_dec, as_of)
+    if not rep.get("ok"):
+        return None
+    inp = rep["input"]
+    inp.update({k: outer["input"][k] for k in ("name", "bytes", "rows", "columns", "sha256") if k in outer["input"]})
+    inp["layout"] = {"layout": STRUCTURE_LAYOUT, "slice": slice_id, "where": where, "column": info["column"],
+                     "rows_in": outer["input"].get("rows"), "rows_out": info["rows"], "series": S.get("series")}
+    rep["reproducibility"]["input_sha256"] = inp["sha256"]
+    rep["privacy"] = {"flagged": list(outer.get("flagged") or []), "released": list(outer.get("released") or [])}
+    st = rep.get("structure") or {}
+    st["file_health"] = outer.get("file_health")
+    rep["structure"] = st
+    if ai_plan:
+        inner_plan = rep.get("ai_plan") or {}
+        keep = {k: inner_plan[k] for k in ("context_queries", "context_queries_dropped", "context") if k in inner_plan}
+        rep["ai_plan"] = dict(ai_plan, **keep)
+        rep["ai_plan"]["structure_slice"] = {"id": slice_id, "where": where, "plan_source": plan_source,
+                                            "column": info["column"]}
+        if refused_analyses:
+            aa = rep.setdefault("ai_analyses", {"items": [], "refused": []})
+            aa["refused"] = list(aa.get("refused") or []) + refused_analyses
+        if plan_source == "ai_corrected":
+            rep["plan_signals"] = []          # a correction is disclosed, never sent back to the planner
+    tm = {t["stage"]: float(t["seconds"]) for t in rep.get("timings") or []}
+    for k, v in (timings or {}).items():
+        tm[k] = tm.get(k, 0.0) + float(v or 0.0)
+    rep["timings"] = [{"stage": s, "seconds": round(tm.get(s, 0.0), 3)} for s in STAGES]
+    return rep
+
+
+def _structure_inner_blocks(rep: Dict[str, Any], inner: Dict[str, Any]) -> None:
+    """In the slice's own run: rep["structure"] and rep["estimand"], in the engine's own windows (the headline claim's
+    chart), with S1's monthly values reconciled to the engine's charted series (1e-6)."""
+    NS = _ns()
+    S, where = inner["S"], inner["where"]
+    months, vals = NS._monthly(S, where)
+    win = None
+    chart = None
+    for c in rep.get("charts") or []:
+        if isinstance(c, dict) and c.get("type") == "trend_windows" and c.get("finding_ids"):
+            f = next((x for x in rep.get("findings") or [] if x.get("id") == c["finding_ids"][0]), None)
+            if f is not None and f.get("kind") == "business" and not str(f.get("id") or "").startswith("measure.volume"):
+                chart = c
+                break
+    if chart is not None and (chart.get("data") or {}).get("windows"):
+        w = chart["data"]["windows"]
+        win = {"prior": list(w["prior"]), "latest": list(w["latest"])}
+    if win is None:
+        win = NS.windows(months, vals)
+    why = (NS.slice_by_id(S, inner.get("slice_id") or "") or {}).get("why") or {}
+    est = NS.estimand(S, where, win, inner.get("plan_source") or "engine_default", why)
+    est["slice_id"] = inner.get("slice_id")
+    rec = None
+    if chart is not None:
+        cm, cv = chart["data"].get("months") or [], chart["data"].get("values") or []
+        mine = dict(zip(months, vals))
+        bad = [m for m, v in zip(cm, cv) if (win["prior"][0] <= m <= win["latest"][1]) and v is not None and
+               (m not in mine or not (abs(float(mine[m]) - float(v)) <= 1e-6 * max(1.0, abs(float(v)))))]
+        rec = not bad
+    est["reconciles"] = rec
+    est["corrections"] = list(inner.get("corrections") or [])
+    rep["estimand"] = est
+    pub = NS.public(S)
+    pub["corrections"] = list(inner.get("corrections") or [])
+    pub["slice"] = {"id": inner.get("slice_id"), "where": where, "column": inner.get("column")}
+    rep["structure"] = pub
+    _structure_notes(rep, S, est, inner.get("info") or {})
+
+
+
 def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict[str, Any]] = None,
         as_of: Optional[str] = None) -> Dict[str, Any]:
     """The engine's end-to-end path on one file, as THE REPORT CONTRACT. Never raises.
@@ -7840,6 +8375,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         ai_plan = None
         goal_from_plan = False
         plan_review = None
+        structure_inner = None                    # set only in the slice's own run (_run_slice)
+        if isinstance(decisions, dict) and "__structure_inner__" in decisions:
+            decisions = dict(decisions)
+            structure_inner = decisions.pop("__structure_inner__")
         if isinstance(decisions, dict) and "__plan_review__" in decisions:
             decisions = dict(decisions)
             plan_review = _clean_plan_review(decisions.pop("__plan_review__"))
@@ -7857,6 +8396,30 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         sent_rows = None                          # (each planned row's place among the visitor's rows, their count)
         raw_context: Any = None                   # the plan's web searches: items of list terms (_context_queries)
         plan_drops: List[Dict[str, Any]] = []     # the plan's steps that set rows aside (_row_drops)
+        # the structure of a statistical table, the fast path: the structure the scan's run or the planner's profile
+        # found under these same choices (a plan's run that finds none runs the profile pass once, which caches it)
+        S_pre = None
+        cube_refusal = ""
+        has_plan = isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict)
+        vis_dec = {k: v for k, v in dict(decisions or {}).items() if not str(k).startswith("__")}
+        if structure_inner is None and STRUCTURE_ON:
+            sha_sent = hashlib.sha256(data).hexdigest()
+            S_pre = _structure_cached(sha_sent, vis_dec)
+            if S_pre is None and has_plan:
+                got = _engine_profile_pass(data, name, vis_dec, as_of, structure=True)
+                if got.get("ok"):
+                    _PROFILE_CACHE.clear()
+                    _PROFILE_CACHE.update(sha=sha_sent, value=got)
+                    S_pre = got.get(_PROFILE_CACHE_STRUCTURE)
+            if S_pre is not None and S_pre.get("kind") == "cube_incomplete":
+                cube_refusal = S_pre.get("reason") or "the table's rows cannot be told apart"
+            if S_pre is not None and S_pre.get("usable") and not has_plan:
+                outer = _PROFILE_CACHE.get("value") or {}
+                inner = _run_slice(S_pre, dict(S_pre["default"]), "S1", "engine_default", [], name=name,
+                                   objective=objective, as_of=as_of, ai_plan=None, raw_context=None,
+                                   outer=_outer_of(outer, rep), timings={})
+                if inner is not None:
+                    return inner
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
@@ -7864,7 +8427,35 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             try:
                 import pandas as _pd
                 cols = list(_pd.read_csv(io.BytesIO(data), dtype=str, nrows=0, encoding="utf-8-sig").columns)
-                ai_plan, plan_refused = _validate_plan(raw_plan, cols)
+                S_use = S_pre if (S_pre is not None and S_pre.get("usable")) else None
+                ai_plan, plan_refused = _validate_plan(raw_plan, cols, S_use)
+                if S_use is not None:
+                    # a table read by its structure: the plan's rows are checked against it (check_rows) and the slice
+                    # runs; a plan that reshapes the table is not needed (the structure reads its series)
+                    ops = [o for o in ai_plan.get("operations") or [] if o.get("op") != "long_to_wide"]
+                    if len(ops) < len(ai_plan.get("operations") or []):
+                        plan_refused.append("long_to_wide: the table is read by its structure, one series at a time")
+                    _d2, applied_s, _lay = _apply_plan(data, dict(ai_plan, operations=ops))
+                    ai_plan["applied"] = applied_s["applied"]
+                    ai_plan["refused"] = plan_refused + applied_s["refused"]
+                    ai_plan["row_drops"] = _row_drops(list(applied_s.get("drops") or []),
+                                                      _private_of((_PROFILE_CACHE.get("value") or {})))
+                    ai_plan["context_queries"], ai_plan["context_queries_dropped"], ai_plan["context"] = \
+                        _context_queries(raw_context)
+                    where, sid, psrc, corr = _structure_plan(S_use, ai_plan, applied_s.get("positions"),
+                                                             bool(applied_s.get("drops")))
+                    if psrc == "ai_corrected":
+                        ai_plan["refused"].append(
+                            "the plan's rows mix a total with its parts (%s), so the engine's default slice was used"
+                            % "; ".join("%s: %s" % (v["dim"], v["kind"].replace("_", " ")) for v in corr[:3]))
+                    outer = _PROFILE_CACHE.get("value") or {}
+                    inner = _run_slice(S_use, where, sid, psrc, corr, name=name, objective=objective, as_of=as_of,
+                                       ai_plan=ai_plan, raw_context=raw_context, outer=_outer_of(outer, rep),
+                                       timings={})
+                    if inner is not None:
+                        if plan_review:
+                            inner.setdefault("ai_plan", {})["review"] = plan_review
+                        return inner
                 data, applied, layout = _apply_plan(data, ai_plan)
                 sent_rows = (applied.get("positions"), applied.get("rows_in"))
                 ai_plan["applied"] = applied["applied"]
@@ -7888,9 +8479,11 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             except Exception as exc:  # noqa: BLE001 - a plan that cannot run leaves the rule-based path
                 ai_plan = {"refused": ["the plan could not run (%s); the rule-based reading was used" % type(exc).__name__]}
         reshaped_after = False                    # the rules read the planned file as a long table
-        if layout is None:
+        if layout is None and structure_inner is None:
             try:
                 reshaped, layout = _reshape_long_panel(data)
+                if layout and STRUCTURE_ON and int(layout.get("series") or 0) >= 2 and _long_has_structure(data):
+                    layout = None                 # totals beside parts: the structure reads it (the hook below)
                 if layout:
                     data = reshaped
                     reshaped_after = True
@@ -7902,7 +8495,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             2026: the downloads numbered the plan's re-written file, so a row after a filtered one, a quoted
             line break or a blank line carried the wrong line). ONE mapping for every download. None when the
             file was read reshaped: a long table read as one column per series has no such line."""
-            if layout is not None:
+            if layout is not None or structure_inner is not None:
                 return None
             lines = _record_lines(sent)
             if sent_rows is None:
@@ -7955,8 +8548,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # -- decide: every flagged column (the engine's scan, then the adapter's personal-column check), the
         # visitor's choice or withhold; a withheld column is then landed as codes no cleaning rule reads
         t0 = time.perf_counter()
-        flagged, withheld, scrub = _decide_and_guard(E, eng, res, decisions)
+        flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions)
         rep["privacy"]["flagged"] = flagged
+        rep["privacy"]["released"] = released
         timings["decide"] = time.perf_counter() - t0
 
         as_of_eff = as_of or _dt.date.today().isoformat()
@@ -7972,6 +8566,41 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             audit = _loop.run_loop(eng.db_path, table, objective, out_dir=os.path.join(tmp, "audit"),
                                    display_name=name, as_of=as_of_eff)
             t_audit = time.perf_counter() - t0
+            # -- the structure hook: the reading built early (the audit's cleaning is the analysis's), the structure
+            # detected and cached with the profile's facts; a usable one is analysed as its slice
+            early_reading = None
+            if structure_inner is None and STRUCTURE_ON and ai_plan is None and layout is None and not cube_refusal:
+                t_s = time.perf_counter()
+                try:
+                    early_reading = _engine_reading(eng.db_path, table, _clean.standard_rules(audit.health, as_of=as_of_eff),
+                                                    audit.clean, colmap)
+                except Exception:  # noqa: BLE001 - the reading is built again below
+                    if os.environ.get("NL_BROWSER_STRICT"):
+                        raise
+                    early_reading = None
+                S_hook = None
+                hidden_early = [str(f["column"]) for f in flagged if f.get("decision") != "keep"]
+                if early_reading is not None:
+                    S_hook = _structure_detect(early_reading, hidden_early)
+                if S_hook is not None:
+                    outer_info = _hook_cache(sent, early_reading, flagged, released, colmap, S_hook, audit, wh_list=withheld,
+                                             rep=rep, name=name, pub_lite=lambda t: public_text(scrub.clean(t), table, name))
+                    if S_hook.get("usable"):
+                        timings["analyze"] = t_audit
+                        timings["profile"], timings["clean"] = 0.0, 0.0
+                        timings["read"] = timings.get("read", 0.0)
+                        tm_outer = dict(timings, analyze=t_audit + (time.perf_counter() - t_s))
+                        inner = _run_slice(S_hook, dict(S_hook["default"]), "S1", "engine_default", [], name=name,
+                                           objective=objective, as_of=as_of, ai_plan=None, raw_context=None,
+                                           outer=outer_info, timings=tm_outer)
+                        if inner is not None:
+                            return inner
+                    elif S_hook.get("kind") == "cube_incomplete":
+                        cube_refusal = S_hook.get("reason") or "the table's rows cannot be told apart"
+                    # a table refused for its structure, or one whose slice could not run, says so; a file read as
+                    # before (a business export whose members add up, a panel with no relation) carries none
+                    rep["structure"] = _ns().public(S_hook) if (S_hook.get("kind") == "cube_incomplete" or
+                                                                S_hook.get("usable")) else None
             # -- the business analysis: measures, forecast, story
             try:
                 pol = None
@@ -7980,6 +8609,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 # otherwise, and the gate's primary matched nothing, so the report led with the row count). A long
                 # table's value column is one column per series: the report leads with one of them (_lead_series).
                 prim_head = str((ai_plan or {}).get("primary") or "")
+                if structure_inner is not None and not prim_head:
+                    prim_head = str(structure_inner.get("column") or "")      # the slice's measure leads
                 if layout and (not prim_head or prim_head == layout.get("value_column")):
                     layout["lead"], layout["lead_why"] = _lead_series(layout, objective)
                     if goal_from_plan and layout["lead_why"] == "your question names it":
@@ -7990,10 +8621,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     from northledger import gate as _gate
                     pol = _dc.replace(_gate.DEFAULT_POLICY,
                                       primary_metric=str(colmap.get(prim_head) or _slug(prim_head)))
-                r = _loop.run_analyze(eng.db_path, table, objective, policy=pol,
-                                      out_dir=os.path.join(tmp, "analysis"), as_of=as_of_eff,
-                                      display_name=name, timer=timer,
-                                      landing=E.landing_stamp(eng.meta(), table))
+                if cube_refusal:
+                    # a table of series whose readable columns cannot tell its rows apart: adding its rows would mix
+                    # totals and parts, so the business analysis is refused with the reason (nl_structure)
+                    refusal = cube_refusal
+                else:
+                    r = _loop.run_analyze(eng.db_path, table, objective, policy=pol,
+                                          out_dir=os.path.join(tmp, "analysis"), as_of=as_of_eff,
+                                          display_name=name, timer=timer,
+                                          landing=E.landing_stamp(eng.meta(), table))
             except E.NotReady as exc:
                 refusal = str(exc)
         st = {s["stage"]: float(s["seconds"]) for s in timer.stages}
@@ -8111,9 +8747,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             "ledger_json": _ledger_text(ledgers, scrub, rep["engine"]),
         }
         # -- the engine's reading of every cell of the table it landed (ONE parser: see _engine_reading)
-        reading = None
+        reading = early_reading
         try:
-            reading = _engine_reading(eng.db_path, table, rules, cr, dict(getattr(res, "column_map", {}) or {}))
+            if reading is None:
+                reading = _engine_reading(eng.db_path, table, rules, cr, dict(getattr(res, "column_map", {}) or {}))
         except Exception:  # noqa: BLE001 - without it the tests use the engine's value readers, the analyses do not run
             if os.environ.get("NL_BROWSER_STRICT"):
                 raise
@@ -8138,13 +8775,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the profile the planner reads next may come from this same reading (the page asks for it after the
         # visitor's choices; when those are the choices this run made, every flagged column withheld as the
         # scan runs, the profile needs no second pass of the engine: _same_choices)
-        if ai_plan is None and layout is None and reading is not None:
+        if ai_plan is None and layout is None and reading is not None and structure_inner is None and \
+                not (_PROFILE_CACHE.get("sha") == hashlib.sha256(sent).hexdigest() and
+                     _PROFILE_CACHE_STRUCTURE in (_PROFILE_CACHE.get("value") or {})):
             try:
                 _PROFILE_CACHE.clear()
                 import nl_viz as _nv
                 pfacts = _profile_facts(reading, list(reading.land) or list(reading.values.columns), hidden_land)
                 _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value={
-                    "ok": True, "facts": pfacts,
+                    "ok": True, "facts": pfacts, "released": [dict(x) for x in released],
                     "rows": reading.n, "flagged": [dict(f) for f in flagged],
                     "colmap": dict(getattr(res, "column_map", {}) or {}),
                     "viz_stats": _nv.profile_stats(reading, pfacts)})
@@ -8265,11 +8904,14 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             _true_headline(rep, r, pub, _date_grain(cr.clean, r.roles.date))
         # the question the report answers: the plan's goal, else the visitor's own (never the default question)
         goal = str((ai_plan or {}).get("goal") or (objective if objective != DEFAULT_OBJECTIVE else ""))
-        rep["scenarios"] = _scenarios(rep, r, cr, hidden_land, reading, ai_plan, pub, date_withheld, goal)
+        if structure_inner is not None and r is not None:
+            _structure_inner_blocks(rep, structure_inner)
+        rep["scenarios"] = _scenarios(rep, r, cr, hidden_land, reading, ai_plan, pub, date_withheld, goal,
+                                      structure_inner)
         # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens,
-                          scrub.flag_tokens_by)
+                          scrub.flag_tokens_by, structure_inner)
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8418,7 +9060,7 @@ def _plan_signals(rep: Dict[str, Any], plan: Dict[str, Any], scrub: Optional["_N
 
 
 def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], reading: Any, plan: Any, pub: Any,
-               date_withheld: bool, goal: str = "") -> Dict[str, Any]:
+               date_withheld: bool, goal: str = "", structure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """rep["scenarios"] (design B; engine/nl_scenarios.py): the engine's claims as its gate kept them, the rows its
     cleaner kept without any column the visitor withheld or coded (the frame the analyses read, by the landed
     names the claims use), and the plan's column roles and units. The engine's own files are not touched."""
@@ -8430,6 +9072,16 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
     if refused:
         return {"basis": None, "items": [], "refused": [refused],
                 "note": "No scenario or contribution figures for this file; the reasons are listed."}
+    if structure is not None and rep.get("estimand"):
+        try:
+            import nl_scenarios as _nsc
+            return _nsc.build_structure(rep, structure, plan if isinstance(plan, dict) else None)
+        except Exception as exc:  # noqa: BLE001 - the report stands without the block, and says so
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
+            return {"basis": None, "items": [], "refused": ["the structure's breakdown could not be computed (%s)"
+                                                            % type(exc).__name__],
+                    "note": "No scenario or contribution figures for this file; the reasons are listed."}
     try:
         import nl_scenarios as _ns
         from northledger.clean import QUARANTINE_COL
@@ -8458,7 +9110,7 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
 
 
 def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",
-         names: Any = frozenset(), names_by: Any = None) -> Dict[str, Any]:
+         names: Any = frozenset(), names_by: Any = None, structure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """rep["viz"] (engine/nl_viz.py, CONTRACT §5.9): the charts the AI plan chose, each checked and built from the rows
     the engine kept, or the engine's own picks; every refusal with its reason. The report stands without them. names:
     the exact tokens of every flagged column's values (Scrubber.flag_tokens); names_by: the same by landed column
@@ -8466,7 +9118,8 @@ def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: s
     try:
         import nl_viz as _nv
         return _nv.build(rep, {"r": r, "reading": reading, "plan": plan if isinstance(plan, dict) else None,
-                               "pub": pub, "goal": goal, "names": names, "names_by": names_by or {}})
+                               "pub": pub, "goal": goal, "names": names, "names_by": names_by or {},
+                               "structure": structure})
     except Exception as exc:  # noqa: BLE001 - the report stands without the charts, and says so
         if os.environ.get("NL_BROWSER_STRICT"):
             raise

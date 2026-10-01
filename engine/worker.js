@@ -21,7 +21,8 @@
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
    Messages out
      {type: 'stage', id, stage, state: 'start'|'done', seconds, cached}
-     {type: 'scanned', id, result: {ok, error, flagged: [{column, kind}], excel}}
+     {type: 'scanned', id, result: {ok, error, flagged: [{column, kind}], released: [{column, header,
+                                                distinct, text}], excel}}
      {type: 'profiled', id, profile, landed}    profile null when it could not be made; landed:
                                                 {header: the engine's landed name}, for the page only
      {type: 'result', id, report}               THE REPORT CONTRACT
@@ -171,7 +172,12 @@ async function onScan(m) {
   first = { report: report, options: m.options || {} };
   timesOf(report, BEFORE, m.id);
   var flagged = ((report.privacy || {}).flagged || []).map(function (f) { return { column: f.column, kind: f.kind }; });
-  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged,
+  // the categories the adapter read as categories, not personal data (privacy.released, AM1): the consent step shows each
+  // and the visitor may still withhold it
+  var released = ((report.privacy || {}).released || []).map(function (r) {
+    return { column: r.column, header: r.header, distinct: r.distinct, text: r.text };
+  });
+  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, released: released,
     excel: (file && file.excel) ? { sheet: file.excel.sheet, sheets: file.excel.sheets } : null } });
 }
 
@@ -187,6 +193,10 @@ function onProfile(m) {
     fm[f.column] = f.kind;
     if (['withhold', 'code', 'keep'].indexOf(got[f.column]) >= 0) dec[f.column] = got[f.column];
   });
+  // a released category the visitor chose to withhold (or code): the adapter then flags it again
+  (((first.report || {}).privacy || {}).released || []).forEach(function (r) {
+    if (['withhold', 'code'].indexOf(got[r.column]) >= 0) dec[r.column] = got[r.column];
+  });
   var out = null;
   try {
     out = JSON.parse(String(nl.plan_profile_json(file.bytes, String(first.options.name || file.name), JSON.stringify(fm),
@@ -199,7 +209,9 @@ function onProfile(m) {
 async function onRun(m) {
   if (!booted || !file || !first) { fail(m.id, 'engine', 'There is no file to work on; pick it again.'); return; }
   var d = (m.options && m.options.decisions) || {}, report;
-  var changed = Object.keys(d).some(function (k) { return d[k] !== 'withhold'; }) ||
+  var rel = (((first.report || {}).privacy || {}).released || []).map(function (r) { return r.column; });
+  // withholding a released category is a change too: the scan's run read it
+  var changed = Object.keys(d).some(function (k) { return d[k] !== 'withhold' || rel.indexOf(k) >= 0; }) ||
     String((m.options || {}).objective || '') !== String(first.options.objective || '');
   if (!changed) {
     report = first.report;                                // every flagged column withheld: the run already made

@@ -1106,7 +1106,8 @@ self.onmessage = function (e) {
   if (m.type === 'scan') {
     self.postMessage({ type: 'stage', id: m.id, stage: 'load', state: 'done', seconds: 0.01 });
     self.postMessage({ type: 'scanned', id: m.id, result: { ok: true, error: null,
-      flagged: REPORT.privacy.flagged.map(function (f) { return { column: f.column, kind: f.kind }; }) } });
+      flagged: REPORT.privacy.flagged.map(function (f) { return { column: f.column, kind: f.kind }; }),
+      released: (REPORT.privacy.released || []).map(function (r) { return { column: r.column, header: r.header, distinct: r.distinct, text: r.text }; }) } });
   } else if (m.type === 'profile') {
     var P = REPORT.__profile ? (typeof REPORT.__profile === 'object' ? REPORT.__profile : DEFAULT_PROFILE) : null;
     if (P && REPORT.__profileDecisions && sorted(m.decisions) !== sorted(REPORT.__profileDecisions)) P = null;
@@ -1129,6 +1130,11 @@ self.onmessage = function (e) {
         R.contracts = { tests: D.__plan__.columns.filter(function (c) { return c.semantic_type !== 'category'; }).map(function (c) { return { column: c.name, semantic_type: c.semantic_type, test: 'stub test', checked: off.indexOf(c.name) < 0 ? 10 : 0, failed: 0, examples: [], action: off.indexOf(c.name) < 0 ? 'passed' : 'turned off by you', unreadable: 0, out_of_range: 0, repeated: 0, unexpected: 0, misread: false, signal: false }; }), cells_flagged: 1, line: 'source_line', note: 'stub' };
         R.downloads.contract_flagged_csv = 'source_line,column,value,test,what happened\\n9,amount,140,between 0 and 100,out of range; kept by the engine\\n';
       }
+    }
+    if (REPORT.__echoDecisions) {          // the choices the run received, on the report's headline (the released-category check)
+      R = JSON.parse(JSON.stringify(R)); var dd = {};
+      Object.keys(D).sort().forEach(function (k) { if (k.indexOf('__') !== 0) dd[k] = D[k]; });
+      R.story.headline = 'decisions ' + JSON.stringify(dd);
     }
     self.postMessage({ type: 'result', id: m.id, report: R });
   }
@@ -2658,6 +2664,39 @@ check('try-personal-data-step-says-what-each-choice-does', DESK, async (ctx) => 
     /no cleaning rule reads or changes them, so they never set a row aside, and they only keep otherwise-identical rows apart, as they are in your file/.test(priv) && /never sent to an AI or put in a share link, not even its name/.test(priv) &&
     /an AI is told only its name, type and counts/.test(priv) && !/dropped before analysis|left out of the business analysis, the story/.test(priv), 'the report\'s personal-data note overclaims or misses the promise: ' + priv.slice(0, 400));
 });
+
+// a category the engine read as a category, not personal data (privacy.released; the lead's amendment AM1, WAVE 4): the
+// consent step shows it in those words with its labels counted, Use is the default and Withhold is still on offer; a
+// withhold reaches the engine's run, and Use sends no choice (the engine's own reading)
+function releasedReport() {
+  const rep = stubReport();
+  rep.privacy = { flagged: [], released: [{ column: 'industry_segment', header: 'Industry segment', distinct: 30, rows: 1000,
+    text: 'Read as a category, not personal data: Industry segment (30 labels)' }] };
+  rep.__echoDecisions = true;
+  return rep;
+}
+for (const pick of ['withhold', 'use']) {
+  check('try-released-category-is-shown-and-' + (pick === 'withhold' ? 'can-be-withheld' : 'use-sends-no-choice'), DESK, async (ctx) => {
+    const p = await openTry(ctx, { stubReport: releasedReport(), proxy: 'unset' });
+    await p.click('#try-sample');
+    await tryUntil(p, '#try-pd:not([hidden])');
+    const t = squash(await p.textContent('#try-pd'));
+    ok(/Read as a category, not personal data: Industry segment \(30 labels\)/.test(t), 'the released column is not shown in the AM1 words: ' + t.slice(0, 300));
+    ok(/No column was flagged as personal/.test(t), 'the step speaks of flagged columns when none was flagged: ' + t.slice(0, 200));
+    ok(await p.isChecked('#try-pd input[data-col="industry_segment"][value="use"]'), 'Use is not the default for a released category');
+    ok(await p.isVisible('#try-pd input[data-col="industry_segment"][value="withhold"]'), 'Withhold is not on offer for a released category');
+    if (pick === 'withhold') await p.check('#try-pd input[data-col="industry_segment"][value="withhold"]');
+    await p.click('#try-pd-go');
+    await tryUntil(p, '#try-report:not([hidden])');
+    const shown = await p.evaluate(() => document.getElementById('try-report').innerText);
+    const want = pick === 'withhold' ? 'decisions {"industry_segment":"withhold"}' : 'decisions {}';
+    ok(shown.indexOf(want) >= 0, 'the run did not receive the visitor\'s choice (' + pick + '): ' + shown.slice(0, 200));
+    const key = await p.evaluate(() => [window.NLTry.planKeyText('ab12', { industry_segment: 'withhold' }, [{ column: 'industry_segment' }]),
+      window.NLTry.planKeyText('ab12', {}, [{ column: 'industry_segment' }])]);
+    ok(key[0] === 'ab12\nindustry_segment=withhold' && key[1] === '', 'a withheld released category does not change the plan key: ' + JSON.stringify(key));
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  });
+}
 
 check('try-save-as-pdf-prints-every-finding-and-the-email', DESK, async (ctx) => {
   const rep = stubReport();

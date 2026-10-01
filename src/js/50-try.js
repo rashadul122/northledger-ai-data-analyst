@@ -1283,8 +1283,10 @@
   };
   // what the plan cache key is made from when a choice differs from the default (withhold): the file's hash
   // and each such choice, sorted; '' when every flagged column is withheld (the key is then the file's hash)
-  T.planKeyText = function (fileHash, decisions) {
-    var d = decisions || {}, ks = Object.keys(d).filter(function (k) { return d[k] !== 'withhold'; }).sort();
+  T.planKeyText = function (fileHash, decisions, released) {
+    // a released category withheld is a choice too (its default is to be read): it changes the profile, so the key
+    var rel = (released || []).map(function (x) { return x && x.column; });
+    var d = decisions || {}, ks = Object.keys(d).filter(function (k) { return d[k] !== 'withhold' || rel.indexOf(k) >= 0; }).sort();
     return fileHash && ks.length ? fileHash + '\n' + ks.map(function (k) { return k + '=' + d[k]; }).join('\n') : '';
   };
   // the engine's signals the re-plan may send: never one about a withheld column, or naming one
@@ -1690,7 +1692,10 @@
           (r.excel.sheets && r.excel.sheets.length > 1 ? ' (the sheet with the most rows)' : '') + '.'; }
         var flagged = (r.flagged || []).filter(function (f) { return f && typeof f.column === 'string'; });
         S.flagged = flagged;
-        if (flagged.length) askPersonal(flagged);
+        // the categories the engine reads as categories, not personal data (privacy.released): shown on the step, each
+        // with Withhold still on offer (the lead's amendment AM1)
+        S.released = (r.released || []).filter(function (x) { return x && typeof x.column === 'string' && x.column; });
+        if (flagged.length || S.released.length) askPersonal(flagged);
         else if (!CFG.ai_proxy_url) { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
         else { setStage('decide', 'skip', null, 'no personal data flagged'); askAiChoice(); }
       } else if (m.type === 'profiled') {
@@ -1810,12 +1815,28 @@
       goTo($('try-pd-h'));
       try { $('try-pd-go').focus({ preventScroll: true }); } catch (e) { $('try-pd-go').focus(); }
     }
+    // a released category (privacy.released): read like any column unless the visitor withholds it
+    var RELEASED_CHOICES = [['use', 'Use', 'read as a category like any other column: its labels can appear in the findings, the charts and the downloads' + (CFG.ai_proxy_url ? ', and in what the AI reads' : '')],
+      ['withhold', 'Withhold', 'treat it as personal after all: never sent to an AI or put in a share link, its values never shown, downloaded or used in the analysis']];
+    function releasedHtml(rel) {
+      if (!rel.length) return '';
+      return '<p class="note pd-rel-note">The engine reads ' + (rel.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (rel.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape and no sensitive name. You can still withhold ' + (rel.length === 1 ? 'it' : 'any of them') + '.</p>' +
+        rel.map(function (x, i) {
+          var words = 'Read as a category, not personal data: ' + String(x.header || x.column) + ' (' + Number(x.distinct || 0).toLocaleString('en-US') + ' labels)';
+          return '<fieldset class="pd-col pd-rel"><legend><code>' + esc(x.header || x.column) + '</code> <span class="pd-kind">' + esc(words) + '</span></legend><div class="pd-opts">' +
+            RELEASED_CHOICES.map(function (c) {
+              return '<label class="pd-opt"><input type="radio" name="pd-rel-' + i + '" value="' + c[0] + '"' + (c[0] === 'use' ? ' checked' : '') + ' data-col="' + esc(x.column) + '" data-rel="1"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
+            }).join('') + '</div></fieldset>';
+        }).join('');
+    }
     function askPersonal(flagged) {
       setStage('decide', 'wait');
       S.sendKey = '';                                // a new step: no box, nothing ticked, every column withheld
+      var rel = S.released || [];
       var keepable = flagged.some(function (f) { return String(f.kind || '').indexOf(CODED) < 0; });
       el.pd.innerHTML = '<h3 id="try-pd-h">Personal data: you decide</h3>' +
-        '<p>The engine flagged ' + plural(flagged.length, 'column', 'columns') + ' as possibly personal. Withhold is chosen for each; change it only if the column is safe to use. Your file stays in this browser whatever you pick.</p>' +
+        (flagged.length ? '<p>The engine flagged ' + plural(flagged.length, 'column', 'columns') + ' as possibly personal. Withhold is chosen for each; change it only if the column is safe to use. Your file stays in this browser whatever you pick.</p>'
+          : '<p>No column was flagged as personal. Your file stays in this browser whatever you pick.</p>') +
         '<p class="note">The scan reads column names and the shape of values. A column of names under a neutral heading (a stylist or a vendor, say) can be missed, and is then used as it is.</p>' +
         (keepable ? '<p class="pd-all"><button type="button" class="btn btn-ghost btn-sm" id="try-pd-all">' + esc(KEEP_ALL) + '</button>' +
           '<span class="pd-all-said note" id="try-pd-all-said" role="status"></span></p>' : '') +
@@ -1826,12 +1847,16 @@
               var off = coded && c[0] === 'keep';
               return '<label class="pd-opt"><input type="radio" name="pd-' + i + '" value="' + c[0] + '"' + (c[0] === 'withhold' ? ' checked' : '') + (off ? ' disabled' : '') + ' data-col="' + esc(f.column) + '"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
             }).join('') + '</div>' + (coded ? '<p class="pd-note">Already coded as it arrived: an email address or phone number cannot be kept as it is, so Keep is not offered.</p>' : '') + '</fieldset>';
-        }).join('') +
+        }).join('') + releasedHtml(rel) +
         (CFG.ai_proxy_url ? aiChoiceHtml(true) : '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>');
       el.pd.hidden = false;
       var pdDecisions = function () {
         var d = {};
-        Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio]:checked'), function (x) { d[x.getAttribute('data-col')] = x.value; });
+        Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio]:checked'), function (x) {
+          // a released category counts only when withheld: "use" is the engine's own reading, no choice to send
+          if (x.getAttribute('data-rel') && x.value !== 'withhold') return;
+          d[x.getAttribute('data-col')] = x.value;
+        });
         return d;
       };
       if (CFG.ai_proxy_url) { syncSend(); wireAiChoice(pdDecisions); }
@@ -1867,7 +1892,7 @@
     // default), else the SHA-256 of that hash and the choices, so a plan made under other choices (one that
     // saw a column now withheld) is never served back; '' when the browser cannot hash (no cache)
     function planKey() {
-      var text = T.planKeyText(S.fileHash, S.decisions);
+      var text = T.planKeyText(S.fileHash, S.decisions, S.released);
       if (!text) return Promise.resolve(S.fileHash || '');
       try {
         return window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))

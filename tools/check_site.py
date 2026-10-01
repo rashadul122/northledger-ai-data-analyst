@@ -1109,6 +1109,12 @@ FALSE_PROMISES = (
     (r"search(?:es)? (?:are|is) (?:checked|vetted|screened) against (?:your|the) file",
      "no search is vetted against the file any more: each is built from fixed terms only, so nothing from the file "
      "can be in it", False),
+    # integration pass, 1 Oct 2026: the honesty check also removes a sentence whose figure the engine did compute, when
+    # the sentence counts it in other words (9,897 "reviews" where the engine counted rows), so a removed sentence
+    # carried a figure the check could not match, never one "neither computed by the engine"
+    (r"neither computed by the engine|carrying a figure that was neither\b",
+     "the honesty check removes a sentence whose figure it could not match to the engine's results or to a source "
+     "cited in the same sentence, which may be an engine figure counted in other words", False),
 )
 
 

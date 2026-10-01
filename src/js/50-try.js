@@ -2532,13 +2532,16 @@
       var srcs = j.sources || [];
       // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden, with the count
       // first. A figure passes only when the engine computed it or a source the same sentence cites prints it (the
-      // worker's guard, insight-proxy/src/figures.js); a removed sentence carried one that was neither (final review,
-      // 30 Sep 2026: the note said all figures were the engine's, which was false beside a cited source's figure)
+      // worker's guard, insight-proxy/src/figures.js; final review, 30 Sep 2026: the note said all figures were the
+      // engine's, which was false beside a cited source's figure). A removed sentence carried a figure the check could
+      // not match (integration pass, 1 Oct 2026: the badge said such a figure was not the engine's at all, which is
+      // false when the guard removes an engine figure its sentence counts in other words, 9,897 "reviews" where the
+      // engine counted rows)
       var n = typeof j.repaired === 'number' && j.repaired >= 0 ? j.repaired : null;
       var trust = '<p class="ai-rep-trust" role="note"' + (n === null ? '' : ' data-removed="' + n + '"') + '>\u2713 Honesty check: ' +
         (n === null ? 'every figure was checked before this report was shown: each was computed by the engine or quoted from a source cited in the same sentence.'
           : n === 0 ? '0 sentences removed; every figure was computed by the engine or quoted from a source cited in the same sentence.'
-            : n + ' sentence' + (n === 1 ? '' : 's') + ' removed before this report was shown: ' + (n === 1 ? 'it' : 'each') + ' carried a figure that was neither computed by the engine nor quoted from a source cited in the same sentence. Every figure left is one or the other.') + '</p>';
+            : n + ' sentence' + (n === 1 ? '' : 's') + ' removed before this report was shown: ' + (n === 1 ? 'it' : 'each') + ' carried a figure the check could not match to the engine\'s results or to a source cited in the same sentence. Every figure left matches one or the other.') + '</p>';
       var paper = pdfPaper();
       card.innerHTML = '<div class="ai-rep-head"><h3>The AI-written report</h3>' +
         '<p class="note">Figures by the engine or quoted from the sources it cites [S1]\u2026, words by ' + esc(j.model || 'the AI') + '; every figure was checked against the engine\'s results or the source cited beside it.</p></div>' +

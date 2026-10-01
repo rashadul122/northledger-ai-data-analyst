@@ -2333,7 +2333,10 @@ check('try-ai-report-says-how-many-sentences-were-removed', DESK, async (ctx) =>
   ok(d.n === '2' && /Honesty check: 2 sentences removed/.test(d.t), 'the trust note does not lead with the count: ' + d.t);
   // a figure may be the engine's or a cited source's (the worker's guard): never "every figure matches the engine's own"
   const head = await p.textContent('#try-ai-report .ai-rep-head');
-  ok(/neither computed by the engine nor quoted from a source cited in the same sentence/.test(d.t) && !/matches the engine|engine never computed/.test(d.t) &&
+  // (integration pass, 1 Oct 2026: never "neither computed by the engine", which is false for an engine figure the guard
+  // removed because its sentence counted it in other words)
+  ok(/each carried a figure the check could not match to the engine's results or to a source cited in the same sentence\. Every figure left matches one or the other\./.test(d.t) &&
+    !/neither computed|matches the engine|engine never computed/.test(d.t) &&
     /Figures by the engine or quoted from the sources it cites/.test(head), 'the trust note still says every figure is the engine\'s: ' + d.t + ' / ' + head);
   ok(!d.hidden && /2 sentences removed \(figures: 1\.8 times, 17\)/.test(d.a || ''), 'the analyst view does not say how many sentences were removed and their figures: ' + d.a);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);

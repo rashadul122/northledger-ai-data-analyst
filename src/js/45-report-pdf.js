@@ -1811,12 +1811,16 @@
 
     // ---- about this report (the cover's notice and Appendix A's first section). A figure may be the engine's or quoted
     // from a source the same sentence cites: the honesty check lets nothing else through (final review, 30 Sep 2026:
-    // the notice said every figure was the engine's, beside a sentence quoting a cited source's figure)
+    // the notice said every figure was the engine's, beside a sentence quoting a cited source's figure). A removed
+    // sentence carried a figure the check could not match, said whole (integration pass, 1 Oct 2026: a live PDF's
+    // sentence stopped at its word "neither", right before "No person reviewed this report."; and a removed figure may
+    // be the engine's own, counted in other words)
     var rep = typeof inp.repaired === 'number' && inp.repaired >= 0 ? inp.repaired : null;
     var kept = Array.isArray(inp.kept) ? inp.kept.map(String) : null;
     var notice = 'Every figure in this report was computed by the NorthLedger engine from the reader\'s own file, in their browser, or quoted from a source cited in the same sentence. An AI model' + (inp.model ? ' (' + inp.model + ')' : '') +
       ' worded the text; an honesty check compared each figure with the engine\'s results and the cited sources' +
-      (rep === null ? '' : rep === 0 ? ' and removed no sentence' : ' and removed ' + rep + ' sentence' + (rep === 1 ? '' : 's') + ' carrying a figure that was neither') +
+      (rep === null ? '' : rep === 0 ? ' and removed no sentence' : ' and removed ' + rep + ' sentence' + (rep === 1 ? ', which carried' : 's, each carrying') +
+        ' a figure the check could not match to the engine\'s results or to a source cited in the same sentence') +
       '. No person reviewed this report. ' + (inp.shared ? 'This copy was written from a shared link\'s stored report; the reader\'s file was never uploaded.' : 'It was generated in the reader\'s browser; nothing was sent to make this file.');
     if (kept && kept.length) notice += ' The reader chose to send these personal columns to the AI: ' + kept.join(', ') + '; this report may contain their values.';
     else if (!kept) notice += inp.shared ? ' This shared copy does not record which personal columns, if any, were sent to the AI, so it may contain personal values.'

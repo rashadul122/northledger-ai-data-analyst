@@ -253,6 +253,15 @@ export function checkPdf(bytes, o = {}) {
   if (typeof o.removed === 'number') {
     const want = o.removed === 0 ? 'removed no sentence' : 'removed ' + o.removed + ' sentence';
     if (hay.indexOf(want) < 0) fail('the notice does not say the honesty check ' + want + (o.removed > 1 ? 's' : ''));
+    // the sentence is whole, and says what the check could not do (integration pass, 1 Oct 2026: a live PDF read
+    // "...removed 4 sentences carrying a figure that was neither. No person reviewed this report."; "neither computed by
+    // the engine" is also false for an engine figure the guard removed because its sentence counted it in other words)
+    const flat = hay.replace(/\s+/g, ' ');
+    const whole = o.removed === 0 ? '' : plainText('removed ' + o.removed + (o.removed === 1 ? ' sentence, which carried' : ' sentences, each carrying') +
+      ' a figure the check could not match to the engine\'s results or to a source cited in the same sentence. no person reviewed this report.');
+    if ((whole && flat.indexOf(whole) < 0) || /carrying a figure that was neither|neither computed by the engine/.test(flat)) {
+      fail('the notice\'s honesty-check sentence is cut or says "neither": ' + (flat.match(/removed \d+ sentences?[^.]{0,160}\./) || [''])[0]);
+    }
   }
   return { ok: !fails.length, fails, notes, pages: N, text: all, hay, texts: pages.map((p) => p.texts), streams: pages.map((p) => p.stream), media };
 }

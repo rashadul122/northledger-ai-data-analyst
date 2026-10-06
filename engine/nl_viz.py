@@ -2518,7 +2518,8 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
          "the total less its published parts (%s)" % (bd["parent"], bd["dim"], cause_words)),
         {"columns": [measure, str(bd["dim"])], "rows": None, "months": [basis["windows"]["prior"][0],
                                                                          basis["windows"]["latest"][1]],
-         "op": "each part's 12-month total in each window, from the table's own series"})
+         "op": "each part's %s total in each window, from the table's own series" % (
+             "annual" if int(P.get("window") or 12) == 1 else "%d-%s" % (int(P.get("window") or 12), P["noun"]))})
 
 
 def _short_dim(dim: str, n: int = 30) -> str:

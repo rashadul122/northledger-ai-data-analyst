@@ -1377,8 +1377,8 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
                 NST.money(u["contribution"], S_local, signed=True, ref=ref, exact_small=True), grade,
                 segment="unallocated (%s)" % bd["dim"],
                 window="both", op="the change less the parts' contributions",
-                assumes="the total less the parts the publisher shows (%s): %s in the latest 12 months, %s before"
-                        % (cause, NST.money(u["latest"], S_local, ref=ref, exact_small=True),
+                assumes="the total less the parts the publisher shows (%s): %s in %s, %s before"
+                        % (cause, NST.money(u["latest"], S_local, ref=ref, exact_small=True), NST.period_words(Sp)["latest"],
                            NST.money(u["prior"], S_local, ref=ref, exact_small=True)))
             if it is not None:
                 items.append(it)

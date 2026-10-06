@@ -1847,6 +1847,55 @@ def _period_forecast_reason(per: Dict[str, Any]) -> str:
 
 
 _MONTH_WORDS = re.compile(r"(?i)\bmonth|months\b")
+_WINDOW_CUE = re.compile(r"12-month|12 months|the 12 before|the average month|[Mm]onthly total\b")
+
+
+def _window_sub(text: str, noun: str, nouns: str, w: int) -> str:
+    """The window phrases of the engine's sentences (a window is 12 months) in a quarterly or an annual table's own words:
+    "the latest 12 months against the 12 before", "the 12 months before", "latest 12 months", "12-month", "12 months"."""
+    one = w == 1
+    text = re.sub(r"(?i)\bthe latest 12 months against the 12 before\b",
+                  "the latest %s against the %s before" % (noun if one else "%d %s" % (w, nouns), noun if one else str(w)), text)
+    text = re.sub(r"\bthe 12 months before\b", "the %s before" % (noun if one else "%d %s" % (w, nouns)), text)
+    text = re.sub(r"\b(latest|last) 12 months\b", lambda m: "%s %s" % (m.group(1), noun if one else "%d %s" % (w, nouns)), text)
+    text = re.sub(r"\bthe 12 before\b", "the %s before" % (noun if one else w), text)
+    text = re.sub(r"\b12-month\b", "%s-%s" % (w, noun) if not one else "annual", text)
+    text = re.sub(r"\b12 months\b", "%d %s" % (w, nouns) if not one else "a year", text)
+    return text
+
+
+def _window_phrases(text: Any, per: Optional[Dict[str, Any]]) -> Any:
+    """Wave 5c. Window phrases only, for a quarterly or an annual table: "the latest 12 months against the 12 before", "the 12
+    months before", "latest 12 months", "12-month", "12 months", and the two phrases the core's claims name a period's figure
+    with: "the average month" (a mean) and "monthly total" (a sum). Any other text that holds the word "months" ("Months since
+    signup", "48 months of history", "monthly") is left alone,
+    and a monthly table's text is never touched. For the text the core wrote that the adapter copies into a record of its own
+    (a claim, a chart's `supports` and `inputs.op`, an item's `assumes`, a label); `_period_text` is the broad pass over the
+    report's own sentences."""
+    if not isinstance(text, str) or not per or int(per.get("step") or 1) == 1 or not _WINDOW_CUE.search(text):
+        return text
+    noun, nouns, w = str(per.get("noun")), str(per.get("nouns")), int(per.get("window") or 12)
+    adj = str(per.get("adjective") or "monthly")
+    text = re.sub(r"\bthe average month\b", "the average %s" % noun, _window_sub(text, noun, nouns, w))
+    return re.sub(r"\b([Mm])onthly total\b", lambda m: (adj if m.group(1) == "m" else adj[:1].upper() + adj[1:]) + " total", text)
+
+
+_WINDOW_KEYS = frozenset(("claim", "supports", "op", "assumes"))
+
+
+def _window_rewrite(o: Any, per: Dict[str, Any], key: str = "") -> Any:
+    """_window_phrases applied to the records that carry a claim, a chart's `supports` and `inputs.op`, an item's `assumes` and
+    the summary's labels (never to a member's name, a label of the data, an id or a machine value)."""
+    if isinstance(o, str):
+        return _window_phrases(o, per) if key in _WINDOW_KEYS else o
+    if isinstance(o, list):
+        return [_window_rewrite(x, per, key) for x in o]
+    if isinstance(o, dict):
+        if key == "labels":
+            return {k: (_window_phrases(v, per) if isinstance(v, str) else v) for k, v in o.items()}
+        return {k: (_window_rewrite(v, per, str(k)) if k not in ("id", "slug", "estimand", "unit", "kind", "chart", "type") else v)
+                for k, v in o.items()}
+    return o
 
 
 def _period_text(text: str, per: Dict[str, Any]) -> str:
@@ -1865,14 +1914,7 @@ def _period_text(text: str, per: Dict[str, Any]) -> str:
                   r"(\d+) in each; the file holds no values for [^.;]*",
                   lambda m: "the table holds one value a %s, so each window holds %d: the change test needs at least %s in each"
                   % (noun, w, m.group(3)), text)
-    one = w == 1
-    text = re.sub(r"(?i)\bthe latest 12 months against the 12 before\b",
-                  "the latest %s against the %s before" % (noun if one else "%d %s" % (w, nouns), noun if one else str(w)), text)
-    text = re.sub(r"\bthe 12 months before\b", "the %s before" % (noun if one else "%d %s" % (w, nouns)), text)
-    text = re.sub(r"\b(latest|last) 12 months\b", lambda m: "%s %s" % (m.group(1), noun if one else "%d %s" % (w, nouns)), text)
-    text = re.sub(r"\bthe 12 before\b", "the %s before" % (noun if one else w), text)
-    text = re.sub(r"\b12-month\b", "%s-%s" % (w, noun) if not one else "annual", text)
-    text = re.sub(r"\b12 months\b", "%d %s" % (w, nouns) if not one else "a year", text)
+    text = _window_sub(text, noun, nouns, w)
     for pat, rep_ in ((r"\bmonth-to-month\b", "%s-to-%s" % (noun, noun)), (r"\bMonth-to-month\b", "%s-to-%s" % (cap(noun), noun)),
                       (r"\bmonthly\b", adj), (r"\bMonthly\b", cap(adj)), (r"\bmonths\b", nouns), (r"\bMonths\b", cap(nouns)),
                       (r"\bmonth\b", noun), (r"\bMonth\b", cap(noun))):
@@ -9163,18 +9205,20 @@ def _structure_notes(rep: Dict[str, Any], S: Dict[str, Any], est: Dict[str, Any]
     """Say how the table was read: the limitations' first line and a cleaning step."""
     roles = "; ".join("%s: %s" % (d["column"], d["role"].replace("_", " ")) for d in S["dims"] if d["role"] != "constant")
     per = S.get("period") or {"nouns": "months", "adjective": "monthly"}
+    nu = next((d for d in S["dims"] if _ns()._named_unverified(d)), None)
+    checked = ("%s is the named total of %s; it could not be checked against its parts: %s cannot be summed." % (
+        nu["total"], nu["column"], "an index" if S["measure"].get("type") == "index" else "a rate")) if nu else \
+        "Each total was checked against its parts."
     text = ("This file is a statistical table: %s rows, %s series over %s %s (%s). Adding its rows would count the "
             "same value more than once, so the report reads one series, the headline the structure chooses: %s. "
             "%s" % (
                 format(int(S.get("rows") or 0), ","), format(int(S.get("series") or 0), ","),
                 format(int(S.get("months") or 0), ","), per["nouns"], roles, est.get("text") or "",
                 ("The table has no total row: the headline is the sum of its parts, month by month; the other totals were "
-                 "checked against their parts." if any(d["role"] == "parts" for d in S["dims"]) else
-                 "Each total was checked against its parts.")
+                 "checked against their parts." if any(d["role"] == "parts" for d in S["dims"]) else checked)
                 if int(per.get("step") or 1) == 1 else
                 ("The table has no total row: the headline is the sum of its parts; the other totals were checked "
-                 "against their parts." if any(d["role"] == "parts" for d in S["dims"]) else
-                 "Each total was checked against its parts.")))
+                 "against their parts." if any(d["role"] == "parts" for d in S["dims"]) else checked)))
     if S.get("wide"):
         w_ = S["wide"]
         text += (" The file was a wide table (%d columns of %s, %s to %s); it was reshaped to one row per series and %s, and a "
@@ -9262,6 +9306,10 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
         for k in ("story", "summary", "findings", "methods", "limitations", "charts", "forecast", "cleaning"):
             if k in rep:
                 rep[k] = _period_rewrite(rep[k], per)
+        # wave 5c: the claims, chart records and labels the adapter copied from the core's text before it was rewritten
+        for k in ("scenarios", "viz", "charts", "summary"):
+            if k in rep:
+                rep[k] = _window_rewrite(rep[k], per)
     tm = {t["stage"]: float(t["seconds"]) for t in rep.get("timings") or []}
     for k, v in (timings or {}).items():
         tm[k] = tm.get(k, 0.0) + float(v or 0.0)
@@ -9350,6 +9398,12 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
             str(d.get("column")) for d in st.get("dims") or [] if d.get("role") in ("partition", "hierarchy")) \
             if any(d.get("role") in ("partition", "hierarchy") for d in st.get("dims") or []) else \
             "the headline is one published series"
+        for d in st.get("dims") or []:
+            # wave 5c: the headline is a rate's or an index's aggregate by its name alone: no sum-check could verify it, and the
+            # record says so (the headline is still named, so it is still described as a published total)
+            if d.get("role") == "rate_aggregate" and (d.get("sum_check") or {}).get("verified") is False \
+                    and sl.get(str(d.get("column"))) == str(d.get("total")):
+                why_total = "the headline is %s, %s" % (d.get("total"), _ns().named_total_words(str((st.get("measure") or {}).get("type") or "rate")))
         bf = (rep.get("estimand") or {}).get("built_from") if isinstance(rep.get("estimand"), dict) else None
         if isinstance(bf, dict) and bf.get("n"):
             # a table with no total row: the headline is the sum of its published parts (nothing is sampled by the sum)

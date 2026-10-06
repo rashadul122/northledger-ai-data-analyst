@@ -72,6 +72,7 @@ BREAKDOWNS_MAX = 4              # a plan names at most 4 breakdowns
 SLICE_ID = re.compile(r"^S\d{1,2}$")
 BREAKDOWN_ID = re.compile(r"^B\d{1,2}$")
 RECONCILE_TOL = 1e-6
+FLOAT_NOISE = 1e-12             # wave 5c: a residual this small beside the figure it is part of is float arithmetic, not data
 
 ROLES = ("partition", "hierarchy", "adjustment", "measure", "components", "flat_additive", "single", "rate_aggregate",
          "constant", "parts")
@@ -1925,6 +1926,19 @@ def _agg_name_tier(label: str) -> int:
     return 1 if _AGG_WHOLE.match(label) else 0
 
 
+_REST_NAME = re.compile(r"(?i)\b(?:other|others|rest of|remaining|remainder)\b")
+
+
+def _named_unverified(d: Dict[str, Any]) -> bool:
+    """A dimension whose published aggregate is one by its name alone (wave 5c): no range or fit could verify it."""
+    return d.get("role") == "rate_aggregate" and (d.get("sum_check") or {}).get("verified") is False
+
+
+def named_total_words(mtype: str) -> str:
+    """What the engine says of a member of a rate or an index that is the table's aggregate by its name alone (wave 5c)."""
+    return "the named total; not verifiable by a sum-check (%s cannot be summed)" % ("an index" if mtype == "index" else "a rate")
+
+
 def _nnls(X: Any, y: Any) -> Any:
     """Non-negative least squares (Lawson and Hanson, active set), numpy only: min ||X w - y|| with w >= 0."""
     import numpy as np
@@ -2036,29 +2050,47 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
     A, X, _c = _dim_tensor(S, j)
     M = len(labels)
     stats: Dict[int, Tuple[float, int]] = {}
-    named: List[Tuple[int, int, float, int]] = []
+    named: List[Tuple[int, int, float, int]] = []          # a name AND inside the others' range in 99% of its cells (the range verifies it)
+    named_any: List[Tuple[int, int, float, int]] = []      # a name, whatever the range says (wave 5c: the name is the evidence)
     with np.errstate(all="ignore"):
         for m in range(M):
             rest = [x for x in range(M) if x != m]
             if not rest:
                 continue
+            tier = _agg_name_tier(labels[m])
             lo = np.nanmin(np.where(np.isnan(A[rest]), np.inf, A[rest]), axis=0)
             hi = np.nanmax(np.where(np.isnan(A[rest]), -np.inf, A[rest]), axis=0)
             have = ~np.isnan(A[m]) & np.isfinite(lo) & np.isfinite(hi)
             n = int(have.sum())
             if n < MIN_COMPLETE:
+                if tier:
+                    named_any.append((tier, m, 0.0, n))
                 continue
             inside = float(((A[m][have] >= lo[have] - 1e-12) & (A[m][have] <= hi[have] + 1e-12)).mean())
             stats[m] = (float(((A[m][have] > lo[have]) & (A[m][have] < hi[have])).mean()), n)
-            tier = _agg_name_tier(labels[m])
-            if tier and inside >= BOUND_SHARE:
-                named.append((tier, m, inside, n))
+            if tier:
+                named_any.append((tier, m, inside, n))
+                if inside >= BOUND_SHARE:
+                    named.append((tier, m, inside, n))
     pick, by, evidence = None, "", {}
     if named:
         top = max(t for t, _m, _i, _n in named)
         pool = [x for x in named if x[0] == top]
         if top == 2 or len(pool) == 1:            # two whole countries' names (a table of countries) do not say which is the total
             pick, by = pool[0], "name"
+    if pick is None:
+        # wave 5c: a member with a total's name (total, all, overall, national, _T) or a whole country's name in a geographic
+        # dimension is the aggregate even when no check can verify it: an index or a rate cannot be summed, so there is no
+        # sum-check, two bases or one other member leave no range to lie in, and a weighted-average fit has too little to fit. The
+        # name is then the only evidence, and the table says so (sum_check.verified false). Exactly one such name, and never a
+        # member that says it is the rest ("All other provinces").
+        cands = [x for x in named_any if (x[0] == 2 or _GEO_WORDS.search(rec["column"])) and not _REST_NAME.search(labels[x[1]])]
+        if cands:
+            top = max(t for t, _m, _i, _n in cands)
+            pool = [x for x in cands if x[0] == top]
+            if len(pool) == 1:
+                pick, by = pool[0], "name"
+                evidence = {"verified": False}
     if pick is None:
         try:
             got = _unnamed_aggregate(S, A, stats, labels, time.perf_counter() + (min(AGG_BUDGET_S, max(0.0, tm.left())) if tm else AGG_BUDGET_S))
@@ -2071,15 +2103,19 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
         rec["why"] = "a rate or an index is never added up; no member is a published aggregate"
         return
     _s, m, inside, n = pick
+    unverified = evidence.get("verified") is False
     rec.update(role="rate_aggregate", total=labels[m], total_index=m, aggregate_by=by,
                parts=[labels[x] for x in range(M) if x != m], part_index=[x for x in range(M) if x != m],
                components={}, alternatives={},
                sum_check=dict({"inside_range_share": round(inside, 4), "cells": n}, **evidence),
-               why="a %s is never added or averaged across members: %s lies inside the others' range in %s%% of %s "
-                   "cells and is read as the published aggregate%s" % (
-                       S["measure"]["type"], labels[m], round(100 * inside, 1), _fmt_count(n),
-                       "" if by == "name" else " (no member is named as a total: it has full coverage and the others' "
-                                               "weighted average reproduces it to the last published digit)"))
+               why=("%s %s is never added or averaged across members: %s is %s" % (
+                        "an" if S["measure"]["type"] == "index" else "a", S["measure"]["type"], labels[m],
+                        named_total_words(S["measure"]["type"]))) if unverified else
+               ("a %s is never added or averaged across members: %s lies inside the others' range in %s%% of %s "
+                "cells and is read as the published aggregate%s" % (
+                    S["measure"]["type"], labels[m], round(100 * inside, 1), _fmt_count(n),
+                    "" if by == "name" else " (no member is named as a total: it has full coverage and the others' "
+                                            "weighted average reproduces it to the last published digit)")))
 
 
 def _adjustment(S: Dict[str, Any], j: int) -> None:
@@ -2273,7 +2309,8 @@ def _slices(S: Dict[str, Any]) -> None:
                 "measure": ("the engine's default measure: the first of %s" % MEASURE_RULE) if d.get("measure_dim") else
                 "the total measure; the others are components or other measures",
                 "components": "it bounds the other members, which are its components",
-                "rate_aggregate": "the published aggregate (a %s is never added across members)" % S["measure"]["type"],
+                "rate_aggregate": named_total_words(S["measure"]["type"]) if _named_unverified(d) else
+                "the published aggregate (a %s is never added across members)" % S["measure"]["type"],
                 "single": "read one member at a time (no relation verified)",
             }.get(r, "the default member")
     slices = []
@@ -2841,6 +2878,15 @@ def pct(v: Optional[float], signed: bool = True) -> str:
     return ("−" if v < 0 else "") + s
 
 
+def noise_zero(v: float, *figures: Optional[float]) -> float:
+    """A residual that is float noise is exactly 0 (and never -0.0): it is at most a millionth of a millionth of the largest of
+    the figures it is part of (a count averaged over a window leaves -3.41e-13 beside a total of 5e4), and at most 1e-12 itself
+    when the figures are small. A real residual, however small beside its total (the publisher's rounding, $1,000 of $864B), is
+    kept as it is: it is millions of times the noise."""
+    scale = max([1.0] + [abs(float(f)) for f in figures if f is not None])
+    return 0.0 if abs(v) <= FLOAT_NOISE * scale else v
+
+
 def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
               ) -> Optional[Dict[str, Any]]:
     """One breakdown in the headline's windows: per part its two window figures, its contribution to the change, its own
@@ -2875,10 +2921,10 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
         parts.append({"member": p, "prior": a, "latest": b, "contribution": b - a, "complete": complete,
                       "growth_pct": (100.0 * (b / a - 1.0)) if complete and a > 0 else None,
                       "share_level_pct": 100.0 * b / T1 if T1 else None})
-    u0 = T0 - math.fsum(sums0)
-    u1 = T1 - math.fsum(sums1)
+    u0 = noise_zero(T0 - math.fsum(sums0), T0, T1)
+    u1 = noise_zero(T1 - math.fsum(sums1), T0, T1)
     contribs = [p["contribution"] for p in parts]
-    u_contrib = change - math.fsum(contribs)
+    u_contrib = noise_zero(change - math.fsum(contribs), change, T0, T1)
     same = all((c >= 0) == (change >= 0) for c in contribs if abs(c) > 0) and abs(change) >= 0.01 * abs(T0)
     for p in parts:
         p["share_change_pct"] = (100.0 * p["contribution"] / change) if same and change else None
@@ -3014,6 +3060,11 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             single_member = {"dim": d["column"], "member": d["total"], "noun": d.get("noun") or "total",
                              "statement": "one member shown: %s; this table has no total member, so this is not %s" % (d["total"], what)}
             built_txt += single_member["statement"] + "; "
+    for d in S["dims"]:
+        # wave 5c: a rate's or an index's aggregate that is one by its name alone (no sum-check can verify it): the estimand says so,
+        # first, so that a long text cut at its cap loses the windows' words and not this
+        if _named_unverified(d) and where.get(d["column"]) == d.get("total"):
+            built_txt = "%s: %s; " % (d["total"], named_total_words(m["type"])) + built_txt
     def span(w: List[str]) -> str:
         a, b = (_mon(w[0]), _mon(w[1])) if P["step"] == 1 else (_plabel(S, w[0]), _plabel(S, w[1]))
         return a if a == b else "%s–%s" % (a, b)
@@ -3111,7 +3162,9 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                              "why": "parts of %s (sum-checked); shown as a breakdown, never added to it" % d["total"]})
         if d["role"] == "rate_aggregate" and w == d.get("total"):
             excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
-                             "why": "each member's own %s; never added or averaged across members" % S["measure"]["type"]})
+                             "why": "each member's own %s; never added or averaged across members%s" % (
+                                 S["measure"]["type"], ("; %s is %s" % (d["total"], named_total_words(m["type"])))
+                                 if _named_unverified(d) else "")})
         if d["role"] == "single":
             if d.get("single_by") == "dominance":
                 excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],

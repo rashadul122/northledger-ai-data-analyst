@@ -1982,21 +1982,240 @@ def test_w5b_the_aggregate_search_is_quick_quiet_and_bounded_for_a_table_of_fort
     assert g0["role"] == "single" and g0.get("no_total_member") is True, (g0["role"], g0.get("total"))
 
 
-def test_w5b_an_index_table_with_two_bases_is_unchanged_by_the_rate_rule():
-    """The structure, the figures and the words of the two-base index table (Canada and Ontario, one measure shown per base) are
-    those of before the change: its figures were read from the run of 6 October (387c876)."""
-    S = detect(MC.index_two_bases())
-    assert S["hash"] == "2a7fac4ff75acb3d", "the structure record is byte for byte the one of 387c876"
-    assert [(d["column"], d["role"], d.get("total"), d.get("single_by")) for d in NS.public(S)["dims"]] == \
-        [("GEO", "single", "Ontario", "dominance"), ("Base", "measure", "2002 base", None)]
-    assert not dim(S, "GEO").get("no_total_member"), "a member is named Canada: its range cannot be checked against one other member"
-    rep = _run(MC.index_two_bases(), "index.csv")
+def test_w5c_an_index_table_with_a_named_whole_reads_the_named_member_never_the_dominant_one():
+    """Wave 5c, defect 1. The two-base index table (Canada and Ontario, one measure shown per base) held a named whole country
+    that no range or fit could verify (one other member; an index cannot be summed), and the engine headlined Ontario, the more
+    dominant member, as "in the published totals". The old test of this (w5b) pinned that on purpose, "unchanged"; the test was
+    wrong, not the rule. BEFORE (387c876, 529bf3f): structure hash 2a7fac4ff75acb3d; GEO read `single` by dominance, total Ontario;
+    headline "2002 base, Ontario, 12 months to Dec 2022: +4.008 (156.8) in the published totals"; the estimand text "Ontario · 2002
+    base; one measure shown: ..."; Ontario's figures (latest 156.841667, change 4.008333, +2.622683%). AFTER: a member with a name
+    hint is the aggregate of a rate or an index even when no sum-check can verify it, and the estimand says so."""
+    data = MC.index_two_bases()
+    S = detect(data)
+    assert S["hash"] != "2a7fac4ff75acb3d", "the structure record changed, on purpose"
+    assert [(d["column"], d["role"], d.get("total"), d.get("aggregate_by"), d.get("single_by")) for d in NS.public(S)["dims"]] == \
+        [("GEO", "rate_aggregate", "Canada", "name", None), ("Base", "measure", "2002 base", None, None)]
+    g = dim(S, "GEO")
+    assert g["sum_check"]["verified"] is False and not g.get("no_total_member"), g
+    assert "the named total; not verifiable by a sum-check (an index cannot be summed)" in g["why"], g["why"]
+    rep = _run(data, "index.csv")
     est = rep["estimand"]
-    assert est["figures"]["latest"]["value"] == 156.841667 and est["figures"]["change"]["value"] == 4.008333, est["figures"]
-    assert est["figures"]["change_pct"]["value"] == 2.622683, est["figures"]
-    assert est["text"].startswith("Ontario · 2002 base; one measure shown: 2002 base") and "one member shown:" not in est["text"], est["text"]
-    assert "single_member" not in est and any("this table has no total row" in x["why"] for x in est["excluded"]), est["excluded"]
-    assert rep["story"]["headline"] == "2002 base, Ontario, 12 months to Dec 2022: +4.008 (156.8) in the published totals", rep["story"]["headline"]
+    # Canada's own published 2002=100 series, the latest 12 months against the 12 before (the cube's DECIMALS are 1)
+    df = pd.read_csv(io.BytesIO(data), dtype=str)
+    can = df[(df.GEO == "Canada") & (df.Base == "2002 base")].set_index("REF_DATE").VALUE.astype(float)
+    lat, pri = est["comparison"]["latest"], est["comparison"]["prior"]
+    want_l = can[(can.index >= lat[0]) & (can.index <= lat[1])].mean()
+    want_p = can[(can.index >= pri[0]) & (can.index <= pri[1])].mean()
+    assert abs(est["figures"]["latest"]["value"] - want_l) < 1e-5 and abs(est["figures"]["prior"]["value"] - want_p) < 1e-5, \
+        (est["figures"], want_l, want_p)
+    assert est["figures"]["latest"]["value"] != 156.841667, "Ontario's figure (the 387c876 headline) is gone"
+    assert est["text"].startswith("Canada · 2002 base; Canada: the named total; not verifiable by a sum-check (an index cannot be summed); "
+                                  "one measure shown: 2002 base"), est["text"]
+    assert "one member shown:" not in est["text"] and "single_member" not in est, est["text"]
+    assert any(x["dim"] == "GEO" and "Canada is the named total; not verifiable by a sum-check (an index cannot be summed)" in x["why"]
+               for x in est["excluded"]), est["excluded"]
+    assert "Ontario" not in est["text"] and not any("this table has no total" in x["why"] for x in est["excluded"]), est["excluded"]
+    assert rep["story"]["headline"].startswith("2002 base, Canada, 12 months to Dec 2022: "), rep["story"]["headline"]
+    assert rep["story"]["headline"].endswith(" in the published totals"), rep["story"]["headline"]
+    inf = est["inference"]
+    assert inf and inf["mode"] == "official_aggregate" and any("the named total" in h and "not verifiable by a sum-check" in h
+                                                              for h in inf["how_known"]), inf
+    sl = next(x for x in est["slice"] if x["dim"] == "GEO")
+    assert sl["member"] == "Canada" and sl["why"] == "the named total; not verifiable by a sum-check (an index cannot be summed)", sl
+    lim = rep["limitations"][0]["text"]
+    assert "Canada is the named total of GEO; it could not be checked against its parts: an index cannot be summed." in lim \
+        and "Each total was checked against its parts" not in lim, lim
+    assert g["why"].startswith("an index is never added or averaged across members: Canada is the named total"), g["why"]
+    json.dumps(rep, allow_nan=False)
+
+
+def test_w5c_the_same_holds_for_a_rate_a_total_name_and_a_whole_that_leaves_the_range():
+    """A named whole of a rate (the unit is a percent): "a rate cannot be summed"; a total's name ("All provinces", tier 2) and a
+    whole country's name ("Canada", tier 1) both do it; the whole lies OUTSIDE the six provinces' range in every month (so the
+    range cannot verify it and the six cannot reproduce it): it is still the headline."""
+    for agg, nm in (("Canada_out", "Canada"), ("total_out", "All provinces")):
+        for idx in (False, True):
+            data = MC.rate_table(agg, index=idx)
+            S = detect(data)
+            g = dim(S, "GEO")
+            assert g["role"] == "rate_aggregate" and g["total"] == nm and g["aggregate_by"] == "name" and g["sum_check"]["verified"] is False, \
+                (agg, idx, g["role"], g.get("total"))
+            words = "an index cannot be summed" if idx else "a rate cannot be summed"
+            assert "the named total; not verifiable by a sum-check (%s)" % words in g["why"], g["why"]
+            rep = _run(data, "rate.csv")
+            est = rep["estimand"]
+            assert est["text"].startswith("%s; " % nm) or est["text"].startswith("%s · " % nm) or est["text"].startswith(nm), est["text"]
+            assert "%s: the named total; not verifiable by a sum-check (%s)" % (nm, words) in est["text"], est["text"]
+            assert nm in rep["story"]["headline"] and rep["story"]["headline"].endswith(" in the published totals"), rep["story"]["headline"]
+            assert "single_member" not in est
+            df = pd.read_csv(io.BytesIO(data), dtype=str)
+            own = df[df.GEO == nm].set_index("REF_DATE").VALUE.astype(float)
+            lat = est["comparison"]["latest"]
+            assert abs(est["figures"]["latest"]["value"] - own[(own.index >= lat[0]) & (own.index <= lat[1])].mean()) < 1e-5
+
+
+def test_w5c_negative_cases_a_verified_whole_a_table_with_no_named_whole_and_two_countries_are_what_they_were():
+    """The structure hashes below were read from the code BEFORE the change (529bf3f): every one is the same record after it. A rate
+    or an index with a named whole that the range DOES verify, a whole found by evidence, a table with no named whole (one member
+    shown, not a national figure) and a table of two whole countries' names (the names say nothing) are not touched."""
+    before = {
+        ("Canada", False, False): "44450cabc195ff9d",
+        ("Canada", False, True): "e01b1457639a0357",
+        ("total", False, False): "c2059953661a8585",
+        ("unnamed", False, False): "5df3ad7f00f70f48",
+        ("none", False, False): "ca12ec63a1561849",
+        ("none", True, False): "9ac25438f0a4d62f",
+    }
+    for (agg, countries, idx), h in before.items():
+        S = detect(MC.rate_table(agg, index=idx, countries=countries))
+        assert S["hash"] == h, (agg, countries, idx, S["hash"], h)
+        g = dim(S, "GEO")
+        assert not NS._named_unverified(g), (agg, g.get("why"))
+    # a verified whole carries no "verified" key at all (its record is byte for byte the one it was)
+    g = dim(detect(MC.rate_table("Canada")), "GEO")
+    assert g["role"] == "rate_aggregate" and g["aggregate_by"] == "name" and "verified" not in g["sum_check"], g["sum_check"]
+    # no named whole: one member, by dominance, and the words of wave 5b (the headline says it is not a national figure)
+    rep = _run(MC.rate_table("none"), "rate_none.csv")
+    assert rep["estimand"]["single_member"]["statement"] == "one member shown: Echo; this table has no total member, so this is not a national figure"
+    assert "in the published totals" not in rep["story"]["headline"] and "one member shown, not a national figure" in rep["story"]["headline"], rep["story"]["headline"]
+    assert "the named total" not in rep["estimand"]["text"]
+    # a named whole that the range verifies keeps its words: no "not verifiable" anywhere
+    rep = _run(MC.rate_table("Canada"), "rate_canada.csv")
+    assert "not verifiable" not in rep["estimand"]["text"] and rep["story"]["headline"].endswith(" in the published totals")
+
+
+def test_w5c_a_whole_countrys_name_outside_a_geographic_dimension_and_a_rest_of_name_are_no_named_total():
+    """Negative cases of the name rule: "Canada" as a member of a dimension that is not geographic (born in Canada, born elsewhere)
+    is not the table's whole, and a member that says it is the rest ("All other provinces") is not the whole either: both are read
+    as they were before wave 5c (one member at a time; "All other provinces" by its "All")."""
+    born = detect(MC.index_two_bases().replace(b'"GEO"', b'"Place of birth"', 1))
+    g = dim(born, "Place of birth")
+    assert g["role"] == "single" and g.get("single_by") == "dominance" and g["total"] == "Ontario" and not NS._named_unverified(g), g
+    rest = detect(MC.rate_table("total_out").replace(b"All provinces", b"All other provinces"))
+    g = dim(rest, "GEO")
+    assert g["role"] == "single" and g.get("single_by") == "name" and g["total"] == "All other provinces" and not NS._named_unverified(g), g
+
+
+_WINDOW_PHRASE = re.compile(r"(?i)\b12[- ]months?\b|\bthe 12 before\b|\bthe average month\b|\blatest 12\b|\bmonthly total\b")
+
+
+def _strings(o, path="R"):
+    if isinstance(o, str):
+        yield path, o
+    elif isinstance(o, dict):
+        for k, v in o.items():
+            yield from _strings(v, "%s.%s" % (path, k))
+    elif isinstance(o, list):
+        for i, v in enumerate(o):
+            yield from _strings(v, "%s[%d]" % (path, i))
+
+
+def test_w5c_a_quarterly_or_annual_payload_counts_its_windows_in_its_own_periods():
+    """Wave 5c, defect 2. A quarterly or an annual slice still counted MONTHS in scenarios.basis.claim ("Change in the average month
+    of value_total, latest 12 months against the 12 before"), a chart's `supports` and `inputs.op` ("each part's 12-month total"),
+    the unallocated item's `assumes` ("in the latest 12 months") and the summary's labels. They say quarters or a year now, in
+    every place the page and the worker read (results_for_ai and the report's own blocks)."""
+    words = {"quarter": ("4 quarters", "the average quarter", "latest 4 quarters against the 4 before", "4-quarter", "the latest 4 quarters"),
+             "year": ("a year", "the average year", "latest year against the year before", "annual", "the latest year")}
+    cubes = [("quarter", "iso", st, MC.periodic("quarter", "iso", stock=st)) for st in (False, True)] + \
+            [("year", "year", st, MC.periodic("year", "year", stock=st)) for st in (False, True)] + \
+            [("quarter", "wide", None, MC.wide_period("quarter")[0]), ("year", "wide", None, MC.wide_period("year")[0])]
+    for freq, style, stock, data in cubes:
+        if True:
+            rep = _run(data, "%s_%s_%s.csv" % (freq, style, stock))
+            out = NB.results_for_ai(rep)
+            blocks = {"results_for_ai": out, "report": {k: rep.get(k) for k in ("scenarios", "charts", "viz", "summary", "findings", "story")}}
+            for src, blob in blocks.items():
+                bad = [(p, t[:140]) for p, t in _strings(blob) if _WINDOW_PHRASE.search(t)]
+                assert not bad, (freq, stock, src, bad[:4])
+            _w, avg, against, unit_w, lat = words[freq]
+            claim = (out.get("primary") or {}).get("claim") or out["scenarios"]["basis"]["claim"]
+            assert against in claim and (avg in claim or ("%s total" % ("quarterly" if freq == "quarter" else "annual")) in claim), claim
+            assert out["scenarios"]["basis"]["claim"] == claim, (out["scenarios"]["basis"]["claim"], claim)
+            un = next(it for it in out["scenarios"]["items"] if it["id"].endswith(".unallocated"))
+            assert ("in %s, " % lat) in un["assumes"] and un["assumes"].endswith(" before"), un["assumes"]
+            wf = next(c for c in out["charts"] if c.get("chart") == "contribution_waterfall")
+            assert wf["supports"] == claim, (wf["supports"], claim)
+            assert wf["inputs"]["op"] == "each part's %s total in each window, from the table's own series" % unit_w, wf["inputs"]
+            labs = (rep.get("summary") or {}).get("labels") or {}
+            assert all("the average month" not in str(v) for v in labs.values()), labs
+
+
+def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
+    """The scrub that puts a quarter's or a year's words into text the core wrote (`nl_browser._window_phrases`) touches window
+    phrases only; a label that merely holds the word "months" is left alone, and a monthly table's text is never touched. The
+    monthly outputs below were read from the code BEFORE the change (529bf3f): every figure of every block is the same after it."""
+    Q = {"kind": "quarter", "noun": "quarter", "nouns": "quarters", "step": 3, "window": 4, "adjective": "quarterly"}
+    Y = {"kind": "year", "noun": "year", "nouns": "years", "step": 12, "window": 1, "adjective": "annual"}
+    M = {"kind": "month", "noun": "month", "nouns": "months", "step": 1, "window": 12, "adjective": "monthly"}
+    f = NB._window_phrases
+    claim = "Change in the average month of value_total, latest 12 months against the 12 before"
+    assert f(claim, Q) == "Change in the average quarter of value_total, latest 4 quarters against the 4 before"
+    assert f(claim, Y) == "Change in the average year of value_total, latest year against the year before"
+    assert f("the latest 12 months against the 12 before", Q) == "the latest 4 quarters against the 4 before"
+    assert f("the 12 months before", Q) == "the 4 quarters before" and f("the 12 months before", Y) == "the year before"
+    assert f("each part's 12-month total in each window", Q) == "each part's 4-quarter total in each window"
+    assert f("each part's 12-month total in each window", Y) == "each part's annual total in each window"
+    assert f("$0 in the latest 12 months, $0 before", Q) == "$0 in the latest 4 quarters, $0 before"
+    # a monthly table: the same text, untouched
+    for t in (claim, "the 12 months before", "each part's 12-month total", "$0 in the latest 12 months"):
+        assert f(t, M) == t and f(t, None) == t
+    # negatives: no window phrase, no change
+    assert f("Change in the monthly total of value_total, latest 12 months against the 12 before", Y) == \
+        "Change in the annual total of value_total, latest year against the year before"
+    assert f("Value total, monthly total", Q) == "Value total, quarterly total" and f("Monthly total of x", Q) == "Quarterly total of x"
+    for t in ("Months since signup", "months_active", "48 months of history", "Average monthly spend", "12 monthly cohorts",
+              "A 120-month contract", "Latest 112 months", "Monthly totals by region", "Reads monthly series only"):
+        assert f(t, Q) == t, (t, f(t, Q))
+    # a monthly slice: every block of the reports is what it was
+    before = {"partition_suppressed": ("c976440ea05601af", "0b557e428676763d"), "partition_clean": ("3606b4083ccc30c9", "b876124a77c18de0"),
+              "hierarchy": ("f8772f0a999c4ce5", "9efb43e58e7a2c80"), "rate_canada": ("878aa9e7716fa3c1", "acb73cf7ad309139"),
+              "mixed_units": ("5cec8f4300d961eb", "7021525ff667565b"), "no_total": ("4fd22be300dbcfd0", "b04ca379ab41e02b")}
+    import hashlib
+    keys = ("story", "summary", "findings", "scenarios", "charts", "viz", "forecast", "limitations", "methods", "cleaning", "estimand",
+            "charts_suppressed")
+    makers = {"partition_suppressed": lambda: MC.partition(0.10), "partition_clean": lambda: MC.partition(), "hierarchy": lambda: MC.hierarchy(),
+              "rate_canada": lambda: MC.rate_table("Canada"), "mixed_units": lambda: MC.mixed_units(), "no_total": lambda: MC.no_total()}
+    for k, mk in makers.items():
+        rep = _run(mk(), k + ".csv")
+        blob = json.dumps({x: rep.get(x) for x in keys}, sort_keys=True, default=str)
+        res = json.dumps(NB.results_for_ai(rep), sort_keys=True, default=str)
+        got = (hashlib.sha256(blob.encode()).hexdigest()[:16], hashlib.sha256(res.encode()).hexdigest()[:16])
+        assert got == before[k], (k, got, before[k])
+
+
+def test_w5c_a_residual_that_is_float_noise_prints_as_zero_and_a_real_one_does_not():
+    """Wave 5c, defect 3. For a count that cannot say whether it accumulates (averaged over the window) the unallocated item read
+    "−3.41e-13" beside its value 0, and the same noise stood in its `assumes` and in the sum-check's record. A residual that is
+    float noise (a millionth of a millionth of the figure) is exactly 0 everywhere, in the item's value and text, its `assumes`,
+    the sum-check's record and the chart's own line; a real one (the publisher's rounding of $12,000 in a figure of $2B) is
+    printed as it was, and so is a gap of suppressed cells."""
+    for uom in ("Persons", "Number"):
+        rep = _run(MC.counts(uom), "counts_%s.csv" % uom)
+        assert rep["estimand"]["measure"]["type_basis"].startswith("ambiguous"), rep["estimand"]["measure"]
+        it = _items(rep)["contribution.geo.unallocated"]
+        assert it["value"] == 0.0 and math.copysign(1.0, it["value"]) > 0, it["value"]
+        assert it["text"] == "0" and it["assumes"].endswith(": 0 in the latest 12 months, 0 before"), (it["text"], it["assumes"])
+        chk = next(c for c in rep["estimand"]["sum_checks"] if c["dim"] == "GEO")
+        assert chk["unallocated_latest"] == {"value": 0.0, "text": "0"} and chk["unallocated_prior"] == {"value": 0.0, "text": "0"}, chk
+        assert math.copysign(1.0, chk["unallocated_latest"]["value"]) > 0
+        noisy = [(p_, t_[:120]) for p_, t_ in _strings([rep["scenarios"], rep["estimand"], rep["charts"], rep["viz"]], "rep")
+                 if re.search(r"\de-\d\d", t_)]
+        assert not noisy, noisy[:3]
+    # a real residual, however small beside the figure, is kept (the publisher's rounding: 12 months of $1,000)
+    rep = _run(MC.partition(rounding_gap=1), "gap.csv")
+    it = _items(rep)["contribution.geo.unallocated"]
+    assert it["value"] == 12000.0 and it["text"] == "+$12,000", it
+    assert "$12,000 in the latest 12 months, $0 before" in it["assumes"], it["assumes"]
+    chk = next(c for c in rep["estimand"]["sum_checks"] if c["dim"] == "GEO")
+    assert chk["unallocated_latest"] == {"value": 12000.0, "text": "$12,000"}, chk
+    # suppressed cells: the real share of the change, as before
+    rep = _run(MC.partition(0.10), "suppressed.csv")
+    want_u, _n = MC.partition_suppressed_sum()
+    assert abs(_items(rep)["contribution.geo.unallocated"]["value"] - want_u) < 1e-3
+    # the threshold itself: noise is relative to the figure, never to a few units
+    assert NS.noise_zero(-3.41e-13, 5.0e4) == 0.0 and NS.noise_zero(1e-6, 5.0e4) == 1e-6 and NS.noise_zero(1000.0, 8.6e11) == 1000.0
+    assert NS.noise_zero(-6000.0, 2.9e10) == -6000.0 and NS.noise_zero(0.4, 100.0) == 0.4 and NS.noise_zero(-0.0, 1.0) == 0.0
 
 
 def test_w5b_the_pyodide_checks_cube_matches_its_pandas_reference_and_reads_the_same_natively():

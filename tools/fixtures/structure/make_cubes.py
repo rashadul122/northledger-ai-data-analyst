@@ -61,9 +61,11 @@ def _official(header_dims, records, uom="Dollars", scalar="thousands", decimals=
     return _csv(head, rows)
 
 
-def partition(blank_share: float = 0.0, seed: int = 1) -> bytes:
+def partition(blank_share: float = 0.0, seed: int = 1, rounding_gap: int = 0) -> bytes:
     """Test 1 (and 2 with blank_share 0.10): Total and 5 regions; the Total is the exact sum of the regions as published;
-    with blank_share, that share of the region cells is suppressed ("x", blank value), the Total still whole."""
+    with blank_share, that share of the region cells is suppressed ("x", blank value), the Total still whole. With
+    `rounding_gap` (wave 5c), the Total of each of the latest 12 months is that many thousands above its parts' sum: the
+    publisher's rounding, a real residual of rounding_gap x 12 x 1,000 dollars."""
     rng = np.random.RandomState(seed)
     regions = ["North", "South", "East", "West", "Centre"]
     vals = {r: _series(rng, lv) for r, lv in zip(regions, (5200, 8100, 3300, 6100, 2400))}
@@ -71,7 +73,7 @@ def partition(blank_share: float = 0.0, seed: int = 1) -> bytes:
     hide = rng.rand(len(regions), len(MONTHS)) < blank_share
     rec = []
     for i, mo in enumerate(MONTHS):
-        rec.append((mo, "Total", ("Retail sales",), total[i], "A"))
+        rec.append((mo, "Total", ("Retail sales",), total[i] + (rounding_gap if i >= 36 else 0), "A"))
         for k, r in enumerate(regions):
             if hide[k, i]:
                 rec.append((mo, r, ("Retail sales",), None, "x"))
@@ -595,7 +597,7 @@ _RATE_WEIGHT = (0.30, 0.22, 0.18, 0.14, 0.10, 0.06)
 
 def rate_table(aggregate: str = "none", agg_first: bool = False, parts: int = 6, noise: float = 0.5, decimals: int = 1,
                seed: int = 71, index: bool = False, countries: bool = False) -> bytes:
-    """Wave 5b, follow-up 3: an unemployment-like rate (Percent; with index=True a price index on one base, "2012=100") of
+    """Wave 5b, follow-up 3 (aggregate "Canada_out" and "total_out": wave 5c, a named whole outside the others' range): an unemployment-like rate (Percent; with index=True a price index on one base, "2012=100") of
     `parts` provinces. aggregate: "none" (NO total member: the first province lies strictly inside the others' range in every
     cell, the table the old rule read as the published aggregate: "one province reported as the national figure"), "Canada" (a row
     named as a whole country), "total" (a row named "All provinces"), "unnamed" (a row called "Zeta group", the labour-force-weighted
@@ -607,14 +609,18 @@ def rate_table(aggregate: str = "none", agg_first: bool = False, parts: int = 6,
     base = np.array(_RATE_BASE[:parts]) * (14.0 if index else 1.0)
     w = np.array(_RATE_WEIGHT[:parts])
     w = w / w.sum()
-    agg_name = {"Canada": "Canada", "total": "All provinces", "unnamed": "Zeta group"}.get(aggregate)
+    agg_name = {"Canada": "Canada", "total": "All provinces", "unnamed": "Zeta group", "Canada_out": "Canada",
+                "total_out": "All provinces"}.get(aggregate)
     label = "Consumer price index" if index else "Unemployment rate"
     rec = []
     for i, mo in enumerate(MONTHS):
         r = np.round(base + (0.6 * (14.0 if index else 1.0)) * np.sin(i / 5.0) + noise * (14.0 if index else 1.0) * rng.standard_normal(parts), decimals)
         rows = [(mo, p, (label,), float(x), "") for p, x in zip(names, r)]
         if agg_name:
-            agg = (mo, agg_name, (label,), round(float((r * w).sum()), decimals), "")
+            # "Canada_out" / "total_out" (wave 5c): a named whole whose values lie OUTSIDE the others' range in every month (the
+            # listed provinces are a subset of its parts), so the range cannot verify it and nothing can reproduce it
+            out = 2.0 if aggregate.endswith("_out") else 1.0
+            agg = (mo, agg_name, (label,), round(float((r * w).sum()) * out, decimals), "")
             rows = [agg] + rows if agg_first else rows + [agg]
         rec.extend(rows)
     return _official(["Labour force characteristics"], rec, uom="2012=100" if index else "Percent", scalar="units",

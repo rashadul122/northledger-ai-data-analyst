@@ -5261,10 +5261,25 @@ def test_results_for_ai_keeps_under_its_byte_budget_dropping_scenario_items_from
     size = {by[i]["segment"]: abs(by[i]["value"]) for i in ids if by[i]["group"] == "contribution" and i.endswith(".change")}
     rank = sorted(size, key=lambda s: (-size[s], s))
     tail = [i for i in dropped if i not in facts]
-    assert tail == ids[len(ids) - len(tail):], ("the items dropped are not the tail of the order", tail)
+    # wave 4, track B step 0: what goes after the facts is the detail of the parts beyond the 6 largest, and never an item
+    # that moved against the headline change (a part that fell while the total rose)
+    head = by["headline.change"]["value"]
+    against = [i for i in ids if by[i]["group"] == "contribution" and by[i]["kind"] == "change" and by[i]["value"] * head < 0]
+    assert against, "this file has no part that moved against the change, so the test tests nothing"
+    assert not set(against) & set(dropped), ("an item that moved against the headline change was dropped", sorted(set(against) & set(dropped)))
     assert tail and all(by[i]["group"] in NS.PER_SEGMENT and rank.index(by[i]["segment"]) >= 6 for i in tail), tail
-    # no more than it needs: with the last item dropped put back, the payload is over the budget
-    back = dict(got, scenarios=dict(got["scenarios"], items=[it for it in whole["scenarios"]["items"] if it["id"] in set(kept) | {tail[0]}]))
+    # the parts left out are the smallest of those beyond the 6 largest: a part kept beyond them is larger than any whole part dropped
+    gone = {by[i]["segment"] for i in tail}
+    whole_gone = {s_ for s_ in gone if all(i in set(dropped) for i in ids if by[i]["segment"] == s_ and by[i]["group"] in NS.PER_SEGMENT)}
+    against_segs = {by[i]["segment"] for i in against}
+    beyond_kept = {by[i]["segment"] for i in kept if by[i]["group"] in NS.PER_SEGMENT and by[i]["segment"] in size
+                   and rank.index(by[i]["segment"]) >= 6 and by[i]["segment"] not in against_segs}
+    assert not [s_ for s_ in whole_gone for k_ in beyond_kept if size[k_] < size[s_]], (whole_gone, beyond_kept)
+    # no more than it needs: with the item dropped last put back, the payload is over the budget
+    order = NB._budget_drop_order(whole["scenarios"]["items"], whole["scenarios"]["basis"])
+    pos = {whole["scenarios"]["items"][k]["id"]: n for n, k in enumerate(order)}
+    last = max(dropped, key=lambda i: pos[i])
+    back = dict(got, scenarios=dict(got["scenarios"], items=[it for it in whole["scenarios"]["items"] if it["id"] in set(kept) | {last}]))
     assert len(json.dumps(back)) > 90000, "the budget dropped more than it needed"
     # the writer is told first, and the "Where the change came from" table is rebuilt from the items kept
     assert got["scenarios"]["refused"][0] == NB.BUDGET_REFUSED % (len(dropped), "134", "90,000"), got["scenarios"]["refused"][:1]

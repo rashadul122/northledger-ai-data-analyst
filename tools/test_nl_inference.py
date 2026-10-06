@@ -15,7 +15,8 @@ CONTRACT-v2.md 5.11):
       count the windows that rose, use the extremes under 10 independent windows, and add the non-overlapping changes
   P0-13 the forecast audit: a too-narrow range fails, a seasonal random walk is no better than seasonal naive (not
       passes), a reviews-like series holding 1 of 12 fails, the cheap audit agrees with the full re-run; a row count
-      the layout or the calendar fixes is not forecast
+      the layout or the calendar fixes is not forecast; the pass rule is "no worse than seasonal naive" (rel_MAE at
+      most 1: a seasonal-naive champion with good coverage passes, a non-naive one with rel_MAE over 1.2 never does)
   T4  an official aggregate's record on the published FX layout, and none without the publisher's columns or with
       published standard errors
 
@@ -383,6 +384,60 @@ def test_audit_a_reviews_like_series_holding_1_of_12_fails():
     assert (h12["held"], h12["of"]) == (1, 12), h12
     assert h12["status"] == "fails" and a["status"] == "fails" and a["trusted"] is False, a
     assert "1 of 12 at 12 months" in a["label"], a["label"]
+
+
+def test_audit_a_seasonal_naive_champion_with_good_coverage_passes():
+    """Step 0 of track B (6 Oct 2026): when the shown model IS seasonal naive its rel_MAE is 1.00 by construction, so
+    "rel_MAE under 1" could never pass it (StatCan retail held 21 of 23, 19 of 21, 17 of 18, 11 of 12 and stayed
+    "unclear"). The rule is "no worse than seasonal naive" (at most 1); a seasonal-naive champion is judged on coverage."""
+    months, y = _seasonal_random_walk(10)          # a seasonal random walk: seasonal naive is its own best model
+    fr = F.run_forecast(months, y, {"horizon": 12})
+    assert fr.champion == "seasonal_naive", fr.champion
+    a = NI.forecast_audit(months, y, fr)
+    assert a["benchmark_is_model"] is True and all(h["rel_mae"] == 1.0 for h in a["horizons"]), a["horizons"]
+    assert [h["status"] for h in a["horizons"]] == ["passes"] * 4 and a["status"] == "passes" and a["trusted"], a
+    assert all(h["wilson"][0] >= 0.6 and h["n_eff"] >= 8 for h in a["horizons"]), a["horizons"]
+    assert a["label"].endswith("; the model is the seasonal-naive benchmark itself"), a["label"]
+    assert a["label"].startswith("back-tested: held 21 of 23 at 1 month, 19 of 21 at 3 months"), a["label"]
+    assert a["grade_label"] == "the engine's grade (the back-test passed)", a["grade_label"]
+    assert "no worse than seasonal naive's" in a["rule"], a["rule"]
+    # a model that is not the benchmark says nothing about it
+    months, y = _seasonal(3, phi=0.2, sd=0.02)
+    b = NI.forecast_audit(months, y, F.run_forecast(months, y, {"horizon": 12}))
+    assert b["benchmark_is_model"] is False and "benchmark" not in b["label"], b["label"]
+
+
+def test_audit_a_seasonal_naive_champion_whose_range_misses_still_fails_and_a_thin_one_is_unclear():
+    months, y = _seasonal_random_walk(10)
+    fr = F.run_forecast(months, y, {"horizon": 12})
+    narrow = copy.deepcopy(fr)
+    for row in narrow.forward:
+        row["lo80"], row["hi80"] = row["point"] * 0.995, row["point"] * 1.005
+    a = NI.forecast_audit(months, y, narrow)
+    assert a["benchmark_is_model"] and a["status"] == "fails" and not a["trusted"], a["label"]
+    assert all(h["rel_mae"] == 1.0 for h in a["horizons"]) and all(h["status"] == "fails" for h in a["horizons"]), a["horizons"]
+    # the same model with the range it really showed, held to the horizons its back-test can count: 12 checks at
+    # 12 months leave the Wilson lower end under 0.6 when 9 of them hold (the retail-like "unclear" stays unclear)
+    months, y = _seasonal_random_walk(5)
+    c = NI.forecast_audit(months, y, F.run_forecast(months, y, {"horizon": 12}))
+    assert c["benchmark_is_model"] and c["status"] == "unclear" and not c["trusted"], c["label"]
+
+
+def test_audit_a_non_naive_champion_over_seasonal_naive_never_passes_however_well_its_range_holds():
+    months, y = _seasonal(1, phi=0.2, sd=0.02)
+    fr = F.run_forecast(months, y, {"horizon": 12})
+    for champ in ("naive", "drift", "holt_damped_log"):
+        shown = copy.deepcopy(fr)
+        shown.champion = champ
+        shown.error_mode = "ratio"
+        shown.forward = [{"point": 100.0, "lo80": 5.0, "hi80": 2000.0} for _ in range(12)]     # a range that always holds
+        a = NI.forecast_audit(months, y, shown)
+        assert a["benchmark_is_model"] is False, a
+        assert all(h["held"] == h["of"] for h in a["horizons"]), (champ, [(h["held"], h["of"]) for h in a["horizons"]])
+        assert max(h["rel_mae"] for h in a["horizons"]) >= 1.2, (champ, [h["rel_mae"] for h in a["horizons"]])
+        over = [h for h in a["horizons"] if h["rel_mae"] > 1.0]
+        assert over and all(h["status"] == "fails" for h in over), (champ, a["horizons"])
+        assert a["status"] == "fails" and a["trusted"] is False, (champ, a["status"])
 
 
 def test_audit_the_cheap_audit_agrees_with_the_full_rerun():

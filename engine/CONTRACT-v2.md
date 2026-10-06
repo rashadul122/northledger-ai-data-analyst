@@ -1121,8 +1121,12 @@ offsets in additive mode) is applied to the refit; seasonal naive is refitted th
 months, as far as the forecast reaches): held of checked; n_eff from the hits' lag-1 autocorrelation (the errors' when
 every check hit or every one missed), n (1 - r) / (1 + r) with r in [0, 0.95]; the Wilson interval of the coverage on
 n_eff; MAE, rel_MAE (against seasonal naive) and MASE. A horizon fails when the Wilson upper end is under 0.80 or
-rel_MAE is over 1, passes when the Wilson lower end is at least 0.60, n_eff at least 8 and rel_MAE under 1 (AM5), and is
-unclear otherwise; the audit fails if any horizon fails, passes if all pass, and is `trusted` only then. `mode="full"`
+rel_MAE is over 1, passes when the Wilson lower end is at least 0.60, n_eff at least 8 and rel_MAE is at most 1 (AM5:
+no worse than seasonal naive; amended 6 October 2026, it said "under 1", which a seasonal-naive champion can never meet,
+its rel_MAE being 1.00 by construction: StatCan retail held 21 of 23, 19 of 21, 17 of 18 and 11 of 12 at 1, 3, 6 and 12
+months and was stuck at "unclear"), and is unclear otherwise; a model that IS the seasonal-naive benchmark
+(`benchmark_is_model`) is judged on its coverage alone and its label ends "; the model is the seasonal-naive benchmark
+itself"; the audit fails if any horizon fails, passes if all pass, and is `trusted` only then. `mode="full"`
 re-runs the core's whole `run_forecast` at each origin (the test suite's check that the cheap audit agrees). The bottom
 line says "Plan on about ..." only for a CONFIRMED and trusted forecast; a CONFIRMED forecast whose audit is unclear is
 "a guide rather than a plan", and one whose audit fails reads "the engine graded it ..., but that grade is not trusted:

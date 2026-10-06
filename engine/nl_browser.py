@@ -1909,6 +1909,11 @@ def _forecast_block(r: Any, db_path: str, story_next: List[str],
             block["audit"] = _ni.forecast_audit(months, values, fr)
             block["audit"]["series"] = str(s.label)
             block["trusted"] = bool(block["audit"]["trusted"])
+            if dropped and s.slug == "monthly_rows":
+                # kept for the record only: a forecast that is not shown is not trusted, whatever its back-test says
+                block["audit"]["shown"] = False
+                block["audit"]["trusted"] = block["trusted"] = False
+                block["audit"]["grade_label"] = "the engine's grade (no forecast of this series is shown)"
         except Exception:  # noqa: BLE001 - the audit is an addition; the engine's forecast stands without it
             if os.environ.get("NL_BROWSER_STRICT"):
                 raise
@@ -1956,6 +1961,137 @@ def _demote_row_forecast_lines(lines: List[str], dropped: Optional[Dict[str, Any
         if not skip:
             out.append(x)
     return out
+
+
+# The core's own sentence about how its month-ahead range did on its replay ("Its month-ahead 80% range held in 22 of 24
+# replayed months, each range built only from errors known at the time."), which disagrees with the audit's count of the
+# range actually shown (21 of 23 at 1 month: a different replay). With an audit, only the audit's evidence is stated
+# (wave 4, track B step 0).
+_CORE_REPLAY_SENTENCE = re.compile(
+    r"(?:Its|The) month-ahead \d+(?:\.\d+)?% range held in \d+ of \d+ replayed months?"
+    r"(?:,? each range built only from errors known at the time)?\.")
+
+
+def _audit_sentence(audit: Dict[str, Any]) -> str:
+    """The audit's own evidence as one sentence ("Its 80% range was back-tested: held 21 of 23 at 1 month, ...")."""
+    lab = str(audit.get("label") or "").strip().rstrip(".")
+    if not lab:
+        return ""
+    if lab.startswith("back-tested: "):
+        lab = "was " + lab
+    return "Its 80%% range %s." % lab
+
+
+def _one_forecast_evidence(rep: Dict[str, Any]) -> None:
+    """With rep["forecast"]["audit"], the story's and the summary's sentences about the core's replay of its range
+    ("held in 22 of 24 replayed months") become the audit's own ("back-tested: held 21 of 23 at 1 month, ..."), so a
+    report states ONE count of how the range held. A sentence is rewritten in the block of the series the audit was
+    run on (the block that starts with its label), or the only one there is; the rest of the line is kept."""
+    fc = rep.get("forecast") if isinstance(rep.get("forecast"), dict) else {}
+    au = fc.get("audit") if isinstance(fc.get("audit"), dict) else None
+    new = _audit_sentence(au) if au and au.get("horizons") else ""
+    if not new:
+        return
+    series = str(au.get("series") or fc.get("label") or "")
+    story = rep.get("story") if isinstance(rep.get("story"), dict) else {}
+    lines = [x for k in ("what_happened", "why", "whats_next", "what_to_do") for x in story.get(k) or []
+             if isinstance(x, str)]
+    lines += [str(x.get("text")) for x in (rep.get("summary") or {}).get("lines") or [] if isinstance(x, dict)]
+    hits = sum(len(_CORE_REPLAY_SENTENCE.findall(x)) for x in lines)
+    if not hits:
+        return
+
+    def fix(items: List[Any]) -> List[Any]:
+        out, block = [], series
+        for x in items:
+            if not isinstance(x, str):
+                out.append(x)
+                continue
+            m = re.match(r"^(monthly [^:]+?|[A-Za-z][^:]{0,80}?) for \d{4}-\d{2}:", x)
+            if m:
+                block = m.group(1)
+            if hits == 1 or block == series or not series:
+                x = _CORE_REPLAY_SENTENCE.sub(lambda _m: new, x, count=1)
+            out.append(x)
+        return out
+    for k in ("what_happened", "why", "whats_next", "what_to_do"):
+        if isinstance(story.get(k), list):
+            story[k] = fix(story[k])
+    for ln in (rep.get("summary") or {}).get("lines") or []:
+        if isinstance(ln, dict) and isinstance(ln.get("text"), str):
+            ln["text"] = _CORE_REPLAY_SENTENCE.sub(lambda _m: new, ln["text"], count=1)
+
+
+def _estimand_window_text(est: Dict[str, Any]) -> str:
+    """"12 months to Jul 2026" (the estimand's latest window); "the 11 matched months to Jul 2026" when a month the
+    headline lacks in one window is left out of both; "Jul 2026" for one month."""
+    w = (est.get("comparison") or {}).get("latest") or []
+    if not (isinstance(w, list) and len(w) == 2 and all(isinstance(x, str) and len(x) >= 7 for x in w)):
+        return ""
+    try:
+        y1, m1, y2, m2 = int(w[0][:4]), int(w[0][5:7]), int(w[1][:4]), int(w[1][5:7])
+    except ValueError:
+        return ""
+    n = (y2 - y1) * 12 + (m2 - m1) + 1
+    if n < 1 or not 1 <= m2 <= 12:
+        return ""
+    end = "%s %d" % (_MON[m2 - 1], y2)
+    if est.get("complete") is False and est.get("months_used"):
+        return "the %d matched months to %s" % (int(est["months_used"]), end)
+    return end if n == 1 else "%d months to %s" % (n, end)
+
+
+def _proper_minus(t: str) -> str:
+    return re.sub(r"^(\s*)-(?=[\d$\u20ac\u00a3\u00a5.])", "\\1\u2212", str(t))
+
+
+def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
+    """The report's headline composed from its estimand (the core's "Monthly total_retail_sales forecast at
+    73,046,640,000 total_retail_sales for 2026-08." says nothing of what the table's headline is), in the format of the
+    report writer's own fallback title (insight-proxy report.js engineTitle):
+        an official aggregate  "<measure>, <member>, 12 months to Jul 2026: +3.5% ($864.0B) in the published totals"
+        CONFIRMED              "<subject>, <window>: +3.5% to $864.0B (CONFIRMED)"
+        WATCH                  "<subject>: no settled change in the 12 months to Jul 2026 (+3.5%, WATCH)"
+        INSUFFICIENT           "<subject>: no settled change; the data cannot say yet (INSUFFICIENT)"
+    The subject is the estimand's measure label and its first slice member that is not the label; nothing is invented.
+    None when there is no estimand, or its figures cannot be stated."""
+    est = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
+    if not est:
+        return None
+    fig = est.get("figures") if isinstance(est.get("figures"), dict) else {}
+    meas = est.get("measure") if isinstance(est.get("measure"), dict) else {}
+    label = str(meas.get("label") or "").strip()
+    member = next((str(x.get("member")) for x in est.get("slice") or [] if isinstance(x, dict) and x.get("member")
+                   and str(x.get("member")) != label and str(x.get("member")) != "*"), "")
+    subject = label + (", " + member if member else "") if label else member
+    if not subject:
+        return None
+    level = meas.get("type") in ("rate", "index")
+    chg = (fig.get("change") if level else fig.get("change_pct")) or {}
+    lvl = fig.get("latest") or {}
+    chg_t = _proper_minus(str(chg.get("text") or "")) if chg.get("value") is not None else ""
+    lvl_t = _proper_minus(str(lvl.get("text") or "")) if lvl.get("value") is not None else ""
+    if not chg_t or chg_t == "n/a":
+        return None
+    win = _estimand_window_text(est)
+    lead = subject + (", " + win if win else "") + ": "
+    inf = est.get("inference") if isinstance(est.get("inference"), dict) else {}
+    sid = (rep.get("scenarios") or {}).get("basis") or {}
+    fid = sid.get("finding_id") if isinstance(sid, dict) else None
+    f = next((x for x in rep.get("findings") or [] if isinstance(x, dict) and x.get("id") == fid), None) \
+        or next((x for x in rep.get("findings") or [] if isinstance(x, dict) and x.get("kind") == "business"
+                 and str(x.get("id") or "").endswith(".change")), None)
+    grade = str((f or {}).get("grade") or "")
+    if inf.get("mode") == "official_aggregate":
+        return lead + chg_t + (" (%s)" % lvl_t if lvl_t and lvl_t != "n/a" else "") + " in the published totals"
+    if grade == "CONFIRMED":
+        return lead + chg_t + (" to %s" % lvl_t if lvl_t and lvl_t != "n/a" and not level else "") + " (CONFIRMED)"
+    if grade == "WATCH":
+        return "%s: no settled change%s (%s, WATCH)" % (subject, " in the " + win if win and not win.startswith("the ")
+                                                       else (" in " + win if win else ""), chg_t)
+    if grade in ("NOT_ENOUGH_DATA", "INSUFFICIENT"):
+        return subject + ": no settled change; the data cannot say yet (INSUFFICIENT)"
+    return None
 
 
 # --------------------------------------------------------------------------- contract v2
@@ -4953,7 +5089,9 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         cov = f.get("coverage") if isinstance(f.get("coverage"), dict) else {}
         hits, n = cov.get("hits"), cov.get("n")
         lvl = _num((f.get("band") or {}).get("level")) if isinstance(f.get("band"), dict) else None
-        if isinstance(hits, (int, float)) and isinstance(n, (int, float)) and n:
+        has_audit = isinstance(f.get("audit"), dict) and bool(f["audit"].get("horizons"))
+        # with an audit the report states ONE count of how the range held: the audit's (wave 4, track B step 0)
+        if isinstance(hits, (int, float)) and isinstance(n, (int, float)) and n and not has_audit:
             fc["coverage"] = ("%d of %d replayed months inside the %s range" % (
                 int(hits), int(n), ("%s%%" % _fmt(100.0 * lvl if lvl <= 1 else lvl)) if lvl else "forecast"))[:120]
         if isinstance(f.get("baseline_won"), bool):
@@ -5131,7 +5269,8 @@ def _cut_words(s: str, n: int) -> str:
 # The size is json.dumps's with its \u escapes, never less than the UTF-8 bytes the page sends.
 RESULTS_MAX_BYTES = 90000
 BUDGET_REFUSED = ("%s of the %s scenario items are left out to keep what the report writer receives under %s bytes: "
-                  "the facts first, then the segments with the smallest contributions")
+                  "the facts first, then the parts with the smallest contributions; a part that moved against the "
+                  "change and the unallocated part are kept to the end")
 BUDGET_ANALYSES = ("%s of the %s analyses are left out to keep what the report writer receives under %s bytes: the "
                    "last ones in the plan's order")
 
@@ -5141,27 +5280,89 @@ def _payload_bytes(x: Any) -> int:
     return len(json.dumps(x, default=str))
 
 
-def _budget_drop_order(items: List[Dict[str, Any]]) -> List[int]:
-    """The scenario items' indices in the order the byte budget drops them (RESULTS_MAX_BYTES)."""
+BUDGET_TOP_PARTS = 6            # the parts of each breakdown with the largest |contribution|, kept to the end (the worker's top 6)
+_BUDGET_PARTS_OF = ("contribution", "price_volume_mix")      # the groups that say where the change sits
+
+
+def _sign(v: Any) -> int:
+    return 0 if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) or v == 0 \
+        else (1 if v > 0 else -1)
+
+
+def _budget_drop_order(items: List[Dict[str, Any]], basis: Optional[Dict[str, Any]] = None) -> List[int]:
+    """The scenario items' indices in the order the byte budget drops them (RESULTS_MAX_BYTES), first to go first.
+
+    Wave 4, track B step 0 (6 Oct 2026): the retail report left out the Northwest Territories, the only province that
+    fell, because it was the smallest part. The priority is now (1) the facts; (2) the items of the parts outside each
+    breakdown's BUDGET_TOP_PARTS largest |contribution| that did not move against the headline change, the smallest
+    part first and, inside a part, its last item first; (3) the items of the largest parts (and the share items of a
+    part that moved against the change), the smallest first; (4) the other groups, the headline's last; (5) an item that
+    moved AGAINST the headline change (a contribution, or the price, volume or mix effect, of the opposite sign: the
+    reader must learn what pulled the other way); (6) the unallocated part (the total less its published parts), which
+    is what makes a breakdown add up to the change, last. A breakdown is a table's own dimension (basis.breakdowns,
+    the id's second word) or, with none, the one segment column."""
     import nl_scenarios as _ns
-    rank = _ns.segment_rank(items)
     per = set(_ns.PER_SEGMENT)
     groups = {g: i for i, g in enumerate(_ns.GROUPS)}
-
-    def seg_rank(i: int) -> Optional[int]:
-        s = items[i].get("segment")
-        return rank.get(s) if items[i].get("group") in per and isinstance(s, str) else None
     idx = list(range(len(items)))
-    # a table read by its structure: the unallocated part (the total less its published parts) is what makes a
-    # breakdown add up to the change, so it is the last of the segments' items to go, however small it is
-    keep_last = [i for i in idx if str(items[i].get("id") or "").endswith(".unallocated")]
+    keys = {str(b.get("key")) for b in (basis or {}).get("breakdowns") or [] if isinstance(b, dict) and b.get("key")}
+    head = next((it for it in items if it.get("id") == "headline.change"), None)
+    hs = _sign(head.get("value")) if head else 0
+
+    def is_unalloc(i: int) -> bool:
+        return str(items[i].get("id") or "").endswith(".unallocated")
+
+    def bkey(i: int) -> str:
+        parts = str(items[i].get("id") or "").split(".")
+        return parts[1] if len(parts) > 2 and parts[1] in keys else ""
+
+    def of_part(i: int) -> bool:
+        s = items[i].get("segment")
+        return items[i].get("group") in per and isinstance(s, str) and not is_unalloc(i)
+    size: Dict[Tuple[str, str], float] = {}
+    sign: Dict[Tuple[str, str], int] = {}
+    for i in idx:
+        it = items[i]
+        if of_part(i) and it.get("group") == "contribution" and it.get("kind") == "change" and it.get("unit") != "%" \
+                and isinstance(it.get("value"), (int, float)) and not isinstance(it.get("value"), bool):
+            k = (bkey(i), it["segment"])
+            size[k] = max(size.get(k, 0.0), abs(float(it["value"])))
+            sign[k] = _sign(it["value"])
+    rank: Dict[Tuple[str, str], int] = {}
+    for b in sorted({k[0] for k in size}):
+        for r, k in enumerate(sorted((k for k in size if k[0] == b), key=lambda k: (-size[k], k[1]))):
+            rank[k] = r
+
+    def part(i: int) -> Optional[Tuple[str, str]]:
+        return (bkey(i), items[i]["segment"]) if of_part(i) else None
+
+    def against(i: int) -> bool:
+        """an item that moved the other way than the headline change: a contribution or a growth, an effect of the
+        change's own sign (kind change), not a share of a level"""
+        it = items[i]
+        if not hs or it.get("kind") != "change" or it.get("group") not in _BUDGET_PARTS_OF or is_unalloc(i):
+            return False
+        return _sign(it.get("value")) == -hs
+
+    def part_against(k: Optional[Tuple[str, str]]) -> bool:
+        return k is not None and bool(hs) and sign.get(k, 0) == -hs
     facts = [i for i in reversed(idx) if items[i].get("group") == "facts"]
-    beyond = [i for i in reversed(idx) if (seg_rank(i) or 0) >= _ns.TOP_SEGMENTS and i not in keep_last]
-    core_seg = sorted((i for i in idx if seg_rank(i) is not None and seg_rank(i) < _ns.TOP_SEGMENTS and i not in keep_last),
-                      key=lambda i: (-seg_rank(i), -i))
-    taken = set(facts) | set(beyond) | set(core_seg) | set(keep_last)
+    keep_last = [i for i in idx if is_unalloc(i)]
+    protected = [i for i in idx if against(i) and i not in keep_last]
+    taken = set(facts) | set(keep_last) | set(protected)
+
+    def smallest_first(cands: List[int]) -> List[int]:
+        # the part with the smallest |contribution| first (a tie: the breakdown, then the name); inside a part its last
+        # item first (the order the items were built in)
+        return sorted(cands, key=lambda i: (size.get(part(i), 0.0), part(i) or ("", ""), -i))
+    parts_i = [i for i in idx if of_part(i) and i not in taken]
+    beyond = smallest_first([i for i in parts_i if rank.get(part(i), 0) >= BUDGET_TOP_PARTS and not part_against(part(i))])
+    top = smallest_first([i for i in parts_i if i not in set(beyond)])
+    taken |= set(beyond) | set(top)
     rest = sorted((i for i in idx if i not in taken), key=lambda i: (-groups.get(items[i].get("group"), 0), -i))
-    return facts + beyond + core_seg + rest + sorted(keep_last, reverse=True)
+    prot = smallest_first(protected) if all(of_part(i) for i in protected) else \
+        sorted(protected, key=lambda i: (-groups.get(items[i].get("group"), 0), -i))
+    return facts + beyond + top + rest + prot + sorted(keep_last, reverse=True)
 
 
 def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int,
@@ -5179,7 +5380,7 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
     sc = out.get("scenarios") if isinstance(out.get("scenarios"), dict) else None
     items = list((sc or {}).get("items") or [])
     if items:
-        order = _budget_drop_order(items)
+        order = _budget_drop_order(items, sc.get("basis") if isinstance(sc.get("basis"), dict) else None)
         base_out = out
 
         def without(k: int) -> Tuple[Dict[str, Any], Dict[str, Any], int]:
@@ -8534,6 +8735,11 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
     _official_inference(rep, list(outer.get("header") or []), {"layout": STRUCTURE_LAYOUT, "structure_slice": True,
                                                               "rows_a_month": int(NS.rows_a_month(S))},
                         list(outer.get("hidden") or []))
+    # the core's headline of a table's report is its forecast's ("Monthly total_retail_sales forecast at 73,046,640,000
+    # total_retail_sales for 2026-08."): with an estimand, the headline says what the table's headline is (wave 4, B)
+    hl = _estimand_headline(rep)
+    if hl and isinstance(rep.get("story"), dict):
+        rep["story"]["headline"] = hl
     if ai_plan:
         inner_plan = rep.get("ai_plan") or {}
         keep = {k: inner_plan[k] for k in ("context_queries", "context_queries_dropped", "context") if k in inner_plan}
@@ -9105,6 +9311,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         for k in ("audit", "row_forecast_dropped"):          # P0-13: the series they name, scrubbed as the label is
             if isinstance(rep["forecast"].get(k), dict) and rep["forecast"][k].get("series"):
                 rep["forecast"][k]["series"] = pub(rep["forecast"][k]["series"])
+        _one_forecast_evidence(rep)       # with an audit, the story states the audit's count of the range, no other
         rep["roles"]["excluded"] = {k: pub(v) for k, v in rep["roles"]["excluded"].items()}
 
         # -- downloads: withheld columns never leave, not even in a quarantine reason

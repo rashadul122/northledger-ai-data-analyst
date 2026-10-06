@@ -433,8 +433,11 @@ def sig2(v: float) -> float:
 AUDIT_ORIGINS = 23              # the last 23 forecast origins
 AUDIT_MIN_HISTORY = 45          # each with at least the months the core needs to forecast at all
 AUDIT_HORIZONS = (1, 3, 6, 12)
-AUDIT_PASS = {"wilson_lo": 0.60, "n_eff": 8.0, "rel_mae": 1.0}      # AM5: the stricter pass rule
-AUDIT_FAIL = {"wilson_hi": 0.80, "rel_mae": 1.0}
+AUDIT_PASS = {"wilson_lo": 0.60, "n_eff": 8.0, "rel_mae": 1.0}      # AM5: the stricter pass rule; rel_mae AT MOST 1
+AUDIT_FAIL = {"wilson_hi": 0.80, "rel_mae": 1.0}                    # fails when rel_mae is OVER 1
+AUDIT_REL_TOL = 1e-9            # "no worse than seasonal naive": a ratio of 1 (up to the last bits) is not "over 1"
+BENCHMARK_MODEL = "seasonal_naive"
+BENCHMARK_NOTE = "the model is the seasonal-naive benchmark itself"
 
 
 def _month_ix(m: Any) -> int:
@@ -478,8 +481,10 @@ def forecast_audit(months: Sequence[Any], values: Sequence[float], fr: Any,
     Wilson interval of the coverage on that effective count; the MAE, its ratio to seasonal naive's (rel_mae) and
     MASE (the MAE over the in-sample seasonal-naive MAE before the first origin). Status: "fails" when the Wilson
     upper end is under 0.80 or rel_mae is over 1; "passes" when the Wilson lower end is at least 0.60, the effective
-    count at least 8 and rel_mae under 1; "unclear" otherwise. Overall: fails if any horizon fails, passes if every
-    audited horizon passes; trusted only when it passes."""
+    count at least 8 and rel_mae is no more than 1 (no worse than seasonal naive); "unclear" otherwise. When the
+    shown model IS seasonal naive its rel_mae is 1.00 by construction, so it is judged on its coverage alone
+    (`benchmark_is_model`, said in the label). Overall: fails if any horizon fails, passes if every audited horizon
+    passes; trusted only when it passes."""
     from northledger import forecast as _fc
     np = _np()
     cfg = dict(getattr(fr, "config", None) or {})
@@ -494,10 +499,11 @@ def forecast_audit(months: Sequence[Any], values: Sequence[float], fr: Any,
         mon, y = [mon[i] for i in idx], y[idx]
     n = len(y)
     rec: Dict[str, Any] = {"method": "rolling origin", "mode": mode, "model": str(getattr(fr, "champion", "")),
+                           "benchmark_is_model": str(getattr(fr, "champion", "")) == BENCHMARK_MODEL,
                            "origins": 0, "first": None, "last": None, "min_history": int(min_history),
                            "horizons": [], "status": "not_run", "trusted": False, "label": "", "grade_label": "",
-                           "rule": "passes: Wilson lower end >= 0.6, effective checks >= 8 and MAE under seasonal "
-                                   "naive's; fails: Wilson upper end < 0.8 or MAE over seasonal naive's",
+                           "rule": "passes: Wilson lower end >= 0.6, effective checks >= 8 and MAE no worse than "
+                                   "seasonal naive's; fails: Wilson upper end < 0.8 or MAE over seasonal naive's",
                            "why": ""}
     first = max(int(min_history), n - int(origins))
     org = list(range(first, n))
@@ -592,10 +598,11 @@ def forecast_audit(months: Sequence[Any], values: Sequence[float], fr: Any,
         mae_sn = math.fsum(ae_sn) / of
         rel = (mae / mae_sn) if mae_sn > 0 else None
         mase = (mae / scale) if scale > 0 else None
-        if (wh is not None and wh < AUDIT_FAIL["wilson_hi"]) or (rel is not None and rel > AUDIT_FAIL["rel_mae"]):
+        if (wh is not None and wh < AUDIT_FAIL["wilson_hi"]) \
+                or (rel is not None and rel > AUDIT_FAIL["rel_mae"] + AUDIT_REL_TOL):
             status = "fails"
         elif wl is not None and wl >= AUDIT_PASS["wilson_lo"] and ne >= AUDIT_PASS["n_eff"] and rel is not None \
-                and rel < AUDIT_PASS["rel_mae"]:
+                and rel <= AUDIT_PASS["rel_mae"] + AUDIT_REL_TOL:
             status = "passes"
         else:
             status = "unclear"
@@ -613,6 +620,8 @@ def forecast_audit(months: Sequence[Any], values: Sequence[float], fr: Any,
     rec["trusted"] = rec["status"] == "passes"
     rec["label"] = "back-tested: held %s" % ", ".join(
         "%d of %d at %d month%s" % (x["held"], x["of"], x["h"], "" if x["h"] == 1 else "s") for x in out_h)
+    if rec["benchmark_is_model"]:
+        rec["label"] += "; %s" % BENCHMARK_NOTE
     rec["grade_label"] = {"fails": "the engine's grade (not trusted: the back-test failed)",
                           "passes": "the engine's grade (the back-test passed)",
                           "unclear": "the engine's grade (the back-test neither passed nor failed it)"}[rec["status"]]

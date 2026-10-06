@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import os
 import sys
 import time
@@ -544,6 +545,141 @@ def test_the_payload_budget_drops_the_unallocated_part_last_and_the_forecast_lab
     assert fl and all(", forecast for " in x for x in fl), rep["summary"]["labels"]
 
 
+# ------------------------------------------------------------------------------ wave 4, track B step 0
+def _part_items(key, parts, total_sign=1):
+    """The items of a breakdown the way nl_scenarios builds them: contribution, growth and share_level per part."""
+    out = []
+    for name, v in parts:
+        slug = name.lower().replace(" ", "_")
+        out.append({"id": "contribution.%s.%s" % (key, slug), "group": "contribution", "segment": name, "kind": "change",
+                    "unit": "", "value": float(v)})
+        out.append({"id": "growth.%s.%s" % (key, slug), "group": "contribution", "segment": name, "kind": "change",
+                    "unit": "%", "value": float(v) / 100.0})
+        out.append({"id": "share_level.%s.%s" % (key, slug), "group": "contribution", "segment": name, "kind": "percent",
+                    "unit": "", "value": abs(float(v)) / 10.0})
+    out.append({"id": "contribution.%s.unallocated" % key, "group": "contribution", "segment": "unallocated (%s)" % key,
+                "kind": "change", "unit": "", "value": 1.0})
+    return out
+
+
+def test_the_payload_budget_keeps_a_part_that_moved_against_the_change_and_each_breakdowns_largest_parts():
+    """Retail: the budget left out the Northwest Territories, the only province that fell, as the smallest part. Now:
+    the facts first; the parts beyond each breakdown's 6 largest, the smallest first; then the largest parts' share
+    items; then the other groups; an item that moved AGAINST the headline change late; the unallocated part last."""
+    geo = [("Ontario", 100), ("Quebec", 60), ("Alberta", 50), ("BC", 30), ("Manitoba", 10), ("Nova Scotia", 9),
+           ("Saskatchewan", 8), ("Newfoundland", 3), ("Yukon", 1), ("Nunavut", 0.5), ("Northwest Territories", -0.4)]
+    nai = [("General merchandise", 80), ("Health", 66), ("Gasoline", 61), ("Sporting", 34), ("Clothing", 31),
+           ("Food", 26), ("Furniture", -17), ("Motor vehicle", 12.8), ("Building", -1.4)]
+    basis = {"breakdowns": [{"key": "geo", "dim": "GEO"}, {"key": "naics", "dim": "NAICS"}]}
+
+    def build(sign):
+        its = [{"id": "headline.change", "group": "headline", "segment": None, "kind": "change", "unit": "",
+                "value": 293.0 * sign},
+               {"id": "headline.latest", "group": "headline", "segment": None, "kind": "amount", "unit": "", "value": 8640.0}]
+        its += _part_items("geo", [(n, v * sign) for n, v in geo]) + _part_items("naics", [(n, v * sign) for n, v in nai])
+        its += [{"id": "facts.months", "group": "facts", "segment": None, "kind": "count", "unit": "", "value": 79.0}]
+        return its
+    for sign in (1, -1):            # a total that rose, and one that fell (the parts that rose are the ones against it)
+        items = build(sign)
+        order = NB._budget_drop_order(items, basis)
+        ids = [items[i]["id"] for i in order]
+        assert sorted(order) == list(range(len(items))) and ids[0] == "facts.months", (sign, ids[:3])
+        # the unallocated parts are the very last, the one built first the last of all; a part against the change just before
+        assert ids[-2:] == ["contribution.naics.unallocated", "contribution.geo.unallocated"], ids[-3:]
+        assert ids[-3] in ("contribution.naics.furniture", "contribution.geo.northwest_territories",
+                           "growth.naics.furniture", "contribution.naics.building"), ids[-3:]
+        pos = {k: n for n, k in enumerate(ids)}
+        # GEO's 6 largest are Ontario to Nova Scotia; Saskatchewan, the 7th, and every smaller part are beyond them, and go
+        # first, the smallest part first
+        assert all(pos["contribution.geo.%s" % n] < pos["contribution.geo.ontario"]
+                   for n in ("saskatchewan", "newfoundland", "yukon", "nunavut"))
+        assert pos["contribution.geo.nunavut"] < pos["contribution.geo.yukon"] < pos["contribution.geo.newfoundland"] < \
+            pos["contribution.geo.saskatchewan"] < pos["contribution.geo.manitoba"], "the smallest part goes first"
+        # a part that moved against the headline change: its contribution and growth are among the last items to go, after
+        # the headline and every large part, and only the unallocated parts come after; its share_level is an ordinary item
+        for k in ("contribution.geo.northwest_territories", "growth.geo.northwest_territories",
+                  "contribution.naics.furniture", "growth.naics.furniture", "contribution.naics.building",
+                  "growth.naics.building"):
+            assert pos[k] > pos["headline.latest"] and pos[k] > pos["contribution.geo.ontario"] \
+                and pos[k] > pos["contribution.naics.food"] and pos[k] > pos["contribution.geo.nunavut"], (sign, k)
+        assert pos["share_level.geo.northwest_territories"] < pos["contribution.geo.northwest_territories"]
+        # nothing that moved the headline's way is ever kept ahead of a part that moved against it
+        assert pos["contribution.geo.yukon"] < pos["growth.geo.northwest_territories"]
+    # with no breakdowns in the basis (one segment column) the same rules hold, per column
+    flat = [dict(it, id=it["id"].replace(".geo.", ".")) for it in build(1) if ".naics." not in it["id"]]
+    o2 = [flat[i]["id"] for i in NB._budget_drop_order(flat, {})]
+    assert o2[-1] == "contribution.unallocated" and o2.index("contribution.northwest_territories") > o2.index("contribution.ontario")
+    assert o2[0] == "facts.months" and o2.index("contribution.nunavut") < o2.index("contribution.ontario")
+
+
+def _later(data: bytes, years: int) -> bytes:
+    """A cube's file with every REF_DATE `years` years later (so its last month is close to the test's analysis date)."""
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    df["REF_DATE"] = df["REF_DATE"].map(lambda m: "%04d%s" % (int(m[:4]) + years, m[4:]))
+    return df.to_csv(index=False, quoting=1).encode("utf-8")
+
+
+def test_the_replay_sentence_of_the_core_is_replaced_by_the_audits_one_count_and_the_headline_by_the_estimands():
+    """Step 0 of track B: a report states ONE count of how its range held (the audit's), and a table read by its structure
+    leads with its estimand, in the writer's fallback-title format; a report with no structure keeps the core's headline."""
+    data = _later(MC.partition(0.10), 3)           # Jan 2022 - Dec 2025: a forecast of the months after it is not history
+    NB._PROFILE_CACHE.clear()
+    rep = NB.run(data, "regions.csv", "", {}, "2026-01-20")
+    assert rep["ok"], rep["error"]
+    au = rep["forecast"]["audit"]
+    assert au["horizons"] and au["label"].startswith("back-tested: held "), au
+    wn = " ".join(rep["story"]["whats_next"])
+    assert not re.search(r"held in \d+ of \d+ replayed months", wn + " ".join(rep["story"]["what_happened"])), wn
+    assert "Its 80%% range was %s." % au["label"] in wn, wn
+    out = NB.results_for_ai(rep)
+    assert "coverage" not in out["forecast"] and out["forecast"]["audit"]["label"] == au["label"], out["forecast"]
+    est = rep["estimand"]
+    F = est["figures"]
+    meas = est["measure"]["label"]
+    member = next(x["member"] for x in est["slice"] if x["member"] != meas)
+    hl = rep["story"]["headline"]
+    assert hl.startswith("%s, %s, 12 months to " % (meas, member)) and (": " + F["change_pct"]["text"]) in hl, hl
+    assert "Monthly" not in hl and "forecast" not in hl
+    if est["inference"] and est["inference"]["mode"] == "official_aggregate":
+        assert hl.endswith("(%s) in the published totals" % F["latest"]["text"]), hl
+    assert out["goal"] == hl and out["story"]["headline"] == hl, (out["goal"], out["story"]["headline"])
+    # the same table with the structure switched off keeps the core's own headline (no structure: nothing changes)
+    try:
+        NB.STRUCTURE_ON = False
+        NB._PROFILE_CACHE.clear()
+        old = NB.run(data, "regions.csv", "", {}, "2026-01-20")
+    finally:
+        NB.STRUCTURE_ON = True
+    assert old["ok"] and old["estimand"] is None and old["story"]["headline"] != hl
+    assert not re.search(r"in the published totals|12 months to", old["story"]["headline"]), old["story"]["headline"]
+
+
+def test_estimand_headline_formats_follow_the_writers_fallback_title():
+    est = {"measure": {"label": "Total retail sales", "type": "flow"},
+           "slice": [{"member": "Canada"}, {"member": "Total retail sales"}, {"member": "Unadjusted"}],
+           "comparison": {"latest": ["2025-08", "2026-07"], "prior": ["2024-08", "2025-07"]}, "complete": True,
+           "figures": {"latest": {"value": 1.0, "text": "$864.0B"}, "change_pct": {"value": 3.5, "text": "+3.5%"},
+                       "change": {"value": 1.0, "text": "+$29.3B"}}, "inference": None}
+    f = {"id": "measure.x.change", "kind": "business", "grade": "WATCH"}
+    rep = {"estimand": est, "findings": [f], "scenarios": {"basis": {"finding_id": "measure.x.change"}}}
+    assert NB._estimand_headline(rep) == "Total retail sales, Canada: no settled change in the 12 months to Jul 2026 (+3.5%, WATCH)"
+    f["grade"] = "CONFIRMED"
+    assert NB._estimand_headline(rep) == "Total retail sales, Canada, 12 months to Jul 2026: +3.5% to $864.0B (CONFIRMED)"
+    f["grade"] = "NOT_ENOUGH_DATA"
+    assert NB._estimand_headline(rep) == "Total retail sales, Canada: no settled change; the data cannot say yet (INSUFFICIENT)"
+    est["inference"] = {"mode": "official_aggregate"}
+    assert NB._estimand_headline(rep) == "Total retail sales, Canada, 12 months to Jul 2026: +3.5% ($864.0B) in the published totals"
+    est["figures"]["change_pct"] = {"value": -3.5, "text": "-3.5%"}
+    assert "\u22123.5% ($864.0B)" in NB._estimand_headline(rep)
+    est["complete"], est["months_used"] = False, 11
+    assert "the 11 matched months to Jul 2026" in NB._estimand_headline(rep)
+    est["figures"]["change_pct"] = {"value": None, "text": "n/a"}
+    assert NB._estimand_headline(rep) is None, "no figure is printed: no headline made of one"
+    assert NB._estimand_headline({"estimand": None}) is None
+
+
+
+
 def test_e2e_a_headline_month_missing_from_a_window_is_compared_on_the_months_both_windows_have():
     """A flow's window figure adds its months up: a month the headline lacks in one window must not make the change
     compare 11 months with 12. The comparison uses the months with a value in both windows and says so."""
@@ -723,6 +859,24 @@ def test_acceptance_statcan_retail_planner_off_and_an_unadjusted_only_plan():
     assert geo["data"]["rows"][:3] == ["Ontario", "Quebec", "British Columbia"] and geo["data"]["rows"][-1] == "other (2 parts)"
     assert rep["input"]["rows"] == 36735 and rep["input"]["columns"] == 17
     print("    statcan planner off: %.1f s native" % took)
+    # step 0 of track B (6 Oct 2026): the seasonal-naive champion's audit can pass (rel MAE 1.00 is "no worse"), the story
+    # states the audit's one count of the range, the headline is the estimand's, and the writer's payload keeps the
+    # only province that fell
+    au = rep["forecast"]["audit"]
+    assert [(h["held"], h["of"]) for h in au["horizons"]] == [(21, 23), (19, 21), (17, 18), (11, 12)], au["label"]
+    assert au["status"] == "passes" and au["trusted"] is True and rep["forecast"]["trusted"] is True and \
+        au["benchmark_is_model"] is True and au["label"].endswith("; the model is the seasonal-naive benchmark itself"), au
+    assert rep["story"]["headline"] == "Total retail sales, Canada, 12 months to Jul 2026: +3.5% ($864.0B) in the published totals", \
+        rep["story"]["headline"]
+    assert not re.search(r"22 of 24", json.dumps(rep["story"]) + json.dumps(rep["summary"])), rep["story"]["whats_next"]
+    out = NB.results_for_ai(rep)
+    assert out["goal"] == rep["story"]["headline"] and "coverage" not in out["forecast"]
+    assert len(json.dumps(out)) <= NB.RESULTS_MAX_BYTES, len(json.dumps(out))
+    kept = [i["id"] for i in out["scenarios"]["items"]]
+    assert {"contribution.geo.northwest_territories", "growth.geo.northwest_territories", "contribution.naics.444",
+            "contribution.naics.449", "contribution.geo.unallocated", "contribution.naics.unallocated"} <= set(kept), \
+        [i for i in it if i not in kept]
+    print("    statcan payload: %d bytes, %d of %d scenario items" % (len(json.dumps(out)), len(kept), len(it)))
     plan = {"goal": "How did retail sales change?", "primary": "VALUE",
             "columns": [{"name": "VALUE", "semantic_type": "flow_amount", "role": "target"}],
             "operations": [{"op": "keep_rows", "column": "Adjustments", "values": ["Unadjusted"]}]}

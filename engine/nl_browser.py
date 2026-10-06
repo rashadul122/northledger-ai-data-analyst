@@ -8886,13 +8886,17 @@ SLICE_GUARD_REASON = ("This file is a table of series with totals, and the part 
                       "could not run. An average over its rows would count totals and parts together, so no figure is shown.")
 
 
-def _slice_failure(S: Dict[str, Any]) -> Dict[str, Any]:
-    """The `structure` record of a refusal when the structure layer found a table of series and its slice could not be run
-    (fewer than 2 values, or the engine's run on the slice stopped): the file is never read as a plain table instead."""
+def _slice_failure(data: bytes) -> Optional[Dict[str, Any]]:
+    """The `structure` record of a refusal when the structure layer found a usable structure, its slice could not be run (fewer
+    than 2 values, or the engine's run on the slice stopped) and the file looks like a table of series with totals: it is never
+    read as a plain table instead. None for any other file (a business file the layer found some structure in is read as before)."""
+    why = looks_like_series_table(data)
+    if why is None:
+        return None
     return {"kind": "error", "usable": False, "reason": SLICE_GUARD_REASON,
             "error": {"stage": "slice", "type": "SliceNotRun",
                       "message": "the headline slice could not be run (fewer than 2 values, or the engine's run on it stopped)"},
-            "looks_like": {"by": "structure", "columns": [str(d.get("column")) for d in S.get("dims") or [] if d.get("column")][:8]}}
+            "looks_like": why}
 
 
 def _reason_in_sentence(rec: Dict[str, Any]) -> str:
@@ -9529,7 +9533,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                    outer=_outer_of(outer, rep, data), timings={})
                 if inner is not None:
                     return inner
-                struct_error = _slice_failure(S_pre)                # a verified table whose slice could not be run
+                struct_error = _slice_failure(data)                 # a table of series whose slice could not be run (else: read as before)
         if struct_error is not None:
             cube_refusal = _reason_in_sentence(struct_error)
             rep["structure"] = struct_error
@@ -9569,9 +9573,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         if plan_review:
                             inner.setdefault("ai_plan", {})["review"] = plan_review
                         return inner
-                    struct_error = _slice_failure(S_use)             # a verified table whose slice could not be run
-                    cube_refusal = _reason_in_sentence(struct_error)
-                    rep["structure"] = struct_error
+                    struct_error = _slice_failure(data)              # a table of series whose slice could not be run (else: read as before)
+                    if struct_error is not None:
+                        cube_refusal = _reason_in_sentence(struct_error)
+                        rep["structure"] = struct_error
                 data, applied, layout = _apply_plan(data, ai_plan)
                 sent_rows = (applied.get("positions"), applied.get("rows_in"))
                 ai_plan["applied"] = applied["applied"]
@@ -9732,8 +9737,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                            outer=outer_info, timings=tm_outer)
                         if inner is not None:
                             return inner
-                        struct_error = _slice_failure(S_hook)       # a verified table whose slice could not be run
-                        cube_refusal = _reason_in_sentence(struct_error)
+                        struct_error = _slice_failure(sent)         # a table of series whose slice could not be run (else: read as before)
+                        if struct_error is not None:
+                            cube_refusal = _reason_in_sentence(struct_error)
                     elif S_hook.get("kind") == "cube_incomplete":
                         cube_refusal = S_hook.get("reason") or "the table's rows cannot be told apart"
                     # a table refused for its structure, or one whose slice could not run, says so; a file read as

@@ -1061,8 +1061,9 @@ a component of the smallest verified member that bounds it everywhere, a coded o
 the nearest before it in the publisher's own order (Cannabis retailers [459993] under Miscellaneous retailers [459B]); (5)
 no partition but one member bounds the others in an official table or under a total's name: `components` (`measure` when
 the dimension or its members name measures: Sales); (6) a rate or an index (Percent, rate, per N; index, NNNN=100) is
-never summed or averaged across members (AM4): its published aggregate is the member inside the others' range in 99% of
-the cells that is named as a total or comes first (`rate_aggregate`); (7) nothing verified: an official table reads one
+never summed or averaged across members (AM4): its published aggregate (`rate_aggregate`) is a member inside the others' range in
+99% of its cells that is named as a total or as a whole country, or is shown to be the others' weighted average (wave 5b, section
+5.12 item 9: its place in the file is no evidence); with none, the table has no aggregate and rule 7 reads one member; (7) nothing verified: an official table reads one
 member (`single`: the total-named one, else the most covered and dominant), a business export adds its members up
 (`flat_additive`, read as before). An adjusted pair is found first, by behaviour: two members (of a dimension of 2 to 4)
 whose calendar-year totals agree within 3% and one three times as seasonal (the variance of its month means, detrended
@@ -1126,6 +1127,12 @@ rows mix totals and parts; the structure's breakdowns answer it"); `long_to_wide
 aside) gets no business analysis: the story's headline is "The business analysis did not run: the date and the columns
 the engine may read (GEO, Sales, Adjustments) do not tell the rows apart: 34,365 of 36,735 rows repeat a date and a
 series, so a column that names the series is withheld or set aside." and no chart reads its rows.
+
+*The refusal when the structure layer cannot run* (wave 5b, section 5.12 item 8). A file that looks like a table of series with
+totals (`nl_browser.looks_like_series_table`: a publisher's signature columns, 3 or more metadata-like columns, or a date, a
+measure, 2 or more dimensions and a flag column) is never read the old way when `nl_structure` cannot be imported, `detect`
+throws, the wide reshape throws, the engine's reading of the table cannot be built, or the verified table's slice cannot be run:
+the same "did not run" path, `structure = {kind: "error", usable: false, reason, error: {stage, type, message}, looks_like}`.
 
 *Flags* (`structure.flags`): `{column, publisher, by_kind{kind: rows}, codes{code: {kind, rows, blank_measure, missing}},
 unrecognised[], blank_without_flag, quality_of_headline{code: months}}`; a code's kind is the publisher's
@@ -1225,8 +1232,9 @@ months only (every part has a value) when the table's own latest windows (anchor
 at least 6 months complete in both and the last complete month is within 3 months of that anchor; else the REPORTED parts are
 summed and the estimand counts what was suppressed and is marked incomplete. Any other measure (a stock, a rate, an index, an
 ambiguous count) has no valid aggregate: `role: "single"` with `single_by: "dominance"` (the most covered, then the most
-dominant member), the estimand's `excluded` says "one member shown, not a national figure: this table has no total row, and a
-stock is never added or averaged across members" ("a total" for a dimension that is not geographic), and such a table is read
+dominant member), the estimand's `excluded` says "one member shown, not a national figure: this table has no total member, and a
+stock is never added or averaged across members" ("a total" for a dimension that is not geographic; wave 5b: the estimand's text
+and the headline say it too, `estimand.single_member`, item 9), and such a table is read
 by its structure when its dimension is geographic (a table of currencies stays a panel read side by side). The estimand:
 `text` "<measure> · the sum of 5 regions; built from 5 regions; this table has no total row; complete months only: the 2
 months where a part is suppressed are left out; dollars (...); totals of the 10 months with a value in both windows (...)", and
@@ -1472,6 +1480,103 @@ empty cell is no observation. `structure.wide` = `{family, periods, first, last,
 first limitation, and the downloads carry no visitor line numbers. The planner's profile reads the file as it was sent.
 Unit codes that hold a currency (MIO_EUR) are currencies.
 
+**8. Fail closed when the structure layer cannot run** (wave 5b, follow-up 1). The structure layer is an aid for most files and a
+safeguard for one kind: a table of series with totals, whose rows the old reading averaged together (the page's Pyodide once
+failed to import `nl_structure`, and retail was read that way: 57 s, no waterfalls, a figure that looked right). One helper that
+does not depend on `nl_structure`, `nl_browser.looks_like_series_table(data)`, says what such a file looks like, by ANY of: a
+publisher's signature columns (`flag_vocab.json`: 3 of them, or all of a shorter signature); 3 or more metadata-like columns
+(`_PANEL_META`: UOM, VECTOR, DGUID, SCALAR_FACTOR, STATUS ...); a long format (a date column, a measure column, 2 or more dimension
+columns and a flag column: a few short codes that either stand for a blank measure (learned from the file) or sit in a column
+the publishers name a flag, holding a publisher's code; a "status" of open/done, a "returned" of Y/blank or a grade of A to D is
+a business file's own column). When it holds and the layer could not run, no business analysis is made, whatever stopped it:
+
+| stage | what stopped the layer |
+|---|---|
+| `import` | `import nl_structure` raised (an illegal regex in Python 3.12, a missing file) |
+| `wide` | the reshape of a wide table of periods raised |
+| `detect` | `detect` raised (in the long-panel check, the profile pass or the run's own hook) |
+| `reading` | the engine's reading of the table could not be built for the hook |
+| `slice` | a usable structure was found in a file that looks like a table of series, but its headline slice could not be run (fewer than 2 values, or the engine's run on it stopped); a business file the layer found some structure in is read as before |
+
+The story's headline is "The business analysis did not run: this file looks like a table of series with totals, and the part of the
+engine that finds them could not run. An average over its rows would count totals and parts together, so no figure is shown." (for
+`slice`: "This file is a table of series with totals, and the part of the engine that reads it one series at a time could not run ...");
+the audit, the health and the cleaning are the engine's own as for any refusal; `estimand` is null, `scenarios.items` is empty, no
+finding is of kind business. `structure` is the record below; the planner's profile pass keeps it beside the structure (`_PROFILE_CACHE`
+key `structure_error`), so a run after the profile refuses too, a plan does not get round it, and the planner still receives the
+columns with no structure block. Any file that does not look like a table of series keeps the old behaviour (a strict run, the
+test suites' own switch, raises the layer's exception for it). The message is the exception's own text trimmed to 200 characters; the
+writer's copy (`results_for_ai.structure.error`) passes it through the same scrub as every text. Example (the layer's import failed):
+
+```json
+{
+ "kind": "error",
+ "usable": false,
+ "reason": "This file looks like a table of series with totals, and the part of the engine that finds them could not run. An average over its rows would count totals and parts together, so no figure is shown.",
+ "error": {
+  "stage": "import",
+  "type": "error",
+  "message": "global flags not at the start of the expression at position 296"
+ },
+ "looks_like": {
+  "by": "publisher",
+  "publisher": "statcan",
+  "columns": ["REF_DATE", "DGUID", "VECTOR", "STATUS"]
+ }
+}
+```
+
+(`looks_like.by` is "publisher", "metadata" or "long format".) Not covered: a business export whose
+members include "All" and "Total" rows and has none of the three marks, a wide table of periods whose reshape could not run when
+the file has no mark in its header, and a file the reader cannot parse (the engine's own intake refuses it).
+
+**9. Rate and index aggregates by name or by evidence, never by place** (wave 5b, follow-up 3). A rate or an index is never added
+or averaged across members; its published aggregate is a member that is not just first in the file. Before, a member that lay
+inside the others' range in 99% of its cells was read as the aggregate when it came first in the file (`aggregate_by` "first in
+file"): one province reported as the national figure, the headline "in the published totals", and a row named Canada that came last
+was ignored for it. Now a member is the aggregate (`role: "rate_aggregate"`, `aggregate_by`) only when it lies inside the others'
+min-max in at least 99% of its cells AND
+
+- `name`: it carries a total's name (total, all, overall, grand, aggregate, combined, national, nationwide, _T, TOTAL, _Z) or is a
+  whole country's name as the table of its provinces or states lists it (Canada, United States, United Kingdom, Great Britain,
+  Australia, New Zealand, Euro area, European Union, EU27_2020, OECD, World); two whole countries' names in one table (Canada and the
+  United States among Mexico and Brazil) say nothing, and a name that says "excluding" is an alternative; or
+- `range and fit`: it has no such name, but it lies STRICTLY inside the others' range in 99% of its cells, has the table's full
+  coverage (a value wherever any member has one, at least every other member's), and the others reproduce it: on the cells where
+  every member has a value, a weighted average of the others (weights fixed, at least 0, adding to 1; non-negative least squares) matches
+  it to within one unit of the last published digit, while a typical member's own fit (each by the others without it) is at least 3
+  units off and the member's is at most a quarter of that. An aggregate is an exact weighted average of its parts to the digit it
+  publishes; a province in the middle of the range is not. Needs 3 or more parts beside it and at most 40 members, and 12 complete
+  cells, else there is no evidence. Its place in the file is no evidence either way. `sum_check` carries `{inside_range_share, cells,
+  fit_rms, typical_member_fit_rms, unit, fit_cells, coverage}`.
+
+With none, the table has NO aggregate: rule 6 reads one member, `role: "single"`, `single_by: "dominance"` (the most covered, then the most
+dominant), and when no member is named as a total (`no_total_member: true` on the dimension; a lone Canada row that could not be
+verified is a named member and is read as before) the estimand says so: `estimand.single_member = {dim, member, noun, statement}` (the key
+exists only then), its text carries "one member shown: Echo; this table has no total member, so this is not a national figure", the
+"left out and why" line says the same ("this table has no total member"), the headline reads "Unemployment rate, Echo (one member shown,
+not a national figure): ..." and the claim is never described as a published total (`estimand.inference` and `findings[].inference` are
+null: the engine's own grade stands). Calibrated on simulated panels (tools in the pass's scratch, not shipped): 0 of 600 random
+provinces tables with no aggregate had a member read as one, 97% of the unnamed true aggregates were found. Before and after, on the
+synthetic rate table of 6 provinces with Alpha first and mid-range (`tools/fixtures/structure/make_cubes.rate_table`):
+
+```json
+{
+ "before": {"role": "rate_aggregate", "total": "Alpha", "aggregate_by": "first in file"},
+ "after": {
+  "role": "single", "single_by": "dominance", "total": "Echo", "no_total_member": true,
+  "estimand.single_member": {
+   "dim": "GEO", "member": "Echo", "noun": "national figure",
+   "statement": "one member shown: Echo; this table has no total member, so this is not a national figure"
+  }
+ }
+}
+```
+
+A table with a named Canada row (first or last in the file), a row named All provinces, and the two-base index table (Canada and
+Ontario: the range of one other member cannot verify a name) give the figures, slices and words they gave; the two-base index
+record is byte for byte the one of 387c876 (hash 2a7fac4ff75acb3d). `aggregate_by` is now on `structure.dims[]`.
+
 *Runtime.* The page runs the engine in Pyodide (Python 3.12.7, pandas 2.2.3, numpy 2.0.2); the native tests run on 3.9. A global inline
 regex flag ((?i)) anywhere but the start of a pattern is an error in 3.11+ and only a warning in 3.9: a pattern built by joining
 other patterns' text (`_MEMBER_CUE`) broke the structure layer in Pyodide (the import failed, the file was read as before, the
@@ -1479,10 +1584,17 @@ retail run was 2x slower with no waterfalls) while every native test passed. `te
 now checks every compiled pattern of the five engine modules. Measured in Pyodide on this release: the retail file (36,000 rows)
 detects in 0.24 to 0.35 s and runs in 24 to 30 s on a busy machine (main: 26 to 31 s, same load); a 40,321-row synthetic cube detects in
 0.16 s and runs in 22 s; the 20 synthetic cubes of the wave (no-total, measures, counts, duplicate names, quarterly, annual, wide) give
-the same estimand, headline, structure kind, scenario ids and finding count as native.
+the same estimand, headline, structure kind, scenario ids and finding count as native. `tools/check_pyodide_cube.mjs` (a step of
+`verify.sh`) now runs the PACKED engine in that Pyodide on a synthetic cube made at test time (5 regions and Canada, 3 industries and a
+total, 36 months, 4 suppressed cells, a status column; the Statistics Canada layout) and fails unless `nl_structure` imports, the cube is read
+by its structure with no `structure.error`, the slice is its two totals and the headline equals the pandas reference pinned in the file
+(`tools/test_nl_structure.py` recomputes that reference from `--emit-cube` and reads the same cube natively); with the original defect
+re-introduced in a copy, 12 of its 15 checks fail and the page's refusal is printed beside Pyodide's own message.
 
 *For the worker.* `validateStructure` takes the roles as listed in section 5.4 and drops unknown keys: it needs `measures`
-(members validated as profile values), `no_total`, `period` and the plan's `measure_member` (`^M\d{1,2}$`); `structureRules` should
+(members validated as profile values), `no_total`, `period` and the plan's `measure_member` (`^M\d{1,2}$`); the results'
+`structure.error` (`{stage, type, message}`) and `structure.kind: "error"`, `estimand.single_member` and `structure.dims[].no_total_member`,
+`aggregate_by` (wave 5b: a refusal says plainly why no figure is shown; a headline of one member says it is not a national figure); `structureRules` should
 word a partition with no `total` ("has no total row: its parts are added up") and a measure dimension. `validateResults` should
 keep the new estimand keys (`built_from`, `measure_choice`, `period`, `measure.type_basis`, `sum_checks[].built_from_parts` and
 `suppressed_part_months`, `figures.*.months`) and `forecast.frequency`; the engineTitle fallback says "in the sum of the published

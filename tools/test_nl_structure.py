@@ -1831,11 +1831,18 @@ def test_w5b_a_verified_table_whose_slice_cannot_be_run_is_refused_not_read_as_a
         NB._PROFILE_CACHE.clear()
         rep = NB.run(MC.partition(), "regions.csv", "", {}, AS_OF)
         st = _is_refusal(rep, "slice", "SliceNotRun")
-        assert st["reason"] == NB.SLICE_GUARD_REASON and st["looks_like"]["by"] == "structure", st
+        assert st["reason"] == NB.SLICE_GUARD_REASON and st["looks_like"]["by"] == "publisher", st
         plan = {"goal": "How did sales change?", "columns": [], "operations": [], "primary": "VALUE", "analyses": []}
         NB._PROFILE_CACHE.clear()
         rep = NB.run(MC.partition(), "regions.csv", "", {"__plan__": plan}, AS_OF)
         _is_refusal(rep, "slice", "SliceNotRun")
+        # NEGATIVE: a business file the layer found some structure in (All and Total rows, no mark of a table of series) whose
+        # slice cannot be run is read as before, never refused (the browser suite's conversion-rate file is the same case)
+        NB._PROFILE_CACHE.clear()
+        rep = NB.run(MC.business_export(), "sales.csv", "", {}, AS_OF)
+        assert rep["ok"] and not rep["story"]["headline"].startswith(NB.GATE_TRIPPED), rep["story"]["headline"]
+        assert not rep["structure"] or rep["structure"]["kind"] != "error", rep["structure"]
+        assert [f for f in rep["findings"] if f["kind"] == "business"], "the old reading ran"
 
 
 # ----------------------------------------------------------------------------- wave 5b, follow-up 3: aggregates of a rate

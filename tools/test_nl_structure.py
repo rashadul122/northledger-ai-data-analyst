@@ -429,6 +429,35 @@ def test_viz_structure_calendar_is_the_adjusted_slice_month_on_month_and_the_hea
     assert rep["scenarios"]["basis"]["slice"]["Adjustments"] == "Unadjusted"
 
 
+def test_e2e_a_plan_names_a_slice_and_breakdowns_by_id_and_an_unknown_id_or_a_row_filter_is_ignored():
+    data = MC.adjusted_additive()
+    NB._PROFILE_CACHE.clear()
+    prof = NB.profile_for_ai(data, "adj.csv", decisions={})
+    st = prof["structure"]
+    ids = {s["id"]: s for s in st["slices"]}
+    assert set(ids) >= {"S1", "S2"} and ids["S2"]["use"] == "momentum", ids
+    assert [b["id"] for b in st["breakdowns"]] == ["B1"], st["breakdowns"]
+    plan = {"goal": "How did sales move?", "primary": "VALUE", "slice": "S2", "momentum_slice": "S2",
+            "breakdowns": ["B1", "B9", "x"],
+            "columns": [{"name": "VALUE", "semantic_type": "flow_amount", "role": "target"}],
+            "operations": [{"op": "keep_rows", "column": "GEO", "values": ["North"]}]}
+    rep = _run(data, "adj.csv", {"__plan__": plan})
+    est = rep["estimand"]
+    assert est["slice_id"] == "S2" and est["plan_source"] == "ai", (est["slice_id"], est["plan_source"])
+    assert est["slice"][-1]["member"] == "Seasonally adjusted" and est["slice"][0]["member"] == "All regions", est["slice"]
+    refused = " | ".join(rep["ai_plan"]["refused"])
+    assert "breakdown ids the table does not have were ignored" in refused, refused
+    assert "keep_rows on GEO was ignored" in refused, refused
+    assert [b["id"] for b in rep["scenarios"]["basis"]["breakdowns"]] == ["B1"]
+    cal = [c for c in rep["viz"]["charts"] if c["chart"] == "calendar_heatmap"]
+    assert len(cal) == 1 and cal[0]["data"]["rows"][0] == "2019"
+    json.dumps(rep, allow_nan=False)
+    # an id the table does not have is ignored and the default slice read
+    rep = _run(data, "adj.csv", {"__plan__": dict(plan, slice="S7", momentum_slice="S9", operations=[])})
+    assert rep["estimand"]["slice_id"] == "S1" and rep["estimand"]["plan_source"] == "engine_default"
+    assert any("not one of the table's slices" in x for x in rep["ai_plan"]["refused"]), rep["ai_plan"]["refused"]
+
+
 def test_e2e_a_rate_table_reads_its_published_aggregate_and_never_adds_or_averages_members():
     NB._PROFILE_CACHE.clear()
     rep = json.loads(NB.run_json(MC.rate(), "rates.csv", "", None, AS_OF))

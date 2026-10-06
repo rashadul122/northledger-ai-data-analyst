@@ -51,7 +51,7 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
 | `llm` | object | 2 | `{used: false, model: null, consent: false, guard: {...}}`; the adapter never calls a model |
 | `scenarios` | object | 2 | the headline claim broken down for the report writer (design B, 29 Sep 2026): `{basis, items[], refused[], note}`, §5.8. Always present; `{basis: null, items: [], refused: [], note: ""}` on a refusal |
 | `summary` | object | 2 | the manager's bottom line (fixer round, 24 Sep 2026): `{lines: [{kind: "moved"|"act"|"plan", text, finding_ids[]}], labels: {finding_id: plain label}, monitoring: [finding_id]}`. `lines` holds at most three sentences built from the engine's facts, every number printed with `narrate.story_number` from a fact the line lists: what moved and why (the primary claim, the steps where what the file covers changed and its like-for-like restatement, a fall since a peak), what to act on (the CONFIRMED business claims, or none), and the planning number (the primary series' forecast, graded). `labels` names each business and forecast claim in the reader's words ("Rent, monthly total", "Ledger lines a month"); an average of a measure the AI plan reads is named from its column and the plan's own words for it, its `label` when the plan gives one and its unit when that names a real unit ("Average value (CAD per USD), the average month", "Average USD/CAD exchange rate (CAD per USD), ..."), never from a value in the file (a long table with one series names it after its value column, never after a column that holds one value throughout: the live FX file's rate was "canada", from GEO). `monitoring` lists the claims about the ledger's own line count when the file has a money total: kept off the first screen, the tiles and the bottom line; they stay in the tables and the analyst view |
-| `estimand` | object or null | 2 | WAVE 4 (track A1, 1 October 2026): what the headline IS, for a file read by its structure (§5.10); null otherwise. `{text, slice[{dim, member, role, why}], measure{label, uom, scale, scale_applied, type, aggregation}, comparison{latest[a,b], prior[a,b]}, figures{prior, latest, change, change_pct}: {value, text} (base units, the file's scale applied; `prior`/`latest` also carry `months`), sum_checks[{dim, total, parts, by, complete_cells, within_tolerance, max_rel_residual, unallocated_latest{value, text}, unallocated_prior{value, text}, verdict}], excluded[{what, dim, why}], plan_source: "engine_default"\|"ai"\|"ai_corrected", slice_id, reconciles, corrections[], inference}` (`inference` is track A2's, null here). `text`: "Canada · Retail trade [44-45] · Total retail sales · Unadjusted; dollars (file in thousands ×1,000); 12-month totals Aug 2025–Jul 2026 vs Aug 2024–Jul 2025". `reconciles` is true when the slice's monthly values equal the engine's charted series to 1e-6 (the headline claim's trend chart). The page and the PDF print it first; `results_for_ai` sends it first |
+| `estimand` | object or null | 2 | WAVE 4 (track A1, 1 October 2026): what the headline IS, for a file read by its structure (§5.10); null otherwise. `{text, slice[{dim, member, role, why}], measure{label (the slice's member of a measure dimension, "Total retail sales", else the column), uom, scale, scale_applied, type, aggregation}, comparison{latest[a,b], prior[a,b]}, figures{prior, latest, change, change_pct}: {value, text} (base units, the file's scale applied; `prior`/`latest` also carry `months`), sum_checks[{dim, total, parts, by, complete_cells, within_tolerance, max_rel_residual, unallocated_latest{value, text}, unallocated_prior{value, text}, verdict}], excluded[{what, dim, why}], plan_source: "engine_default"\|"ai"\|"ai_corrected", slice_id, reconciles, corrections[], inference}` (`inference` is track A2's, null here). `text`: "Canada · Retail trade [44-45] · Total retail sales · Unadjusted; dollars (file in thousands ×1,000); 12-month totals Aug 2025–Jul 2026 vs Aug 2024–Jul 2025". `reconciles` is true when the slice's monthly values equal the engine's charted series to 1e-6 (the headline claim's trend chart), null when the engine charted none to compare with, false only in a refused block (§5.8: `basis.reconciles` is false then too, and true otherwise). The page and the PDF print it first; `results_for_ai` sends it first |
 | `structure` | object or null | 2 | the table's structure (§5.10, `nl_structure.public`): `{kind, usable, reason, version, publisher, official, series, months, rows, date, measure, metadata[], flag_column, dims[], slices[], breakdowns[], flags, corrections[], hash, detect_seconds, slice{id, where, column}, file_health}`; null for a file read as before (a business export whose members add up, a panel with no relation, a file with no dimension). A table refused for its structure (`kind: "cube_incomplete"`) carries it with the reason |
 
 A refusal (`ok: false`) returns every key with its empty value.
@@ -899,19 +899,38 @@ levels by the size of the chart's measure: the sum of |measure| over the latest 
 |mean| for a level; then rows; then name (it was rows, then name); `_top_levels` passes the chart's measure for the change
 heatmap and the crosstab, so the 11 largest levels are shown and the rest folded into "other". The group ranges keep the
 compare analysis's selection (the 12 groups with the most rows) because they must equal its table. *Structure charts*
-(`nl_viz._build_structure`, in the slice's run): a `contribution_waterfall` per breakdown from the structure's scenario
-items: the 10 largest parts by |contribution|, the rest folded into "other parts (n)", then an "unallocated (suppressed
-cells)" step, the totals first and last; `basis.split` "segment" with `basis.column` the dimension; the table `[Step,
-Contribution, Own change]` carries each part's growth; `source` begins "structure:"; `inputs.rows` null (each part rests
-on its 12 published months in each window). The record keeps the frozen spec's shape (spec.json: a step and `basis` take
-no other key), so the design's `basis.source` and per-step `growth_pct` live in `source` and the table until the spec
-(track C) adds them. A plan's `contribution_waterfall` of a structure dimension is that waterfall (chosen_by "ai"); a
-plan's heatmap of a table of series is refused ("each cell of a table of series is one published figure, under the 5 rows a
-shown cell needs; the structure's breakdowns show where the change sits": SMALL_CELL counts rows, and a published series
-has one a month), and any other chart of a structure dimension is refused ("rows of a table of series mix totals and parts:
-the structure's breakdowns show GEO instead"). A table refused for its structure (`structure.kind` "cube_incomplete"), or
-one whose slice could not run, gets no chart over its raw rows: `viz.refused` holds `{chart: "all", why: "rows of a table
-of series mix totals and parts"}`.
+(`nl_viz._build_structure`, in the slice's run, up to 8 charts and 3 heatmaps): per breakdown a `contribution_waterfall`
+and a `change_heatmap`, then one `calendar_heatmap`.
+- `contribution_waterfall`: from the structure's scenario items: the 10 largest parts by |contribution|, the rest folded
+  into "other parts (n)", then an "unallocated (suppressed cells)" step, the totals first and last; `basis.split`
+  "segment" with `basis.column` the dimension; the table `[Step, Contribution, Own change]` carries each part's growth;
+  `source` begins "structure:"; `inputs.rows` null (each part rests on its 12 published months in each window). A step's
+  label is the member's, cut at 80 characters with its trailing code kept ("... leather goods retailers [458]").
+- `change_heatmap` (section "drove"): each part of the breakdown, month by month, against the same month a year before in
+  percent, on the headline slice's own dimensions (the unadjusted series, so the comparison is like for like); the 11
+  largest parts by their latest 12 months and one "other (n parts)" row (the folded parts' sum in a month where every one
+  has a value; its subtitle names them); the latest 24 such months; the diverging scale and tiers of §5.9's heatmaps.
+  **A cell's `n` is the number of sum-checked published parts its figure adds up from** (`nl_structure.support`: a
+  province's retail total adds up from its 9 industries; Canada's adjusted total from its 13 provinces; the part count
+  with a value in the month, the fewer of the two months for a change), because a published figure rests on one table
+  row and the spec's small-cell rule (5 rows) is about records. A cell on fewer than 5 parts reads "<5"; fewer than half
+  its cells shown refuses the chart ("fewer than half its cells rest on 5 or more published parts ..."); a table of one
+  dimension with no part below its parts has none. `source` begins "structure:"; `inputs.rows` null.
+- `calendar_heatmap` (section "other": its measure is the adjusted copy of the headline's, not the claim's): the
+  month-on-month change in percent of the seasonally adjusted slice (S2; `measure.kind` "change_pct", the diverging
+  scale), the latest 12 years; cell `n` as above. Refused with "the table publishes no seasonally adjusted series: the
+  month-on-month change of an unadjusted series shows its season, not momentum" when there is no adjustment dimension, and
+  for a rate or an index (it changes in points).
+The records keep the frozen spec's shape (spec.json: a step and `basis` take no other key, a shown cell needs n at least
+5), so the design's `basis.source` and per-step `growth_pct` live in `source` and the table until the spec (track C) adds
+them. A plan's `contribution_waterfall` or `change_heatmap` of a structure dimension is that chart (chosen_by "ai"), a
+plan's `calendar_heatmap` the calendar; a plan's `crosstab_heatmap` is refused ("a crosstab of a table of series would add
+rows that mix totals and parts; the structure's breakdowns show where the change sits") and any other chart of a
+structure dimension is too ("rows of a table of series mix totals and parts: the structure's breakdowns show GEO
+instead"). A table refused for its structure (`structure.kind` "cube_incomplete"), or one whose slice could not run, gets
+no chart over its raw rows: `viz.refused` holds `{chart: "all", why: "rows of a table of series mix totals and parts"}`.
+Retail: 2 waterfalls (GEO, NAICS depth 1), 2 heatmaps (GEO with 11 provinces and "other (2 parts)", NAICS with the 9
+industries), the calendar (n 13); the GEO heatmap shows 24 "<5" cells (a territory's industries suppressed in a month).
 
 ### 5.10 Structure (WAVE 4, track A1: `engine/nl_structure.py`, `plan/WAVE4-A-DESIGN.md` sections 1, 2 and 4)
 
@@ -982,7 +1001,7 @@ audit (`run_loop`) and the business analysis (`run_analyze`): the reading built 
 afterwards), the structure detected and cached with the profile's facts. A usable structure runs the whole engine on the
 slice (`_run_slice`: `nl_structure.slice_bytes`, the date and one measure column in base units, one row a month; a flow's
 column is named so the engine adds it up: "Total retail sales", "<label> total", a count "<label> count", a level "value")
-and returns that report with the file's own `input` (name, bytes, rows, columns, sha256) and `input.layout = {layout:
+and returns that report (its run's layout states the table's rows a month, 465 for the retail file, which track A2's row-count drop reads as `layout.rows_a_month`; after the structure and the estimand are copied on, `nl_browser._official_inference(rep, header, layout, hidden)` of track A2 is called when it exists) with the file's own `input` (name, bytes, rows, columns, sha256) and `input.layout = {layout:
 "structured cube slice", slice, where, column, rows_in, rows_out, series}`, its `privacy` (flagged and released), its
 health in `structure.file_health` (`{score, issues, dropped, rows_in, rows_clean, rows_quarantined, note}`: the engine's
 issues on the whole file less those on metadata and flag columns, the core's score unchanged), the plan as applied to the

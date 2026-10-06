@@ -2605,13 +2605,18 @@ def _momentum_where(S: Dict[str, Any], where: Dict[str, Any]) -> Optional[Dict[s
 
 
 def _b_structure_mom(rep: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any], basis: Dict[str, Any],
-                     findings: Dict[str, Any]) -> Dict[str, Any]:
+                     findings: Dict[str, Any], momentum: Optional[str] = None) -> Dict[str, Any]:
     """The month-on-month calendar of the seasonally adjusted slice (S2, the momentum slice): month across, year down, the
     change from the month before in percent. The unadjusted series is never used for momentum."""
     import nl_structure as NST
     if S["measure"]["type"] in ("rate", "index"):
         raise Refused(R_RATE_CAL)
     w2 = _momentum_where(S, where)
+    plan_sl = NST.slice_by_id(S, momentum) if momentum else None        # the plan's momentum_slice id, when it is adjusted
+    adj0 = next((d for d in S["dims"] if d["role"] == "adjustment"), None)
+    if plan_sl is not None and adj0 is not None and plan_sl["where"].get(adj0["column"]) == adj0.get("sa") and \
+            NST._series_exist(S, plan_sl["where"]):
+        w2 = dict(plan_sl["where"])
     if w2 is None:
         raise Refused(R_NO_SA)
     months, v = NST._monthly(S, w2)
@@ -2708,7 +2713,7 @@ def _build_structure(rep: Dict[str, Any], ctx_in: Dict[str, Any], viz: Dict[str,
                 viz["refused"].append({"chart": "change_heatmap", "columns": [dim], "why": _cut(str(exc), 300),
                                        "chosen_by": "engine"})
         try:
-            calendar = _b_structure_mom(rep, S, where, basis, findings)
+            calendar = _b_structure_mom(rep, S, where, basis, findings, st_in.get("momentum_slice"))
         except Refused as exc:
             viz["refused"].append({"chart": "calendar_heatmap", "columns": [], "why": _cut(str(exc), 300),
                                    "chosen_by": "engine"})

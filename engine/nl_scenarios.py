@@ -1195,7 +1195,7 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
              "grade": grade, "grade_words": "the claim itself, graded %s" % grade if grade else None,
              "measure": col, "how": "total" if meas["type"] in ("flow", "count") else "average", "unit": meas.get("uom") or "",
              "windows": win, "slice": dict(where), "slice_id": inner.get("slice_id"), "breakdowns": [],
-             "estimand": est.get("text"), "reconciles": bool(est.get("reconciles"))}
+             "estimand": est.get("text"), "reconciles": est.get("reconciles") is not False}
     out["basis"] = basis
     if est.get("reconciles") is False:
         out["items"] = []

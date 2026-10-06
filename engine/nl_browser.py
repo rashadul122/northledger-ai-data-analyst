@@ -8277,7 +8277,8 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
         return None
     inner_dec: Dict[str, Any] = {"__structure_inner__": {"S": S, "where": where, "slice_id": slice_id,
                                                          "plan_source": plan_source, "corrections": corrections,
-                                                         "column": info["column"], "info": info}}
+                                                         "column": info["column"], "info": info,
+                                                         "momentum_slice": (ai_plan or {}).get("momentum_slice")}}
     refused_analyses: List[str] = []
     if ai_plan:
         inner_dec["__plan__"], refused_analyses = _inner_plan(ai_plan, S, where, info["column"], raw_context)

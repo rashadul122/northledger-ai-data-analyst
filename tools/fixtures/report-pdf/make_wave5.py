@@ -16,6 +16,13 @@ results = nl_browser.results_json(nl_browser.run_json(...)), whole, what the pag
   onemember  (wave 5b) a rate of six provinces with NO total member, the first province in the middle of the others' range
              (make_cubes.rate_table): one member shown by dominance, "one member shown: Echo; this table has no total member, so
              this is not a national figure", never described as a published total
+  namedtotal (wave 5c) a price index on two bases with a named whole, Canada, and one province (make_cubes.index_two_bases): Canada is the
+             aggregate by its name though no sum-check can verify it ("Canada: the named total; not verifiable by a sum-check (an index
+             cannot be summed)"), never the more dominant Ontario
+  quarterly_flow (wave 5c) a Total and four regions of dollars published every quarter (make_cubes.periodic): the claim, the chart's
+             supports and inputs.op and the unallocated item's assumes count quarters, never 12 months
+  ambiguous  (wave 5c) a Total and five regions of persons that cannot say whether they accumulate (make_cubes.counts): averaged, and
+             the unallocated residual is exactly 0 (never -3.41e-13)
   refused    (wave 5b) a table of series with totals (make_cubes.partition) read while the structure layer cannot run (nl_structure
              is made unimportable in the run): the business analysis did not run, structure {kind: "error", error: {stage, type,
              message}}, no estimand, no figure
@@ -43,6 +50,9 @@ CASES = {
     "measures": ("sales_and_units.csv", MC.measures_units_dollars),
     "onemember": ("provinces_no_total.csv", lambda: MC.rate_table("none")),
     "refused": ("regions_layer_down.csv", MC.partition),
+    "namedtotal": ("price_index_two_bases.csv", MC.index_two_bases),
+    "quarterly_flow": ("sales_quarterly.csv", lambda: MC.periodic("quarter", "iso", stock=False)),
+    "ambiguous": ("persons_ambiguous.csv", MC.counts),
 }
 BLOCKED = {"refused"}                          # the structure layer cannot be imported in these runs
 RUN = r"""

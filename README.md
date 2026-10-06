@@ -77,6 +77,20 @@ writes can be published). `SKIP_VISUAL=1` skips the screenshots.
 | visual | full-page and narrow screenshots plus a print PDF land in `QA_OUT` (a 420 px Chrome window is not a phone; the ui step covers real phone widths) |
 | print | `tools/check_print.py` reads that print PDF page by page with the poppler tools (`pdftotext`, `pdftoppm`; skipped without them): the hero is on page 1, no page but the last is nearly empty, and no page ends on a chart's caption with the chart on the next |
 
+## Known limit of the structure guard
+
+A statistical table (a publisher's long table of series with totals beside their parts) is read by its structure
+(`engine/nl_structure.py`); when that layer cannot run on one, the engine refuses the file with a plain reason instead of
+averaging its rows (`engine/CONTRACT-v2.md` section 5.12, item 8). The guard knows such a file by a publisher's signature
+columns, by three or more metadata-like columns, or by a long format with a flag column. **Two kinds of file have none of those
+marks and are not covered:** a wide table of periods (2016Q1, 2016-01 as columns) with no mark in its header, and a business
+export with "All" and "Total" rows. If the structure layer fails on one of them, it is read the old way (rows averaged or added,
+totals counted with their parts) and nothing says so. This is a known limit, and it is not widened on purpose: a business export
+with an "All" or "Total" row is an ordinary valid file, so refusing every such file whenever the layer fails would reject valid
+business CSVs because of a failure of ours, and a wide table with no mark has no reliable sign that it is not a business table of
+periods. The failure itself is caught elsewhere: `verify.sh` runs the packed engine in the page's Pyodide and fails when the
+layer cannot import. The reason is written out in `engine/CONTRACT-v2.md` section 5.10 ("Known limit").
+
 ## Contracts for page authors
 
 - **Bind every figure to its JSON.** `<span data-fact="forecast_lab:display.champion_mape">1.27%</span>`

@@ -1070,6 +1070,24 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       /^This file looks like a table of series with totals, and the part of the engine that finds them could not run\. An average over its rows would count totals and parts together, so no figure is shown\.$/.test(RF.structure.reason) &&
       /^The business analysis did not run: this file looks like a table of series with totals/.test(RF.story.headline) && !(RF.findings || []).some((f) => f.kind === 'business') && !RF.key_figures,
       'a refused table carries an estimand, a figure or no reason: ' + JSON.stringify([RF.structure, RF.story.headline, !!RF.estimand]));
+    // wave 5c: a named whole of an index that no check can verify is the headline and says so (never the more dominant province); a
+    // quarterly table's claim, chart records and items count quarters (never 12 months); an averaged count's residual is exactly 0
+    const NMV = V('namedtotal'), NMR = W5.namedtotal.results, QF = W5.quarterly_flow.results, AMB = W5.ambiguous.results;
+    expect(L5 + ': a named total', NMV && /Canada: the named total; not verifiable by a sum-check \(an index cannot be summed\)/.test(NMV.what) && /^Canada · 2002 base$/.test(NMV.title) &&
+      NMV.excluded.some((x) => x.what === '1 other members' && /Canada is the named total; not verifiable by a sum-check \(an index cannot be summed\)/.test(x.why)) && NMV.described &&
+      /^2002 base, Canada, 12 months to Dec 2022: .* in the published totals$/.test(NMR.story.headline) && !/Ontario/.test(NMR.story.headline + NMV.what) && !NMR.estimand.single_member &&
+      NMR.estimand.inference.how_known.some((h) => /the named total; not verifiable by a sum-check/.test(h)),
+      'the estimand of an index with a named whole does not say it is the named total no sum-check can verify: ' + JSON.stringify([NMV && NMV.title, NMV && NMV.what, NMR.story.headline]));
+    const WIN = /\b12[- ]months?\b|\bthe 12 before\b|\bthe average month\b|\blatest 12\b|\bmonthly total\b/;
+    const stringsOf = (o, out = []) => { if (typeof o === 'string') out.push(o); else if (o && typeof o === 'object') Object.keys(o).forEach((k) => stringsOf(o[k], out)); return out; };
+    const monthly = stringsOf({ s: QF.scenarios, c: QF.charts, p: QF.primary, f: QF.findings, st: QF.story }).filter((t) => WIN.test(t));
+    expect(L5 + ': a quarterly flow', !monthly.length && /latest 4 quarters against the 4 before/.test(QF.scenarios.basis.claim) && QF.scenarios.basis.claim === QF.primary.claim &&
+      QF.charts.some((c) => c.supports === QF.primary.claim && c.inputs && c.inputs.op === 'each part\'s 4-quarter total in each window, from the table\'s own series') &&
+      QF.scenarios.items.some((it) => /^contribution\..*\.unallocated$/.test(it.id) && /in the latest 4 quarters, /.test(it.assumes)),
+      'a quarterly table\'s payload counts months: ' + JSON.stringify(monthly.slice(0, 4)));
+    const unal = AMB.scenarios.items.filter((it) => /\.unallocated$/.test(it.id));
+    expect(L5 + ': an averaged count', AMB.estimand.measure.type_basis === 'ambiguous: averaged' && unal.length === 1 && unal.every((it) => it.text === '0' && it.value === 0 && !Object.is(it.value, -0) && /: 0 in the latest 12 months, 0 before$/.test(it.assumes)) &&
+      AMB.estimand.sum_checks.every((c) => !/e-\d\d/.test(JSON.stringify(c))), 'a count averaged over a window prints float noise as its unallocated part: ' + JSON.stringify(unal));
     const q = W5.quarterly.results;
     expect(L5 + ': quarterly payload', q.estimand.period && q.estimand.period.noun === 'quarter' && q.estimand.period.window === 4 && q.estimand.measure.type_basis === 'positively a stock' &&
       q.forecast && q.forecast.frequency === 'quarter' && /forecast reads monthly series only/.test(q.forecast.reason) && q.story.whats_next.length === 1,
@@ -1078,7 +1096,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     const RV = W.facts.estimandView(J('retail-results.json').results);
     expect(L5 + ': monthly unchanged', RV.figures[0].label === '12 months before' && RV.figures[1].label === 'Latest 12 months' && /on 265 of 265 months, largest gap/.test(RV.checks[0]), 'a monthly table\'s estimand words moved: ' + JSON.stringify([RV.figures.map((f) => f.label), RV.checks[0]]));
     // the report PDF is made from them: the appendix says "no total row" and "Quarters checked"
-    for (const key of ['nototal', 'quarterly', 'onemember', 'refused']) {
+    for (const key of ['nototal', 'quarterly', 'onemember', 'refused', 'namedtotal']) {
       const resp = J('retail-response.json');
       const m = W.model({ report: resp.report, sources: [], model: resp.model, repaired: resp.repaired, removed_figures: [], results: W5[key].results, kept: [], name: W5[key].name, showName: false, date, goal: W5[key].results.goal });
       let u8, T = '';
@@ -1089,9 +1107,51 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       expect(L5 + ': ' + key + ' PDF', key === 'nototal' ? /no total row/.test(T) && /not possible to check: geo has no total row/.test(T) :
         key === 'onemember' ? /one member shown: echo; this table has no total member, so this is not a national figure/.test(T) :
           key === 'refused' ? /the business analysis did not run: this file looks like a table of series with totals, and the part of the engine that finds them could not run/.test(T) :
-            /4 quarters/.test(T) && /quarters checked/.test(T) && !/not allocated, latest 12 months/.test(T),
+            key === 'namedtotal' ? /canada: the named total; not verifiable by a sum-check \(an index cannot be summed\)/.test(T) && /each member.s own index; never added or averaged across members; canada is the named total; not verifiable by a sum-check/.test(T) :
+              /4 quarters/.test(T) && /quarters checked/.test(T) && !/not allocated, latest 12 months/.test(T),
         'the PDF of the ' + key + ' table does not carry its estimand words' + (key === 'refused' || key === 'onemember' ? ': ' + T.slice(0, 200) : ''));
     }
+  }
+
+  // ---- wave 5c: a no-total sum-check reads the SAME from either shape of the record. The page's copy (the engine's results: complete_cells,
+  // within_tolerance and max_rel_residual null, max_residual {text: "n/a"}) printed "null", "n/a" and, from the writer's own share copy,
+  // "under 0.01%" (isFinite(null) is true); the shared copy (the worker leaves a null field out and keeps neither max_residual nor
+  // within_tolerance) printed blanks. Both now say "not possible (no total row)", print no residual figure and "none" as not allocated.
+  {
+    const W5c = J('wave5-results.json').cases;
+    const shapes = (key) => {
+      const page = JSON.parse(JSON.stringify(W5c[key].results)), shared = JSON.parse(JSON.stringify(W5c[key].results));
+      // the worker's rebuild of a sum-check (insight-proxy src/report.js validEstimand): a null field is left out, max_residual and within_tolerance are not carried
+      shared.estimand.sum_checks = shared.estimand.sum_checks.map((c) => { const o = {}; for (const k of ['dim', 'total', 'parts', 'verdict', 'unallocated_latest', 'built_from_parts', 'suppressed_part_months', 'complete_cells', 'max_rel_residual']) if (c[k] !== null && c[k] !== undefined) o[k] = c[k]; return o; });
+      // the page's own trimmed copy (the writer's shareResults) is a third shape: its nulls are dropped too
+      const trimmed = W.shareResults ? W.shareResults(page) : null;
+      return { page, shared, trimmed };
+    };
+    const tableOf = (results, tag) => {
+      const resp = J('retail-response.json');
+      const m = W.model({ report: resp.report, sources: [], model: resp.model, repaired: resp.repaired, removed_figures: [], results, kept: [], name: 'regions_no_total.csv', showName: false, date, goal: results.goal });
+      const u8 = W.build(m, { paper: 'letter' }), f = path.join(tmp, 'wave5c-' + tag + '.pdf');
+      writeFileSync(f, u8);
+      const T = sp(checkPdf(u8, { file: f, name: 'regions_no_total', removed: 0 }).text || '');
+      const mm = T.match(/each total checked against its parts (dimension total parts.*?)source: northledger engine/);
+      return { all: T, table: mm ? mm[1].trim() : null };
+    };
+    const SH = shapes('nototal');
+    const A = tableOf(SH.page, 'page'), B = tableOf(SH.shared, 'shared'), C = SH.trimmed ? tableOf(SH.trimmed, 'trimmed') : null;
+    const clean = (t) => !!t && /not possible \(no total row\)/.test(t) && !/null|under 0\.01%|n\/a|its par\b|undefined/.test(t);
+    expect('wave 5c: no-total sum-check, page copy', clean(A.table), 'the page copy\'s no-total row prints a null, an n/a, a residual or a cut sentence: ' + (A.table || '(no table)'));
+    expect('wave 5c: no-total sum-check, shared copy', clean(B.table), 'the shared copy\'s no-total row is blank or prints a null: ' + (B.table || '(no table)'));
+    expect('wave 5c: no-total sum-check, the same from either shape', !!A.table && A.table === B.table && (!C || C.table === A.table),
+      'the page\'s copy and the shared copy read differently: ' + JSON.stringify([A.table, B.table, C && C.table]));
+    expect('wave 5c: no-total sum-check, the sentence', /not possible to check: geo has no total row, so the 5 parts are added up, month by month/.test(A.all) && /not possible to check: geo has no total row, so the 5 parts are added up, month by month/.test(B.all),
+      'the estimand\'s sum-check sentence is missing from one shape');
+    // a total that WAS checked keeps its figures, from either shape (the retail fixture's own sum-checks)
+    const RTR = J('retail-results.json').results, RSH = JSON.parse(JSON.stringify(RTR));
+    RSH.estimand.sum_checks = RSH.estimand.sum_checks.map((c) => { const o = {}; for (const k of ['dim', 'total', 'parts', 'verdict', 'unallocated_latest', 'built_from_parts', 'suppressed_part_months', 'complete_cells', 'max_rel_residual']) if (c[k] !== null && c[k] !== undefined) o[k] = c[k]; return o; });
+    const R1 = tableOf(RTR, 'retail-page');
+    expect('wave 5c: a checked total keeps its figures', !!R1.table && /265/.test(R1.table) && !/null|undefined|not possible/.test(R1.table), 'a checked total lost its figures: ' + (R1.table || '(no table)'));
+    expect('wave 5c: unit words of a null', W.facts.sumCheckWords({ dim: 'GEO', total: null, parts: 5, verdict: 'not possible (no total row)', complete_cells: null, max_rel_residual: null, built_from_parts: true }, null, null).indexOf('null') < 0 &&
+      W.facts.sumCheckWords({ dim: 'GEO', total: 'Canada', parts: 5, verdict: 'adds_up', complete_cells: null, max_rel_residual: null }, null, null).indexOf('null') < 0, 'a null reads as the word "null" in the sum-check sentence');
   }
 
   // the download's name: the date, and the file's name only when asked for

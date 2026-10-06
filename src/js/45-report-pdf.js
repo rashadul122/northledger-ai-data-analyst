@@ -267,18 +267,24 @@
     var one = P.window === 1;
     return { latest: 'latest ' + periodSpan(P), prior: (one ? 'the ' : 'the ') + periodSpan(P) + ' before', cap: P.nouns.charAt(0).toUpperCase() + P.nouns.slice(1) };
   }
+  // a figure, or none: a record's null (the page's copy of a field the engine could not fill) and an absent field (the worker's copy
+  // leaves a null out) are both "no figure". isFinite(null) is true, so a null read as 0 and printed as "null" or "under 0.01%".
+  function figOk(x) { return typeof x === 'number' && isFinite(x); }
+  // a sum-check of a table with no total row: nothing to check a total against, the headline is the sum of the parts. Both shapes
+  // of the record (the page's: null fields, max_residual "n/a"; the shared copy's: the fields left out) say so the same way.
+  var NO_TOTAL_VERDICT = 'not possible (no total row)';
+  function noTotalCheck(c) { return !!c && (c.built_from_parts === true || String(c.verdict || '') === NO_TOTAL_VERDICT); }
   function sumCheckWords(c, U, P) {
     P = P || PERIOD_MONTHLY;
     var parts = c.parts === undefined || c.parts === null ? 'its' : 'the ' + c.parts;
-    if (c.built_from_parts || c.verdict === 'not possible (no total row)') {
-      // a table with no total row: nothing to check a total against; the headline is the sum of the parts
-      var sup = isFinite(c.suppressed_part_months) && c.suppressed_part_months > 0 ? ' ' + c.suppressed_part_months + ' ' + (P.noun === 'month' ? 'part-months' : 'part-' + P.nouns) + ' are suppressed in the two windows.' : '';
+    if (noTotalCheck(c)) {
+      var sup = figOk(c.suppressed_part_months) && c.suppressed_part_months > 0 ? ' ' + c.suppressed_part_months + ' ' + (P.noun === 'month' ? 'part-months' : 'part-' + P.nouns) + ' are suppressed in the two windows.' : '';
       return 'Not possible to check: ' + c.dim + ' has no total row, so ' + parts + ' parts are added up, ' + P.noun + ' by ' + P.noun + '.' + sup;
     }
-    var on = isFinite(c.complete_cells) ? (isFinite(c.within_tolerance) ? ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' ' + P.nouns : ' on the ' + c.complete_cells + ' ' + P.nouns + ' where every part has a value') : ' ' + P.noun + ' by ' + P.noun;
+    var on = figOk(c.complete_cells) ? (figOk(c.within_tolerance) ? ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' ' + P.nouns : ' on the ' + c.complete_cells + ' ' + P.nouns + ' where every part has a value') : ' ' + P.noun + ' by ' + P.noun;
     var gap = '';
     if (c.max_residual && c.max_residual.text && c.max_residual.text !== 'n/a') gap = ', largest gap ' + c.max_residual.text;
-    else if (isFinite(c.max_rel_residual)) gap = ', largest gap ' + (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') + ' of ' + c.total;
+    else if (figOk(c.max_rel_residual)) gap = ', largest gap ' + (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') + ' of ' + c.total;
     var un = c.unallocated_latest && c.unallocated_latest.text ? '; not allocated to a part in the latest ' + periodSpan(P) + ': ' + c.unallocated_latest.text : '';
     var head = c.verdict === 'adds_up' ? 'Adds up: ' : 'Does not add up cleanly: ';
     return head + c.total + ' = ' + parts + ' parts of ' + c.dim + on + gap + un + '.';
@@ -2142,8 +2148,12 @@
         pa.push({ type: 'h2', num: '', text: 'The table\'s structure and what was checked', id: 'm-structure' });
         var PW = periodWords(periodOf(R));
         if (chk.length) pa.push({ type: 'table', table: { title: 'Each total checked against its parts', cols: ['Dimension', 'Total', 'Parts', PW.cap + ' checked', 'Within tolerance', 'Largest gap', 'Not allocated, ' + PW.latest],
-          rows: chk.map(function (c) { return [String(c.dim), c.built_from_parts ? 'no total row' : String(c.total), c.parts === undefined || c.parts === null ? '' : String(c.parts), isFinite(c.complete_cells) ? String(c.complete_cells) : '', isFinite(c.within_tolerance) ? String(c.within_tolerance) : '',
-            c.max_residual && c.max_residual.text ? String(c.max_residual.text) : isFinite(c.max_rel_residual) ? (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') : '', c.unallocated_latest && c.unallocated_latest.text ? String(c.unallocated_latest.text) : '']; }) },
+          rows: chk.map(function (c) {
+            // a table with no total row: no months checked, no tolerance, no gap and nothing unallocated (the headline is the sum of the
+            // parts), whichever shape the record has (wave 5c: the page's copy printed "null" and "n/a", the shared copy left blanks)
+            if (noTotalCheck(c)) return [String(c.dim), NO_TOTAL_VERDICT, figOk(c.parts) ? String(c.parts) : '', '', '', '', 'none'];
+            return [String(c.dim), String(c.total), figOk(c.parts) ? String(c.parts) : '', figOk(c.complete_cells) ? String(c.complete_cells) : '', figOk(c.within_tolerance) ? String(c.within_tolerance) : '',
+              c.max_residual && c.max_residual.text && c.max_residual.text !== 'n/a' ? String(c.max_residual.text) : figOk(c.max_rel_residual) ? (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') : '', c.unallocated_latest && c.unallocated_latest.text ? String(c.unallocated_latest.text) : '']; }) },
           source: 'Source: NorthLedger engine, from the table\'s own published series. A total adds up when it is within half a unit of the last published digit of its parts on 95% or more of the months where every part has a value.' });
         var fl = R.structure && R.structure.flags, byk = fl && fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return Number(fl.by_kind[k]).toLocaleString('en-US') + ' rows ' + k.replace(/_/g, ' '); }) : [];
         var qh = EV.quality && EV.quality.codes ? Object.keys(EV.quality.codes).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + EV.quality.codes[k] + ' ' + periodOf(R).noun + (EV.quality.codes[k] === 1 ? '' : 's'); }) : [];
@@ -2336,9 +2346,9 @@
         measure: E.measure ? { label: str(E.measure.label, 120), uom: str(E.measure.uom, 40), type: str(E.measure.type, 20), type_basis: E.measure.type_basis ? str(E.measure.type_basis, 40) : undefined, aggregation: str(E.measure.aggregation, 60), scale_applied: E.measure.scale_applied } : null,
         comparison: E.comparison || null, figures: {},
         period: E.period && E.period.noun ? { kind: str(E.period.kind, 20), noun: str(E.period.noun, 20), nouns: str(E.period.nouns, 20), window: E.period.window } : undefined,
-        sum_checks: (E.sum_checks || []).slice(0, 4).map(function (c) { return { dim: str(c.dim, 120), total: c.total === null || c.total === undefined ? null : str(c.total, 120), parts: c.parts, verdict: str(c.verdict, 40), complete_cells: c.complete_cells,
-          max_rel_residual: c.max_rel_residual, unallocated_latest: fig(c.unallocated_latest) || undefined, built_from_parts: c.built_from_parts === true ? true : undefined,
-          suppressed_part_months: isFinite(c.suppressed_part_months) ? c.suppressed_part_months : undefined }; }),
+        sum_checks: (E.sum_checks || []).slice(0, 4).map(function (c) { return { dim: str(c.dim, 120), total: c.total === null || c.total === undefined ? null : str(c.total, 120), parts: figOk(c.parts) ? c.parts : undefined, verdict: str(c.verdict, 40), complete_cells: figOk(c.complete_cells) ? c.complete_cells : undefined,
+          max_rel_residual: figOk(c.max_rel_residual) ? c.max_rel_residual : undefined, unallocated_latest: fig(c.unallocated_latest) || undefined, built_from_parts: c.built_from_parts === true ? true : undefined,
+          suppressed_part_months: figOk(c.suppressed_part_months) ? c.suppressed_part_months : undefined }; }),
         excluded: (E.excluded || []).slice(0, 6).map(function (x) { return { what: str(x.what, 120), why: str(x.why, 200) }; }), plan_source: E.plan_source };
       ['prior', 'latest', 'change', 'change_pct'].forEach(function (k) { var f = fig(E.figures && E.figures[k]); if (f) est.figures[k] = f; });
       var I = E.inference;

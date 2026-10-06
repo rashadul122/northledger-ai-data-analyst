@@ -1140,6 +1140,27 @@ unrecognised[], blank_without_flag, quality_of_headline{code: months}}`; a code'
 blank). Retail: `by_kind {suppressed: 5430, not_available: 533, too_unreliable: 162}`, `quality_of_headline {A: 45, "": 34}`.
 `structure.hash` is a deterministic hash of what was detected.
 
+*Known limit: the fail-closed guard does not cover every file (wave 5c; the guard is section 5.12 item 8).* The guard refuses a file
+that looks like a table of series with totals by one of three marks (a publisher's signature columns, 3 or more metadata-like
+columns, a long format with a flag column). Two kinds of file carry none of them, so when the structure layer cannot run on one (the
+import fails, `detect` throws, the wide reshape throws), the file is read the old way and nothing refuses it:
+
+1. a wide table of periods (2016Q1, 2016-01 as columns) whose header holds no publisher's mark and no metadata-like column: the
+   reshape and the structure layer would have read it as one row per series and period, and a series of totals beside parts is
+   then averaged or added as it stands;
+2. a business export whose members include "All" and "Total" rows (a region "All", a product "Total"), which the structure layer
+   reads as a partition: read the old way, its "All" row is added to the rows it is the sum of.
+
+*Why it is not widened.* A business export with "All" and "Total" rows is an ordinary, valid file (a sales ledger with a
+subtotal row is something any business sends); refusing every such file whenever the structure layer fails would reject valid
+business CSVs because of a failure of ours, and the old reading of a business file is the right one for every file that has no such
+row. A wide table with no mark in its header has no reliable sign that it is a table of series and not a business table of periods.
+So the guard errs towards reading the file, and the layer's own failure is caught where it can be: `verify.sh` runs the packed engine
+in the page's Pyodide on a synthetic official cube and fails when `nl_structure` cannot import, and a test compiles every pattern
+the engine builds under Python 3.12's rules. What a reader sees if the layer does fail on such a file: the old report (rows averaged
+or added, totals counted with their parts) with no `structure` record. A fix needs a mark a business export does not carry; none
+is known.
+
 ### 5.11 Inference labels (wave 4, track A2: `engine/nl_inference.py`, `plan/WAVE4-A-DESIGN.md` section 3)
 
 **T1, the trend test** (`trend_test`, read by `nl_browser._a_trend`; Newey-West's `_hac_slope` is kept only as the size
@@ -1393,7 +1414,10 @@ every frequency (the point-in-time change, latest against a year earlier, is not
 (one value a quarter), so it is not drawn"), the waterfall stays. The engine's own sentences count months ("the average month",
 "the latest 12 months against the 12 before", "48 months of history"); about such a table `nl_browser._period_text` says quarters
 or years (the numbers stand: only the unit's name and the window's length), in the story, summary, findings, methods,
-limitations, charts, forecast and cleaning. The writer's words (`45-report-pdf.js periodOf, periodWords, sumCheckWords(c, U, P)`):
+limitations, charts, forecast and cleaning. Wave 5c: the claim the scenarios copy (`scenarios.basis.claim`), a chart's `supports` and `inputs.op`, the unallocated item's
+`assumes` and the summary's labels say quarters or a year too (`nl_browser._window_phrases`: window phrases only: "12 months", "12-month",
+"the 12 months before", "latest 12 months", "the average month", "monthly total"; a label that merely holds the word "months" is left
+alone, a monthly table is never touched). The writer's words (`45-report-pdf.js periodOf, periodWords, sumCheckWords(c, U, P)`):
 "4 quarters before", "Latest 4 quarters", "Quarters checked", "not allocated to a part in the latest 4 quarters". Example
 (`estimand`, a quarterly stock, and `results_for_ai.forecast`):
 
@@ -1469,7 +1493,10 @@ repeat a date and a series, so a column that names the series is withheld or set
 COORDINATE is withheld, that keeping it on the consent card may tell them apart).
 
 **6. The unallocated item** (section 5.8): its label and `assumes` name the cause by the chart's rule and the amount is the real
-residual.
+residual. A residual that is float noise (at most 1e-12 of the figures it is part of: `nl_structure.noise_zero`) is exactly 0, never
+"-3.41e-13" or -0.0, in the item's value and text, its `assumes`, the sum-check's `unallocated_*` and the chart (wave 5c: a count
+averaged over a window left that noise beside a total of 5e4); a real residual, however small beside its total (the publisher's
+rounding), is printed as it is.
 
 **7. A wide table of periods** (stretch). A table whose header holds 6 or more period columns of one family (5 years)
 (2016-01, 2016M01, 2016Q1, 2016-Q1, 2016H1, 2016) beside the columns that name the series is reshaped before anything reads it
@@ -1529,7 +1556,8 @@ writer's copy (`results_for_ai.structure.error`) passes it through the same scru
 (`looks_like.by` is "publisher" or "metadata", with the signature or metadata column names, or "long format", with only the counts of its
 dimensions and flag columns: a dimension may be a column the visitor withholds, so no name of one is kept.) Not covered: a business export whose
 members include "All" and "Total" rows and has none of the three marks, a wide table of periods whose reshape could not run when
-the file has no mark in its header, and a file the reader cannot parse (the engine's own intake refuses it).
+the file has no mark in its header, and a file the reader cannot parse (the engine's own intake refuses it). The first two are a
+known limit, with the reason the guard is not widened, in section 5.10 ("Known limit").
 
 **9. Rate and index aggregates by name or by evidence, never by place** (wave 5b, follow-up 3). A rate or an index is never added
 or averaged across members; its published aggregate is a member that is not just first in the file. Before, a member that lay
@@ -1576,9 +1604,33 @@ synthetic rate table of 6 provinces with Alpha first and mid-range (`tools/fixtu
 }
 ```
 
-A table with a named Canada row (first or last in the file), a row named All provinces, and the two-base index table (Canada and
-Ontario: the range of one other member cannot verify a name) give the figures, slices and words they gave; the two-base index
-record is byte for byte the one of 387c876 (hash 2a7fac4ff75acb3d). `aggregate_by` is now on `structure.dims[]`.
+A table with a named Canada row (first or last in the file) or a row named All provinces that the others' range verifies, and an
+aggregate found by evidence, give the figures, slices and words they gave (their structure records are byte for byte what they were).
+`aggregate_by` is now on `structure.dims[]`.
+
+*A named whole that no check can verify* (wave 5c). The two-base index table (Canada and Ontario, one measure shown per base) held a
+named whole country that the range of ONE other member cannot verify and that an index cannot be summed to check; wave 5b left it
+read as `single` by dominance, so the headline was Ontario, the more dominant member, "in the published totals". That was kept only
+to honour "unchanged", and the test that pinned it was wrong, not the rule. Now a member of a rate or an index whose NAME says it is
+the whole (a total's name, or a whole country's name in a geographic dimension; exactly one such member; never one that says it is
+the rest, "All other provinces") is its published aggregate even when its range and a weighted-average fit cannot verify it:
+`role: "rate_aggregate"`, `aggregate_by: "name"`, `sum_check.verified: false`. The estimand says so, first in its text and in the
+`excluded` line: "Canada: the named total; not verifiable by a sum-check (an index cannot be summed)" ("a rate cannot be summed" for a
+rate); the slice's `why` and `inference.how_known` say it; the limitation's closing sentence reads "Canada is the named total of GEO;
+it could not be checked against its parts: an index cannot be summed." in place of "Each total was checked against its parts."
+"in the published totals" is printed only for a named or a verified aggregate; a table with no named whole keeps wave 5b's "one member
+shown, not a national figure". Never are levels compared across different bases (the measure dimension still fixes one base). Before
+and after, on the two-base index table (`make_cubes.index_two_bases`):
+
+```json
+{
+ "before": {"hash": "2a7fac4ff75acb3d", "GEO": {"role": "single", "single_by": "dominance", "total": "Ontario"},
+            "headline": "2002 base, Ontario, 12 months to Dec 2022: +4.008 (156.8) in the published totals"},
+ "after": {"GEO": {"role": "rate_aggregate", "aggregate_by": "name", "total": "Canada", "sum_check": {"inside_range_share": 0.0, "cells": 48, "verified": false}},
+           "estimand.text": "Canada · 2002 base; Canada: the named total; not verifiable by a sum-check (an index cannot be summed); one measure shown: 2002 base, ...",
+           "headline": "2002 base, Canada, 12 months to Dec 2022: +3.9 (152.3) in the published totals"}
+}
+```
 
 *Runtime.* The page runs the engine in Pyodide (Python 3.12.7, pandas 2.2.3, numpy 2.0.2); the native tests run on 3.9. A global inline
 regex flag ((?i)) anywhere but the start of a pattern is an error in 3.11+ and only a warning in 3.9: a pattern built by joining

@@ -2398,6 +2398,9 @@ R_NO_SA = ("the table publishes no seasonally adjusted series: the month-on-mont
            "its season, not momentum")
 R_RATE_CAL = "a rate or an index changes in points, not percent: its published aggregate is charted by its trend"
 STRUCTURE_WATERFALL_PARTS = 10          # the largest parts shown; the rest folded into "other parts", then unallocated
+# the step the total less its published parts makes (the publisher's suppressed cells), in the words a reader needs:
+# not "unallocated", a word of accounting, but what it is (wave 4, track B)
+UNALLOCATED_STEP = "Not allocated: suppressed cells"
 
 
 def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[str, Dict[str, Any]],
@@ -2419,7 +2422,7 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     if rest:
         v = math.fsum(float(it["value"]) for it in rest)
         steps.append(("other parts (%d)" % len(rest), v, _money_like(v, str(hc["text"]))))
-    steps.append(("unallocated (suppressed cells)", float(unal["value"]), str(unal["text"])))
+    steps.append((UNALLOCATED_STEP, float(unal["value"]), str(unal["text"])))
     bs = {"split": "segment", "finding_id": basis.get("finding_id"), "column": str(bd["dim"])[:120],
           "prior": list(basis["windows"]["prior"]), "latest": list(basis["windows"]["latest"])}
     full = basis.get("complete") is not False
@@ -2447,7 +2450,7 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
         rows.append([wlabels[i], str(it["text"]), str(g["text"]) if g else "n/a"])
     if rest:
         rows.append([steps[len(shown)][0], steps[len(shown)][2], ""])
-    rows.append(["unallocated (suppressed cells)", str(unal["text"]), ""])
+    rows.append([UNALLOCATED_STEP, str(unal["text"]), ""])
     rows.append([w_latest, str(hl["text"]), ""])
     fid = str(basis.get("finding_id") or "")
     anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.prior"] + \

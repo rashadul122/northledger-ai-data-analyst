@@ -206,6 +206,126 @@
     return s.slice(0, max).replace(/\s+\S*$/, '').replace(/[,;:.\s]+$/, '') + '\u2026';
   }
 
+  /* ---------------------------------------------------------------- wave 4 (track B): the estimand, the inference labels and the forecast audit in words
+     The page (src/js/52-nl2-report.js) and this writer say these things the same way: NLReportPdf.facts holds the sentences
+     and figures, composed from the engine's records alone (nothing is computed here but a unit's suffix and a share). */
+  var SUFFIX = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  // the estimand's own units ("$864.0B", as nl_structure.money writes them): a function of one amount, or null when the
+  // report has no estimand or its measure is a rate or an index (never summed, never abbreviated)
+  function unitOf(R) {
+    var e = R && R.estimand, m = e && e.measure;
+    if (!m || m.type === 'rate' || m.type === 'index') return null;
+    var cur = /dollar|\$|CAD|USD/i.test(String(m.uom || '')) ? '$' : '';
+    return function (v, signed) {
+      v = Number(v);
+      if (!isFinite(v)) return 'n/a';
+      var a = Math.abs(v), body = null, i;
+      for (i = 0; i < SUFFIX.length; i++) if (a >= SUFFIX[i][0]) { body = (a / SUFFIX[i][0]).toFixed(1) + SUFFIX[i][1]; break; }
+      if (body === null) body = a >= 1 ? a.toFixed(0) : String(Number(a.toPrecision(3)));
+      if (!/[1-9]/.test(body)) v = 0;
+      return (signed ? (v > 0 ? '+' : v < 0 ? '\u2212' : '') : (v < 0 ? '\u2212' : '')) + cur + body;
+    };
+  }
+  // a waterfall's axis in the record's own units: "$200B" for ticks of 200,000,000,000 (a step label's own text names the
+  // currency); null for a small axis, which keeps its plain numbers
+  function compactTicks(lo, hi, step, cur) {
+    var top = Math.max(Math.abs(lo), Math.abs(hi)), u = null, i, k;
+    // the largest unit the step is a whole number of ("$200B", not "$0.2T"), else a tenth of one
+    for (k = 1; k >= 0.1 && !u; k /= 10) for (i = 0; i < SUFFIX.length; i++) if (top >= SUFFIX[i][0] && step >= SUFFIX[i][0] * k) { u = SUFFIX[i]; break; }
+    if (!u) return null;
+    var r = step / u[0], dp = r >= 1 ? 0 : Math.min(2, Math.ceil(-Math.log10(r) - 1e-9));
+    return function (t) { return t === 0 ? cur + '0' : (t < 0 ? '\u2212' : '') + cur + nf(dp, dp).format(Math.abs(t) / u[0]) + u[1]; };
+  }
+  // the unallocated step's label, as the engine now writes it and as an older report did
+  var UNALLOCATED = /^(?:not allocated: suppressed cells|unallocated \(suppressed cells\))$/i;
+  var UNALLOCATED_WORDS = 'Not allocated: suppressed cells';
+  function stepLabel(s) { return UNALLOCATED.test(String(s)) ? UNALLOCATED_WORDS : String(s); }
+  var CORRECTION_WORDS = { total_with_parts: 'a total kept together with its own parts', two_adjustments: 'both the adjusted and the unadjusted series',
+    component_with_parent: 'a component kept with the total that already holds it', alt_with_total: 'an alternative total kept with the total',
+    mixed_units: 'different units mixed', rate_members: 'several members of a rate or an index', unverified_members: 'several members of a dimension no total was verified for' };
+  // where the slice came from, in plain words (estimand.plan_source; structure.corrections names what was corrected)
+  function planSourceWords(est, st) {
+    var src = est && est.plan_source;
+    if (src === 'ai') return 'The AI plan chose this slice and the engine checked it: no rows of it add a total to its own parts.';
+    if (src === 'ai_corrected') {
+      var cs = ((st && st.corrections) || (est && est.corrections) || []).filter(function (c) { return c && c.kind; });
+      var why = cs.map(function (c) { return (CORRECTION_WORDS[c.kind] || String(c.kind).replace(/_/g, ' ')) + (c.dim ? ' (' + c.dim + ')' : ''); });
+      return 'Your plan was corrected: ' + (why.length ? 'its rows would have counted the same amount twice (' + why.join('; ') + '), so' : 'its rows mixed totals and parts, so') +
+        ' the engine read its default slice instead.';
+    }
+    if (src === 'engine_default') return 'The engine chose this slice: no plan asked for another, so it reads the table\'s own headline, the total of each dimension.';
+    return '';
+  }
+  // "adds up" for each dimension whose total was checked against its parts: the verdict, the count of months it holds
+  // on, the largest gap and what no published part holds in the latest 12 months
+  function sumCheckWords(c, U) {
+    var parts = c.parts === undefined || c.parts === null ? 'its' : 'the ' + c.parts;
+    var on = isFinite(c.complete_cells) ? (isFinite(c.within_tolerance) ? ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' months' : ' on the ' + c.complete_cells + ' months where every part has a value') : ' month by month';
+    var gap = '';
+    if (c.max_residual && c.max_residual.text && c.max_residual.text !== 'n/a') gap = ', largest gap ' + c.max_residual.text;
+    else if (isFinite(c.max_rel_residual)) gap = ', largest gap ' + (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') + ' of ' + c.total;
+    var un = c.unallocated_latest && c.unallocated_latest.text ? '; not allocated to a part in the latest 12 months: ' + c.unallocated_latest.text : '';
+    var head = c.verdict === 'adds_up' ? 'Adds up: ' : 'Does not add up cleanly: ';
+    return head + c.total + ' = ' + parts + ' parts of ' + c.dim + on + gap + un + '.';
+  }
+  // the report's headline claim: results.primary names it by id or claim; its finding gives the grade
+  function primaryFinding(R) {
+    var p = R && R.primary, fs = (R && R.findings) || [];
+    if (!p) return null;
+    return fs.filter(function (f) { return f && (f.claim === (p.claim || p) || (p.id && f.id === p.id)); })[0] || null;
+  }
+  // the process grade (T4): the engine still grades the claim, but when the headline is an official aggregate the grade
+  // is of the month-to-month noise behind the monthly figures, not of the published total
+  function processOf(R, f) {
+    var inf = R && R.estimand && R.estimand.inference;
+    if (!inf || inf.mode !== 'official_aggregate') return null;
+    var g = f && gradeOf(f.verdict || f.grade), note = String(inf.grade_label || '').replace(/^process grade:\s*/i, '');
+    return { grade: g || '', word: g ? (GRADE_LABEL[g] || g) : '', note: note || 'the month-to-month noise of the monthly figures; not a test of the published total' };
+  }
+  function estimandView(R) {
+    var e = R && R.estimand;
+    if (!e || typeof e !== 'object' || !e.text) return null;
+    var U = unitOf(R), F = e.figures || {}, semi = String(e.text).indexOf(';'), f = primaryFinding(R);
+    var months = function (x) { return x && x.months && x.months !== 12 ? 'the ' + x.months + ' matched months' : '12 months'; };
+    var figs = [];
+    if (F.prior && F.prior.text) figs.push({ label: (F.prior.months && F.prior.months !== 12 ? 'The ' + F.prior.months + ' matched months before' : '12 months before'), value: String(F.prior.text) });
+    if (F.latest && F.latest.text) figs.push({ label: (F.latest.months && F.latest.months !== 12 ? 'The ' + F.latest.months + ' matched months, latest' : 'Latest 12 months'), value: String(F.latest.text) });
+    if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text) });
+    if (F.change_pct && F.change_pct.text) figs.push({ label: 'Change, %', value: String(F.change_pct.text), lead: true });
+    var inf = e.inference || null, st = R.structure || null;
+    return { title: semi < 0 ? String(e.text) : String(e.text).slice(0, semi), what: semi < 0 ? '' : String(e.text).slice(semi + 1).trim(), figures: figs,
+      process: processOf(R, f), described: !!(inf && inf.mode === 'official_aggregate'),
+      checks: (e.sum_checks || []).filter(function (c) { return c && c.dim; }).map(function (c) { return sumCheckWords(c, U); }),
+      excluded: (e.excluded || []).filter(function (x) { return x && x.what; }).map(function (x) { return { what: String(x.what), why: String(x.why || '') }; }),
+      source: planSourceWords(e, st), how: inf && inf.how_known && inf.how_known.length ? inf.how_known.join('; ') : '',
+      revisions: inf && inf.revisions ? String(inf.revisions) : '', quality: inf && inf.quality && inf.quality.codes ? inf.quality : null };
+  }
+  var AUDIT_WORDS = { passes: 'the back-test passed', unclear: 'the back-test neither passed nor failed it', fails: 'the back-test failed' };
+  // the forecast's back-test (forecast.audit, nl_inference.forecast_audit): the label as the engine wrote it, the status and
+  // whether the engine's grade is trusted; a failed one marks the forecast "not trusted" beside its grade
+  function auditView(R) {
+    var a = R && R.forecast && R.forecast.audit;
+    if (!a || typeof a !== 'object' || !a.label) return null;
+    var st = String(a.status || 'unclear');
+    return { label: String(a.label), status: st, trusted: a.trusted === true, untrusted: st === 'fails', words: AUDIT_WORDS[st] || 'the back-test is not conclusive',
+      grade: String(a.grade_label || ''), line: String(a.label) + ' (' + (AUDIT_WORDS[st] || st) + (a.trusted === true ? '; trusted' : '; not trusted') + ')' };
+  }
+  // a trend test's method line (T1): what it fitted, its answer, and what it does in series known to have no trend
+  function trendLine(t, title) {
+    if (!t || typeof t !== 'object' || !t.verdict) return '';
+    var v = { rising: 'a rising trend', falling: 'a falling trend', no_settled_direction: 'no settled direction', not_graded: 'a direction it does not grade' }[t.verdict] || t.verdict;
+    var z = t.size || {}, c = z.cell || {};
+    var s = String(title || 'Trend') + ': ' + (t.name ? String(t.name) : 'a bootstrap trend test') + (t.n ? ' on ' + t.n + ' yearly values' : '') +
+      (isFinite(t.p) ? '; p ' + Number(t.p).toPrecision(2).replace(/\.?0+$/, '') : '') + (isFinite(t.p_random_walk) ? ', random-walk screen ' + Number(t.p_random_walk).toPrecision(2).replace(/\.?0+$/, '') : '') +
+      '; the verdict is ' + v + '.';
+    if (isFinite(z.simulated)) {
+      s += ' On ' + (z.series ? Number(z.series).toLocaleString('en-US') + ' ' : '') + 'simulated series with no trend' + (c.n ? ' like this one (' + c.n + ' years' + (isFinite(c.rho) ? ', momentum ' + c.rho : '') + ')' : '') +
+        ', the test found a trend in ' + (100 * z.simulated).toFixed(1) + '% at its ' + (100 * (z.nominal || 0.05)).toFixed(0) + '% level' +
+        (isFinite(z.newey_west) ? '; the Newey-West range used before found one in ' + (100 * z.newey_west).toFixed(1) + '%' : '') + '.';
+    }
+    return s;
+  }
+
   /* ---------------------------------------------------------------- the page model */
   function Doc(o) {
     var sz = PAPER[o.paper] || PAPER.letter;
@@ -389,7 +509,7 @@
     this.y = top - h - 12;
   };
   // the grade badge: a shape and the word, so a grade never rests on colour alone
-  Doc.prototype.badge = function (grade, x, yb) {
+  Doc.prototype.badge = function (grade, x, yb, note) {
     var g = gradeOf(grade), lab = enc(GRADE_LABEL[g] || g), c = COL.grade[g] || COL.muted;
     var w = twc(lab, 6.5, 'B', 0.5) + 20, h = 11, y = yb - 2.5;
     if (g === 'CONFIRMED') {
@@ -406,6 +526,8 @@
       this.rect(x, y, w, h, COL.white, c, 0.8, '2 1.5');
       this.text(lab, x + 6, y + 3.3, 6.5, 'B', c, 0.5);
     }
+    // what the grade is a grade of, in the words beside the pill ("process grade"), drawn on the next line when it does not fit
+    if (note && !(note.ok === false)) this.text(enc(note.text), note.x !== undefined ? note.x : x + w + 5, note.y !== undefined ? note.y : y + 3.3, note.size || 6.5, 'I', COL.muted);
     return w;
   };
   // a figure derived from a graded change (a run rate, a what-if) has no grade of its own: a neutral outline and
@@ -440,6 +562,61 @@
     return '';
   }
 
+  /* ---- the estimand: what the headline measures, its three figures, how it was checked, what was left out (wave 4, track B) ---- */
+  Doc.prototype.estimand = function (v) {
+    var self = this, pad = 12, W = this.CW, inner = W - 2 * pad - 4, gap = 8;
+    var titleL = wrapTokens(tokens(v.title, 'B', COL.ink), 12, inner), whatL = v.what ? wrapTokens(tokens(v.what, 'R', COL.muted), 8.3, inner) : [];
+    var nf0 = v.figures.length, fw = (inner - gap * Math.max(0, nf0 - 1)) / Math.max(1, nf0), figH = 46;
+    var procNote = v.process ? 'process grade: ' + v.process.note : '';
+    var procW = v.process && v.process.word ? twc(enc(v.process.word), 6.5, 'B', 0.5) + 20 : 0;
+    var procL = procNote ? wrapTokens(tokens(procNote, 'R', COL.muted), 7.8, Math.max(120, inner - procW - 8)) : [];
+    var descL = v.described ? wrapTokens(tokens('Described, not tested: this is a published total, so the engine states the change and its checks rather than testing it.', 'I', COL.body), 8, inner) : [];
+    var lines = function (list, size, font, color) { return list.map(function (t) { return wrapTokens(tokens(t, font || 'R', color || COL.body), size, inner - 10); }); };
+    var chkL = lines(v.checks, 8.2), exL = lines(v.excluded.map(function (x) { return x.what + (x.why ? ': ' + x.why : ''); }), 8.2);
+    var srcL = v.source ? wrapTokens(tokens(v.source, 'I', COL.muted), 8, inner) : [];
+    var howL = v.how ? wrapTokens(tokens('How it is known: ' + v.how + '.' + (v.revisions ? ' ' + cap1(v.revisions) + '.' : ''), 'R', COL.muted), 7.6, inner) : [];
+    var count = function (ls) { return ls.reduce(function (a, l) { return a + l.length; }, 0); };
+    var h = pad + 14 + titleL.length * 14.5 + (whatL.length ? 3 + whatL.length * 10.5 : 0) + 8 + figH + 8 + Math.max(procL.length * 10 + 4, procNote ? 14 : 0) + (descL.length ? 4 + descL.length * 10 : 0) +
+      (chkL.length ? 6 + 11 + count(chkL) * 10.2 + chkL.length * 2 : 0) + (exL.length ? 6 + 11 + count(exL) * 10.2 + exL.length * 2 : 0) + (srcL.length ? 6 + srcL.length * 10 : 0) + (howL.length ? 5 + howL.length * 9.6 : 0) + pad;
+    this.need(h + 8);
+    var top = this.y, x0 = this.L + pad + 4, y = top - pad;
+    this.rect(this.L, top - h, W, h, COL.panel);
+    this.rect(this.L, top - h, 3, h, COL.accent);
+    this.text(enc('WHAT THIS REPORT MEASURES'), x0, y - 7, 7.5, 'B', COL.accentInk, 1); y -= 14;
+    titleL.forEach(function (ln) { self.drawLine(ln, x0, y - 12, 12); y -= 14.5; });
+    if (whatL.length) { y -= 3; whatL.forEach(function (ln) { self.drawLine(ln, x0, y - 8.3, 8.3); y -= 10.5; }); }
+    y -= 8;
+    v.figures.forEach(function (f, i) {
+      var fx = x0 + i * (fw + gap);
+      self.rect(fx, y - figH, fw, figH, COL.white, f.lead ? COL.accent : COL.hair, f.lead ? 1.1 : 0.8);
+      self.text(enc(String(f.label).toUpperCase()), fx + 7, y - 12, 6.4, 'B', COL.muted, 0.5);
+      var vb = enc(f.value), vs = f.lead ? 19 : 16;
+      while (tw(vb, vs, 'B') > fw - 14 && vs > 9) vs -= 1;
+      self.text(vb, fx + 7, y - 35, vs, 'B', f.lead ? COL.accentInk : COL.ink);
+    });
+    y -= figH + 8;
+    if (procNote) {
+      if (procW) self.badge(v.process.grade, x0, y - 9);
+      procL.forEach(function (ln, k) { self.drawLine(ln, x0 + (procW ? procW + 8 : 0), y - 9 - k * 10, 7.8); });
+      y -= Math.max(procL.length * 10 + 4, 14);
+    }
+    if (descL.length) { y -= 4; descL.forEach(function (ln) { self.drawLine(ln, x0, y - 8, 8); y -= 10; }); }
+    var list = function (head, ls) {
+      if (!ls.length) return;
+      y -= 6;
+      self.text(enc(head.toUpperCase()), x0, y - 7, 6.8, 'B', COL.muted, 0.8); y -= 11;
+      ls.forEach(function (one) {
+        one.forEach(function (ln, k) { if (k === 0) self.rect(x0 + 1, y - 7, 2.6, 2.6, COL.accent); self.drawLine(ln, x0 + 10, y - 8.2, 8.2); y -= 10.2; });
+        y -= 2;
+      });
+    };
+    list('How the figure was checked', chkL);
+    list('Left out, and why', exL);
+    if (srcL.length) { y -= 6; srcL.forEach(function (ln) { self.drawLine(ln, x0, y - 8, 8); y -= 10; }); }
+    if (howL.length) { y -= 5; howL.forEach(function (ln) { self.drawLine(ln, x0, y - 7.6, 7.6); y -= 9.6; }); }
+    this.y = top - h - 12;
+  };
+
   /* ---- key-figure tiles: the figures a reader should carry away ---- */
   Doc.prototype.kpis = function (list) {
     if (!list.length) return;
@@ -448,6 +625,7 @@
     // tile grows with it; any other tile's words keep to two lines
     var subL = list.map(function (k) { var l = k.sub ? wrapTokens(tokens(k.sub, 'R', COL.muted), 7, w - 16) : []; return k.whole ? l : l.slice(0, 2); });
     list.forEach(function (k, i) { if (k.whole) h = Math.max(h, 60 + (subL[i].length - 1) * 8.5 + 12 + (gradeOf(k.grade) ? 20 : 0)); });
+    if (list.some(function (k) { return k.process; })) h += 12;
     this.need(h + 14);
     var top = this.y;
     list.forEach(function (k, i) {
@@ -459,7 +637,8 @@
       while (tw(v, vs, 'B') > w - 16 && vs > 11) vs -= 1;
       self.text(v, x + 8, top - 47, vs, 'B', COL.ink);
       subL[i].forEach(function (ln, j) { self.drawLine(ln, x + 8, top - 60 - j * 8.5, 7); });
-      if (g) self.badge(g, x + 8, top - h + 9);
+      if (g && k.process) self.badge(g, x + 8, top - h + 9, { text: 'process grade, not a test of the published total', x: x + 8, y: top - h + 19.5, size: 6 });
+      else if (g) self.badge(g, x + 8, top - h + 9);
     });
     this.y = top - h - 14;
   };
@@ -739,15 +918,15 @@
   }
   function tierFill(t, seq) { return t > 0 ? (seq ? VC.seq : VC.rises)[Math.min(3, t) - 1] : t < 0 ? VC.falls[Math.min(3, -t) - 1] : null; }
   // an axis's ticks for [lo, hi] and their labels, the only numbers a drawer formats
-  function axis(lo, hi, n) {
-    var nt = niceTicks(lo, hi, n);
-    nt.lab = nt.ticks.map(function (t) { return enc(fmtTick(t + 0, nt.step)); });
+  function axis(lo, hi, n, cur) {
+    var nt = niceTicks(lo, hi, n), cf = cur === undefined ? null : compactTicks(nt.lo, nt.hi, nt.step, cur);
+    nt.lab = nt.ticks.map(function (t) { return enc(cf ? cf(t + 0) : fmtTick(t + 0, nt.step)); });
     nt.w = nt.lab.map(function (b) { return tw(b, 7, 'R'); });
     nt.max = Math.max.apply(null, nt.w);
     return nt;
   }
   // a horizontal axis over width: as many ticks as have room for their labels (5 down to 2)
-  function axisFor(lo, hi, width) { var nt; for (var m = 5; m >= 2; m--) { nt = axis(lo, hi, m); if (width / Math.max(1, nt.ticks.length - 1) >= nt.max + 10) break; } return nt; }
+  function axisFor(lo, hi, width, cur) { var nt; for (var m = 5; m >= 2; m--) { nt = axis(lo, hi, m, cur); if (width / Math.max(1, nt.ticks.length - 1) >= nt.max + 10) break; } return nt; }
   // tick labels under a horizontal axis, each centred on its tick; one that would touch the one before is left out
   Doc.prototype.xTicks = function (nt, X, y) {
     var last = -Infinity, self = this;
@@ -778,23 +957,24 @@
       lay: function (r, CW) {
         var st = r.data.steps, lo = 0, hi = 0;
         st.forEach(function (s) { lo = Math.min(lo, s.from, s.to); hi = Math.max(hi, s.from, s.to); });
-        var font = st.map(function (s) { return s.kind === 'total' ? 'B' : 'R'; }), tb = st.map(function (s) { return enc(s.text); });
+        var font = st.map(function (s) { return s.kind === 'total' ? 'B' : UNALLOCATED.test(s.label) ? 'I' : 'R'; }), tb = st.map(function (s) { return enc(s.text); });
         var o = { n: st.length, font: font, tb: tb, tws: tb.map(function (b, k) { return tw(b, 7, font[k]); }) };
-        var nt = axis(lo, hi, 4), x0 = nt.max + 8, slot = (CW - x0) / o.n;
+        var cur = (/^[+\u2212-]?([$\u20ac\u00a3\u00a5])/.exec(String(st[0].text)) || [])[1] || '';
+        var nt = axis(lo, hi, 4, cur), x0 = nt.max + 8, slot = (CW - x0) / o.n;
         if (slot >= 44 && Math.max.apply(null, o.tws) <= slot - 4) {
           o.v = true; o.nt = nt; o.x0 = x0; o.slot = slot; o.down = st.some(function (s) { return s.to < s.from; });
-          o.labels = st.map(function (s, k) { return wrapLabel(s.label, 7, font[k], slot - 4, 2); });
+          o.labels = st.map(function (s, k) { return wrapLabel(stepLabel(s.label), 7, font[k], slot - 4, 2); });
           o.h = 12 + 150 + (o.down ? 11 : 0) + 24;
           return o;
         }
         var right = 0, left = 0;
         st.forEach(function (s, k) { if (s.to >= s.from) right = Math.max(right, o.tws[k] + 5); else left = Math.max(left, o.tws[k] + 5); });
-        var labW = Math.min(CW * 0.36, Math.max.apply(null, st.map(function (s, k) { return tw(enc(s.label), 7, font[k]); })) + 8);
+        var labW = Math.min(CW * 0.36, Math.max.apply(null, st.map(function (s, k) { return tw(enc(stepLabel(s.label)), 7, font[k]); })) + 8);
         o.labW = labW = Math.max(60, Math.min(labW, CW - left - right - 100));
         o.xa = labW + left;
-        o.nt = axisFor(lo, hi, CW - right - o.xa);
+        o.nt = axisFor(lo, hi, CW - right - o.xa, cur);
         o.xb = Math.min(CW - right, CW - o.nt.max / 2 - 1);
-        o.labels = st.map(function (s, k) { return wrapLabel(s.label, 7, font[k], labW - 8, 2); });
+        o.labels = st.map(function (s, k) { return wrapLabel(stepLabel(s.label), 7, font[k], labW - 8, 2); });
         o.rh = o.labels.map(function (ls) { return Math.max(17, ls.length * 8.5 + 8); });
         o.h = o.rh.reduce(function (a, b) { return a + b; }, 0) + 16;
         return o;
@@ -809,7 +989,8 @@
           for (i = 0; i < o.n; i++) {
             s = st[i];
             var cx = x0 + slot * (i + 0.5), y1 = Y(s.from), y2 = Y(s.to), f = o.font[i];
-            this.rect(cx - bw / 2, Math.min(y1, y2), bw, Math.max(0.8, Math.abs(y2 - y1)), col(s));
+            if (UNALLOCATED.test(s.label)) this.rect(cx - bw / 2, Math.min(y1, y2) - 2.5, bw, Math.max(0.8, Math.abs(y2 - y1)) + 5, COL.white, COL.muted, 0.8, '2 1.5');
+            else this.rect(cx - bw / 2, Math.min(y1, y2), bw, Math.max(0.8, Math.abs(y2 - y1)), col(s));
             if (i < o.n - 1) this.line(cx + bw / 2, y2, cx + slot - bw / 2, y2, VC.conn, 0.6, '2 2');
             this.text(o.tb[i], cx - o.tws[i] / 2, s.to >= s.from ? y2 + 3 : y2 - 8.5, 7, f, VC.ink);
             o.labels[i].forEach(function (b, k) { self.text(b, cx - tw(b, 7, f) / 2, pb - 9 - k * 8.5, 7, f, VC.body); });
@@ -823,7 +1004,8 @@
         for (i = 0; i < o.n; i++) {
           s = st[i];
           var mid = y - o.rh[i] / 2, by = mid - 4.5, a = X(Math.min(s.from, s.to)), e = X(Math.max(s.from, s.to)), ls = o.labels[i], fo = o.font[i];
-          this.rect(a, by, Math.max(0.8, e - a), 9, col(s));
+          if (UNALLOCATED.test(s.label)) this.rect((a + e) / 2 - 3, by - 1, Math.max(6, e - a), 11, COL.white, COL.muted, 0.8, '2 1.5');
+          else this.rect(a, by, Math.max(0.8, e - a), 9, col(s));
           if (prev) this.line(X(prev.to), prev.by, X(prev.to), by + 9, VC.conn, 0.6, '2 2');
           this.text(o.tb[i], s.to >= s.from ? X(s.to) + 3 : X(s.to) - 3 - o.tws[i], mid - 2.5, 7, fo, VC.ink);
           ls.forEach(function (b, k) { self.text(b, L, mid + (ls.length - 1) * 4.25 - 2.5 - k * 8.5, 7, fo, VC.body); });
@@ -1195,7 +1377,7 @@
   /* ---- the graded findings as a table with badges ---- */
   Doc.prototype.findingsTable = function (items) {
     var self = this, cw = this.CW - 190;
-    var rowsH = items.map(function (f) { return Math.max(wrapTokens(tokens(f.claim, 'R', COL.body), 8.3, cw).length * 11 + 8, 20); });
+    var rowsH = items.map(function (f) { return Math.max(wrapTokens(tokens(f.claim, 'R', COL.body), 8.3, cw).length * 11 + 8, f.process || f.untrusted ? 28 : 20); });
     this.need(40 + (rowsH[0] || 0));
     this.tab += 1;
     var cap = enc('Table ' + this.tab + '.  ');
@@ -1215,6 +1397,7 @@
       wrapTokens(tokens(f.claim, 'R', COL.body), 8.3, cw).forEach(function (ln, k) { self.drawLine(ln, self.L + 5, top - 12 - k * 11, 8.3); });
       var v = enc(smart(f.value || '')); self.text(v, self.L + self.CW - 110 - tw(v, 8.3, 'R'), top - 12, 8.3, 'R', COL.ink);
       if (gradeOf(f.grade)) self.badge(f.grade, self.L + self.CW - 96, top - 12);
+      if (f.process || f.untrusted) self.text(enc(f.untrusted ? 'not trusted: back-test failed' : 'process grade'), self.L + self.CW - 96, top - 23.5, 6.2, 'I', f.untrusted ? COL.grade.WATCH : COL.muted);
       self.y = top - rowsH[i]; self.line(self.L, self.y, self.L + self.CW, self.y, i === items.length - 1 ? COL.ink : COL.hair, i === items.length - 1 ? 0.8 : 0.4);
     });
     this.y -= 14;
@@ -1431,6 +1614,7 @@
     d.newPage();
     if (!onCover) d.callout('About this report', m.notice, { size: 8.5, fill: COL.panel });
     d.h1('Executive summary', 'The headline', 'summary');
+    if (m.estimand) d.estimand(m.estimand);
     d.callout('Headline insight', m.headline, { size: 12.5, font: 'B' });
     d.kpis(m.kpis || []);
     if (m.summary && m.summary.length) { d.h2('', 'In brief', 'brief', 44); d.bullets(m.summary); }
@@ -1518,6 +1702,8 @@
     return { title: n(t && t.title), cols: ((t && t.cols) || []).map(n).join('|') };
   }
   var MAX_SOURCES = 20;
+  // the adapter's note that the byte budget left scenario items out of what the writer received (nl_browser.BUDGET_REFUSED)
+  var LEFT_OUT = /scenario items are left out to keep what the report writer receives/i;
   // b's items added to the end of a, in place (a = a.concat(b) in a loop copies a each time: quadratic in sections)
   function append(a, b) { for (var i = 0; i < b.length; i++) a.push(b[i]); return a; }
   function model(inp) {
@@ -1540,6 +1726,7 @@
     var P = parseReport(text);
     var rows = R && R.input && R.input.rows, cols = R && R.input && R.input.columns;
     var analyses = (R && R.analyses) || [];
+    var EV = R ? estimandView(R) : null, AV = R ? auditView(R) : null, U = R ? unitOf(R) : null;
     var methodOf = function (t) { var a = analyses.filter(function (x) { return x && x.title === t; })[0]; return a && a.method ? ' Method: ' + a.method : ''; };
     var srcNote = function (t) { return 'Source: NorthLedger engine, computed in the reader\'s browser from ' + fileWord + (rows ? ' (' + Number(rows).toLocaleString('en-US') + ' rows)' : '') + '.' + methodOf(t); };
     var usedTables = {}, usedCharts = {};
@@ -1660,8 +1847,11 @@
     var lead = null;
     if (latest || pct) {
       lead = basisF;
-      if (latest) kpis.push({ label: latest.label, value: String(latest.text), sub: prior ? String(prior.text) + ' in the 12 months before' : '', grade: itemGrade(latest).grade });
-      if (pct) kpis.push({ label: 'Change on the 12 months before', value: String(pct.text), sub: [chg ? String(chg.text) : '', basisF && interval(basisF.why) ? '95% interval ' + interval(basisF.why) : ''].filter(Boolean).join('; '), grade: itemGrade(pct).grade });
+      var proc = !!(EV && EV.process);       // an official aggregate: the engine's grade is a process grade, said on the tile
+      if (latest) kpis.push({ label: EV && R.estimand.measure && R.estimand.measure.label ? R.estimand.measure.label + ', latest 12 months' : latest.label, value: String(latest.text),
+        sub: prior ? String(prior.text) + ' in the 12 months before' : '', grade: itemGrade(latest).grade, process: proc });
+      if (pct) kpis.push({ label: 'Change on the 12 months before', value: String(pct.text),
+        sub: [chg ? String(chg.text) : '', basisF && interval(basisF.why) && !proc ? '95% interval ' + interval(basisF.why) : ''].filter(Boolean).join('; ') + (proc ? ' (described)' : ''), grade: itemGrade(pct).grade, process: proc });
     } else if (kfs.length) {
       kfs.forEach(function (k) { kpis.push({ label: String(k.label || ''), value: String(k.text), sub: '', grade: gradeOf(k.grade) }); });
     } else {
@@ -1774,12 +1964,23 @@
       lags.forEach(function (lg) {
         var win = hi(lg, 'windows'), rose = hi(lg, 'rose');
         var of = win ? 'the ' + String(win.text) + ' past windows' : 'the past ' + lg + '-month windows';
+        // the overlapping windows are worth fewer independent ones: "the 104 past windows (about 13 independent)"
+        var ne = hi(lg, 'n_eff');
+        if (win && ne) of = 'the ' + String(win.text) + ' past windows (about ' + String(ne.text) + ' independent)';
         [['p10', '1 in 10 lower', '; 1 in 10 of ' + of + ' was lower'], ['p50', 'Middle', ', the middle of ' + of + (rose ? '; it rose in ' + String(rose.text) + ' of them' : '')],
           ['p90', '1 in 10 higher', '; 1 in 10 of ' + of + ' was higher']].forEach(function (pp) {
           var x = hi(lg, pp[0]);
           if (x) hcards.push({ name: lg + '-month: ' + pp[1], value: String(x.text), unit: 'The change in the monthly average' + pp[2], assumption: '', grade: '', parent: '', tag: 'history' });
         });
         if (win && win.label) hsays.push(sentence(win.label));
+        // the non-overlapping alternative: one window each year (or each quarter), none counted twice
+        var no = { n: hi(lg, 'nonoverlap.n'), min: hi(lg, 'nonoverlap.min'), med: hi(lg, 'nonoverlap.median'), max: hi(lg, 'nonoverlap.max') };
+        if (no.n && no.min && no.max) {
+          [['nonoverlap.min', 'lowest'], ['nonoverlap.median', 'middle'], ['nonoverlap.max', 'highest']].forEach(function (pp) {
+            var x = hi(lg, pp[0]);
+            if (x) hcards.push({ name: lg + '-month, none counted twice: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
+          });
+        }
       });
       hist.forEach(function (x) { if (!hzero && x.assumes) hzero = sentence(x.assumes); });
       if (hcards.length) {
@@ -1790,7 +1991,8 @@
     if (any) append(p3, hb);
     if (any && sc && sc.note) p3.push({ type: 'p', engine: true, text: sc.note, wide: true, size: 7.5, lead: 10.5, font: 'I', color: COL.muted, after: 10 });
     if (!any) {
-      var why = sc && Array.isArray(sc.refused) && sc.refused.length ? sc.refused.map(function (x) { return cap1(String(x).replace(/[.\s]+$/, '')) + '.'; }).join(' ') : '';
+      var seenWhy = {}, why = sc && Array.isArray(sc.refused) && sc.refused.length ? sc.refused.filter(function (x) { return !LEFT_OUT.test(String(x)); }).map(function (x) { return cap1(String(x).replace(/[.\s]+$/, '')) + '.'; })
+        .filter(function (x) { if (seenWhy[x]) return false; seenWhy[x] = true; return true; }).join(' ') : '';
       if (!why) { var nf = findings.filter(function (x) { return x.kind === 'forecast' && gradeOf(x.verdict) === 'INSUFFICIENT'; })[0]; if (nf && nf.why) why = 'No forecast: ' + nf.why; }
       if (!why) why = R ? 'The engine computed no run rate, sensitivity, gap or forecast for this file.'
         : inp.shared ? 'This shared copy doesn\'t carry the engine\'s full results; the figures shown are those in the report text.'
@@ -1799,6 +2001,26 @@
       // no scenario to add up, and the level's past range instead: the reason first, then the history
       append(p3, hb);
     }
+
+    // the forecast and its back-test (nl_inference.forecast_audit): the engine's range and how it held when the shown model
+    // was refitted at the last origins; a failed back-test marks the engine's grade "not trusted"; a row-count forecast the
+    // table's layout fixes is one line saying why, never a number
+    var FCR = R && R.forecast, fcb = [];
+    if (FCR && (FCR.row_forecast_dropped === true || FCR.available || AV)) {
+      fcb.push({ type: 'h2', num: '', text: 'The forecast and how its range held when back-tested', id: 'sc-audit', engine: true });
+      if (FCR.available && Array.isArray(FCR.points) && FCR.points.length) {
+        var pts = [0, 2, 5, 11].filter(function (k) { return k < FCR.points.length; }).map(function (k) { return FCR.points[k]; });
+        var money = function (v) { return isFinite(v) && v !== null ? (U && Math.abs(v) >= 1e6 ? U(v) : fmtVal(v)) : 'n/a'; };
+        fcb.push({ type: 'table', engine: true, table: { title: 'The engine\'s forecast' + (FCR.series ? ': ' + String(FCR.series).replace(/_/g, ' ') : ''), cols: ['Month', 'Forecast', '80% range'],
+          rows: pts.map(function (q) { return [String(q.date), money(q.value), q.lo !== null && q.hi !== null && q.lo !== undefined ? money(q.lo) + ' to ' + money(q.hi) : 'n/a']; }) },
+          source: 'Source: NorthLedger engine. The engine\'s grade of the forecast: ' + (FCR.verdict ? String(FCR.verdict).toUpperCase() : 'not stated') + (FCR.champion ? '; the model: ' + FCR.champion : '') + (FCR.baseline_won === true ? ' (the simple rule won the engine\'s replay)' : '') + '.' });
+      } else if (FCR.row_forecast_dropped === true) {
+        fcb.push({ type: 'p', engine: true, text: String(FCR.reason || 'No forecast of the rows a month is shown: rows per month are fixed by the table\'s layout.') });
+      }
+      if (AV) fcb.push({ type: 'callout', engine: true, label: AV.untrusted ? 'Back-test: not trusted' : 'Back-test of the range shown', size: 9.5, rule: AV.untrusted ? COL.grade.WATCH : COL.accent,
+        labelColor: AV.untrusted ? COL.grade.WATCH : COL.accentInk, text: cap1(AV.line) + '.' + (AV.untrusted ? ' The engine\'s grade of the forecast stands, but it is not trusted: the back-test of its range failed.' : AV.status === 'passes' ? ' A passed back-test says the range held often enough and the model is no worse than the simple rule; it is not a promise.' : ' A back-test that neither passes nor fails says the evidence is too thin to settle it.') });
+    }
+    append(p3, fcb);
 
     // ---- Part 4: what to do; Part 5: the risks and what the data cannot say
     var p4 = [], todo = secsOf('todo');
@@ -1837,6 +2059,25 @@
     if (R) {
       if (R.partial) pa.push({ type: 'p', text: 'This shared copy carries the engine\'s key figures and scenario figures, not its full results.', size: 8.5 });
       if (R.reading) pa.push({ type: 'h2', num: '', text: 'The data', id: 'm-data' }, { type: 'p', text: R.reading });
+      // a column the scan flagged as free text and the engine read as a category (privacy.released): said here as the reader
+      // was told on the consent step; the report's figures may show its labels
+      var rel = R.privacy && Array.isArray(R.privacy.released) ? R.privacy.released.filter(function (x) { return x && x.text; }) : [];
+      if (rel.length) pa.push({ type: 'h2', num: '', text: 'Columns read as categories, not personal data', id: 'm-released' }, { type: 'bullets', items: rel.map(function (x) { return String(x.text); }) });
+      if (EV) {
+        var chk = (R.estimand.sum_checks || []).filter(function (c) { return c && c.dim; });
+        pa.push({ type: 'h2', num: '', text: 'The table\'s structure and what was checked', id: 'm-structure' });
+        if (chk.length) pa.push({ type: 'table', table: { title: 'Each total checked against its parts', cols: ['Dimension', 'Total', 'Parts', 'Months checked', 'Within tolerance', 'Largest gap', 'Not allocated, latest 12 months'],
+          rows: chk.map(function (c) { return [String(c.dim), String(c.total), c.parts === undefined || c.parts === null ? '' : String(c.parts), isFinite(c.complete_cells) ? String(c.complete_cells) : '', isFinite(c.within_tolerance) ? String(c.within_tolerance) : '',
+            c.max_residual && c.max_residual.text ? String(c.max_residual.text) : isFinite(c.max_rel_residual) ? (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') : '', c.unallocated_latest && c.unallocated_latest.text ? String(c.unallocated_latest.text) : '']; }) },
+          source: 'Source: NorthLedger engine, from the table\'s own published series. A total adds up when it is within half a unit of the last published digit of its parts on 95% or more of the months where every part has a value.' });
+        var fl = R.structure && R.structure.flags, byk = fl && fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return Number(fl.by_kind[k]).toLocaleString('en-US') + ' rows ' + k.replace(/_/g, ' '); }) : [];
+        var qh = EV.quality && EV.quality.codes ? Object.keys(EV.quality.codes).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + EV.quality.codes[k] + ' month' + (EV.quality.codes[k] === 1 ? '' : 's'); }) : [];
+        if (byk.length || qh.length) pa.push({ type: 'bullets', items: [byk.length ? 'The publisher\'s flags in the file: ' + byk.join(', ') + '.' : '', qh.length ? 'Quality marks on the headline\'s months: ' + qh.join(', ') + '.' : ''].filter(Boolean) });
+      }
+      var tests = analyses.filter(function (a) { return a && a.test; });
+      if (tests.length) pa.push({ type: 'h2', num: '', text: 'The trend test and its size', id: 'm-trend' }, { type: 'bullets', items: tests.map(function (a) { return trendLine(a.test, a.title); }).filter(Boolean) });
+      var cut = sc && Array.isArray(sc.refused) ? sc.refused.filter(function (x) { return LEFT_OUT.test(String(x)); })[0] : '';
+      if (cut) pa.push({ type: 'p', text: 'Scenario detail left out: ' + cap1(String(cut).replace(/[.\s]+$/, '')) + '.', size: 8.5 });
       // every step of the AI plan that set rows aside: its count, its share of the file's rows, the plan's reason and
       // the engine's check of it (the adapter's words)
       if (drops.length) pa.push({ type: 'h2', num: '', text: 'Rows the AI plan set aside', id: 'm-drops' }, { type: 'bullets', items: drops.map(function (d) { return d.text; }) });
@@ -1856,7 +2097,11 @@
         pa.push({ type: 'h2', num: '', text: 'Every finding and its grade', id: 'm-find' });
         pa.push({ type: 'findings', items: findings.map(function (x) {
           var ch = x.kind === 'business' && /^change in /i.test(x.claim) && isFinite(x.value);
-          return { claim: x.claim, value: ch ? sgnPct(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict };
+          // a row-count forecast the table's layout fixes: one line in the forecast block says why; here no number and no grade
+          if (x.layout_artifact === true) return { claim: x.claim, value: 'not shown', grade: '' };
+          var big = U && isFinite(x.value) && x.value !== null && x.kind === 'forecast' && Math.abs(x.value) >= 1e6;
+          return { claim: x.claim, value: ch ? sgnPct(x.value) : big ? U(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict,
+            process: !!(EV && EV.process && R.primary && x.claim === (R.primary.claim || R.primary)), untrusted: !!(AV && AV.untrusted && x.kind === 'forecast') };
         }) });
       }
       if (Array.isArray(R.limitations) && R.limitations.length && !secsOf('risks').length) pa.push({ type: 'h2', num: '', text: 'The engine\'s limitations', id: 'm-lim' }, { type: 'bullets', items: R.limitations.map(String) });
@@ -1880,7 +2125,7 @@
       subject: showName ? String(inp.name) : 'The reader\'s file (its name is left off unless they choose to show it)',
       dataLine: (rows ? Number(rows).toLocaleString('en-US') + ' rows' + (cols ? ' \u00d7 ' + cols + ' columns' : '') + '; ' : '') + 'analysed in the reader\'s browser; the file was never uploaded', shared: inp.shared === true,
       preparedBy: 'The NorthLedger engine (every figure it computed) and ' + (inp.model || 'an AI model') + ' (the wording, and any figure quoted from a source it cites), each figure checked against the engine\'s results or that source',
-      reportId: reportId(inp.report), kept: kept || [], notice: notice, headline: title, kpis: kpis.slice(0, 4), summary: summary,
+      reportId: reportId(inp.report), kept: kept || [], notice: notice, headline: title, kpis: kpis.slice(0, 4), summary: summary, estimand: EV,
       parts: [
         { kicker: 'Part 1' + DOT + 'What drove it', title: 'What the engine found, and why', id: 'drivers', blocks: p1 },
         { kicker: 'Part 2' + DOT + 'In the real world', title: 'What it means outside this file', id: 'context', blocks: p2 },
@@ -2006,6 +2251,20 @@
     });
     var hx = typeof R.health_explain === 'string' ? R.health_explain.trim() : '';
     var rn = typeof R.row_noun === 'string' && /^[a-z]{3,20}$/.test(R.row_noun) ? R.row_noun : '';
+    // the estimand (wave 4): what the headline measures, which the shared PDF prints first; the worker rebuilds it strictly
+    var est = null;
+    if (R.estimand && typeof R.estimand === 'object' && R.estimand.text) {
+      var E = R.estimand, fig = function (x) { return x && typeof x === 'object' && x.text ? (isFinite(x.value) && x.value !== null ? { value: x.value, text: str(x.text, 40) } : { text: str(x.text, 40) }) : null; };
+      est = { text: str(E.text, 400), slice: (E.slice || []).slice(0, 8).map(function (x) { return { dim: str(x.dim, 120), member: str(x.member, 120), why: str(x.why, 200) }; }),
+        measure: E.measure ? { label: str(E.measure.label, 120), uom: str(E.measure.uom, 40), type: str(E.measure.type, 20), aggregation: str(E.measure.aggregation, 60), scale_applied: E.measure.scale_applied } : null,
+        comparison: E.comparison || null, figures: {},
+        sum_checks: (E.sum_checks || []).slice(0, 4).map(function (c) { return { dim: str(c.dim, 120), total: str(c.total, 120), parts: c.parts, verdict: str(c.verdict, 20), complete_cells: c.complete_cells,
+          max_rel_residual: c.max_rel_residual, unallocated_latest: fig(c.unallocated_latest) || undefined }; }),
+        excluded: (E.excluded || []).slice(0, 6).map(function (x) { return { what: str(x.what, 120), why: str(x.why, 200) }; }), plan_source: E.plan_source };
+      ['prior', 'latest', 'change', 'change_pct'].forEach(function (k) { var f = fig(E.figures && E.figures[k]); if (f) est.figures[k] = f; });
+      var I = E.inference;
+      if (I && typeof I === 'object' && I.mode) est.inference = { mode: I.mode, publisher: I.publisher, how_known: (I.how_known || []).slice(0, 4).map(function (x) { return str(x, 200); }), describe: I.describe, revisions: str(I.revisions, 200), grade_label: str(I.grade_label, 200) };
+    }
     var render = function () {
       var out = { partial: true };
       if (R.input && typeof R.input === 'object') out.input = { rows: R.input.rows, columns: R.input.columns };
@@ -2015,6 +2274,7 @@
       if (rn) out.row_noun = rn;
       if (R.cleaning && typeof R.cleaning === 'object') out.cleaning = { rows_in: R.cleaning.rows_in, rows_clean: R.cleaning.rows_clean, rows_quarantined: R.cleaning.rows_quarantined };
       if (R.primary && !gone.primary) out.primary = R.primary;
+      if (est && !gone.est) out.estimand = est;
       out.findings = findings.filter(function (_, i) { return !gone['f' + i]; });
       if (story && !gone.story) out.story = story;
       if (sc && !gone.scen) out.scenarios = { basis: sc.basis && typeof sc.basis === 'object' ? sc.basis : null, refused: (Array.isArray(sc.refused) ? sc.refused : []).slice(0, 6).map(function (x) { return str(x, 300); }),
@@ -2025,7 +2285,7 @@
     var order = dropOrder(items, SHARE_TOP_SEGMENTS), pre = function (p) { return function (i) { return p + i; }; };
     var fBack = findings.map(function (_, i) { return i; }).reverse();
     var units = [].concat(order.detail.map(pre('i')), fBack.filter(function (i) { return findings[i].kind !== 'business'; }).map(pre('f')), ['story'],
-      order.core.map(pre('i')), fBack.filter(function (i) { return findings[i].kind === 'business'; }).map(pre('f')), ['scen', 'primary']);
+      order.core.map(pre('i')), fBack.filter(function (i) { return findings[i].kind === 'business'; }).map(pre('f')), ['scen', 'est', 'primary']);
     var out = render(), size = function () { return utf8Len(JSON.stringify(out)); }, cut = [];
     for (var k = 0; k < units.length && size() > cap; k++) { gone[units[k]] = true; cut.push(units[k]); out = render(); }
     if (size() > cap) return null;
@@ -2067,6 +2327,8 @@
     return base + (nm ? ' - ' + nm : '') + '.pdf';
   }
   var API = { build: build, model: model, fileName: fileName, paperFor: paperFor, shareResults: shareResults, sectionKind: kindOf, itemGrade: itemGrade,
+    facts: { estimandView: estimandView, auditView: auditView, unitOf: unitOf, sumCheckWords: sumCheckWords, planSourceWords: planSourceWords, trendLine: trendLine,
+      processOf: processOf, primaryFinding: primaryFinding, stepLabel: stepLabel, compactTicks: compactTicks, UNALLOCATED_WORDS: UNALLOCATED_WORDS },
     FILE_WORD: FILE_WORD, SHARE_MAX_BYTES: SHARE_MAX_BYTES, SHARE_MAX_ITEMS: SHARE_MAX_ITEMS, MAX_SOURCES: MAX_SOURCES, _enc: enc, _tw: tw, _smart: smart };
   if (typeof module === 'object' && module && module.exports) module.exports = API; else root.NLReportPdf = API;
 })(typeof window !== 'undefined' ? window : typeof globalThis !== 'undefined' ? globalThis : this);

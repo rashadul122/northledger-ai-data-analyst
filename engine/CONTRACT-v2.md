@@ -945,7 +945,7 @@ compare analysis's selection (the 12 groups with the most rows) because they mus
 (`nl_viz._build_structure`, in the slice's run, up to 8 charts and 3 heatmaps): per breakdown a `contribution_waterfall`
 and a `change_heatmap`, then one `calendar_heatmap`.
 - `contribution_waterfall`: from the structure's scenario items: the 10 largest parts by |contribution|, the rest folded
-  into "other parts (n)", then an "unallocated (suppressed cells)" step, the totals first and last; `basis.split`
+  into "other parts (n)", then a "Not allocated: suppressed cells" step (a report made before 6 October 2026 says "unallocated (suppressed cells)"; the page and the PDF read both), the totals first and last; `basis.split`
   "segment" with `basis.column` the dimension; the table `[Step, Contribution, Own change]` carries each part's growth;
   `source` begins "structure:"; `inputs.rows` null (each part rests on its 12 published months in each window). A step's
   label is the member's, cut at 80 characters with its trailing code kept ("... leather goods retailers [458]").

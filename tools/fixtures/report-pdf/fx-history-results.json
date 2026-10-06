@@ -1,8 +1,8 @@
 {
- "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset), on tools/fixtures/eval/fx_usd_cad.csv (the Bank of Canada daily U.S. dollar rate, 2017 to 2026) under the plan below and analysis date 2026-09-29: rep = nl_browser.run_json(...); results = nl_browser.results_json(rep), whole. A level (VALUE, typed level) gets no forecast (the engine forecasts counts and totals only) and its historical range instead: group history_range, ten items (the 12-month and 3-month windows: their count, 10th, 50th and 90th percentiles and the share that rose), facts about the past with no grade. The same run as insight-proxy/test/scenarios-fx-history.json.",
+ "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset), on tools/fixtures/eval/fx_usd_cad.csv (the Bank of Canada daily U.S. dollar rate, 2017 to 2026) under the plan below and analysis date 2026-09-29: rep = nl_browser.run_json(...); results = nl_browser.results_json(rep), whole. A level (VALUE, typed level) gets no forecast (the engine forecasts counts and totals only) and its historical range instead: group history_range, twenty items (the 12-month and 3-month windows: their count, their independent count n_eff, the 10th, 50th and 90th percentiles, the share that rose, and the non-overlapping changes: their count, minimum, median and maximum), facts about the past with no grade; and the trend analysis with its test (wave 4, A2: the simulated size). The same run as insight-proxy/test/scenarios-fx-history.json.",
  "made_with": "python3 tools/fixtures/report-pdf/make_fx_history.py (the packed engine, run natively)",
  "engine_snapshot": "19ec81d19e0d",
- "zip_sha256": "a25af1920274136096e8cc817e79f8e0c651219e5877eafe47e9bf17f26e80c6",
+ "zip_sha256": "b22dba56474fca736a87a7c978a883fed9e308139ab98532c42282852f748d36",
  "csv_sha256": "557089f911ac13f6ab5793cf3ac91a5be8404088be7072704a0cb438cc9ccdee",
  "as_of": "2026-09-29",
  "plan": {
@@ -59,6 +59,8 @@
  },
  "results": {
   "ok": true,
+  "estimand": null,
+  "structure": null,
   "input": {
    "name": "[your file]",
    "rows": 2957,
@@ -68,7 +70,7 @@
   "reading": "The Bank of Canada daily U.S. dollar rate.",
   "quality_risks": [],
   "plan_applied": [
-   "dropped 569 rows where VALUE is blank (2,957 rows left)",
+   "dropped 569 rows (16.1%) where VALUE is blank (2,957 rows left)",
    "set aside STATUS",
    "data test on VALUE (level): note: 550 zero values in VALUE are not counted by the AI's analyses (they fall on weekends between non-zero rates, the pattern of a day with no value); the engine's own rea"
   ],
@@ -79,28 +81,52 @@
     "kind": "business",
     "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
     "value": 0.40485829959514774,
-    "why": "No change of at least the 5% bar is shown: a 0.4% rise in the average month, latest 12 months against the 12 before (95% interval -2.5% to +2.7%; built to hold the true change 95% of the time; in simulated series with strong momentum, which"
+    "why": "No change of at least the 5% bar is shown: a 0.4% rise in the average month, latest 12 months against the 12 before (95% interval -2.5% to +2.7%; labelled 95%; coverage not measured for this kind of series). If the change were smaller than "
    },
    {
     "verdict": "WATCH",
     "kind": "business",
     "claim": "Change in the average month of value, latest 12 months against the 12 before",
     "value": -0.7325944129509026,
-    "why": "A 0.7% fall in the average month, latest 12 months against the 12 before (95% interval -5.2% to +7.8%; built to hold the true change 95% of the time; in simulated series with strong momentum, which the model can underestimate, it held it le"
+    "why": "A 0.7% fall in the average month, latest 12 months against the 12 before (95% interval -5.2% to +7.8%; labelled 95%; coverage not measured for this kind of series), but this series wanders (its month-to-month persistence cannot be told apar"
    },
    {
     "verdict": "WATCH",
     "kind": "forecast",
     "claim": "Forecast of monthly rows in [your file] for 2026-09",
-    "value": 20.0,
-    "why": "No method beat the simple rule of repeating the same month from last year when we replayed the last 24 months: the champion IS that rule. Use it as a guide, not a plan."
+    "why": "No method beat the simple rule of repeating the same month from last year when we replayed the last 24 months: the champion IS that rule. Use it as a guide, not a plan.",
+    "layout_artifact": true
    }
   ],
   "analyses": [
    {
     "title": "Long-run trend",
-    "sentence": "VALUE rose by 0.0104 CAD per USD per year over 2017 to 2025 (its yearly average; 95% range 0.00329 to 0.0175) (550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value).",
-    "method": "Least-squares line through each complete calendar year's value (yearly average); the 95% range uses Newey-West errors, because one year's value leans on the year before. Dates from the REF_DATE column."
+    "sentence": "VALUE shows no clear rise or fall over 2017 to 2025: its yearly average moves by 0.0114 CAD per USD per year, with a 95% range of −0.0241 to 0.0468, which includes no change (550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value).",
+    "method": "A line through each complete calendar year's value (yearly average), fitted allowing for one year leaning on the year before (Prais-Winsten); its 95% range and its direction come from 999 simulated series with no trend and the same momentum, and a direction is claimed only when the line is steeper…",
+    "test": {
+     "name": "Prais-Winsten AR(1) slope, parametric bootstrap under no tre",
+     "verdict": "no_settled_direction",
+     "n": 9,
+     "rho": 0.5529889643274083,
+     "slope": 0.011397597696015723,
+     "p": 0.34,
+     "p_random_walk": 0.518,
+     "ci": [
+      -0.02405265136506136,
+      0.046847846757092804
+     ],
+     "size": {
+      "nominal": 0.05,
+      "simulated": 0.0415,
+      "series": 2000,
+      "newey_west": 0.401,
+      "claims": 0.0045,
+      "cell": {
+       "n": 9,
+       "rho": 0.6
+      }
+     }
+    }
    },
    {
     "title": "How VALUE is spread",
@@ -145,9 +171,9 @@
       "name": "VALUE trend",
       "recent": false,
       "x0": 2017.0,
-      "y0": 1.284496777515585,
+      "y0": 1.2804767998548492,
       "x1": 2025.0,
-      "y1": 1.3676376037622333
+      "y1": 1.3716575814229763
      }
     ]
    },
@@ -170,6 +196,38 @@
      {
       "label": "1.27 to 1.29",
       "value": 246.0
+     },
+     {
+      "label": "1.29 to 1.31",
+      "value": 215.0
+     },
+     {
+      "label": "1.31 to 1.33",
+      "value": 377.0
+     },
+     {
+      "label": "1.33 to 1.35",
+      "value": 354.0
+     },
+     {
+      "label": "1.35 to 1.37",
+      "value": 407.0
+     },
+     {
+      "label": "1.37 to 1.4",
+      "value": 234.0
+     },
+     {
+      "label": "1.4 to 1.42",
+      "value": 125.0
+     },
+     {
+      "label": "1.42 to 1.44",
+      "value": 72.0
+     },
+     {
+      "label": "1.44 to 1.46",
+      "value": 25.0
      }
     ]
    },
@@ -792,7 +850,7 @@
      "legend": [
       {
        "tier": -3,
-       "text": "−5.02% to −1.35%"
+       "text": "−4.58% to −1.35%"
       },
       {
        "tier": -2,
@@ -1023,8 +1081,8 @@
       "VALUE",
       "2017 to 2025",
       "9",
-      "0.0104",
-      "0.00329 to 0.0175",
+      "0.0114",
+      "−0.0241 to 0.0468",
       ""
      ]
     ]
@@ -1055,8 +1113,8 @@
   "story": {
    "headline": "Volume +0.4% on the year before, graded WATCH; average value -0.7%, graded WATCH; monthly rows in [your file] forecast at 20 rows for 2026-09.",
    "what_happened": [
-    "Row volume changed by +0.4% in the latest year (248 rows) against the year before (247 rows). The same test's interval for the change runs from -2.5% to +2.7%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model can underestimate, it he",
-    "Average value (the average month) moved from 1.396 in the year before to 1.386 in the latest year, a change of -0.7%. The same test's interval for the change runs from -5.2% to +7.8%. It was built to hold the true change at its stated level; in simulated series with strong momentum, which the model "
+    "Row volume changed by +0.4% in the latest year (248 rows) against the year before (247 rows). The same test's interval for the change runs from -2.5% to +2.7%. It is labelled 95%; coverage not measured for this kind of series. If the change were smaller than the materiality bar, a result at least th",
+    "Average value (the average month) moved from 1.396 in the year before to 1.386 in the latest year, a change of -0.7%. The same test's interval for the change runs from -5.2% to +7.8%. It is labelled 95%; coverage not measured for this kind of series. If the change were smaller than the materiality b"
    ],
    "why": [
     "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
@@ -1065,98 +1123,27 @@
     "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
    ],
    "whats_next": [
-    "monthly rows in [your file] for 2026-09: 20 rows (80% range 16 to 22). By 2027-08: 20 (80% range 19 to 22).",
-    "Method: repeat the same month from last year, chosen because it had the lowest error when we replayed the last 24 months, forecasting each from what was known at the time. Over that replay it missed by 3.6% on average across every horizon: by 4.0% one month ahead and by 3.0% at the furthest month ah",
-    "Its month-ahead 80% range held in 23 of 24 replayed months, each range built only from errors known at the time. This forecast did not clear the confidence gate: watch it, do not act on it yet."
+    "No forecast of monthly rows in [your file] is shown: each row is one date, so the rows a month count the dates the file has a value for, which the calendar sets, not activity."
    ],
    "cannot_answer": []
   },
   "forecast": {
-   "available": true,
-   "series": "monthly rows in [your file]",
-   "verdict": "not yet shown usable",
-   "champion": "repeat the same month from last year",
-   "coverage": "23 of 24 replayed months inside the 80% range",
-   "baseline_won": true,
-   "reason": "No method beat the simple rule of repeating the same month from last year when we replayed the last 24 months: the champion IS that rule. Use it as a guide, not a plan.",
-   "points": [
-    {
-     "date": "2026-09",
-     "value": 20.0,
-     "lo": 15.8,
-     "hi": 21.9
-    },
-    {
-     "date": "2026-10",
-     "value": 22.0,
-     "lo": 19.1,
-     "hi": 24.0
-    },
-    {
-     "date": "2026-11",
-     "value": 19.0,
-     "lo": 17.3,
-     "hi": 20.5
-    },
-    {
-     "date": "2026-12",
-     "value": 21.0,
-     "lo": 18.4,
-     "hi": 23.5
-    },
-    {
-     "date": "2027-01",
-     "value": 21.0,
-     "lo": 19.2,
-     "hi": 22.5
-    },
-    {
-     "date": "2027-02",
-     "value": 19.0,
-     "lo": 17.2,
-     "hi": 20.6
-    },
-    {
-     "date": "2027-03",
-     "value": 22.0,
-     "lo": 19.8,
-     "hi": 24.2
-    },
-    {
-     "date": "2027-04",
-     "value": 20.0,
-     "lo": 18.3,
-     "hi": 22.0
-    },
-    {
-     "date": "2027-05",
-     "value": 20.0,
-     "lo": 17.9,
-     "hi": 22.0
-    },
-    {
-     "date": "2027-06",
-     "value": 22.0,
-     "lo": 19.9,
-     "hi": 24.2
-    },
-    {
-     "date": "2027-07",
-     "value": 22.0,
-     "lo": 20.5,
-     "hi": 23.9
-    },
-    {
-     "date": "2027-08",
-     "value": 20.0,
-     "lo": 18.6,
-     "hi": 21.6
-    }
-   ]
+   "row_forecast_dropped": true,
+   "reason": "No forecast of the rows a month is shown: each row is one date, so the rows a month count the dates the file has a value for, which the calendar sets, not activity."
   },
   "health_score": 75.0,
+  "health_explain": "75 because the check marks down numbers stored as text, which every CSV has, although the engine reads them as numbers (the validity check); the other checks averaged 100.",
   "health_issues": [
    "The health score counts numbers stored as text, which every CSV has: it is validity, the weakest dimension here, marked down for them, although the engine reads them as numbers."
+  ],
+  "plan_row_drops": [
+   {
+    "rows": 569,
+    "of": 3526,
+    "pct": 16.137266023823027,
+    "text": "Set aside 569 rows (16.1% of the file's 3,526) where VALUE is blank. The plan gave no reason.",
+    "notice": "The AI plan set aside 569 rows (16.1%) and gave no reason."
+   }
   ],
   "cleaning": {
    "rows_in": 2957,
@@ -1168,6 +1155,7 @@
    ]
   },
   "limitations": [
+   "The AI plan set aside 569 rows (16.1%). The plan gave no reason.",
    "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
    "the past errors behind the 80% ranges move together from month to month (lag-1 autocorrelation up to 0.36), so they carry the information of fewer independent errors (as few as about 18); the ranges for 1 of 12 months ahead were widened, by",
    "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
@@ -1181,7 +1169,7 @@
      "id": "history_range.m12.windows",
      "group": "history_range",
      "segment": null,
-     "label": "In the 104 past 12-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change in the monthly average of value ran from −0.0635 CAD per USD (1 in 10 lower) to +0.0785 CAD per USD (1 in 10 higher); the middle was +0.0162 CAD per USD. This is history, not a forecast.",
+     "label": "In the 104 past 12-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month, so they are worth about 13 independent ones), the change in the monthly average of value ran from −0.063 CAD per USD (1 in 10 lower) to +0.078 CAD per USD (1 in 10 higher); the middle was +0.016 CAD per USD, and it rose in 68 of the 104. Taking one window a year, each ending in Aug, the 9 changes ran from ",
      "value": 104.0,
      "text": "104",
      "kind": "count",
@@ -1200,12 +1188,34 @@
      }
     },
     {
+     "id": "history_range.m12.n_eff",
+     "group": "history_range",
+     "segment": null,
+     "label": "About how many independent windows the 104 past 12-month windows are worth (they overlap: n / (1 + 2 x the changes' autocorrelations up to lag 11)), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 13.0,
+     "text": "13",
+     "kind": "count",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "effective count of 12-month windows"
+     }
+    },
+    {
      "id": "history_range.m12.p10",
      "group": "history_range",
      "segment": null,
      "label": "The monthly average of value: the 10th percentile of its changes over the 104 past 12-month windows (1 in 10 was lower), Jan 2017 to Aug 2026; history, not a forecast",
-     "value": -0.063493,
-     "text": "−0.0635 CAD per USD",
+     "value": -0.063,
+     "text": "−0.063 CAD per USD",
      "kind": "change",
      "unit": "CAD per USD",
      "grade": null,
@@ -1226,8 +1236,8 @@
      "group": "history_range",
      "segment": null,
      "label": "The monthly average of value: the middle (median) of its changes over the 104 past 12-month windows, Jan 2017 to Aug 2026; history, not a forecast",
-     "value": 0.016249,
-     "text": "+0.0162 CAD per USD",
+     "value": 0.016,
+     "text": "+0.016 CAD per USD",
      "kind": "change",
      "unit": "CAD per USD",
      "grade": null,
@@ -1248,8 +1258,8 @@
      "group": "history_range",
      "segment": null,
      "label": "The monthly average of value: the 90th percentile of its changes over the 104 past 12-month windows (1 in 10 was higher), Jan 2017 to Aug 2026; history, not a forecast",
-     "value": 0.078455,
-     "text": "+0.0785 CAD per USD",
+     "value": 0.078,
+     "text": "+0.078 CAD per USD",
      "kind": "change",
      "unit": "CAD per USD",
      "grade": null,
@@ -1269,11 +1279,11 @@
      "id": "history_range.m12.rose",
      "group": "history_range",
      "segment": null,
-     "label": "Share of the 104 past 12-month windows in which the monthly average of value rose, Jan 2017 to Aug 2026; history, not a forecast",
-     "value": 65.384615,
-     "text": "65.4%",
-     "kind": "percent",
-     "unit": "%",
+     "label": "Of the 104 past 12-month windows (about 13 independent), the windows in which the monthly average of value rose, Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 68.0,
+     "text": "68",
+     "kind": "count",
+     "unit": "",
      "grade": null,
      "parent_grade": null,
      "grade_words": "a fact about the file's past, not graded: history, not a forecast",
@@ -1284,14 +1294,102 @@
        "value"
       ],
       "window": "history",
-      "op": "share of 12-month windows that rose"
+      "op": "count of 12-month windows that rose"
+     }
+    },
+    {
+     "id": "history_range.m12.nonoverlap.n",
+     "group": "history_range",
+     "segment": null,
+     "label": "The number of the 9 non-overlapping 12-month changes (one window a year, each ending in Aug), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 9.0,
+     "text": "9",
+     "kind": "count",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "count of non-overlapping 12-month changes"
+     }
+    },
+    {
+     "id": "history_range.m12.nonoverlap.min",
+     "group": "history_range",
+     "segment": null,
+     "label": "The monthly average of value: the lowest of the 9 non-overlapping 12-month changes (one window a year, each ending in Aug), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": -0.062,
+     "text": "−0.062 CAD per USD",
+     "kind": "change",
+     "unit": "CAD per USD",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "min of non-overlapping 12-month changes"
+     }
+    },
+    {
+     "id": "history_range.m12.nonoverlap.median",
+     "group": "history_range",
+     "segment": null,
+     "label": "The monthly average of value: the middle of the 9 non-overlapping 12-month changes (one window a year, each ending in Aug), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 0.017,
+     "text": "+0.017 CAD per USD",
+     "kind": "change",
+     "unit": "CAD per USD",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "median of non-overlapping 12-month changes"
+     }
+    },
+    {
+     "id": "history_range.m12.nonoverlap.max",
+     "group": "history_range",
+     "segment": null,
+     "label": "The monthly average of value: the highest of the 9 non-overlapping 12-month changes (one window a year, each ending in Aug), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 0.056,
+     "text": "+0.056 CAD per USD",
+     "kind": "change",
+     "unit": "CAD per USD",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "max of non-overlapping 12-month changes"
      }
     },
     {
      "id": "history_range.m3.windows",
      "group": "history_range",
      "segment": null,
-     "label": "In the 113 past 3-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change in the monthly average of value ran from −0.0402 CAD per USD (1 in 10 lower) to +0.0472 CAD per USD (1 in 10 higher); the middle was +0.00393 CAD per USD. This is history, not a forecast.",
+     "label": "In the 113 past 3-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month, so they are worth about 43 independent ones), the change in the monthly average of value ran from −0.040 CAD per USD (1 in 10 lower) to +0.047 CAD per USD (1 in 10 higher); the middle was +0.0039 CAD per USD, and it rose in 61 of the 113. Taking one window every 3 months, the latest ending in Aug 2026, the ",
      "value": 113.0,
      "text": "113",
      "kind": "count",
@@ -1310,12 +1408,34 @@
      }
     },
     {
+     "id": "history_range.m3.n_eff",
+     "group": "history_range",
+     "segment": null,
+     "label": "About how many independent windows the 113 past 3-month windows are worth (they overlap: n / (1 + 2 x the changes' autocorrelations up to lag 2)), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 43.0,
+     "text": "43",
+     "kind": "count",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "effective count of 3-month windows"
+     }
+    },
+    {
      "id": "history_range.m3.p10",
      "group": "history_range",
      "segment": null,
      "label": "The monthly average of value: the 10th percentile of its changes over the 113 past 3-month windows (1 in 10 was lower), Jan 2017 to Aug 2026; history, not a forecast",
-     "value": -0.04016,
-     "text": "−0.0402 CAD per USD",
+     "value": -0.04,
+     "text": "−0.040 CAD per USD",
      "kind": "change",
      "unit": "CAD per USD",
      "grade": null,
@@ -1336,8 +1456,8 @@
      "group": "history_range",
      "segment": null,
      "label": "The monthly average of value: the middle (median) of its changes over the 113 past 3-month windows, Jan 2017 to Aug 2026; history, not a forecast",
-     "value": 0.003927,
-     "text": "+0.00393 CAD per USD",
+     "value": 0.0039,
+     "text": "+0.0039 CAD per USD",
      "kind": "change",
      "unit": "CAD per USD",
      "grade": null,
@@ -1358,8 +1478,8 @@
      "group": "history_range",
      "segment": null,
      "label": "The monthly average of value: the 90th percentile of its changes over the 113 past 3-month windows (1 in 10 was higher), Jan 2017 to Aug 2026; history, not a forecast",
-     "value": 0.047192,
-     "text": "+0.0472 CAD per USD",
+     "value": 0.047,
+     "text": "+0.047 CAD per USD",
      "kind": "change",
      "unit": "CAD per USD",
      "grade": null,
@@ -1379,11 +1499,11 @@
      "id": "history_range.m3.rose",
      "group": "history_range",
      "segment": null,
-     "label": "Share of the 113 past 3-month windows in which the monthly average of value rose, Jan 2017 to Aug 2026; history, not a forecast",
-     "value": 53.982301,
-     "text": "54.0%",
-     "kind": "percent",
-     "unit": "%",
+     "label": "Of the 113 past 3-month windows (about 43 independent), the windows in which the monthly average of value rose, Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 61.0,
+     "text": "61",
+     "kind": "count",
+     "unit": "",
      "grade": null,
      "parent_grade": null,
      "grade_words": "a fact about the file's past, not graded: history, not a forecast",
@@ -1394,7 +1514,95 @@
        "value"
       ],
       "window": "history",
-      "op": "share of 3-month windows that rose"
+      "op": "count of 3-month windows that rose"
+     }
+    },
+    {
+     "id": "history_range.m3.nonoverlap.n",
+     "group": "history_range",
+     "segment": null,
+     "label": "The number of the 38 non-overlapping 3-month changes (one window every 3 months, the latest ending in Aug 2026), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 38.0,
+     "text": "38",
+     "kind": "count",
+     "unit": "",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "count of non-overlapping 3-month changes"
+     }
+    },
+    {
+     "id": "history_range.m3.nonoverlap.min",
+     "group": "history_range",
+     "segment": null,
+     "label": "The monthly average of value: the lowest of the 38 non-overlapping 3-month changes (one window every 3 months, the latest ending in Aug 2026), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": -0.1,
+     "text": "−0.10 CAD per USD",
+     "kind": "change",
+     "unit": "CAD per USD",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "min of non-overlapping 3-month changes"
+     }
+    },
+    {
+     "id": "history_range.m3.nonoverlap.median",
+     "group": "history_range",
+     "segment": null,
+     "label": "The monthly average of value: the middle of the 38 non-overlapping 3-month changes (one window every 3 months, the latest ending in Aug 2026), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 0.007,
+     "text": "+0.0070 CAD per USD",
+     "kind": "change",
+     "unit": "CAD per USD",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "median of non-overlapping 3-month changes"
+     }
+    },
+    {
+     "id": "history_range.m3.nonoverlap.max",
+     "group": "history_range",
+     "segment": null,
+     "label": "The monthly average of value: the highest of the 38 non-overlapping 3-month changes (one window every 3 months, the latest ending in Aug 2026), Jan 2017 to Aug 2026; history, not a forecast",
+     "value": 0.068,
+     "text": "+0.068 CAD per USD",
+     "kind": "change",
+     "unit": "CAD per USD",
+     "grade": null,
+     "parent_grade": null,
+     "grade_words": "a fact about the file's past, not graded: history, not a forecast",
+     "assumes": "550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value",
+     "inputs": {
+      "columns": [
+       "ref_date",
+       "value"
+      ],
+      "window": "history",
+      "op": "max of non-overlapping 3-month changes"
      }
     },
     {
@@ -1483,10 +1691,9 @@
     }
    ],
    "refused": [
-    "the headline is an average, so it has no parts that add up; see the headline finding",
-    "the forecast is not yet shown usable, so it is not added up into scenarios"
+    "the headline is an average, so it has no parts that add up; see the headline finding"
    ],
-   "note": "No scenario or contribution figures for this file; the reasons are listed. The historical range items (group history_range) say how much the monthly average moved in the file's own past windows: facts about the past, not a forecast and not graded."
+   "note": "No scenario or contribution figures for this file; the reasons are listed. The historical range items (group history_range) say how much the monthly average moved in the file's own past windows: facts about the past, not a forecast and not graded. The windows overlap, so each range says how many independent windows they are worth (n_eff), and the non-overlapping changes are stated beside them; figures are given to 2 significant figures."
   },
   "primary": {
    "id": "measure.value.change",

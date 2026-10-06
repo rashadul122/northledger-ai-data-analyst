@@ -825,7 +825,8 @@ def _sum_check(A: Any, X: Any, t: int, parts: Sequence[int], tol_unit: float, no
     out = {"pass": nc >= MIN_COMPLETE and months_c >= MIN_MONTHS and share >= PASS_SHARE and not neg,
            "complete": nc, "within": int(ok.sum()), "months": months_c, "incomplete": int(incomplete.sum()),
            "share": round(share, 4), "negative_unallocated": neg,
-           "max_rel_residual": float(rel.max()) if len(rel) else None}
+           "max_rel_residual": float(rel.max()) if len(rel) else None,
+           "max_residual": float(np.abs(r[complete]).max()) if nc else None}
     if nc == 0 and int(incomplete.sum()) > 0 and not neg:
         out["bound_only"] = True
     return out
@@ -960,7 +961,8 @@ def _measure_dim_name(name: str, labels: List[str]) -> bool:
 
 
 def _public_check(chk: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: chk.get(k) for k in ("complete", "within", "months", "incomplete", "share", "max_rel_residual")}
+    return {k: chk.get(k) for k in ("complete", "within", "months", "incomplete", "share", "max_rel_residual",
+                                    "max_residual")}
 
 
 def _alternatives(S: Dict[str, Any], rec: Dict[str, Any], A: Any, tol_u: float, alts_label: Set[int]) -> None:
@@ -1980,6 +1982,9 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         checks.append({"dim": d["column"], "total": d["total"], "parts": len(d.get("parts") or []),
                        "by": d.get("by") or "flat", "complete_cells": sc.get("complete"),
                        "within_tolerance": sc.get("within"), "max_rel_residual": mx,
+                       "max_residual": {"value": _r(sc.get("max_residual")),
+                                        "text": money(sc.get("max_residual"), S) if sc.get("max_residual") is not None
+                                        else "n/a"},
                        "unallocated_latest": {"value": _r(res["unallocated"]["latest"]) if res else None,
                                               "text": money(res["unallocated"]["latest"], S, ref=T1) if res else "n/a"},
                        "unallocated_prior": {"value": _r(res["unallocated"]["prior"]) if res else None,

@@ -2022,6 +2022,42 @@ def _one_forecast_evidence(rep: Dict[str, Any]) -> None:
             ln["text"] = _CORE_REPLAY_SENTENCE.sub(lambda _m: new, ln["text"], count=1)
 
 
+_BIG_NUMBER = re.compile(r"(?<![\w.,$])(\d{1,3}(?:,\d{3}){2,})(?:\.\d+)?(?![\w,])")
+
+
+def _estimand_units_in_text(text: str, S: Dict[str, Any], column: str) -> str:
+    """text with each amount of a million or more printed in the estimand's own units ("$73.0B": nl_structure.money), as the
+    headline is, never as raw base units ("73,046,640,000 total_retail_sales"); the measure's column name that follows an
+    amount goes with it. A rate or an index is left as it is."""
+    if not isinstance(text, str) or S["measure"].get("type") in ("rate", "index") or not _BIG_NUMBER.search(text):
+        return text
+    NS = _ns()
+    slug = re.escape(column or "")
+
+    def one(m: Any) -> str:
+        v = float(m.group(0).replace(",", ""))
+        return NS.money(v, S)
+    out = _BIG_NUMBER.sub(one, text)
+    return re.sub(r"(\$?\d[\d.]*[TBMK])\s+%s\b" % slug, r"\1", out) if slug else out
+
+
+def _estimand_units(rep: Dict[str, Any], S: Dict[str, Any], column: str) -> None:
+    """A table read by its structure: every amount the engine's sentences print in raw base units (the core writes
+    "73,046,640,000 total_retail_sales") is printed in the estimand's units instead, in the story, the summary and the
+    forecast's reason. The numbers themselves are not changed: only how they are written."""
+    fix = lambda t: _estimand_units_in_text(t, S, column)
+    st = rep.get("story") if isinstance(rep.get("story"), dict) else {}
+    for k in ("what_happened", "why", "whats_next", "what_to_do", "cannot_answer"):
+        if isinstance(st.get(k), list):
+            st[k] = [fix(x) if isinstance(x, str) else x for x in st[k]]
+    for ln in (rep.get("summary") or {}).get("lines") or []:
+        if isinstance(ln, dict) and isinstance(ln.get("text"), str):
+            ln["text"] = fix(ln["text"])
+    fc = rep.get("forecast") if isinstance(rep.get("forecast"), dict) else {}
+    if isinstance(fc.get("reason"), str):
+        fc["reason"] = fix(fc["reason"])
+
+
 def _estimand_window_text(est: Dict[str, Any]) -> str:
     """"12 months to Jul 2026" (the estimand's latest window); "the 11 matched months to Jul 2026" when a month the
     headline lacks in one window is left out of both; "Jul 2026" for one month."""
@@ -4832,15 +4868,60 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
            "comparison": est.get("comparison"),
            "figures": {k: {"value": (v or {}).get("value"), "text": safe((v or {}).get("text"), 40)}
                        for k, v in (est.get("figures") or {}).items() if isinstance(v, dict)},
-           "sum_checks": [{"dim": safe(c.get("dim"), 120), "total": safe(c.get("total"), 120), "parts": c.get("parts"),
-                           "verdict": c.get("verdict"),
-                           "unallocated_latest": {"value": (c.get("unallocated_latest") or {}).get("value"),
-                                                  "text": safe((c.get("unallocated_latest") or {}).get("text"), 40)}}
+           "sum_checks": [dict({"dim": safe(c.get("dim"), 120), "total": safe(c.get("total"), 120), "parts": c.get("parts"),
+                                "verdict": c.get("verdict"),
+                                "unallocated_latest": {"value": (c.get("unallocated_latest") or {}).get("value"),
+                                                       "text": safe((c.get("unallocated_latest") or {}).get("text"), 40)}},
+                               # how it adds up, for the report's estimand block (the worker keeps complete_cells and
+                               # max_rel_residual; the page's own copy keeps the rest)
+                               **{k: c[k] for k in ("complete_cells", "within_tolerance", "max_rel_residual") if k in c},
+                               **({"max_residual": {"value": (c.get("max_residual") or {}).get("value"),
+                                                    "text": safe((c.get("max_residual") or {}).get("text"), 40)}}
+                                  if isinstance(c.get("max_residual"), dict) else {}))
                           for c in est.get("sum_checks") or [] if isinstance(c, dict)][:8],
            "excluded": [{"what": safe(x.get("what"), 120), "why": safe(x.get("why"), 200)}
                         for x in est.get("excluded") or [] if isinstance(x, dict)][:8],
            "plan_source": est.get("plan_source"), "inference": _inference_for_ai(est.get("inference"), safe)}
     return out
+
+
+def _trend_test_for_ai(t: Any, safe: Any) -> Optional[Dict[str, Any]]:
+    """A trend analysis's test record (nl_inference.trend_test) for the writer: the slope and its 95% range, p, the
+    random-walk screen, the momentum, n, the verdict and the test's simulated size (what it found in no-trend series like
+    this one, and what the Newey-West range used before found). Never the series' name (a column)."""
+    if not isinstance(t, dict) or not t.get("verdict"):
+        return None
+    out: Dict[str, Any] = {"name": safe(t.get("name"), 60), "verdict": str(t["verdict"])[:30]}
+    for k in ("n", "rho", "slope", "p", "p_random_walk"):
+        v = t.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out[k] = v
+    ci = t.get("ci")
+    if isinstance(ci, (list, tuple)) and len(ci) == 2 and all(isinstance(x, (int, float)) and math.isfinite(x) for x in ci):
+        out["ci"] = [ci[0], ci[1]]
+    z = t.get("size")
+    if isinstance(z, dict):
+        sz: Dict[str, Any] = {k: z[k] for k in ("nominal", "simulated", "series", "newey_west", "claims")
+                              if isinstance(z.get(k), (int, float)) and not isinstance(z.get(k), bool)}
+        c = z.get("cell")
+        if isinstance(c, dict):
+            sz["cell"] = {k: c[k] for k in ("n", "rho") if isinstance(c.get(k), (int, float))}
+        elif isinstance(c, str):
+            sz["cell"] = safe(c, 60)
+        out["size"] = sz
+    return out
+
+
+def _privacy_for_ai(pr: Any, safe: Any, scrub: Any) -> Optional[Dict[str, Any]]:
+    """The categories the engine read as categories, not personal data (privacy.released), as the words the visitor was
+    shown ("Read as a category, not personal data: <column> (30 labels)"), for the report's method section. A column the
+    visitor withheld is never named (it is not among the released ones, and a text that names one is left out)."""
+    rel = []
+    for x in (pr or {}).get("released") or [] if isinstance(pr, dict) else []:
+        if not isinstance(x, dict) or not x.get("text") or scrub.names(x.get("text")):
+            continue
+        rel.append({"text": safe(x["text"], 200), "distinct": x.get("distinct") if isinstance(x.get("distinct"), int) else None})
+    return {"released": rel[:8]} if rel else None
 
 
 def _inference_for_ai(inf: Any, safe: Any) -> Optional[Dict[str, Any]]:
@@ -4920,6 +5001,9 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 d[k] = v
         if f.get("why"):
             d["why"] = safe(f["why"], 240)
+        if f.get("layout_artifact") is True:
+            d["layout_artifact"] = True          # a row count the table's layout fixes: no number, no grade for the reader
+            d.pop("value", None)
         cov = ((f.get("effect") or {}).get("coverage")) if isinstance(f.get("effect"), dict) else None
         if isinstance(cov, dict) and _num(cov.get("measured")) is not None:
             # T2: the interval's measured coverage (the numbers the why quotes), for the writer and its guard
@@ -4937,6 +5021,9 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         d: Dict[str, Any] = {"title": safe(a.get("title"), 160),
              "sentence": _cut_words(safe(a.get("sentence"), 4000), ANALYSIS_TEXT_MAX["sentence"]),
              "method": _cut_words(safe(a.get("method"), 4000), ANALYSIS_TEXT_MAX["method"])}
+        tt = _trend_test_for_ai(a.get("test"), safe)
+        if tt:
+            d["test"] = tt          # T1: the test's own record (the method text above is cut where the worker cuts it)
         t = a.get("table") or {}
         rows = t.get("rows") or []
         tab = None
@@ -5077,6 +5164,11 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     # was always told the baseline lost), each point's month as "date". Live bug, 29 Sep 2026.
     fc = {}
     f = rep.get("forecast") or {}
+    if not f.get("available") and f.get("row_forecast_dropped"):
+        # P0-13: no forecast of a row count the table's layout (or the calendar) fixes, and why: one line, never a number
+        fc["row_forecast_dropped"] = True
+        if f.get("reason"):
+            fc["reason"] = safe(f["reason"], 200)
     if f.get("available"):
         fc["available"] = True
         if f.get("label"):
@@ -5197,6 +5289,9 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         # the claim the report leads with ({id, claim, grade} or null): the PDF's key figures read it exactly
         "primary": _primary_for_ai(rep, safe, scrub),
     }
+    pv = _privacy_for_ai(rep.get("privacy"), safe, scrub)
+    if pv:
+        out["privacy"] = pv        # what was read as a category, for the report's method section (the worker drops it: the AI never reads it)
     # never the file's name (final review, 29 Sep 2026: the engine's sentences name it, "22 values in the amount
     # column of private_mix.csv could not be read", and every one went to /report): FILE_WORD stands in, as in
     # the planner's profile; the page puts the name back only in what it shows the visitor (src/js/50-try.js)
@@ -8740,6 +8835,12 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
     hl = _estimand_headline(rep)
     if hl and isinstance(rep.get("story"), dict):
         rep["story"]["headline"] = hl
+        # the bottom line's first sentence is the same claim (it read "Average total retail sales is up 3.5% on the year
+        # before (too little data to judge)": the monthly average's own grade, not what the table's headline is)
+        lines = (rep.get("summary") or {}).get("lines") or []
+        if lines and isinstance(lines[0], dict) and lines[0].get("kind") == "moved":
+            lines[0]["text"] = hl
+    _estimand_units(rep, S, _engine_slug(info["column"]))
     if ai_plan:
         inner_plan = rep.get("ai_plan") or {}
         keep = {k: inner_plan[k] for k in ("context_queries", "context_queries_dropped", "context") if k in inner_plan}

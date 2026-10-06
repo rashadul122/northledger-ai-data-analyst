@@ -7,8 +7,9 @@ page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT u
 tools/fixtures/eval/fx_usd_cad.csv (the Bank of Canada daily U.S. dollar rate, 2017 to 2026) under the plan below and
 analysis date 2026-09-29: rep = nl_browser.run_json(...); results = nl_browser.results_json(rep), whole. A level
 (VALUE, typed level) gets no forecast (the engine forecasts counts and totals only) and its historical range instead:
-group history_range, ten items (the 12-month and 3-month windows: their count, 10th, 50th and 90th percentiles and
-the share that rose), facts about the past with no grade. The same run as insight-proxy/test/scenarios-fx-history.json.
+group history_range, twenty items (the 12-month and 3-month windows: their count, their independent count n_eff, the 10th,
+50th and 90th percentiles, the share that rose, and the non-overlapping changes: their count, minimum, median and
+maximum), facts about the past with no grade; and the trend analysis with its test (wave 4, A2: the simulated size). The same run as insight-proxy/test/scenarios-fx-history.json.
 """
 import hashlib
 import json
@@ -61,7 +62,7 @@ def main() -> None:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     hist = [x["id"] for x in run["results"]["scenarios"]["items"] if x["group"] == "history_range"]
-    assert len(hist) == 10, hist
+    assert len(hist) == 20, hist
     out = {"about": __doc__.strip().split("\n\n")[-1].replace("\n", " "),
            "made_with": "python3 tools/fixtures/report-pdf/make_fx_history.py (the packed engine, run natively)",
            "engine_snapshot": run["snapshot"], "zip_sha256": hashlib.sha256(open(ZIP, "rb").read()).hexdigest(),

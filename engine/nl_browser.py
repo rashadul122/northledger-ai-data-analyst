@@ -4883,6 +4883,15 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
            "excluded": [{"what": safe(x.get("what"), 120), "why": safe(x.get("why"), 200)}
                         for x in est.get("excluded") or [] if isinstance(x, dict)][:8],
            "plan_source": est.get("plan_source"), "inference": _inference_for_ai(est.get("inference"), safe)}
+    mc = est.get("measure_choice")
+    if isinstance(mc, dict) and isinstance(mc.get("chosen"), dict):
+        # a table whose members are different measures: the one shown, who chose it, the rule and the others left out
+        out["measure_choice"] = {
+            "dim": safe(mc.get("dim"), 120), "by": mc.get("by"), "rule": safe(mc.get("rule"), 200),
+            "chosen": {k: safe(mc["chosen"].get(k), 80) for k in ("id", "name", "uom", "type", "type_basis")},
+            "alternatives": [{"id": safe(a.get("id"), 8), "name": safe(a.get("name"), 80), "type": a.get("type"),
+                              "precision": bool(a.get("precision"))}
+                             for a in mc.get("alternatives") or [] if isinstance(a, dict)][:8]}
     bf = est.get("built_from")
     if isinstance(bf, dict) and bf.get("n"):
         # a table with no total row: the headline is the sum of its parts (nl_structure.parts_info), said in its own words
@@ -5678,6 +5687,21 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
         ms = plan.get("momentum_slice")
         if isinstance(ms, str) and _nst.SLICE_ID.match(ms) and ms in sids:
             out["momentum_slice"] = ms
+        mm = plan.get("measure_member")
+        mdim = next((d for d in S.get("dims") or [] if d.get("measure_dim")), None)
+        if mm not in (None, ""):
+            ids = {x["id"]: x for x in (mdim or {}).get("measures") or []}
+            if mdim is None:
+                refused.append("measure_member %s was ignored: the table has no dimension of measures" % str(mm)[:12])
+            elif not (isinstance(mm, str) and _nst._MEASURE_ID.match(mm) and mm in ids):
+                refused.append("measure_member %s is not one of the table's measures (%s)" % (
+                    str(mm)[:12], ", ".join(sorted(ids))))
+            elif ids[mm]["precision"]:
+                refused.append("measure_member %s (%s) is the precision of another member (a standard error, a margin of error "
+                               "or a confidence interval): never the headline, so the default measure was kept" % (
+                                   mm, ids[mm]["name"][:60]))
+            else:
+                out["measure_member"] = mm
         bd = plan.get("breakdowns")
         if isinstance(bd, list):
             keep = [b for b in bd if isinstance(b, str) and _nst.BREAKDOWN_ID.match(b) and b in bids]
@@ -8739,6 +8763,25 @@ def _structure_plan(S: Dict[str, Any], ai_plan: Dict[str, Any], positions: Any, 
     rows aside, the slice its kept rows form, or the default slice when they mix a total with its parts, both adjusted
     copies, a component with its parent or units (ai_corrected, never sent back as a plan signal); else the default."""
     NS = _ns()
+    where, sid_, psrc, corr = _structure_plan_rows(S, ai_plan, positions, row_steps)
+    mm = ai_plan.get("measure_member")
+    mdim = next((d for d in S.get("dims") or [] if d.get("measure_dim")), None)
+    if mm and mdim is not None:
+        member = next((x for x in mdim["measures"] if x["id"] == mm and not x["precision"]), None)
+        if member is not None:
+            w2 = dict(where, **{mdim["column"]: member["name"]})
+            if NS._series_exist(S, w2):
+                same = next((x for x in S["slices"] if x["where"] == w2), None)
+                return w2, (same["id"] if same else "plan"), ("ai" if psrc == "engine_default" else psrc), corr
+            ai_plan.setdefault("refused", []).append(
+                "measure_member %s (%s) has no series at the headline's other members, so the default measure was kept" % (
+                    mm, member["name"][:60]))
+    return where, sid_, psrc, corr
+
+
+def _structure_plan_rows(S: Dict[str, Any], ai_plan: Dict[str, Any], positions: Any, row_steps: bool
+                         ) -> Tuple[Dict[str, Any], str, str, List[Dict[str, Any]]]:
+    NS = _ns()
     sid = str(ai_plan.get("slice") or "")
     s = NS.slice_by_id(S, sid) if sid else None
     if s is not None:
@@ -8854,7 +8897,7 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
         lines = (rep.get("summary") or {}).get("lines") or []
         if lines and isinstance(lines[0], dict) and lines[0].get("kind") == "moved":
             lines[0]["text"] = hl
-    _estimand_units(rep, S, _engine_slug(info["column"]))
+    _estimand_units(rep, NS.local(S, where), _engine_slug(info["column"]))
     if ai_plan:
         inner_plan = rep.get("ai_plan") or {}
         keep = {k: inner_plan[k] for k in ("context_queries", "context_queries_dropped", "context") if k in inner_plan}
@@ -8878,6 +8921,7 @@ def _structure_inner_blocks(rep: Dict[str, Any], inner: Dict[str, Any]) -> None:
     chart), with S1's monthly values reconciled to the engine's charted series (1e-6)."""
     NS = _ns()
     S, where = inner["S"], inner["where"]
+    S = NS.local(S, where)                  # the slice's own measure (a member of a measure dimension has its own unit)
     months, vals = NS._monthly(S, where)
     win = None
     chart = None

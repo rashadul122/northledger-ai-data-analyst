@@ -526,6 +526,9 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         "_member_unit": unit_info["member_unit"],
     }
     _measure_type(S)
+    # -- the dimension that names what is measured, first: the table's measure is its default member's, and the other
+    # dimensions' relations are read on that member's cells (wave 5, gap 2)
+    _measure_dims(S)
     # -- relations, dimension by dimension (adjustment pairs first: the other sum-checks run on the unadjusted member)
     for j in range(len(dims)):
         if tm.over():
@@ -546,7 +549,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
             rec["why"] = "the time budget ran out"
             continue
         if rec.get("mixed_units"):
-            _mixed_measure(S, j)
+            _mixed_measure(S, j)                       # a unit that varies with this dimension but is not a measure: typed anyway
             continue
         try:
             if S["measure"]["type"] in ("rate", "index"):
@@ -794,36 +797,128 @@ def _unit_type(uom: str, labels: str, column: str, member: str = "") -> str:
     return str(_classify(uom, labels, column, member)["type"])
 
 
-def _mixed_measure(S: Dict[str, Any], j: int) -> None:
-    """A dimension whose members are measured in different units (dollars beside units, an index on two bases): each
-    slice fixes one member, never mixed. The default member: one named as a total, else one in a currency, else the
-    first in the file."""
+MEASURE_RULE = ("a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member")
+_MEASURE_ID = re.compile(r"^M\d{1,2}$")
+_MEMBER_CUE = re.compile("|".join(x.pattern for x in (_PRECISION, _RATE_WORDS, _INDEX_WORDS, _STOCK_LEVEL_WORDS, _FLOW_WORDS)),
+                         re.I)
+
+
+def _member_types(S: Dict[str, Any], j: int) -> List[Dict[str, Any]]:
+    """Each member of dimension j typed on its own: its unit (the table's unit, or the one its rows carry when the unit
+    column varies with the dimension) and the words of its label decide (nl_structure._classify)."""
+    d = S["dims"][j]
+    unit_of = d.get("unit_of") or {}
+    m = S["measure"]
+    consts = [str(x.get("value") or "") for x in S.get("metadata") or []
+              if x.get("class") == "constant" and _norm(x.get("column")) not in _META]
+    bag = " ".join([m["column"]] + consts)
+    base = str(m.get("uom") or "") if not unit_of else ""
+    out = []
+    for lb in d["labels"]:
+        u = str(unit_of.get(lb) or base)
+        out.append(dict(_classify(u, bag, m["column"], lb), uom=u, currency=bool(_CURRENCY.search(u))))
+    return out
+
+
+def _is_measure_dim(S: Dict[str, Any], j: int) -> Optional[List[Dict[str, Any]]]:
+    """The members' types when dimension j names what is measured (its members' units differ, or their types differ and
+    most labels say so, or a member is the precision of another), else None (wave 5, gap 2)."""
+    d = S["dims"][j]
+    if d.get("role") or len(d["labels"]) < 2 or len(d["labels"]) > 40:
+        return None
+    types = _member_types(S, j)
+    if d.get("mixed_units"):
+        return types
+    kinds = {c["type"] for c in types}
+    prec = any(c["type"] == "precision" for c in types)
+    cued = sum(1 for lb in d["labels"] if _MEMBER_CUE.search(lb))
+    if (len(kinds) >= 2 or prec) and cued >= 0.5 * len(d["labels"]) and any(c["type"] != "precision" for c in types):
+        return types
+    return None
+
+
+def _measure_dims(S: Dict[str, Any]) -> None:
+    """The dimension that names what is measured (dollars beside units, a rate beside counts beside standard errors in one
+    value column): each member typed separately (M1, M2 ...), a default chosen by the documented rule, the relations of the
+    other dimensions then read on that member. The first such dimension only."""
+    for j, d in enumerate(S["dims"]):
+        types = _is_measure_dim(S, j)
+        if types is not None:
+            _measure_dim(S, j, types)
+            return
+
+
+def _rank(c: Dict[str, Any], label: str) -> Tuple[int, int]:
+    """The default order: a currency flow (0), a count flow or any other positive flow (1), a stock (2), an ambiguous
+    count or unknown (3), a rate or an index (4); a precision member never (9). A total's name breaks a tie."""
+    t = c["type"]
+    r = 0 if t == "flow" and c.get("currency") else 1 if (t in ("flow", "count") and sums_over_time(c)) else \
+        2 if t == "stock" else 4 if t in ("rate", "index") else 9 if t == "precision" else 3
+    return r, 0 if _TOTAL_HINT.search(label) else 1
+
+
+def _measure_dim(S: Dict[str, Any], j: int, types: List[Dict[str, Any]]) -> None:
+    """Dimension j is a measure dimension: `measures` lists its members (id M1, M2 ... in file order, unit, type and the
+    decision behind it, precision, default); the default is the first by MEASURE_RULE, never a precision member. The table's
+    measure becomes the default's; the other dimensions' sum-checks read the default member's cells."""
     rec = S["dims"][j]
     labels = rec["labels"]
-    unit_of = rec.get("unit_of") or {}
-    hint = [m for m in range(len(labels)) if _TOTAL_HINT.search(labels[m])]
-    cur = [m for m in range(len(labels)) if _CURRENCY.search(str(unit_of.get(labels[m]) or ""))]
-    m = (hint or cur or [0])[0]
-    rec.update(role="measure", total=labels[m], total_index=m, components={}, alternatives={},
-               why="its members are measured in different units (%s): one at a time, never added or averaged together"
-                   % ", ".join(sorted(set(str(u) for u in unit_of.values()))[:4]))
-    u = str(unit_of.get(labels[m]) or "")
-    c = _classify(u, " ".join([S["measure"]["column"], labels[m]]), S["measure"]["column"], labels[m])
-    S["measure"].update(c, uom=u, currency=bool(_CURRENCY.search(u)), units_vary_by=rec["column"])
+    order = sorted(range(len(labels)), key=lambda mi: (_rank(types[mi], labels[mi]), mi))
+    best = order[0]
+    if types[best]["type"] == "precision":
+        rec["role"] = "unresolved"
+        rec["why"] = "every member is the precision of another (standard errors, margins of error): nothing to report"
+        return
+    unit_of = {labels[mi]: types[mi]["uom"] for mi in range(len(labels))} if rec.get("mixed_units") else {}
+    meas = []
+    for mi, lb in enumerate(labels):
+        c = types[mi]
+        meas.append({"id": "M%d" % (mi + 1), "index": mi, "name": lb, "uom": c["uom"], "type": c["type"],
+                     "type_basis": c["type_basis"], "type_why": c["type_why"], "aggregation": c["aggregation"],
+                     "currency": bool(c.get("currency")), "precision": c["type"] == "precision", "default": mi == best})
+    rec.update(role="measure", measure_dim=True, measures=meas, total=labels[best], total_index=best, default_index=best,
+               components={}, alternatives={}, unit_of=unit_of or rec.get("unit_of") or {},
+               why="its members are different measures (%s): one at a time, never added or averaged together; the default is "
+                   "the first of %s" % (", ".join(sorted({"%s (%s)" % (m["name"], m["type"]) for m in meas}))[:200], MEASURE_RULE))
+    if rec.get("unit_of"):
+        rec["mixed_units"] = True
+    c = types[best]
+    S["measure"].update({k: c[k] for k in ("type", "type_basis", "type_why", "aggregation")}, uom=c["uom"],
+                        currency=bool(c.get("currency")), units_vary_by=rec["column"])
     if c["type"] == "index":
-        S["measure"]["index_bases"] = sorted(set(_INDEX_BASE.findall(u)))
+        S["measure"]["index_bases"] = sorted(set(_INDEX_BASE.findall(c["uom"])))
+
+
+def _mixed_measure(S: Dict[str, Any], j: int) -> None:
+    """A dimension whose members are measured in different units: a measure dimension (kept for the callers of old)."""
+    _measure_dim(S, j, _member_types(S, j))
 
 
 def slice_type(S: Dict[str, Any], where: Dict[str, Any]) -> Dict[str, Any]:
     """The measure of one slice: its unit and type (a measure dimension's member decides them)."""
     for d in S["dims"]:
-        if d.get("mixed_units") and isinstance(where.get(d["column"]), str):
+        if d.get("measure_dim") and isinstance(where.get(d["column"]), str):
+            mm = next((x for x in d["measures"] if x["name"] == where[d["column"]]), None)
+            if mm is not None:
+                return {"uom": mm["uom"], "type": mm["type"], "currency": mm["currency"], "aggregation": mm["aggregation"],
+                        "type_basis": mm["type_basis"], "type_why": mm["type_why"]}
+        elif d.get("mixed_units") and isinstance(where.get(d["column"]), str):
             u = str((d.get("unit_of") or {}).get(where[d["column"]]) or "")
             c = _classify(u, " ".join([S["measure"]["column"], where[d["column"]]]), S["measure"]["column"], where[d["column"]])
             return dict(c, uom=u, currency=bool(_CURRENCY.search(u)))
     m = S["measure"]
     return {"uom": m.get("uom"), "type": m["type"], "currency": m.get("currency"), "aggregation": m["aggregation"],
             "type_basis": m.get("type_basis"), "type_why": m.get("type_why")}
+
+
+def local(S: Dict[str, Any], where: Dict[str, Any]) -> Dict[str, Any]:
+    """The structure with the measure of ONE slice: a slice of another member of a measure dimension has its own unit and
+    type (dollars, units, a rate), whatever the table's default measure is."""
+    st = slice_type(S, where)
+    m = S["measure"]
+    if all(st.get(k) == m.get(k) for k in ("uom", "type", "aggregation", "type_basis")):
+        return S
+    return dict(S, measure=dict(m, **st))
 
 
 PANEL_MAX_SERIES = 60           # nl_browser's long-table layout reads at most this many series side by side
@@ -858,6 +953,9 @@ def _dim_tensor(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool
     import numpy as np
     SM, V, E = S["_SM"], S["_V"], S["_E"]
     mask = np.ones(SM.shape[0], dtype=bool)
+    for k, d in enumerate(S["dims"]):
+        if k != j and d.get("measure_dim") and d.get("default_index") is not None:
+            mask &= SM[:, k] == d["default_index"]          # the other dimensions' relations are read on the default measure
     if restrict:
         for k, d in enumerate(S["dims"]):
             if k != j and d.get("role") == "adjustment" and d.get("nsa_index") is not None:
@@ -967,6 +1065,9 @@ def _nonneg(S: Dict[str, Any]) -> bool:
     if S["measure"]["type"] not in ("flow", "count", "stock", "unknown"):
         return False
     V = S["_V"]
+    for k, d in enumerate(S["dims"]):
+        if d.get("measure_dim") and d.get("default_index") is not None:
+            V = V[S["_SM"][:, k] == d["default_index"]]
     have = ~np.isnan(V)
     return bool(not have.any() or float(V[have].min()) >= 0)
 
@@ -1624,7 +1725,8 @@ def _slices(S: Dict[str, Any]) -> None:
                 "partition": "the total of the %d other members (sum-check)" % len(d.get("parts") or []),
                 "hierarchy": "the root of the hierarchy (sum-checked family by family)",
                 "adjustment": "the unadjusted series: full calendar years, additive",
-                "measure": "the total measure; the others are components or other measures",
+                "measure": ("the engine's default measure: the first of %s" % MEASURE_RULE) if d.get("measure_dim") else
+                "the total measure; the others are components or other measures",
                 "components": "it bounds the other members, which are its components",
                 "rate_aggregate": "the published aggregate (a %s is never added across members)" % S["measure"]["type"],
                 "single": "read one member at a time (no relation verified)",
@@ -1657,7 +1759,15 @@ def _slices(S: Dict[str, Any]) -> None:
                 if _series_exist(S, w):
                     slices.append({"id": "S%d" % (len(slices) + 1), "where": w, "use": "alternative",
                                    "why": {d["column"]: "an alternative total (%s)" % of}})
-        if d["role"] == "measure" and d.get("mixed_units"):
+        if d["role"] == "measure" and d.get("measure_dim"):
+            for mm in d["measures"]:
+                if mm["name"] != base and not mm["precision"] and len(slices) < SLICES_MAX:
+                    w = dict(where, **{d["column"]: mm["name"]})
+                    if _series_exist(S, w):
+                        slices.append({"id": "S%d" % (len(slices) + 1), "where": w, "use": "other_measure",
+                                       "measure_id": mm["id"],
+                                       "why": {d["column"]: "another measure (%s, %s)" % (mm["type"], mm["uom"] or "its own units")}})
+        elif d["role"] == "measure" and d.get("mixed_units"):
             for lb in d["labels"]:
                 if lb != base and len(slices) < SLICES_MAX and lb not in (d.get("components") or {}):
                     w = dict(where, **{d["column"]: lb})
@@ -1909,7 +2019,11 @@ def check_rows(S: Dict[str, Any], positions: Optional[Sequence[int]]) -> List[Di
         ap = [a for a in alts if a in names and (d.get("total") in names)]
         if ap and role != "adjustment":
             out.append({"dim": d["column"], "kind": "alt_with_total", "members": ap + [d["total"]]})
-        if d.get("mixed_units"):
+        if d.get("measure_dim"):
+            if len(names) > 1:
+                out.append({"dim": d["column"], "kind": "mixed_units" if d.get("mixed_units") else "mixed_measures",
+                            "members": names[:12]})
+        elif d.get("mixed_units"):
             units = {(d.get("unit_of") or {}).get(n) for n in names}
             if len(units) > 1:
                 out.append({"dim": d["column"], "kind": "mixed_units", "members": names[:12]})
@@ -2203,6 +2317,26 @@ def _label_of(S: Dict[str, Any], where: Dict[str, Any]) -> List[str]:
     return out
 
 
+def measure_choice(S: Dict[str, Any], where: Dict[str, Any], plan_source: str = "engine_default") -> Optional[Dict[str, Any]]:
+    """estimand.measure_choice for a table whose members are different measures: the one measure shown, whether the engine's
+    default order chose it or the plan did, the rule, and the others (left out and why). None for any other table."""
+    for d in S["dims"]:
+        w = where.get(d["column"])
+        if not (d.get("measure_dim") and isinstance(w, str)):
+            continue
+        ch = next((m for m in d["measures"] if m["name"] == w), None)
+        if ch is None:
+            return None
+        alts = [{"id": m["id"], "name": m["name"], "uom": m["uom"], "type": m["type"], "precision": m["precision"],
+                 "why": ("the precision of another member: never the headline, never summed" if m["precision"] else
+                         "another measure: one measure is shown, never mixed with this one")}
+                for m in d["measures"] if m["id"] != ch["id"]]
+        rec = lambda m: {k: m[k] for k in ("id", "name", "uom", "type", "type_basis")}
+        return {"dim": d["column"], "chosen": rec(ch), "by": "plan" if plan_source == "ai" else "default",
+                "rule": MEASURE_RULE, "alternatives": alts}
+    return None
+
+
 def parts_info(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]) -> Optional[Dict[str, Any]]:
     """estimand.built_from for a slice that sums the parts of a dimension that has no total row: how many parts, whether only
     the months where every part has a value were summed, which months a suppressed part left out, how many part-months are
@@ -2256,8 +2390,12 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     if m.get("factor") and m["factor"] != 1:
         scale_txt = " (file in %s ×%s)" % (m.get("scale"), format(int(m["factor"]), ","))
     unit = (str(m.get("uom") or "") or m["type"]).lower()
+    choice = measure_choice(S, where, plan_source)
     built = parts_info(S, where, win)
     built_txt = ""
+    if choice:
+        built_txt = "one measure shown: %s, chosen %s; " % (
+            choice["chosen"]["name"], "by the plan" if choice["by"] == "plan" else "by the engine's default order (%s)" % MEASURE_RULE)
     if built:
         bits = [built["text"]]
         cells = "region-months" if built["noun"] == "regions" else "member-months"
@@ -2267,7 +2405,7 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         elif built["complete_months_only"] and built["months_dropped"]:
             bits.append("complete months only: the %s months where a part is suppressed are left out" % _fmt_count(
                 len(built["months_dropped"])))
-        built_txt = "; ".join(bits) + "; "
+        built_txt += "; ".join(bits) + "; "
     text = "%s; %s%s%s; %s %s–%s vs %s–%s" % (
         " · ".join(_label_of(S, where)) or "the whole table", built_txt, unit, scale_txt, agg,
         _mon(win["latest"][0]), _mon(win["latest"][1]), _mon(win["prior"][0]), _mon(win["prior"][1]))
@@ -2334,6 +2472,14 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         for alt, of in (d.get("alternatives") or {}).items():
             if d["role"] != "adjustment":
                 excluded.append({"what": alt, "dim": d["column"], "why": "an alternative total (%s)" % of})
+        if d.get("measure_dim") and isinstance(w, str):
+            for mm in d["measures"]:
+                if mm["name"] == w:
+                    continue
+                excluded.append({"what": mm["name"], "dim": d["column"], "why": (
+                    "the precision of another member (a standard error, a margin of error or a confidence interval): never the "
+                    "headline, never summed" if mm["precision"] else
+                    "another measure (%s, %s): one measure is shown, never mixed with %s" % (mm["type"], mm["uom"] or "its own units", w))})
         if d["role"] == "parts" and w == PARTS_TOKEN:
             for cmb, fam in (d.get("combined") or {}).items():
                 excluded.append({"what": cmb, "dim": d["column"],
@@ -2371,7 +2517,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             "comparison": {"latest": list(win["latest"]), "prior": list(win["prior"])},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
             "complete": bool(complete) and not (built or {}).get("incomplete"), "months_used": len(lat_m) if flow else n1,
-            "months_left_out": [] if complete else left_out, "inference": None, "built_from": built}
+            "months_left_out": [] if complete else left_out, "inference": None, "built_from": built,
+            "measure_choice": choice}
 
 
 def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
@@ -2433,6 +2580,9 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
             x["sa_adds_up"] = d["sa_adds_up"]
         if d.get("unit_of"):
             x["unit_of"] = dict(d["unit_of"])
+        if d.get("measure_dim"):
+            x["measures"] = [{k: m[k] for k in ("id", "name", "uom", "type", "type_basis", "precision", "default")}
+                             for m in d["measures"]]
         dims.append(x)
     out = {"kind": S["kind"], "usable": bool(S.get("usable")), "reason": S.get("reason") or "",
            "version": S.get("version"), "publisher": S.get("publisher"), "official": bool(S.get("official")),
@@ -2566,12 +2716,24 @@ def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: i
             rules.append("never add members of %s: no total was verified" % d["column"])
     rules.append("choose one slice id for the headline; the default slice is the engine's choice")
     m = S["measure"]
+    measures = None
+    for d in S["dims"]:
+        if d.get("measure_dim") and d["column"] in shown:
+            mem_ok = [x for x in d["measures"] if mem(d["column"], x["name"])]
+            if len(mem_ok) == len(d["measures"]):
+                measures = {"dim": d["column"], "members": [
+                    {"id": x["id"], "name": mem(d["column"], x["name"]), "uom": x["uom"] or None, "type": x["type"],
+                     "default": bool(x["default"]), "precision": bool(x["precision"])} for x in d["measures"]]}
+                rules.append("a measure dimension: show one member at a time (name its id as measure_member), never add or "
+                             "average its members; a precision member is never the headline")
     out = {"kind": "cube", "publisher": S.get("publisher"), "series": S.get("series"), "months": S.get("months"),
            "date": S["date"]["column"],
            "measure": {"column": m["column"], "type": m["type"], "uom": m.get("uom"), "scale": m.get("scale")},
            "metadata": [x["column"] for x in S.get("metadata") or [] if cols_all is None or x["column"] in cols_all][:20],
            "flag_column": (S.get("flags") or {}).get("column"),
            "dims": dims, "slices": slices, "breakdowns": bds, "rules": rules}
+    if measures:
+        out["measures"] = measures
     if cols_all is not None and out["flag_column"] not in cols_all:
         out["flag_column"] = None
 

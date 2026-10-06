@@ -2751,6 +2751,9 @@ def _build_structure(rep: Dict[str, Any], ctx_in: Dict[str, Any], viz: Dict[str,
     st_in = ctx_in.get("structure") or {}
     S = st_in.get("S") or {}
     where = dict(st_in.get("where") or {})
+    if S:
+        import nl_structure as _NST
+        S = _NST.local(S, where)               # the slice's own measure (a member of a measure dimension)
     waterfalls: Dict[str, Dict[str, Any]] = {}
     heats: Dict[str, Dict[str, Any]] = {}
     calendar: Optional[Dict[str, Any]] = None

@@ -464,6 +464,66 @@ def measures_rate_se(seed: int = 53, members=None) -> bytes:
         return "Persons" if key[1] == "Employment" else "Percent"
     return _official(["Labour force characteristics"], rec, uom=uom, scalar="units", decimals="2")
 
+# G5: repeated member names. An industry table whose names repeat under different parents ("Other", "Services"):
+_DUP_TREE = {"All industries": ["Retail", "Wholesale", "Transport"],
+             "Retail": ["Food", "Other", "Services"], "Wholesale": ["Machinery", "Other", "Services"],
+             "Transport": ["Road", "Other", "Services"]}
+_DUP_LEAF = {("Retail", "Food"): 3000, ("Retail", "Other"): 1200, ("Retail", "Services"): 800,
+             ("Wholesale", "Machinery"): 2500, ("Wholesale", "Other"): 900, ("Wholesale", "Services"): 700,
+             ("Transport", "Road"): 2000, ("Transport", "Other"): 600, ("Transport", "Services"): 500}
+
+
+def dup_names(variant: str = "coordinate", seed: int = 61) -> bytes:
+    """G5: the industry names "Other" and "Services" repeat under three parents. variant: "coordinate" (a dotted COORDINATE
+    "1.<member id>": the member id is its second part), "code" (an "Industry code" column), "parent" (an "Industry group" column
+    holding the parent's name), "none" (nothing tells the repeats apart, but they sit under different parents ... no: the same
+    parent, so they are true duplicates: the table is refused) or "plain" (the same names, no id, no parent column)."""
+    rng = np.random.RandomState(seed)
+    leaf = {k: _series(rng, v) for k, v in _DUP_LEAF.items()}
+    members = []                                              # (id, name, parent, series)
+    mid = 0
+    for par, kids in list(_DUP_TREE.items())[1:]:
+        for kid in kids:
+            mid += 1
+            members.append((mid, kid, par, leaf[(par, kid)]))
+    par_sum = {par: sum(m[3] for m in members if m[2] == par) for par in ("Retail", "Wholesale", "Transport")}
+    for par in ("Retail", "Wholesale", "Transport"):
+        mid += 1
+        members.append((mid, par, "All industries", par_sum[par]))
+    mid += 1
+    members.append((mid, "All industries", "", sum(par_sum.values())))
+    if variant == "none":
+        # two rows named "Other" under Retail on every date: true duplicates
+        members.append((mid + 1, "Other", "Retail", leaf[("Retail", "Other")] * 0 + 7))
+    head = ["REF_DATE", "GEO", "DGUID", "Industry"] + (["Industry group"] if variant == "parent" else []) + \
+        (["Industry code"] if variant == "code" else []) + ["UOM", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID", "VECTOR"] + \
+        (["COORDINATE"] if variant == "coordinate" else []) + ["VALUE", "STATUS", "SYMBOL", "TERMINATED", "DECIMALS"]
+    rows = []
+    for i, mo in enumerate(MONTHS):
+        for (m_id, name, par, ser) in members:
+            r = [mo, "Canada", "2021A000000011", name]
+            if variant == "parent":
+                r.append(par)
+            if variant == "code":
+                r.append("C%03d" % (100 + m_id))
+            r += ["Dollars", "81", "thousands", "3", "v%d" % (200000 + m_id)]
+            if variant == "coordinate":
+                r.append("1.%d" % m_id)
+            r += ["%d" % ser[i], "A", "", "", "0"]
+            rows.append(r)
+    return _csv(head, rows)
+
+
+def dup_names_series(seed: int = 61):
+    """The members' true monthly series of dup_names (thousands of dollars): {(parent, name): array}, parents summed."""
+    rng = np.random.RandomState(seed)
+    leaf = {k: _series(rng, v) for k, v in _DUP_LEAF.items()}
+    out = dict(leaf)
+    for par in ("Retail", "Wholesale", "Transport"):
+        out[("All industries", par)] = sum(v for (p, _n), v in leaf.items() if p == par)
+    out[("", "All industries")] = sum(out[("All industries", p)] for p in ("Retail", "Wholesale", "Transport"))
+    return out
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

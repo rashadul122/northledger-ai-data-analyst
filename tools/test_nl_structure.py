@@ -1191,6 +1191,124 @@ def test_g1_a_stock_or_a_rate_with_no_total_shows_one_member_by_dominance_and_sa
     assert rep["estimand"]["slice"][0]["member"] == "Bravo", rep["estimand"]["slice"]
 
 
+# ----------------------------------------------------------------------------- wave 5, gap 2: measure dimensions
+def _meas(S, col):
+    return {m["name"]: m for m in dim(S, col)["measures"]}
+
+
+def test_g2_dollars_and_units_in_one_value_column_are_typed_separately_and_one_is_chosen():
+    """A "Statistics" dimension whose members are measured in different units (dollars beside units): each member is typed
+    on its own (M1, M2 ... with unit, type and the default flag), the table's relations are checked on the default member,
+    the slices, the estimand and the breakdowns fix ONE member, and the estimand says why it is that one."""
+    data = MC.measures_units_dollars()
+    S = detect(data)
+    d = dim(S, "Statistics")
+    assert d["role"] == "measure" and S["usable"], (d["role"], S["reason"])
+    got = [(m["id"], m["name"], m["uom"], m["type"], m["default"], m["precision"]) for m in d["measures"]]
+    assert got == [("M1", "Sales value", "Dollars", "flow", True, False), ("M2", "Units sold", "Number", "count", False, False)], got
+    assert d["measures"][1]["type_basis"] == "positively a flow" and d["measures"][0]["type_basis"] == "positively a flow"
+    g = dim(S, "GEO")
+    assert g["role"] == "partition" and g["total"] == "Total", (g["role"], g.get("why"))
+    assert S["default"] == {"GEO": "Total", "Statistics": "Sales value"}, S["default"]
+    rep = _run(data, "measures.csv")
+    est = rep["estimand"]
+    mc = est["measure_choice"]
+    assert mc["dim"] == "Statistics" and mc["chosen"]["id"] == "M1" and mc["by"] == "default", mc
+    assert "a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member" in mc["rule"], mc
+    assert [(a["id"], a["name"]) for a in mc["alternatives"]] == [("M2", "Units sold")], mc["alternatives"]
+    assert est["measure"]["uom"] == "Dollars" and est["measure"]["type"] == "flow", est["measure"]
+    assert "one measure shown: Sales value" in est["text"], est["text"]
+    ex = {x["what"]: x["why"] for x in est["excluded"]}
+    assert "another measure" in ex["Units sold"] and "never mixed" in ex["Units sold"], ex
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    tot = pd.to_numeric(df[(df.GEO == "Total") & (df.Statistics == "Sales value")].set_index("REF_DATE").VALUE)
+    lat = est["comparison"]["latest"]
+    assert abs(est["figures"]["latest"]["value"] - tot[(tot.index >= lat[0]) & (tot.index <= lat[1])].sum()) < 1e-6, \
+        "dollars only: the units are never added to them"
+    out = NB.results_for_ai(rep)
+    assert out["estimand"]["measure_choice"]["chosen"]["id"] == "M1"
+    json.dumps(rep, allow_nan=False)
+
+
+def test_g2_a_plan_chooses_a_measure_member_by_id_and_the_profile_lists_the_members():
+    data = MC.measures_units_dollars()
+    NB._PROFILE_CACHE.clear()
+    prof = NB.profile_for_ai(data, "measures.csv", decisions={})
+    ms = prof["structure"]["measures"]
+    assert ms["dim"] == "Statistics" and [(m["id"], m["name"], m["uom"], m["type"], m["default"]) for m in ms["members"]] == [
+        ("M1", "Sales value", "Dollars", "flow", True), ("M2", "Units sold", "Number", "count", False)], ms
+    plan = {"goal": "How did unit sales move?", "primary": "VALUE", "measure_member": "M2",
+            "columns": [{"name": "VALUE", "semantic_type": "count", "role": "target"}], "operations": []}
+    rep = _run(data, "measures.csv", {"__plan__": plan})
+    est = rep["estimand"]
+    assert est["plan_source"] == "ai" and est["measure"]["uom"] == "Number" and est["measure"]["type"] == "count", est["measure"]
+    assert est["measure_choice"]["chosen"]["id"] == "M2" and est["measure_choice"]["by"] == "plan", est["measure_choice"]
+    assert "one measure shown: Units sold, chosen by the plan" in est["text"], est["text"]
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    tot = pd.to_numeric(df[(df.GEO == "Total") & (df.Statistics == "Units sold")].set_index("REF_DATE").VALUE)
+    lat = est["comparison"]["latest"]
+    assert abs(est["figures"]["latest"]["value"] - tot[(tot.index >= lat[0]) & (tot.index <= lat[1])].sum()) < 1e-6, est["figures"]
+    assert est["figures"]["latest"]["text"].startswith("$") is False, "units are not dollars: %s" % est["figures"]["latest"]["text"]
+    it = _items(rep)
+    parts = [v["value"] for k, v in it.items() if k.startswith("contribution.geo.") and not k.endswith("unallocated")]
+    assert len(parts) == 3 and abs(sum(parts) + it["contribution.geo.unallocated"]["value"] - it["headline.change"]["value"]) < 1e-6
+    # an id the table does not have is ignored, with a note
+    rep = _run(data, "measures.csv", {"__plan__": dict(plan, measure_member="M9")})
+    assert rep["estimand"]["measure_choice"]["chosen"]["id"] == "M1" and rep["estimand"]["plan_source"] == "engine_default"
+    assert any("measure_member" in x and "M9" in x for x in rep["ai_plan"]["refused"]), rep["ai_plan"]["refused"]
+
+
+def test_g2_a_rate_a_count_and_a_standard_error_in_one_value_column_a_precision_member_is_never_the_headline():
+    data = MC.measures_rate_se()
+    S = detect(data)
+    d = dim(S, "Labour force characteristics")
+    ms = {m["name"]: m for m in d["measures"]}
+    assert d["role"] == "measure", d["role"]
+    assert ms["Unemployment rate"]["type"] == "rate" and ms["Unemployment rate"]["id"] == "M1", ms["Unemployment rate"]
+    assert ms["Employment"]["type"] == "stock" and ms["Employment"]["type_basis"] == "positively a stock", ms["Employment"]
+    se = ms["Standard error of the unemployment rate"]
+    assert se["precision"] is True and se["type"] == "precision" and se["default"] is False and se["id"] == "M3", se
+    # the documented default: a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member
+    assert ms["Employment"]["default"] is True and ms["Unemployment rate"]["default"] is False, [m["default"] for m in d["measures"]]
+    assert S["default"]["Labour force characteristics"] == "Employment" and dim(S, "GEO")["role"] == "partition" and \
+        dim(S, "GEO")["total"] == "Canada", (S["default"], dim(S, "GEO")["role"])
+    assert not any(s["where"].get("Labour force characteristics") == se["name"] for s in S["slices"]), "no slice of a precision member"
+    # the rate's slice: its published aggregate, never added or averaged
+    r = next(s for s in S["slices"] if s["where"].get("Labour force characteristics") == "Unemployment rate")
+    assert r["where"]["GEO"] == "Canada" and r["use"] == "other_measure", r
+    rep = _run(data, "lfs.csv")
+    est = rep["estimand"]
+    assert est["measure_choice"]["chosen"]["name"] == "Employment" and est["measure"]["type"] == "stock", est["measure_choice"]
+    ex = {x["what"]: x["why"] for x in est["excluded"]}
+    assert "precision" in ex["Standard error of the unemployment rate"] and "never the headline" in ex["Standard error of the unemployment rate"], ex
+    assert [a["name"] for a in est["measure_choice"]["alternatives"]] == ["Unemployment rate", "Standard error of the unemployment rate"], \
+        est["measure_choice"]["alternatives"]
+    # a plan may choose the rate (M1): its published aggregate in percent; a precision member (M3) is refused
+    plan = {"goal": "How did unemployment move?", "primary": "VALUE", "operations": [],
+            "columns": [{"name": "VALUE", "semantic_type": "percentage", "role": "target"}]}
+    rep = _run(data, "lfs.csv", {"__plan__": dict(plan, measure_member="M1")})
+    est = rep["estimand"]
+    assert est["measure"]["type"] == "rate" and est["slice"][0]["member"] == "Canada" and est["plan_source"] == "ai", est["measure"]
+    assert est["figures"]["change"]["text"].endswith("percentage points"), est["figures"]
+    assert not [k for k in _items(rep) if k.startswith("contribution.")], "a rate is never broken down"
+    rep = _run(data, "lfs.csv", {"__plan__": dict(plan, measure_member="M3")})
+    assert rep["estimand"]["measure_choice"]["chosen"]["name"] == "Employment" and rep["estimand"]["plan_source"] == "engine_default"
+    assert any("precision" in x and "M3" in x for x in rep["ai_plan"]["refused"]), rep["ai_plan"]["refused"]
+
+
+def test_g2_negatives_a_precision_member_first_in_the_file_is_not_the_default_and_an_ordinary_dimension_is_not_a_measure_dimension():
+    S = detect(MC.measures_rate_se(members=("Standard error of the unemployment rate", "Unemployment rate")))
+    d = dim(S, "Labour force characteristics")
+    assert d["measures"][0]["precision"] and not d["measures"][0]["default"] and d["measures"][1]["default"], d["measures"]
+    assert S["default"]["Labour force characteristics"] == "Unemployment rate", S["default"]
+    # a table whose measure dimension holds two currency measures of one unit (the retail table's own shape) keeps its role
+    S2 = detect(MC.partition())
+    assert all(x["role"] != "measure" for x in S2["dims"]), [x["role"] for x in S2["dims"]]
+    # one region whose name holds the word "rate" is a region, not a measure
+    S3 = detect(MC.partition().replace(b"North", b"Rate review boards"))
+    assert dim(S3, "GEO")["role"] == "partition" and not any(x.get("measure_dim") for x in S3["dims"]), dim(S3, "GEO")["role"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

@@ -2114,9 +2114,11 @@
       var cl = R.cleaning || {}, drows = [];
       var dropN = drops.reduce(function (a, d) { return a + (isFinite(d.rows) ? Number(d.rows) : 0); }, 0), fileN = drops.length && isFinite(drops[0].of) ? Number(drops[0].of) : 0;
       if (dropN && fileN) drows.push(['Rows in the file', fileN.toLocaleString('en-US')], ['Rows the AI plan set aside', dropN.toLocaleString('en-US') + ' (' + fmtShare(100 * dropN / fileN) + ')']);
-      if (rows !== undefined && rows !== null) drows.push(['Rows read', Number(cl.rows_in !== undefined && cl.rows_in !== null ? cl.rows_in : rows).toLocaleString('en-US')]);
-      if (cl.rows_clean !== undefined && cl.rows_clean !== null) drows.push(['Rows analysed', Number(cl.rows_clean).toLocaleString('en-US')]);
-      if (cl.rows_quarantined !== undefined && cl.rows_quarantined !== null) drows.push(['Rows set aside', Number(cl.rows_quarantined).toLocaleString('en-US')]);
+      // a statistical table read by its structure is one series: its rows are the table's, what the engine reads is its monthly values
+      var tbl = !!(R.structure && R.structure.usable), nm = tbl ? 'Monthly values' : 'Rows';
+      if (rows !== undefined && rows !== null) drows.push([tbl ? 'Table rows read' : 'Rows read', Number(tbl ? rows : cl.rows_in !== undefined && cl.rows_in !== null ? cl.rows_in : rows).toLocaleString('en-US')]);
+      if (cl.rows_clean !== undefined && cl.rows_clean !== null) drows.push([nm + ' analysed', Number(cl.rows_clean).toLocaleString('en-US')]);
+      if (cl.rows_quarantined !== undefined && cl.rows_quarantined !== null) drows.push([nm + ' set aside', Number(cl.rows_quarantined).toLocaleString('en-US')]);
       if (cols) drows.push(['Columns', String(cols)]);
       if (isFinite(R.health_score) && R.health_score !== null) drows.push(['Data health score (0 to 100)', Number(R.health_score).toFixed(1)]);
       if (hx && isFinite(R.health_score) && R.health_score !== null) drows.push(['What set the health score', hx]);

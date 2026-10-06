@@ -958,6 +958,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       // the categories the engine read as categories, in the method and data quality
       const apxA = sp(between(r, 'APPENDIX A', 'APPENDIX B'));
       expect(lp, apxA.indexOf('columns read as categories, not personal data') >= 0 && apxA.indexOf(sp(RTR.privacy.released[0].text)) >= 0, 'the released category is not in the method and data quality');
+      expect(lp, /table rows read 36,735 monthly values analysed 79 monthly values set aside 0/.test(apxA), 'the data table calls the 79 monthly values of a statistical table "rows", or loses the table\'s own 36,735 rows: ' + apxA.slice(apxA.indexOf('the data and its cleaning'), apxA.indexOf('the data and its cleaning') + 200));
       expect(lp, apxA.indexOf('each total checked against its parts') >= 0 && /geo canada 13 265 265 \$3\.0k \$0\.0b/.test(apxA) && apxA.indexOf('the publisher\'s flags in the file: 5,430 rows suppressed') >= 0, 'the sum-check table or the publisher\'s flags are missing from Appendix A');
       if (paper === 'letter') {
         // the name of the file the visitor sent is nowhere

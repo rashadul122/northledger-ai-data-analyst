@@ -910,7 +910,7 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
 .nl2-grade[data-process] { white-space: normal; }
 .nlv .w-unalloc { fill: var(--surface); stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 3 2; }
 @media (max-width: 720px) { .nl2-est-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media print { body.print-try .nl2-estimand { break-inside: avoid; } body.print-try .nl2-est-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); } body.print-try .nl2-untrusted, body.print-try .nl2-est-fig { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+@media print { body.print-try .nl2-estimand, body.print-try .nl2-estimand-in { break-inside: avoid; } body.print-try .nl2-est-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); } body.print-try .nl2-untrusted, body.print-try .nl2-est-fig { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
 .nl2-drivers { margin: 0; font-size: 14px; color: var(--muted); }
 .nl2-drivers b { color: var(--ink); }
 .nl2-trustcard h3, .nl2-settle h3, .nl2-ftab-card h3 { margin: 0 0 8px; font-size: 18px; }
@@ -1073,6 +1073,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
   body.print-try .nl2-ftab[data-cols="manager"] thead th:nth-child(3) { width: 14%; }
   body.print-try .nl2-sort::after { content: none !important; }
   body.print-try .nl2-sec .tr-card, body.print-try .nl2-sec .tr-two { break-inside: auto; }
+  body.print-try .nl2-sec .tr-card.nl2-estimand-in { break-inside: avoid; }
   body.print-try .nl2-grade, body.print-try .nl2 svg, body.print-try .nl2-tag, body.print-try .nl2-champ > * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 
@@ -1356,7 +1357,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-06 12:57:35 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-06 13:07:05 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

@@ -1,0 +1,2966 @@
+{
+ "about": "Builds wave5-results.json: the engine's results on three SYNTHETIC statistical tables, for the report writer's wave 5 checks.",
+ "made_with": "python3 tools/fixtures/report-pdf/make_wave5.py (the packed engine, run natively)",
+ "zip_sha256": "888a95dae9c64a57460ec648066fd51d2c74e78c1810deec7ff441c972af411f",
+ "as_of": "2026-09-30",
+ "cases": {
+  "nototal": {
+   "name": "regions_no_total.csv",
+   "csv_sha256": "1a760e05a6e95ebdb092f22bebd3b021a5916a8f0d4458fb48a905441997ad41",
+   "results": {
+    "ok": true,
+    "estimand": {
+     "text": "the sum of 5 regions; built from 5 regions; this table has no total row; complete months only: the 2 months where a part is suppressed are left out; dollars (file in thousands ×1,000); totals of the 10 months with a value in both windows (Mar 2022, Nov 2022 left out) Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
+     "slice": [
+      {
+       "dim": "GEO",
+       "member": "the sum of 5 regions",
+       "why": "no total row: the headline is the sum of the 5 regions, month by month"
+      }
+     ],
+     "measure": {
+      "label": "VALUE",
+      "uom": "Dollars",
+      "scale": "thousands",
+      "scale_applied": 1000.0,
+      "type": "flow",
+      "type_basis": "positively a flow",
+      "aggregation": "sum over months"
+     },
+     "comparison": {
+      "latest": [
+       "2022-01",
+       "2022-12"
+      ],
+      "prior": [
+       "2021-01",
+       "2021-12"
+      ]
+     },
+     "figures": {
+      "prior": {
+       "value": 279104000.0,
+       "text": "$279.1M",
+       "months": 10
+      },
+      "latest": {
+       "value": 288396000.0,
+       "text": "$288.4M",
+       "months": 10
+      },
+      "change": {
+       "value": 9292000.0,
+       "text": "+$9.3M"
+      },
+      "change_pct": {
+       "value": 3.329225,
+       "text": "+3.3%"
+      }
+     },
+     "sum_checks": [
+      {
+       "dim": "GEO",
+       "total": "",
+       "parts": 5,
+       "verdict": "not possible (no total row)",
+       "unallocated_latest": {
+        "value": 0.0,
+        "text": "none: the headline is the sum of its par"
+       },
+       "complete_cells": null,
+       "within_tolerance": null,
+       "max_rel_residual": null,
+       "built_from_parts": true,
+       "suppressed_part_months": 2,
+       "max_residual": {
+        "value": null,
+        "text": "n/a"
+       }
+      }
+     ],
+     "excluded": [],
+     "plan_source": "engine_default",
+     "inference": {
+      "mode": "official_aggregate",
+      "publisher": "statcan",
+      "describe": {
+       "change_pct": 4.6358787529322285,
+       "prior": 279104000.0,
+       "latest": 288396000.0
+      },
+      "how_known": [
+       "publisher columns REF_DATE, DGUID, VECTOR, STATUS (Statistics Canada)",
+       "the headline is the sum of the table's 5 published regions (it has no total row)",
+       "a flow in Dollars"
+      ],
+      "revisions": "the file marks no month of the headline as revised or preliminary",
+      "grade_label": "process grade: month-to-month noise in 34 monthly totals; not a test of the published total",
+      "quality": {
+       "column": "STATUS",
+       "codes": {
+        "A": 238,
+        "x": 2
+       }
+      }
+     },
+     "built_from": {
+      "dim": "GEO",
+      "noun": "regions",
+      "n": 5,
+      "text": "built from 5 regions; this table has no total row",
+      "complete_months_only": true,
+      "incomplete": false,
+      "suppressed_part_months": 2,
+      "months_dropped": [
+       "2021-11",
+       "2022-03"
+      ],
+      "combined": []
+     }
+    },
+    "structure": {
+     "kind": "cube",
+     "usable": true,
+     "publisher": "statcan",
+     "series": 5,
+     "months": 48,
+     "dims": [
+      {
+       "column": "GEO",
+       "role": "parts",
+       "members": 5,
+       "parts": 5
+      }
+     ],
+     "slice": {
+      "id": "S1",
+      "where": {
+       "GEO": "(sum of the parts)"
+      },
+      "column": "value total"
+     },
+     "reason": "",
+     "flags": {
+      "column": "STATUS",
+      "by_kind": {
+       "suppressed": 2
+      },
+      "quality_of_headline": {
+       "A": 238,
+       "x": 2
+      }
+     },
+     "corrections": []
+    },
+    "input": {
+     "name": "[your file]",
+     "rows": 240,
+     "columns": 14
+    },
+    "goal": "VALUE, the sum of 5 regions, the 10 matched months to Dec 2022: +3.3% ($288.4M) in the published totals",
+    "reading": "",
+    "quality_risks": [],
+    "plan_applied": [],
+    "plan_refused": [],
+    "findings": [
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "business",
+      "claim": "Change in the average month of value_total, latest 12 months against the 12 before",
+      "value": 4.6358787529322285,
+      "why": "Based on 22 rows over 8 periods -- too little history to act on yet. The 4.6% difference is real in this sample, but a sample this small moves that much on its own.",
+      "interval_coverage": {
+       "measured": 0.9606126914660832,
+       "lo": 0.938603573191842,
+       "hi": 0.9749427058733878
+      }
+     },
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "forecast",
+      "claim": "Months of history available to forecast monthly value_total",
+      "value": 46.0,
+      "why": "There are 46 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+     }
+    ],
+    "analyses": [],
+    "charts": [
+     {
+      "id": "viz.1.contribution_waterfall",
+      "chart": "contribution_waterfall",
+      "kind": "waterfall",
+      "title": "Where the change in value total came from, by GEO",
+      "subtitle": "value total went from $279.1M to $288.4M (10 matched months of each window); each published part's contribution to the +$9.3M change",
+      "section": "drove",
+      "supports": "Change in the average month of value_total, latest 12 months against the 12 before",
+      "anchors": [
+       "finding:measure.value_total.change",
+       "scenario:headline.prior",
+       "scenario:contribution.geo.bravo",
+       "scenario:contribution.geo.alpha",
+       "scenario:contribution.geo.delta",
+       "scenario:contribution.geo.echo",
+       "scenario:contribution.geo.charlie",
+       "scenario:headline.latest",
+       "scenario:headline.change"
+      ],
+      "grade": null,
+      "parent_grade": "NOT_ENOUGH_DATA",
+      "chosen_by": "engine",
+      "why": "Chosen by the engine: where the change in the headline came from, by the table's own published parts of GEO",
+      "measure": {
+       "label": "value total",
+       "unit": "",
+       "kind": "amount"
+      },
+      "data": {
+       "steps": [
+        {
+         "label": "Start",
+         "value": 0,
+         "text": "$0",
+         "kind": "total",
+         "from": 0,
+         "to": 0
+        },
+        {
+         "label": "Bravo",
+         "value": 3709000,
+         "text": "+$3.7M",
+         "kind": "step",
+         "from": 0,
+         "to": 3709000
+        },
+        {
+         "label": "Alpha",
+         "value": 2006000,
+         "text": "+$2.0M",
+         "kind": "step",
+         "from": 3709000,
+         "to": 5715000
+        },
+        {
+         "label": "Delta",
+         "value": 1857000,
+         "text": "+$1.9M",
+         "kind": "step",
+         "from": 5715000,
+         "to": 7572000
+        },
+        {
+         "label": "Echo",
+         "value": 951000,
+         "text": "+$951.0K",
+         "kind": "step",
+         "from": 7572000,
+         "to": 8523000
+        },
+        {
+         "label": "Charlie",
+         "value": 769000,
+         "text": "+$769.0K",
+         "kind": "step",
+         "from": 8523000,
+         "to": 9292000
+        },
+        {
+         "label": "Total change",
+         "value": 9292000,
+         "text": "+$9.3M",
+         "kind": "total",
+         "from": 0,
+         "to": 9292000
+        }
+       ],
+       "basis": {
+        "split": "segment",
+        "finding_id": "measure.value_total.change",
+        "column": "GEO",
+        "prior": [
+         "2021-01",
+         "2021-12"
+        ],
+        "latest": [
+         "2022-01",
+         "2022-12"
+        ]
+       },
+       "change": {
+        "value": 9292000,
+        "text": "+$9.3M"
+       }
+      },
+      "table": {
+       "cols": [
+        "Step",
+        "Contribution",
+        "Own change"
+       ],
+       "rows": [
+        [
+         "Start",
+         "$0",
+         ""
+        ],
+        [
+         "Bravo",
+         "+$3.7M",
+         "+4.1%"
+        ],
+        [
+         "Alpha",
+         "+$2.0M",
+         "+3.5%"
+        ],
+        [
+         "Delta",
+         "+$1.9M",
+         "+2.7%"
+        ],
+        [
+         "Echo",
+         "+$951.0K",
+         "+3.6%"
+        ],
+        [
+         "Charlie",
+         "+$769.0K",
+         "+2.1%"
+        ],
+        [
+         "Total change",
+         "+$9.3M",
+         ""
+        ]
+       ]
+      },
+      "summary": "the sum of 5 regions went from $279.1M in the 10 matched months before to $288.4M in the same months of the latest 12, a change of +$9.3M (descriptive arithmetic on published totals). The largest contributions by GEO: Bravo +$3.7M and Alpha +$2.0M. The parts add up to the change exactly. Where the change sits, not what caused it.",
+      "suppressed": {
+       "cells": 0,
+       "why": ""
+      },
+      "source": "structure: the parts of the table by GEO (it has no total row: the headline is built by adding them)",
+      "inputs": {
+       "columns": [
+        "value total",
+        "GEO"
+       ],
+       "rows": null,
+       "months": [
+        "2021-01",
+        "2022-12"
+       ],
+       "op": "each part's 12-month total in each window, from the table's own series"
+      }
+     }
+    ],
+    "tables": [
+     {
+      "title": "Where the change in value total (the sum of 5 regions) came from",
+      "cols": [
+       "GEO",
+       "Contribution to the change",
+       "Share of the change",
+       "Own change",
+       "Share of the latest year"
+      ],
+      "rows": [
+       [
+        "Bravo",
+        "+$3.7M",
+        "39.9%",
+        "+4.1%",
+        "32.4%"
+       ],
+       [
+        "Alpha",
+        "+$2.0M",
+        "21.6%",
+        "+3.5%",
+        "20.6%"
+       ],
+       [
+        "Delta",
+        "+$1.9M",
+        "20.0%",
+        "+2.7%",
+        "24.3%"
+       ],
+       [
+        "Echo",
+        "+$951.0K",
+        "10.2%",
+        "+3.6%",
+        "9.6%"
+       ],
+       [
+        "Charlie",
+        "+$769.0K",
+        "8.3%",
+        "+2.1%",
+        "13.1%"
+       ]
+      ]
+     }
+    ],
+    "analyses_refused": [],
+    "story": {
+     "headline": "VALUE, the sum of 5 regions, the 10 matched months to Dec 2022: +3.3% ($288.4M) in the published totals",
+     "what_happened": [
+      "Average value_total (the average month) moved from $27.7M in the year before to $29.0M in the latest year, a change of +4.6%. The model's interval for the change runs from +2.0% to +4.4%, which does not contain this plain ratio of the average months: the model weighs the months differently, so read "
+     ],
+     "why": [
+      "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+     ],
+     "what_to_do": [
+      "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+     ],
+     "whats_next": [
+      "No forecast of monthly value_total: 46 months of history is too short to replay and check one."
+     ],
+     "cannot_answer": [
+      "The data cannot support this claim: Change in the average month of value_total, latest 12 months against the 12 before. Why: Based on 22 rows over 8 periods -- too little history to act on yet. The 4.6% difference is real in this sample, but a sample this small moves that much on its own. What would",
+      "The data cannot support this claim: Months of history available to forecast monthly value_total. Why: There are 46 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 1 more month(s) of history."
+     ]
+    },
+    "forecast": {},
+    "health_score": 0.0,
+    "health_explain": "0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 93.8.",
+    "health_issues": [
+     "The health score is 0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 93.8.",
+     "Newest row in ref_date is 2022-12-01, 1399 days old as of 2026-09-30."
+    ],
+    "plan_row_drops": [],
+    "cleaning": {
+     "rows_in": 46,
+     "rows_clean": 46,
+     "rows_quarantined": 0,
+     "fixes": [
+      "A statistical table read as one series: 240 rows to 46 monthly values of value total (base units, the file's scale applied)",
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+     ]
+    },
+    "limitations": [
+     "This file is a statistical table: 240 rows, 5 series over 48 months (GEO: parts). Adding its rows would count the same value more than once, so the report reads one series, the headline the structure chooses: the sum of 5 regions; built fro",
+     "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+     "The data cannot support this claim: Change in the average month of value_total, latest 12 months against the 12 before. Why: Based on 22 rows over 8 periods -- too little history to act on yet. The 4.6% difference is real in this sample, bu",
+     "The data cannot support this claim: Months of history available to forecast monthly value_total. Why: There are 46 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What wo",
+     "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+     "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+    ],
+    "scenarios": {
+     "basis": {
+      "source": "structure",
+      "finding_id": "measure.value_total.change",
+      "claim": "Change in the average month of value_total, latest 12 months against the 12 before",
+      "grade": "NOT_ENOUGH_DATA",
+      "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+      "measure": "value total",
+      "how": "total",
+      "unit": "Dollars",
+      "windows": {
+       "prior": [
+        "2021-01",
+        "2021-12"
+       ],
+       "latest": [
+        "2022-01",
+        "2022-12"
+       ]
+      },
+      "slice": {
+       "GEO": "(sum of the parts)"
+      },
+      "slice_id": "S1",
+      "breakdowns": [
+       {
+        "id": "B1",
+        "dim": "GEO",
+        "key": "geo",
+        "parent": null,
+        "no_total": true,
+        "parts": 5,
+        "depth": 1,
+        "shares_given": true,
+        "unallocated": {
+         "prior": 0.0,
+         "latest": 0.0,
+         "contribution": 0.0
+        }
+       }
+      ],
+      "estimand": "the sum of 5 regions; built from 5 regions; this table has no total row; complete months only: the 2 months where a part is suppressed are left out; dollars (file in thousands ×1,000); totals of the 10 months with a value in both windows (Mar 2022, Nov 2022 left out) Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
+      "reconciles": true,
+      "complete": false,
+      "months_used": 10,
+      "period": {
+       "kind": "month",
+       "noun": "month",
+       "nouns": "months",
+       "step": 1,
+       "window": 12,
+       "adjective": "monthly"
+      }
+     },
+     "items": [
+      {
+       "id": "headline.prior",
+       "group": "headline",
+       "segment": null,
+       "label": "the sum of 5 regions, the 10 matched months before (2021-01 to 2021-12)",
+       "value": 279104000.0,
+       "text": "$279.1M",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "prior",
+        "op": "sum of the slice's months"
+       }
+      },
+      {
+       "id": "headline.latest",
+       "group": "headline",
+       "segment": null,
+       "label": "the sum of 5 regions, the 10 matched latest months (2022-01 to 2022-12)",
+       "value": 288396000.0,
+       "text": "$288.4M",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "latest",
+        "op": "sum of the slice's months"
+       }
+      },
+      {
+       "id": "headline.change",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in the sum of 5 regions, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 9292000.0,
+       "text": "+$9.3M",
+       "kind": "change",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest less prior"
+       }
+      },
+      {
+       "id": "headline.change_pct",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in the sum of 5 regions in percent, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 3.329225,
+       "text": "+3.3%",
+       "kind": "change",
+       "unit": "%",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "contribution.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: contribution to the change in the sum of 5 regions, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 3709000.0,
+       "text": "+$3.7M",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: its own change in percent, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 4.13388,
+       "text": "+4.1%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: share of the sum of 5 regions in the 10 matched latest months",
+       "value": 32.396774,
+       "text": "32.4%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: share of the change in the sum of 5 regions",
+       "value": 39.916057,
+       "text": "39.9%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: contribution to the change in the sum of 5 regions, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 2006000.0,
+       "text": "+$2.0M",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: its own change in percent, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 3.486937,
+       "text": "+3.5%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: share of the sum of 5 regions in the 10 matched latest months",
+       "value": 20.64349,
+       "text": "20.6%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: share of the change in the sum of 5 regions",
+       "value": 21.588463,
+       "text": "21.6%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.delta",
+       "group": "contribution",
+       "segment": "Delta",
+       "label": "Delta: contribution to the change in the sum of 5 regions, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 1857000.0,
+       "text": "+$1.9M",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.delta",
+       "group": "contribution",
+       "segment": "Delta",
+       "label": "Delta: its own change in percent, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 2.726312,
+       "text": "+2.7%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.delta",
+       "group": "contribution",
+       "segment": "Delta",
+       "label": "Delta: share of the sum of 5 regions in the 10 matched latest months",
+       "value": 24.262126,
+       "text": "24.3%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.delta",
+       "group": "contribution",
+       "segment": "Delta",
+       "label": "Delta: share of the change in the sum of 5 regions",
+       "value": 19.984933,
+       "text": "20.0%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.echo",
+       "group": "contribution",
+       "segment": "Echo",
+       "label": "Echo: contribution to the change in the sum of 5 regions, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 951000.0,
+       "text": "+$951.0K",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.echo",
+       "group": "contribution",
+       "segment": "Echo",
+       "label": "Echo: its own change in percent, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 3.561264,
+       "text": "+3.6%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.echo",
+       "group": "contribution",
+       "segment": "Echo",
+       "label": "Echo: share of the sum of 5 regions in the 10 matched latest months",
+       "value": 9.589245,
+       "text": "9.6%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.echo",
+       "group": "contribution",
+       "segment": "Echo",
+       "label": "Echo: share of the change in the sum of 5 regions",
+       "value": 10.23461,
+       "text": "10.2%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: contribution to the change in the sum of 5 regions, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 769000.0,
+       "text": "+$769.0K",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: its own change in percent, the 10 months with a value in both the latest 12 months and the 12 before",
+       "value": 2.076414,
+       "text": "+2.1%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: share of the sum of 5 regions in the 10 matched latest months",
+       "value": 13.108365,
+       "text": "13.1%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: share of the change in the sum of 5 regions",
+       "value": 8.275936,
+       "text": "8.3%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "facts.months",
+       "group": "facts",
+       "segment": null,
+       "label": "Months with a value in the headline series",
+       "value": 46.0,
+       "text": "46",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": null,
+        "op": "count months"
+       }
+      },
+      {
+       "id": "facts.first",
+       "group": "facts",
+       "segment": null,
+       "label": "The first month of the headline series",
+       "value": "2019-01",
+       "text": "2019-01",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": null,
+        "op": "min"
+       }
+      },
+      {
+       "id": "facts.last",
+       "group": "facts",
+       "segment": null,
+       "label": "The last month of the headline series",
+       "value": "2022-12",
+       "text": "2022-12",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value total"
+        ],
+        "window": null,
+        "op": "max"
+       }
+      }
+     ],
+     "refused": [],
+     "note": "Descriptive arithmetic on the table's own published series, in the engine's comparison windows (the latest 12 months against the 12 before): the headline is the series the table's structure chooses, and each breakdown's parts are that total's verified parts (each total checked against its parts). The unallocated part is the total less the parts the publisher shows (its suppressed cells); the parts and the unallocated add up to the change exactly. A contribution says where the change sits, not what caused it."
+    },
+    "primary": {
+     "id": "measure.value_total.change",
+     "claim": "Change in the average month of value_total, latest 12 months against the 12 before",
+     "grade": "NOT_ENOUGH_DATA"
+    }
+   }
+  },
+  "quarterly": {
+   "name": "population_quarterly.csv",
+   "csv_sha256": "acb58f49017172da194cf6d9c170fbe66914351364a9ceff10170c32c8e7c706",
+   "results": {
+    "ok": true,
+    "estimand": {
+     "text": "Total; persons; 4-quarter averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022",
+     "slice": [
+      {
+       "dim": "GEO",
+       "member": "Total",
+       "why": "the total of the 4 other members (sum-check)"
+      }
+     ],
+     "measure": {
+      "label": "Population",
+      "uom": "Persons",
+      "scale": "units",
+      "scale_applied": 1.0,
+      "type": "stock",
+      "type_basis": "positively a stock",
+      "aggregation": "mean over quarters"
+     },
+     "comparison": {
+      "latest": [
+       "2023-01",
+       "2023-10"
+      ],
+      "prior": [
+       "2022-01",
+       "2022-10"
+      ]
+     },
+     "period": {
+      "kind": "quarter",
+      "noun": "quarter",
+      "nouns": "quarters",
+      "window": 4
+     },
+     "figures": {
+      "prior": {
+       "value": 33060.25,
+       "text": "33.1K"
+      },
+      "latest": {
+       "value": 34058.75,
+       "text": "34.1K"
+      },
+      "change": {
+       "value": 998.5,
+       "text": "+998"
+      },
+      "change_pct": {
+       "value": 3.020243,
+       "text": "+3.0%"
+      }
+     },
+     "sum_checks": [
+      {
+       "dim": "GEO",
+       "total": "Total",
+       "parts": 4,
+       "verdict": "adds_up",
+       "unallocated_latest": {
+        "value": 0.0,
+        "text": "0"
+       },
+       "complete_cells": 48,
+       "within_tolerance": 48,
+       "max_rel_residual": 0.0,
+       "max_residual": {
+        "value": 0.0,
+        "text": "0"
+       }
+      }
+     ],
+     "excluded": [
+      {
+       "what": "4 other members",
+       "why": "parts of Total (sum-checked); shown as a breakdown, never added to it"
+      }
+     ],
+     "plan_source": "engine_default",
+     "inference": {
+      "mode": "official_aggregate",
+      "publisher": "statcan",
+      "describe": {
+       "change_pct": 3.0202433435923837,
+       "prior": 33060.25,
+       "latest": 34058.75
+      },
+      "how_known": [
+       "publisher columns REF_DATE, DGUID, VECTOR, STATUS (Statistics Canada)",
+       "the headline is the total of GEO (sum-check)",
+       "a stock in Persons"
+      ],
+      "revisions": "revisions are not stated in what the engine read (the file's status column is not among them)",
+      "grade_label": "process grade: quarter-to-quarter noise in quarterly averages; not a test of the published figure",
+      "quality": null
+     }
+    },
+    "structure": {
+     "kind": "cube",
+     "usable": true,
+     "publisher": "statcan",
+     "series": 5,
+     "months": 48,
+     "dims": [
+      {
+       "column": "GEO",
+       "role": "partition",
+       "members": 5,
+       "total": "Total",
+       "parts": 4
+      }
+     ],
+     "slice": {
+      "id": "S1",
+      "where": {
+       "GEO": "Total"
+      },
+      "column": "value"
+     },
+     "reason": "",
+     "flags": null,
+     "corrections": []
+    },
+    "input": {
+     "name": "[your file]",
+     "rows": 240,
+     "columns": 14
+    },
+    "goal": "Population, Total, 4 quarters to Q4 2023: +3.0% (34.1K) in the published totals",
+    "reading": "",
+    "quality_risks": [],
+    "plan_applied": [],
+    "plan_refused": [],
+    "findings": [
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "business",
+      "claim": "Change in the average quarter of value, latest 4 quarters against the 4 before",
+      "value": 3.0202433435923837,
+      "why": "Based on 8 rows over 4 periods -- too little history to act on yet. The 3% difference is real in this sample, but a sample this small moves that much on its own."
+     }
+    ],
+    "analyses": [],
+    "charts": [
+     {
+      "id": "viz.1.contribution_waterfall",
+      "chart": "contribution_waterfall",
+      "kind": "waterfall",
+      "title": "Where the change in value came from, by GEO",
+      "subtitle": "value went from 33.1K (Q1 2022 to Q4 2022) to 34.1K (Q1 2023 to Q4 2023); each published part's contribution to the +998 change",
+      "section": "drove",
+      "supports": "Change in the average month of value, latest 12 months against the 12 before",
+      "anchors": [
+       "finding:measure.value.change",
+       "scenario:headline.prior",
+       "scenario:contribution.geo.south",
+       "scenario:contribution.geo.north",
+       "scenario:contribution.geo.east",
+       "scenario:contribution.geo.west",
+       "scenario:contribution.geo.unallocated",
+       "scenario:headline.latest",
+       "scenario:headline.change"
+      ],
+      "grade": null,
+      "parent_grade": "NOT_ENOUGH_DATA",
+      "chosen_by": "engine",
+      "why": "Chosen by the engine: where the change in the headline came from, by the table's own published parts of GEO",
+      "measure": {
+       "label": "value",
+       "unit": "",
+       "kind": "amount"
+      },
+      "data": {
+       "steps": [
+        {
+         "label": "Start",
+         "value": 0,
+         "text": "0",
+         "kind": "total",
+         "from": 0,
+         "to": 0
+        },
+        {
+         "label": "South",
+         "value": 464,
+         "text": "+464",
+         "kind": "step",
+         "from": 0,
+         "to": 464
+        },
+        {
+         "label": "North",
+         "value": 233.5,
+         "text": "+234",
+         "kind": "step",
+         "from": 464,
+         "to": 697.5
+        },
+        {
+         "label": "East",
+         "value": 168.25,
+         "text": "+168",
+         "kind": "step",
+         "from": 697.5,
+         "to": 865.75
+        },
+        {
+         "label": "West",
+         "value": 132.75,
+         "text": "+133",
+         "kind": "step",
+         "from": 865.75,
+         "to": 998.5
+        },
+        {
+         "label": "Total change",
+         "value": 998.5,
+         "text": "+998",
+         "kind": "total",
+         "from": 0,
+         "to": 998.5
+        }
+       ],
+       "basis": {
+        "split": "segment",
+        "finding_id": "measure.value.change",
+        "column": "GEO",
+        "prior": [
+         "2022-01",
+         "2022-10"
+        ],
+        "latest": [
+         "2023-01",
+         "2023-10"
+        ]
+       },
+       "change": {
+        "value": 998.5,
+        "text": "+998"
+       }
+      },
+      "table": {
+       "cols": [
+        "Step",
+        "Contribution",
+        "Own change"
+       ],
+       "rows": [
+        [
+         "Start",
+         "0",
+         ""
+        ],
+        [
+         "South",
+         "+464",
+         "+3.9%"
+        ],
+        [
+         "North",
+         "+234",
+         "+3.1%"
+        ],
+        [
+         "East",
+         "+168",
+         "+3.5%"
+        ],
+        [
+         "West",
+         "+133",
+         "+1.5%"
+        ],
+        [
+         "Total change",
+         "+998",
+         ""
+        ]
+       ]
+      },
+      "summary": "Total went from 33.1K in the 4 quarters before to 34.1K in the latest 4 quarters, a change of +998 (descriptive arithmetic on published totals). The largest contributions by GEO: South +464 and North +234. The parts add up to the change exactly. Where the change sits, not what caused it.",
+      "suppressed": {
+       "cells": 0,
+       "why": ""
+      },
+      "source": "structure: the published parts of Total by GEO (each total checked against its parts: adds up)",
+      "inputs": {
+       "columns": [
+        "value",
+        "GEO"
+       ],
+       "rows": null,
+       "months": [
+        "2022-01",
+        "2023-10"
+       ],
+       "op": "each part's 12-month total in each window, from the table's own series"
+      }
+     }
+    ],
+    "tables": [
+     {
+      "title": "Where the change in value (Total) came from",
+      "cols": [
+       "GEO",
+       "Contribution to the change",
+       "Share of the change",
+       "Own change",
+       "Share of the latest year"
+      ],
+      "rows": [
+       [
+        "South",
+        "+464",
+        "46.5%",
+        "+3.9%",
+        "35.9%"
+       ],
+       [
+        "North",
+        "+234",
+        "23.4%",
+        "+3.1%",
+        "22.9%"
+       ],
+       [
+        "East",
+        "+168",
+        "16.9%",
+        "+3.5%",
+        "14.6%"
+       ],
+       [
+        "West",
+        "+133",
+        "13.3%",
+        "+1.5%",
+        "26.7%"
+       ],
+       [
+        "unallocated (GEO)",
+        "0",
+        "",
+        "",
+        ""
+       ]
+      ]
+     }
+    ],
+    "analyses_refused": [],
+    "story": {
+     "headline": "Population, Total, 4 quarters to Q4 2023: +3.0% (34.1K) in the published totals",
+     "what_happened": [
+      "Average value (the average quarter) moved from 33,060 in the year before to 34,059 in the latest year, a change of +3.0%. No chance test was run. This is graded NOT ENOUGH DATA: the data cannot support it."
+     ],
+     "why": [
+      "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+     ],
+     "what_to_do": [
+      "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+     ],
+     "whats_next": [
+      "No forecast is shown: the table is quarterly (one value a quarter), and the forecast reads monthly series only, so it has no back-test either."
+     ],
+     "cannot_answer": [
+      "The data cannot support this claim: Change in the average quarter of value, latest 4 quarters against the 4 before. Why: Based on 8 rows over 4 periods -- too little history to act on yet. The 3% difference is real in this sample, but a sample this small moves that much on its own. What would settle",
+      "The data cannot support this claim: Quarters of history available to forecast quarterly value. Why: There are 48 quarters of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 1 more quarter(s) of history."
+     ]
+    },
+    "forecast": {
+     "frequency": "quarter",
+     "reason": "No forecast is shown: the table is quarterly (one value a quarter), and the forecast reads monthly series only, so it has no back-test either."
+    },
+    "health_score": 0.0,
+    "health_explain": "0 because the newest row is 3 years old (the timeliness check); the other checks averaged 93.8.",
+    "health_issues": [
+     "The health score is 0 because the newest row is 3 years old (the timeliness check); the other checks averaged 93.8.",
+     "Newest row in ref_date is 2023-10-01, 1095 days old as of 2026-09-30."
+    ],
+    "plan_row_drops": [],
+    "cleaning": {
+     "rows_in": 48,
+     "rows_clean": 48,
+     "rows_quarantined": 0,
+     "fixes": [
+      "A statistical table read as one series: 240 rows to 48 quarterly values of value (base units, the file's scale applied)",
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+     ]
+    },
+    "limitations": [
+     "This file is a statistical table: 240 rows, 5 series over 48 quarters (GEO: partition). Adding its rows would count the same value more than once, so the report reads one series, the headline the structure chooses: Total; persons; 4-quarter",
+     "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+     "The data cannot support this claim: Change in the average quarter of value, latest 4 quarters against the 4 before. Why: Based on 8 rows over 4 periods -- too little history to act on yet. The 3% difference is real in this sample, but a sam",
+     "The data cannot support this claim: Quarters of history available to forecast quarterly value. Why: There are 48 quarters of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What wo",
+     "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+     "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+    ],
+    "scenarios": {
+     "basis": {
+      "source": "structure",
+      "finding_id": "measure.value.change",
+      "claim": "Change in the average month of value, latest 12 months against the 12 before",
+      "grade": "NOT_ENOUGH_DATA",
+      "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+      "measure": "value",
+      "how": "average",
+      "unit": "Persons",
+      "windows": {
+       "prior": [
+        "2022-01",
+        "2022-10"
+       ],
+       "latest": [
+        "2023-01",
+        "2023-10"
+       ]
+      },
+      "slice": {
+       "GEO": "Total"
+      },
+      "slice_id": "S1",
+      "breakdowns": [
+       {
+        "id": "B1",
+        "dim": "GEO",
+        "key": "geo",
+        "parent": "Total",
+        "no_total": false,
+        "parts": 4,
+        "depth": 1,
+        "shares_given": true,
+        "unallocated": {
+         "prior": 0.0,
+         "latest": 0.0,
+         "contribution": 0.0
+        }
+       }
+      ],
+      "estimand": "Total; persons; 4-quarter averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022",
+      "reconciles": true,
+      "complete": true,
+      "months_used": 4,
+      "period": {
+       "kind": "quarter",
+       "noun": "quarter",
+       "nouns": "quarters",
+       "step": 3,
+       "window": 4,
+       "adjective": "quarterly"
+      }
+     },
+     "items": [
+      {
+       "id": "headline.prior",
+       "group": "headline",
+       "segment": null,
+       "label": "Total, the 4 quarters before (Q1 2022 to Q4 2022)",
+       "value": 33060.25,
+       "text": "33.1K",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "prior",
+        "op": "mean of the slice's quarters"
+       }
+      },
+      {
+       "id": "headline.latest",
+       "group": "headline",
+       "segment": null,
+       "label": "Total, the latest 4 quarters (Q1 2023 to Q4 2023)",
+       "value": 34058.75,
+       "text": "34.1K",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "latest",
+        "op": "mean of the slice's quarters"
+       }
+      },
+      {
+       "id": "headline.change",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in Total, the latest 4 quarters against the 4 before",
+       "value": 998.5,
+       "text": "+998",
+       "kind": "change",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest less prior"
+       }
+      },
+      {
+       "id": "headline.change_pct",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in Total in percent, the latest 4 quarters against the 4 before",
+       "value": 3.020243,
+       "text": "+3.0%",
+       "kind": "change",
+       "unit": "%",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "contribution.geo.south",
+       "group": "contribution",
+       "segment": "South",
+       "label": "South: contribution to the change in Total, the latest 4 quarters against the 4 before",
+       "value": 464.0,
+       "text": "+464",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.south",
+       "group": "contribution",
+       "segment": "South",
+       "label": "South: its own change in percent, the latest 4 quarters against the 4 before",
+       "value": 3.948936,
+       "text": "+3.9%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.south",
+       "group": "contribution",
+       "segment": "South",
+       "label": "South: share of Total in the latest 4 quarters",
+       "value": 35.861563,
+       "text": "35.9%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.south",
+       "group": "contribution",
+       "segment": "South",
+       "label": "South: share of the change in Total",
+       "value": 46.469705,
+       "text": "46.5%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.north",
+       "group": "contribution",
+       "segment": "North",
+       "label": "North: contribution to the change in Total, the latest 4 quarters against the 4 before",
+       "value": 233.5,
+       "text": "+234",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.north",
+       "group": "contribution",
+       "segment": "North",
+       "label": "North: its own change in percent, the latest 4 quarters against the 4 before",
+       "value": 3.088318,
+       "text": "+3.1%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.north",
+       "group": "contribution",
+       "segment": "North",
+       "label": "North: share of Total in the latest 4 quarters",
+       "value": 22.884721,
+       "text": "22.9%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.north",
+       "group": "contribution",
+       "segment": "North",
+       "label": "North: share of the change in Total",
+       "value": 23.385078,
+       "text": "23.4%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.east",
+       "group": "contribution",
+       "segment": "East",
+       "label": "East: contribution to the change in Total, the latest 4 quarters against the 4 before",
+       "value": 168.25,
+       "text": "+168",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.east",
+       "group": "contribution",
+       "segment": "East",
+       "label": "East: its own change in percent, the latest 4 quarters against the 4 before",
+       "value": 3.5074,
+       "text": "+3.5%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.east",
+       "group": "contribution",
+       "segment": "East",
+       "label": "East: share of Total in the latest 4 quarters",
+       "value": 14.578486,
+       "text": "14.6%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.east",
+       "group": "contribution",
+       "segment": "East",
+       "label": "East: share of the change in Total",
+       "value": 16.850275,
+       "text": "16.9%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.west",
+       "group": "contribution",
+       "segment": "West",
+       "label": "West: contribution to the change in Total, the latest 4 quarters against the 4 before",
+       "value": 132.75,
+       "text": "+133",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.west",
+       "group": "contribution",
+       "segment": "West",
+       "label": "West: its own change in percent, the latest 4 quarters against the 4 before",
+       "value": 1.482826,
+       "text": "+1.5%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.west",
+       "group": "contribution",
+       "segment": "West",
+       "label": "West: share of Total in the latest 4 quarters",
+       "value": 26.67523,
+       "text": "26.7%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.west",
+       "group": "contribution",
+       "segment": "West",
+       "label": "West: share of the change in Total",
+       "value": 13.294942,
+       "text": "13.3%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.unallocated",
+       "group": "contribution",
+       "segment": "unallocated (GEO)",
+       "label": "Unallocated within GEO: Total less its published parts (rounding), its change, the latest 4 quarters against the 4 before",
+       "value": 0.0,
+       "text": "0",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": "the total less the parts the publisher shows (rounding): 0 in the latest 12 months, 0 before",
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "the change less the parts' contributions"
+       }
+      },
+      {
+       "id": "facts.months",
+       "group": "facts",
+       "segment": null,
+       "label": "Quarters with a value in the headline series",
+       "value": 48.0,
+       "text": "48",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": null,
+        "op": "count quarters"
+       }
+      },
+      {
+       "id": "facts.first",
+       "group": "facts",
+       "segment": null,
+       "label": "The first quarter of the headline series",
+       "value": "2012-01",
+       "text": "Q1 2012",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": null,
+        "op": "min"
+       }
+      },
+      {
+       "id": "facts.last",
+       "group": "facts",
+       "segment": null,
+       "label": "The last quarter of the headline series",
+       "value": "2023-10",
+       "text": "Q4 2023",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": null,
+        "op": "max"
+       }
+      }
+     ],
+     "refused": [],
+     "note": "Descriptive arithmetic on the table's own published series, in the engine's comparison windows (the latest 4 quarters against the 4 before): the headline is the series the table's structure chooses, and each breakdown's parts are that total's verified parts (each total checked against its parts). The unallocated part is the total less the parts the publisher shows (its suppressed cells); the parts and the unallocated add up to the change exactly. A contribution says where the change sits, not what caused it."
+    },
+    "primary": {
+     "id": "measure.value.change",
+     "claim": "Change in the average quarter of value, latest 4 quarters against the 4 before",
+     "grade": "NOT_ENOUGH_DATA"
+    }
+   }
+  },
+  "measures": {
+   "name": "sales_and_units.csv",
+   "csv_sha256": "ff7dddca3ca43b3c8adfa8ac448d533c88f41e93cd22ddca17b7ed8edc1c5b74",
+   "results": {
+    "ok": true,
+    "estimand": {
+     "text": "Total · Sales value; one measure shown: Sales value, chosen by the engine's default order (a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member); dollars; 12-month totals Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
+     "slice": [
+      {
+       "dim": "GEO",
+       "member": "Total",
+       "why": "the total of the 3 other members (sum-check)"
+      },
+      {
+       "dim": "Statistics",
+       "member": "Sales value",
+       "why": "the engine's default measure: the first of a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member"
+      }
+     ],
+     "measure": {
+      "label": "Sales value",
+      "uom": "Dollars",
+      "scale": "units",
+      "scale_applied": 1.0,
+      "type": "flow",
+      "type_basis": "positively a flow",
+      "aggregation": "sum over months"
+     },
+     "comparison": {
+      "latest": [
+       "2022-01",
+       "2022-12"
+      ],
+      "prior": [
+       "2021-01",
+       "2021-12"
+      ]
+     },
+     "figures": {
+      "prior": {
+       "value": 39274.0,
+       "text": "$39.3K"
+      },
+      "latest": {
+       "value": 40800.0,
+       "text": "$40.8K"
+      },
+      "change": {
+       "value": 1526.0,
+       "text": "+$1.5K"
+      },
+      "change_pct": {
+       "value": 3.885522,
+       "text": "+3.9%"
+      }
+     },
+     "sum_checks": [
+      {
+       "dim": "GEO",
+       "total": "Total",
+       "parts": 3,
+       "verdict": "adds_up",
+       "unallocated_latest": {
+        "value": 0.0,
+        "text": "$0"
+       },
+       "complete_cells": 48,
+       "within_tolerance": 48,
+       "max_rel_residual": 0.0,
+       "max_residual": {
+        "value": 0.0,
+        "text": "$0"
+       }
+      }
+     ],
+     "excluded": [
+      {
+       "what": "3 other members",
+       "why": "parts of Total (sum-checked); shown as a breakdown, never added to it"
+      },
+      {
+       "what": "Units sold",
+       "why": "another measure (count, Number): one measure is shown, never mixed with Sales value"
+      }
+     ],
+     "plan_source": "engine_default",
+     "inference": {
+      "mode": "official_aggregate",
+      "publisher": "statcan",
+      "describe": {
+       "change_pct": 3.885522228446291,
+       "prior": 39274.0,
+       "latest": 40800.0
+      },
+      "how_known": [
+       "publisher columns REF_DATE, DGUID, VECTOR, STATUS (Statistics Canada)",
+       "the headline is the total of GEO (sum-check)",
+       "a flow in Dollars"
+      ],
+      "revisions": "revisions are not stated in what the engine read (the file's status column is not among them)",
+      "grade_label": "process grade: month-to-month noise in 36 monthly totals; not a test of the published total",
+      "quality": null
+     },
+     "measure_choice": {
+      "dim": "Statistics",
+      "by": "default",
+      "rule": "a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member",
+      "chosen": {
+       "id": "M1",
+       "name": "Sales value",
+       "uom": "Dollars",
+       "type": "flow",
+       "type_basis": "positively a flow"
+      },
+      "alternatives": [
+       {
+        "id": "M2",
+        "name": "Units sold",
+        "type": "count",
+        "precision": false
+       }
+      ]
+     }
+    },
+    "structure": {
+     "kind": "cube",
+     "usable": true,
+     "publisher": "statcan",
+     "series": 8,
+     "months": 48,
+     "dims": [
+      {
+       "column": "GEO",
+       "role": "partition",
+       "members": 4,
+       "total": "Total",
+       "parts": 3
+      },
+      {
+       "column": "Statistics",
+       "role": "measure",
+       "members": 2,
+       "total": "Sales value"
+      }
+     ],
+     "slice": {
+      "id": "S1",
+      "where": {
+       "GEO": "Total",
+       "Statistics": "Sales value"
+      },
+      "column": "Sales value total"
+     },
+     "reason": "",
+     "flags": null,
+     "corrections": []
+    },
+    "input": {
+     "name": "[your file]",
+     "rows": 384,
+     "columns": 14
+    },
+    "goal": "Sales value, Total, 12 months to Dec 2022: +3.9% ($40.8K) in the published totals",
+    "reading": "",
+    "quality_risks": [],
+    "plan_applied": [],
+    "plan_refused": [],
+    "findings": [
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "business",
+      "claim": "Change in the average month of sales_value_total, latest 12 months against the 12 before",
+      "value": 3.885522228446291,
+      "why": "Based on 24 rows over 9 periods -- too little history to act on yet. The 3.8% difference is real in this sample, but a sample this small moves that much on its own.",
+      "interval_coverage": {
+       "measured": 0.9504843918191603,
+       "lo": 0.9396570132830399,
+       "hi": 0.9594528394999341
+      }
+     },
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "forecast",
+      "claim": "Forecast of monthly sales_value_total for 2023-01",
+      "value": 2780.22357811915,
+      "why": "The data stops at 2022-12, but the analysis date is 2026-09-30: a forecast of 2023-01 is history, not a plan."
+     }
+    ],
+    "analyses": [],
+    "charts": [
+     {
+      "id": "viz.1.contribution_waterfall",
+      "chart": "contribution_waterfall",
+      "kind": "waterfall",
+      "title": "Where the change in Sales value total came from, by GEO",
+      "subtitle": "Sales value total went from $39.3K (2021-01 to 2021-12) to $40.8K (2022-01 to 2022-12); each published part's contribution to the +$1.5K change",
+      "section": "drove",
+      "supports": "Change in the average month of sales_value_total, latest 12 months against the 12 before",
+      "anchors": [
+       "finding:measure.sales_value_total.change",
+       "scenario:headline.prior",
+       "scenario:contribution.geo.bravo",
+       "scenario:contribution.geo.alpha",
+       "scenario:contribution.geo.charlie",
+       "scenario:contribution.geo.unallocated",
+       "scenario:headline.latest",
+       "scenario:headline.change"
+      ],
+      "grade": null,
+      "parent_grade": "NOT_ENOUGH_DATA",
+      "chosen_by": "engine",
+      "why": "Chosen by the engine: where the change in the headline came from, by the table's own published parts of GEO",
+      "measure": {
+       "label": "Sales value total",
+       "unit": "",
+       "kind": "amount"
+      },
+      "data": {
+       "steps": [
+        {
+         "label": "Start",
+         "value": 0,
+         "text": "$0",
+         "kind": "total",
+         "from": 0,
+         "to": 0
+        },
+        {
+         "label": "Bravo",
+         "value": 841,
+         "text": "+$841",
+         "kind": "step",
+         "from": 0,
+         "to": 841
+        },
+        {
+         "label": "Alpha",
+         "value": 365,
+         "text": "+$365",
+         "kind": "step",
+         "from": 841,
+         "to": 1206
+        },
+        {
+         "label": "Charlie",
+         "value": 320,
+         "text": "+$320",
+         "kind": "step",
+         "from": 1206,
+         "to": 1526
+        },
+        {
+         "label": "Total change",
+         "value": 1526,
+         "text": "+$1.5K",
+         "kind": "total",
+         "from": 0,
+         "to": 1526
+        }
+       ],
+       "basis": {
+        "split": "segment",
+        "finding_id": "measure.sales_value_total.change",
+        "column": "GEO",
+        "prior": [
+         "2021-01",
+         "2021-12"
+        ],
+        "latest": [
+         "2022-01",
+         "2022-12"
+        ]
+       },
+       "change": {
+        "value": 1526,
+        "text": "+$1.5K"
+       }
+      },
+      "table": {
+       "cols": [
+        "Step",
+        "Contribution",
+        "Own change"
+       ],
+       "rows": [
+        [
+         "Start",
+         "$0",
+         ""
+        ],
+        [
+         "Bravo",
+         "+$841",
+         "+4.3%"
+        ],
+        [
+         "Alpha",
+         "+$365",
+         "+3.3%"
+        ],
+        [
+         "Charlie",
+         "+$320",
+         "+3.6%"
+        ],
+        [
+         "Total change",
+         "+$1.5K",
+         ""
+        ]
+       ]
+      },
+      "summary": "Total · Sales value went from $39.3K in the 12 months before to $40.8K in the latest 12 months, a change of +$1.5K (descriptive arithmetic on published totals). The largest contributions by GEO: Bravo +$841 and Alpha +$365. The parts add up to the change exactly. Where the change sits, not what caused it.",
+      "suppressed": {
+       "cells": 0,
+       "why": ""
+      },
+      "source": "structure: the published parts of Total by GEO (each total checked against its parts: adds up)",
+      "inputs": {
+       "columns": [
+        "Sales value total",
+        "GEO"
+       ],
+       "rows": null,
+       "months": [
+        "2021-01",
+        "2022-12"
+       ],
+       "op": "each part's 12-month total in each window, from the table's own series"
+      }
+     }
+    ],
+    "tables": [
+     {
+      "title": "Where the change in Sales value total (Total · Sales value) came from",
+      "cols": [
+       "GEO",
+       "Contribution to the change",
+       "Share of the change",
+       "Own change",
+       "Share of the latest year"
+      ],
+      "rows": [
+       [
+        "Bravo",
+        "+$841",
+        "55.1%",
+        "+4.3%",
+        "49.6%"
+       ],
+       [
+        "Alpha",
+        "+$365",
+        "23.9%",
+        "+3.3%",
+        "28.1%"
+       ],
+       [
+        "Charlie",
+        "+$320",
+        "21.0%",
+        "+3.6%",
+        "22.3%"
+       ],
+       [
+        "unallocated (GEO)",
+        "$0",
+        "",
+        "",
+        ""
+       ]
+      ]
+     }
+    ],
+    "analyses_refused": [],
+    "story": {
+     "headline": "Sales value, Total, 12 months to Dec 2022: +3.9% ($40.8K) in the published totals",
+     "what_happened": [
+      "Average sales_value_total (the average month) moved from 3,273 in the year before to 3,400 in the latest year, a change of +3.9%. The same test's interval for the change runs from +2.4% to +6.0%. It is a 95% interval by construction; in the benchmark's simulated series nearest this one it held the t"
+     ],
+     "why": [
+      "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+     ],
+     "what_to_do": [
+      "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+     ],
+     "whats_next": [
+      "No forecast of monthly sales_value_total is offered: the data stops at 2022-12, before the analysis date (2026-09), so a forecast of 2023-01 would be history, not a plan."
+     ],
+     "cannot_answer": [
+      "The data cannot support this claim: Change in the average month of sales_value_total, latest 12 months against the 12 before. Why: Based on 24 rows over 9 periods -- too little history to act on yet. The 3.8% difference is real in this sample, but a sample this small moves that much on its own. What",
+      "The data cannot support this claim: Forecast of monthly sales_value_total for 2023-01. Why: The data stops at 2022-12, but the analysis date is 2026-09-30: a forecast of 2023-01 is history, not a plan. What would settle it: Data up to the month before the analysis date; then this forecast can be re-"
+     ]
+    },
+    "forecast": {},
+    "health_score": 0.0,
+    "health_explain": "0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 93.8.",
+    "health_issues": [
+     "The health score is 0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 93.8.",
+     "Newest row in ref_date is 2022-12-01, 1399 days old as of 2026-09-30."
+    ],
+    "plan_row_drops": [],
+    "cleaning": {
+     "rows_in": 48,
+     "rows_clean": 48,
+     "rows_quarantined": 0,
+     "fixes": [
+      "A statistical table read as one series: 384 rows to 48 monthly values of Sales value total (base units, the file's scale applied)",
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+     ]
+    },
+    "limitations": [
+     "This file is a statistical table: 384 rows, 8 series over 48 months (GEO: partition; Statistics: measure). Adding its rows would count the same value more than once, so the report reads one series, the headline the structure chooses: Total ",
+     "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+     "horizon shortened to 4 month(s): a longer one would leave fewer than 12 backtest months with a band",
+     "the past errors behind the 80% ranges move together from month to month (lag-1 autocorrelation up to 0.45), so they carry the information of fewer independent errors (as few as about 6); the ranges for 1 of 4 months ahead were widened, by u",
+     "The data cannot support this claim: Change in the average month of sales_value_total, latest 12 months against the 12 before. Why: Based on 24 rows over 9 periods -- too little history to act on yet. The 3.8% difference is real in this samp",
+     "The data cannot support this claim: Forecast of monthly sales_value_total for 2023-01. Why: The data stops at 2022-12, but the analysis date is 2026-09-30: a forecast of 2023-01 is history, not a plan. What would settle it: Data up to the m"
+    ],
+    "scenarios": {
+     "basis": {
+      "source": "structure",
+      "finding_id": "measure.sales_value_total.change",
+      "claim": "Change in the average month of sales_value_total, latest 12 months against the 12 before",
+      "grade": "NOT_ENOUGH_DATA",
+      "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+      "measure": "Sales value total",
+      "how": "total",
+      "unit": "Dollars",
+      "windows": {
+       "prior": [
+        "2021-01",
+        "2021-12"
+       ],
+       "latest": [
+        "2022-01",
+        "2022-12"
+       ]
+      },
+      "slice": {
+       "GEO": "Total",
+       "Statistics": "Sales value"
+      },
+      "slice_id": "S1",
+      "breakdowns": [
+       {
+        "id": "B1",
+        "dim": "GEO",
+        "key": "geo",
+        "parent": "Total",
+        "no_total": false,
+        "parts": 3,
+        "depth": 1,
+        "shares_given": true,
+        "unallocated": {
+         "prior": 0.0,
+         "latest": 0.0,
+         "contribution": 0.0
+        }
+       }
+      ],
+      "estimand": "Total · Sales value; one measure shown: Sales value, chosen by the engine's default order (a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member); dollars; 12-month totals Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
+      "reconciles": true,
+      "complete": true,
+      "months_used": 12,
+      "period": {
+       "kind": "month",
+       "noun": "month",
+       "nouns": "months",
+       "step": 1,
+       "window": 12,
+       "adjective": "monthly"
+      }
+     },
+     "items": [
+      {
+       "id": "headline.prior",
+       "group": "headline",
+       "segment": null,
+       "label": "Total · Sales value, the 12 months before (2021-01 to 2021-12)",
+       "value": 39274.0,
+       "text": "$39.3K",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "prior",
+        "op": "sum of the slice's months"
+       }
+      },
+      {
+       "id": "headline.latest",
+       "group": "headline",
+       "segment": null,
+       "label": "Total · Sales value, the latest 12 months (2022-01 to 2022-12)",
+       "value": 40800.0,
+       "text": "$40.8K",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "latest",
+        "op": "sum of the slice's months"
+       }
+      },
+      {
+       "id": "headline.change",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in Total · Sales value, the latest 12 months against the 12 before",
+       "value": 1526.0,
+       "text": "+$1.5K",
+       "kind": "change",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "latest less prior"
+       }
+      },
+      {
+       "id": "headline.change_pct",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in Total · Sales value in percent, the latest 12 months against the 12 before",
+       "value": 3.885522,
+       "text": "+3.9%",
+       "kind": "change",
+       "unit": "%",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "contribution.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: contribution to the change in Total · Sales value, the latest 12 months against the 12 before",
+       "value": 841.0,
+       "text": "+$841",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: its own change in percent, the latest 12 months against the 12 before",
+       "value": 4.338854,
+       "text": "+4.3%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: share of Total · Sales value in the latest 12 months",
+       "value": 49.568627,
+       "text": "49.6%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.bravo",
+       "group": "contribution",
+       "segment": "Bravo",
+       "label": "Bravo: share of the change in Total · Sales value",
+       "value": 55.111402,
+       "text": "55.1%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: contribution to the change in Total · Sales value, the latest 12 months against the 12 before",
+       "value": 365.0,
+       "text": "+$365",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: its own change in percent, the latest 12 months against the 12 before",
+       "value": 3.285033,
+       "text": "+3.3%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: share of Total · Sales value in the latest 12 months",
+       "value": 28.127451,
+       "text": "28.1%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.alpha",
+       "group": "contribution",
+       "segment": "Alpha",
+       "label": "Alpha: share of the change in Total · Sales value",
+       "value": 23.918742,
+       "text": "23.9%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: contribution to the change in Total · Sales value, the latest 12 months against the 12 before",
+       "value": 320.0,
+       "text": "+$320",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window less its window before"
+       }
+      },
+      {
+       "id": "growth.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: its own change in percent, the latest 12 months against the 12 before",
+       "value": 3.644647,
+       "text": "+3.6%",
+       "kind": "change",
+       "unit": "%",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "share_level.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: share of Total · Sales value in the latest 12 months",
+       "value": 22.303922,
+       "text": "22.3%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's latest window / the total's"
+       }
+      },
+      {
+       "id": "share_change.geo.charlie",
+       "group": "contribution",
+       "segment": "Charlie",
+       "label": "Charlie: share of the change in Total · Sales value",
+       "value": 20.969856,
+       "text": "21.0%",
+       "kind": "percent",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the part's contribution / the change"
+       }
+      },
+      {
+       "id": "contribution.geo.unallocated",
+       "group": "contribution",
+       "segment": "unallocated (GEO)",
+       "label": "Unallocated within GEO: Total less its published parts (rounding), its change, the latest 12 months against the 12 before",
+       "value": 0.0,
+       "text": "$0",
+       "kind": "change",
+       "unit": "",
+       "grade": null,
+       "parent_grade": "NOT_ENOUGH_DATA",
+       "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+       "assumes": "the total less the parts the publisher shows (rounding): $0 in the latest 12 months, $0 before",
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": "both",
+        "op": "the change less the parts' contributions"
+       }
+      },
+      {
+       "id": "facts.months",
+       "group": "facts",
+       "segment": null,
+       "label": "Months with a value in the headline series",
+       "value": 48.0,
+       "text": "48",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": null,
+        "op": "count months"
+       }
+      },
+      {
+       "id": "facts.first",
+       "group": "facts",
+       "segment": null,
+       "label": "The first month of the headline series",
+       "value": "2019-01",
+       "text": "2019-01",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": null,
+        "op": "min"
+       }
+      },
+      {
+       "id": "facts.last",
+       "group": "facts",
+       "segment": null,
+       "label": "The last month of the headline series",
+       "value": "2022-12",
+       "text": "2022-12",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "Sales value total"
+        ],
+        "window": null,
+        "op": "max"
+       }
+      }
+     ],
+     "refused": [],
+     "note": "Descriptive arithmetic on the table's own published series, in the engine's comparison windows (the latest 12 months against the 12 before): the headline is the series the table's structure chooses, and each breakdown's parts are that total's verified parts (each total checked against its parts). The unallocated part is the total less the parts the publisher shows (its suppressed cells); the parts and the unallocated add up to the change exactly. A contribution says where the change sits, not what caused it."
+    },
+    "primary": {
+     "id": "measure.sales_value_total.change",
+     "claim": "Change in the average month of sales_value_total, latest 12 months against the 12 before",
+     "grade": "NOT_ENOUGH_DATA"
+    }
+   }
+  }
+ },
+ "engine_snapshot": "19ec81d19e0d"
+}

@@ -4939,9 +4939,12 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
            "measure": {k: (est.get("measure") or {}).get(k) for k in ("label", "uom", "scale", "scale_applied", "type",
                                                                       "type_basis", "aggregation")},
            "comparison": est.get("comparison"),
-           **({"period": {k: (est["period"] or {}).get(k) for k in ("kind", "nouns", "window")}}
+           **({"period": {k: (est["period"] or {}).get(k) for k in ("kind", "noun", "nouns", "window")}}
               if isinstance(est.get("period"), dict) and int(est["period"].get("step") or 1) != 1 else {}),
-           "figures": {k: {"value": (v or {}).get("value"), "text": safe((v or {}).get("text"), 40)}
+           "figures": {k: dict({"value": (v or {}).get("value"), "text": safe((v or {}).get("text"), 40)},
+                               # the periods a window figure adds up, only when they are not the whole window (matched months)
+                               **({"months": v["months"]} if isinstance(v.get("months"), int) and not isinstance(v.get("months"), bool)
+                                  and v["months"] != int(((est.get("period") or {}).get("window")) or 12) else {}))
                        for k, v in (est.get("figures") or {}).items() if isinstance(v, dict)},
            "sum_checks": [dict({"dim": safe(c.get("dim"), 120), "total": safe(c.get("total"), 120), "parts": c.get("parts"),
                                 "verdict": c.get("verdict"),
@@ -5265,6 +5268,11 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         fc["row_forecast_dropped"] = True
         if f.get("reason"):
             fc["reason"] = safe(f["reason"], 200)
+    if not f.get("available") and f.get("frequency"):
+        # wave 5, gap 4: no forecast and no audit of a quarterly or an annual table, and why: one line, never a number
+        fc["frequency"] = str(f["frequency"])[:20]
+        if f.get("reason"):
+            fc["reason"] = safe(f["reason"], 240)
     if f.get("available"):
         fc["available"] = True
         if f.get("label"):

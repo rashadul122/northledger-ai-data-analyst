@@ -408,6 +408,26 @@ def main(argv=None):
         json.dump(rep, f)
     print("%-18s %s" % (name, rep.get("__fixture_error") or "%s; audit %s" % (rep["story"]["headline"], rep["forecast"]["audit"]["status"])),
           file=sys.stderr if "__fixture_error" in rep else sys.stdout)
+    # wave 5 (generality): a table with NO total row and a quarterly table, both synthetic (make_cubes.py); the page says so
+    for name, mk, need in (("wave5-no-total", lambda: MC.no_total(hide=[("Charlie", 38), ("Bravo", 34)]),
+                            lambda r: (r.get("estimand") or {}).get("built_from")),
+                           ("wave5-quarterly", lambda: MC.periodic("quarter", "iso", stock=True),
+                            lambda r: ((r.get("estimand") or {}).get("period") or {}).get("kind") == "quarter")):
+        try:
+            data = mk()
+            with open(os.path.join(a.out, name + ".csv"), "wb") as f:
+                f.write(data)
+            rep = nl_browser.run(data, name + ".csv", "", None, AS_OF)
+            if not rep.get("ok"):
+                rep = {"__fixture_error": "the run failed: %s" % rep.get("error")}
+            elif not need(rep):
+                rep = {"__fixture_error": "the run carries no built_from / period record: %s" % json.dumps(rep.get("estimand"))[:300]}
+        except Exception as e:
+            rep = {"__fixture_error": "the run raised %s: %s" % (type(e).__name__, e)}
+        with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
+            json.dump(rep, f)
+        print("%-18s %s" % (name, rep.get("__fixture_error") or rep["estimand"]["text"][:80]),
+              file=sys.stderr if "__fixture_error" in rep else sys.stdout)
     # a header that is markup, in a chart the engine refuses (the chart review of 30 Sep 2026)
     name = "viz-hostile-header"
     write_hostile(a.out)

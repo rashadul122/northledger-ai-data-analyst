@@ -1042,6 +1042,44 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       (moved.length ? ': ' + moved.length + ' differ or are missing: ' + moved.join('; ') : '') + (fresh.length ? ' (' + fresh.length + ' new cases not in it: ' + fresh.join('; ') + ')' : ''));
     ok = !moved.length && ok;
   }
+  // ---- wave 5 (generality): a table with NO total row, a quarterly table and a table of two measures in one value column. SYNTHETIC
+  // tables (tools/fixtures/report-pdf/make_wave5.py: the packed engine on tools/fixtures/structure/make_cubes.py, never an official
+  // table). The writer's facts (the page's estimand card and the PDF read the same ones) say what the engine's records say: the
+  // sum-check "not possible (no total row)", the headline built from the parts, the period's own words (4 quarters, not 12
+  // months), the one measure shown and the others left out, and a monthly table's words stay as they were.
+  {
+    const W5 = J('wave5-results.json').cases, V = (k) => W.facts.estimandView(W5[k].results), L5 = 'wave 5';
+    const NT = V('nototal'), QT = V('quarterly'), MS = V('measures');
+    expect(L5 + ': no total row', NT && NT.title === 'the sum of 5 regions' && /built from 5 regions; this table has no total row/.test(NT.what) &&
+      NT.checks.length === 1 && NT.checks[0] === 'Not possible to check: GEO has no total row, so the 5 parts are added up, month by month. 2 part-months are suppressed in the two windows.' &&
+      !/adds up/i.test(NT.checks[0]) && NT.figures[0].label === 'The 10 matched months before' && NT.figures[1].label === 'The 10 matched months, latest',
+      'the estimand does not say the headline is built from 5 regions with no total row, the sum-check is not possible, and 10 matched months: ' + JSON.stringify([NT && NT.title, NT && NT.checks, NT && NT.figures.map((f) => f.label)]));
+    expect(L5 + ': quarterly', QT && QT.figures.map((f) => f.label).join('|') === '4 quarters before|Latest 4 quarters|Change|Change, %' && /^persons; 4-quarter averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022$/.test(QT.what) &&
+      /^Adds up: Total = the 4 parts of GEO on 48 of 48 quarters, largest gap 0; not allocated to a part in the latest 4 quarters: /.test(QT.checks[0]) && !/month/i.test(QT.what + QT.checks.join(' ') + QT.figures.map((f) => f.label).join(' ')),
+      'a quarterly table\'s estimand says months: ' + JSON.stringify([QT && QT.figures.map((f) => f.label), QT && QT.what, QT && QT.checks]));
+    expect(L5 + ': one measure', MS && /^one measure shown: Sales value, chosen by the engine's default order \(a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member\); dollars; 12-month totals /.test(MS.what) &&
+      MS.excluded.some((x) => x.what === 'Units sold' && /another measure/.test(x.why) && /never mixed/.test(x.why)), 'the estimand does not name the one measure shown, the rule that chose it and the one left out: ' + JSON.stringify([MS && MS.what, MS && MS.excluded]));
+    const q = W5.quarterly.results;
+    expect(L5 + ': quarterly payload', q.estimand.period && q.estimand.period.noun === 'quarter' && q.estimand.period.window === 4 && q.estimand.measure.type_basis === 'positively a stock' &&
+      q.forecast && q.forecast.frequency === 'quarter' && /forecast reads monthly series only/.test(q.forecast.reason) && q.story.whats_next.length === 1,
+      'the payload of a quarterly table does not carry its period, its type basis and the forecast\'s reason: ' + JSON.stringify([q.estimand.period, q.estimand.measure, q.forecast]));
+    // a monthly report keeps its words (the retail fixture's estimand view is unchanged: 12 months, "months checked")
+    const RV = W.facts.estimandView(J('retail-results.json').results);
+    expect(L5 + ': monthly unchanged', RV.figures[0].label === '12 months before' && RV.figures[1].label === 'Latest 12 months' && /on 265 of 265 months, largest gap/.test(RV.checks[0]), 'a monthly table\'s estimand words moved: ' + JSON.stringify([RV.figures.map((f) => f.label), RV.checks[0]]));
+    // the report PDF is made from them: the appendix says "no total row" and "Quarters checked"
+    for (const key of ['nototal', 'quarterly']) {
+      const resp = J('retail-response.json');
+      const m = W.model({ report: resp.report, sources: [], model: resp.model, repaired: resp.repaired, removed_figures: [], results: W5[key].results, kept: [], name: W5[key].name, showName: false, date, goal: W5[key].results.goal });
+      let u8, T = '';
+      try { u8 = W.build(m, { paper: 'letter' }); } catch (e) { expect(L5 + ': ' + key + ' PDF', false, 'the writer cannot build the PDF: ' + e.message); continue; }
+      const f = path.join(tmp, 'wave5-' + key + '.pdf'); writeFileSync(f, u8);
+      const r = checkPdf(u8, { file: f, forbid, name: path.basename(W5[key].name, '.csv'), removed: 0 });
+      T = sp(r.text || '');
+      expect(L5 + ': ' + key + ' PDF', key === 'nototal' ? /no total row/.test(T) && /not possible to check: geo has no total row/.test(T) : /4 quarters/.test(T) && /quarters checked/.test(T) && !/not allocated, latest 12 months/.test(T),
+        'the PDF of the ' + key + ' table does not carry its estimand words');
+    }
+  }
+
   // the download's name: the date, and the file's name only when asked for
   const n0 = W.fileName(date), n1 = W.fileName(date, NAME);
   const names = n0 === 'NorthLedger report - 2026-09-29.pdf' && n1 === 'NorthLedger report - 2026-09-29 - ship2_privacy_orders.pdf';

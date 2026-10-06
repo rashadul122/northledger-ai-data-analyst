@@ -2869,7 +2869,7 @@ check('try-sample-profile-through-the-real-engine-after-the-choices', DESK, asyn
 const PY = process.env.PY || path.join(SITE_DIR, '..', 'agent-demo', 'venv', 'bin', 'python');
 const FX_NAMES = ['sample', 'rent-roll', 'sales-ledger', 'web-analytics', 'cafe-invoices-18m', 'rent-roll-gated', 'shop-margins-36m'];
 // a statistical table read by its structure (wave 4, track B): only its report is read by the checks (no profile or landed files)
-const FX_STRUCT = ['official-cube.json'];
+const FX_STRUCT = ['official-cube.json', 'wave5-no-total.json', 'wave5-quarterly.json'];
 // every file the checks read: each report, the profile the page would send /plan for it, and the planned
 // orders-private run (its CSV too, for the personal values that must never show)
 const FX_FILES = FX_NAMES.concat(['orders-private']).map((n) => n + '.json').concat(FX_NAMES.concat(['orders-private']).map((n) => n + '.profile.json'),
@@ -4142,6 +4142,29 @@ async function openCube(ctx, rep) {
   await p.waitForTimeout(200);
   return p;
 }
+/* wave 5 (generality): a table with no total row, and a quarterly table, say so on the page. SYNTHETIC tables (make_ui_fixtures.py
+   "wave5-no-total", "wave5-quarterly"): the estimand card prints that the headline is built from its parts and why it cannot be
+   checked against a total, and a quarterly table's figures and checks say quarters, never months. */
+check('wave5-no-total-row-and-quarterly-tables-are-said-on-the-page', DESK, async (ctx) => {
+  const nt = vizCopy(fixture('wave5-no-total')), qt = vizCopy(fixture('wave5-quarterly'));
+  ok(nt.estimand && nt.estimand.built_from && nt.estimand.built_from.n === 5 && qt.estimand && qt.estimand.period && qt.estimand.period.kind === 'quarter', 'the fixtures carry no built_from or period record');
+  const read = (p) => p.evaluate(() => {
+    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null, m = document.getElementById('nl2-manager');
+    return { title: t(document.querySelector('#nl2-manager .nl2-est-title')), what: t(document.querySelector('#nl2-manager .nl2-est-what')),
+      figs: Array.from(document.querySelectorAll('#nl2-manager .nl2-estimand .nl2-est-fig dt')).map(t), checks: Array.from(document.querySelectorAll('#nl2-manager .nl2-est-checks li')).map(t),
+      excl: Array.from(document.querySelectorAll('#nl2-manager .nl2-est-excl li')).map(t), structure: t(document.querySelector('#nl2-analyst .nl2-structure')) || '', page: t(m) };
+  });
+  const p1 = await openCube(ctx, nt), a = await read(p1);
+  ok(a.title === 'the sum of 5 regions' && /built from 5 regions; this table has no total row/.test(a.what), 'the estimand card does not say the headline is built from 5 regions with no total row: ' + JSON.stringify([a.title, a.what]));
+  ok(a.checks.length === 1 && /^Not possible to check: GEO has no total row, so the 5 parts are added up, month by month\. 2 part-months are suppressed in the two windows\.$/.test(a.checks[0]) && !/adds up/i.test(a.checks[0]), 'the sum-check line is not "not possible": ' + JSON.stringify(a.checks));
+  ok(/the sum of its 5 parts \(no total row\)/.test(a.structure) && /parts/.test(a.structure), 'the analyst view\'s structure table does not say GEO is the sum of its parts: ' + a.structure.slice(0, 300));
+  await p1.close();
+  const p2 = await openCube(ctx, qt), b = await read(p2);
+  ok(b.figs.join('|') === '4 quarters before|Latest 4 quarters|Change|Change, %' && /4-quarter averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022/.test(b.what), 'a quarterly table\'s estimand card does not say quarters: ' + JSON.stringify([b.figs, b.what]));
+  ok(!/\bmonths?\b/i.test(b.figs.join(' ') + ' ' + b.what + ' ' + b.checks.join(' ')) && /on 48 of 48 quarters/.test(b.checks[0]) && /in the latest 4 quarters/.test(b.checks[0]), 'a quarterly table\'s estimand card says months: ' + JSON.stringify([b.figs, b.what, b.checks]));
+  ok(qt.forecast.available === false && /forecast reads monthly series only/.test(qt.forecast.reason) && !qt.forecast.audit, 'the quarterly table has a forecast or an audit: ' + JSON.stringify(qt.forecast.reason));
+  await p2.close();
+});
 check('estimand-leads-the-report-and-the-headline-is-the-estimands', DESK, async (ctx) => {
   const rep = cubeReport(), E = rep.estimand;
   ok(E && E.figures && E.inference && E.inference.mode === 'official_aggregate', 'the fixture carries no official-aggregate estimand');

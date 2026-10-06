@@ -2380,17 +2380,23 @@ def _built(ctx: Ctx, chart: str, lands: Optional[List[str]]) -> Dict[str, Any]:
 
 # --------------------------------------------------------------------------- a statistical table's charts
 # WAVE 4, track A1 (plan/WAVE4-A-DESIGN.md section 2(10)). A table read by its structure (nl_structure) is charted from
-# its published parts, never its raw rows: a contribution waterfall per breakdown (the headline's verified parts, the
-# largest first, the smaller ones folded into "other parts", and the UNALLOCATED step: the total less its published
-# parts, the suppressed share), its table carrying each part's own change. The record keeps the frozen spec's shape
-# (basis.split "segment", no key the spec does not know): the record's source says it is the structure's, and each part
-# rests on its 12 published months in each window. A heatmap is not drawn from published series: each cell would be
-# one published figure, under the 5 rows a shown cell needs (SMALL_CELL), so a plan's heatmap of a structure dimension
-# is refused with that reason. A chart over a table's raw rows (a table whose structure could not be used) is refused:
-# its rows mix totals and parts.
+# its published parts, never its raw rows: (1) a contribution waterfall per breakdown (the headline's verified parts,
+# the largest first, the smaller ones folded into "other parts", and the UNALLOCATED step: the total less its published
+# parts, the suppressed share), its table carrying each part's own change; (2) a year-on-year change heatmap of each
+# breakdown's parts on the unadjusted series (a province by month), the smallest parts folded into "other"; (3) the
+# month-on-month calendar of the seasonally adjusted slice (S2), refused when the table publishes no adjusted series
+# (the unadjusted one shows its season, not momentum). The records keep the frozen spec's shape (spec.json: a step and
+# `basis` take no other key, a shown cell needs n >= 5): the record's source says it is the structure's, a part's own
+# change is in the waterfall's table, and a heatmap cell's n is the number of sum-checked PUBLISHED PARTS its figure adds
+# up from (nl_structure.support: a province's retail total adds up from its 9 industries), 5 or more or the cell reads
+# "<5". A chart over a table's raw rows (a table whose structure could not be used) is refused: its rows mix totals and
+# parts.
 R_CUBE_ROWS = "rows of a table of series mix totals and parts"
-R_CUBE_HEAT = ("each cell of a table of series is one published figure, under the 5 rows a shown cell needs; the "
-               "structure's breakdowns show where the change sits")
+R_CUBE_HEAT = ("a crosstab of a table of series would add rows that mix totals and parts; the structure's breakdowns "
+               "show where the change sits")
+R_NO_SA = ("the table publishes no seasonally adjusted series: the month-on-month change of an unadjusted series shows "
+           "its season, not momentum")
+R_RATE_CAL = "a rate or an index changes in points, not percent: its published aggregate is charted by its trend"
 STRUCTURE_WATERFALL_PARTS = 10          # the largest parts shown; the rest folded into "other parts", then unallocated
 
 
@@ -2408,7 +2414,8 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     parts.sort(key=lambda it: (-abs(float(it["value"])), str(it["segment"])))
     shown, rest = parts[:STRUCTURE_WATERFALL_PARTS], parts[STRUCTURE_WATERFALL_PARTS:]
     growth = {str(it["segment"]): it for iid, it in items.items() if iid.startswith("growth.%s." % key)}
-    steps = [(str(it["segment"])[:LABEL_MAX], float(it["value"]), str(it["text"])) for it in shown]
+    wlabels = _unique_labels([str(it["segment"]) for it in shown])
+    steps = [(wlabels[i], float(it["value"]), str(it["text"])) for i, it in enumerate(shown)]
     if rest:
         v = math.fsum(float(it["value"]) for it in rest)
         steps.append(("other parts (%d)" % len(rest), v, _money_like(v, str(hc["text"]))))
@@ -2429,9 +2436,9 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
                "less its published parts) is %s. Where the change sits, not what caused it." % (
                    _cut(what, 120), hp["text"], hl["text"], hc["text"], bd["dim"], lead, unal["text"]))
     rows = [["12 months before", str(hp["text"]), ""]]
-    for it in shown:
+    for i, it in enumerate(shown):
         g = growth.get(str(it["segment"]))
-        rows.append([str(it["segment"]), str(it["text"]), str(g["text"]) if g else "n/a"])
+        rows.append([wlabels[i], str(it["text"]), str(g["text"]) if g else "n/a"])
     if rest:
         rows.append([steps[len(shown)][0], steps[len(shown)][2], ""])
     rows.append(["unallocated (suppressed cells)", str(unal["text"]), ""])
@@ -2463,50 +2470,299 @@ def _money_like(v: float, like: str) -> str:
     return NST.money(v, S, signed=True)
 
 
+def _short_label(s: Any, n: int = LABEL_MAX) -> str:
+    """A member's label in at most n characters with its trailing code kept ("... leather goods retailers [458]")."""
+    s = " ".join(str(s or "").split())
+    if len(s) <= n:
+        return s
+    m = re.search(r"\s*(\[[^\[\]]{1,12}\])\s*$", s)
+    tail = (" " + m.group(1)) if m else ""
+    head = s[:len(s) - len(m.group(0))] if m else s
+    return head[:max(1, n - len(tail) - 1)].rstrip() + "\u2026" + tail
+
+
+def _unique_labels(names: List[str]) -> List[str]:
+    out, seen = [], set()
+    for x in names:
+        lab = _short_label(x)
+        k = 2
+        while lab in seen:
+            lab = _short_label(x, LABEL_MAX - 4) + " (%d)" % k
+            k += 1
+        seen.add(lab)
+        out.append(lab)
+    return out
+
+
+def _b_structure_yoy(rep: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any], bd: Dict[str, Any],
+                     basis: Dict[str, Any], findings: Dict[str, Any]) -> Dict[str, Any]:
+    """A breakdown's parts by month: each part's published series against the same month a year before, in percent. The
+    headline's other dimensions are held at the slice (an unadjusted slice makes the same month a year before a
+    like-for-like comparison); the 11 largest parts are rows and the rest one "other" row (a month where all of them
+    have a value). A cell's n is the number of published parts its figure adds up from (nl_structure.support)."""
+    import numpy as np
+    import nl_structure as NST
+    if (rep.get("estimand") or {}).get("reconciles") is False:       # None: the engine charted no series to compare with
+        raise Refused(R_RECON)
+    dim = str(bd["dim"])
+    months, _tot = NST._monthly(S, where)
+    if not months:
+        raise Refused("no dated rows")
+    pos = {m: i for i, m in enumerate(months)}
+    span = NB._month_range(months[0], months[-1])
+    if len(span) < CHANGE_MIN_MONTHS:
+        raise Refused(REGISTRY["change_heatmap"]["limit_needs"] + "; the table spans %s months" % _count(len(span)))
+    win = basis["windows"]
+    parts = []
+    for p in bd["parts"]:
+        w = dict(where, **{dim: p})
+        _m, v = NST._monthly(S, w)
+        lat, _k = NST.window_figure(S, _m, v, win["latest"])
+        parts.append((str(p), v, NST.support(S, w)[1], abs(float(lat or 0.0))))
+    parts.sort(key=lambda t: (-t[3], t[0]))
+    if len(parts) < 2 or len(parts) > 400:
+        raise Refused("%s has %s" % (dim, _plural(len(parts), "part")))
+    shown, folded = (parts[:CROSS_ROWS - 1], parts[CROSS_ROWS - 1:]) if len(parts) > CROSS_ROWS else (parts, [])
+    names = [t[0] for t in shown]
+    series = [(t[1], t[2]) for t in shown]
+    if folded:
+        allv = np.vstack([t[1] for t in folded])
+        ok = ~np.isnan(allv).any(axis=0)
+        series.append((np.where(ok, np.nansum(allv, axis=0), np.nan), np.sum(np.vstack([t[2] for t in folded]), axis=0)))
+        names.append("other (%d parts)" % len(folded))
+    labels = _unique_labels(names)
+    cols_all = [m for m in span if NB._shift_month(m, -12) >= span[0]][-CHANGE_COLS:]
+    measure = str(basis.get("measure") or "the total")
+    flow = S["measure"]["type"] in ("flow", "count")
+    adj = next((d for d in S["dims"] if d["role"] == "adjustment"), None)
+    nsa_note = "; unadjusted, so the same month a year before is a like-for-like comparison" \
+        if adj is not None and where.get(adj["column"]) == adj.get("nsa") else ""
+    fid = str(basis.get("finding_id") or "")
+    fold_txt = ("; %s folded into 'other': %s" % (_plural(len(folded), "smaller part"), ", ".join(
+        _short_label(t[0], 24) for t in folded[:6]) + (", ..." if len(folded) > 6 else ""))) if folded else ""
+
+    def build(k: int) -> Dict[str, Any]:
+        cm = cols_all[k:]
+        cells = []
+        for v, sup in series:
+            row = []
+            for m in cm:
+                q = NB._shift_month(m, -12)
+                if m not in pos or q not in pos:
+                    row.append((None, "", 0, 0))
+                    continue
+                a, b = float(v[pos[q]]), float(v[pos[m]])
+                if a != a or b != b or a <= 0:
+                    row.append((None, "", 0, 0))
+                    continue
+                x = 100.0 * (b / a - 1.0)
+                row.append(_cell(x, int(min(sup[pos[m]], sup[pos[q]])), _chg(_r6(x), "%")))
+            cells.append(row)
+        data, supp = _grid(labels, cm, cells, "diverging", lambda x: _chg(_r6(x), "%"), dim, "Month")
+        if 2 * _shown(data) < len(labels) * len(cm):
+            raise Refused("fewer than half its cells rest on 5 or more published parts (each figure's n is the sum-checked "
+                          "parts it adds up from; a leaf of the table has none)")
+        shown_c = [(data["values"][i][j], i, j) for i in range(len(labels)) for j in range(len(cm))
+                   if data["values"][i][j] is not None]
+        up, dn = max(shown_c), min(shown_c)
+        summary = "The largest rise on the year before is %s in %s (%s) and the largest fall %s in %s (%s)." % (
+            labels[up[1]], cm[up[2]], data["text"][up[1]][up[2]], labels[dn[1]], cm[dn[2]], data["text"][dn[1]][dn[2]])
+        if supp:
+            summary += " %s %s on fewer than 5 published parts and %s not shown." % (
+                _plural(supp, "cell"), "rests" if supp == 1 else "rest", "is" if supp == 1 else "are")
+        what = measure if measure.lower().startswith("total") else ("total %s" % measure if flow else "average %s" % measure)
+        sub = "Each %s's %s in the month against the same month a year before, in percent%s%s" % (
+            dim, what, nsa_note, fold_txt)
+        if k:
+            sub += "; %s to %s shown: the chart's size limit" % (cm[0], cm[-1])
+        anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.latest"]
+        return _record(
+            "change_heatmap", "%s by %s and month, change on the year before" % (NB._cap(measure), dim), sub, "drove",
+            str((findings.get(fid) or {}).get("claim") or "%s by %s" % (NB._cap(measure), dim)), anchors, None,
+            basis.get("grade"), {"label": measure, "unit": "%", "kind": "change_pct"}, data,
+            _grid_table(dim, labels, cm, data["text"]), summary,
+            (supp, "%s on fewer than 5 published parts" % _plural(supp, "cell") if supp else ""),
+            "structure: each part of %s by month (the published series; each figure's n is the sum-checked parts it adds "
+            "up from)" % bd["parent"],
+            {"columns": [measure, dim, str(S["date"]["column"])], "rows": None,
+             "months": [NB._shift_month(cm[0], -12), cm[-1]],
+             "op": "published %s by %s and month, percent change on the same month a year before" % (measure, dim)})
+    return _fit(build, len(cols_all) - 1)
+
+
+def _momentum_where(S: Dict[str, Any], where: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The slice's seasonally adjusted copy: its adjustment dimension at the adjusted member (or the slice itself when it
+    already is that), None when the table has no adjusted series for this slice."""
+    import nl_structure as NST
+    adj = next((d for d in S["dims"] if d["role"] == "adjustment"), None)
+    if adj is None or not adj.get("sa"):
+        return None
+    w = dict(where)
+    if w.get(adj["column"]) not in (adj.get("nsa"), adj.get("sa")):
+        return None
+    w[adj["column"]] = adj["sa"]
+    return w if NST._series_exist(S, w) else None
+
+
+def _b_structure_mom(rep: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any], basis: Dict[str, Any],
+                     findings: Dict[str, Any]) -> Dict[str, Any]:
+    """The month-on-month calendar of the seasonally adjusted slice (S2, the momentum slice): month across, year down, the
+    change from the month before in percent. The unadjusted series is never used for momentum."""
+    import nl_structure as NST
+    if S["measure"]["type"] in ("rate", "index"):
+        raise Refused(R_RATE_CAL)
+    w2 = _momentum_where(S, where)
+    if w2 is None:
+        raise Refused(R_NO_SA)
+    months, v = NST._monthly(S, w2)
+    sm, sup = NST.support(S, w2)
+    if not months:
+        raise Refused("no dated rows")
+    pos = {m: i for i, m in enumerate(months)}
+    span = NB._month_range(months[0], months[-1])
+    years_all = sorted({m[:4] for m in span})
+    if len(span) < CALENDAR_MIN_MONTHS or len(years_all) < 2:
+        raise Refused(REGISTRY["calendar_heatmap"]["limit_needs"] + "; the table spans %s months" % _count(len(span)))
+    measure = str(basis.get("measure") or "the total")
+    first = max(0, len(years_all) - CALENDAR_YEARS)
+    adj = next(d for d in S["dims"] if d["role"] == "adjustment")
+    adds = {d["column"]: d.get("sa_adds_up") for d in S["dims"] if d["role"] in ("partition", "hierarchy")}
+    sa_txt = "; its parts add up" if adds and all(x is True for x in adds.values()) else ""
+
+    def build(k: int) -> Dict[str, Any]:
+        years = years_all[first + k:]
+        cells = []
+        for y in years:
+            row = []
+            for j in range(12):
+                m = "%s-%02d" % (y, j + 1)
+                q = NB._shift_month(m, -1)
+                if m not in pos or q not in pos:
+                    row.append((None, "", 0, 0))
+                    continue
+                a, b = float(v[pos[q]]), float(v[pos[m]])
+                if a != a or b != b or a <= 0:
+                    row.append((None, "", 0, 0))
+                    continue
+                x = 100.0 * (b / a - 1.0)
+                row.append(_cell(x, int(min(sup[pos[m]], sup[pos[q]])), _chg(_r6(x), "%")))
+            cells.append(row)
+        data, supp = _grid(years, list(MONTHS), cells, "diverging", lambda x: _chg(_r6(x), "%"), "Year", "Month")
+        shown = [(data["values"][i][j], i, j) for i in range(len(years)) for j in range(12)
+                 if data["values"][i][j] is not None]
+        if not shown:
+            raise Refused("no month rests on 5 or more published parts")
+        up, dn = max(shown), min(shown)
+        yr = "%s and %s" % (years[0], years[-1]) if len(years) == 2 else "%s to %s" % (years[0], years[-1])
+        summary = ("The largest rise on the month before is %s %s (%s) and the largest fall %s %s (%s), in the seasonally "
+                   "adjusted series." % (MONTHS[up[2]], years[up[1]], data["text"][up[1]][up[2]], MONTHS[dn[2]],
+                                         years[dn[1]], data["text"][dn[1]][dn[2]]))
+        if supp:
+            summary += " %s %s on fewer than 5 published parts and %s not shown." % (
+                _plural(supp, "month"), "rests" if supp == 1 else "rest", "is" if supp == 1 else "are")
+        sub = "Change in the seasonally adjusted %s from the month before, in percent%s" % (measure, sa_txt)
+        if k or first:
+            sub += "; %s to %s shown: %s" % (years[0], years[-1], "the chart's size limit" if k else
+                                             "the latest %d years" % CALENDAR_YEARS)
+        dm = [m for m in months if m[:4] >= years[0]]
+        return _record(
+            "calendar_heatmap", "%s month on month, seasonally adjusted, %s" % (NB._cap(measure), yr), sub, "other",
+            "month-on-month momentum of the seasonally adjusted %s" % measure, [], None, basis.get("grade"),
+            {"label": measure, "unit": "%", "kind": "change_pct"}, data, _grid_table("Year", years, list(MONTHS), data["text"]),
+            summary, (supp, "%s on fewer than 5 published parts" % _plural(supp, "month") if supp else ""),
+            "structure: the seasonally adjusted slice (%s) by month; each figure's n is the sum-checked parts it adds up "
+            "from" % adj["sa"],
+            {"columns": [measure, str(S["date"]["column"])], "rows": None, "months": [dm[0], dm[-1]],
+             "op": "the seasonally adjusted %s by calendar month, percent change from the month before" % measure})
+    return _fit(lambda k: build(k), len(years_all) - first - 2)
+
+
 def _build_structure(rep: Dict[str, Any], ctx_in: Dict[str, Any], viz: Dict[str, Any]) -> Dict[str, Any]:
-    """The charts of a table read by its structure: a waterfall per breakdown; a plan's chart of a structure dimension is
-    the structure's own when one matches, else refused with its reason."""
+    """The charts of a table read by its structure: a waterfall and a year-on-year heatmap per breakdown and the
+    seasonally adjusted month-on-month calendar; a plan's chart of a structure dimension is the structure's own when one
+    matches, else refused with its reason."""
     sc = rep.get("scenarios") or {}
     basis = sc.get("basis") or {}
     items = {str(it.get("id")): it for it in sc.get("items") or [] if isinstance(it, dict)}
     findings = {str(f.get("id")): f for f in rep.get("findings") or [] if isinstance(f, dict)}
-    built: Dict[str, Dict[str, Any]] = {}
+    st_in = ctx_in.get("structure") or {}
+    S = st_in.get("S") or {}
+    where = dict(st_in.get("where") or {})
+    waterfalls: Dict[str, Dict[str, Any]] = {}
+    heats: Dict[str, Dict[str, Any]] = {}
+    calendar: Optional[Dict[str, Any]] = None
     if basis.get("source") == "structure":
         for bd in basis.get("breakdowns") or []:
+            dim = str(bd["dim"])
             try:
-                built[str(bd["dim"])] = _b_structure_waterfall(rep, bd, items, basis, findings)
+                waterfalls[dim] = _b_structure_waterfall(rep, bd, items, basis, findings)
             except Refused as exc:
-                viz["refused"].append({"chart": "contribution_waterfall", "columns": [str(bd["dim"])],
+                viz["refused"].append({"chart": "contribution_waterfall", "columns": [dim],
                                        "why": _cut(str(exc), 300), "chosen_by": "engine"})
-    S = (ctx_in.get("structure") or {}).get("S") or {}
+            full = next((b for b in S.get("breakdowns") or [] if b.get("id") == bd.get("id")), None)
+            if full is None:
+                continue
+            try:
+                heats[dim] = _b_structure_yoy(rep, S, where, full, basis, findings)
+            except Refused as exc:
+                viz["refused"].append({"chart": "change_heatmap", "columns": [dim], "why": _cut(str(exc), 300),
+                                       "chosen_by": "engine"})
+        try:
+            calendar = _b_structure_mom(rep, S, where, basis, findings)
+        except Refused as exc:
+            viz["refused"].append({"chart": "calendar_heatmap", "columns": [], "why": _cut(str(exc), 300),
+                                   "chosen_by": "engine"})
     dims = {d["column"] for d in S.get("dims") or []}
-    chosen_ai: Dict[str, str] = {}
+    chosen_ai: Dict[Tuple[str, str], str] = {}
     plan = ctx_in.get("plan") if isinstance(ctx_in.get("plan"), dict) else {}
     for it in (plan.get("charts") or [])[:PLAN_CHARTS_READ]:
         chart = str(it.get("kind") or "")
         cols = [str(c) for c in it.get("columns") or []]
         hit = [c for c in cols if c in dims]
         ref = {"chart": chart[:40], "columns": cols[:12], "why": "", "chosen_by": "ai"}
-        if chart == "contribution_waterfall" and hit and hit[0] in built:
-            chosen_ai[hit[0]] = str(it.get("why") or "")
+        if chart == "contribution_waterfall" and hit and hit[0] in waterfalls:
+            chosen_ai[(chart, hit[0])] = str(it.get("why") or "")
             continue
-        if chart in ("change_heatmap", "calendar_heatmap", "crosstab_heatmap"):
+        if chart == "change_heatmap" and hit and hit[0] in heats:
+            chosen_ai[(chart, hit[0])] = str(it.get("why") or "")
+            continue
+        if chart == "calendar_heatmap" and calendar is not None and not hit:
+            chosen_ai[(chart, "")] = str(it.get("why") or "")
+            continue
+        if chart == "crosstab_heatmap":
             ref["why"] = R_CUBE_HEAT
+        elif chart in ("change_heatmap", "calendar_heatmap") and not hit:
+            ref["why"] = next((str(r["why"]) for r in viz["refused"] if r.get("chart") == chart),
+                              "the chart reads the table's rows, which mix totals and parts; the structure's own "
+                              "charts show the headline's parts")
         elif hit:
             ref["why"] = "%s: %s" % (R_CUBE_ROWS, "the structure's breakdowns show %s instead" % hit[0])
         else:
             ref["why"] = "the chart reads the table's rows, which mix totals and parts; the headline series is charted " \
                          "by the engine's own trend chart"
         viz["refused"].append(ref)
-    for dim, rec in built.items():
+    order = [("contribution_waterfall", d, r) for d, r in waterfalls.items()] + \
+            [("change_heatmap", d, r) for d, r in heats.items()] + \
+            ([("calendar_heatmap", "", calendar)] if calendar is not None else [])
+    heat = 0
+    for chart, dim, rec in order:
         if len(viz["charts"]) >= VIZ_MAX:
-            break
-        if dim in chosen_ai:
-            _place(viz, rec, "ai", str(chosen_ai[dim]) or "the plan asked where the change came from by %s" % dim)
+            viz["refused"].append({"chart": chart, "columns": [dim] if dim else [], "why": R_MAX, "chosen_by": "engine"})
+            continue
+        if rec["kind"] == "heatmap" and heat >= HEAT_MAX:
+            viz["refused"].append({"chart": chart, "columns": [dim] if dim else [], "why": R_HEAT, "chosen_by": "engine"})
+            continue
+        heat += int(rec["kind"] == "heatmap")
+        if (chart, dim) in chosen_ai:
+            _place(viz, rec, "ai", str(chosen_ai[(chart, dim)]) or "the plan asked for this chart of the table's parts")
         else:
-            _place(viz, rec, "engine", ENGINE_WHY + "where the change in the headline came from, by the table's own "
-                                                    "published parts of %s" % dim)
-    viz["chosen_by"] = "ai" if chosen_ai else ("engine" if viz["charts"] else "none")
+            _place(viz, rec, "engine", ENGINE_WHY + {
+                "contribution_waterfall": "where the change in the headline came from, by the table's own published "
+                                          "parts of %s" % dim,
+                "change_heatmap": "how each published part of %s moved against the year before" % dim,
+                "calendar_heatmap": "the month-on-month momentum of the seasonally adjusted series"}[chart])
+    viz["chosen_by"] = "ai" if any(c.get("chosen_by") == "ai" for c in viz["charts"]) else \
+        ("engine" if viz["charts"] else "none")
     rep["charts"] = list(rep.get("charts") or []) + v2_records(viz)
     drop_driver_line(rep, viz)
     return viz

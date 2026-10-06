@@ -8080,13 +8080,37 @@ def _file_health(score: Any, findings: Iterable[Any], S: Dict[str, Any], withhel
                          m["column"] for m in S.get("metadata") or [] if m.get("landed") in meta))[:300]) if meta else ""}
 
 
-def _outer_of(got: Dict[str, Any], rep: Dict[str, Any]) -> Dict[str, Any]:
+def _sent_header(data: Optional[bytes]) -> List[str]:
+    """The header row of the file as the visitor sent it (a publisher's signature columns are read from it)."""
+    if not data:
+        return []
+    try:
+        import pandas as _pd_h
+        return [str(c) for c in _pd_h.read_csv(io.BytesIO(data), dtype=str, nrows=0, encoding="utf-8-sig").columns]
+    except Exception:  # noqa: BLE001 - no header, no publisher signature
+        return []
+
+
+def _hidden_names(flagged: Iterable[Dict[str, Any]], colmap: Dict[str, str]) -> List[str]:
+    """The columns the engine may not read, by landed name and by the file's header (a withheld or coded column)."""
+    inv = {str(v): str(k) for k, v in dict(colmap or {}).items()}
+    out: List[str] = []
+    for f in flagged or []:
+        if isinstance(f, dict) and f.get("decision") != "keep" and f.get("column"):
+            out.append(str(f["column"]))
+            if inv.get(str(f["column"])):
+                out.append(inv[str(f["column"])])
+    return out
+
+
+def _outer_of(got: Dict[str, Any], rep: Dict[str, Any], data: Optional[bytes] = None) -> Dict[str, Any]:
     """What the slice's report takes from the file (the fast path: the cached reading's)."""
     inp = dict(rep.get("input") or {})
     inp["rows"] = int(got.get("rows") or 0)
     inp["columns"] = int(got.get("columns") or len(got.get("colmap") or {}) or 0)
     return {"input": inp, "flagged": [dict(f) for f in got.get("flagged") or []],
-            "released": [dict(x) for x in got.get("released") or []], "file_health": got.get("file_health")}
+            "released": [dict(x) for x in got.get("released") or []], "file_health": got.get("file_health"),
+            "header": _sent_header(data), "hidden": _hidden_names(got.get("flagged") or [], got.get("colmap") or {})}
 
 
 def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], released: List[Dict[str, Any]],
@@ -8112,7 +8136,8 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
     _PROFILE_CACHE.clear()
     _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value=value)
     inp = dict(rep["input"])
-    return {"input": inp, "flagged": value["flagged"], "released": value["released"], "file_health": fh}
+    return {"input": inp, "flagged": value["flagged"], "released": value["released"], "file_health": fh,
+            "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap)}
 
 
 def _long_has_structure(data: bytes) -> bool:
@@ -8268,6 +8293,12 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
     st = rep.get("structure") or {}
     st["file_health"] = outer.get("file_health")
     rep["structure"] = st
+    # T4, an official aggregate is described, not tested (track A2, branch w4-inference): it reads the structure and the
+    # estimand copied on just above, and the file's own header and withheld columns
+    fn = globals().get("_official_inference")
+    if fn:
+        fn(rep, list(outer.get("header") or []), {"layout": STRUCTURE_LAYOUT, "structure_slice": True,
+                                                    "rows_a_month": int(NS.rows_a_month(S))}, list(outer.get("hidden") or []))
     if ai_plan:
         inner_plan = rep.get("ai_plan") or {}
         keep = {k: inner_plan[k] for k in ("context_queries", "context_queries_dropped", "context") if k in inner_plan}
@@ -8417,7 +8448,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 outer = _PROFILE_CACHE.get("value") or {}
                 inner = _run_slice(S_pre, dict(S_pre["default"]), "S1", "engine_default", [], name=name,
                                    objective=objective, as_of=as_of, ai_plan=None, raw_context=None,
-                                   outer=_outer_of(outer, rep), timings={})
+                                   outer=_outer_of(outer, rep, data), timings={})
                 if inner is not None:
                     return inner
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
@@ -8450,7 +8481,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                             % "; ".join("%s: %s" % (v["dim"], v["kind"].replace("_", " ")) for v in corr[:3]))
                     outer = _PROFILE_CACHE.get("value") or {}
                     inner = _run_slice(S_use, where, sid, psrc, corr, name=name, objective=objective, as_of=as_of,
-                                       ai_plan=ai_plan, raw_context=raw_context, outer=_outer_of(outer, rep),
+                                       ai_plan=ai_plan, raw_context=raw_context, outer=_outer_of(outer, rep, data),
                                        timings={})
                     if inner is not None:
                         if plan_review:
@@ -8489,6 +8520,12 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     reshaped_after = True
             except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
                 layout = None
+        if structure_inner is not None:
+            # the slice's own table holds one row a month, and the outer table's layout fixes its rows a month (465
+            # a month): track A2's row-count drop (w4-inference, nl_inference.row_series_artifact) reads
+            # layout["rows_a_month"]; every other use of `layout` below is a long table's, which this is not
+            layout = {"layout": STRUCTURE_LAYOUT, "structure_slice": True,
+                      "rows_a_month": int(_ns().rows_a_month(structure_inner["S"]))}
 
         def visitor_lines() -> Optional[List[int]]:
             """Each record of the file the engine read, as its line in the visitor's file (review M2, 29 Sep
@@ -8854,7 +8891,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                   flagged, withheld, pub, as_of_eff, objective, reasons, rules, plan_measure,
                   _measure_names(ai_plan, colmap, pub))
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
-        if layout:
+        if layout and structure_inner is None:
             _layout_notes(rep, layout)
         if ai_plan:
             if plan_review:
@@ -8893,7 +8930,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                                                          reading.filled(land))
                     actx = {"reading": reading, "clean": cr.clean, "hide": hidden_land, "pct": pct, "private": private,
                             "gate": gate, "names_by": scrub.flag_tokens_by}
-                    rep["ai_analyses"] = _run_analyses(actx, ai_plan, layout)
+                    rep["ai_analyses"] = _run_analyses(actx, ai_plan, None if structure_inner is not None else layout)
                     _zero_note_rows(rep, actx.get("zeros") or {}, contracts_off)
             rep["plan_signals"] = _plan_signals(rep, ai_plan, ai_scrub, gate)
         if plan_review and not ai_plan and not plan_review["approved"]:

@@ -1606,6 +1606,20 @@ def slice_bytes(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[bytes, Dict[s
                                                                                       if v != v]}
 
 
+def rows_a_month(S: Dict[str, Any]) -> int:
+    """The table's own rows a month (StatCan retail: 465, one per series): the count the layout fixes, which is no
+    activity. A table whose months do not all list the same series gives the commonest count."""
+    import numpy as np
+    E = S["_E"]
+    months = np.asarray([t[:7] for t in S["_times"]])
+    per: List[int] = []
+    for m in sorted(set(months.tolist())):
+        per.append(int(E[:, months == m].any(axis=1).sum()))
+    if not per:
+        return 0
+    return int(max(set(per), key=lambda k: (per.count(k), k)))
+
+
 # --------------------------------------------------------------------------------------------- 6. a plan's rows
 def check_rows(S: Dict[str, Any], positions: Optional[Sequence[int]]) -> List[Dict[str, Any]]:
     """The violations of a plan's kept rows (their places among the landed rows): a total kept with its parts, both
@@ -1721,6 +1735,28 @@ def _monthly(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any]:
     for i, xs in acc.items():
         out[i] = math.fsum(xs) if flow else math.fsum(xs) / len(xs)
     return months, out
+
+
+def support(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any]:
+    """(months, how many published parts the slice's figure adds up from in each month): the best of the dimensions whose
+    total the slice is (a province's industry total adds up from its 9 industries, Canada's seasonally adjusted total
+    from its 13 provinces), counting the parts that have a value that month. Zero for a figure no sum-check
+    decomposes. A published figure rests on its table row alone; this is how many sum-checked parts stand behind it."""
+    import numpy as np
+    months = sorted({t[:7] for t in S["_times"]})
+    best = np.zeros(len(months), dtype=int)
+    for d in S["dims"]:
+        if d["role"] not in ("partition", "hierarchy") or where.get(d["column"]) != d.get("total"):
+            continue
+        bd = next((b for b in S.get("breakdowns") or [] if b["dim"] == d["column"]), None)
+        if not bd:
+            continue
+        cnt = np.zeros(len(months), dtype=int)
+        for p in bd["parts"]:
+            _m, v = _monthly(S, dict(where, **{d["column"]: p}))
+            cnt += (~np.isnan(v)).astype(int)
+        best = np.maximum(best, cnt)
+    return months, best
 
 
 def window_figure(S: Dict[str, Any], months: Sequence[str], vals: Any, w: Sequence[str]) -> Tuple[Optional[float], int]:
@@ -1922,12 +1958,21 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                              "why": "no total was verified, so members are never added across this dimension"})
     return {"text": text, "slice": sl,
-            "measure": {"label": m["column"], "uom": m.get("uom"), "scale": m.get("scale"),
+            "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": m.get("scale"),
                         "scale_applied": m.get("factor"), "type": m["type"],
                         "aggregation": m["aggregation"]},
             "comparison": {"latest": list(win["latest"]), "prior": list(win["prior"])},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
             "inference": None}
+
+
+def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
+    """What the headline measures, in the reader's words: the slice's member of a measure dimension ("Total retail
+    sales"), else the measure column's name ("VALUE")."""
+    for d in S["dims"]:
+        if d["role"] in ("measure", "components") and isinstance(where.get(d["column"]), str):
+            return str(where[d["column"]])
+    return str(S["measure"]["column"])
 
 
 def _r(v: Optional[float], nd: int = 6) -> Optional[float]:

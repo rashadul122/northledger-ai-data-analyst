@@ -160,6 +160,26 @@ def adjusted(seed: int = 5) -> bytes:
     return _official(["Type"], rec)
 
 
+def adjusted_additive(seed: int = 6) -> bytes:
+    """A headline with its seasonally adjusted copy, the way a statistical office publishes it: 6 regions and their total,
+    each as "Unadjusted" and "Seasonally adjusted" (the same factors for every region, so the adjusted regions add up to
+    the adjusted total exactly). Used by the structure charts' tests (a month-on-month calendar needs 5 or more parts)."""
+    rng = np.random.RandomState(seed)
+    regions = ["North", "South", "East", "West", "Central", "Islands"]
+    nsa = {r: _series(rng, lv, growth=0.004) for r, lv in zip(regions, (3000, 2600, 2100, 1700, 1300, 700))}
+    nsa["All regions"] = sum(nsa[r] for r in regions)
+    t = np.arange(len(MONTHS))
+    factor = SEASON[t % 12] * (1.0 + 0.01 * np.sin(t / 3.0))
+    sa = {r: np.round(nsa[r] / factor) for r in regions}
+    sa["All regions"] = sum(sa[r] for r in regions)
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        for r in ["All regions"] + regions:
+            rec.append((mo, r, ("Unadjusted",), nsa[r][i], "A"))
+            rec.append((mo, r, ("Seasonally adjusted",), sa[r][i], "A"))
+    return _official(["Adjustments"], rec)
+
+
 def rate(seed: int = 7) -> bytes:
     """Test 6: an unemployment-like rate (Percent): Canada is the labour-force-weighted average of 5 provinces, never
     their sum, and never their plain average."""
@@ -327,7 +347,7 @@ def category_long(rows: int = 1000, labels: int = 30, header: str = "Industry se
     return _csv(["date", header, "amount"], out)
 
 
-ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy,
+ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,
        "business_flat": lambda: business_export(total_rows=False), "eurostat": eurostat, "ons": ons, "big": big,

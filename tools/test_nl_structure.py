@@ -35,6 +35,11 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 import make_cubes as MC  # noqa: E402
+
+sys.path.insert(0, os.path.join(HERE, "fixtures", "viz"))
+import validate_spec as VS  # noqa: E402
+
+SPEC = VS.load(os.path.join(HERE, "fixtures", "viz", "spec.json"))
 import nl_browser as NB  # noqa: E402
 import nl_structure as NS  # noqa: E402
 
@@ -312,6 +317,118 @@ def test_e2e_a_cube_is_read_as_its_headline_slice_with_the_estimand_and_reconcil
     json.dumps(rep, allow_nan=False)
 
 
+def test_e2e_the_slice_run_hands_track_a2_the_header_the_row_layout_and_the_hidden_columns():
+    """The guarded call (nl_browser._official_inference, track A2 on w4-inference): made once the structure and the
+    estimand are on the slice's report, with the file's own header, a layout that carries the table's rows a month, and
+    the columns the engine may not read. Without the function (this branch alone) nothing is called."""
+    seen = []
+
+    def spy(rep, header, layout, hidden):
+        seen.append({"header": list(header), "layout": dict(layout), "hidden": list(hidden),
+                     "structure": rep.get("structure"), "estimand": rep.get("estimand")})
+    data = MC.partition(0.10)
+    assert not hasattr(NB, "_official_inference") or os.environ.get("NL_A2_MERGED")
+    NB._official_inference = spy
+    try:
+        rep = _run(data, "regions.csv")
+    finally:
+        del NB._official_inference
+    assert len(seen) == 1, len(seen)
+    got = seen[0]
+    assert got["header"] == list(pd.read_csv(io.BytesIO(data), dtype=str, nrows=0).columns), got["header"]
+    assert got["layout"]["rows_a_month"] == 6 and got["layout"]["layout"] == NB.STRUCTURE_LAYOUT, got["layout"]
+    assert got["structure"]["kind"] == "cube" and got["estimand"]["slice"][0]["member"] == "Total", got["estimand"]["slice"]
+    # the table's rows a month is the series it lists (6 here, 465 for the retail file)
+    S = NS.detect(reading(data), set())
+    assert NS.rows_a_month(S) == 6
+    json.dumps(rep, allow_nan=False)
+
+
+def _spec_errors(rec):
+    """validate_spec's schema and invariants for one chart record, with the owner's byte caps."""
+    return VS.validate(rec, SPEC["schema"], SPEC["schema"]) or VS.check_record(rec, SPEC)
+
+
+def _charts(rep):
+    return {c["id"]: c for c in rep["viz"]["charts"]}
+
+
+def test_viz_structure_heatmaps_recompute_from_the_cube_and_every_record_is_in_the_frozen_spec():
+    """A year-on-year heatmap of each breakdown's published parts (the smallest folded into "other"), every cell
+    recomputed from the CSV; the calendar is refused when the table has no adjusted series; no chart reads raw rows."""
+    data = MC.big()
+    rep = _run(data, "big.csv")
+    ch = [c for c in rep["viz"]["charts"] if c["chart"] == "change_heatmap"]
+    assert [c["data"]["row_label"] for c in ch] == ["GEO", "Industry"], [c["data"]["row_label"] for c in ch]
+    assert not [c for c in rep["viz"]["charts"] if c["chart"] == "calendar_heatmap"]
+    assert any(r["chart"] == "calendar_heatmap" and "seasonally adjusted" in r["why"] for r in rep["viz"]["refused"]), \
+        rep["viz"]["refused"]
+    for c in rep["viz"]["charts"]:
+        assert not _spec_errors(c), (c["id"], _spec_errors(c))
+        assert c["source"].startswith("structure:") and c["inputs"]["rows"] is None, c["source"]
+    df = pd.read_csv(io.BytesIO(data), dtype=str)
+    df["v"] = pd.to_numeric(df.VALUE) * 1000.0
+    for c in ch:
+        dim = c["data"]["row_label"]
+        other = "Industry" if dim == "GEO" else "GEO"
+        keep = df[df[other] == ("All industries" if other == "Industry" else "Canada")]
+        wide = keep.pivot_table(index="REF_DATE", columns=dim, values="v", aggfunc="sum")
+        rows, cols = c["data"]["rows"], c["data"]["cols"]
+        assert len(rows) == 12 and rows[-1] == "other (2 parts)" if dim == "GEO" else len(rows) == 12, rows
+        assert not any(r in ("Canada", "All industries") for r in rows), "a total is never a row"
+        size = wide.loc[wide.index >= sorted(wide.index)[-12]].abs().sum().drop(["Canada", "All industries"], errors="ignore")
+        assert rows[:11] == list(size.sort_values(ascending=False, kind="stable").index[:11]), (rows, size.head(12))
+        parts = [x for x in wide.columns if x not in ("Canada", "All industries")]
+        folded = [x for x in parts if x not in rows]
+        for i, r in enumerate(rows):
+            s = wide[folded].sum(axis=1) if r.startswith("other (") else wide[r]
+            for j, m in enumerate(cols):
+                q = NB._shift_month(m, -12)
+                want = 100.0 * (s[m] / s[q] - 1.0)
+                got = c["data"]["values"][i][j]
+                assert got is not None and abs(got - want) < 1e-4, (dim, r, m, got, want)
+                assert c["data"]["n"][i][j] >= 5
+        assert "folded into 'other'" in c["subtitle"] and not c["data"]["text"][0][0] == ""
+    # the waterfalls' step labels are unique and at most 80 characters, a member's code kept
+    for c in rep["viz"]["charts"]:
+        if c["chart"] == "contribution_waterfall":
+            labs = [s["label"] for s in c["data"]["steps"]]
+            assert len(set(labs)) == len(labs) and all(len(x) <= 80 for x in labs), labs
+    import nl_viz as NV
+    lab = NV._short_label("Clothing, clothing accessories, shoes, jewellery, luggage and leather goods retailers [458]")
+    assert lab.endswith(" [458]") and len(lab) <= 80 and lab.startswith("Clothing, clothing"), lab
+    assert NV._short_label("Ontario") == "Ontario"
+
+
+def test_viz_structure_calendar_is_the_adjusted_slice_month_on_month_and_the_heatmaps_say_when_parts_are_too_few():
+    data = MC.adjusted_additive()
+    rep = _run(data, "adjusted.csv")
+    cal = [c for c in rep["viz"]["charts"] if c["chart"] == "calendar_heatmap"]
+    assert len(cal) == 1 and cal[0]["section"] == "other" and cal[0]["measure"]["kind"] == "change_pct", cal
+    c = cal[0]
+    assert not _spec_errors(c), _spec_errors(c)
+    assert "seasonally adjusted" in c["title"] and "adjusted" in c["subtitle"]
+    df = pd.read_csv(io.BytesIO(data), dtype=str)
+    sa = df[(df.GEO == "All regions") & (df.Adjustments == "Seasonally adjusted")].set_index("REF_DATE").VALUE.astype(float)
+    for i, y in enumerate(c["data"]["rows"]):
+        for j in range(12):
+            m = "%s-%02d" % (y, j + 1)
+            p = NB._shift_month(m, -1)
+            got = c["data"]["values"][i][j]
+            if m in sa.index and p in sa.index:
+                want = 100.0 * (sa[m] / sa[p] - 1.0)
+                assert got is not None and abs(got - want) < 1e-4, (m, got, want)
+                assert c["data"]["n"][i][j] == 6, c["data"]["n"][i][j]          # the 6 regions it adds up from
+            else:
+                assert got is None and c["data"]["text"][i][j] == ""
+    # a region is a leaf of this table: its year-on-year cells rest on 1 published figure, so the heatmap says so
+    assert any(r["chart"] == "change_heatmap" and "published parts" in r["why"] for r in rep["viz"]["refused"]), \
+        rep["viz"]["refused"]
+    # the headline is the unadjusted series, the momentum slice is the adjusted one, and the table never mixes them
+    assert rep["estimand"]["slice"][-1]["member"] == "Unadjusted"
+    assert rep["scenarios"]["basis"]["slice"]["Adjustments"] == "Unadjusted"
+
+
 def test_e2e_a_rate_table_reads_its_published_aggregate_and_never_adds_or_averages_members():
     NB._PROFILE_CACHE.clear()
     rep = json.loads(NB.run_json(MC.rate(), "rates.csv", "", None, AS_OF))
@@ -444,6 +561,15 @@ def test_acceptance_statcan_retail_planner_off_and_an_unadjusted_only_plan():
     assert not any("status" in x.lower() for x in rep["health"]["issues"] + rep["structure"]["file_health"]["issues"])
     assert not any(f["id"].startswith("forecast.monthly_rows") for f in rep["findings"]), "a row forecast"
     assert not any(c.get("chart") == "group_ranges" for c in rep["viz"]["charts"])
+    kinds = [c["chart"] for c in rep["viz"]["charts"]]
+    assert kinds.count("contribution_waterfall") == 2 and kinds.count("change_heatmap") == 2 and \
+        kinds.count("calendar_heatmap") == 1, kinds
+    for c in rep["viz"]["charts"]:
+        assert not _spec_errors(c), (c["id"], _spec_errors(c))
+    cal = next(c for c in rep["viz"]["charts"] if c["chart"] == "calendar_heatmap")
+    assert "seasonally adjusted" in cal["title"] and max(n for row in cal["data"]["n"] for n in row if n) == 13, cal["title"]
+    geo = next(c for c in rep["viz"]["charts"] if c["chart"] == "change_heatmap" and c["data"]["row_label"] == "GEO")
+    assert geo["data"]["rows"][:3] == ["Ontario", "Quebec", "British Columbia"] and geo["data"]["rows"][-1] == "other (2 parts)"
     assert rep["input"]["rows"] == 36735 and rep["input"]["columns"] == 17
     print("    statcan planner off: %.1f s native" % took)
     plan = {"goal": "How did retail sales change?", "primary": "VALUE",

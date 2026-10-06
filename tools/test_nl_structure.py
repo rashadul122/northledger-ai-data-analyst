@@ -2169,9 +2169,12 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
     for t in ("Months since signup", "months_active", "48 months of history", "Average monthly spend", "12 monthly cohorts",
               "A 120-month contract", "Latest 112 months", "Monthly totals by region", "Reads monthly series only"):
         assert f(t, Q) == t, (t, f(t, Q))
-    # a monthly slice: every block of the reports is what it was
+    # a monthly slice: every block of the reports is what it was. ONE intended difference (wave 5d, listed in PROGRESS): the synthetic
+    # "hierarchy" cube lists Canada beside Ontario (no sum-check ties them: Ontario is 0.4 of Canada, a part of it in the world); it was
+    # read as "the sum of 2 regions" (Ontario counted twice: ("f8772f0a999c4ce5", "9efb43e58e7a2c80")), and is now read as Canada, the
+    # named whole of its provinces, one member shown. The five other cubes are byte for byte what they were.
     before = {"partition_suppressed": ("c976440ea05601af", "0b557e428676763d"), "partition_clean": ("3606b4083ccc30c9", "b876124a77c18de0"),
-              "hierarchy": ("f8772f0a999c4ce5", "9efb43e58e7a2c80"), "rate_canada": ("878aa9e7716fa3c1", "280f1b84c2c3381d"),
+              "hierarchy": ("ed473d76bba175c8", "2a8f4af197ddcd56"), "rate_canada": ("878aa9e7716fa3c1", "280f1b84c2c3381d"),
               "mixed_units": ("5cec8f4300d961eb", "7021525ff667565b"), "no_total": ("4fd22be300dbcfd0", "b04ca379ab41e02b")}
     import hashlib
     keys = ("story", "summary", "findings", "scenarios", "charts", "viz", "forecast", "limitations", "methods", "cleaning", "estimand",

@@ -56,6 +56,7 @@ DUP_MAX = 0.01                  # date x dimensions repeat on at most 1% of the 
 PASS_SHARE = 0.95               # a sum-check passes on 95% of its complete cells ...
 MIN_COMPLETE = 6                # ... with at least 6 complete cells ...
 MIN_MONTHS = 3                  # ... across at least 3 months
+STRONG_INFO = 100.0             # wave 5d: ... or, when the total is at least 100 rounding tolerances (a match is no coincidence), at least 3 cells
 BOUND_SHARE = 0.99              # a member bounds another in 99% of the cells
 CANDIDATES_MAX = 22             # the subset-sum search: at most 22 candidates (2^11 subsets a half)
 PARENTS_MAX = 30
@@ -65,6 +66,7 @@ FLAG_BLANK_SHARE = 0.90         # a code whose rows have a blank measure this of
 ADJ_YEAR_TOL = 0.03             # an adjusted pair: calendar-year sums within 3% ...
 ADJ_SEASONAL_RATIO = 3.0        # ... and one three times more seasonal than the other
 ADJ_MAX_MEMBERS = 4
+ADJ_MIN_PERIODS = {1: 24, 3: 16}      # wave 5d: periods an adjusted pair is looked for in, by the table's step (months: 2 years, quarters: 4)
 PROFILE_CAP = 6000              # the profile's structure block, bytes
 PROFILE_VALUE_MAX = 60          # a member string as the profile lists it (nl_browser._profile_facts cuts at 60)
 SLICES_MAX = 12
@@ -96,7 +98,10 @@ _FLAG_NAMES = ("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", 
 _DATE_NAMES = ("refdate", "timeperiod", "date", "period", "time", "referenceperiod")
 _VALUE_NAMES = ("value", "obsvalue")
 _TOTAL_HINT = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|combined)(?:\b|$)|^\s*(?:_T|TOTAL|_Z)\s*$")
-_ALT_HINT = re.compile(r"(?i)\b(?:excluding|except|ex\.|less|without|other than)\b")
+# wave 5d: "excl." / "excl" / "w/o" / "net of" / "not including" / "minus" say it too (a member named "Total excl. Seasonal shops" was read as a
+# total beside "Total, all industries": the abbreviation's full stop meant `ex\.` could never match before a letter)
+_ALT_HINT = re.compile(r"(?i)(?<![A-Za-z])(?:excluding|excludes?|excluded|excl(?:uding)?\.?|except(?:ing)?|ex\.|less|without|w/o|"
+                       r"other than|not including|net of|minus)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])")
 _STOCK_WORDS = re.compile(r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|debts?|stocks?)\b")
 _POP_WORDS = re.compile(r"(?i)\b(?:employment|employed|population|labour force|labor force|persons employed)\b")
 _CURRENCY = re.compile(r"(?i)\b(?:dollars?|euros?|pounds?|yen|yuan|francs?|krona|kronor|krone|rupees?|pesos?|reais|"
@@ -512,6 +517,16 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     publisher = _publisher([head[c] for c in cols] + [c for c in hidden])
     meta_named = [c for c in cols if _norm(head[c]) in _META]
     official = bool(publisher) or len(meta_named) >= 3
+    # wave 5d: the column that holds the table's figures (VALUE, OBS_VALUE) is withheld (the scan flagged some of its values as
+    # personal: a count of nine or more digits has the shape of a national ID number). No other number column may stand in for
+    # it (a unit id or a vector coordinate read as the measure printed a constant figure, 0% change): an official table whose
+    # value column is withheld is not read, and the reason is said. The names are hints; the refusal is the safe side of one.
+    withheld_value = [R.header(h) for h in sorted(hidden) if _norm(R.header(h)) in _VALUE_NAMES]
+    if withheld_value and official:
+        return _empty("cube_incomplete",
+                      "the column that holds the table's figures (%s) is withheld as possibly personal, so no figure can be read: "
+                      "choose Keep for it on the consent card if it holds numbers only" % withheld_value[0],
+                      publisher=publisher, official=official)
     # -- the date: the column with the most dates the engine reads
     date, n_d = None, 0
     for c in cols:
@@ -687,6 +702,14 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     tix = trank[tcode]
     scale_row, scale_info = _scale(R, cat, metadata, rows, head)
     v = vals[rows] * scale_row
+    # wave 5d: half a unit of the last published digit of EACH series, in base units. A table whose members have different
+    # scale factors (dollars in millions beside units sold) or different DECIMALS has no one unit: a sum-check's rounding
+    # tolerance is the one of the series it reads, not of the table's first scale
+    half_unit = np.zeros(n_series)
+    np.maximum.at(half_unit, s_codes, 0.5 * 10.0 ** (-_row_decimals(cat, head, rows, _decimals(R, measure, metadata)))
+                  * np.abs(scale_row))
+    scale_series = np.zeros(n_series)
+    np.maximum.at(scale_series, s_codes, np.abs(scale_row))
     V = np.full((n_series, len(times)), np.nan)
     E = np.zeros((n_series, len(times)), dtype=bool)
     V[s_codes, tix] = v
@@ -733,7 +756,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         ("%s (embedded)" % head[measure] if embedded else None),
         "_SM": s_index, "_times": times, "_months": [t[:7] for t in times],
         "_row_series": _row_map(R.n, rows, s_codes), "_row_time": _row_map(R.n, rows, tix),
-        "_member_unit": unit_info["member_unit"],
+        "_member_unit": unit_info["member_unit"], "_half_unit": half_unit, "_scale_series": scale_series,
     }
     _measure_type(S)
     # -- the dimension that names what is measured, first: the table's measure is its default member's, and the other
@@ -1018,6 +1041,22 @@ def _decimals(R: Any, measure: str, metadata: List[Dict[str, Any]]) -> int:
     if not len(t):
         return 0
     return int(min(9, t.str.extract(r"\.(\d+)")[0].str.len().max() or 0))
+
+
+def _row_decimals(cat: Dict[str, Any], head: Dict[str, str], rows: Any, base: int) -> Any:
+    """Each row's number of decimals: the DECIMALS column's own value where it varies (one for dollars, another for counts), else
+    the table's (`base`, from a constant DECIMALS or the measure's text)."""
+    import numpy as np
+    for c, (codes, labels, _f) in cat.items():
+        if _norm(head.get(c, c)) in _DECIMALS:
+            per = []
+            for lb in labels:
+                try:
+                    per.append(max(0, min(9, int(float(lb)))))
+                except ValueError:
+                    per.append(base)
+            return np.array(per, dtype=float)[codes]
+    return np.full(len(rows), float(base))
 
 
 def _scale(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], rows: Any, head: Dict[str, str]
@@ -1335,12 +1374,11 @@ def _usable(S: Dict[str, Any]) -> bool:
 
 
 # --------------------------------------------------------------------------------------------- 2. relations
-def _dim_tensor(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool = False) -> Tuple[Any, Any, Any]:
-    """A[member, context, time] (base units, NaN where blank or absent), X (a row exists), and each series' context,
-    on the reference cells: another dimension's adjusted copy left out (its parts may be adjusted apart); with
-    `adjusted`, the adjusted copy's cells only (the record of whether the adjusted parts add up)."""
+def _dim_mask(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool = False) -> Any:
+    """The series dimension j's sum-checks read: the other dimensions' default measure (their relations are read on the default
+    measure's cells) and, with `restrict`, the unadjusted copy (or with `adjusted`, the adjusted one)."""
     import numpy as np
-    SM, V, E = S["_SM"], S["_V"], S["_E"]
+    SM = S["_SM"]
     mask = np.ones(SM.shape[0], dtype=bool)
     for k, d in enumerate(S["dims"]):
         if k != j and d.get("measure_dim") and d.get("default_index") is not None:
@@ -1349,6 +1387,16 @@ def _dim_tensor(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool
         for k, d in enumerate(S["dims"]):
             if k != j and d.get("role") == "adjustment" and d.get("nsa_index") is not None:
                 mask &= SM[:, k] == d["sa_index" if adjusted else "nsa_index"]
+    return mask
+
+
+def _dim_tensor(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool = False) -> Tuple[Any, Any, Any]:
+    """A[member, context, time] (base units, NaN where blank or absent), X (a row exists), and each series' context,
+    on the reference cells: another dimension's adjusted copy left out (its parts may be adjusted apart); with
+    `adjusted`, the adjusted copy's cells only (the record of whether the adjusted parts add up)."""
+    import numpy as np
+    SM, V, E = S["_SM"], S["_V"], S["_E"]
+    mask = _dim_mask(S, j, restrict, adjusted)
     sm = SM[mask]
     others = [k for k in range(SM.shape[1]) if k != j]
     if others:
@@ -1367,8 +1415,37 @@ def _dim_tensor(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool
     return A, X, ctx
 
 
-def _tol_unit(S: Dict[str, Any]) -> float:
-    """Half a unit of the last published digit, in base units (0.5 thousand dollars for a table in thousands)."""
+_SCALE_WORD = {1.0: "units", 10.0: "tens", 100.0: "hundreds", 1e3: "thousands", 1e6: "millions", 1e9: "billions", 1e12: "trillions"}
+
+
+def slice_scale(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[Optional[str], Optional[float]]:
+    """(the scale as the file words it, its factor) of ONE slice: the table's when every series has one scale, else the slice's own
+    (the dollars of a table of dollars in millions beside units sold are in millions, the units are not); (the words, None) when
+    the slice's series do not share one."""
+    m = S["measure"]
+    if m.get("factor") is not None:
+        return m.get("scale"), m.get("factor")
+    sc, sel = S.get("_scale_series"), _select(S, where)
+    if sc is None or sel is None or not len(sel):
+        return m.get("scale"), None
+    import numpy as np
+    u = np.unique(sc[sel])
+    if len(u) == 1 and float(u[0]) > 0:
+        f = float(u[0])
+        return _SCALE_WORD.get(f, "x%g" % f), f
+    return m.get("scale"), None
+
+
+def _tol_unit(S: Dict[str, Any], j: Optional[int] = None, restrict: bool = True, adjusted: bool = False) -> float:
+    """Half a unit of the last published digit, in base units (0.5 thousand dollars for a table in thousands). Of dimension j's
+    sum-check (wave 5d): the largest half unit among the series that check reads, each series with its own scale factor and
+    its own DECIMALS (a table of dollars in millions beside units sold has no one unit). One scale and one DECIMALS give the
+    table's, as before."""
+    h = S.get("_half_unit")
+    if j is not None and h is not None:
+        sel = h[_dim_mask(S, j, restrict, adjusted)]
+        if len(sel) and float(sel.max()) > 0:
+            return float(sel.max())
     f = S["measure"].get("factor") or 1.0
     return 0.5 * (10.0 ** -int(S["measure"].get("decimals") or 0)) * float(f)
 
@@ -1400,7 +1477,12 @@ def _sum_check(A: Any, X: Any, t: int, parts: Sequence[int], tol_unit: float, no
     share = float(ok.sum()) / nc if nc else 0.0
     neg = bool(((r < -tol) & incomplete).any()) if nonneg else False
     rel = np.abs(r[complete]) / np.maximum(np.abs(tgt[complete]), 1e-300) if nc else np.array([])
-    out = {"pass": nc >= MIN_COMPLETE and months_c >= MIN_MONTHS and share >= PASS_SHARE and not neg,
+    # wave 5d: the cells a pass needs depend on how much a match tells. A total many times the rounding tolerance that equals the sum
+    # of its parts to the digit is no coincidence in 3 cells; under heavy suppression a table may hold only 5 complete cells, and a
+    # total read as one of its own parts was counted twice
+    info = float(np.median(np.abs(tgt[complete]) / np.maximum(tol[complete], 1e-300))) if nc else 0.0
+    need = MIN_COMPLETE if info < STRONG_INFO else MIN_MONTHS
+    out = {"pass": nc >= need and months_c >= MIN_MONTHS and share >= PASS_SHARE and not neg,
            "complete": nc, "within": int(ok.sum()), "months": months_c, "incomplete": int(incomplete.sum()),
            "share": round(share, 4), "negative_unallocated": neg,
            "max_rel_residual": float(rel.max()) if len(rel) else None,
@@ -1468,7 +1550,7 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     rec = S["dims"][j]
     labels = rec["labels"]
     A, X, _ctx = _dim_tensor(S, j)
-    tol_u = _tol_unit(S)
+    tol_u = _tol_unit(S, j)
     nonneg = _nonneg(S)
     dom = _dominance(A)
     M = len(labels)
@@ -1478,9 +1560,13 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     hint = [m for m in range(M) if _TOTAL_HINT.search(labels[m]) or (_label_code(labels[m]) or "").count("-") == 1
             and _RANGE.match(_label_code(labels[m]) or "")]
     order = list(np.argsort(-dom, kind="stable"))
+    # wave 5d: a whole country's name in a geographic dimension (Canada beside its provinces) is a total's name too: tried as the
+    # total, and never added to the parts when no check could verify it
+    whole = [m for m in range(M) if m not in hint and m not in alts_label and _agg_name_tier(labels[m]) == 1
+             and _GEO_WORDS.search(rec["column"])]
     # 1. FLAT: the top 3 by dominance and any name-hinted member, against every other member (alternatives left out)
     tried = []
-    for t in list(dict.fromkeys([int(x) for x in order[:3]] + hint)):
+    for t in list(dict.fromkeys([int(x) for x in order[:3]] + hint + whole)):
         P = [m for m in range(M) if m != t and m not in alts_label]
         if len(P) < 1:
             continue
@@ -1516,12 +1602,12 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     # 5. NO TOTAL ROW (wave 5, gap 1): no member is the total of the others and none stands as their parent. A combined
     # member (one that equals the sum of 2 or more others) is left out; the rest are the parts, and a flow's headline is
     # their sum. Any other measure has no valid aggregate: one member is read (rule 6)
-    if _parts_only(S, rec, A, X, tol_u, nonneg, alts_label, dom, hint, tm):
+    if _parts_only(S, rec, A, X, tol_u, nonneg, alts_label, dom, hint + whole, tm):
         return
     # an official table whose largest member bounds the others and whose measure cannot be added (a stock, a rate): one
     # member shown, as rule 6 reads it
     rec["role"] = "unresolved"
-    rec["why"] = "no member is the sum of others (sum-checks failed)"
+    rec["why"] = rec.pop("twin_why", None) or "no member is the sum of others (sum-checks failed)"
 
 
 def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: float, nonneg: bool, alts_label: Set[int],
@@ -1579,6 +1665,14 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
             nested[m] = max(anc, key=lambda o: _spec(codes[o]))
     keep = [m for m in keep if m not in nested]
     if len(keep) < 2:
+        return False
+    # wave 5d: two members whose calendar-year totals agree in every year are one quantity twice (a seasonally adjusted copy beside
+    # the unadjusted one), never parts: adding them counts every dollar twice. A table too short to say which is which still says
+    # that much
+    twin = _same_quantity(A, keep, S["_months"], S["measure"]["type"], (S.get("period") or {}).get("step", 1))
+    if twin is not None:
+        rec["twin_why"] = ("%s and %s have the same calendar-year totals: one quantity twice (an adjusted copy beside an unadjusted "
+                           "one), so they are never added" % (labels[twin[0]], labels[twin[1]]))
         return False
     rec.update(role="parts", total=None, total_index=None, parts=[labels[m] for m in keep], part_index=keep,
                combined={labels[p]: [labels[x] for x in sorted(f)] for p, f in sorted(combined.items())},
@@ -1830,6 +1924,14 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     # (wave 5, gap 1). A table that fails this has no total row: its parts are added up (_parts_only)
     if len(trial.get("components") or {}) > max(1, M // 6):
         return False
+    # wave 5d: a member left over is a component of the ROOT itself only when the root says it is the total. Found by bounding
+    # alone, with no member below the root that could hold it, it is as likely a sibling the root leaves out: a combined member
+    # (Inland provinces = two of the three regions) is a subtotal, and the third region a part of the table, not a component
+    # of it. An unnamed root with such a leftover is no total: the dimension is read by its parts (_parts_only)
+    root_label = labels[root]
+    if (not _TOTAL_HINT.search(root_label) and _agg_name_tier(root_label) != 2
+            and any(parent == root_label for parent in (trial.get("components") or {}).values())):
+        return False
     rec.update(trial)
     return True
 
@@ -1913,6 +2015,9 @@ AGG_BUDGET_S = 0.5              # the whole search, inside detect's budget: out 
 AGG_FIT_UNITS = 1.0             # the fit's RMS residual: at most 1 unit of the last published digit ...
 AGG_PEER_UNITS = 3.0            # ... while a typical member's own fit is at least 3 units off (else the table cannot tell) ...
 AGG_PEER_RATIO = 0.25           # ... and the member's fit is at most a quarter of a typical member's
+AGG_MIN_WEIGHT = 0.01           # wave 5d: ... and every other member carries at least 1% of its weight (else it averages a part of the table) ...
+AGG_SMALL_TABLE = 12            # ... in a table of at most this many members; in a larger one ...
+AGG_SUPPORT_SHARE = 0.5         # ... the members carrying 95% of the weight are at least this share of them
 
 
 def _agg_name_tier(label: str) -> int:
@@ -1964,18 +2069,36 @@ def _nnls(X: Any, y: Any) -> Any:
     return w
 
 
-def _convex_rms(y: Any, X: Any) -> float:
-    """The RMS residual of y reproduced as a weighted average of the columns of X (weights >= 0 adding to 1, fixed over the cells)."""
+def _convex_fit(y: Any, X: Any) -> Tuple[float, Any]:
+    """(the RMS residual, the weights) of y reproduced as a weighted average of the columns of X (weights >= 0 adding to 1, fixed
+    over the cells)."""
     import numpy as np
     lam = 1e3 * max(1.0, float(np.abs(y).max()))
     with np.errstate(all="ignore"):               # some BLAS builds (macOS Accelerate) raise spurious floating-point flags in matmul
         w = _nnls(np.vstack([X, lam * np.ones((1, X.shape[1]))]), np.r_[y, lam])
         rms = float(np.sqrt(np.mean((X @ w - y) ** 2)))
-    return rms if np.isfinite(rms) else float("inf")      # a fit that did not converge is no evidence
+    return (rms if np.isfinite(rms) else float("inf")), w      # a fit that did not converge is no evidence
+
+
+def _weights_cover(w: Any) -> bool:
+    """Whether an aggregate's weights rest on its members all (see _unnamed_aggregate): every weight at least AGG_MIN_WEIGHT when
+    there are at most AGG_SMALL_TABLE members, else the heaviest members that carry 95% of the weight are at least
+    AGG_SUPPORT_SHARE of them."""
+    import numpy as np
+    w = np.asarray(w, dtype=float)
+    if len(w) <= AGG_SMALL_TABLE:
+        return bool(float(w.min()) >= AGG_MIN_WEIGHT)
+    cum = np.cumsum(np.sort(w)[::-1]) / max(float(w.sum()), 1e-12)
+    return bool((int(np.searchsorted(cum, 0.95)) + 1) >= AGG_SUPPORT_SHARE * len(w))
+
+
+def _convex_rms(y: Any, X: Any) -> float:
+    """The RMS residual of y reproduced as a weighted average of the columns of X (weights >= 0 adding to 1, fixed over the cells)."""
+    return _convex_fit(y, X)[0]
 
 
 def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, int]], labels: Sequence[str],
-                       t_end: Optional[float] = None) -> Optional[Tuple[int, Dict[str, Any]]]:
+                       t_end: Optional[float] = None, unit: Optional[float] = None) -> Optional[Tuple[int, Dict[str, Any]]]:
     """A member with no name that says it is the aggregate of a rate or an index is one only when ALL of these hold, whatever
     its place in the file (first in the file is no evidence): it lies STRICTLY inside the others' min-max in at least 99% of its
     cells (`stats`); it has the table's full coverage (a value wherever any member has one, at least every other member's); and the
@@ -2000,7 +2123,8 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
     if len(cells) > AGG_FIT_ROWS:
         cells = cells[np.linspace(0, len(cells) - 1, AGG_FIT_ROWS).astype(int)]
     B = A.reshape(M, -1)[:, cells]
-    unit = (10.0 ** -int(S["measure"].get("decimals") or 0)) * float(S["measure"].get("factor") or 1.0)
+    if unit is None:
+        unit = (10.0 ** -int(S["measure"].get("decimals") or 0)) * float(S["measure"].get("factor") or 1.0)
     if t_end is None:
         t_end = time.perf_counter() + AGG_BUDGET_S
     cands = []
@@ -2018,8 +2142,15 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
         if time.perf_counter() > t_end:
             return None                               # out of time: no evidence
         rest = [x for x in range(M) if x != m]
-        rm = _convex_rms(B[m], B[rest].T)
+        rm, wts = _convex_fit(B[m], B[rest].T)
         if rm > AGG_FIT_UNITS * unit:
+            continue
+        # wave 5d: an aggregate is the weighted average of ALL its members. A candidate the others reproduce without some of
+        # them (a combined member: the average of two or three of the regions) is a subtotal of a part of the table, never its
+        # aggregate: read as the national figure it dropped the other regions. In a table of at most 12 members every member
+        # carries at least 1% of the weight; in a larger one a small member cannot be told from a zero, so the members that
+        # carry 95% of the weight must be at least half of them
+        if not _weights_cover(wts):
             continue
         step = max(1, len(rest) // AGG_PEERS)
         peers = []
@@ -2076,8 +2207,8 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
     if named:
         top = max(t for t, _m, _i, _n in named)
         pool = [x for x in named if x[0] == top]
-        if top == 2 or len(pool) == 1:            # two whole countries' names (a table of countries) do not say which is the total
-            pick, by = pool[0], "name"
+        if len(pool) == 1:                        # two whole countries' names (a table of countries), or two members that say "total"
+            pick, by = pool[0], "name"            # (wave 5d: "Total, all industries" and a "Total excl. ..."), do not say which is the total
     if pick is None:
         # wave 5c: a member with a total's name (total, all, overall, national, _T) or a whole country's name in a geographic
         # dimension is the aggregate even when no check can verify it: an index or a rate cannot be summed, so there is no
@@ -2093,7 +2224,8 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
                 evidence = {"verified": False}
     if pick is None:
         try:
-            got = _unnamed_aggregate(S, A, stats, labels, time.perf_counter() + (min(AGG_BUDGET_S, max(0.0, tm.left())) if tm else AGG_BUDGET_S))
+            got = _unnamed_aggregate(S, A, stats, labels, time.perf_counter() + (min(AGG_BUDGET_S, max(0.0, tm.left())) if tm else AGG_BUDGET_S),
+                                     unit=2.0 * _tol_unit(S, j))
         except (np.linalg.LinAlgError, ValueError, FloatingPointError):      # a fit that cannot be made is no evidence
             got = None
         if got is not None:
@@ -2125,14 +2257,16 @@ def _adjustment(S: Dict[str, Any], j: int) -> None:
     rec = S["dims"][j]
     labels = rec["labels"]
     M = len(labels)
-    if not (2 <= M <= ADJ_MAX_MEMBERS) or not S.get("monthly") or S["months"] < 24 or (S.get("period") or {}).get("step", 1) != 1:
+    step = (S.get("period") or {}).get("step", 1)
+    # wave 5d: a QUARTERLY table too (four seasons a year, at least 4 years); a monthly one needs 2 years, as before
+    if not (2 <= M <= ADJ_MAX_MEMBERS) or not S.get("monthly") or step not in ADJ_MIN_PERIODS or S["months"] < ADJ_MIN_PERIODS[step]:
         return
     A, X, _c = _dim_tensor(S, j, restrict=False)
     months = S["_months"]
     best = None
     for a in range(M):
         for b in range(a + 1, M):
-            year_ok, ratio = _pair_behaviour(A[a], A[b], months, S["measure"]["type"])
+            year_ok, ratio = _pair_behaviour(A[a], A[b], months, S["measure"]["type"], step)
             if year_ok is None:
                 continue
             if year_ok and ratio is not None and (ratio >= ADJ_SEASONAL_RATIO or ratio <= 1.0 / ADJ_SEASONAL_RATIO):
@@ -2152,10 +2286,13 @@ def _adjustment(S: Dict[str, Any], j: int) -> None:
             rec["alternatives"][labels[m]] = labels[nsa]
 
 
-def _seasonal_strength(y: Any, months: Sequence[str]) -> Optional[float]:
+def _seasonal_strength(y: Any, months: Sequence[str], step: int = 1) -> Optional[float]:
+    """The variance of a series' seasonal means (its detrended values by month of the year, or by quarter of the year for a
+    quarterly table, wave 5d), or None when the series is too short or leaves a season empty."""
     import numpy as np
+    per = 12 // step                                 # seasons a year: 12 months, 4 quarters
     ok = ~np.isnan(y)
-    if ok.sum() < 24:
+    if ok.sum() < 2 * per:
         return None
     v = y.copy()
     if np.all(v[ok] > 0):
@@ -2163,30 +2300,35 @@ def _seasonal_strength(y: Any, months: Sequence[str]) -> Optional[float]:
     else:
         mu = np.nanmean(np.abs(v)) or 1.0
         v = v / mu
-    # a centred 2x12 moving average as the trend
-    k = np.r_[0.5, np.ones(11), 0.5] / 12.0
+    # a centred 2 x per moving average as the trend
+    h = per // 2
+    k = np.r_[0.5, np.ones(per - 1), 0.5] / float(per)
     tr = np.full_like(v, np.nan)
-    for i in range(6, len(v) - 6):
-        w = v[i - 6:i + 7]
+    for i in range(h, len(v) - h):
+        w = v[i - h:i + h + 1]
         if not np.isnan(w).any():
             tr[i] = float(np.dot(w, k))
     res = v - tr
-    mon = np.array([int(m[5:7]) for m in months])
+    slot = np.array([((int(m[5:7]) - 1) // step) % per for m in months])
     means = []
-    for mm in range(1, 13):
-        x = res[(mon == mm) & ~np.isnan(res)]
+    for mm in range(per):
+        x = res[(slot == mm) & ~np.isnan(res)]
         if len(x):
             means.append(float(x.mean()))
-    if len(means) < 12:
+    if len(means) < per:
         return None
     return float(np.var(means))
 
 
-def _pair_behaviour(a: Any, b: Any, months: Sequence[str], mtype: str) -> Tuple[Optional[bool], Optional[float]]:
-    """(calendar-year totals agree within 3% in every context, the median ratio of a's seasonal strength to b's)."""
+def _year_gaps(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1, with_strength: bool = False
+               ) -> Tuple[List[float], List[float]]:
+    """(each complete calendar year's relative gap between two members' totals, in every context (up to 60); and, with
+    `with_strength`, the ratio of their seasonal strengths per context). A year is complete when it holds every period of it
+    (12 months, 4 quarters) with a value in both."""
     import numpy as np
     years = sorted({m[:4] for m in months})
     mon = np.array(months)
+    per = 12 // step
     agree, ratios, n = [], [], 0
     for c in range(a.shape[0]):
         ya, yb = a[c], b[c]
@@ -2194,20 +2336,43 @@ def _pair_behaviour(a: Any, b: Any, months: Sequence[str], mtype: str) -> Tuple[
             continue
         for y in years:
             sel = np.array([m.startswith(y) for m in mon])
-            if sel.sum() == 12 and not np.isnan(ya[sel]).any() and not np.isnan(yb[sel]).any():
+            if sel.sum() == per and not np.isnan(ya[sel]).any() and not np.isnan(yb[sel]).any():
                 fa, fb = (ya[sel].sum(), yb[sel].sum()) if mtype in ("flow", "count", "unknown") else \
                     (ya[sel].mean(), yb[sel].mean())
                 if fb != 0:
                     agree.append(abs(fa / fb - 1.0))
-        sa_, sb_ = _seasonal_strength(ya, months), _seasonal_strength(yb, months)
-        if sa_ is not None and sb_ is not None and sb_ > 0 and sa_ > 0:
-            ratios.append(sa_ / sb_)
+        if with_strength:
+            sa_, sb_ = _seasonal_strength(ya, months, step), _seasonal_strength(yb, months, step)
+            if sa_ is not None and sb_ is not None and sb_ > 0 and sa_ > 0:
+                ratios.append(sa_ / sb_)
         n += 1
         if n >= 60:
             break
+    return agree, ratios
+
+
+def _pair_behaviour(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1) -> Tuple[Optional[bool], Optional[float]]:
+    """(calendar-year totals agree within 3% in every context, the median ratio of a's seasonal strength to b's)."""
+    import numpy as np
+    agree, ratios = _year_gaps(a, b, months, mtype, step, with_strength=True)
     if not agree or not ratios:
         return None, None
     return bool(float(np.median(agree)) <= ADJ_YEAR_TOL), float(np.median(ratios))
+
+
+def _same_quantity(A: Any, members: Sequence[int], months: Sequence[str], mtype: str, step: int) -> Optional[Tuple[int, int]]:
+    """Two of `members` whose calendar-year totals agree within 3% in every year they can be compared (at least 2 comparisons):
+    the same quantity twice (an adjusted copy beside an unadjusted one), whatever the table is long enough to say about which is
+    which. Parts of a total are never so alike. (a, b) or None."""
+    import numpy as np
+    if step not in ADJ_MIN_PERIODS:
+        return None
+    for i, a in enumerate(members):
+        for b in members[i + 1:]:
+            agree, _r = _year_gaps(A[a], A[b], months, mtype, step)
+            if len(agree) >= 2 and float(np.median(agree)) <= ADJ_YEAR_TOL and float(np.max(agree)) <= 2 * ADJ_YEAR_TOL:
+                return a, b
+    return None
 
 
 def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
@@ -3031,8 +3196,9 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         (("average level over the window (%s averages)" % unit_w if w_ > 1 else "average level over the window (annual values)")
          if ambiguous else ("%s averages" % unit_w if w_ > 1 else "annual values"))
     scale_txt = ""
-    if m.get("factor") and m["factor"] != 1:
-        scale_txt = " (file in %s ×%s)" % (m.get("scale"), format(int(m["factor"]), ","))
+    sc_word, sc_factor = slice_scale(S, where)
+    if sc_factor and sc_factor != 1:
+        scale_txt = " (file in %s ×%s)" % (sc_word, format(int(sc_factor), ","))
     unit = (str(m.get("uom") or "") or m["type"]).lower()
     choice = measure_choice(S, where, plan_source)
     built = parts_info(S, where, win)
@@ -3176,8 +3342,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                 excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                                  "why": "no total was verified, so members are never added across this dimension"})
     out = {"text": text, "slice": sl,
-            "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": m.get("scale"),
-                        "scale_applied": m.get("factor"), "type": m["type"], "type_basis": m.get("type_basis"),
+            "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": sc_word,
+                        "scale_applied": sc_factor, "type": m["type"], "type_basis": m.get("type_basis"),
                         "type_why": m.get("type_why"),
                         "aggregation": str(m["aggregation"]).replace("over months", "over %s" % P["nouns"])},
             "comparison": cmp_, "period": {k: P[k] for k in ("kind", "noun", "nouns", "step", "window", "adjective")},

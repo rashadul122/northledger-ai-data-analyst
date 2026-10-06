@@ -34,6 +34,11 @@ rules the report draws from the data's roles:
                      review_text kept and its theme chart asked for (the final evaluation, 1 Oct 2026): the report
                      carries ai_plan.row_drops (the notice, the reason, the engine's check), health.explain (its newest
                      row is 3.5 years old) and the theme chart of the kept text
+  official-cube     a SYNTHETIC statistical table in Statistics Canada's shape (tools/fixtures/structure/make_cubes.py: a total and
+                     five regions, a tenth of the regions' cells suppressed, 48 months moved to end in Aug 2026), read by its
+                     structure (wave 4, track B): the report carries an estimand, a sum-check, a not-allocated step, an official
+                     aggregate's process grade, a forecast with its back-test and a dropped row forecast; when the adapter
+                     cannot make it, the file holds {"__fixture_error": why} and only the check that reads it fails
   orders-private     240 orders with a buyer's email, a free-text note and the member of staff, run
                      with an AI plan (PRIVATE_PLAN) and the choices code / withhold / keep: the
                      coded email and the kept staff name fail their tests (the withheld note's date
@@ -379,6 +384,29 @@ def main(argv=None):
     with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
         json.dump(rep, f)
     print("%-18s %s" % (name, rep.get("__fixture_error") or "%d row drop(s)" % len(rep["ai_plan"]["row_drops"])),
+          file=sys.stderr if "__fixture_error" in rep else sys.stdout)
+    # a statistical table read by its structure (wave 4, track B): synthetic, in Statistics Canada's shape
+    name = "official-cube"
+    try:
+        sys.path.insert(0, os.path.join(HERE, "fixtures", "structure"))
+        import make_cubes as MC
+        df = pd.read_csv(__import__("io").BytesIO(MC.partition(0.10)), dtype=str, keep_default_na=False)
+        ix = lambda m: int(m[:4]) * 12 + int(m[5:7]) - 1 + 44            # the table's 48 months end in Aug 2026
+        df["REF_DATE"] = df["REF_DATE"].map(lambda m: "%04d-%02d" % (ix(m) // 12, ix(m) % 12 + 1))
+        data = df.to_csv(index=False, quoting=1).encode("utf-8")
+        with open(os.path.join(a.out, name + ".csv"), "wb") as f:
+            f.write(data)
+        rep = nl_browser.run(data, name + ".csv", "", None, AS_OF)
+        if not rep.get("ok"):
+            rep = {"__fixture_error": "the run failed: %s" % rep.get("error")}
+        elif not (rep.get("estimand") and (rep.get("forecast") or {}).get("audit") and rep["estimand"].get("inference")):
+            rep = {"__fixture_error": "the run carries no estimand, audit or official-aggregate record: %s" % json.dumps(
+                {k: bool(rep.get(k)) for k in ("estimand", "structure")})}
+    except Exception as e:
+        rep = {"__fixture_error": "the run raised %s: %s" % (type(e).__name__, e)}
+    with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f)
+    print("%-18s %s" % (name, rep.get("__fixture_error") or "%s; audit %s" % (rep["story"]["headline"], rep["forecast"]["audit"]["status"])),
           file=sys.stderr if "__fixture_error" in rep else sys.stdout)
     # a header that is markup, in a chart the engine refuses (the chart review of 30 Sep 2026)
     name = "viz-hostile-header"

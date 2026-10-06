@@ -2868,11 +2868,13 @@ check('try-sample-profile-through-the-real-engine-after-the-choices', DESK, asyn
    an 18-month file), then compare what the page shows with the report, number by number. */
 const PY = process.env.PY || path.join(SITE_DIR, '..', 'agent-demo', 'venv', 'bin', 'python');
 const FX_NAMES = ['sample', 'rent-roll', 'sales-ledger', 'web-analytics', 'cafe-invoices-18m', 'rent-roll-gated', 'shop-margins-36m'];
+// a statistical table read by its structure (wave 4, track B): only its report is read by the checks (no profile or landed files)
+const FX_STRUCT = ['official-cube.json'];
 // every file the checks read: each report, the profile the page would send /plan for it, and the planned
 // orders-private run (its CSV too, for the personal values that must never show)
 const FX_FILES = FX_NAMES.concat(['orders-private']).map((n) => n + '.json').concat(FX_NAMES.concat(['orders-private']).map((n) => n + '.profile.json'),
   FX_NAMES.concat(['orders-private']).map((n) => n + '.landed.json'), ['orders-private.csv', 'sales-ledger-charts.json', 'viz-hostile-header.json',
-    'reviews-plan-drop.json']);
+    'reviews-plan-drop.json']).concat(FX_STRUCT);
 let FX_DIR = null;
 function fixtureProfile(name) { fixture(name); return JSON.parse(fs.readFileSync(path.join(FX_DIR, name + '.profile.json'), 'utf8')); }
 function fixtureLanded(name) { fixture(name); return JSON.parse(fs.readFileSync(path.join(FX_DIR, name + '.landed.json'), 'utf8')); }
@@ -4122,6 +4124,124 @@ check('try-report-results-carry-the-row-noun-and-a-share-keeps-the-plan-disclosu
       ok(!q.__errs.length, 'page error: ' + q.__errs[0]);
     } finally { await c.close(); }
   }
+});
+
+/* ------------------------------------------------------------ wave 4, track B: the estimand first, the process grade, the audit
+   A statistical table (tools/make_ui_fixtures.py "official-cube": a synthetic cube in Statistics Canada's shape) is run through
+   the adapter; the page must open on what the headline measures (the estimand), say that the engine's grade is a grade of the
+   monthly noise, show the not-allocated step and each part's own change, print the back-test beside the forecast (and say "not
+   trusted" when it failed), and say why a dropped forecast is dropped. The sentences are the writer's (45-report-pdf.js), so
+   the checks read them from the report, not from the page. */
+const cubeReport = () => vizCopy(fixture('official-cube'));
+const noBigNumbers = (txt, where) => { const m = String(txt).match(/(?<![\d,.])\d{9,}(?![\d,])/g); ok(!m, where + ' prints a raw number of 9 or more digits: ' + (m || []).slice(0, 3).join(', ')); };
+async function openCube(ctx, rep) {
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  await runReport(p);
+  ok(await p.evaluate(() => !!document.querySelector('#try-report .nl2-views') && !document.querySelector('#try-report .nl2-fallback')), 'the statistical table\'s report fell back to v1');
+  await p.evaluate(() => document.querySelectorAll('#try-report details').forEach((d) => { d.open = true; }));
+  await p.waitForTimeout(200);
+  return p;
+}
+check('estimand-leads-the-report-and-the-headline-is-the-estimands', DESK, async (ctx) => {
+  const rep = cubeReport(), E = rep.estimand;
+  ok(E && E.figures && E.inference && E.inference.mode === 'official_aggregate', 'the fixture carries no official-aggregate estimand');
+  // the headline: the estimand composed (what, window, change in the units of the table, "in the published totals"), no invented subject
+  ok(/^VALUE, Total, 12 months to Aug 2026: \+3\.8% \(\$347\.6M\) in the published totals$/.test(rep.story.headline), 'the headline is not the estimand\'s: ' + rep.story.headline);
+  ok(rep.summary.lines[0].text === rep.story.headline && rep.summary.lines[0].kind === 'moved', 'the first summary sentence is not the headline: ' + JSON.stringify(rep.summary.lines[0]));
+  const p = await openCube(ctx, rep);
+  const d = await p.evaluate(() => {
+    const m = document.getElementById('nl2-manager'), first = m.querySelector('.tr-card'), t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null;
+    const figs = Array.from(document.querySelectorAll('#nl2-manager .nl2-estimand .nl2-est-fig')).map((f) => [t(f.querySelector('dt')), t(f.querySelector('dd')), f.classList.contains('nl2-est-lead')]);
+    return { firstIsEstimand: !!first && first.classList.contains('nl2-estimand'), n: m.querySelectorAll('.nl2-estimand').length, title: t(document.querySelector('#nl2-manager .nl2-est-title')),
+      figs, desc: t(document.querySelector('#nl2-manager .nl2-est-desc')), proc: t(document.querySelector('#nl2-manager .nl2-est-proc')), chip: t(document.querySelector('#nl2-manager .nl2-est-proc .nl2-grade')),
+      checks: Array.from(document.querySelectorAll('#nl2-manager .nl2-est-checks li')).map(t), excl: Array.from(document.querySelectorAll('#nl2-manager .nl2-est-excl li')).map(t), src: t(document.querySelector('#nl2-manager .nl2-est-src')),
+      how: t(document.querySelector('#nl2-manager .nl2-est-how')), noSvg: (() => { const c = m.cloneNode(true); c.querySelectorAll('svg').forEach((x) => x.remove()); return t(c); })(), bl: Array.from(document.querySelectorAll('#nl2-manager .nl2-bottomcard li, #nl2-manager .nl2-bottomcard p')).map(t).join(' '), man: t(m) };
+  });
+  ok(d.firstIsEstimand && d.n === 1, 'the first card of the report is not the one estimand card: ' + JSON.stringify({ first: d.firstIsEstimand, n: d.n }));
+  ok(d.title === E.text || d.title.indexOf(E.measure.label) === 0 || d.title.indexOf('Total') >= 0, 'the estimand card does not open with the estimand\'s text: ' + d.title);
+  // prior, latest, change and change % in the report's own words, the change the prominent one
+  const want = { prior: E.figures.prior.text, latest: E.figures.latest.text, change: E.figures.change.text, change_pct: E.figures.change_pct.text };
+  Object.keys(want).forEach((k) => ok(d.figs.some((f) => f[1].indexOf(want[k]) >= 0), 'the estimand card does not print ' + k + ' ' + want[k] + ': ' + JSON.stringify(d.figs)));
+  ok(d.figs.filter((f) => f[2]).length === 1 && d.figs.filter((f) => f[2])[0][1].indexOf(want.change) >= 0 || d.figs.filter((f) => f[2])[0][1].indexOf(want.change_pct) >= 0, 'the described change is not the prominent figure: ' + JSON.stringify(d.figs));
+  ok(/described, not tested/i.test(d.desc || ''), 'a published total is not said to be described, not tested: ' + d.desc);
+  // the sum-check: its verdict and counts, the largest gap, in the table's units
+  const sc = E.sum_checks[0], chk = d.checks.join(' | ');
+  ok(/adds up/i.test(chk) && chk.indexOf(String(sc.within_tolerance) + ' of ' + String(sc.complete_cells)) >= 0 && chk.indexOf(sc.max_residual.text) >= 0, 'the sum-check is not stated with its counts and its largest gap (' + sc.within_tolerance + ' of ' + sc.complete_cells + ', ' + sc.max_residual.text + '): ' + chk);
+  ok(d.excl.some((x) => /5 other members/.test(x) && /never added/.test(x)), 'what was left out, and why, is not listed: ' + JSON.stringify(d.excl));
+  ok(/engine|default|no plan|your own|chose/i.test(d.src || '') && d.src.indexOf('engine_default') < 0, 'the plan\'s source is not in plain words: ' + d.src);
+  // the process grade: the chip names what the grade is a grade of, and the note says it is not a test of the total
+  ok(/\(process grade\)/.test(d.chip || '') && /month-to-month noise in 36 monthly totals; not a test of the published total/.test(d.proc || ''), 'the process-grade chip or note is missing: ' + JSON.stringify({ chip: d.chip, proc: d.proc }));
+  ok(await p.evaluate(() => document.querySelectorAll('#try-report [data-process="1"]').length >= 1), 'no grade chip is marked as a process grade');
+  // the card names its own units and no raw 9-digit figure is printed anywhere in the report
+  noBigNumbers(d.noSvg, 'the manager view');
+  ok(d.man.indexOf('$347.6M') >= 0 && d.man.indexOf('$334.8M') >= 0, 'the amounts are not in the estimand\'s units ($347.6M, $334.8M)');
+  ok(d.bl.indexOf(rep.story.headline) >= 0 || d.man.indexOf(rep.story.headline) >= 0, 'the bottom line does not carry the estimand headline: ' + d.bl.slice(0, 200));
+  // the same card opens the analyst view's estimand section
+  await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForTimeout(150);
+  const a = await p.evaluate(() => { const c = document.getElementById('nl2-analyst').cloneNode(true); c.querySelectorAll('svg').forEach((x) => x.remove()); return { n: document.querySelectorAll('#nl2-analyst .nl2-estimand').length, txt: (c.textContent || '').replace(/\s+/g, ' ') }; });
+  ok(a.n === 1 && /process grade/.test(a.txt), 'the analyst view has no estimand section with the process grade: ' + a.n);
+  noBigNumbers(a.txt, 'the analyst view');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('waterfall-shows-the-unallocated-step-and-each-parts-own-change', DESK, async (ctx) => {
+  const rep = cubeReport(), rec = rep.charts.filter((c) => c.id.indexOf('viz.') === 0 && c.data && c.data.kind === 'waterfall')[0];
+  ok(rec, 'the statistical table has no contribution waterfall');
+  const steps = rec.data.data.steps, un = steps.filter((s) => s.label === 'Not allocated: suppressed cells');
+  ok(un.length === 1 && rec.data.table.cols.indexOf('Own change') === 2 && rec.data.table.rows.some((r) => r[0] === 'Not allocated: suppressed cells'), 'the record does not carry the not-allocated step and the Own change column');
+  const p = await openCube(ctx, rep);
+  const d = await p.evaluate(async () => {
+    const svg = document.querySelector('#try-report svg.nlv .w-unalloc') ? document.querySelector('#try-report svg.nlv .w-unalloc').closest('svg') : null;
+    if (!svg) return { missing: true };
+    const fig = svg.closest('figure'), btn = fig && fig.querySelector('.tbl-btn');
+    const out = { un: svg.querySelectorAll('.w-unalloc').length, tips: Array.from(svg.querySelectorAll('[data-tip]')).map((g) => g.getAttribute('data-tip')), texts: Array.from(svg.querySelectorAll('text')).map((t) => t.textContent), btn: !!btn };
+    if (btn) { btn.click(); await new Promise((r) => setTimeout(r, 80)); out.th = Array.from(fig.querySelectorAll('.vtable thead th, table thead th')).map((x) => x.textContent.trim()); out.rows = Array.from(fig.querySelectorAll('table tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent.replace(/\s+/g, ' ').trim())); }
+    return out;
+  });
+  ok(!d.missing && d.un >= 1, 'the not-allocated step is not drawn as its own (hatched) step: ' + JSON.stringify(d).slice(0, 200));
+  ok(d.tips.some((t) => t.indexOf('Not allocated: suppressed cells: \u2212$26.2M') === 0), 'the step is not named "Not allocated: suppressed cells" with its amount: ' + d.tips.join(' | '));
+  ok(d.texts.every((t) => !/^\d{9,}$/.test(t.replace(/[,\s]/g, ''))), 'an axis prints a raw number: ' + d.texts.join(' | '));
+  // its table (the Table button): the step is a row, and each part has its own change
+  ok(d.btn && d.th && d.th.indexOf('Own change') >= 0 && d.rows.some((r) => r[0] === 'Not allocated: suppressed cells'), 'the waterfall\'s table has no not-allocated row or no Own change column: ' + JSON.stringify([d.th, d.rows]).slice(0, 300));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('the-forecast-audit-is-printed-beside-the-range-and-a-failed-one-says-not-trusted', DESK, async (ctx) => {
+  const base = cubeReport(), A = base.forecast.audit;
+  ok(A && A.horizons && A.horizons.length && A.label, 'the fixture has no forecast audit');
+  let p = await openCube(ctx, base);
+  let d = await p.evaluate(() => ({ lines: Array.from(document.querySelectorAll('#try-report .nl2-audit')).map((e) => e.textContent.replace(/\s+/g, ' ').trim()), untrusted: document.querySelectorAll('#try-report .nl2-untrusted').length,
+    man: document.getElementById('nl2-manager').textContent.replace(/\s+/g, ' '), tbl: Array.from(document.querySelectorAll('#try-report .nl2-audit-table tbody tr')).length }));
+  ok(d.lines.length >= 1 && d.lines.every((l) => /held 3 of 3 at 1 month/.test(l)), 'the back-test line (held k of n by horizon) is not beside the forecast: ' + JSON.stringify(d.lines));
+  ok(d.untrusted === 0, 'a back-test that neither passed nor failed is marked not trusted: ' + d.untrusted);
+  // a back-test that failed: "not trusted" beside the engine's grade, in the finding, the tile and the table
+  const bad = cubeReport(); bad.forecast.audit = Object.assign({}, bad.forecast.audit, { status: 'fails', trusted: false, label: 'back-tested: held 0 of 3 at 1 month, 0 of 1 at 3 months', grade_label: 'the engine\'s grade (the back-test failed it)' });
+  bad.forecast.audit.horizons = bad.forecast.audit.horizons.map((h) => Object.assign({}, h, { held: 0, wilson: [0, 0.56], status: 'fails' }));
+  await p.close();
+  p = await openCube(ctx, bad);
+  d = await p.evaluate(() => ({ un: Array.from(document.querySelectorAll('#try-report .nl2-untrusted')).map((e) => e.textContent.replace(/\s+/g, ' ').trim()), lines: Array.from(document.querySelectorAll('#try-report .nl2-audit')).map((e) => e.textContent.replace(/\s+/g, ' ').trim()),
+    fcGrade: Array.from(document.querySelectorAll('#try-report [data-grade="CONFIRMED"]')).length }));
+  ok(d.un.length >= 1 && d.un.every((x) => /not trusted/.test(x)), 'a failed back-test is not marked "not trusted": ' + JSON.stringify(d.un));
+  ok(d.lines.some((l) => /held 0 of 3 at 1 month/.test(l)), 'the failed back-test\'s counts are not printed: ' + JSON.stringify(d.lines));
+  // a dropped forecast of the rows a month: one line that says why, and no back-test beside it
+  const dr = cubeReport(); dr.forecast.row_forecast_dropped = { reason: 'the table\'s layout fixes the rows a month, so a forecast of them would forecast the layout' };
+  dr.findings.forEach((f) => { if (f.kind === 'forecast') f.layout_artifact = true; });
+  await p.close();
+  p = await openCube(ctx, dr);
+  await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForTimeout(150);
+  d = await p.evaluate(() => ({ txt: document.getElementById('try-report').textContent.replace(/\s+/g, ' '), audit: document.querySelectorAll('#try-report .nl2-audit').length }));
+  ok(d.txt.indexOf('No forecast of the rows a month is shown: the table\'s layout fixes the rows a month') >= 0, 'a dropped forecast does not say why in one line: ' + d.txt.slice(0, 200));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('categories-the-engine-released-reach-the-reports-method-and-data-quality', DESK, async (ctx) => {
+  const rep = cubeReport(), TEXT = 'The column GEO (a short list of 6 labels, each repeated) was read as categories, not as personal data.';
+  rep.privacy = Object.assign({}, rep.privacy, { released: [{ column: 'GEO', text: TEXT }] });
+  const p = await openCube(ctx, rep);
+  await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForTimeout(150);
+  const d = await p.evaluate(() => { const l = document.querySelector('#try-report [data-released="1"]'); return { found: !!l, txt: l ? l.textContent.replace(/\s+/g, ' ').trim() : '', inMethod: !!(l && l.closest('#nl2-analyst')) }; });
+  ok(d.found && d.txt.indexOf(TEXT) >= 0 && d.inMethod, 'the released category is not in the report\'s method and data-quality section: ' + JSON.stringify(d));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
 /* ------------------------------------------------------------ runner */

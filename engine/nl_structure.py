@@ -1627,6 +1627,15 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
     cand = [m for m in range(M) if m not in alts_label]
     if len(cand) < 2:
         return False
+    # wave 5d: a member that equals the sum of ALL the others in every cell where that can be checked (even a few, under heavy
+    # suppression), and is never below their reported sum in the cells that cannot, is the total, whatever its name: it is never
+    # one of its own parts. The dimension is then read one member at a time (the total is shown, and says it was not verified)
+    for t in sorted(cand, key=lambda m: (-float(dom[m]), m))[:3]:
+        chk = _sum_check(A, X, t, [m for m in cand if m != t], tol_u, nonneg)
+        if chk["complete"] >= 1 and chk["within"] == chk["complete"] and not chk["negative_unallocated"] and chk["months"] >= 1:
+            rec["twin_why"] = ("%s equals the sum of the other members in every cell where that can be checked (%d), so it is their "
+                               "total, never one of their parts" % (labels[t], chk["complete"]))
+            return False
     t_end = time.perf_counter() + min(CODEFREE_BUDGET_S, max(0.0, tm.left()))
     sizes = np.array([float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0 for m in range(M)])
     order = [m for m in np.argsort(-dom, kind="stable").tolist() if m in cand]
@@ -1669,7 +1678,8 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
     # wave 5d: two members whose calendar-year totals agree in every year are one quantity twice (a seasonally adjusted copy beside
     # the unadjusted one), never parts: adding them counts every dollar twice. A table too short to say which is which still says
     # that much
-    twin = _same_quantity(A, keep, S["_months"], S["measure"]["type"], (S.get("period") or {}).get("step", 1))
+    twin = _same_quantity(A, keep, S["_months"], S["measure"]["type"], (S.get("period") or {}).get("step", 1)) \
+        if len(keep) <= ADJ_MAX_MEMBERS else None
     if twin is not None:
         rec["twin_why"] = ("%s and %s have the same calendar-year totals: one quantity twice (an adjusted copy beside an unadjusted "
                            "one), so they are never added" % (labels[twin[0]], labels[twin[1]]))

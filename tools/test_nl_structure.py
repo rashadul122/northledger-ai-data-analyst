@@ -2444,6 +2444,10 @@ def test_w5d_a_total_under_heavy_suppression_is_still_the_total_and_a_whole_is_n
     # negative: small counts, the same 5 cells: not enough to tell, and Canada is not added to its regions either
     gs = dim(detect(MC.heavy_suppression(small=True)), "GEO")
     assert gs["role"] == "single" and gs["total"] == "Canada", gs
+    # a total that carries no name at all, with only 2 complete months: it equals the sum of the others in both and is never below it
+    # in the 28 partial ones, so it is their total and not one of their parts (before: counted twice, "incomplete")
+    g2 = dim(detect(MC.heavy_suppression(name="Ardenia", complete=2)), "GEO")
+    assert g2["role"] == "single" and g2["total"] == "Ardenia" and "equals the sum of the other members" in g2["why"], g2
     # negative: a total 20% above its parts is no total, and is never one of the parts
     gb = dim(detect(MC.heavy_suppression(total_gap=0.2)), "GEO")
     assert gb["role"] != "partition" and gb["role"] != "parts", gb

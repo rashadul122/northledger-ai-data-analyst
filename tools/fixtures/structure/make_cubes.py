@@ -759,7 +759,7 @@ def alt_total_rate(seed: int = 94, alt: str = "Total excl. Seasonal shops") -> b
     return _official(["Sales", "Type of business"], rec, uom="Percent", scalar="units", decimals="1")
 
 
-def heavy_suppression(small: bool = False, total_gap: float = 0.0, seed: int = 97, name: str = "Canada") -> bytes:
+def heavy_suppression(small: bool = False, total_gap: float = 0.0, seed: int = 97, name: str = "Canada", complete: int = 5) -> bytes:
     """Wave 5d, cause D. A total (`name`) over five regions, 30 months, a flow, with so many suppressed cells (25 of the 30 months have a
     region blank: 10, 8 and 7 months of three of them) that only 5 months are complete. `small`: counts of 5 to 40 (the total is about 100
     rounding tolerances less than the default): a match in 5 cells says little. `total_gap`: the total is that share above the sum."""
@@ -769,7 +769,9 @@ def heavy_suppression(small: bool = False, total_gap: float = 0.0, seed: int = 9
     lv = (1.0, 1.4, 0.9, 1.2, 0.7)
     base = 8.0 if small else 9000.0
     vals = {r: np.round(base * k * (1.0 + 0.004) ** np.arange(30) * (1.0 + 0.03 * rng.standard_normal(30))) for r, k in zip(regs, lv)}
-    hide = {"Ravdale": range(0, 10), "Pellcombe": range(10, 18), "Lornstead": range(18, 25)}
+    gone = 30 - complete                                   # months with a region blank: three regions share the first `gone` months
+    cut = (gone // 3 + (1 if gone % 3 > 0 else 0), (2 * gone) // 3 + (1 if gone % 3 > 1 else 0))
+    hide = {"Ravdale": range(0, cut[0]), "Pellcombe": range(cut[0], cut[1]), "Lornstead": range(cut[1], gone)}
     rec = []
     for i, mo in enumerate(months):
         rec.append((mo, name, ("Wholesale sales",), round(sum(vals[r][i] for r in regs) * (1.0 + total_gap)), "A"))
@@ -825,7 +827,8 @@ def long_panel_with_owner(seed: int = 98, column: str = "Account owner", phones:
         for k, (c, _b) in enumerate(cur):
             who = ("Group %s" % "ABCDE"[k]) if neutral else (("555-010-%04d" % (1100 + 137 * k)) if phones else OWNERS[k])
             rec.append((mo, "Canada", (c, who), float(level[c][i]), ""))
-    return _official_v(["Type of currency", column], rec, lambda key: ("Dollars", "units", 4))
+    uom = {"U.S. dollar": "Dollars", "Euro": "Euros", "Japanese yen": "Yen", "Pound sterling": "Pounds", "Swiss franc": "Francs"}
+    return _official_v(["Type of currency", column], rec, lambda key: (uom[key[1]], "units", 4))     # each in its own unit: a panel
 
 
 def regions_with_personal(column: str = "Account owner", phones: bool = False, seed: int = 99, months: int = 48) -> bytes:

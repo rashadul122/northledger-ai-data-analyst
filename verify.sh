@@ -32,6 +32,14 @@
 #                numbers with units right-aligned, no shape off the page, and no withheld value or file name the
 #                reader did not opt in to; plus the final review's cases (tools/fixtures/report-pdf/review4.json);
 #                needs Node and poppler
+#     pyodide    tools/check_pyodide_cube.mjs loads the PACKED engine (engine/northledger-browser.zip) in the page's own
+#                Pyodide (Python 3.12) and reads a synthetic official cube (Statistics Canada layout, made at test time; no
+#                licensed or dev file) with the planner off: nl_structure must import, the cube must be read by its structure
+#                (kind cube, usable, no structure.error, the totals of both dimensions as the slice) and the headline must
+#                equal a pandas reference; it fails when the structure layer cannot run in Python 3.12 (a regex flag in the
+#                middle of a pattern is a warning in the 3.9 the unit tests run on and an error here); the packed files must be
+#                the repo's. About 10 to 25 s; needs Node, Playwright, Chrome and cdn.jsdelivr.net, else SKIP with the reason
+#                (NL_REQUIRE_PYODIDE=1 makes a skip a failure)
 #     ui         tools/check_ui.js drives the page in headless Chrome (filters, Esc, drill, phone
 #                layouts at 320 to 390 px, dark theme, accessible names, the "Try it" demo's
 #                refusals, report, AI consent flow and a real engine run of the sample, which
@@ -175,6 +183,17 @@ if command -v node >/dev/null 2>&1; then
   else record ui FAIL "see the UI FAIL lines above"; fi
 else
   record ui SKIP "node not found"
+fi
+
+# 6c) the packed engine in the page's own Pyodide (Python 3.12), on a synthetic official cube, planner off
+if command -v node >/dev/null 2>&1; then
+  CHROME="$CHROME" node "$DIR/tools/check_pyodide_cube.mjs"
+  rc=$?
+  if [ $rc = 0 ]; then record pyodide PASS "the packed engine in Pyodide (Python 3.12): nl_structure imports, the synthetic cube is read by its structure, the headline equals the pandas reference"
+  elif [ $rc = 2 ]; then record pyodide SKIP "see the PYODIDE SKIP line above (Playwright, or cdn.jsdelivr.net, not reachable)"
+  else record pyodide FAIL "see the PYODIDE FAIL lines above"; fi
+else
+  record pyodide SKIP "node not found"
 fi
 
 # 7) visual battery for the owner's eyes (not a pass/fail judgement of layout)

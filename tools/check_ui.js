@@ -2869,7 +2869,7 @@ check('try-sample-profile-through-the-real-engine-after-the-choices', DESK, asyn
 const PY = process.env.PY || path.join(SITE_DIR, '..', 'agent-demo', 'venv', 'bin', 'python');
 const FX_NAMES = ['sample', 'rent-roll', 'sales-ledger', 'web-analytics', 'cafe-invoices-18m', 'rent-roll-gated', 'shop-margins-36m'];
 // a statistical table read by its structure (wave 4, track B): only its report is read by the checks (no profile or landed files)
-const FX_STRUCT = ['official-cube.json', 'wave5-no-total.json', 'wave5-quarterly.json', 'wave5b-one-member.json', 'wave5b-refused.json'];
+const FX_STRUCT = ['official-cube.json', 'wave5-no-total.json', 'wave5-quarterly.json', 'wave5b-one-member.json', 'wave5b-refused.json', 'wave5c-named-total.json'];
 // every file the checks read: each report, the profile the page would send /plan for it, and the planned
 // orders-private run (its CSV too, for the personal values that must never show)
 const FX_FILES = FX_NAMES.concat(['orders-private']).map((n) => n + '.json').concat(FX_NAMES.concat(['orders-private']).map((n) => n + '.profile.json'),
@@ -4196,6 +4196,29 @@ check('wave5b-one-member-and-a-refused-table-are-said-on-the-page', DESK, async 
   ok(!/months? to [A-Z][a-z]{2} 20\d\d: [+-]/.test(b.text), 'a refused table prints a change');
   ok(!p2.__errs.length, 'page error: ' + p2.__errs[0]);
   await p2.close();
+});
+/* wave 5c: a price index with a named whole country (Canada) that no sum-check can verify is the headline, and the estimand card, its left-out
+   line, the structure table and the headline say so; it is still a named total, so it is described as a published one, and never the
+   more dominant province. SYNTHETIC (make_ui_fixtures.py "wave5c-named-total": make_cubes.index_two_bases). */
+check('wave5c-a-named-total-no-check-can-verify-is-said-on-the-page', DESK, async (ctx) => {
+  const rep = vizCopy(fixture('wave5c-named-total'));
+  ok(rep.estimand && !rep.estimand.single_member && rep.estimand.inference && rep.estimand.inference.mode === 'official_aggregate', 'the fixture carries a single_member, or is not described: ' + JSON.stringify(rep.estimand && rep.estimand.single_member));
+  ok(/^2002 base, Canada, 12 months to Dec 2022: .* in the published totals$/.test(rep.story.headline), 'the headline is not the named total\'s: ' + rep.story.headline);
+  const p = await openCube(ctx, rep);
+  const a = await p.evaluate(() => {
+    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null;
+    return { title: t(document.querySelector('#nl2-manager .nl2-est-title')), what: t(document.querySelector('#nl2-manager .nl2-est-what')),
+      excl: Array.from(document.querySelectorAll('#nl2-manager .nl2-est-excl li')).map(t), described: !!document.querySelector('#nl2-manager .nl2-est-desc'),
+      page: t(document.getElementById('try-report')), structure: t(document.querySelector('#nl2-analyst .nl2-structure')) || '' };
+  });
+  ok(a.title === 'Canada \u00b7 2002 base', 'the estimand card is not titled by the named total: ' + a.title);
+  ok(/Canada: the named total; not verifiable by a sum-check \(an index cannot be summed\)/.test(a.what), 'the estimand card does not say Canada is the named total no sum-check can verify: ' + a.what);
+  ok(a.excl.some((x) => /Canada is the named total; not verifiable by a sum-check \(an index cannot be summed\)/.test(x)), 'the left-out line does not say it: ' + JSON.stringify(a.excl));
+  ok(a.described && !/one member shown/i.test(a.what + a.excl.join(' ')), 'a named total is not described as a published total, or says one member is shown');
+  ok(a.page.indexOf(rep.story.headline) >= 0 && !/Ontario/.test(a.what + a.excl.join(' ')), 'the page does not lead with the named total: ' + a.page.slice(0, 200));
+  ok(/GEO/.test(a.structure) && /Canada/.test(a.structure) && /rate aggregate/.test(a.structure), 'the analyst view does not list Canada as the GEO dimension\'s aggregate: ' + a.structure.slice(0, 200));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await p.close();
 });
 check('estimand-leads-the-report-and-the-headline-is-the-estimands', DESK, async (ctx) => {
   const rep = cubeReport(), E = rep.estimand;

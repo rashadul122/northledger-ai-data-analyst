@@ -433,7 +433,11 @@ def main(argv=None):
     for name, mk, need, block in (("wave5b-one-member", lambda: MC.rate_table("none"),
                                    lambda r: (r.get("estimand") or {}).get("single_member"), False),
                                   ("wave5b-refused", MC.partition,
-                                   lambda r: (r.get("structure") or {}).get("kind") == "error" and not r.get("estimand"), True)):
+                                   lambda r: (r.get("structure") or {}).get("kind") == "error" and not r.get("estimand"), True),
+                                  # wave 5c: a price index on two bases whose named whole, Canada, no check can verify: it is the headline
+                                  ("wave5c-named-total", MC.index_two_bases,
+                                   lambda r: any((d.get("sum_check") or {}).get("verified") is False and d.get("total") == "Canada"
+                                                 for d in (r.get("structure") or {}).get("dims") or []), False)):
         saved = sys.modules.get("nl_structure", "__absent__")
         try:
             if block:

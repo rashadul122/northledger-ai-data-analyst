@@ -461,8 +461,10 @@
   Doc.prototype.linesHeight = function (str, size, width, lead, font) { return wrapTokens(tokens(str, font || 'R', COL.body), size, width).length * (lead || size * 1.45); };
 
   /* ---- headings: a part opener starts high on a page; a section keeps with its first lines ---- */
-  Doc.prototype.h1 = function (kicker, title, id) {
-    if (this.y < this.TOP - 4) { if (this.room() < 260) this.newPage(); else this.y -= 16; }
+  Doc.prototype.h1 = function (kicker, title, id, nextMin) {
+    // a part opener keeps with its first block (never a title alone at the foot of a page): 260 pt, or its own height and the first block's
+    var want = Math.max(260, 30 + this.linesHeight(title, 17, this.CW, 21, 'B') + 10 + (nextMin || 44) + 16);
+    if (this.y < this.TOP - 4) { if (this.room() < want) this.newPage(); else this.y -= 16; }
     this.dest(id);
     this.outline.push({ title: title, id: id, level: 0 });
     this.text(enc(kicker.toUpperCase()), this.L, this.y - 8, 7.5, 'B', COL.accentInk, 1.1);
@@ -472,7 +474,7 @@
   };
   Doc.prototype.h2 = function (num, title, id, nextMin) {
     var h = this.linesHeight(title, 11.5, this.TW, 15, 'B');
-    this.need(h + 6 + (nextMin || 44));
+    this.need(h + 6 + 5 + (nextMin || 44));      // the 6 above it and the 5 under it are spent before the next block starts
     this.y -= 6;
     this.dest(id);
     this.outline.push({ title: (num ? num + '  ' : '') + title, id: id, level: 1 });
@@ -834,9 +836,15 @@
   // 7 pt is wider than the page, its columns in parts that fit, each repeating the first column (a heatmap's 24
   // months) and numbered in its caption, "(1 of 2)"
   Doc.prototype.fitTable = function (t, meta) {
-    var cols = (t.cols || []).map(String), self = this, CW = this.CW, sizes = [8.3, 7.8, 7.4, 7];
+    var self = this;
+    this.fitPlan(t, meta).forEach(function (c) { self.table(c.t, c.meta); });
+  };
+  // the tables a fitted table is drawn as (one, or its parts), planned without drawing: fitTable draws them, and a heading that
+  // keeps with the table asks how tall the first is
+  Doc.prototype.fitPlan = function (t, meta) {
+    var cols = (t.cols || []).map(String), self = this, CW = this.CW, sizes = [8.3, 7.8, 7.4, 7], plan = [];
     var rows = (t.rows || []).filter(Array.isArray).map(function (r) { return cols.map(function (_, j) { return String(r[j] === null || r[j] === undefined ? '' : r[j]); }); });
-    if (!cols.length) return;
+    if (!cols.length) return plan;
     // each column's width at a size, from its widths at 1 pt (measured once: a width is linear in the size): a column
     // of numbers its widest cell, a column of words at most 110 pt (it wraps)
     var units = function (cs, rs) {
@@ -850,11 +858,11 @@
     var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
     var whole = function (cs, rs) {
       var us = units(cs, rs);
-      for (var i = 0; i < sizes.length; i++) if (cs.length < 2 || sum(width(us, sizes[i])) <= CW) { self.table({ title: t.title, cols: cs, rows: rs }, { source: meta.source, fit: true, part: true, size: sizes[i], pad: 3 }); return true; }
+      for (var i = 0; i < sizes.length; i++) if (cs.length < 2 || sum(width(us, sizes[i])) <= CW) { plan.push({ t: { title: t.title, cols: cs, rows: rs }, meta: { source: meta.source, fit: true, part: true, size: sizes[i], pad: 3 } }); return true; }
       return false;
     };
-    if (meta.flip && this.flipped && rows.length && whole([String(meta.flip)].concat(rows.map(function (r) { return r[0]; })), cols.slice(1).map(function (c, j) { return [c].concat(rows.map(function (r) { return r[j + 1]; })); }))) return;
-    if (whole(cols, rows)) return;
+    if (meta.flip && this.flipped && rows.length && whole([String(meta.flip)].concat(rows.map(function (r) { return r[0]; })), cols.slice(1).map(function (c, j) { return [c].concat(rows.map(function (r) { return r[j + 1]; })); }))) return plan;
+    if (whole(cols, rows)) return plan;
     var w7 = width(units(cols, rows), 7);
     var split = function (lim) {
       var ps = [], cu = [], ac = w7[0];
@@ -867,9 +875,10 @@
     var parts = split(CW), lo = w7[0] + Math.max.apply(null, w7.slice(1)), hi = CW;
     if (parts.length > 1 && lo < hi) { for (var it = 0; it < 30 && hi - lo > 0.25; it++) { var mid = (lo + hi) / 2; if (split(mid).length <= parts.length) hi = mid; else lo = mid; } parts = split(hi); }
     parts.forEach(function (p, k) {
-      self.table({ title: t.title + ' (' + (k + 1) + ' of ' + parts.length + ')', cols: [cols[0]].concat(p.map(function (x) { return cols[x]; })), rows: rows.map(function (r) { return [r[0]].concat(p.map(function (x) { return r[x]; })); }) },
-        { source: k === parts.length - 1 ? meta.source : '', fit: true, part: true, size: 7, pad: 3 });
+      plan.push({ t: { title: t.title + ' (' + (k + 1) + ' of ' + parts.length + ')', cols: [cols[0]].concat(p.map(function (x) { return cols[x]; })), rows: rows.map(function (r) { return [r[0]].concat(p.map(function (x) { return r[x]; })); }) },
+        meta: { source: k === parts.length - 1 ? meta.source : '', fit: true, part: true, size: 7, pad: 3 } });
     });
+    return plan;
   };
 
   /* ---- the chart registry's records (tools/fixtures/viz/spec.json, version 2026-09-30.1) ----
@@ -1359,15 +1368,22 @@
   };
 
   /* ---- scenario cards (engine-computed), in rows of up to three; or the engine's reason for none ---- */
+  // a row of cards: each card's wrapped words and the row's height (the page break, and a heading that keeps with the first row)
+  Doc.prototype.cardRow = function (row, w) {
+    var shaped = row.map(function (k) {
+      return { k: k, lab: wrapTokens(tokens(k.unit || '', 'R', COL.muted), 7.5, w - 20).slice(0, 4),
+        asm: wrapTokens(tokens(k.assumption ? 'Assumes ' + k.assumption : '', 'R', COL.body), 8, w - 20).slice(0, 4) };
+    });
+    return { shaped: shaped, h: 58 + Math.max.apply(null, shaped.map(function (s) { return s.lab.length * 9.5 + (s.asm.length ? 6 + s.asm.length * 10.5 : 0); })) + 24 };
+  };
+  Doc.prototype.cardsHeight = function (list) {
+    var per = Math.min(3, list.length), w = (this.CW - 10 * (per - 1)) / Math.max(1, per);
+    return list.length ? this.cardRow(list.slice(0, per), w).h + 12 : 0;
+  };
   Doc.prototype.cards = function (list, note) {
     var self = this, per = Math.min(3, list.length), gap = 10, w = (this.CW - gap * (per - 1)) / per;
     for (var r0 = 0; r0 < list.length; r0 += per) {
-      var row = list.slice(r0, r0 + per);
-      var shaped = row.map(function (k) {
-        return { k: k, lab: wrapTokens(tokens(k.unit || '', 'R', COL.muted), 7.5, w - 20).slice(0, 4),
-          asm: wrapTokens(tokens(k.assumption ? 'Assumes ' + k.assumption : '', 'R', COL.body), 8, w - 20).slice(0, 4) };
-      });
-      var h = 58 + Math.max.apply(null, shaped.map(function (s) { return s.lab.length * 9.5 + (s.asm.length ? 6 + s.asm.length * 10.5 : 0); })) + 24;
+      var row = list.slice(r0, r0 + per), cr = this.cardRow(row, w), shaped = cr.shaped, h = cr.h;
       this.need(h + 12);
       var top = this.y;
       shaped.forEach(function (s, i) {
@@ -1639,21 +1655,33 @@
     d.kpis(m.kpis || []);
     if (m.summary && m.summary.length) { d.h2('', 'In brief', 'brief', 44); d.bullets(m.summary); }
     // ---- the parts, in the fixed order
+    // the room a block needs to open a page when a heading keeps with it: a figure whole, a table whole when it is under 60% of a page
+    // (it is moved whole otherwise it would stand alone) else its head and first row, a row of cards, a callout; a paragraph and the table
+    // under it together; a heading and what follows it
+    var pageH = d.TOP - d.BOT;
+    var leadNeed = function (blocks, i) {
+      var b = blocks[i] || {}, nb = blocks[i + 1] || {};
+      if (b.type === 'chart') return d.figureHeight(b);
+      if (b.type === 'table' && b.table) {
+        var pl = b.fit ? d.fitPlan(b.table, b)[0] : null, th = pl ? d.tableHeight(pl.t, pl.meta) : b.fit ? 0 : d.tableHeight(b.table, b);
+        return th && th < pageH * 0.6 ? th + 6 : 90;
+      }
+      if (b.type === 'table' || b.type === 'findings') return 90;
+      if (b.type === 'cards') return Math.max(150, d.cardsHeight(b.items || []));
+      if (b.type === 'callout') return d.calloutHeight(b.label, b.text, b) + 6;
+      if (b.type === 'noscenarios') return 90;
+      if (b.type === 'p' && nb.type === 'table' && nb.table) {
+        var pl2 = nb.fit ? d.fitPlan(nb.table, nb)[0] : null, t2 = pl2 ? d.tableHeight(pl2.t, pl2.meta) : nb.fit ? 0 : d.tableHeight(nb.table, nb);
+        if (t2 && t2 < pageH * 0.6) return d.linesHeight(b.text, b.size || 10, d.TW, b.lead || (b.size || 10) * 1.45) + 6 + t2 + 6;
+      }
+      if (b.type === 'h2') return d.linesHeight(b.text, 11.5, d.TW, 15, 'B') + 6 + leadNeed(blocks, i + 1);
+      return 44;
+    };
     parts.forEach(function (p) {
-      d.h1(p.kicker, p.title, p.id);
+      d.h1(p.kicker, p.title, p.id, leadNeed(p.blocks || [], 0));
       (p.blocks || []).forEach(function (b, bi) {
         var nb = p.blocks[bi + 1] || {};
-        if (b.type === 'h2') {
-          var nextMin = nb.type === 'chart' ? d.figureHeight(nb) : nb.type === 'table' || nb.type === 'findings' ? 90 : nb.type === 'cards' ? 150 : 44;
-          // a heading, its paragraph and then a table that is moved whole to the next page when it does not fit (a table under
-          // 60% of a page is): the heading and its paragraph go with it, never alone at the foot of a page
-          var n2 = p.blocks[bi + 2] || {};
-          if (nb.type === 'p' && n2.type === 'table' && n2.table && !n2.fit) {
-            var th = d.tableHeight(n2.table, n2);
-            if (th && th < (d.TOP - d.BOT) * 0.6) nextMin = d.linesHeight(nb.text, nb.size || 10, d.TW, nb.lead || (nb.size || 10) * 1.45) + 6 + th;
-          }
-          d.h2(b.num, b.text, b.id, nextMin);
-        }
+        if (b.type === 'h2') d.h2(b.num, b.text, b.id, leadNeed(p.blocks, bi + 1));
         else if (b.type === 'p') d.para(b.text, b.wide ? { x: d.L, width: d.CW, size: b.size, lead: b.lead, font: b.font, color: b.color, after: b.after } : b);
         else if (b.type === 'bullets') d.bullets(b.items);
         else if (b.type === 'numbered') d.bullets(b.items, { numbered: true });

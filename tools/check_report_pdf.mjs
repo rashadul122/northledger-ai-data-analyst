@@ -188,6 +188,14 @@ export function checkPdf(bytes, o = {}) {
       if (Math.max(...ends) - Math.min(...ends) > 1) fail('page ' + (i + 1) + ': numbers with units are left-aligned in a table ("' + nu.slice(0, 3).map((t) => t.s).join('", "') + '")');
     });
   });
+  // 6e. a section heading keeps with what follows it: none is the last thing on its page (wave 4, track B: "4 Where the change
+  // sits" stood at the foot of a page with its table on the next)
+  pages.forEach((p, i) => {
+    const body = p.texts.filter((t) => t.y > 70 && t.y < media[1] - 60);
+    if (!body.length) return;
+    const low = body.reduce((a, t) => (t.y < a.y ? t : a));
+    if (low.f === 'F2' && (low.size === 11.5 || low.size === 17)) fail('page ' + (i + 1) + ': the heading "' + low.s + '" is the last thing on its page');
+  });
   // 7. geometry, from an independent oracle: poppler measures every word with its own font metrics
   if (o.file) {
     const L = 60, R = media[0] - 60, TOPM = 36, BOTM = 30;

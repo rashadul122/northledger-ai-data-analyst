@@ -8512,12 +8512,13 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
     st = rep.get("structure") or {}
     st["file_health"] = outer.get("file_health")
     rep["structure"] = st
-    # T4, an official aggregate is described, not tested (track A2, branch w4-inference): it reads the structure and the
-    # estimand copied on just above, and the file's own header and withheld columns
-    fn = globals().get("_official_inference")
-    if fn:
-        fn(rep, list(outer.get("header") or []), {"layout": STRUCTURE_LAYOUT, "structure_slice": True,
-                                                    "rows_a_month": int(NS.rows_a_month(S))}, list(outer.get("hidden") or []))
+    # T4, an official aggregate is described, not tested (track A2): the slice's own run called _official_inference once
+    # with the slice's two-column header; this is the call that matters, with the structure and the estimand copied on
+    # just above and the FILE's header (its publisher's signature columns) and withheld columns. It replaces the first
+    # call's records (the function owns findings[].inference)
+    _official_inference(rep, list(outer.get("header") or []), {"layout": STRUCTURE_LAYOUT, "structure_slice": True,
+                                                              "rows_a_month": int(NS.rows_a_month(S))},
+                        list(outer.get("hidden") or []))
     if ai_plan:
         inner_plan = rep.get("ai_plan") or {}
         keep = {k: inner_plan[k] for k in ("context_queries", "context_queries_dropped", "context") if k in inner_plan}
@@ -8585,10 +8586,12 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
     one value each), or a long table one column per series (each series analysed on its own), and (3) no column
     publishes sampling errors (a "Statistics" dimension with standard errors). The engine still grades the claim;
     the record says what that grade is a grade of. A1 calls this again on the inner report of a structured slice,
-    after copying its structure onto it."""
+    after copying its structure onto it (the file's header and withheld columns, the structure's own flags and the
+    estimand's own 12-month figures: with a structure, the status column is read from structure.flags, because the
+    slice's health holds only the date and the measure, and the described change is the estimand's)."""
     import nl_inference as _ni
     for f in rep.get("findings") or []:
-        f.setdefault("inference", None)
+        f["inference"] = None                 # this function owns the field: a second call replaces the first's records
     st = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
     pubr = _ni.publisher_of(header)
     if pubr is None and st and st.get("publisher"):
@@ -8635,9 +8638,21 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
         rv, pr = codes.get("r", 0), codes.get("p", 0)
         revisions = ("the file marks %d value%s revised and %d preliminary" % (rv, "" if rv == 1 else "s", pr)
                      if rv or pr else "the file marks no value as revised or preliminary")
+    elif st and (st.get("flags") or {}).get("quality_of_headline") is not None:
+        # a table read by its structure (track A1): the slice's own health holds no status column; the structure's
+        # flags give the headline's quality codes (months by code) and the publisher's revised/preliminary marks
+        fl = st["flags"]
+        codes = {str(k): int(v) for k, v in (fl.get("quality_of_headline") or {}).items()}
+        kinds = {k: (v or {}).get("kind") for k, v in (fl.get("codes") or {}).items()}
+        rv = sum(n for k, n in codes.items() if kinds.get(k) == "revised")
+        pr = sum(n for k, n in codes.items() if kinds.get(k) == "preliminary")
+        quality = {"column": str(fl.get("column") or ""), "codes": codes}
+        revisions = ("the file marks %d month%s of the headline revised and %d preliminary" % (rv, "" if rv == 1 else "s", pr)
+                     if rv or pr else "the file marks no month of the headline as revised or preliminary")
     else:
         revisions = "revisions are not stated in what the engine read (the file's status column is not among them)"
     m = (st or {}).get("measure") or {}
+    est_fig = ((rep.get("estimand") or {}).get("figures") or {}) if st else {}
     for f in rep.get("findings") or []:
         if f.get("kind") != "business" or f.get("estimand") != "ratio_of_average_month" \
                 or f["id"].startswith("measure.volume") or f.get("parent_id"):
@@ -8646,6 +8661,11 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
         total = ".total." in f["id"]
         prior = next((led[k]["value"] for k in (base + ".prior12_mean", base + ".prior12") if k in led), None)
         latest = next((led[k]["value"] for k in (base + ".last12_mean", base + ".last12") if k in led), None)
+        if (est_fig.get("prior") or {}).get("value") is not None and (est_fig.get("latest") or {}).get("value") is not None:
+            # the estimand's own 12-month figures (the finding's are monthly averages): the same percent, in the
+            # headline's own words
+            prior, latest, total = est_fig["prior"]["value"], est_fig["latest"]["value"], \
+                m.get("type") in ("flow", "count")
         words = ("a %s in %s" % (m.get("type") or "measure", m.get("uom") or "its own units")) if m else \
             ("a total of the published values" if total else "a published level, averaged by month")
         f["inference"] = _ni.official_inference(

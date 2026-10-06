@@ -15,6 +15,11 @@ The zip holds exactly what the browser needs and nothing else:
   nl_browser.py             the adapter (engine/nl_browser.py)
   nl_scenarios.py           the adapter's scenario and contribution block (engine/nl_scenarios.py)
   nl_viz.py                 the adapter's charts chosen from the data (engine/nl_viz.py, the chart registry)
+  nl_structure.py           the semantic layer of a statistical table (engine/nl_structure.py, wave 4 track A1)
+  flag_vocab.json           the publisher flag codes nl_structure reads beside itself (engine/flag_vocab.json)
+  nl_inference.py           the report's inference: trend test, interval coverage, history n_eff, forecast audit,
+                            official aggregates (engine/nl_inference.py, wave 4 track A2)
+  inference_tables.json     the trend test's simulated sizes nl_inference reads beside itself
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack

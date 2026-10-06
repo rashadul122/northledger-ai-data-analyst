@@ -1053,7 +1053,7 @@ audit (`run_loop`) and the business analysis (`run_analyze`): the reading built 
 afterwards), the structure detected and cached with the profile's facts. A usable structure runs the whole engine on the
 slice (`_run_slice`: `nl_structure.slice_bytes`, the date and one measure column in base units, one row a month; a flow's
 column is named so the engine adds it up: "Total retail sales", "<label> total", a count "<label> count", a level "value")
-and returns that report (its run's layout states the table's rows a month, 465 for the retail file, which track A2's row-count drop reads as `layout.rows_a_month`; after the structure and the estimand are copied on, `nl_browser._official_inference(rep, header, layout, hidden)` of track A2 is called when it exists) with the file's own `input` (name, bytes, rows, columns, sha256) and `input.layout = {layout:
+and returns that report (its run's layout states the table's rows a month, 465 for the retail file, which track A2's row-count drop reads as `layout.rows_a_month`; after the structure and the estimand are copied on, `nl_browser._official_inference(rep, header, layout, hidden)` of track A2 is called, with the file's own header and withheld columns: it is part of this engine, the call is not guarded) with the file's own `input` (name, bytes, rows, columns, sha256) and `input.layout = {layout:
 "structured cube slice", slice, where, column, rows_in, rows_out, series}`, its `privacy` (flagged and released), its
 health in `structure.file_health` (`{score, issues, dropped, rows_in, rows_clean, rows_quarantined, note}`: the engine's
 issues on the whole file less those on metadata and flag columns, the core's score unchanged), the plan as applied to the
@@ -1138,6 +1138,16 @@ each partition or hierarchy is that dimension's total; without it: the engine re
 or read a long table one column per series) and no column publishes sampling errors. A withheld column is counted,
 never named. Track B shows "WATCH (process grade)" beside the described change; track C states such a change "in the
 published totals", never "significant" or "confirmed".
+
+*On a table read by its structure* (the merge of tracks A1 and A2, 6 October 2026) the slice's own run calls
+`_official_inference` first, with the slice's two-column header and no structure yet (it returns at once: no publisher's
+signature), and the slice's call after the structure and the estimand are copied on is the one that matters; it replaces
+the first call's records (the function owns `findings[].inference`). With a structure the status
+column is read from `structure.flags` (the slice's health holds only the date and the measure): `quality` is
+`{column, codes}` with the headline's months by code (retail: `{A: 45, "": 34}`), and `revisions` counts the headline's
+months the publisher marked revised or preliminary ("the file marks 2 months of the headline revised and 1 preliminary").
+`describe.prior` and `describe.latest` are the estimand's own 12-month totals (a flow or a count; else its 12-month
+averages), not the finding's monthly averages: retail $834.7B to $864.0B, +3.5%.
 
 ## 6. What this contract does not carry yet (R1)
 

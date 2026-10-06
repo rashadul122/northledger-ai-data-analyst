@@ -318,28 +318,27 @@ def test_e2e_a_cube_is_read_as_its_headline_slice_with_the_estimand_and_reconcil
 
 
 def test_e2e_the_slice_run_hands_track_a2_the_header_the_row_layout_and_the_hidden_columns():
-    """The guarded call (nl_browser._official_inference, track A2 on w4-inference): made once the structure and the
-    estimand are on the slice's report, with the file's own header, a layout that carries the table's rows a month, and
-    the columns the engine may not read. Without the function (this branch alone) nothing is called."""
+    """The hand-off (nl_browser._official_inference, track A2), now that both tracks are one engine: the slice's own run
+    calls it first with the slice's two-column header and no structure yet (a no-op: that header holds no publisher's
+    signature), and the slice's call is the one that matters: made once the structure and the estimand are on the
+    slice's report, with the FILE's own header, a layout that carries the table's rows a month, and the columns the
+    engine may not read. The call is not guarded: the function is part of this engine."""
     seen = []
 
     def spy(rep, header, layout, hidden):
         seen.append({"header": list(header), "layout": dict(layout), "hidden": list(hidden),
                      "structure": rep.get("structure"), "estimand": rep.get("estimand")})
     data = MC.partition(0.10)
-    orig = getattr(NB, "_official_inference", None)          # present once w4-inference is merged: put it back
+    orig = NB._official_inference
     NB._official_inference = spy
     try:
         rep = _run(data, "regions.csv")
     finally:
-        if orig is None:
-            del NB._official_inference
-        else:
-            NB._official_inference = orig
-    # on this branch alone the slice's run makes the one call; once w4-inference is merged its own run of the slice calls
-    # it first, with the slice's header, and the slice's call (with the file's) is the last
-    assert 1 <= len(seen) <= 2, len(seen)
-    got = seen[-1]
+        NB._official_inference = orig
+    assert len(seen) == 2, len(seen)
+    first, got = seen
+    assert first["header"] == ["REF_DATE", "value total"] and first["structure"] is None and first["estimand"] is None, first
+    assert first["layout"]["rows_a_month"] == 6, first["layout"]            # the row-count drop reads it in the slice's run
     assert got["header"] == list(pd.read_csv(io.BytesIO(data), dtype=str, nrows=0).columns), got["header"]
     assert got["layout"]["rows_a_month"] == 6 and got["layout"]["layout"] == NB.STRUCTURE_LAYOUT, got["layout"]
     assert got["structure"]["kind"] == "cube" and got["estimand"]["slice"][0]["member"] == "Total", got["estimand"]["slice"]
@@ -347,6 +346,64 @@ def test_e2e_the_slice_run_hands_track_a2_the_header_the_row_layout_and_the_hidd
     S = NS.detect(reading(data), set())
     assert NS.rows_a_month(S) == 6
     json.dumps(rep, allow_nan=False)
+    assert not hasattr(NB, "_official_inference_missing"), "the guard (globals().get) is gone"
+    assert 'globals().get("_official_inference")' not in open(os.path.join(ADAPTER_DIR, "nl_browser.py"), encoding="utf-8").read()
+
+
+def _marked(data: bytes, headline_marks):
+    """The cube with the headline series' (the Total's) latest months marked by the publisher: {month: code}."""
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    for mo, code in headline_marks.items():
+        df.loc[(df.GEO == "Total") & (df.REF_DATE == mo), "STATUS"] = code
+    return df.to_csv(index=False, quoting=1).encode("utf-8")
+
+
+def test_e2e_an_official_cube_gets_the_described_change_in_the_estimands_own_figures_and_the_structures_flags():
+    """T4 on a table read by its structure: the change is DESCRIBED (prior and latest are the estimand's 12-month totals,
+    not the finding's monthly averages), the quality codes are the headline's own months by code (the slice's health holds
+    no status column), and revised and preliminary months are counted from the structure's flags."""
+    rep = _run(_marked(MC.partition(0.10), {"2022-10": "r", "2022-11": "r", "2022-12": "p"}), "regions.csv")
+    est, st = rep["estimand"], rep["structure"]
+    chg = [f for f in rep["findings"] if f["id"].endswith(".change")]
+    assert len(chg) == 1, [f["id"] for f in rep["findings"]]
+    inf = chg[0]["inference"]
+    assert inf and inf["mode"] == "official_aggregate" and inf["publisher"] == "statcan", inf
+    assert inf["describe"]["prior"] == est["figures"]["prior"]["value"], (inf["describe"], est["figures"])
+    assert inf["describe"]["latest"] == est["figures"]["latest"]["value"] and inf["describe"]["change_pct"] == chg[0]["value"], inf
+    # a 12-month total of the Total's own published series (thousands x 1,000), not the finding's monthly average
+    df = pd.read_csv(io.BytesIO(MC.partition(0.10)), dtype=str)
+    tot = df[df.GEO == "Total"].set_index("REF_DATE").VALUE.astype(float) * 1000
+    lat, pri = est["comparison"]["latest"], est["comparison"]["prior"]
+    assert inf["describe"]["latest"] == tot[(tot.index >= lat[0]) & (tot.index <= lat[1])].sum(), inf["describe"]
+    assert inf["describe"]["prior"] == tot[(tot.index >= pri[0]) & (tot.index <= pri[1])].sum(), inf["describe"]
+    # the quality codes: months of the headline by code, from the structure
+    assert inf["quality"] == {"column": "STATUS", "codes": st["flags"]["quality_of_headline"]}, (inf["quality"], st["flags"])
+    assert inf["quality"]["codes"] == {"A": 45, "r": 2, "p": 1}, inf["quality"]
+    assert inf["revisions"] == "the file marks 2 months of the headline revised and 1 preliminary", inf["revisions"]
+    assert "flow" in " ".join(inf["how_known"]) and "sum-check" in " ".join(inf["how_known"]), inf["how_known"]
+    # a forecast is not an official figure: no record on it
+    assert all(f.get("inference") is None for f in rep["findings"] if not f["id"].endswith(".change")), rep["findings"]
+    # the same file with the publisher's signature columns renamed: nothing is described, the engine's grade stands alone
+    df = pd.read_csv(io.BytesIO(MC.partition(0.10)), dtype=str, keep_default_na=False)
+    plain = df.rename(columns={"DGUID": "region_key", "VECTOR": "series_key", "STATUS": "mark"}).to_csv(
+        index=False, quoting=1).encode("utf-8")
+    rep2 = _run(plain, "regions.csv")
+    assert rep2["estimand"] and all(f.get("inference") is None for f in rep2["findings"]), \
+        [(f["id"], f.get("inference")) for f in rep2["findings"]]
+    json.dumps(rep, allow_nan=False)
+
+
+def test_the_official_inference_records_are_replaced_by_a_second_call_never_kept():
+    """_official_inference owns findings[].inference: a second call (the slice's, on the inner report) replaces the first
+    call's record, so a file that then publishes sampling errors leaves none behind."""
+    rep = _run(MC.partition(0.10), "regions.csv")
+    f = next(x for x in rep["findings"] if x["id"].endswith(".change"))
+    assert f["inference"] and f["inference"]["mode"] == "official_aggregate"
+    header = list(pd.read_csv(io.BytesIO(MC.partition(0.10)), dtype=str, nrows=0).columns)
+    NB._official_inference(rep, header + ["Standard error"], None, [])
+    assert f["inference"] is None, f["inference"]
+    NB._official_inference(rep, header, None, [])
+    assert f["inference"] and f["inference"]["describe"]["prior"] == rep["estimand"]["figures"]["prior"]["value"]
 
 
 def _spec_errors(rec):

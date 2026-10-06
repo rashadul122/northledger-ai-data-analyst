@@ -2169,13 +2169,14 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
     for t in ("Months since signup", "months_active", "48 months of history", "Average monthly spend", "12 monthly cohorts",
               "A 120-month contract", "Latest 112 months", "Monthly totals by region", "Reads monthly series only"):
         assert f(t, Q) == t, (t, f(t, Q))
-    # a monthly slice: every block of the reports is what it was. ONE intended difference (wave 5d, listed in PROGRESS): the synthetic
-    # "hierarchy" cube lists Canada beside Ontario (no sum-check ties them: Ontario is 0.4 of Canada, a part of it in the world); it was
-    # read as "the sum of 2 regions" (Ontario counted twice: ("f8772f0a999c4ce5", "9efb43e58e7a2c80")), and is now read as Canada, the
-    # named whole of its provinces, one member shown. The five other cubes are byte for byte what they were.
+    # a monthly slice: every block of the reports is what it was. TWO intended differences (wave 5d): the synthetic "hierarchy" and
+    # "mixed_units" cubes list Canada beside one province (Ontario, Quebec: no sum-check ties them, the province is a part of Canada in
+    # the world); each was read as "the sum of 2 regions" (the province counted twice: hierarchy ("f8772f0a999c4ce5", "9efb43e58e7a2c80"),
+    # mixed_units ("5cec8f4300d961eb", "7021525ff667565b")), and is now read as Canada, the named whole of its provinces, one member
+    # shown. The four other cubes are byte for byte what they were.
     before = {"partition_suppressed": ("c976440ea05601af", "0b557e428676763d"), "partition_clean": ("3606b4083ccc30c9", "b876124a77c18de0"),
               "hierarchy": ("ed473d76bba175c8", "2a8f4af197ddcd56"), "rate_canada": ("878aa9e7716fa3c1", "280f1b84c2c3381d"),
-              "mixed_units": ("5cec8f4300d961eb", "7021525ff667565b"), "no_total": ("4fd22be300dbcfd0", "b04ca379ab41e02b")}
+              "mixed_units": ("e18f0c78a45be7dc", "699e1031732326c0"), "no_total": ("4fd22be300dbcfd0", "b04ca379ab41e02b")}
     import hashlib
     keys = ("story", "summary", "findings", "scenarios", "charts", "viz", "forecast", "limitations", "methods", "cleaning", "estimand",
             "charts_suppressed")
@@ -2284,6 +2285,209 @@ def test_w5b_the_pyodide_checks_cube_matches_its_pandas_reference_and_reads_the_
     with _patched(NB, "STRUCTURE_ON", False):
         old = _run(cube, "cube.csv")
     assert old["estimand"] is None and old["structure"] is None
+
+
+# ----------------------------------------------------------------------------- wave 5d: what the fuzz tester found
+def _published_sums(data: bytes, where: dict, windows=12):
+    """(latest, prior) sums of one series of a StatCan-layout cube straight from its cells, in base units (the SCALAR_FACTOR applied):
+    the last `windows` periods and the `windows` before."""
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    for k, v in where.items():
+        df = df[df[k] == v]
+    f = df.SCALAR_FACTOR.map({"units": 1.0, "thousands": 1e3, "millions": 1e6})
+    s = (pd.to_numeric(df.VALUE) * f).groupby(df.REF_DATE).sum()
+    s = s.reindex(sorted(s.index, key=lambda x: re.sub(r"^Q(\d) (\d{4})$", r"\2-Q\1", x)))      # "Q3 2022" sorts as 2022-Q3
+    return float(s.iloc[-windows:].sum()), float(s.iloc[-2 * windows:-windows].sum())
+
+
+def test_w5d_a_table_of_dollars_in_millions_beside_units_finds_its_totals_and_says_each_scale():
+    """Wave 5d, cause A (fuzz seeds 16, 39, 94, 167, 170, 216, 231, 241, 294). The sum-checks' rounding tolerance was ONE number for the
+    table, half a unit of the last digit at the table's scale, and a table whose SCALAR_FACTOR varies by series has no one scale (the
+    factor was None and read as 1): dollars in millions to one decimal were checked to within $0.05, so no total was verified and the
+    regions (and an industry total with its own children, a total with no cue in its name) were ADDED UP, a double count. Each series
+    now carries its own half unit (its SCALAR_FACTOR and its DECIMALS), and a sum-check reads the series it reads. The estimand names
+    the slice's own scale (dollars in millions, units in units), not "varies by series"."""
+    data = MC.dollars_beside_units(industry=True)
+    S = detect(data)
+    assert S["kind"] == "cube" and S["usable"] and S["measure"]["factor"] is None, (S["kind"], S["reason"])
+    g, ind = dim(S, "GEO"), dim(S, "Type of business")
+    assert g["role"] == "partition" and g["total"] == "All regions" and sorted(g["parts"]) == ["Glenhaven", "Wynstead"], g
+    assert ind["role"] == "partition" and ind["total"] == "Full range" and len(ind["parts"]) == 2, ind
+    assert S["default"] == {"GEO": "All regions", "Estimates": "Sales value", "Type of business": "Full range"}, S["default"]
+    # the tolerance is the dollars' own (half of 0.1 million), whatever the units beside them are
+    assert NS._tol_unit(S, S["dims"].index(g)) == 0.5 * 0.1 * 1e6 and NS._tol_unit(S, S["dims"].index(ind)) == 0.5 * 0.1 * 1e6
+    m, v = NS._monthly(S, S["default"])
+    win = NS.windows(m, v)
+    est = NS.estimand(S, S["default"], win)
+    lat, pri = _published_sums(data, {"GEO": "All regions", "Estimates": "Sales value", "Type of business": "Full range"})
+    assert abs(est["figures"]["latest"]["value"] - lat) < 1.0 and abs(est["figures"]["prior"]["value"] - pri) < 1.0, (est["figures"], lat, pri)
+    assert est["measure"]["scale"] == "millions" and est["measure"]["scale_applied"] == 1e6 and "(file in millions ×1,000,000)" in est["text"]
+    units_where = next(sl["where"] for sl in S["slices"] if sl["where"].get("Estimates") == "Units sold")
+    est_u = NS.estimand(S, units_where, win)
+    assert est_u["measure"]["scale"] == "units" and est_u["measure"]["scale_applied"] == 1.0 and "file in" not in est_u["text"], est_u["text"]
+    # nothing is loosened: a total ten million above its parts is no rounding (tolerance $0.15 million), and is no partition
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    hit = (df.GEO == "All regions") & (df.Estimates == "Sales value") & (df["Type of business"] == "Full range")
+    df.loc[hit, "VALUE"] = (pd.to_numeric(df.loc[hit, "VALUE"]) + 10.0).map("{:.1f}".format)
+    S_bad = detect(_csv_of(df))
+    assert dim(S_bad, "GEO")["role"] != "partition" or dim(S_bad, "GEO")["total"] != "All regions"
+    assert dim(S_bad, "Type of business")["role"] != "partition" or dim(S_bad, "Type of business")["total"] != "Full range"
+    # one scale and one DECIMALS: the tolerance is the table's, as before (500 dollars for thousands to no decimal)
+    S1 = detect(MC.partition())
+    assert NS._tol_unit(S1, 0) == 500.0 and NS.slice_scale(S1, S1["default"]) == ("thousands", 1000.0)
+
+
+def test_w5d_a_withheld_value_column_is_never_replaced_by_another_number_column():
+    """Wave 5d, cause A (fuzz seeds 39, 73, 112, 118, 187, 206). The engine's scan flags a column when some of its values look like a national
+    ID number, and a count of nine digits or more does (about one in ten passes the check digit): the VALUE column of a table of units
+    sold was withheld. The structure layer then read the next number column (UOM_ID, COORDINATE) as the measure and printed a constant
+    figure with no change, as a published total. An official table whose value column is withheld is not read, and says why; kept, the
+    column reads the table. A table whose counts do not look personal is untouched."""
+    data = MC.dollars_beside_units()
+    rep = _run(data, "units.csv")
+    assert any(f["column"] == "value" for f in rep["privacy"]["flagged"]), "the fixture's nine-digit counts must trip the scan"
+    st = rep["structure"]
+    assert st["kind"] == "cube_incomplete" and st["usable"] is False and "(VALUE)" in st["reason"] and "withheld" in st["reason"], st["reason"]
+    assert rep["estimand"] is None and "withheld" in rep["story"]["headline"], rep["story"]["headline"]
+    # kept: the table is read, and the figure is the published one
+    lat, pri = _published_sums(data, {"GEO": "All regions", "Estimates": "Sales value"})
+    rep2 = _run(data, "units.csv", {"value": "keep"})
+    f2 = rep2["estimand"]["figures"]
+    assert rep2["structure"]["kind"] == "cube" and abs(f2["latest"]["value"] - lat) < 1.0 and abs(f2["prior"]["value"] - pri) < 1.0, f2
+    # negative: counts that do not look personal (seven digits at the total): nothing flagged, the same reading as a kept column
+    small = MC.dollars_beside_units(price=900.0)
+    rep3 = _run(small, "units.csv")
+    assert rep3["privacy"]["flagged"] == [] and rep3["structure"]["usable"] is True
+    lat3, pri3 = _published_sums(small, {"GEO": "All regions", "Estimates": "Sales value"})
+    assert abs(rep3["estimand"]["figures"]["latest"]["value"] - lat3) < 1.0 and abs(rep3["estimand"]["figures"]["prior"]["value"] - pri3) < 1.0
+
+
+def test_w5d_a_combined_member_beside_regions_with_no_total_row_is_never_the_total():
+    """Wave 5d, cause B, a flow (fuzz seed 251). Three regions and "Inland provinces", the sum of two of them and larger than the third;
+    no total row. The subset-sum search found Inland provinces = Alder + Birch and kept it as the table's root, because the third region,
+    Cedar, was "a component of the root" (the root bounds it): the headline was Inland provinces alone, 40% short, with no flag. A member
+    found only by bounding is a component of the ROOT only when the root says it is a total; with no member below the root that could hold
+    it, it is as likely a sibling the root leaves out. The dimension is read by its parts: the combined member left out, the three
+    regions added."""
+    data = MC.small_combined()
+    S = detect(data)
+    g = dim(S, "GEO")
+    assert g["role"] == "parts" and sorted(g["parts"]) == ["Alder", "Birch", "Cedar"], g
+    assert g["combined"] == {"Inland provinces": ["Alder", "Birch"]}, g.get("combined")
+    m, v = NS._monthly(S, S["default"])
+    win = NS.windows(m, v)
+    est = NS.estimand(S, S["default"], win)
+    lat = sum(_published_sums(data, {"GEO": r})[0] for r in ("Alder", "Birch", "Cedar"))
+    assert abs(est["figures"]["latest"]["value"] - lat) < 1.0, (est["figures"], lat)
+    # negative: with a total row it is a partition, as before
+    g2 = dim(detect(MC.small_combined(total=True)), "GEO")
+    assert g2["role"] in ("partition", "hierarchy") and g2["total"] == "Total", g2
+    # negative: a component that lies inside one of the parts is still found, under an unnamed root (nothing says "total")
+    d = dim(detect(MC.component_under_a_part()), "Type of business")
+    assert d["role"] in ("partition", "hierarchy") and d["total"] == "Full range", d
+    assert list(d["components"]) == ["Online stationery"] and d["components"]["Online stationery"] != "Full range", d["components"]
+
+
+def test_w5d_a_combined_member_of_a_rate_or_an_index_is_not_its_aggregate():
+    """Wave 5d, cause B, a rate (fuzz seeds 264, 269). A row that is the weighted average of three of six provinces ("Frontier area") lay
+    inside the others' range, had full coverage and was reproduced by the others to the digit, so it was read as the NATIONAL rate and
+    printed as the headline. An aggregate is the weighted average of ALL its members: the fit's weights are looked at (in a table of at most
+    12 members every member carries at least 1% of the weight; in a larger one the heaviest members carrying 95% are at least half of
+    them: a small member cannot be told from a zero). A combined member is one province shown, and says it is not a national figure."""
+    g = dim(detect(MC.rate_table("combined")), "GEO")
+    assert g["role"] == "single" and g.get("no_total_member") is True, g
+    # the weights rule itself
+    assert NS._weights_cover([0.4, 0.3, 0.2, 0.1]) and not NS._weights_cover([0.5, 0.3, 0.2, 0.0])
+    assert not NS._weights_cover([0.6, 0.39, 0.01 - 1e-4]) and NS._weights_cover([0.6, 0.39, 0.01])
+    spread = [1.0 / 30.0] * 30
+    heavy = [0.5, 0.3, 0.2] + [0.0] * 27
+    assert NS._weights_cover(spread) and not NS._weights_cover(heavy)
+    assert NS._weights_cover([0.05] * 20)
+    # negative: a real aggregate that carries no name (the weighted average of every province) is still found
+    g2 = dim(detect(MC.rate_table("unnamed")), "GEO")
+    assert g2["role"] == "rate_aggregate" and g2["total"] == "Zeta group" and g2["aggregate_by"] == "range and fit", g2
+    # negative: one that carries a name is still read by its name
+    g3 = dim(detect(MC.rate_table("Canada")), "GEO")
+    assert g3["role"] == "rate_aggregate" and g3["total"] == "Canada" and g3["aggregate_by"] == "name", g3
+
+
+def test_w5d_an_alternative_total_named_with_an_abbreviation_is_never_read_as_the_total():
+    """Wave 5d, cause C (fuzz seed 132). "Total excl. Seasonal shops" did not read as an alternative ("excl." and its full stop were not
+    in the vocabulary, and `ex\\.` could never match before a space), so it was a second member that says "total": the rate's published
+    aggregate was the first of the two, the alternative, and its figure was the headline. The vocabulary says it now; and two members
+    that both say total are no pick by name (they are not told apart by their order in the file)."""
+    for t in ("Total excl. Seasonal shops", "Total ex-gas", "Retail excl gasoline", "Total w/o food", "Total net of tax",
+              "Total, not including cannabis", "Total excluding food", "All items less food and energy", "Total ex. gas"):
+        assert NS._ALT_HINT.search(t), t
+    for t in ("Total, all industries", "Exclusive stores", "Wireless", "Unless otherwise stated", "Excellent", "Core range",
+              "Sales of excellent goods"):
+        assert not NS._ALT_HINT.search(t), t
+    S = detect(MC.alt_total_rate())
+    d = dim(S, "Type of business")
+    assert d["role"] == "rate_aggregate" and d["total"] == "Total, all industries", d
+    assert S["default"]["Type of business"] == "Total, all industries" and dim(S, "GEO")["total"] == "Canada"
+    # negative: a table with no alternative in it reads as it did
+    S0 = detect(MC.alt_total_rate(alt="Apparel only [22]"))
+    assert dim(S0, "Type of business")["total"] == "Total, all industries"
+
+
+def test_w5d_a_total_under_heavy_suppression_is_still_the_total_and_a_whole_is_never_one_of_its_parts():
+    """Wave 5d, cause D (fuzz seed 157). With about a fifth of the cells blank (here: only 5 of 30 months have every region), the total matched
+    its parts in all 5 complete cells to the digit and its 25 partial cells never exceeded it, but a sum-check wanted 6 complete cells:
+    "Canada" was read as one of its own parts (the sum of 6 regions) and the headline doubled. A match is enough in 3 cells when the total
+    is at least 100 rounding tolerances (a coincidence is out of the question). Where the evidence is thin (counts of 5 to 40), 6 cells
+    are still wanted, and a whole country's name beside its regions is never ADDED to them: one member is shown."""
+    S = detect(MC.heavy_suppression())
+    g = dim(S, "GEO")
+    assert g["role"] == "partition" and g["total"] == "Canada" and len(g["parts"]) == 5, g
+    assert g["sum_check"]["complete"] == 5 and g["sum_check"]["share"] == 1.0, g["sum_check"]
+    # negative: small counts, the same 5 cells: not enough to tell, and Canada is not added to its regions either
+    gs = dim(detect(MC.heavy_suppression(small=True)), "GEO")
+    assert gs["role"] == "single" and gs["total"] == "Canada", gs
+    # negative: a total 20% above its parts is no total, and is never one of the parts
+    gb = dim(detect(MC.heavy_suppression(total_gap=0.2)), "GEO")
+    assert gb["role"] != "partition" and gb["role"] != "parts", gb
+    # the rule itself, on the sum-check: 5 complete cells of a large total pass, 5 of a small one do not
+    import numpy as np
+    A = np.full((3, 1, 8), np.nan)
+    A[0, 0, :5] = [28000.0, 25000.0, 24000.0, 26000.0, 28800.0]
+    A[1, 0, :5] = [17000.0, 15000.0, 14000.0, 16000.0, 18000.0]
+    A[2, 0, :5] = [11000.0, 10000.0, 10000.0, 10000.0, 10800.0]
+    X = ~np.isnan(A)
+    assert NS._sum_check(A * 1000.0, X, 0, [1, 2], 500.0, True)["pass"] is True            # a total of 28 million beside a tolerance of 1,500
+    assert NS._sum_check(A, X, 0, [1, 2], 500.0, True)["pass"] is False                    # 28 thousand beside it: 19 tolerances, 5 cells say little
+
+
+def test_w5d_quarterly_adjusted_copies_are_found_and_two_copies_are_never_added():
+    """Wave 5d, cause E (fuzz seeds 84, 285). An adjusted copy beside an unadjusted one was looked for in MONTHLY tables only; a quarterly one
+    fell to the no-total reading (every member a part) and the two copies were ADDED: every dollar counted twice, under a flag that said
+    "incomplete". A quarterly table is searched too (four seasons a year, at least 4 years); and two members whose calendar-year totals agree
+    within 3% in every year are one quantity twice, never parts, even in a table too short to say which is the adjusted one."""
+    data = MC.quarterly_adjusted(years=9)
+    S = detect(data)
+    b = dim(S, "Basis")
+    assert b["role"] == "adjustment" and b["nsa"] == "Unadjusted" and b["sa"] == "Seasonally adjusted", b
+    assert S["default"]["Basis"] == "Unadjusted" and dim(S, "GEO")["role"] == "parts"
+    m, v = NS._monthly(S, S["default"])
+    win = NS.windows(m, v)
+    est = NS.estimand(S, S["default"], win)
+    lat, pri = (sum(x) for x in zip(*[_published_sums(data, {"GEO": r, "Basis": "Unadjusted"}, windows=4) for r in ("Osswick", "Ormvale")]))
+    assert abs(est["figures"]["latest"]["value"] - lat) < 1.0 and abs(est["figures"]["prior"]["value"] - pri) < 1.0, (est["figures"], lat, pri)
+    # neutral labels ("A", "B"): found by behaviour
+    bn = dim(detect(MC.quarterly_adjusted(years=9, neutral=True)), "Basis")
+    assert bn["role"] == "adjustment" and bn["nsa"] == "A" and bn["sa"] == "B", bn
+    # a short table (3 years): too short to say which is which, but the two are never added
+    S3 = detect(MC.quarterly_adjusted(years=3))
+    b3 = dim(S3, "Basis")
+    assert b3["role"] == "single" and "same calendar-year totals" in b3["why"], b3
+    assert S3["default"]["Basis"] in ("Unadjusted", "Seasonally adjusted")
+    # negative: two regions 25% apart in size are parts, added, as before
+    g = dim(detect(MC.quarterly_adjusted(basis=False, gap=0.25)), "GEO")
+    assert g["role"] == "parts" and len(g["parts"]) == 2, g
+    # the limit, on purpose: two regions whose annual totals agree within 3% in every year cannot be told from a copy twice, and are not
+    # added (one member is shown, flagged); a refusal, never a wrong figure
+    gt = dim(detect(MC.quarterly_adjusted(basis=False, gap=0.0)), "GEO")
+    assert gt["role"] == "single" and "same calendar-year totals" in gt["why"], gt
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

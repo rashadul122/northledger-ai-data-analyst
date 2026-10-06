@@ -610,7 +610,7 @@ def rate_table(aggregate: str = "none", agg_first: bool = False, parts: int = 6,
     w = np.array(_RATE_WEIGHT[:parts])
     w = w / w.sum()
     agg_name = {"Canada": "Canada", "total": "All provinces", "unnamed": "Zeta group", "Canada_out": "Canada",
-                "total_out": "All provinces"}.get(aggregate)
+                "total_out": "All provinces", "combined": "Frontier area"}.get(aggregate)
     label = "Consumer price index" if index else "Unemployment rate"
     rec = []
     for i, mo in enumerate(MONTHS):
@@ -621,6 +621,9 @@ def rate_table(aggregate: str = "none", agg_first: bool = False, parts: int = 6,
             # listed provinces are a subset of its parts), so the range cannot verify it and nothing can reproduce it
             out = 2.0 if aggregate.endswith("_out") else 1.0
             agg = (mo, agg_name, (label,), round(float((r * w).sum()) * out, decimals), "")
+            if aggregate == "combined":
+                # wave 5d: NO total member. "Frontier area" is the weighted average of the first THREE provinces only (a regional group)
+                agg = (mo, agg_name, (label,), round(float((r[:3] * w[:3]).sum() / w[:3].sum()), decimals), "")
             rows = [agg] + rows if agg_first else rows + [agg]
         rec.extend(rows)
     return _official(["Labour force characteristics"], rec, uom="2012=100" if index else "Percent", scalar="units",
@@ -643,6 +646,165 @@ def rate_panel(n_members: int = 39, months: int = 79, aggregate: bool = True, de
         if aggregate:
             rec.append((mo, "Zeta group", ("Unemployment rate",), float(agg[t]), ""))
     return _official(["Labour force characteristics"], rec, uom="Percent", scalar="units", decimals=str(decimals))
+
+
+# --------------------------------------------------------------------------------------- wave 5d: what the fuzz tester found
+_SCALE_ID = {"units": "0", "thousands": "3", "millions": "6", "billions": "9"}
+
+
+def _official_v(dim_names, records, spec, status_of=None):
+    """A StatCan-shaped CSV (COORDINATE and all) whose series differ in unit, scale and DECIMALS. records: [(period, geo, dims tuple,
+    value or None, status)]; spec(key) -> (uom, scale word, decimals) for a series key (geo,) + dims. A value prints with its own
+    decimals; a blank value keeps its status."""
+    head = _META_HEAD + list(dim_names) + ["UOM", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID", "VECTOR", "COORDINATE", "VALUE", "STATUS",
+                                           "SYMBOL", "TERMINATED", "DECIMALS"]
+    vec, geos, pos, rows = {}, {}, [dict() for _ in range(1 + len(dim_names))], []
+    for (mo, geo, dims, val, status) in records:
+        key = (geo,) + tuple(dims)
+        vec.setdefault(key, "v%d" % (41000000 + 4 * len(vec)))
+        geos.setdefault(geo, "2021A%09d" % (len(geos) + 11))
+        for k, m in enumerate(key):
+            pos[k].setdefault(m, len(pos[k]) + 1)
+        uom, scale, dec = spec(key)
+        coord = ".".join(str(pos[k][m]) for k, m in enumerate(key))
+        rows.append([mo, geo, geos[geo]] + list(dims) + [uom, "81" if uom == "Dollars" else "223", scale, _SCALE_ID[scale], vec[key],
+                                                          coord, "" if val is None else "%.*f" % (int(dec), val), status, "", "", str(dec)])
+    return _csv(head, rows)
+
+
+def dollars_beside_units(seed: int = 91, scale: str = "millions", industry: bool = False, price: float = 9.0) -> bytes:
+    """Wave 5d, cause A. "All regions" (the exact sum, as published) over Glenhaven and Wynstead, each in two measures held in ONE value
+    column under "Estimates": "Sales value" (Dollars, in `scale`, one decimal) and "Units sold" (Number, units, no decimal: nine
+    digits at the total, the shape of a national ID number). SCALAR_FACTOR and DECIMALS differ by series. With `industry`, a second
+    dimension: "Full range" (a total with no cue in its name) over "Stationery [31]" and "Bicycles [41]"."""
+    rng = np.random.RandomState(seed)
+    f = {"thousands": 1e3, "millions": 1e6}[scale]
+    n = len(MONTHS)
+    t = np.arange(n)
+    inds = (("Stationery [31]", 0.6), ("Bicycles [41]", 0.4)) if industry else ((None, 1.0),)
+    lat = {}
+    for g, lvl in (("Glenhaven", 700.0), ("Wynstead", 900.0)):
+        for ind, sh in inds:
+            lat[(g, ind)] = lvl * sh * 1.004 ** t * SEASON[t % 12] * (1.0 + 0.01 * rng.standard_normal(n))
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        for g in ("All regions", "Glenhaven", "Wynstead"):
+            for ind in (["Full range"] + [x for x, _s in inds]) if industry else [None]:
+                gs = ("Glenhaven", "Wynstead") if g == "All regions" else (g,)
+                ins = [x for x, _s in inds] if ind in (None, "Full range") else [ind]
+                dol = sum(lat[(a, b)][i] for a in gs for b in ins)
+                for measure, val in (("Sales value", round(dol, 1)), ("Units sold", float(round(dol * f / price)))):
+                    rec.append((mo, g, (measure,) + ((ind,) if industry else ()), val, "A"))
+
+    def spec(key):
+        return ("Dollars", scale, 1) if key[1] == "Sales value" else ("Number", "units", 0)
+    return _official_v(["Estimates"] + (["Type of business"] if industry else []), rec, spec)
+
+
+def small_combined(seed: int = 92, total: bool = False) -> bytes:
+    """Wave 5d, cause B (a flow). Three regions and "Inland provinces", which is the sum of two of them (Alder and Birch) and larger than the
+    third (Cedar); NO total row. With `total` (the negative case) a "Total" row is added: the sum of the three."""
+    rng = np.random.RandomState(seed)
+    vals = {r: _series(rng, lv) for r, lv in zip(("Alder", "Birch", "Cedar"), (1000, 750, 1350))}
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        if total:
+            rec.append((mo, "Total", ("Wholesale sales",), sum(vals[r][i] for r in vals), "A"))
+        for r in vals:
+            rec.append((mo, r, ("Wholesale sales",), vals[r][i], "A"))
+        rec.append((mo, "Inland provinces", ("Wholesale sales",), vals["Alder"][i] + vals["Birch"][i], "A"))
+    return _official(["Characteristics"], rec)
+
+
+def component_under_a_part(seed: int = 93) -> bytes:
+    """Wave 5d, the negative of cause B: one place and an industry dimension with NO codes, an unnamed total "Full range" over
+    Stationery, Bicycles and Toys, and "Online stationery", a component INSIDE Stationery (smaller than it everywhere)."""
+    rng = np.random.RandomState(seed)
+    vals = {m: _series(rng, lv) for m, lv in (("Stationery", 1500), ("Bicycles", 1000), ("Toys", 800))}
+    online = np.round(vals["Stationery"] * 0.4)
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        rec.append((mo, "Canada", ("Full range",), sum(vals[m][i] for m in vals), "A"))
+        for m in vals:
+            rec.append((mo, "Canada", (m,), vals[m][i], "A"))
+        rec.append((mo, "Canada", ("Online stationery",), online[i], "A"))
+    return _official(["Type of business"], rec)
+
+
+def alt_total_rate(seed: int = 94, alt: str = "Total excl. Seasonal shops") -> bytes:
+    """Wave 5d, cause C. A vacancy rate (Percent): Canada over two regions (named), and a "Type of business" dimension with
+    "Total, all industries" (the weighted average of two industries), the two industries, and an alternative total `alt` (the total
+    less Seasonal shops: Apparel alone)."""
+    rng = np.random.RandomState(seed)
+    n = len(MONTHS)
+    t = np.arange(n)
+    ind = {"Seasonal shops [11]": 6.0 + 0.5 * np.sin(t / 5.0), "Apparel [21]": 5.0 + 0.4 * np.cos(t / 7.0)}
+    wt = {"Seasonal shops [11]": 0.35, "Apparel [21]": 0.65}
+    rec = []
+    geo = {"Harnmoor": 0.0, "Ulmford": 1.1}
+    gw = {"Harnmoor": 0.55, "Ulmford": 0.45}
+    noise = {(g, k): 0.15 * rng.standard_normal(n) for g in geo for k in ind}
+    for i, mo in enumerate(MONTHS):
+        cells = {}
+        for g in geo:
+            for k in ind:
+                cells[(g, k)] = round(float(ind[k][i] + geo[g] + noise[(g, k)][i]), 1)
+            cells[(g, "Total, all industries")] = round(sum(wt[k] * cells[(g, k)] for k in ind), 1)
+            cells[(g, alt)] = cells[(g, "Apparel [21]")]
+        for k in list(ind) + ["Total, all industries", alt]:
+            cells[("Canada", k)] = round(sum(gw[g] * cells[(g, k)] for g in geo), 1)
+        for g in ("Canada", "Harnmoor", "Ulmford"):
+            for k in (alt, "Apparel [21]", "Total, all industries", "Seasonal shops [11]"):
+                rec.append((mo, g, ("Vacancy rate", k), cells[(g, k)], ""))
+    return _official(["Sales", "Type of business"], rec, uom="Percent", scalar="units", decimals="1")
+
+
+def heavy_suppression(small: bool = False, total_gap: float = 0.0, seed: int = 97, name: str = "Canada") -> bytes:
+    """Wave 5d, cause D. A total (`name`) over five regions, 30 months, a flow, with so many suppressed cells (25 of the 30 months have a
+    region blank: 10, 8 and 7 months of three of them) that only 5 months are complete. `small`: counts of 5 to 40 (the total is about 100
+    rounding tolerances less than the default): a match in 5 cells says little. `total_gap`: the total is that share above the sum."""
+    rng = np.random.RandomState(seed)
+    months = MONTHS[:30]
+    regs = ["Ravdale", "Glenholm", "Pellcombe", "Falholm", "Lornstead"]
+    lv = (1.0, 1.4, 0.9, 1.2, 0.7)
+    base = 8.0 if small else 9000.0
+    vals = {r: np.round(base * k * (1.0 + 0.004) ** np.arange(30) * (1.0 + 0.03 * rng.standard_normal(30))) for r, k in zip(regs, lv)}
+    hide = {"Ravdale": range(0, 10), "Pellcombe": range(10, 18), "Lornstead": range(18, 25)}
+    rec = []
+    for i, mo in enumerate(months):
+        rec.append((mo, name, ("Wholesale sales",), round(sum(vals[r][i] for r in regs) * (1.0 + total_gap)), "A"))
+        for r in regs:
+            if i in hide.get(r, ()):
+                rec.append((mo, r, ("Wholesale sales",), None, "x"))
+            else:
+                rec.append((mo, r, ("Wholesale sales",), vals[r][i], "A"))
+    return _official(["Characteristics"], rec, uom="Number" if small else "Dollars", scalar="units" if small else "thousands")
+
+
+def quarterly_adjusted(years: int = 9, basis: bool = True, neutral: bool = False, seed: int = 95, gap: float = 0.25) -> bytes:
+    """Wave 5d, cause E. A quarterly flow (dollars in thousands) for two regions and NO total row; with `basis`, every region as an
+    unadjusted copy and a seasonally adjusted one (the same annual totals, a third of the seasonality; labelled "A" and "B" with
+    `neutral`); the second region is `gap` larger than the first (0 makes two regions whose annual totals ARE alike). Without
+    `basis` (the negative case) the two regions alone."""
+    rng = np.random.RandomState(seed)
+    nq = 4 * years
+    q = np.arange(nq)
+    season = np.array([0.88, 0.98, 1.04, 1.10])
+    season = season / season.mean()
+    regs = (("Osswick", 1000.0), ("Ormvale", 1000.0 * (1.0 + gap)))
+    label = lambda k: "Q%d %d" % (k % 4 + 1, 2014 + k // 4)       # noqa: E731
+    rec = []
+    nsa = {r: np.round(lv * 1.01 ** q * season[q % 4] * (1.0 + 0.01 * rng.standard_normal(nq))) for r, lv in regs}
+    sa = {r: np.round(nsa[r] / season[q % 4] * (1.0 + 0.002 * rng.standard_normal(nq))) for r, _l in regs}
+    for k in range(nq):
+        for r, _l in regs:
+            if basis:
+                rec.append((label(k), r, ("B" if neutral else "Seasonally adjusted",), sa[r][k], "A"))
+                rec.append((label(k), r, ("A" if neutral else "Unadjusted",), nsa[r][k], "A"))
+            else:
+                rec.append((label(k), r, ("Orders",), nsa[r][k], "A"))
+    return _official(["Basis" if basis else "Estimates"], rec)
+
 
 
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,

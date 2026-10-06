@@ -1929,9 +1929,13 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     # (Inland provinces = two of the three regions) is a subtotal, and the third region a part of the table, not a component
     # of it. An unnamed root with such a leftover is no total: the dimension is read by its parts (_parts_only)
     root_label = labels[root]
-    if (not _TOTAL_HINT.search(root_label) and _agg_name_tier(root_label) != 2
-            and any(parent == root_label for parent in (trial.get("components") or {}).values())):
-        return False
+    if not _TOTAL_HINT.search(root_label) and _agg_name_tier(root_label) != 2:
+        explained = set(trial.get("depth") or {}) | {labels.index(x) for x in (trial.get("alternatives") or {}) if x in labels} | \
+            {labels.index(x) for x in (trial.get("components") or {}) if x in labels} | set(alts_label)
+        # ... and it explains every member: each is under it, an alternative total, or a component of a member below it. A member
+        # the root leaves unexplained (a region that is neither inside it nor a copy of it) makes the root a subtotal
+        if any(parent == root_label for parent in (trial.get("components") or {}).values()) or len(explained) < M:
+            return False
     rec.update(trial)
     return True
 

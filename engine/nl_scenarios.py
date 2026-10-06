@@ -1291,13 +1291,13 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
     items: List[Dict[str, Any]] = []
     fig = est.get("figures") or {}
     complete = est.get("complete") is not False
-    k_used = int(est.get("months_used") or 12)
-    # a flow's window lacking a month in either window is compared on the months both have (nl_structure.matched_months)
-    ext = "the latest 12 months against the 12 before" if complete else \
-        "the %d months with a value in both the latest 12 months and the 12 before" % k_used
-    pri_w = "the 12 months before" if complete else "the %d matched months before" % k_used
-    lat_w = "the latest 12 months" if complete else "the %d matched latest months" % k_used
-    basis["complete"], basis["months_used"] = complete, k_used
+    Sp = {"period": est.get("period")} if est.get("period") else {}              # wave 5, gap 4: a quarterly or annual table's words
+    P = est.get("period") or {"kind": "month", "noun": "month", "nouns": "months", "window": 12, "step": 1}
+    k_used = int(est.get("periods_used") or est.get("months_used") or P["window"])
+    # a flow's window lacking a period in either window is compared on the periods both have (nl_structure.matched_months)
+    pw = NST.period_words(Sp, None if complete else k_used)
+    ext, pri_w, lat_w = pw["against"], pw["prior"], pw["latest"]
+    basis["complete"], basis["months_used"], basis["period"] = complete, k_used, dict(P)
     what = (est.get("text") or col).split(";")[0]
 
     def item(iid: str, group: str, label: str, value: Any, kind: str, text: str, grade_own: Optional[str],
@@ -1312,10 +1312,10 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
                 if grade else STRUCTURE_GRADE_WORDS
         return it
     for key, label, kind, unit, win_k, op in (
-            ("prior", "%s, %s (%s to %s)" % (what, pri_w, win["prior"][0], win["prior"][1]), "amount", "",
-             "prior", "sum of the slice's months" if NST.sums_over_time(meas) else "mean of the slice's months"),
-            ("latest", "%s, %s (%s to %s)" % (what, lat_w, win["latest"][0], win["latest"][1]), "amount", "",
-             "latest", "sum of the slice's months" if NST.sums_over_time(meas) else "mean of the slice's months"),
+            ("prior", "%s, %s (%s to %s)" % (what, pri_w, NST.pkey(Sp, win["prior"][0]), NST.pkey(Sp, win["prior"][1])), "amount", "",
+             "prior", ("sum of the slice's %s" if NST.sums_over_time(meas) else "mean of the slice's %s") % P["nouns"]),
+            ("latest", "%s, %s (%s to %s)" % (what, lat_w, NST.pkey(Sp, win["latest"][0]), NST.pkey(Sp, win["latest"][1])), "amount", "",
+             "latest", ("sum of the slice's %s" if NST.sums_over_time(meas) else "mean of the slice's %s") % P["nouns"]),
             ("change", "Change in %s, %s" % (what, ext), "change", "", "both", "latest less prior"),
             ("change_pct", "Change in %s in percent, %s" % (what, ext), "change", "%", "both", "latest / prior - 1")):
         f = fig.get(key) or {}
@@ -1391,16 +1391,17 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
     months, vals = NST._monthly(S_local, where)
     have = [m for m, v in zip(months, vals) if v == v]
     if have:
-        for it in (item("facts.months", "facts", "Months with a value in the headline series", float(len(have)), "count",
-                        format(len(have), ","), None, op="count months"),
-                   item("facts.first", "facts", "The first month of the headline series", have[0], "date", have[0], None,
-                        op="min"),
-                   item("facts.last", "facts", "The last month of the headline series", have[-1], "date", have[-1], None,
-                        op="max")):
+        for it in (item("facts.months", "facts", "%s with a value in the headline series" % P["nouns"].capitalize(),
+                        float(len(have)), "count", format(len(have), ","), None, op="count %s" % P["nouns"]),
+                   item("facts.first", "facts", "The first %s of the headline series" % P["noun"], have[0], "date",
+                        NST.pkey(Sp, have[0]), None, op="min"),
+                   item("facts.last", "facts", "The last %s of the headline series" % P["noun"], have[-1], "date",
+                        NST.pkey(Sp, have[-1]), None, op="max")):
             if it is not None:
                 items.append(it)
     out["items"] = _ordered(items)
-    out["note"] = STRUCTURE_NOTE
+    out["note"] = STRUCTURE_NOTE.replace("the latest 12 months against the 12 before", pw["against"] if complete else
+                                         NST.period_words(Sp)["against"])
     return out
 
 

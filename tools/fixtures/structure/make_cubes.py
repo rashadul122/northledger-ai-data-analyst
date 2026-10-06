@@ -524,6 +524,39 @@ def dup_names_series(seed: int = 61):
     out[("", "All industries")] = sum(out[("All industries", p)] for p in ("Retail", "Wholesale", "Transport"))
     return out
 
+# G4: quarterly and annual tables. Values and totals as partition(): Total and 4 regions that add up exactly.
+def periodic(freq: str = "quarter", style: str = "iso", stock: bool = False, years: int = 12, seed: int = 71,
+             first_year: int = 2012, with_total: bool = True) -> bytes:
+    """A Total and 4 regions published every quarter (freq "quarter") or every year (freq "year"). style: how the period is
+    written: "iso" (2012-01, the first month of the quarter; 2012-01 for a year), "q" (2012-Q1), "qc" (2012Q1), "qf" (Q1 2012),
+    "year" (2012), "dec" (2012-12-31 for a year, 2012-03-31 for a quarter: the period's last day). stock: a count of persons
+    (Population: a level), else dollars (a flow)."""
+    rng = np.random.RandomState(seed)
+    regs = ["North", "South", "East", "West"]
+    per_year = 4 if freq == "quarter" else 1
+    n = years * per_year
+    t = np.arange(n)
+    vals = {}
+    for r, lv in zip(regs, (5200, 8100, 3300, 6100)):
+        seas = SEASON[(t % per_year) * (12 // per_year)] if per_year > 1 else np.ones(n)
+        vals[r] = np.round(lv * (1.003 ** (t * 12 // per_year)) * (seas if not stock else 1.0) * (1 + 0.01 * rng.standard_normal(n)))
+    total = sum(vals.values())
+
+    def label(i):
+        y = first_year + i // per_year
+        q = i % per_year
+        if freq == "year":
+            return {"iso": "%d-01" % y, "year": "%d" % y, "dec": "%d-12-31" % y}.get(style, "%d-01" % y)
+        return {"iso": "%d-%02d" % (y, 3 * q + 1), "q": "%d-Q%d" % (y, q + 1), "qc": "%dQ%d" % (y, q + 1),
+                "qf": "Q%d %d" % (q + 1, y), "dec": "%d-%02d-%02d" % (y, 3 * q + 3, 31 if q in (0, 3) else 30)}[style]
+    rec = []
+    for i in range(n):
+        if with_total:
+            rec.append((label(i), "Total", ("Population" if stock else "Retail sales",), total[i], "A"))
+        for r in regs:
+            rec.append((label(i), r, ("Population" if stock else "Retail sales",), vals[r][i], "A"))
+    return _official(["Sales"], rec, uom="Persons" if stock else "Dollars", scalar="units" if stock else "thousands")
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

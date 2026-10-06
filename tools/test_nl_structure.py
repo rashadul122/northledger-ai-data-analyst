@@ -1370,6 +1370,115 @@ def test_g5_names_that_repeat_inside_the_same_parent_with_no_id_are_refused_with
     assert S.get("keys") == [] and all("(" not in x for x in dim(S, "GEO")["labels"]), S.get("keys")
 
 
+# ----------------------------------------------------------------------------- wave 5, gap 4: quarterly and annual tables
+def _periodic_total(data: bytes, scale: float = 1.0):
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    return pd.to_numeric(df[df.GEO == "Total"].set_index("REF_DATE").VALUE) * scale
+
+
+def _no_month_words(*texts):
+    for x in texts:
+        assert not re.search(r"(?i)\bmonths?\b|\bmonthly\b", str(x)), "a month word in a quarterly or annual table's words: %s" % x
+
+
+def test_g4_a_quarterly_stock_is_compared_over_4_quarters_and_says_quarters_never_months():
+    """A window is 4 quarters (12 months of a monthly table): the described change is printed with 4 values a window, the core's
+    grade stays its own (not enough data), the words are quarters, and the forecast and its audit are unavailable with a plain
+    reason (the forecast reads monthly series only)."""
+    data = MC.periodic("quarter", "iso", stock=True)
+    S = detect(data)
+    assert S["usable"] and S["period"]["kind"] == "quarter" and S["period"]["window"] == 4 and S["period"]["nouns"] == "quarters", S["period"]
+    rep = _run(data, "quarterly.csv")
+    est = rep["estimand"]
+    P = est["period"]
+    assert P["kind"] == "quarter" and P["window"] == 4 and P["nouns"] == "quarters", P
+    tot = _periodic_total(data)                                   # 48 quarters, Q1 2012 to Q4 2023
+    last4, prev4 = tot.iloc[-4:], tot.iloc[-8:-4]
+    F = est["figures"]
+    assert abs(F["latest"]["value"] - last4.mean()) < 1e-6 and abs(F["prior"]["value"] - prev4.mean()) < 1e-6, (F, last4.mean())
+    assert abs(F["change_pct"]["value"] - 100.0 * (last4.mean() / prev4.mean() - 1.0)) < 1e-4 and F["latest"]["months"] == 4, F
+    assert est["comparison"] == {"latest": ["2023-01", "2023-10"], "prior": ["2022-01", "2022-10"]}, est["comparison"]
+    assert "4-quarter averages Q1 2023\u2013Q4 2023 vs Q1 2022\u2013Q4 2022" in est["text"], est["text"]
+    assert est["complete"] is True and est["periods_used"] == 4, est
+    _no_month_words(est["text"], est["measure"].get("aggregation"), est["slice"][0]["why"])
+    # the core's grade is its own: 4 values a window cannot be tested (not faked)
+    chg = [f for f in rep["findings"] if f["id"].endswith(".change")]
+    assert chg and chg[0]["grade"] in ("NOT_ENOUGH_DATA", "WATCH") and chg[0].get("test", {}).get("p") is None, chg[0]
+    assert rep["story"]["headline"].startswith("Population, Total, 4 quarters to Q4 2023: "), rep["story"]["headline"]
+    # no forecast and no audit, with the reason
+    fc = rep["forecast"]
+    assert fc["available"] is False and "quarterly" in fc["reason"] and fc.get("audit") is None, fc["reason"]
+    assert "forecast reads monthly series only" in fc["reason"], fc["reason"]
+    # the scenarios and the page's words
+    it = _items(rep)
+    assert "the 4 quarters before" in it["headline.prior"]["label"] and "the latest 4 quarters" in it["headline.latest"]["label"], it["headline.prior"]["label"]
+    assert it["facts.months"]["label"].startswith("Quarters with a value"), it["facts.months"]["label"]
+    for k in ("headline.prior", "headline.latest", "headline.change", "facts.months", "facts.first", "facts.last"):
+        _no_month_words(it[k]["label"], it[k].get("inputs", {}).get("op"))
+    assert it["facts.first"]["text"] == "Q1 2012" and it["facts.last"]["text"] == "Q4 2023", (it["facts.first"], it["facts.last"])
+    for chart in rep["viz"]["charts"]:
+        assert chart["chart"] == "contribution_waterfall", chart["chart"]
+        _no_month_words(chart["subtitle"], chart["summary"])
+    assert any(r["chart"] == "change_heatmap" and "quarterly" in r["why"] for r in rep["viz"]["refused"]), rep["viz"]["refused"]
+    for x in rep["story"]["what_happened"] + rep["story"]["whats_next"]:
+        if "forecast reads monthly series only" not in x:        # the one sentence that must say what the forecast reads
+            _no_month_words(x)
+    assert rep["story"]["whats_next"] == [fc["reason"]], rep["story"]["whats_next"]
+    json.dumps(rep, allow_nan=False)
+
+
+def test_g4_a_quarterly_flow_is_summed_over_4_quarters_a_missing_quarter_is_matched_and_a_monthly_table_is_unchanged():
+    data = MC.periodic("quarter", "iso", stock=False)
+    rep = _run(data, "quarterly_sales.csv")
+    est = rep["estimand"]
+    tot = _periodic_total(data, 1000.0)
+    F = est["figures"]
+    assert "4-quarter totals Q1 2023\u2013Q4 2023 vs Q1 2022\u2013Q4 2022" in est["text"], est["text"]
+    assert abs(F["latest"]["value"] - tot.iloc[-4:].sum()) < 1e-3 and abs(F["prior"]["value"] - tot.iloc[-8:-4].sum()) < 1e-3, F
+    it = _items(rep)
+    parts = [v["value"] for k, v in it.items() if k.startswith("contribution.geo.") and not k.endswith("unallocated")]
+    assert len(parts) == 4 and abs(sum(parts) + it["contribution.geo.unallocated"]["value"] - it["headline.change"]["value"]) < 1e-3
+    # a quarter the headline lacks: compared on the 3 quarters both windows have
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    m = (df.GEO == "Total") & (df.REF_DATE == "2023-04")
+    df.loc[m, "VALUE"], df.loc[m, "STATUS"] = "", "x"
+    rep = _run(df.to_csv(index=False).encode(), "quarterly_gap.csv")
+    e2 = rep["estimand"]
+    assert e2["complete"] is False and e2["periods_used"] == 3 and e2["months_left_out"] == ["2023-04"], e2
+    assert "3 quarters with a value in both windows (Q2 2023 left out)" in e2["text"], e2["text"]
+    want1 = tot[["2023-01", "2023-07", "2023-10"]].sum()
+    want0 = tot[["2022-01", "2022-07", "2022-10"]].sum()
+    assert abs(e2["figures"]["latest"]["value"] - want1) < 1e-3 and abs(e2["figures"]["prior"]["value"] - want0) < 1e-3, e2["figures"]
+    # negative: a monthly table keeps its words and its windows
+    S = detect(MC.partition())
+    assert S["period"]["kind"] == "month" and S["period"]["window"] == 12, S["period"]
+    est = _run(MC.partition(), "monthly.csv")["estimand"]
+    assert "12-month totals" in est["text"] and est["period"]["kind"] == "month" and est["comparison"]["latest"] == ["2022-01", "2022-12"], est
+
+
+def test_g4_an_annual_table_prints_the_change_with_one_value_a_window_and_period_labels_are_read():
+    for style in ("year", "iso", "dec"):
+        data = MC.periodic("year", style, stock=False)
+        S = detect(data)
+        assert S["usable"] and S["period"]["kind"] == "year" and S["period"]["window"] == 1, (style, S["reason"], S["period"])
+        rep = _run(data, "annual_%s.csv" % style)
+        est = rep["estimand"]
+        tot = _periodic_total(data, 1000.0)
+        assert "annual totals 2023 vs 2022" in est["text"], est["text"]
+        assert abs(est["figures"]["latest"]["value"] - tot.iloc[-1]) < 1e-3 and abs(est["figures"]["prior"]["value"] - tot.iloc[-2]) < 1e-3, est["figures"]
+        _no_month_words(est["text"])
+        assert rep["story"]["headline"].startswith("Retail sales, Total, 2023: "), rep["story"]["headline"]
+        assert rep["forecast"]["available"] is False and "annual" in rep["forecast"]["reason"], rep["forecast"]["reason"]
+    # quarter labels the engine does not read as dates (2012-Q1, 2012Q1, Q1 2012) are read as quarters, the same table
+    ref = _run(MC.periodic("quarter", "iso"), "q_iso.csv")["estimand"]["figures"]
+    for style in ("q", "qc", "qf"):
+        data = MC.periodic("quarter", style)
+        S = detect(data)
+        assert S["usable"] and S["period"]["kind"] == "quarter", (style, S["reason"])
+        got = _run(data, "q_%s.csv" % style)["estimand"]
+        assert got["figures"] == ref, (style, got["figures"], ref)
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

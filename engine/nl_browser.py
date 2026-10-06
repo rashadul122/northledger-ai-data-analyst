@@ -1840,6 +1840,63 @@ def _ledger_text(paths: Dict[str, str], scrub: Scrubber, engine: Dict[str, str])
     return json.dumps(scrub.clean_tree(safe(doc)), indent=1, allow_nan=False)
 
 
+def _period_forecast_reason(per: Dict[str, Any]) -> str:
+    """Why a quarterly or an annual table has no forecast and no audit of one (the rows_a_month analogue)."""
+    return ("No forecast is shown: the table is %s (one value a %s), and the forecast reads monthly series only, so it "
+            "has no back-test either." % (per.get("adjective") or str(per.get("kind")) + "ly", per.get("noun") or "period"))
+
+
+_MONTH_WORDS = re.compile(r"(?i)\bmonth|months\b")
+
+
+def _period_text(text: str, per: Dict[str, Any]) -> str:
+    """The engine's own sentences count months ("the average month", "the latest 12 months against the 12 before", "48 months of
+    history"); about a quarterly or an annual table they say quarters or years instead (wave 5, gap 4). The numbers are not
+    changed: only the unit's name and the window's length."""
+    if not isinstance(text, str) or not _MONTH_WORDS.search(text) or int(per.get("step") or 1) == 1:
+        return text
+    noun, nouns, w = str(per.get("noun")), str(per.get("nouns")), int(per.get("window") or 12)
+    cap = lambda x: x[:1].upper() + x[1:]
+    adj = str(per.get("adjective") or "monthly")
+    keep = "ZZKEEPZZ"
+    text = text.replace("reads monthly series only", keep)             # the forecast's own reason is about monthly series
+    # a sentence of the core's change test about a window it could not fill
+    text = re.sub(r"only (\d+) of the latest 12 months and (\d+) of the 12 before hold a usable value; the test needs at least "
+                  r"(\d+) in each; the file holds no values for [^.;]*",
+                  lambda m: "the table holds one value a %s, so each window holds %d: the change test needs at least %s in each"
+                  % (noun, w, m.group(3)), text)
+    one = w == 1
+    text = re.sub(r"(?i)\bthe latest 12 months against the 12 before\b",
+                  "the latest %s against the %s before" % (noun if one else "%d %s" % (w, nouns), noun if one else str(w)), text)
+    text = re.sub(r"\bthe 12 months before\b", "the %s before" % (noun if one else "%d %s" % (w, nouns)), text)
+    text = re.sub(r"\b(latest|last) 12 months\b", lambda m: "%s %s" % (m.group(1), noun if one else "%d %s" % (w, nouns)), text)
+    text = re.sub(r"\bthe 12 before\b", "the %s before" % (noun if one else w), text)
+    text = re.sub(r"\b12-month\b", "%s-%s" % (w, noun) if not one else "annual", text)
+    text = re.sub(r"\b12 months\b", "%d %s" % (w, nouns) if not one else "a year", text)
+    for pat, rep_ in ((r"\bmonth-to-month\b", "%s-to-%s" % (noun, noun)), (r"\bMonth-to-month\b", "%s-to-%s" % (cap(noun), noun)),
+                      (r"\bmonthly\b", adj), (r"\bMonthly\b", cap(adj)), (r"\bmonths\b", nouns), (r"\bMonths\b", cap(nouns)),
+                      (r"\bmonth\b", noun), (r"\bMonth\b", cap(noun))):
+        text = re.sub(pat, rep_, text)
+    return text.replace(keep, "reads monthly series only")
+
+
+_PERIOD_TEXT_KEYS = frozenset(("claim", "why", "text", "title", "subtitle", "summary", "reason", "label", "what", "headline",
+                               "not_run_reason", "grade_label", "assumptions", "note", "why_shown", "what_happened",
+                               "whats_next", "what_to_do", "cannot_answer", "needed_to_upgrade", "scale", "lines"))
+
+
+def _period_rewrite(o: Any, per: Dict[str, Any], key: str = "") -> Any:
+    """_period_text applied to the sentences of a report (never to a column's name, an id or a machine value)."""
+    if isinstance(o, str):
+        return _period_text(o, per) if key in _PERIOD_TEXT_KEYS or key == "" else o
+    if isinstance(o, list):
+        return [_period_rewrite(x, per, key) for x in o]
+    if isinstance(o, dict):
+        return {k: (_period_rewrite(v, per, str(k)) if k not in ("id", "slug", "estimand", "unit", "kind", "chart", "type") else v)
+                for k, v in o.items()}
+    return o
+
+
 def _row_artifact(r: Any, db_path: str, row_s: Any, layout: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Why the monthly row count is no business series (P0-13, nl_inference.row_series_artifact), or None: its
     months all hold the same number of rows (a cube, a one-row-a-month slice), the file is a long table read one
@@ -1876,6 +1933,12 @@ def _forecast_block(r: Any, db_path: str, story_next: List[str],
     from northledger._sqlite import connect_ro
     import nl_inference as _ni
     block = blank_report()["forecast"]
+    per = (layout or {}).get("period") if isinstance(layout, dict) else None
+    if isinstance(per, dict) and int(per.get("step") or 1) != 1:
+        # wave 5, gap 4: the forecast and its audit read monthly series; a quarterly or an annual table has none to give them
+        block["reason"] = _period_forecast_reason(per)
+        block["frequency"] = str(per.get("kind"))
+        return block
     series = list(getattr(r.measure, "series", []) or [])
     if not series:
         reasons = list(getattr(r.measure, "unmeasured", []) or [])
@@ -2064,6 +2127,16 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
     w = (est.get("comparison") or {}).get("latest") or []
     if not (isinstance(w, list) and len(w) == 2 and all(isinstance(x, str) and len(x) >= 7 for x in w)):
         return ""
+    per = est.get("period") if isinstance(est.get("period"), dict) else None
+    if per and int(per.get("step") or 1) != 1:
+        # a quarterly or an annual table: "4 quarters to Q4 2023", "2023", "the 3 matched quarters to Q4 2023"
+        Sp = {"period": per}
+        last = _ns()._plabel(Sp, w[1])
+        used = int(est.get("periods_used") or per.get("window") or 1)
+        if est.get("complete") is False and est.get("periods_used"):
+            return "the %d matched %s to %s" % (used, per["nouns"] if used != 1 else per["noun"], last)
+        n = int(per.get("window") or 1)
+        return last if n == 1 else "%d %s to %s" % (n, per["nouns"], last)
     try:
         y1, m1, y2, m2 = int(w[0][:4]), int(w[0][5:7]), int(w[1][:4]), int(w[1][5:7])
     except ValueError:
@@ -4866,6 +4939,8 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
            "measure": {k: (est.get("measure") or {}).get(k) for k in ("label", "uom", "scale", "scale_applied", "type",
                                                                       "type_basis", "aggregation")},
            "comparison": est.get("comparison"),
+           **({"period": {k: (est["period"] or {}).get(k) for k in ("kind", "nouns", "window")}}
+              if isinstance(est.get("period"), dict) and int(est["period"].get("step") or 1) != 1 else {}),
            "figures": {k: {"value": (v or {}).get("value"), "text": safe((v or {}).get("text"), 40)}
                        for k, v in (est.get("figures") or {}).items() if isinstance(v, dict)},
            "sum_checks": [dict({"dim": safe(c.get("dim"), 120), "total": safe(c.get("total"), 120), "parts": c.get("parts"),
@@ -8732,7 +8807,7 @@ def _long_has_structure(data: bytes) -> bool:
         S = _ns().detect(R, (), budget_s=0.3)
         return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
                                                            "rate_aggregate", "parts")
-                                             or (d["role"] in ("single", "measure") and S.get("official"))
+                                             or (d["role"] == "single" and S.get("official") and d.get("noun") == "national figure")
                                              for d in S.get("dims") or [])
     except Exception:  # noqa: BLE001 - the layout pass then reads it as before
         if os.environ.get("NL_BROWSER_STRICT"):
@@ -8837,17 +8912,25 @@ def _inner_plan(ai_plan: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any
 def _structure_notes(rep: Dict[str, Any], S: Dict[str, Any], est: Dict[str, Any], info: Dict[str, Any]) -> None:
     """Say how the table was read: the limitations' first line and a cleaning step."""
     roles = "; ".join("%s: %s" % (d["column"], d["role"].replace("_", " ")) for d in S["dims"] if d["role"] != "constant")
-    text = ("This file is a statistical table: %s rows, %s series over %s months (%s). Adding its rows would count the "
+    per = S.get("period") or {"nouns": "months", "adjective": "monthly"}
+    text = ("This file is a statistical table: %s rows, %s series over %s %s (%s). Adding its rows would count the "
             "same value more than once, so the report reads one series, the headline the structure chooses: %s. "
-            "Each total was checked against its parts." % (
+            "%s" % (
                 format(int(S.get("rows") or 0), ","), format(int(S.get("series") or 0), ","),
-                format(int(S.get("months") or 0), ","), roles, est.get("text") or ""))
+                format(int(S.get("months") or 0), ","), per["nouns"], roles, est.get("text") or "",
+                ("The table has no total row: the headline is the sum of its parts, month by month; the other totals were "
+                 "checked against their parts." if any(d["role"] == "parts" for d in S["dims"]) else
+                 "Each total was checked against its parts.")
+                if int(per.get("step") or 1) == 1 else
+                ("The table has no total row: the headline is the sum of its parts; the other totals were checked "
+                 "against their parts." if any(d["role"] == "parts" for d in S["dims"]) else
+                 "Each total was checked against its parts.")))
     rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": text})
     rep.setdefault("cleaning", {}).setdefault("fixes", []).insert(0, {
         "rule": "structure_slice", "column": S["measure"]["column"], "count": int(S.get("rows") or 0),
-        "what": "A statistical table read as one series: %s rows to %s monthly values of %s (base units, the file's "
+        "what": "A statistical table read as one series: %s rows to %s %s values of %s (base units, the file's "
                 "scale applied)" % (format(int(S.get("rows") or 0), ","), format(int(info.get("rows") or 0), ","),
-                                     info.get("column"))})
+                                     per["adjective"], info.get("column"))})
 
 
 def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_source: str,
@@ -8909,6 +8992,20 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
             aa["refused"] = list(aa.get("refused") or []) + refused_analyses
         if plan_source == "ai_corrected":
             rep["plan_signals"] = []          # a correction is disclosed, never sent back to the planner
+    per = S.get("period") or {}
+    if int(per.get("step") or 1) != 1:
+        # a quarterly or an annual table: the charts that draw a year as 12 months or a window as 12 months are not drawn,
+        # and the engine's own sentences say quarters or years, not months (the numbers stand)
+        drawn = [c for c in rep.get("charts") or [] if isinstance(c, dict) and c.get("type") in ("heatmap", "trend", "fan", "replay")]
+        if drawn:
+            rep["charts"] = [c for c in rep["charts"] if c not in drawn]
+            sup = rep.setdefault("charts_suppressed", [])
+            for c in drawn:
+                sup.append({"rule": "period", "type": str(c.get("type")),
+                            "why": "the chart reads monthly values; this table is %s" % per.get("adjective")})
+        for k in ("story", "summary", "findings", "methods", "limitations", "charts", "forecast", "cleaning"):
+            if k in rep:
+                rep[k] = _period_rewrite(rep[k], per)
     tm = {t["stage"]: float(t["seconds"]) for t in rep.get("timings") or []}
     for k, v in (timings or {}).items():
         tm[k] = tm.get(k, 0.0) + float(v or 0.0)
@@ -9059,7 +9156,10 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
         f["inference"] = _ni.official_inference(
             pubr, hide, why_total, words,
             {"change_pct": _num(f.get("value")), "prior": _num(prior), "latest": _num(latest)},
-            (f.get("test") or {}).get("n_months"), "sum" if total else "mean", quality, revisions)
+            None if (isinstance(rep.get("estimand"), dict) and isinstance(rep["estimand"].get("period"), dict) and
+                     int(rep["estimand"]["period"].get("step") or 1) != 1) else (f.get("test") or {}).get("n_months"),
+            "sum" if total else "mean", quality, revisions,
+            (rep.get("estimand") or {}).get("period") if isinstance(rep.get("estimand"), dict) else None)
         if est_rec is not None and est_rec["inference"] is None and f["inference"]:
             # the table's headline IS this claim: its record goes where the writer reads what the headline is
             # (results_for_ai sends the estimand first), a copy, so the two never share a list
@@ -9234,7 +9334,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             # a month): track A2's row-count drop (w4-inference, nl_inference.row_series_artifact) reads
             # layout["rows_a_month"]; every other use of `layout` below is a long table's, which this is not
             layout = {"layout": STRUCTURE_LAYOUT, "structure_slice": True,
-                      "rows_a_month": int(_ns().rows_a_month(structure_inner["S"]))}
+                      "rows_a_month": int(_ns().rows_a_month(structure_inner["S"])),
+                      "period": dict(structure_inner["S"].get("period") or {"step": 1})}
 
         def visitor_lines() -> Optional[List[int]]:
             """Each record of the file the engine read, as its line in the visitor's file (review M2, 29 Sep
@@ -9422,6 +9523,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                   else "business")
         for f in findings:
             f["claim"], f["why"] = pub(f["claim"]), pub(f["why"])
+        if isinstance(layout, dict) and isinstance(layout.get("period"), dict) and int(layout["period"].get("step") or 1) != 1:
+            findings = [f for f in findings if f.get("kind") != "forecast"]       # about months of history: none are held
         findings.sort(key=lambda f: (_VERDICT_ORDER.get(f["verdict"], 9), _KIND_ORDER.get(f["kind"], 9)))
         rep["findings"] = findings
 
@@ -9463,6 +9566,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                             "dimensions": list(r.roles.dimensions),
                             "excluded": dict(r.roles.excluded)}
             rep["forecast"] = _forecast_block(r, eng.db_path, story["whats_next"], layout)
+            if rep["forecast"].get("frequency"):
+                story["whats_next"] = [rep["forecast"]["reason"]]
             story["whats_next"] = _demote_row_forecast_lines(
                 story["whats_next"], rep["forecast"].get("row_forecast_dropped"),
                 [str(x.label) for x in (getattr(r.measure, "series", []) or [])]) or [_narrate.NO_FORECAST_LINE]
@@ -9677,6 +9782,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
     except Refusal as exc:
         rep["error"] = str(exc)
     except Exception as exc:  # noqa: BLE001 - a plain refusal, never a traceback
+        if os.environ.get("NL_BROWSER_TRACE"):
+            import traceback as _tb
+            _tb.print_exc()
         msg = " ".join(str(exc).split())[:200]
         rep["error"] = ("The engine stopped on this file (%s%s). Nothing was sent anywhere."
                         % (type(exc).__name__, ": " + msg if msg else ""))

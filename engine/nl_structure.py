@@ -138,6 +138,117 @@ _EMBED = re.compile(r"^\s*(?P<num>[-+]?(?:\d[\d,]*(?:\.\d*)?|\.\d+)(?:[eE][-+]?\
 _SENSITIVE_PREFIX = "S"
 
 
+# wave 5, gap 4: the table's period. A window is 12 months of a monthly table, 4 quarters of a quarterly one, 1 year of an annual one
+# (every window is a 12-month span of month keys: a quarter or a year is keyed by the month it starts in, so a 12-month span holds
+# exactly 4 quarters or 1 year). Period labels the engine does not read as dates (2012-Q1, 2012Q1, Q1 2012, 2012) are read here.
+PERIOD_KINDS = {1: ("month", "months", 12), 3: ("quarter", "quarters", 4), 6: ("half-year", "half-years", 2),
+                12: ("year", "years", 1)}
+_YEAR_NAMES = frozenset(("year", "yr", "fiscalyear", "fy", "refdate", "timeperiod", "period", "time", "date", "referenceperiod",
+                         "reference", "calendaryear", "obstime", "timeperiodcode", "refperiod"))
+_Q_A = re.compile(r"^(\d{4})\s*[-_/ ]?\s*[Qq]\s*([1-4])$")
+_Q_B = re.compile(r"^[Qq]\s*([1-4])\s*[-_/ ]?\s*(\d{4})$")
+_H_A = re.compile(r"^(\d{4})\s*[-_/ ]?\s*[HhSs]\s*([12])$")
+_Y_ONLY = re.compile(r"^(\d{4})$")
+
+
+def _parse_periods(t: Any, allow_year: bool) -> Tuple[Any, str, float]:
+    """(each label as the first day of its period, the family "quarter" | "half-year" | "year", the share of the filled labels
+    read) for a column of text: 2012-Q1, 2012Q1, Q1 2012, 2012-H2, 2012 (a bare year only when the header may be a date)."""
+    import pandas as pd
+    f = t[t != ""]
+    best = (None, "", 0.0)
+    fams = [("quarter", [(_Q_A, "yq"), (_Q_B, "qy")]), ("half-year", [(_H_A, "yh")])]
+    if allow_year:
+        fams.append(("year", [(_Y_ONLY, "y")]))
+    for fam, rxs in fams:
+        out = pd.Series(pd.NaT, index=t.index, dtype="datetime64[ns]")
+        ok = pd.Series(False, index=t.index)
+        for rx, kind in rxs:
+            m = f.str.extract(rx)
+            if m.empty:
+                continue
+            good = m.notna().all(axis=1)
+            if not good.any():
+                continue
+            mm = m[good]
+            if kind in ("yq", "yh"):
+                y, k = mm[0].astype(int), mm[1].astype(int)
+            elif kind == "qy":
+                k, y = mm[0].astype(int), mm[1].astype(int)
+            else:
+                y, k = mm[0].astype(int), pd.Series(1, index=mm.index)
+            if fam == "year":
+                good2 = (y >= 1800) & (y <= 2200)
+                month = pd.Series(1, index=y.index)
+            elif fam == "quarter":
+                good2 = (y >= 1800) & (y <= 2200)
+                month = (k - 1) * 3 + 1
+            else:
+                good2 = (y >= 1800) & (y <= 2200)
+                month = (k - 1) * 6 + 1
+            idx = y.index[good2.to_numpy()]
+            out.loc[idx] = pd.to_datetime(pd.DataFrame({"year": y[idx], "month": month[idx], "day": 1}))
+            ok.loc[idx] = True
+        share = float(ok[f.index].mean()) if len(f) else 0.0
+        if share > best[2]:
+            best = (out, fam, share)
+    return best
+
+
+def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tuple[str, Any, str]]:
+    """The date column when the engine read none: a column of period labels (a quarter, a half-year or a year), at least 95% of
+    its filled cells read, 6 or more different periods. (column, dates, family) or None."""
+    best = None
+    for c in cols:
+        if R.kind(c) == "date":
+            continue
+        name = _norm(head[c])
+        t = R.texts[c].astype(str).str.strip()
+        if int((t != "").sum()) < 6:
+            continue
+        out, fam, share = _parse_periods(t, allow_year=name in _YEAR_NAMES)
+        if out is None or share < 0.95 or int(out.nunique()) < 6:
+            continue
+        if best is None or (name in _YEAR_NAMES and not best[3]):
+            best = (c, out, fam, name in _YEAR_NAMES)
+    return None if best is None else (best[0], best[1], best[2])
+
+
+def _period_of(times: List[str], family: str = "") -> Dict[str, Any]:
+    """The table's period from its dates: one value a period (not a daily or weekly table) and a steady gap of 3, 6 or 12
+    months between periods (80% of the gaps) is quarterly, half-yearly or annual; anything else is read by month, as before."""
+    import numpy as np
+    months = sorted({t[:7] for t in times})
+    step = 1
+    if len(months) >= 4 and len(months) == len(times):
+        idx = np.array([int(m[:4]) * 12 + int(m[5:7]) - 1 for m in months])
+        d = np.diff(idx)
+        vals, counts = np.unique(d, return_counts=True)
+        top = int(vals[counts.argmax()])
+        if top in (3, 6, 12) and int(counts.max()) >= 0.8 * len(d):
+            step = top
+    noun, nouns, window = PERIOD_KINDS[step][0], PERIOD_KINDS[step][1], PERIOD_KINDS[step][2]
+    phase = (int(months[0][5:7]) - 1) % step if months else 0
+    return {"kind": noun, "noun": noun, "nouns": nouns, "step": step, "phase": phase, "per_year": 12 // step,
+            "window": window, "adjective": {1: "monthly", 3: "quarterly", 6: "half-yearly", 12: "annual"}[step]}
+
+
+def _plabel(S: Dict[str, Any], key: str) -> str:
+    """A period key (the month it starts in) as the table's period: Jul 2026, Q3 2026, H2 2026, 2026."""
+    st = (S.get("period") or {}).get("step", 1)
+    try:
+        y, m = int(key[:4]), int(key[5:7])
+    except ValueError:
+        return str(key)
+    if st == 3:
+        return "Q%d %d" % ((m - 1) // 3 + 1, y)
+    if st == 6:
+        return "H%d %d" % ((m - 1) // 6 + 1, y)
+    if st == 12:
+        return "%d" % y
+    return _mon(key)
+
+
 class _TooLarge(Exception):
     """A dimension's sum-check block would not fit the memory budget: the dimension is left unresolved (rule 6)."""
 
@@ -324,9 +435,15 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
             k = int(R.dates(c).notna().sum())
             if k > n_d or (k == n_d and date is not None and _norm(head[c]) in _DATE_NAMES):
                 date, n_d = c, k
+    date_family = ""
+    dts = None
     if date is None or n_d < 6:
-        return _empty("not_cube", "no column holds dates", publisher=publisher, official=official)
-    dts = R.dates(date)
+        pl = _period_labels(R, cols, head)                  # 2012-Q1, Q1 2012, 2012: periods the engine does not read as dates
+        if pl is None:
+            return _empty("not_cube", "no column holds dates", publisher=publisher, official=official)
+        date, dts, date_family = pl
+    if dts is None:
+        dts = R.dates(date)
     dated = dts.notna().to_numpy()
     # -- the measure: the number that moves, with the most distinct values (VALUE / OBS_VALUE a hint)
     cands = []
@@ -521,7 +638,8 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     unit_info = _units(R, cat, metadata, alias_of, dims, rows, head, s_index, s_codes)
     S: Dict[str, Any] = {
         "kind": "cube", "usable": False, "reason": "", "version": VERSION, "publisher": publisher,
-        "official": official, "date": {"column": head[date], "landed": date},
+        "official": official, "date": {"column": head[date], "landed": date, "labels": date_family or None},
+        "period": _period_of(times, date_family),
         "measure": {"column": head[measure], "landed": measure, "embedded_flags": embedded,
                     "decimals": _decimals(R, measure, metadata), **scale_info, **unit_info["measure"]},
         "metadata": metadata, "dims": dimrecs, "series": n_series, "times": len(times), "months": len(months),
@@ -1118,9 +1236,10 @@ def _usable(S: Dict[str, Any]) -> bool:
     if rel:
         return True
     if any(d["role"] in ("single", "measure") for d in S["dims"]):
-        # an official table is read one member at a time (it is never added across a dimension it could not verify: wave 5,
-        # gap 1 says so in the estimand); any other table of at most 60 series is read side by side by the layout
-        if int(S.get("series") or 0) <= PANEL_MAX_SERIES and not S.get("official"):
+        # an official table whose geography has no total row is read one member at a time, and says it is not a national
+        # figure (wave 5, gap 1); any other table of at most 60 series (currencies, say) is read side by side by the layout
+        geo_single = S.get("official") and any(d["role"] == "single" and d.get("noun") == "national figure" for d in S["dims"])
+        if int(S.get("series") or 0) <= PANEL_MAX_SERIES and not geo_single:
             S["kind"] = "panel_no_relations"
             S["reason"] = ("no member of the table is a total, a part or an adjusted copy of another: its %d series are "
                            "read side by side" % int(S.get("series") or 0))
@@ -1733,7 +1852,7 @@ def _adjustment(S: Dict[str, Any], j: int) -> None:
     rec = S["dims"][j]
     labels = rec["labels"]
     M = len(labels)
-    if not (2 <= M <= ADJ_MAX_MEMBERS) or not S.get("monthly") or S["months"] < 24:
+    if not (2 <= M <= ADJ_MAX_MEMBERS) or not S.get("monthly") or S["months"] < 24 or (S.get("period") or {}).get("step", 1) != 1:
         return
     A, X, _c = _dim_tensor(S, j, restrict=False)
     months = S["_months"]
@@ -2323,14 +2442,58 @@ def window_figure(S: Dict[str, Any], months: Sequence[str], vals: Any, w: Sequen
 MIN_MATCHED = 6                 # months with a value in both windows a flow's comparison needs
 
 
+def _wlen(S: Dict[str, Any]) -> int:
+    """Periods in a window: 12 months, 4 quarters, 2 half-years or 1 year."""
+    return int((S.get("period") or {}).get("window") or 12)
+
+
 def _min_matched(S: Dict[str, Any]) -> int:
-    """Periods with a value in both windows a flow's comparison needs: half of a window (6 months)."""
-    return MIN_MATCHED
+    """Periods with a value in both windows a flow's comparison needs: half of a window (6 months, 2 quarters, 1 year)."""
+    return max(1, _wlen(S) // 2) if _wlen(S) != 12 else MIN_MATCHED
 
 
 def _prange(S: Dict[str, Any], a: str, b: str) -> List[str]:
-    """The periods from a to b (month keys): every month of a monthly table."""
-    return _mrange(a, b)
+    """The periods from a to b (month keys): every month of a monthly table, the quarters or years a 12-month span holds
+    otherwise (a period is keyed by the month it starts in, at the table's phase)."""
+    st = (S.get("period") or {}).get("step", 1)
+    if st == 1:
+        return _mrange(a, b)
+    ph = (S.get("period") or {}).get("phase", 0)
+    return [m for m in _mrange(a, b) if (int(m[5:7]) - 1) % st == ph]
+
+
+def _comparison(S: Dict[str, Any], win: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """A window's endpoints: its two month keys for a monthly table, its first and last PERIOD for another (the quarters or
+    the year a 12-month span holds), so a range of the endpoints holds exactly the periods compared."""
+    if (S.get("period") or {}).get("step", 1) == 1:
+        return {"latest": list(win["latest"]), "prior": list(win["prior"])}
+    out = {}
+    for k in ("latest", "prior"):
+        ps = _prange(S, win[k][0], win[k][1])
+        out[k] = [ps[0], ps[-1]] if ps else list(win[k])
+    return out
+
+
+def pkey(S: Dict[str, Any], key: str) -> str:
+    """A period key in words: the month key itself for a monthly table (2022-11), Q4 2022 / 2022 otherwise."""
+    return key if (S.get("period") or {}).get("step", 1) == 1 else _plabel(S, key)
+
+
+def period_words(S: Dict[str, Any], used: Optional[int] = None) -> Dict[str, str]:
+    """The words of a comparison in the table's own period: "the latest 12 months against the 12 before", "the 4 quarters
+    before", "the latest year" ...; with `used` (a flow whose windows are matched on the periods both have) "the 3 matched
+    quarters before". A monthly table's words are the ones the structure's reports have always used."""
+    p = S.get("period") or {"noun": "month", "nouns": "months", "window": 12}
+    w, noun, nouns = int(p["window"]), str(p["noun"]), str(p["nouns"])
+    span = noun if w == 1 else "%d %s" % (w, nouns)
+    latest = "the latest %s" % span
+    before = "the %s before" % noun if w == 1 else "the %d before" % w
+    if used is None or used == w:
+        return {"latest": latest, "prior": "the %s before" % span, "against": "%s against %s" % (latest, before),
+                "noun": noun, "nouns": nouns}
+    nn = nouns if used != 1 else noun
+    return {"latest": "the %d matched latest %s" % (used, nn), "prior": "the %d matched %s before" % (used, nn),
+            "against": "the %d %s with a value in both %s and %s" % (used, nn, latest, before), "noun": noun, "nouns": nouns}
 
 
 def _mshift(ym: str, k: int) -> str:
@@ -2352,13 +2515,13 @@ def matched_months(S: Dict[str, Any], months: Sequence[str], tot: Any, win: Dict
     window figure adds up its months, so a month the headline lacks in either window would make the change compare 11
     months with 12; the comparison then uses the months with a value in both windows (the same calendar month in each:
     like for like). A level's window figure is the mean of the months it has, so its windows stay whole."""
-    lat = _mrange(win["latest"][0], win["latest"][1])
-    pri = _mrange(win["prior"][0], win["prior"][1])
+    lat = _prange(S, win["latest"][0], win["latest"][1])
+    pri = _prange(S, win["prior"][0], win["prior"][1])
     if not sums_over_time(S["measure"]) or len(lat) != len(pri):
         return lat, pri, True
     have = {m for m, v in zip(months, tot) if v == v}
     pairs = [(a, b) for a, b in zip(pri, lat) if a in have and b in have]
-    full = len(pairs) == len(lat) == len(pri) == 12
+    full = len(pairs) == len(lat) == len(pri) == _wlen(S)
     return [b for _a, b in pairs], [a for a, _b in pairs], full
 
 
@@ -2446,8 +2609,8 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
     T0, n0 = sum_at(S, months, tot, pri_m)
     T1, n1 = sum_at(S, months, tot, lat_m)
     flow = sums_over_time(S["measure"])
-    need = MIN_MATCHED if flow else 12
-    if T0 is None or T1 is None or n0 < need or n1 < need or (not flow and (n0 < 12 or n1 < 12)):
+    need = _min_matched(S) if flow else _wlen(S)
+    if T0 is None or T1 is None or n0 < need or n1 < need or (not flow and (n0 < _wlen(S) or n1 < _wlen(S))):
         return None
     change = T1 - T0
     parts = []
@@ -2458,8 +2621,8 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
         b, nb = sum_at(S, m2, pv, lat_m)
         if not flow:
             # a stock's window mean: its months' values over the 12 months (a blank month is unallocated)
-            a = math.fsum(float(v) for m, v in zip(m2, pv) if win["prior"][0] <= m <= win["prior"][1] and v == v) / 12.0
-            b = math.fsum(float(v) for m, v in zip(m2, pv) if win["latest"][0] <= m <= win["latest"][1] and v == v) / 12.0
+            a = math.fsum(float(v) for m, v in zip(m2, pv) if win["prior"][0] <= m <= win["prior"][1] and v == v) / _wlen(S)
+            b = math.fsum(float(v) for m, v in zip(m2, pv) if win["latest"][0] <= m <= win["latest"][1] and v == v) / _wlen(S)
         a = a or 0.0
         b = b or 0.0
         sums0.append(a)
@@ -2563,13 +2726,20 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     T1, n1 = sum_at(S, months, vals, lat_m)
     m = S["measure"]
     flow = sums_over_time(m)
-    if flow and len(lat_m) < MIN_MATCHED:
+    if flow and len(lat_m) < _min_matched(S):
         T0 = T1 = None                                   # too few months in both windows to compare like for like
-    left_out = sorted(set(_mrange(win["latest"][0], win["latest"][1])) - set(lat_m))
+    left_out = sorted(set(_prange(S, win["latest"][0], win["latest"][1])) - set(lat_m))
+    P = S.get("period") or {"step": 1, "noun": "month", "nouns": "months", "window": 12, "adjective": "monthly", "kind": "month"}
+    cmp_ = _comparison(S, win)
     ambiguous = str(m.get("type_basis") or "").startswith("ambiguous")
-    agg = ("12-month totals" if complete else "totals of the %d months with a value in both windows (%s left out)" % (
-        len(lat_m), ", ".join(_mon(x) for x in left_out[:3]) + (", ..." if len(left_out) > 3 else ""))) if flow else \
-        ("average level over the window (12-month averages)" if ambiguous else "12-month averages")
+    w_ = int(P["window"])
+    unit_w = "%d-%s" % (w_, P["noun"]) if w_ > 1 else "annual"
+    agg = ("%s totals" % unit_w if complete else "totals of the %d %s with a value in both windows (%s left out)" % (
+        len(lat_m), P["nouns"] if len(lat_m) != 1 else P["noun"],
+        ", ".join(_mon(x) if P["step"] == 1 else _plabel(S, x) for x in left_out[:3]) + (", ..." if len(left_out) > 3 else ""))) \
+        if flow else \
+        (("average level over the window (%s averages)" % unit_w if w_ > 1 else "average level over the window (annual values)")
+         if ambiguous else ("%s averages" % unit_w if w_ > 1 else "annual values"))
     scale_txt = ""
     if m.get("factor") and m["factor"] != 1:
         scale_txt = " (file in %s ×%s)" % (m.get("scale"), format(int(m["factor"]), ","))
@@ -2590,9 +2760,12 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             bits.append("complete months only: the %s months where a part is suppressed are left out" % _fmt_count(
                 len(built["months_dropped"])))
         built_txt += "; ".join(bits) + "; "
-    text = "%s; %s%s%s; %s %s–%s vs %s–%s" % (
+    def span(w: List[str]) -> str:
+        a, b = (_mon(w[0]), _mon(w[1])) if P["step"] == 1 else (_plabel(S, w[0]), _plabel(S, w[1]))
+        return a if a == b else "%s–%s" % (a, b)
+    text = "%s; %s%s%s; %s %s vs %s" % (
         " · ".join(_label_of(S, where)) or "the whole table", built_txt, unit, scale_txt, agg,
-        _mon(win["latest"][0]), _mon(win["latest"][1]), _mon(win["prior"][0]), _mon(win["prior"][1]))
+        span(cmp_["latest"]), span(cmp_["prior"]))
     why = why or {}
     sl = []
     for d in S["dims"]:
@@ -2697,10 +2870,12 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     return {"text": text, "slice": sl,
             "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": m.get("scale"),
                         "scale_applied": m.get("factor"), "type": m["type"], "type_basis": m.get("type_basis"),
-                        "type_why": m.get("type_why"), "aggregation": m["aggregation"]},
-            "comparison": {"latest": list(win["latest"]), "prior": list(win["prior"])},
+                        "type_why": m.get("type_why"),
+                        "aggregation": str(m["aggregation"]).replace("over months", "over %s" % P["nouns"])},
+            "comparison": cmp_, "period": {k: P[k] for k in ("kind", "noun", "nouns", "step", "window", "adjective")},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
             "complete": bool(complete) and not (built or {}).get("incomplete"), "months_used": len(lat_m) if flow else n1,
+            "periods_used": len(lat_m) if flow else n1,
             "months_left_out": [] if complete else left_out, "inference": None, "built_from": built,
             "measure_choice": choice}
 
@@ -2771,8 +2946,10 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
     out = {"kind": S["kind"], "usable": bool(S.get("usable")), "reason": S.get("reason") or "",
            "version": S.get("version"), "publisher": S.get("publisher"), "official": bool(S.get("official")),
            "series": S.get("series"), "months": S.get("months"), "rows": S.get("rows"),
-           "date": (S.get("date") or {}).get("column"),
-           "measure": {k: v for k, v in (S.get("measure") or {}).items() if k != "landed"} if S.get("measure") else None,
+           "date": (S.get("date") or {}).get("column"), "period": dict(S["period"]) if S.get("period") else None,
+           "measure": ({k: (str(v).replace("over months", "over %s" % (S.get("period") or {}).get("nouns", "months"))
+                            if k == "aggregation" else v) for k, v in (S.get("measure") or {}).items() if k != "landed"}
+                       if S.get("measure") else None),
            "metadata": [{k: v for k, v in m.items() if k != "landed"} for m in S.get("metadata") or []],
            "flag_column": (S.get("flags") or {}).get("column"), "dims": dims,
            "slices": [{k: v for k, v in s.items()} for s in S.get("slices") or []],
@@ -2918,6 +3095,8 @@ def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: i
            "dims": dims, "slices": slices, "breakdowns": bds, "rules": rules}
     if measures:
         out["measures"] = measures
+    if S.get("period") and int(S["period"].get("step") or 1) != 1:
+        out["period"] = {"kind": S["period"]["kind"], "window": S["period"]["window"]}
     if cols_all is not None and out["flag_column"] not in cols_all:
         out["flag_column"] = None
 

@@ -2397,6 +2397,7 @@ R_CUBE_HEAT = ("a crosstab of a table of series would add rows that mix totals a
 R_NO_SA = ("the table publishes no seasonally adjusted series: the month-on-month change of an unadjusted series shows "
            "its season, not momentum")
 R_RATE_CAL = "a rate or an index changes in points, not percent: its published aggregate is charted by its trend"
+R_PERIOD = "the chart reads monthly values; this table is %s (one value a %s), so it is not drawn"
 STRUCTURE_WATERFALL_PARTS = 10          # the largest parts shown; the rest folded into "other parts", then unallocated
 # the step the total less its published parts makes, in the words a reader needs: not "unallocated", a word of
 # accounting, but what it is (wave 4, track B). Final integration pass (6 Oct 2026): the waterfall shows the DECOMPOSITION OF
@@ -2462,9 +2463,16 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     big = shown[:2]
     lead = " and ".join("%s %s" % (it["segment"], it["text"]) for it in big)
     pw, lw = basis["windows"]["prior"], basis["windows"]["latest"]
-    levels = ("went from %s in the 12 months before to %s in the latest 12 months" if full else
-              "went from %%s in the %d matched months before to %%s in the same months of the latest 12" % k_used) % (
-                  hp["text"], hl["text"])
+    import nl_structure as _N
+    P = basis.get("period") or {"noun": "month", "nouns": "months", "window": 12, "step": 1}
+    Sp = {"period": P}
+    words = _N.period_words(Sp, None if full else k_used)
+    if int(P.get("step") or 1) == 1:
+        levels = ("went from %s in the 12 months before to %s in the latest 12 months" if full else
+                  "went from %%s in the %d matched months before to %%s in the same months of the latest 12" % k_used) % (
+                      hp["text"], hl["text"])
+    else:
+        levels = "went from %s in %s to %s in %s" % (hp["text"], words["prior"], hl["text"], words["latest"])
     closing = ("The parts add up to the change%s." % (" exactly" if u == 0 else " (gap %s, %s)" % (gap_text, cause_words))) \
         if omit else ("Not allocated (the total less its published parts, %s): %s." % (cause_words, unal["text"]))
 
@@ -2491,8 +2499,9 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.prior"] + \
         ["scenario:" + str(it["id"]) for it in shown] + (["scenario:" + str(unal["id"])] if unal is not None else []) + \
         ["scenario:headline.latest", "scenario:headline.change"]
-    sub_levels = "%s (%s to %s) to %s (%s to %s)" % (hp["text"], pw[0], pw[1], hl["text"], lw[0], lw[1]) if full else \
-        "%s to %s (%d matched months of each window)" % (hp["text"], hl["text"], k_used)
+    sub_levels = "%s (%s to %s) to %s (%s to %s)" % (hp["text"], _N.pkey(Sp, pw[0]), _N.pkey(Sp, pw[1]), hl["text"],
+                                                      _N.pkey(Sp, lw[0]), _N.pkey(Sp, lw[1])) if full else \
+        "%s to %s (%d matched %s of each window)" % (hp["text"], hl["text"], k_used, P["nouns"] if k_used != 1 else P["noun"])
     return _record(
         "contribution_waterfall", "Where the change in %s came from, by %s" % (_cut(measure, 60), bd["dim"]),
         "%s went from %s; each published part's contribution to the %s change" % (
@@ -2560,6 +2569,10 @@ def _b_structure_yoy(rep: Dict[str, Any], S: Dict[str, Any], where: Dict[str, An
     have a value). A cell's n is the number of published parts its figure adds up from (nl_structure.support)."""
     import numpy as np
     import nl_structure as NST
+    per = (basis.get("period") or {})
+    if int(per.get("step") or 1) != 1:
+        raise Refused(R_PERIOD % ({"quarter": "quarterly", "half-year": "half-yearly", "year": "annual"}.get(per.get("kind"), per.get("kind")),
+                                  per.get("noun")))
     if (rep.get("estimand") or {}).get("reconciles") is False:       # None: the engine charted no series to compare with
         raise Refused(R_RECON)
     dim = str(bd["dim"])
@@ -2667,6 +2680,10 @@ def _b_structure_mom(rep: Dict[str, Any], S: Dict[str, Any], where: Dict[str, An
     """The month-on-month calendar of the seasonally adjusted slice (S2, the momentum slice): month across, year down, the
     change from the month before in percent. The unadjusted series is never used for momentum."""
     import nl_structure as NST
+    per = (basis.get("period") or {})
+    if int(per.get("step") or 1) != 1:
+        raise Refused(R_PERIOD % ({"quarter": "quarterly", "half-year": "half-yearly", "year": "annual"}.get(per.get("kind"), per.get("kind")),
+                                  per.get("noun")))
     if S["measure"]["type"] in ("rate", "index"):
         raise Refused(R_RATE_CAL)
     w2 = _momentum_where(S, where)

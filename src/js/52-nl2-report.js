@@ -89,14 +89,17 @@
   function structureHtml(r) {
     var st = r.structure;
     if (!st || !st.kind || st.kind === 'none' || !arr(st.dims) || !st.dims.length) return '';
-    var num = fm().num, rows = st.dims.map(function (d) {
-      return '<tr><th scope="row">' + esc(d.column) + '</th><td>' + esc(String(d.role || '').replace(/_/g, ' ')) + '</td><td>' + esc(d.total || (d.nsa ? d.nsa + ' (unadjusted)' : '')) + '</td><td class="num">' + (d.parts !== undefined ? esc(num(d.parts, 0)) : '') + '</td><td class="num">' + (d.members !== undefined ? esc(num(d.members, 0)) : '') + '</td></tr>';
+    var num = fm().num, per = st.period && st.period.noun ? st.period : { noun: 'month', nouns: 'months' }, noTotal = st.dims.some(function (d) { return d.role === 'parts'; });
+    var rows = st.dims.map(function (d) {
+      var reads = d.total || (d.nsa ? d.nsa + ' (unadjusted)' : '') || (d.role === 'parts' ? 'the sum of its ' + num(d.parts || 0, 0) + ' parts (no total row)' : '');
+      return '<tr><th scope="row">' + esc(d.column) + '</th><td>' + esc(String(d.role || '').replace(/_/g, ' ')) + '</td><td>' + esc(reads) + '</td><td class="num">' + (d.parts !== undefined ? esc(num(d.parts, 0)) : '') + '</td><td class="num">' + (d.members !== undefined ? esc(num(d.members, 0)) : '') + '</td></tr>';
     }).join('');
     var fl = st.flags || {}, by = fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return num(fl.by_kind[k], 0) + ' rows ' + k.replace(/_/g, ' '); }).join(', ') : '';
-    var q = fl.quality_of_headline ? Object.keys(fl.quality_of_headline).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + num(fl.quality_of_headline[k], 0) + ' month' + (fl.quality_of_headline[k] === 1 ? '' : 's'); }).join(', ') : '';
+    var q = fl.quality_of_headline ? Object.keys(fl.quality_of_headline).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + num(fl.quality_of_headline[k], 0) + ' ' + per.noun + (fl.quality_of_headline[k] === 1 ? '' : 's'); }).join(', ') : '';
     var cs = (st.corrections || []).filter(function (c) { return c && c.kind; });
-    return '<h4>The table\'s structure</h4><p>A statistical table: ' + esc(num(st.rows, 0)) + ' rows, ' + esc(num(st.series, 0)) + ' series over ' + esc(num(st.months, 0)) + ' months' + (st.publisher ? ', published by ' + esc(PUBLISHER[st.publisher] || st.publisher) : '') +
-      '. Its totals sit beside their parts, so adding its rows would count the same amount more than once; the engine reads one series.</p>' +
+    return '<h4>The table\'s structure</h4><p>A statistical table: ' + esc(num(st.rows, 0)) + ' rows, ' + esc(num(st.series, 0)) + ' series over ' + esc(num(st.months, 0)) + ' ' + esc(per.nouns) + (st.publisher ? ', published by ' + esc(PUBLISHER[st.publisher] || st.publisher) : '') +
+      (noTotal ? '. It has no total row, so the engine adds up its parts (never a combined member together with its own parts) and says how many are suppressed; it reads one series.</p>' :
+        '. Its totals sit beside their parts, so adding its rows would count the same amount more than once; the engine reads one series.</p>') +
       '<div class="tscroll" tabindex="0" role="region" aria-label="The table\'s dimensions"><table class="dt nl2-structure"><thead><tr><th scope="col">Dimension</th><th scope="col">Role</th><th scope="col">The headline reads</th><th scope="col" class="num">Parts</th><th scope="col" class="num">Members</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       (by || q ? '<p class="note nl2-flags">' + (by ? 'The publisher\'s flags in the file: ' + esc(by) + '.' : '') + (q ? ' Quality marks on the headline\'s months: ' + esc(q) + '.' : '') + '</p>' : '') +
       (cs.length ? '<p class="note nl2-corrections">Corrected: ' + cs.map(function (c) { return esc(String(c.kind).replace(/_/g, ' ') + (c.dim ? ' (' + c.dim + ')' : '')); }).join('; ') + '.</p>' : '');

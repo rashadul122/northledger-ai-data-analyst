@@ -259,13 +259,27 @@
   }
   // "adds up" for each dimension whose total was checked against its parts: the verdict, the count of months it holds
   // on, the largest gap and what no published part holds in the latest 12 months
-  function sumCheckWords(c, U) {
+  // wave 5: a table's period (estimand.period): a window is 12 months, 4 quarters, or 1 year; a monthly table's words are unchanged
+  var PERIOD_MONTHLY = { noun: 'month', nouns: 'months', window: 12 };
+  function periodOf(R) { var p = R && R.estimand && R.estimand.period; return p && p.noun && p.nouns ? p : PERIOD_MONTHLY; }
+  function periodSpan(P) { return P.window > 1 ? P.window + ' ' + P.nouns : P.noun; }          // "12 months", "4 quarters", "year"
+  function periodWords(P) {
+    var one = P.window === 1;
+    return { latest: 'latest ' + periodSpan(P), prior: (one ? 'the ' : 'the ') + periodSpan(P) + ' before', cap: P.nouns.charAt(0).toUpperCase() + P.nouns.slice(1) };
+  }
+  function sumCheckWords(c, U, P) {
+    P = P || PERIOD_MONTHLY;
     var parts = c.parts === undefined || c.parts === null ? 'its' : 'the ' + c.parts;
-    var on = isFinite(c.complete_cells) ? (isFinite(c.within_tolerance) ? ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' months' : ' on the ' + c.complete_cells + ' months where every part has a value') : ' month by month';
+    if (c.built_from_parts || c.verdict === 'not possible (no total row)') {
+      // a table with no total row: nothing to check a total against; the headline is the sum of the parts
+      var sup = isFinite(c.suppressed_part_months) && c.suppressed_part_months > 0 ? ' ' + c.suppressed_part_months + ' ' + (P.noun === 'month' ? 'part-months' : 'part-' + P.nouns) + ' are suppressed in the two windows.' : '';
+      return 'Not possible to check: ' + c.dim + ' has no total row, so ' + parts + ' parts are added up, ' + P.noun + ' by ' + P.noun + '.' + sup;
+    }
+    var on = isFinite(c.complete_cells) ? (isFinite(c.within_tolerance) ? ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' ' + P.nouns : ' on the ' + c.complete_cells + ' ' + P.nouns + ' where every part has a value') : ' ' + P.noun + ' by ' + P.noun;
     var gap = '';
     if (c.max_residual && c.max_residual.text && c.max_residual.text !== 'n/a') gap = ', largest gap ' + c.max_residual.text;
     else if (isFinite(c.max_rel_residual)) gap = ', largest gap ' + (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') + ' of ' + c.total;
-    var un = c.unallocated_latest && c.unallocated_latest.text ? '; not allocated to a part in the latest 12 months: ' + c.unallocated_latest.text : '';
+    var un = c.unallocated_latest && c.unallocated_latest.text ? '; not allocated to a part in the latest ' + periodSpan(P) + ': ' + c.unallocated_latest.text : '';
     var head = c.verdict === 'adds_up' ? 'Adds up: ' : 'Does not add up cleanly: ';
     return head + c.total + ' = ' + parts + ' parts of ' + c.dim + on + gap + un + '.';
   }
@@ -286,17 +300,17 @@
   function estimandView(R) {
     var e = R && R.estimand;
     if (!e || typeof e !== 'object' || !e.text) return null;
-    var U = unitOf(R), F = e.figures || {}, semi = String(e.text).indexOf(';'), f = primaryFinding(R);
-    var months = function (x) { return x && x.months && x.months !== 12 ? 'the ' + x.months + ' matched months' : '12 months'; };
+    var U = unitOf(R), F = e.figures || {}, semi = String(e.text).indexOf(';'), f = primaryFinding(R), P = periodOf(R), W = P.window;
     var figs = [];
-    if (F.prior && F.prior.text) figs.push({ label: (F.prior.months && F.prior.months !== 12 ? 'The ' + F.prior.months + ' matched months before' : '12 months before'), value: String(F.prior.text) });
-    if (F.latest && F.latest.text) figs.push({ label: (F.latest.months && F.latest.months !== 12 ? 'The ' + F.latest.months + ' matched months, latest' : 'Latest 12 months'), value: String(F.latest.text) });
+    var pn = function (x) { return x === 1 ? P.noun : P.nouns; };
+    if (F.prior && F.prior.text) figs.push({ label: (F.prior.months && F.prior.months !== W ? 'The ' + F.prior.months + ' matched ' + pn(F.prior.months) + ' before' : W > 1 ? periodSpan(P) + ' before' : 'The ' + P.noun + ' before'), value: String(F.prior.text) });
+    if (F.latest && F.latest.text) figs.push({ label: (F.latest.months && F.latest.months !== W ? 'The ' + F.latest.months + ' matched ' + pn(F.latest.months) + ', latest' : W > 1 ? 'Latest ' + periodSpan(P) : 'Latest ' + P.noun), value: String(F.latest.text) });
     if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text) });
     if (F.change_pct && F.change_pct.text) figs.push({ label: 'Change, %', value: String(F.change_pct.text), lead: true });
     var inf = e.inference || null, st = R.structure || null;
     return { title: semi < 0 ? String(e.text) : String(e.text).slice(0, semi), what: semi < 0 ? '' : String(e.text).slice(semi + 1).trim(), figures: figs,
       process: processOf(R, f), described: !!(inf && inf.mode === 'official_aggregate'),
-      checks: (e.sum_checks || []).filter(function (c) { return c && c.dim; }).map(function (c) { return sumCheckWords(c, U); }),
+      checks: (e.sum_checks || []).filter(function (c) { return c && c.dim; }).map(function (c) { return sumCheckWords(c, U, P); }),
       excluded: (e.excluded || []).filter(function (x) { return x && x.what; }).map(function (x) { return { what: String(x.what), why: String(x.why || '') }; }),
       source: planSourceWords(e, st), how: inf && inf.how_known && inf.how_known.length ? inf.how_known.join('; ') : '',
       revisions: inf && inf.revisions ? String(inf.revisions) : '', quality: inf && inf.quality && inf.quality.codes ? inf.quality : null };
@@ -1907,9 +1921,10 @@
     if (latest || pct) {
       lead = basisF;
       var proc = !!(EV && EV.process);       // an official aggregate: the engine's grade is a process grade, said on the tile
-      if (latest) kpis.push({ label: EV && R.estimand.measure && R.estimand.measure.label ? R.estimand.measure.label + ', latest 12 months' : latest.label, value: String(latest.text),
-        sub: prior ? String(prior.text) + ' in the 12 months before' : '', grade: itemGrade(latest).grade, process: proc });
-      if (pct) kpis.push({ label: 'Change on the 12 months before', value: String(pct.text),
+      var KW = periodWords(periodOf(R));
+      if (latest) kpis.push({ label: EV && R.estimand.measure && R.estimand.measure.label ? R.estimand.measure.label + ', ' + KW.latest : latest.label, value: String(latest.text),
+        sub: prior ? String(prior.text) + ' in ' + KW.prior : '', grade: itemGrade(latest).grade, process: proc });
+      if (pct) kpis.push({ label: 'Change on ' + KW.prior, value: String(pct.text),
         sub: [chg ? String(chg.text) : '', basisF && interval(basisF.why) && !proc ? '95% interval ' + interval(basisF.why) : ''].filter(Boolean).join('; ') + (proc ? ' (described)' : ''), grade: itemGrade(pct).grade, process: proc });
     } else if (kfs.length) {
       kfs.forEach(function (k) { kpis.push({ label: String(k.label || ''), value: String(k.text), sub: '', grade: gradeOf(k.grade) }); });
@@ -2125,12 +2140,13 @@
       if (EV) {
         var chk = (R.estimand.sum_checks || []).filter(function (c) { return c && c.dim; });
         pa.push({ type: 'h2', num: '', text: 'The table\'s structure and what was checked', id: 'm-structure' });
-        if (chk.length) pa.push({ type: 'table', table: { title: 'Each total checked against its parts', cols: ['Dimension', 'Total', 'Parts', 'Months checked', 'Within tolerance', 'Largest gap', 'Not allocated, latest 12 months'],
-          rows: chk.map(function (c) { return [String(c.dim), String(c.total), c.parts === undefined || c.parts === null ? '' : String(c.parts), isFinite(c.complete_cells) ? String(c.complete_cells) : '', isFinite(c.within_tolerance) ? String(c.within_tolerance) : '',
+        var PW = periodWords(periodOf(R));
+        if (chk.length) pa.push({ type: 'table', table: { title: 'Each total checked against its parts', cols: ['Dimension', 'Total', 'Parts', PW.cap + ' checked', 'Within tolerance', 'Largest gap', 'Not allocated, ' + PW.latest],
+          rows: chk.map(function (c) { return [String(c.dim), c.built_from_parts ? 'no total row' : String(c.total), c.parts === undefined || c.parts === null ? '' : String(c.parts), isFinite(c.complete_cells) ? String(c.complete_cells) : '', isFinite(c.within_tolerance) ? String(c.within_tolerance) : '',
             c.max_residual && c.max_residual.text ? String(c.max_residual.text) : isFinite(c.max_rel_residual) ? (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') : '', c.unallocated_latest && c.unallocated_latest.text ? String(c.unallocated_latest.text) : '']; }) },
           source: 'Source: NorthLedger engine, from the table\'s own published series. A total adds up when it is within half a unit of the last published digit of its parts on 95% or more of the months where every part has a value.' });
         var fl = R.structure && R.structure.flags, byk = fl && fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return Number(fl.by_kind[k]).toLocaleString('en-US') + ' rows ' + k.replace(/_/g, ' '); }) : [];
-        var qh = EV.quality && EV.quality.codes ? Object.keys(EV.quality.codes).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + EV.quality.codes[k] + ' month' + (EV.quality.codes[k] === 1 ? '' : 's'); }) : [];
+        var qh = EV.quality && EV.quality.codes ? Object.keys(EV.quality.codes).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + EV.quality.codes[k] + ' ' + periodOf(R).noun + (EV.quality.codes[k] === 1 ? '' : 's'); }) : [];
         if (byk.length || qh.length) pa.push({ type: 'bullets', items: [byk.length ? 'The publisher\'s flags in the file: ' + byk.join(', ') + '.' : '', qh.length ? 'Quality marks on the headline\'s months: ' + qh.join(', ') + '.' : ''].filter(Boolean) });
       }
       var tests = analyses.filter(function (a) { return a && a.test; });
@@ -2317,10 +2333,12 @@
     if (R.estimand && typeof R.estimand === 'object' && R.estimand.text) {
       var E = R.estimand, fig = function (x) { return x && typeof x === 'object' && x.text ? (isFinite(x.value) && x.value !== null ? { value: x.value, text: str(x.text, 40) } : { text: str(x.text, 40) }) : null; };
       est = { text: str(E.text, 400), slice: (E.slice || []).slice(0, 8).map(function (x) { return { dim: str(x.dim, 120), member: str(x.member, 120), why: str(x.why, 200) }; }),
-        measure: E.measure ? { label: str(E.measure.label, 120), uom: str(E.measure.uom, 40), type: str(E.measure.type, 20), aggregation: str(E.measure.aggregation, 60), scale_applied: E.measure.scale_applied } : null,
+        measure: E.measure ? { label: str(E.measure.label, 120), uom: str(E.measure.uom, 40), type: str(E.measure.type, 20), type_basis: E.measure.type_basis ? str(E.measure.type_basis, 40) : undefined, aggregation: str(E.measure.aggregation, 60), scale_applied: E.measure.scale_applied } : null,
         comparison: E.comparison || null, figures: {},
-        sum_checks: (E.sum_checks || []).slice(0, 4).map(function (c) { return { dim: str(c.dim, 120), total: str(c.total, 120), parts: c.parts, verdict: str(c.verdict, 20), complete_cells: c.complete_cells,
-          max_rel_residual: c.max_rel_residual, unallocated_latest: fig(c.unallocated_latest) || undefined }; }),
+        period: E.period && E.period.noun ? { kind: str(E.period.kind, 20), noun: str(E.period.noun, 20), nouns: str(E.period.nouns, 20), window: E.period.window } : undefined,
+        sum_checks: (E.sum_checks || []).slice(0, 4).map(function (c) { return { dim: str(c.dim, 120), total: c.total === null || c.total === undefined ? null : str(c.total, 120), parts: c.parts, verdict: str(c.verdict, 40), complete_cells: c.complete_cells,
+          max_rel_residual: c.max_rel_residual, unallocated_latest: fig(c.unallocated_latest) || undefined, built_from_parts: c.built_from_parts === true ? true : undefined,
+          suppressed_part_months: isFinite(c.suppressed_part_months) ? c.suppressed_part_months : undefined }; }),
         excluded: (E.excluded || []).slice(0, 6).map(function (x) { return { what: str(x.what, 120), why: str(x.why, 200) }; }), plan_source: E.plan_source };
       ['prior', 'latest', 'change', 'change_pct'].forEach(function (k) { var f = fig(E.figures && E.figures[k]); if (f) est.figures[k] = f; });
       var I = E.inference;

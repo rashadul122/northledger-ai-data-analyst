@@ -720,7 +720,8 @@ def publishes_errors(columns: Iterable[Dict[str, Any]]) -> bool:
 
 def official_inference(publisher: Dict[str, Any], hidden: Iterable[str], why_total: str, measure_words: str,
                        describe: Dict[str, Any], months: Optional[int], aggregation: str,
-                       quality: Optional[Dict[str, int]] = None, revisions: str = "") -> Dict[str, Any]:
+                       quality: Optional[Dict[str, int]] = None, revisions: str = "",
+                       period: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The findings[].inference record of an official aggregate (T4): how it is known to be one, the change it
     describes, and what the engine's grade is then a grade of. `hidden`: column names never to name."""
     gone = {_norm_col(h) for h in hidden}
@@ -728,12 +729,15 @@ def official_inference(publisher: Dict[str, Any], hidden: Iterable[str], why_tot
     held = len(publisher["columns"]) - len(named)
     cols = ", ".join(named) + ((" and %d column%s you withheld" % (held, "" if held == 1 else "s")) if held else "")
     how = ["publisher columns %s (%s)" % (cols, publisher["name"]), why_total, measure_words]
-    what = "monthly totals" if aggregation == "sum" else "monthly averages"
+    adj = str((period or {}).get("adjective") or "monthly")            # wave 5, gap 4: quarterly and annual tables
+    noun_ = str((period or {}).get("noun") or "month")
+    to = "%s-to-%s" % (noun_, noun_)
+    what = "%s totals" % adj if aggregation == "sum" else "%s averages" % adj
     return {"mode": "official_aggregate", "publisher": publisher["key"],
             "how_known": [x for x in how if x],
             "describe": describe,
             "revisions": revisions or "the file marks no value as revised or preliminary",
             "quality": quality,
-            "grade_label": "process grade: month-to-month noise in %s%s; not a test of the published %s"
-                           % (("%d " % months) if months else "", what,
+            "grade_label": "process grade: %s noise in %s%s; not a test of the published %s"
+                           % (to, ("%d " % months) if months else "", what,
                               "total" if aggregation == "sum" else "figure")}

@@ -2565,6 +2565,8 @@ def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Opti
             body = "%.0f" % x if x >= 1 else "%.3g" % x
         elif exact_small and x > 0 and not re.search(r"[1-9]", body):
             body = format(int(round(x)), ",") if x >= 1 else "%.3g" % x
+        if exact_small and x == 0:
+            body = "0"                                      # a residual that is exactly nothing is "$0", not "$0.0B"
     if not re.search(r"[1-9]", body):
         v = 0.0                               # rounds to zero: no sign ("$0.0B", never "−$0.0B")
     sign = ("+" if v > 0 else "−" if v < 0 else "") if signed else ("−" if v < 0 else "")
@@ -2886,7 +2888,9 @@ def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
     for d in S["dims"]:
         if d["role"] in ("measure", "components") and isinstance(where.get(d["column"]), str):
             return str(where[d["column"]])
-    return str(S["measure"].get("label_hint") or S["measure"]["column"])
+    # a table's one constant label ("Population") names a count or a stock; a currency flow keeps the measure column's name, as
+    # it always has (the report's headline of a table with no label dimension reads "VALUE, Total, ...")
+    return str((S["measure"].get("label_hint") if not S["measure"].get("currency") else "") or S["measure"]["column"])
 
 
 def _r(v: Optional[float], nd: int = 6) -> Optional[float]:

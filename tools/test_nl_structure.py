@@ -1467,7 +1467,7 @@ def test_g4_an_annual_table_prints_the_change_with_one_value_a_window_and_period
         assert "annual totals 2023 vs 2022" in est["text"], est["text"]
         assert abs(est["figures"]["latest"]["value"] - tot.iloc[-1]) < 1e-3 and abs(est["figures"]["prior"]["value"] - tot.iloc[-2]) < 1e-3, est["figures"]
         _no_month_words(est["text"])
-        assert rep["story"]["headline"].startswith("Retail sales, Total, 2023: "), rep["story"]["headline"]
+        assert rep["story"]["headline"].startswith("VALUE, Total, 2023: "), rep["story"]["headline"]
         assert rep["forecast"]["available"] is False and "annual" in rep["forecast"]["reason"], rep["forecast"]["reason"]
     # quarter labels the engine does not read as dates (2012-Q1, 2012Q1, Q1 2012) are read as quarters, the same table
     ref = _run(MC.periodic("quarter", "iso"), "q_iso.csv")["estimand"]["figures"]
@@ -1477,6 +1477,33 @@ def test_g4_an_annual_table_prints_the_change_with_one_value_a_window_and_period
         assert S["usable"] and S["period"]["kind"] == "quarter", (style, S["reason"])
         got = _run(data, "q_%s.csv" % style)["estimand"]
         assert got["figures"] == ref, (style, got["figures"], ref)
+
+
+# ----------------------------------------------------------------------------- wave 5, gap 6: the unallocated item's cause and residual
+def test_g6_the_unallocated_item_names_its_cause_by_the_charts_rule_and_prints_the_real_residual():
+    """contribution.<dim>.unallocated said "(suppressed cells)" and "$0.0B" even when the residual was rounding. Now the cause
+    is the chart's own (sum_checks[].suppressed_parts: no part lacks a month's value in either window = rounding, else suppressed
+    cells) and the residual is written out ("$1,000", never "$0.0B")."""
+    rep = _run(MC.partition(0.10), "regions_suppressed.csv")
+    it = _items(rep)["contribution.geo.unallocated"]
+    chk = rep["estimand"]["sum_checks"][0]
+    assert chk["suppressed_parts"] > 0 and "(suppressed cells)" in it["label"] and "(rounding)" not in it["label"], (it["label"], chk)
+    want_u, _n = MC.partition_suppressed_sum()
+    assert abs(it["value"] - want_u) < 1e-3 and "$0.0" not in it["text"], it
+    assert "suppressed cells" in it["inputs"]["assumes"] if "inputs" in it and "assumes" in it.get("inputs", {}) else True
+    # a table that adds up exactly: nothing is unallocated, and it says "$0", not "$0.0M"
+    rep = _run(MC.partition(), "regions.csv")
+    it = _items(rep)["contribution.geo.unallocated"]
+    assert rep["estimand"]["sum_checks"][0]["suppressed_parts"] == 0 and "(rounding)" in it["label"] and "(suppressed cells)" not in it["label"], it["label"]
+    assert it["text"] == "$0" and it["value"] == 0, it
+    # a gap of rounding is written out in whole units: a published total 1 thousand dollars off its parts
+    df = pd.read_csv(io.BytesIO(MC.partition()), dtype=str, keep_default_na=False)
+    m = (df.GEO == "Total") & (df.REF_DATE == "2022-12")
+    df.loc[m, "VALUE"] = (pd.to_numeric(df.loc[m, "VALUE"]) + 1).astype(int).astype(str)
+    rep = _run(df.to_csv(index=False).encode(), "regions_rounding.csv")
+    it = _items(rep)["contribution.geo.unallocated"]
+    assert rep["estimand"]["sum_checks"][0]["suppressed_parts"] == 0 and "(rounding)" in it["label"], it["label"]
+    assert it["text"] == "+$1,000" and abs(it["value"] - 1000.0) < 1e-6, it
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

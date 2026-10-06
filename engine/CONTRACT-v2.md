@@ -53,7 +53,7 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
 | `llm` | object | 2 | `{used: false, model: null, consent: false, guard: {...}}`; the adapter never calls a model |
 | `scenarios` | object | 2 | the headline claim broken down for the report writer (design B, 29 Sep 2026): `{basis, items[], refused[], note}`, §5.8. Always present; `{basis: null, items: [], refused: [], note: ""}` on a refusal |
 | `summary` | object | 2 | the manager's bottom line (fixer round, 24 Sep 2026): `{lines: [{kind: "moved"|"act"|"plan", text, finding_ids[]}], labels: {finding_id: plain label}, monitoring: [finding_id]}`. `lines` holds at most three sentences built from the engine's facts, every number printed with `narrate.story_number` from a fact the line lists: what moved and why (the primary claim, the steps where what the file covers changed and its like-for-like restatement, a fall since a peak), what to act on (the CONFIRMED business claims, or none), and the planning number (the primary series' forecast, graded). `labels` names each business and forecast claim in the reader's words ("Rent, monthly total", "Ledger lines a month"); an average of a measure the AI plan reads is named from its column and the plan's own words for it, its `label` when the plan gives one and its unit when that names a real unit ("Average value (CAD per USD), the average month", "Average USD/CAD exchange rate (CAD per USD), ..."), never from a value in the file (a long table with one series names it after its value column, never after a column that holds one value throughout: the live FX file's rate was "canada", from GEO). `monitoring` lists the claims about the ledger's own line count when the file has a money total: kept off the first screen, the tiles and the bottom line; they stay in the tables and the analyst view |
-| `estimand` | object or null | 2 | WAVE 4 (track A1, 1 October 2026): what the headline IS, for a file read by its structure (§5.10); null otherwise. `{text, slice[{dim, member, role, why}], measure{label (the slice's member of a measure dimension, "Total retail sales", else the column), uom, scale, scale_applied, type, aggregation}, comparison{latest[a,b], prior[a,b]}, figures{prior, latest, change, change_pct}: {value, text} (base units, the file's scale applied; `prior`/`latest` also carry `months`), sum_checks[{dim, total, parts, by, complete_cells, within_tolerance, max_rel_residual, max_residual{value, text}, suppressed_parts, unallocated_latest{value, text}, unallocated_prior{value, text}, verdict}] (`suppressed_parts`, 6 October 2026: how many parts of the dimension lack a month's value in either window, 0 when the not-allocated amount is only the rounding of the published figures; engine report only, not in `results_for_ai`. The `unallocated_*` texts of a gap that would read as zero are written out in whole units, "−$3,000", never "$0.0B"), excluded[{what, dim, why}], plan_source: "engine_default"\|"ai"\|"ai_corrected", slice_id, reconciles, complete, months_used, months_left_out[], corrections[], inference}` (`inference` is track A2's record of the headline claim, the same record as that finding's `findings[].inference` (§5.11 T4), a copy; null when the table is not an official aggregate). `text`: "Canada · Retail trade [44-45] · Total retail sales · Unadjusted; dollars (file in thousands ×1,000); 12-month totals Aug 2025–Jul 2026 vs Aug 2024–Jul 2025". `reconciles` is true when the slice's monthly values equal the engine's charted series to 1e-6 (the headline claim's trend chart), null when the engine charted none to compare with, false only in a refused block (§5.8: `basis.reconciles` is false then too, and true otherwise). The page and the PDF print it first; `results_for_ai` sends it first |
+| `estimand` | object or null | 2 | WAVE 4 (track A1, 1 October 2026): what the headline IS, for a file read by its structure (§5.10); null otherwise. `{text, slice[{dim, member, role, why}], measure{label (the slice's member of a measure dimension, "Total retail sales", else the column), uom, scale, scale_applied, type, aggregation}, comparison{latest[a,b], prior[a,b]}, figures{prior, latest, change, change_pct}: {value, text} (base units, the file's scale applied; `prior`/`latest` also carry `months`), sum_checks[{dim, total, parts, by, complete_cells, within_tolerance, max_rel_residual, max_residual{value, text}, suppressed_parts, unallocated_latest{value, text}, unallocated_prior{value, text}, verdict}] (`suppressed_parts`, 6 October 2026: how many parts of the dimension lack a month's value in either window, 0 when the not-allocated amount is only the rounding of the published figures; engine report only, not in `results_for_ai`. The `unallocated_*` texts of a gap that would read as zero are written out in whole units, "−$3,000", never "$0.0B"), excluded[{what, dim, why}], plan_source: "engine_default"\|"ai"\|"ai_corrected", slice_id, reconciles, complete, months_used, months_left_out[], corrections[], inference}` (`inference` is track A2's record of the headline claim, the same record as that finding's `findings[].inference` (§5.11 T4), a copy; null when the table is not an official aggregate). `text`: "Canada · Retail trade [44-45] · Total retail sales · Unadjusted; dollars (file in thousands ×1,000); 12-month totals Aug 2025–Jul 2026 vs Aug 2024–Jul 2025". `reconciles` is true when the slice's monthly values equal the engine's charted series to 1e-6 (the headline claim's trend chart), null when the engine charted none to compare with, false only in a refused block (§5.8: `basis.reconciles` is false then too, and true otherwise). The page and the PDF print it first; `results_for_ai` sends it first. WAVE 5 (7 October 2026, section 5.12) adds `built_from` (a table with no total row), `measure_choice` (a table whose members are different measures), `period` and `periods_used` (a quarterly or an annual table), `measure.type_basis` and `measure.type_why`, and sum-check entries with `verdict: "not possible (no total row)"`, `built_from_parts` and `suppressed_part_months` |
 | `structure` | object or null | 2 | the table's structure (§5.10, `nl_structure.public`): `{kind, usable, reason, version, publisher, official, series, months, rows, date, measure, metadata[], flag_column, dims[], slices[], breakdowns[], flags, corrections[], hash, detect_seconds, slice{id, where, column}, file_health}`; null for a file read as before (a business export whose members add up, a panel with no relation, a file with no dimension). A table refused for its structure (`kind: "cube_incomplete"`) carries it with the reason |
 
 A refusal (`ok: false`) returns every key with its empty value.
@@ -151,6 +151,10 @@ Wave 4 (P0-13, section 5.11):
   series) or by the calendar (one row per date, 15 or more dates a month). The block then shows the next forecast
   series the engine made, or none (`available: false`, `reason` "No forecast of the rows a month is shown: ..."), and
   the story's "what's next" says so in one line.
+- `frequency` (wave 5, 7 October 2026): `"quarter"`, `"half-year"` or `"year"` when the table is read in those periods
+  (`estimand.period.step` is not 1): the block is `available: false`, has no `audit`, and its `reason` is "No forecast is
+  shown: the table is quarterly (one value a quarter), and the forecast reads monthly series only, so it has no back-test
+  either."; the story's "what's next" is that one line, and no forecast finding is made (section 5.12).
 
 ### 2.6 `reproducibility` (provenance)
 
@@ -393,6 +397,15 @@ dimension is ignored with a note in `ai_plan.refused` ("keep_rows on Type was ig
 rows"). Retail (465 series): 1,993 bytes, S1 headline, S2 momentum (seasonally adjusted), S3 component (e-commerce), B1
 GEO (13 parts), B2 NAICS depth 1 (9 parts).
 
+*Wave 5 additions to the block* (7 October 2026, section 5.12): a dimension that names what is measured adds
+`measures: {dim, members[{id: "M1", name, uom, type, default, precision}]}` (ids `^M\d{1,2}$`, in file order; a plan names one
+with `"measure_member": "M1"`, an id only; `_validate_plan` keeps it only when the table holds it and it is not a precision
+member, else a note in `ai_plan.refused`); a dimension with no total row is `{role: "partition", no_total: true, parts: N}` (no
+`total`) and its slice leaves the dimension out of `where`; a quarterly, half-yearly or annual table adds
+`period: {kind, window}`. The roles are the worker's vocabulary (`insight-proxy/src/plan.js STRUCTURE_ROLES`): a rate's
+published aggregate is `"aggregate"` (the adapter wrote `"rate_aggregate"`, which the worker would have dropped the whole block
+for), and a dimension of one member is left out of `dims`.
+
 ### 5.5 The adapter's personal-column check
 
 On top of the engine's scan (never instead of it): a column the scan did not flag joins `privacy.flagged`, with
@@ -500,7 +513,11 @@ unallocated_latest}`, excluded `{what, why}`, plan_source, inference (`_inferenc
 (`_structure_for_ai`: kind, usable, publisher, series, months, dims `{column, role, members, total, parts, nsa, sa,
 depths}`, slice, reason, flags `{column, by_kind, quality_of_headline}`, corrections `{dim, kind}`), or null. Every figure in
 them is also a scenario item (§5.8), so the worker's guard can index it. Then the forecast audit and the trend tests
-(track A2).
+(track A2). Wave 5 (section 5.12) adds, only when they apply: `estimand.built_from`, `estimand.measure_choice`,
+`estimand.period` (`{kind, noun, nouns, window}`, a quarterly or an annual table), `estimand.measure.type_basis`
+(always), `estimand.sum_checks[].built_from_parts` and `suppressed_part_months`, `estimand.figures.<k>.months` (only when a
+window figure adds up fewer periods than the whole window), and `forecast: {frequency, reason}` for a table with no
+forecast because of its period.
 
 **The trend test, the forecast's back-test and the layout rows (WAVE 4, track B, 6 October 2026).** `analyses[]` carries
 `{title, sentence, method}` and, for a trend analysis, `test`: `{verdict, name, n, p, p_random_walk, size {nominal, simulated,
@@ -932,7 +949,12 @@ breakdown (at most 4: the plan's `breakdowns`, else every one) and part, in grou
 percent, kind change, unit "%", only when its 24 months are all published), `share_level.<dim>.<member>` (its share of the
 latest window, kind percent), `share_change.<dim>.<member>` (its share of the change, only when every part moved the way
 the total did: else `refused` says so, MIXED_SHARES); and `contribution.<dim>.unallocated`, the total less its published
-parts (the publisher's suppressed cells) as a change, its `assumes` naming both windows' unallocated amounts. `<dim>` is
+parts as a change, its `assumes` naming both windows' unallocated amounts. Its label and `assumes` name the cause by the
+chart's own rule (wave 5, 7 October 2026: `sum_checks[].suppressed_parts`, the number of parts that lack a month's value in
+either window): "(suppressed cells)" when some part does, "(rounding)" when none does (a table in thousands adds up to within
+a few units), and the amount is the real residual written out in whole units ("+$1,000", "−$6,000": never "$0.0B"; exactly
+nothing is "$0"). A breakdown of a dimension with NO total row has no `unallocated` item (`basis.breakdowns[].no_total` true:
+the headline is the sum of those parts, so nothing is left over). `<dim>` is
 `nl_scenarios.dim_key` (an acronym in brackets, "naics", else the slug, "geo"); `<member>` is `member_keys` (its code,
 "455", "44_45", "459a", else its slug, "ontario"). The forecast items as before; `facts.{months, first, last}` of the
 headline series. Texts are the estimand's (`nl_structure.money`: "$834.7B", "+$10.2B", "−$144.7M", a figure that rounds
@@ -941,7 +963,10 @@ every derived item has grade null, the claim's grade as `parent_grade`, and for 
 "descriptive arithmetic on published totals; part of a change graded WATCH, not graded itself". Reconciliation: the
 slice's monthly values equal the engine's charted series to 1e-6 (`estimand.reconciles`), or the whole block is refused
 (NOT_RECONCILED); each breakdown's parts and unallocated add up (math.fsum) to the change to 1e-6, or that breakdown is left
-out with a reason. A rate or an index has no contributions: "a rate is never added or averaged across members: each
+out with a reason. In a quarterly or an annual table every period word of the block is the period's own (`basis.period`
+{kind, noun, nouns, step, window}, only when it is not monthly): "the latest 4 quarters against the 4 before", "the 3 matched
+quarters before", "the latest year", `facts.months`' label "Quarters with a value in the headline series", its first and last
+texts "Q1 2012", "Q4 2023"; the ids stay. A rate or an index has no contributions: "a rate is never added or averaged across members: each
 member's own rate is published, and the headline is the published aggregate, so there are no contributions". The writer's
 table (`nl_scenarios.table`) for a structure basis is the first breakdown: `[<dim>, "Contribution to the change", "Share
 of the change", "Own change", "Share of the latest year"]` less any column no row fills. In the payload byte budget (`_budget_drop_order`) a breakdown's `contribution.<dim>.unallocated` item is the last of the segment items
@@ -1045,7 +1070,7 @@ by a centred 2×12 average, of the logs) is the unadjusted copy (`adjustment`, `
 of each partition add up to the adjusted total is recorded (`sa_adds_up`: retail's do). A dimension whose unit of measure
 changes with its members (dollars beside units, an index on two bases) is a `measure` dimension with `unit_of`: each slice
 fixes one member, never mixed. Roles: partition | hierarchy | adjustment | measure | components | rate_aggregate | single |
-flat_additive | constant | unresolved.
+flat_additive | constant | unresolved | parts (wave 5: no total row, section 5.12).
 
 *Measure type and scale.* From the unit: a currency is a flow (a stock under inventories, outstanding, balance, holdings,
 assets, debt, stock), persons or a number a count (a stock under employment, population, labour force), percent, rate or
@@ -1178,6 +1203,277 @@ months the publisher marked revised or preliminary ("the file marks 2 months of 
 `describe.prior` and `describe.latest` are the estimand's own 12-month totals (a flow or a count; else its 12-month
 averages), not the finding's monthly averages: retail $834.7B to $864.0B, +3.5%. The record is copied into
 `estimand.inference` (§1), which `results_for_ai` sends first.
+
+### 5.12 Generality (WAVE 5, 7 October 2026: `engine/nl_structure.py`, `plan/WAVE4-A-DESIGN.md` "Wave 5")
+
+Five gaps the golden runner's offline predictions named, fixed generally (no table id, no publisher's table name; the
+StatCan column layout is still recognised as before). Every test cube is synthetic (`tools/fixtures/structure/make_cubes.py`).
+The retail dev file is unchanged in every figure and every scenario id: the only differences are the new keys
+(`estimand.measure.type_basis`) and the unallocated items' label, text and `assumes` (gap 6).
+
+**1. No-total partitions** (`role: "parts"`). In an official table, when no member is a total of the others (the flat search,
+the coded hierarchy and the subset-sum hierarchy found none, and no name says "total"), the members are the PARTS of a table
+with no total row (`_parts_only`). Left out of the parts: a COMBINED member (one that equals the sum of 2 or more others:
+`nl_structure._subset_partition` on a 3-cell fingerprint, each match verified on every cell, the 30 most dominant members,
+0.5 s), a member identical to an earlier one, a member inside a coded parent that is also listed (459993 inside 459, kept
+only when the parent bounds it everywhere), and an alternative total named "excluding". A subtotal is never read as the total:
+a code-free hierarchy whose root leaves more than max(1, members / 6) members explained only by bounding is rejected (13
+provinces and a Prairies group, no Canada row). A plain dimension of an official table is no longer read as "components of its
+largest member" (step 5 of the search keeps that for a total's name or a dimension that names measures). A flow's headline for
+that dimension is the sum of the parts, month by month: the slice's `where` holds the token `"(sum of the parts)"`; in COMPLETE
+months only (every part has a value) when the table's own latest windows (anchored at the last month any part has a value) hold
+at least 6 months complete in both and the last complete month is within 3 months of that anchor; else the REPORTED parts are
+summed and the estimand counts what was suppressed and is marked incomplete. Any other measure (a stock, a rate, an index, an
+ambiguous count) has no valid aggregate: `role: "single"` with `single_by: "dominance"` (the most covered, then the most
+dominant member), the estimand's `excluded` says "one member shown, not a national figure: this table has no total row, and a
+stock is never added or averaged across members" ("a total" for a dimension that is not geographic), and such a table is read
+by its structure when its dimension is geographic (a table of currencies stays a panel read side by side). The estimand:
+`text` "<measure> · the sum of 5 regions; built from 5 regions; this table has no total row; complete months only: the 2
+months where a part is suppressed are left out; dollars (...); totals of the 10 months with a value in both windows (...)", and
+`built_from` `{dim, noun ("regions" for a geographic dimension, else "members"), n, text, complete_months_only, incomplete,
+suppressed_part_months (part-months with no value in the two comparison windows), months_dropped[], latest_month_in_table,
+combined[], duplicates[], dims[]}`; `sum_checks[]` has `{dim, total: null, parts: 5, by: "parts", verdict: "not possible (no
+total row)", built_from_parts: true, suppressed_part_months, unallocated_*: "none ..."}`; `excluded[]` names each combined member
+("equals the sum of Alpha, Bravo and Charlie (each also a member): left out of the sum, never added to its own parts"). The
+breakdown's parts carry contribution and growth as for any partition; there is no `unallocated` item. `check_rows` adds
+`combined_with_parts`. In the report, `structure.dims[]` has `role: "parts"`, `no_total: true`, `combined`, `duplicates`,
+`nested`, `complete_only`, and the structure table's "The headline reads" cell says "the sum of its 5 parts (no total row)".
+T4 (official aggregate): the headline is "the sum of the table's 5 published regions (it has no total row)"; described, not
+tested. Example (`results_for_ai.estimand.built_from`, a table of five regions with two suppressed cells):
+
+```json
+{
+ "dim": "GEO",
+ "noun": "regions",
+ "n": 5,
+ "text": "built from 5 regions; this table has no total row",
+ "complete_months_only": true,
+ "incomplete": false,
+ "suppressed_part_months": 2,
+ "months_dropped": [
+  "2021-11",
+  "2022-03"
+ ],
+ "combined": []
+}
+```
+
+**2. Measure dimensions.** A dimension whose members carry different units, or whose labels say they are different measure types
+(a rate, a count, an index, the precision of another member), in one value column, is detected FIRST (`_measure_dims`): each
+member typed on its own (`_member_types`: its unit, the unit column's value for it, and the words of its label), the table's
+measure becomes the default member's, and the other dimensions' sum-checks read the default member's cells only. Detection:
+the unit varies with the dimension, or at least two kinds appear (or one member is a precision member) and at least half the
+labels hold a type word (rate, percent, index, a stock or a flow word, standard error ...), with 2 to 40 members. A precision
+member (standard error, margin of error, confidence interval, coefficient of variation: `_PRECISION`) has `type:
+"precision"`: never the default, never the headline (a plan naming it is refused with a note), never summed, no slice. The
+documented default (planner off): a currency flow, then a count flow, then a stock, then an ambiguous count, then a rate or an
+index; a total's name breaks a tie, then file order. `dims[].measures[]` = `{id: "M1", index, name, uom, type, type_basis,
+type_why, aggregation, currency, precision, default}` (ids in file order). The profile block lists them and a plan may name one
+with `"measure_member": "M1"`; the other members are `other_measure` slices (S3 ...). `estimand.measure_choice` =
+`{dim, chosen{id, name, uom, type, type_basis}, by: "default"|"plan", rule, alternatives[{id, name, uom, type, precision, why}]}`;
+the estimand's text says "one measure shown: Employment, chosen by the engine's default order (a currency flow, then a count
+flow, then a stock, then a rate or an index; never a precision member)" or "..., chosen by the plan"; each alternative is in
+`excluded`. `check_rows` flags several members of a measure dimension as `mixed_units` (their units differ) or
+`mixed_measures`. Example (profile block, `plan.measure_member`, `estimand.measure_choice`):
+
+```json
+{"structure.measures": {
+ "dim": "Labour force characteristics",
+ "members": [
+  {
+   "id": "M1",
+   "name": "Unemployment rate",
+   "uom": "Percent",
+   "type": "rate",
+   "default": false,
+   "precision": false
+  },
+  {
+   "id": "M2",
+   "name": "Employment",
+   "uom": "Persons",
+   "type": "stock",
+   "default": true,
+   "precision": false
+  },
+  {
+   "id": "M3",
+   "name": "Standard error of the unemployment rate",
+   "uom": "Percent",
+   "type": "precision",
+   "default": false,
+   "precision": true
+  }
+ ]
+},
+ "plan": {"measure_member": "M1"},
+ "estimand.measure_choice (plan M1)": {
+ "dim": "Labour force characteristics",
+ "chosen": {
+  "id": "M1",
+  "name": "Unemployment rate",
+  "uom": "Percent",
+  "type": "rate",
+  "type_basis": "a rate: a level, never summed"
+ },
+ "by": "plan",
+ "rule": "a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member",
+ "alternatives": [
+  {
+   "id": "M2",
+   "name": "Employment",
+   "uom": "Persons",
+   "type": "stock",
+   "precision": false,
+   "why": "another measure: one measure is shown, never mixed with this one"
+  },
+  {
+   "id": "M3",
+   "name": "Standard error of the unemployment rate",
+   "uom": "Percent",
+   "type": "precision",
+   "precision": true,
+   "why": "the precision of another member: never the headline, never summed"
+  }
+ ]
+}}
+```
+
+**3. Unknown-type counts.** A measure is summed over time only when it is POSITIVELY a flow (`nl_structure._classify`): a
+currency (unless a stock word is in the labels), or a flow word in the labels (sales, receipts, revenue, permits, births, deaths,
+visits, trips, arrivals, nights, starts, completions, shipments, orders, bookings, transactions, claims, admissions, exports,
+imports, production, output, sold ...); a count (persons, a number, units) with a stock word (employment, population, inventory,
+households, dwellings, vacancies ...) is a stock; a count with no word that says which is AMBIGUOUS and is averaged ("average
+level over the window"), so a total is never misstated and the percent change is right either way; an index or a rate named in
+the unit or the labels is never summed. The words come from the measure's column, the members' labels and the value of a column
+that holds one value throughout. `measure.type_basis` is "positively a flow", "positively a stock", "ambiguous: averaged" (a
+rate or an index: "a rate: a level, never summed"), with `type_why` the cue ("a currency (Dollars)", "the labels say permits,
+which accumulates over a period"); `aggregation` "sum over months" only for a flow. The slice's column name is "<label> total"
+or "<label> count" only for a flow, else "value" (a level to the core). Example (`estimand.measure`, persons with no clue in
+the labels):
+
+```json
+{
+ "label": "Group A",
+ "uom": "Persons",
+ "scale": "units",
+ "scale_applied": 1.0,
+ "type": "count",
+ "type_basis": "ambiguous: averaged",
+ "type_why": "a count (Persons) with no word in the labels that says it accumulates over time",
+ "aggregation": "mean over months"
+}
+```
+
+**4. Non-monthly frequency.** `S["period"]` = `{kind, noun, nouns, step, phase, per_year, window, adjective}` from the dates: one
+value a period and a steady gap (80% of the gaps) of 3, 6 or 12 months is quarterly, half-yearly or annual, else monthly (daily,
+weekly and irregular tables are read by month, as before). Period labels the engine does not read as dates (2012-Q1, 2012Q1, Q1
+2012, 2012-H2, and a bare year under a date-like header such as TIME_PERIOD, year or period) are read when the table has no
+date column (`_period_labels`); the slice's file then carries the period's first day. A period is keyed by the month it starts in
+(a quarter's phase is kept), so every window is a 12-month span of month keys that holds exactly 4 quarters or 1 year:
+`estimand.comparison` is the first and last PERIOD of each window (["2023-01", "2023-10"] for Q1 to Q4 2023), `periods_used` the
+periods compared (`months_used` keeps its old key), a flow needs half a window matched (6 months, 2 quarters, 1 year), a level
+needs the whole window. The estimand prints the change with 4 (quarterly) or 1 (annual) values a window: "persons; 4-quarter
+averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022", "annual totals 2023 vs 2022", "totals of the 3 quarters with a value in both
+windows (Q2 2023 left out) ..."; `estimand.period` `{kind, noun, nouns, step, window, adjective}`; `measure.aggregation` "mean
+over quarters". The core's own grade is untouched (4 values cannot be tested: NOT_ENOUGH_DATA) and is not faked; the headline is
+"Population, Total, 4 quarters to Q4 2023: +3.0% (34.1K) in the published totals". Stocks and levels keep the window average at
+every frequency (the point-in-time change, latest against a year earlier, is not used). The forecast block is
+`{available: false, frequency: "quarter", reason}` with no audit (section 2.5), no forecast finding is made, the story's
+"what's next" is the reason, and the month-by-year heatmap, trend and forecast charts are not drawn (`charts_suppressed`, rule
+"period"); the structure charts' heatmaps and calendar are refused ("the chart reads monthly values; this table is quarterly
+(one value a quarter), so it is not drawn"), the waterfall stays. The engine's own sentences count months ("the average month",
+"the latest 12 months against the 12 before", "48 months of history"); about such a table `nl_browser._period_text` says quarters
+or years (the numbers stand: only the unit's name and the window's length), in the story, summary, findings, methods,
+limitations, charts, forecast and cleaning. The writer's words (`45-report-pdf.js periodOf, periodWords, sumCheckWords(c, U, P)`):
+"4 quarters before", "Latest 4 quarters", "Quarters checked", "not allocated to a part in the latest 4 quarters". Example
+(`estimand`, a quarterly stock, and `results_for_ai.forecast`):
+
+```json
+{
+ "text": "Total; persons; 4-quarter averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022",
+ "period": {
+  "kind": "quarter",
+  "noun": "quarter",
+  "nouns": "quarters",
+  "step": 3,
+  "window": 4,
+  "adjective": "quarterly"
+ },
+ "comparison": {
+  "latest": [
+   "2023-01",
+   "2023-10"
+  ],
+  "prior": [
+   "2022-01",
+   "2022-10"
+  ]
+ },
+ "figures": {
+  "prior": {
+   "value": 33060.25,
+   "text": "33.1K",
+   "months": 4
+  },
+  "latest": {
+   "value": 34058.75,
+   "text": "34.1K",
+   "months": 4
+  },
+  "change": {
+   "value": 998.5,
+   "text": "+998"
+  },
+  "change_pct": {
+   "value": 3.020243,
+   "text": "+3.0%"
+  }
+ },
+ "complete": true,
+ "periods_used": 4
+}
+```
+
+```json
+{
+ "frequency": "quarter",
+ "reason": "No forecast is shown: the table is quarterly (one value a quarter), and the forecast reads monthly series only, so it has no back-test either."
+}
+```
+
+**5. Repeated member names.** A name that stands for two members (Other under three parents) no longer refuses the table
+(`_key_members`): for a dimension whose name column has a finer key beside it (an id: at least as many values as names, each
+belonging to ONE name, and at least half the names belonging to one id), the members are that key's values, printed by their
+name and qualified when two share it: an id column ("Other (C104)"), the one part of a dotted COORDINATE that tells the
+dimension's members apart ("Other (id 5)": every part is checked against every dimension, never assumed by position, and a
+withheld COORDINATE is never read), or, with no id, a parent column whose values are members' names ("Other (Retail)"). A
+grouping (stores inside regions) is not an id: its names do not belong to one value each. `structure.keys[]` = `{dim, by,
+duplicates[]}`; the id or parent column is metadata (`member_id`, `parent`). The only refusal is a table where nothing tells the
+repeats apart (no id, or a parent that repeats too): `kind: "cube_incomplete"` with "the date and the columns the engine may
+read (Industry) do not tell the rows apart: \"Other\" appears more than once for the same date (up to 3 times); 192 of 624 rows
+repeat a date and a series, so a column that names the series is withheld or set aside" (and, when a series code such as
+COORDINATE is withheld, that keeping it on the consent card may tell them apart).
+
+**6. The unallocated item** (section 5.8): its label and `assumes` name the cause by the chart's rule and the amount is the real
+residual.
+
+**7. A wide table of periods** (stretch). A table whose header holds 6 or more period columns of one family (5 years)
+(2016-01, 2016M01, 2016Q1, 2016-Q1, 2016H1, 2016) beside the columns that name the series is reshaped before anything reads it
+(`nl_structure.wide_to_long`, called by `run()` and the profile pass): one row per series and period, the id columns kept
+(`geo\\TIME_PERIOD` is `geo`), `TIME_PERIOD` and `OBS_VALUE` the cell's own text with an embedded flag (":" , "123.4 p") left in
+it, where the structure layer strips it and counts it by the publisher's vocabulary (`structure.flags.by_kind`, `codes`); an
+empty cell is no observation. `structure.wide` = `{family, periods, first, last, id_columns[], rows_in, rows_out}`, a sentence in the
+first limitation, and the downloads carry no visitor line numbers. The planner's profile reads the file as it was sent.
+Unit codes that hold a currency (MIO_EUR) are currencies.
+
+*For the worker.* `validateStructure` takes the roles as listed in section 5.4 and drops unknown keys: it needs `measures`
+(members validated as profile values), `no_total`, `period` and the plan's `measure_member` (`^M\d{1,2}$`); `structureRules` should
+word a partition with no `total` ("has no total row: its parts are added up") and a measure dimension. `validateResults` should
+keep the new estimand keys (`built_from`, `measure_choice`, `period`, `measure.type_basis`, `sum_checks[].built_from_parts` and
+`suppressed_part_months`, `figures.*.months`) and `forecast.frequency`; the engineTitle fallback says "in the sum of the published
+regions" for a headline with `built_from` and the period's words for a quarterly table; the guard should accept "4 quarters" where
+it accepts "12 months".
 
 ## 6. What this contract does not carry yet (R1)
 

@@ -1,7 +1,7 @@
 {
  "about": "Builds wave5-results.json: the engine's results on three SYNTHETIC statistical tables, for the report writer's wave 5 checks.",
  "made_with": "python3 tools/fixtures/report-pdf/make_wave5.py (the packed engine, run natively)",
- "zip_sha256": "888a95dae9c64a57460ec648066fd51d2c74e78c1810deec7ff441c972af411f",
+ "zip_sha256": "3b81f6211189a5f4b14e2cf85499e539a69d05c84232097a3ec3b42df9534a3b",
  "as_of": "2026-09-30",
  "cases": {
   "nototal": {
@@ -493,15 +493,7 @@
       "estimand": "the sum of 5 regions; built from 5 regions; this table has no total row; complete months only: the 2 months where a part is suppressed are left out; dollars (file in thousands ×1,000); totals of the 10 months with a value in both windows (Mar 2022, Nov 2022 left out) Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
       "reconciles": true,
       "complete": false,
-      "months_used": 10,
-      "period": {
-       "kind": "month",
-       "noun": "month",
-       "nouns": "months",
-       "step": 1,
-       "window": 12,
-       "adjective": "monthly"
-      }
+      "months_used": 10
      },
      "items": [
       {
@@ -1514,7 +1506,6 @@
         "dim": "GEO",
         "key": "geo",
         "parent": "Total",
-        "no_total": false,
         "parts": 4,
         "depth": 1,
         "shares_given": true,
@@ -2505,7 +2496,6 @@
         "dim": "GEO",
         "key": "geo",
         "parent": "Total",
-        "no_total": false,
         "parts": 3,
         "depth": 1,
         "shares_given": true,
@@ -2519,15 +2509,7 @@
       "estimand": "Total · Sales value; one measure shown: Sales value, chosen by the engine's default order (a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member); dollars; 12-month totals Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
       "reconciles": true,
       "complete": true,
-      "months_used": 12,
-      "period": {
-       "kind": "month",
-       "noun": "month",
-       "nouns": "months",
-       "step": 1,
-       "window": 12,
-       "adjective": "monthly"
-      }
+      "months_used": 12
      },
      "items": [
       {

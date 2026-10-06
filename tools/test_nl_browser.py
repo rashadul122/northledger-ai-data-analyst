@@ -6356,6 +6356,39 @@ def test_integ_a_filter_counts_toward_the_signal_only_the_rows_that_hold_a_value
     assert d["valued"] == 550 and [s["kind"] for s in rep["plan_signals"] if s["kind"] == "other"] == ["other"], d
 
 
+def test_results_for_ai_forwards_each_trend_test_in_a_compact_record():
+    # wave 4, track B step 3: the worker's trend rule read the adapter's SENTENCE because analyses[].test was not sent. Now every
+    # trend analysis carries {verdict, name, n, p, p_random_walk, size {nominal, simulated, claims, newey_west}} in about 250 bytes
+    rep = _run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
+    assert rep["ok"], rep["error"]
+    tr = next(a for a in rep["ai_analyses"]["items"] if a["type"] == "trend")
+    rec = tr["test"]
+    ai = json.loads(NB.results_json(json.dumps(rep)))
+    tests = [a["test"] for a in ai["analyses"] if "test" in a]
+    assert len(tests) == 1 and [a["title"] for a in ai["analyses"] if "test" in a] == [tr["title"]], [(a["title"], sorted(a)) for a in ai["analyses"]]
+    t = tests[0]
+    assert set(t) == {"verdict", "name", "n", "p", "p_random_walk", "size"}, sorted(t)
+    assert t["verdict"] == rec["verdict"] == "no_settled_direction" and t["verdict"] in ("rising", "falling", "no_settled_direction", "not_graded"), t
+    assert (t["n"], t["p"], t["p_random_walk"]) == (rec["n"], rec["p"], rec["p_random_walk"]), (t, rec)
+    assert t["size"] == {k: rec["size"][k] for k in ("nominal", "simulated", "claims", "newey_west")}, (t["size"], rec["size"])
+    assert t["name"] == rec["name"] and "VALUE" not in json.dumps(t), t          # the method's name, never the series' (a column's) name
+    assert len(json.dumps(t, separators=(",", ":"))) <= 250, (len(json.dumps(t, separators=(",", ":"))), t)
+    # what is not here: the slope, its range, the momentum and the simulated cell (the page's own report keeps them)
+    assert not {"slope", "ci", "rho", "se", "series", "cell"} & (set(t) | set(t["size"])), t
+    # a verdict the writer has no word for is not passed on as one; a record with no verdict, or a number that is not finite, is not sent
+    odd = json.loads(json.dumps(rep))
+    odd["ai_analyses"]["items"][0]["test"]["verdict"] = "a_trend_of_some_kind"
+    odd["ai_analyses"]["items"][0]["test"]["p"] = float("nan")
+    got = NB.results_for_ai(odd)["analyses"][0]["test"]
+    assert got["verdict"] == "not_graded" and "p" not in got, got
+    odd["ai_analyses"]["items"][0]["test"]["verdict"] = ""
+    assert "test" not in NB.results_for_ai(odd)["analyses"][0]
+    # a report with no trend analysis sends no test, and the payload stays under its budget
+    rep2 = _run(_sample_bytes(), "sample-messy.csv", "", None, SAMPLE_AS_OF)
+    assert not [a for a in NB.results_for_ai(rep2)["analyses"] if "test" in a]
+    assert len(json.dumps(NB.results_for_ai(rep), default=str)) < NB.RESULTS_MAX_BYTES, len(json.dumps(NB.results_for_ai(rep), default=str))
+
+
 def _payload_bytes_of(x) -> int:
     return len(json.dumps(x, default=str))
 

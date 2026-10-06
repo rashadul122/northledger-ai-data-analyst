@@ -1364,7 +1364,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-06 12:22:18 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-06 12:44:46 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2077,7 +2077,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-06 12:22:18 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-06 12:44:46 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -3979,8 +3979,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       (isFinite(t.p) ? '; p ' + Number(t.p).toPrecision(2).replace(/\.?0+$/, '') : '') + (isFinite(t.p_random_walk) ? ', random-walk screen ' + Number(t.p_random_walk).toPrecision(2).replace(/\.?0+$/, '') : '') +
       '; the verdict is ' + v + '.';
     if (isFinite(z.simulated)) {
+      // the adapter's compact record has {nominal, simulated, claims, newey_west}; a shared copy of an older report may also hold the series count and the cell
       s += ' On ' + (z.series ? Number(z.series).toLocaleString('en-US') + ' ' : '') + 'simulated series with no trend' + (c.n ? ' like this one (' + c.n + ' years' + (isFinite(c.rho) ? ', momentum ' + c.rho : '') + ')' : '') +
         ', the test found a trend in ' + (100 * z.simulated).toFixed(1) + '% at its ' + (100 * (z.nominal || 0.05)).toFixed(0) + '% level' +
+        (isFinite(z.claims) ? ' and claimed a direction in ' + (100 * z.claims).toFixed(1) + '%' : '') +
         (isFinite(z.newey_west) ? '; the Newey-West range used before found one in ' + (100 * z.newey_west).toFixed(1) + '%' : '') + '.';
     }
     return s;
@@ -5004,7 +5006,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     for (var r0 = 0; r0 < list.length; r0 += per) {
       var row = list.slice(r0, r0 + per);
       var shaped = row.map(function (k) {
-        return { k: k, lab: wrapTokens(tokens(k.unit || '', 'R', COL.muted), 7.5, w - 20).slice(0, 3),
+        return { k: k, lab: wrapTokens(tokens(k.unit || '', 'R', COL.muted), 7.5, w - 20).slice(0, 4),
           asm: wrapTokens(tokens(k.assumption ? 'Assumes ' + k.assumption : '', 'R', COL.body), 8, w - 20).slice(0, 4) };
       });
       var h = 58 + Math.max.apply(null, shaped.map(function (s) { return s.lab.length * 9.5 + (s.asm.length ? 6 + s.asm.length * 10.5 : 0); })) + 24;
@@ -5638,7 +5640,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         if (no.n && no.min && no.max) {
           [['nonoverlap.min', 'lowest'], ['nonoverlap.median', 'middle'], ['nonoverlap.max', 'highest']].forEach(function (pp) {
             var x = hi(lg, pp[0]);
-            if (x) hcards.push({ name: lg + '-month, none counted twice: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
+            if (x) hcards.push({ name: lg + '-month, spaced: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
           });
         }
       });
@@ -5888,7 +5890,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     });
     var story = R.story && Array.isArray(R.story.what_happened) ? { what_happened: R.story.what_happened.slice(0, 8).map(function (x) { return str(x, 300); }) } : null;
     var items = sc ? capItems((Array.isArray(sc.items) ? sc.items : []).filter(function (x) { return x && typeof x === 'object'; }), SHARE_MAX_ITEMS, SHARE_TOP_SEGMENTS).map(function (x) {
-      var o = {}; ITEM_KEYS.forEach(function (k) { if (x[k] !== undefined) o[k] = typeof x[k] === 'string' ? str(x[k], 300) : x[k]; }); return o;
+      var o = {}; ITEM_KEYS.forEach(function (k) { if (x[k] !== undefined) o[k] = typeof x[k] === 'string' ? str(x[k], k === 'label' ? 400 : 300) : x[k]; }); return o;
     }) : [];
     // gone: what the cap took ('i' + an item's index, 'f' + a finding's, 'story', 'scen', 'primary')
     var gone = {};

@@ -319,8 +319,10 @@
       (isFinite(t.p) ? '; p ' + Number(t.p).toPrecision(2).replace(/\.?0+$/, '') : '') + (isFinite(t.p_random_walk) ? ', random-walk screen ' + Number(t.p_random_walk).toPrecision(2).replace(/\.?0+$/, '') : '') +
       '; the verdict is ' + v + '.';
     if (isFinite(z.simulated)) {
+      // the adapter's compact record has {nominal, simulated, claims, newey_west}; a shared copy of an older report may also hold the series count and the cell
       s += ' On ' + (z.series ? Number(z.series).toLocaleString('en-US') + ' ' : '') + 'simulated series with no trend' + (c.n ? ' like this one (' + c.n + ' years' + (isFinite(c.rho) ? ', momentum ' + c.rho : '') + ')' : '') +
         ', the test found a trend in ' + (100 * z.simulated).toFixed(1) + '% at its ' + (100 * (z.nominal || 0.05)).toFixed(0) + '% level' +
+        (isFinite(z.claims) ? ' and claimed a direction in ' + (100 * z.claims).toFixed(1) + '%' : '') +
         (isFinite(z.newey_west) ? '; the Newey-West range used before found one in ' + (100 * z.newey_west).toFixed(1) + '%' : '') + '.';
     }
     return s;

@@ -2,7 +2,7 @@
  "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset), on tools/fixtures/eval/fx_usd_cad.csv (the Bank of Canada daily U.S. dollar rate, 2017 to 2026) under the plan below and analysis date 2026-09-29: rep = nl_browser.run_json(...); results = nl_browser.results_json(rep), whole. A level (VALUE, typed level) gets no forecast (the engine forecasts counts and totals only) and its historical range instead: group history_range, twenty items (the 12-month and 3-month windows: their count, their independent count n_eff, the 10th, 50th and 90th percentiles, the share that rose, and the non-overlapping changes: their count, minimum, median and maximum), facts about the past with no grade; and the trend analysis with its test (wave 4, A2: the simulated size). The same run as insight-proxy/test/scenarios-fx-history.json.",
  "made_with": "python3 tools/fixtures/report-pdf/make_fx_history.py (the packed engine, run natively)",
  "engine_snapshot": "19ec81d19e0d",
- "zip_sha256": "eb038c029426ecc60b79b85467e1b0617af337ee822423c7a8f7bbe19c550962",
+ "zip_sha256": "e5f4e74391559f14fb33b445de68f4cbe1b04ba65353ff4433000c418de59e8f",
  "csv_sha256": "557089f911ac13f6ab5793cf3ac91a5be8404088be7072704a0cb438cc9ccdee",
  "as_of": "2026-09-29",
  "plan": {
@@ -104,27 +104,16 @@
     "sentence": "VALUE shows no clear rise or fall over 2017 to 2025: its yearly average moves by 0.0114 CAD per USD per year, with a 95% range of −0.0241 to 0.0468, which includes no change (550 zero values in VALUE are not counted: they fall on weekends between non-zero rates, the pattern of a day with no value).",
     "method": "A line through each complete calendar year's value (yearly average), fitted allowing for one year leaning on the year before (Prais-Winsten); its 95% range and its direction come from 999 simulated series with no trend and the same momentum, and a direction is claimed only when the line is steeper…",
     "test": {
-     "name": "Prais-Winsten AR(1) slope, parametric bootstrap under no tre",
      "verdict": "no_settled_direction",
+     "name": "Prais-Winsten AR(1) slope, parametric bootstrap under no trend, random-walk screen",
      "n": 9,
-     "rho": 0.5529889643274083,
-     "slope": 0.011397597696015723,
      "p": 0.34,
      "p_random_walk": 0.518,
-     "ci": [
-      -0.02405265136506136,
-      0.046847846757092804
-     ],
      "size": {
       "nominal": 0.05,
       "simulated": 0.0415,
-      "series": 2000,
-      "newey_west": 0.401,
       "claims": 0.0045,
-      "cell": {
-       "n": 9,
-       "rho": 0.6
-      }
+      "newey_west": 0.401
      }
     }
    },

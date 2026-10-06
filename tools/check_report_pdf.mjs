@@ -769,14 +769,14 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     removed_figures: VP[name].removed_figures, results: res, kept: [], name: NAME, showName: false, date, goal: res && res.goal, ...(o || {}) });
   const recOf = (c) => (c && c.type === 'viz' && c.data ? c.data : c);
   const DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope'];
-  const vizRun = (label, input, paper, charts, also) => {   // also: records drawn without a marker (after the placed ones)
+  const vizRun = (label, input, paper, charts, also, extra) => {   // also: records drawn without a marker (after the placed ones); extra: more options for checkPdf
     const m = W.model(input), trace = [];
     const u8 = W.build(m, { paper, trace });
     const same = Buffer.compare(Buffer.from(u8), Buffer.from(W.build(W.model(input), { paper }))) === 0;
     hashes[label + ' [' + paper + ']'] = sha(u8);
     const f = path.join(tmp, label.replace(/[^a-z0-9]+/gi, '-') + '-' + paper + '.pdf');
     writeFileSync(f, u8);
-    const r = checkPdf(u8, { file: f, a4: paper === 'a4', forbid, name: STEM, removed: input.repaired, source: String(input.report) + JSON.stringify(charts) });
+    const r = checkPdf(u8, Object.assign({ file: f, a4: paper === 'a4', forbid, name: STEM, removed: input.repaired, source: String(input.report) + JSON.stringify(charts) }, extra || {}));
     ok = report(label + ', ' + paper + ' (' + (u8.length / 1024).toFixed(0) + ' KB)', r) && ok;
     const v = vizCheck(r, trace);
     const n = v.n;
@@ -888,6 +888,116 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
         'the emoji label does not read "[label 1]" in the figure and its table');
       console.log('PDF PASS ' + label + ', ' + paper + ': checked');
     }
+  }
+
+  // ---- wave 4, track B (6 Oct 2026): a statistical table read by its structure. retail-results.json is the packed engine's
+  // results on Statistics Canada table 20-10-0056-01 (make_retail.py: planner off, 36,735 rows); retail-response.json is a
+  // HAND-WRITTEN TEST FIXTURE of the AI's report, never a live reply. The PDF now leads with what its headline measures
+  // (the estimand: the 12-month totals, the change and its units, "described, not tested", the sum-checks with their counts,
+  // what was left out and why), says the engine's grade is a PROCESS grade (the chip and the note), draws the contribution
+  // waterfall's not-allocated step and each part's own change, prints the forecast's back-test beside its range (and says
+  // "not trusted" when it failed, or why a dropped forecast is dropped), names the categories the engine released, and
+  // opens on the estimand's headline instead of the core's forecast sentence. Every word is read from the engine's own record.
+  {
+    const RT = J('retail-results.json'), RTR = RT.results, RTP = J('retail-response.json');
+    const E = RTR.estimand, INF = E && E.inference, AUD = RTR.forecast && RTR.forecast.audit;
+    const L0 = 'retail fixture';
+    expect(L0, !!(E && INF && INF.mode === 'official_aggregate' && INF.grade_label && E.sum_checks.length === 2 && AUD && AUD.status === 'passes' && AUD.trusted === true && RTR.privacy.released.length === 1) &&
+      RT.engine_snapshot === '19ec81d19e0d' && RTR.story.headline === RTR.goal, 'the fixture is not the retail run with an estimand, a process grade, two sum-checks, a passed back-test and a released category');
+    const northwest = RTR.scenarios.items.filter((x) => /northwest/i.test(x.id));
+    expect(L0, northwest.length === 3 && RTR.scenarios.items.length === 53 && /22 of the 75 scenario items are left out/.test(RTR.scenarios.refused[0]),
+      'the payload budget did not keep the part that moved against the change (the Northwest Territories) and 53 of the 75 scenario items');
+    const rtInp = (res, o) => inp(res, RTP.report, Object.assign({ name: RT.name, sources: [], model: RTP.model, repaired: RTP.repaired, removed_figures: RTP.removed_figures || [], charts: res.charts, tables: res.tables }, o || {}));
+    const wordsBetween = (r, word, a, b) => { let on = false, n = 0; r.texts.forEach((ts) => ts.forEach((t) => { if (t.s === a) on = true; if (t.s === b) on = false; if (on && t.s === word) n++; })); return n; };
+    const noRaw = (t) => (String(t).match(/(?<![\w,.−-])\d{9,}(?![\w,])/g) || []).slice(0, 3).join(', ');
+    const copy = (x) => JSON.parse(JSON.stringify(x));
+    for (const paper of ['letter', 'a4']) {
+      const label = 'retail: a statistical table', lp = label + ', ' + paper;
+      const input = rtInp(RTR), { r, trace } = vizRun(label, input, paper, RTR.charts, null, { refs: false, name: 'retail_sales_provinces' });
+      const T = sp(r.text), cover = sp(r.texts[0].map((q) => q.s).join(' '));
+      // the headline is the estimand's (what, where, the window, the change in the table's units), not the core's forecast sentence
+      expect(lp, /^Total retail sales, Canada, 12 months to Jul 2026: \+3\.5% \(\$864\.0B\) in the published totals$/.test(RTR.story.headline), 'the results\' headline is not the estimand\'s: ' + RTR.story.headline);
+      expect(lp, cover.indexOf(sp(RTR.story.headline)) >= 0, 'the cover does not carry the estimand\'s headline');
+      expect(lp, r.text.indexOf('73,046,640,000') < 0 && !/forecast at/i.test(r.text), 'the core\'s forecast sentence ("... forecast at 73,046,640,000") reaches the PDF');
+      expect(lp, !noRaw(r.text), 'a raw figure of 9 or more digits is printed: ' + noRaw(r.text));
+      // the estimand panel: first in the executive summary, before the key figures
+      const iEx = r.text.indexOf('EXECUTIVE SUMMARY'), iEs = r.text.indexOf('WHAT THIS REPORT MEASURES'), iHl = r.text.indexOf('HEADLINE INSIGHT');
+      expect(lp, iEx >= 0 && iEs > iEx && iHl > iEs, 'the estimand panel is not the first thing in the executive summary (before the key figures)');
+      const EV = sp(between(r, 'WHAT THIS REPORT MEASURES', 'HEADLINE INSIGHT'));
+      expect(lp, EV.indexOf(sp(E.text.split(';')[0])) >= 0 && EV.indexOf('dollars (file in thousands') >= 0 && EV.indexOf('12-month totals aug 2025-jul 2026 vs aug 2024-jul 2025') >= 0,
+        'the panel does not say what is measured, in what units, over which months: ' + EV.slice(0, 260));
+      let from = 0;
+      const order = ['prior', 'latest', 'change', 'change_pct'].map((k) => { const i = EV.indexOf(sp(E.figures[k].text), from); if (i >= 0) from = i + 1; return i; });
+      expect(lp, order.every((i) => i >= 0) && /12 months before.*latest 12 months.*change.*change, %/.test(EV), 'the panel does not print the prior, the latest, the change and the change % in that order: ' + order);
+      expect(lp, EV.indexOf('described, not tested') >= 0, 'a published total is not said to be described, not tested');
+      E.sum_checks.forEach((c) => {
+        const k = EV.indexOf('adds up: ' + sp(c.total) + ' = the ' + c.parts + ' parts of ' + sp(c.dim) + ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' months, largest gap ' + sp(c.max_residual.text));
+        expect(lp, k >= 0 && EV.slice(k).indexOf('not allocated to a part in the latest 12 months: ' + sp(c.unallocated_latest.text)) >= 0, 'the sum-check of ' + c.total + ' is not stated with its counts, its largest gap and what is not allocated');
+      });
+      E.excluded.forEach((x) => expect(lp, EV.indexOf(sp(x.what) + ': ' + sp(x.why)) >= 0, 'what was left out is not listed with its reason: ' + x.what));
+      expect(lp, EV.indexOf('the engine chose this slice') >= 0 && EV.indexOf('how it is known') >= 0 && EV.indexOf(sp(INF.revisions)) >= 0 && EV.indexOf('(statistics canada)') >= 0, 'the slice\'s source and how the figure is known are not stated');
+      // the process grade: the chip says what the grade is a grade of, the note says it is not a test of the total, the tiles repeat it
+      expect(lp, EV.indexOf(sp(INF.grade_label)) >= 0 && wordsBetween(r, 'NOT ENOUGH DATA', 'WHAT THIS REPORT MEASURES', 'HEADLINE INSIGHT') === 1, 'the process-grade chip or its note is missing from the panel: ' + EV.slice(-300));
+      const tiles = sp(between(r, 'HEADLINE INSIGHT', 'In brief'));
+      expect(lp, (tiles.match(/process grade, not a test of the published total/g) || []).length >= 2 && tiles.indexOf('(described)') >= 0, 'the key figures do not say the grade is a process grade, or that the change is described: ' + tiles.slice(0, 300));
+      const fnd = sp(between(r, 'Every finding and its grade', 'The tables of the figures'));
+      expect(lp, /process grade/.test(fnd) && fnd.indexOf('not trusted') < 0, 'the findings table does not mark the change\'s grade as a process grade');
+      expect(lp, T.indexOf('the grade beside it, not enough data, grades the month-to-month noise') >= 0, 'the AI report\'s own words about the process grade are lost');
+      // the not-allocated step: its own row in the waterfall (a hatched step in the figure) and in its table, with each part's own change
+      const f1 = T.slice(T.indexOf('figure 1. '), T.indexOf('figure 2. '));
+      expect(lp, f1.indexOf('not allocated: suppressed cells') >= 0 && f1.indexOf('the unallocated step is the total less its published parts') >= 0, 'Figure 1 does not show the not-allocated step');
+      const apx = T.slice(T.indexOf('the tables of the figures'));
+      expect(lp, /not allocated: suppressed cells \$0\.0b/.test(apx) && /step contribution own change/.test(apx) && /ontario \+\$10\.2b \+3\.2%/.test(apx), 'the waterfall\'s table has no not-allocated row or no "Own change" column');
+      const wf = trace.filter((t) => t.kind === 'waterfall');
+      expect(lp, wf.length === 1 && !wf[0].as, 'the contribution waterfall is not drawn as a figure: ' + JSON.stringify(trace.map((t) => [t.kind, t.as])));
+      // the forecast's back-test, beside the range and in the engine's words
+      const p3 = sp(between(r, 'PART 3', 'PART 4'));
+      expect(lp, p3.indexOf('the forecast and how its range held when back-tested') >= 0 && p3.indexOf('back-test of the range shown') >= 0 && p3.indexOf(sp(AUD.label) + ' (the back-test passed; trusted)') >= 0 &&
+        p3.indexOf('a passed back-test says the range held often enough') >= 0 && p3.indexOf('not trusted') < 0, 'Part 3 does not print the back-test line (held k of n by horizon) beside the forecast: ' + p3.slice(-700));
+      expect(lp, /\$73\.0b \$72\.4b to \$77\.7b/.test(p3) && p3.indexOf('the model: repeat the same month from last year') >= 0, 'the forecast table or its model is missing');
+      // the categories the engine read as categories, in the method and data quality
+      const apxA = sp(between(r, 'APPENDIX A', 'APPENDIX B'));
+      expect(lp, apxA.indexOf('columns read as categories, not personal data') >= 0 && apxA.indexOf(sp(RTR.privacy.released[0].text)) >= 0, 'the released category is not in the method and data quality');
+      expect(lp, apxA.indexOf('each total checked against its parts') >= 0 && /geo canada 13 265 265 \$3\.0k \$0\.0b/.test(apxA) && apxA.indexOf('the publisher\'s flags in the file: 5,430 rows suppressed') >= 0, 'the sum-check table or the publisher\'s flags are missing from Appendix A');
+      if (paper === 'letter') {
+        // the name of the file the visitor sent is nowhere
+        expect(lp, r.hay.indexOf('retail_sales_provinces') < 0, 'the file\'s name is in the PDF');
+        // a back-test that failed: "not trusted" beside the engine's grade, in the callout, the sentence and the findings table
+        const bad = copy(RTR);
+        Object.assign(bad.forecast.audit, { status: 'fails', trusted: false, grade_label: 'the engine\'s grade (the back-test failed it)',
+          label: 'back-tested: held 9 of 23 at 1 month, 8 of 21 at 3 months, 6 of 18 at 6 months, 3 of 12 at 12 months; the model is the seasonal-naive benchmark itself' });
+        const rb = check4('retail: a failed back-test', rtInp(bad), 'letter', { name: 'retail_sales_provinces', refs: false });
+        const pb = sp(between(rb, 'PART 3', 'PART 4')), fb = sp(between(rb, 'Every finding and its grade', 'The tables of the figures'));
+        expect('retail failed back-test', pb.indexOf('back-test: not trusted') >= 0 && pb.indexOf('held 9 of 23 at 1 month') >= 0 && pb.indexOf('(the back-test failed; not trusted)') >= 0 &&
+          pb.indexOf('the engine\'s grade of the forecast stands, but it is not trusted: the back-test of its range failed') >= 0 && fb.indexOf('not trusted: back-test failed') >= 0,
+        'a failed back-test is not marked "not trusted" beside the grade: ' + pb.slice(-500) + ' | ' + fb.slice(-200));
+        // a back-test that neither passed nor failed says so
+        const unc = copy(RTR); unc.forecast.audit.status = 'unclear'; unc.forecast.audit.trusted = false;
+        const ru = check4('retail: an unclear back-test', rtInp(unc), 'letter', { name: 'retail_sales_provinces', refs: false });
+        expect('retail unclear back-test', sp(between(ru, 'PART 3', 'PART 4')).indexOf('(the back-test neither passed nor failed it; not trusted)') >= 0, 'an inconclusive back-test is not said to be neither passed nor failed');
+        // a row-count forecast the table's layout fixes: one line that says why, no number and no back-test
+        const dr = copy(RTR);
+        dr.forecast = { row_forecast_dropped: true, reason: 'the table\'s layout fixes the rows a month, so a forecast of them would forecast the layout' };
+        const rd = check4('retail: a dropped row forecast', rtInp(dr), 'letter', { name: 'retail_sales_provinces', refs: false });
+        const pd = sp(between(rd, 'PART 3', 'PART 4'));
+        const blk = pd.slice(pd.indexOf('the forecast and how its range held when back-tested'));     // the engine's block (the AI's own paragraph above it still speaks of the range)
+        expect('retail dropped forecast', blk.length < pd.length && blk.indexOf('the table\'s layout fixes the rows a month, so a forecast of them would forecast the layout') >= 0 && blk.indexOf('back-test of the range shown') < 0 &&
+          blk.indexOf('the engine\'s forecast:') < 0 && !/\$7\d\.\db/.test(blk.slice(0, 400)), 'a dropped forecast does not say why in one line, or shows a number or a back-test: ' + blk.slice(0, 400));
+        // no estimand (an older report, a table the structure did not read): no panel, no chip, and the report still holds together
+        const none = copy(RTR); none.estimand = null; none.structure = null;
+        const rn = check4('retail: no estimand', rtInp(none), 'letter', { name: 'retail_sales_provinces', refs: false });
+        expect('retail no estimand', rn.text.indexOf('WHAT THIS REPORT MEASURES') < 0 && sp(between(rn, 'HEADLINE INSIGHT', 'In brief')).indexOf('process grade') < 0, 'a report with no estimand still draws the estimand panel or a process-grade note');
+      }
+    }
+    // the trend test, as the adapter's compact record gives it (FX; the same results as the history checks)
+    const pr2 = (x) => Number(x).toPrecision(2).replace(/\.?0+$/, '');
+    const tt = FXR.analyses.filter((a) => a.test)[0], rf = check4('FX history: the trend test\'s size', fxInp(FXR, { sources: srcs(2) }), 'letter', { name: 'fx_usd_cad' });
+    const tl = sp(between(rf, 'The trend test and its size', 'Every finding and its grade'));
+    expect('FX trend test', !!tt && Object.keys(tt.test).sort().join() === 'n,name,p,p_random_walk,size,verdict' && Buffer.byteLength(JSON.stringify(tt.test), 'utf8') <= 250 && tt.test.verdict === 'no_settled_direction',
+      'the forwarded trend test is not the compact record: ' + JSON.stringify(tt && tt.test));
+    expect('FX trend test', tl.indexOf('on ' + tt.test.n + ' yearly values; p ' + pr2(tt.test.p) + ', random-walk screen ' + pr2(tt.test.p_random_walk) + '; the verdict is no settled direction.') >= 0 &&
+      tl.indexOf('the test found a trend in ' + (100 * tt.test.size.simulated).toFixed(1) + '% at its 5% level and claimed a direction in ' + (100 * tt.test.size.claims).toFixed(1) + '%; the newey-west range used before found one in ' + (100 * tt.test.size.newey_west).toFixed(1) + '%') >= 0,
+    'the trend test\'s verdict, p and simulated size are not in the method section: ' + tl.slice(0, 500));
   }
 
   // the writer as the page runs it (a classic script: window.NLReportPdf, no module) makes the same bytes

@@ -4885,30 +4885,32 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
     return out
 
 
+TREND_VERDICTS = ("rising", "falling", "no_settled_direction", "not_graded")
+
+
 def _trend_test_for_ai(t: Any, safe: Any) -> Optional[Dict[str, Any]]:
-    """A trend analysis's test record (nl_inference.trend_test) for the writer: the slope and its 95% range, p, the
-    random-walk screen, the momentum, n, the verdict and the test's simulated size (what it found in no-trend series like
-    this one, and what the Newey-West range used before found). Never the series' name (a column)."""
+    """A trend analysis's test (nl_inference.trend_test) for the writer, in a compact record of about 220 bytes:
+    {verdict, name, n, p, p_random_walk, size {nominal, simulated, claims, newey_west}}. `verdict` is one of "rising",
+    "falling", "no_settled_direction" or "not_graded" (anything else reads "not_graded": a word the writer cannot grade
+    on is never passed on as a finding); p, the random-walk screen's p and n are the test's own figures; `size` is what
+    the test found in simulated series with no trend like this one (a share of them: "simulated" at the nominal level,
+    "claims" the share that came out as a rising or falling verdict) and what the Newey-West range used before found.
+    The slope, its range, the momentum and the simulation's cell are in the engine's own report (the page's trend card
+    and the analyst view), not here. Never the series' name (a column)."""
     if not isinstance(t, dict) or not t.get("verdict"):
         return None
-    out: Dict[str, Any] = {"name": safe(t.get("name"), 60), "verdict": str(t["verdict"])[:30]}
-    for k in ("n", "rho", "slope", "p", "p_random_walk"):
-        v = t.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
-            out[k] = v
-    ci = t.get("ci")
-    if isinstance(ci, (list, tuple)) and len(ci) == 2 and all(isinstance(x, (int, float)) and math.isfinite(x) for x in ci):
-        out["ci"] = [ci[0], ci[1]]
+    v = str(t["verdict"])
+    out: Dict[str, Any] = {"verdict": v if v in TREND_VERDICTS else "not_graded", "name": safe(t.get("name"), 90)}
+    for k in ("n", "p", "p_random_walk"):
+        x = t.get(k)
+        if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x):
+            out[k] = x
     z = t.get("size")
     if isinstance(z, dict):
-        sz: Dict[str, Any] = {k: z[k] for k in ("nominal", "simulated", "series", "newey_west", "claims")
-                              if isinstance(z.get(k), (int, float)) and not isinstance(z.get(k), bool)}
-        c = z.get("cell")
-        if isinstance(c, dict):
-            sz["cell"] = {k: c[k] for k in ("n", "rho") if isinstance(c.get(k), (int, float))}
-        elif isinstance(c, str):
-            sz["cell"] = safe(c, 60)
-        out["size"] = sz
+        sz = {k: z[k] for k in ("nominal", "simulated", "claims", "newey_west")
+              if isinstance(z.get(k), (int, float)) and not isinstance(z.get(k), bool) and math.isfinite(z[k])}
+        if sz:
+            out["size"] = sz
     return out
 
 

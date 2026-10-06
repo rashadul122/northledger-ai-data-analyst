@@ -312,8 +312,24 @@ def test_e2e_a_cube_is_read_as_its_headline_slice_with_the_estimand_and_reconcil
     json.dumps(rep, allow_nan=False)
 
 
+def test_e2e_a_rate_table_reads_its_published_aggregate_and_never_adds_or_averages_members():
+    NB._PROFILE_CACHE.clear()
+    rep = json.loads(NB.run_json(MC.rate(), "rates.csv", "", None, AS_OF))
+    assert rep["ok"] and rep["estimand"], rep.get("error")
+    assert rep["estimand"]["slice"][0]["member"] == "Canada" and rep["estimand"]["measure"]["type"] == "rate"
+    df = pd.read_csv(io.BytesIO(MC.rate()), dtype=str)
+    can = df[df.GEO == "Canada"].set_index("REF_DATE").VALUE.astype(float)
+    lat = rep["estimand"]["comparison"]["latest"]
+    want = can[(can.index >= lat[0]) & (can.index <= lat[1])].mean()
+    assert abs(rep["estimand"]["figures"]["latest"]["value"] - want) < 1e-6, (rep["estimand"]["figures"], want)
+    assert rep["estimand"]["figures"]["change"]["text"].endswith("percentage points"), rep["estimand"]["figures"]
+    assert not [i for i in rep["scenarios"]["items"] if i["id"].startswith("contribution.")], "a rate was broken down"
+    assert any("never added or averaged" in x for x in rep["scenarios"]["refused"]), rep["scenarios"]["refused"]
+
+
 def test_e2e_10_a_withheld_dimension_refuses_the_business_analysis_with_a_reason():
     rep = _run(MC.health_region(), "health.csv")
+    json.dumps(rep, allow_nan=False)
     fl = {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}
     assert fl.get("health_region") == "withhold" and not rep["privacy"]["released"], rep["privacy"]
     assert rep["structure"]["kind"] == "cube_incomplete", rep.get("structure")
@@ -364,6 +380,7 @@ def test_e2e_14_a_plan_that_keeps_one_adjustment_but_mixes_regions_is_corrected(
             "operations": [{"op": "keep_rows", "column": "Type", "values": ["A"]}], "primary": "VALUE",
             "analyses": [{"type": "compare", "columns": ["VALUE"], "by": "GEO", "why": "regions"}]}
     rep = _run(data, "adjusted.csv", {"__plan__": plan})
+    json.dumps(rep, allow_nan=False)
     est = rep["estimand"]
     assert est["plan_source"] == "ai_corrected", est["plan_source"]
     kinds = {(c["dim"], c["kind"]) for c in rep["structure"]["corrections"]}
@@ -400,6 +417,7 @@ def test_acceptance_statcan_retail_planner_off_and_an_unadjusted_only_plan():
     t0 = time.perf_counter()
     rep = _run(data, os.path.basename(path), {})
     took = time.perf_counter() - t0
+    json.dumps(rep, allow_nan=False)
     est = rep["estimand"]
     F = est["figures"]
     assert (F["prior"]["text"], F["latest"]["text"], F["change_pct"]["text"]) == ("$834.7B", "$864.0B", "+3.5%"), F

@@ -48,6 +48,8 @@ FLAG_VOCAB_FILE = "flag_vocab.json"
 BUDGET_S = 1.0                  # detect, timer-guarded
 CODEFREE_BUDGET_S = 0.5         # the subset-sum search, inside that
 MAX_SERIES = 20000
+MAX_CELLS = 2_000_000           # series x dates held in memory (16 MB of floats): a larger table is not read as a cube
+MAX_TENSOR = 4_000_000          # a dimension's member x context x date block for its sum-checks
 MAX_DIMS = 8
 MAX_MEMBERS = 400               # a dimension has 2 to 400 members
 DUP_MAX = 0.01                  # date x dimensions repeat on at most 1% of the rows
@@ -109,6 +111,10 @@ _RANGE = re.compile(r"^(\d+)-(\d+)$")
 _EMBED = re.compile(r"^\s*(?P<num>[-+]?(?:\d[\d,]*(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)?\s*"
                     r"(?P<flag>\[[A-Za-z]{1,2}\]|[A-Za-z]{1,2}|:|\.{2,3}|\*)?\s*$")
 _SENSITIVE_PREFIX = "S"
+
+
+class _TooLarge(Exception):
+    """A dimension's sum-check block would not fit the memory budget: the dimension is left unresolved (rule 6)."""
 
 
 class _Timer:
@@ -429,6 +435,8 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     n_series = int(s_index.shape[0])
     if n_series > MAX_SERIES:
         return _empty("not_cube", "more than %s series" % _fmt_count(MAX_SERIES), **base)
+    if n_series * len(tlabels) > MAX_CELLS:
+        return _empty("not_cube", "more than %s series-dates to hold" % _fmt_count(MAX_CELLS), **base)
     # -- the tensor: V[series, time] in base units, E (a row exists), F (its flag code)
     torder = np.argsort(np.array(tlabels))
     trank = np.empty_like(torder)
@@ -489,7 +497,10 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     for j in range(len(dims)):
         if tm.over():
             break
-        _adjustment(S, j)
+        try:
+            _adjustment(S, j)
+        except _TooLarge:
+            pass
     for j in range(len(dims)):
         rec = S["dims"][j]
         if rec["role"]:
@@ -504,10 +515,14 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         if rec.get("mixed_units"):
             _mixed_measure(S, j)
             continue
-        if S["measure"]["type"] in ("rate", "index"):
-            _rate_aggregate(S, j)
-        else:
-            _relations(S, j, tm)
+        try:
+            if S["measure"]["type"] in ("rate", "index"):
+                _rate_aggregate(S, j)
+            else:
+                _relations(S, j, tm)
+        except _TooLarge:
+            rec["role"] = "unresolved"
+            rec["why"] = "too many members and dates to check within the memory budget"
     for rec in S["dims"]:
         if rec["role"] in (None, "unresolved"):
             _rule6(S, rec)
@@ -765,6 +780,8 @@ def _dim_tensor(S: Dict[str, Any], j: int, restrict: bool = True, adjusted: bool
     M = len(S["dims"][j]["labels"])
     C = int(ctx.max()) + 1 if len(ctx) else 0
     T = V.shape[1]
+    if M * C * T > MAX_TENSOR:
+        raise _TooLarge()
     A = np.full((M, C, T), np.nan)
     X = np.zeros((M, C, T), dtype=bool)
     A[sm[:, j], ctx] = V[mask]
@@ -822,6 +839,20 @@ def _bounds(A: Any, x: int, y: int, tol: float) -> bool:
     if n < MIN_COMPLETE:
         return False
     return float((A[y][both] <= A[x][both] + tol + 1e-9 * np.abs(A[x][both])).mean()) >= BOUND_SHARE
+
+
+def _bounded_by(A: Any, x: int, tol: float) -> Any:
+    """For every member at once: x bounds it in 99% of the cells where both have a value (6 or more such cells)."""
+    import numpy as np
+    ax = A[x]
+    both = ~np.isnan(A) & ~np.isnan(ax)[None, :, :]
+    n = both.reshape(A.shape[0], -1).sum(axis=1)
+    with np.errstate(invalid="ignore"):
+        under = (A <= ax[None, :, :] + tol + 1e-9 * np.abs(ax)[None, :, :]) & both
+    k = under.reshape(A.shape[0], -1).sum(axis=1)
+    out = (n >= MIN_COMPLETE) & (k >= BOUND_SHARE * np.maximum(n, 1))
+    out[x] = False
+    return out
 
 
 def _dominance(A: Any) -> Any:
@@ -1104,7 +1135,8 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     while queue and done < PARENTS_MAX and time.perf_counter() < t_end:
         p = queue.pop(0)
         done += 1
-        cands = [m for m in range(M) if m not in assigned and m not in alts_label and _bounds(A, p, m, tol_u)]
+        bnd = _bounded_by(A, p, tol_u)
+        cands = [m for m in range(M) if m not in assigned and m not in alts_label and bnd[m]]
         if not cands:
             continue
         cands = sorted(cands, key=lambda m: (-sizes[m], m))[:CANDIDATES_MAX]
@@ -1334,9 +1366,12 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
             m = hint[0]
         else:
             SM, E = S["_SM"], S["_E"]
-            cover = np.array([int(E[SM[:, j] == mm].sum()) for mm in range(len(labels))])
-            A, X, _c = _dim_tensor(S, j)
-            dom = _dominance(A)
+            cover = np.bincount(SM[:, j], weights=E.sum(axis=1), minlength=len(labels))
+            try:
+                A, X, _c = _dim_tensor(S, j)
+                dom = _dominance(A)
+            except _TooLarge:
+                dom = np.zeros(len(labels))
             m = int(sorted(range(len(labels)), key=lambda x: (-cover[x], -dom[x], x))[0])
         prior = rec.get("why")
         rec.update(role="single", total=labels[m], total_index=m, components={}, alternatives={},
@@ -1713,7 +1748,7 @@ def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Opti
     x = abs(float(v))
     r = abs(float(ref)) if ref is not None else x
     if t in ("rate", "index"):
-        body = "%.4g" % x
+        body = "%.4g" % x + ("%" if re.search(r"(?i)percent|%", str(S["measure"].get("uom") or "")) else "")
     else:
         body = None
         for lim, suf in _SUFFIX:
@@ -1729,6 +1764,20 @@ def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Opti
     if not cur and S["measure"].get("currency"):
         unit = " " + str(S["measure"].get("uom") or "")
     return sign + cur + body + unit
+
+
+def _percent_rate(S: Dict[str, Any]) -> bool:
+    return S["measure"]["type"] == "rate" and bool(re.search(r"(?i)percent|%", str(S["measure"].get("uom") or "")))
+
+
+def points(v: Optional[float]) -> str:
+    """A change of a percentage: "+0.617 percentage points" (never "%", which would read as a relative change)."""
+    if v is None or v != v:
+        return "n/a"
+    body = "%.3g" % abs(v)
+    if not re.search(r"[1-9]", body):
+        return "0 percentage points"
+    return ("+" if v > 0 else "\u2212") + body + " percentage points"
 
 
 def pct(v: Optional[float], signed: bool = True) -> str:
@@ -1831,7 +1880,7 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     chg_pct = (100.0 * (T1 / T0 - 1.0)) if T0 and T1 is not None and T0 > 0 else None
     figures = {"prior": {"value": _r(T0), "text": money(T0, S), "months": n0},
                "latest": {"value": _r(T1), "text": money(T1, S), "months": n1},
-               "change": {"value": _r(change), "text": money(change, S, signed=True)},
+               "change": {"value": _r(change), "text": points(change) if _percent_rate(S) else money(change, S, signed=True)},
                "change_pct": {"value": _r(chg_pct, 6), "text": pct(chg_pct)}}
     checks = []
     for d in S["dims"]:

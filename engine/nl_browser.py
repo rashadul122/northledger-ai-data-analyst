@@ -8140,8 +8140,8 @@ def _long_has_structure(data: bytes) -> bool:
                 values[c] = pd.to_datetime(t.where(t != ""), errors="coerce")
         R = _Reading(values, texts, np.ones(len(df), bool), land, {})
         S = _ns().detect(R, (), budget_s=0.3)
-        return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components")
-                                             for d in S.get("dims") or [])
+        return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
+                                                           "rate_aggregate") for d in S.get("dims") or [])
     except Exception:  # noqa: BLE001 - the layout pass then reads it as before
         if os.environ.get("NL_BROWSER_STRICT"):
             raise

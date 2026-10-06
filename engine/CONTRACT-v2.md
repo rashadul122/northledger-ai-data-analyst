@@ -502,6 +502,18 @@ depths}`, slice, reason, flags `{column, by_kind, quality_of_headline}`, correct
 them is also a scenario item (§5.8), so the worker's guard can index it. Then the forecast audit and the trend tests
 (track A2).
 
+**The trend test, the forecast's back-test and the layout rows (WAVE 4, track B, 6 October 2026).** `analyses[]` carries
+`{title, sentence, method}` and, for a trend analysis, `test`: `{verdict, name, n, p, p_random_walk, size {nominal, simulated,
+claims, newey_west}}` in about 240 bytes (`_trend_test_for_ai`; the test's slope, range, momentum and simulated cell stay in the
+report). `verdict` is one of "rising", "falling", "no_settled_direction" or "not_graded" (a word the writer has no name for
+is sent as "not_graded"); `name` is the method's (at most 90 characters), never the series' name; a number that is not finite is
+left out. `forecast.audit` is `{label, status, trusted, grade_label}` (status "passes", "unclear" or "fails"; a seasonal-naive
+champion can pass on coverage alone; the report states ONE count of how the range held, the audit's: `forecast.coverage` is
+sent only when there is no audit). A row count the table's layout fixes is no number: `findings[].layout_artifact` is true
+(and `value` is left out) and `forecast` is `{row_forecast_dropped: true, reason}`; no audit goes with it. When the payload is
+over its budget, the scenario items that go first are the facts, then the parts with the smallest contributions; a part that
+moved against the change and the unallocated part are kept to the end (`scenarios.refused[0]` says how many were left out).
+
 ### 5.8 `scenarios` and the web searches (design B of `plan/AI-INSIGHTS-DESIGN.md`, 29 September 2026; the searches built from a fixed list, 30 September 2026)
 
 The report writer may quote a figure only when the payload holds it. `scenarios` holds the figures it needed and

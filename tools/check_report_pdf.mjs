@@ -913,8 +913,14 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     expect(L0, !!(E && INF && INF.mode === 'official_aggregate' && INF.grade_label && E.sum_checks.length === 2 && AUD && AUD.status === 'passes' && AUD.trusted === true && RTR.privacy.released.length === 1) &&
       RT.engine_snapshot === '19ec81d19e0d' && RTR.story.headline === RTR.goal, 'the fixture is not the retail run with an estimand, a process grade, two sum-checks, a passed back-test and a released category');
     const northwest = RTR.scenarios.items.filter((x) => /northwest/i.test(x.id));
-    expect(L0, northwest.length === 3 && RTR.scenarios.items.length === 53 && /22 of the 75 scenario items are left out/.test(RTR.scenarios.refused[0]),
-      'the payload budget did not keep the part that moved against the change (the Northwest Territories) and 53 of the 75 scenario items');
+    expect(L0, northwest.length === 3 && RTR.scenarios.items.length === 54 && /21 of the 75 scenario items are left out/.test(RTR.scenarios.refused[0]),
+      'the payload budget did not keep the part that moved against the change (the Northwest Territories) and 54 of the 75 scenario items');
+    // the structure waterfalls decompose the CHANGE: a Start of 0, the parts, the Total change; the not-allocated step ($1,000 and $6,000 of $29.3B) is left out
+    // and the sum-check line says the gap; the levels are in the caption
+    const wfRecs = RTR.charts.filter((c) => c && c.chart === 'contribution_waterfall');
+    expect(L0, wfRecs.length === 2 && wfRecs.every((c) => { const st = c.data.steps, ch = c.data.change.value; return st[0].label === 'Start' && st[0].value === 0 && st[st.length - 1].label === 'Total change' && st[st.length - 1].value === ch &&
+        !st.some((x) => /^not allocated/i.test(x.label)) && Math.max.apply(null, st.slice(1, -1).map((x) => Math.abs(x.value))) >= 0.1 * ch && /adds up; gap \$[\d,]+, rounding\)/.test(c.source) && /\$834\.7B \(2024-08 to 2025-07\) to \$864\.0B/.test(c.subtitle); }),
+      'the retail waterfalls are not the decomposition of the change (Start 0 to Total change, the largest part a tenth of it, no hairline not-allocated step, the gap in the source line, the levels in the caption)');
     const rtInp = (res, o) => inp(res, RTP.report, Object.assign({ name: RT.name, sources: [], model: RTP.model, repaired: RTP.repaired, removed_figures: RTP.removed_figures || [], charts: res.charts, tables: res.tables }, o || {}));
     const wordsBetween = (r, word, a, b) => { let on = false, n = 0; r.texts.forEach((ts) => ts.forEach((t) => { if (t.s === a) on = true; if (t.s === b) on = false; if (on && t.s === word) n++; })); return n; };
     const noRaw = (t) => (String(t).match(/(?<![\w,.−-])\d{9,}(?![\w,])/g) || []).slice(0, 3).join(', ');
@@ -953,9 +959,10 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       expect(lp, T.indexOf('the grade beside it, not enough data, grades the month-to-month noise') >= 0, 'the AI report\'s own words about the process grade are lost');
       // the not-allocated step: its own row in the waterfall (a hatched step in the figure) and in its table, with each part's own change
       const f1 = T.slice(T.indexOf('figure 1. '), T.indexOf('figure 2. '));
-      expect(lp, f1.indexOf('not allocated: suppressed cells') >= 0 && f1.indexOf('the unallocated step is the total less its published parts') >= 0, 'Figure 1 does not show the not-allocated step');
+      expect(lp, f1.indexOf('not allocated') < 0 && /each total checked against its parts: adds up; gap \$1,000, rounding/.test(f1) && f1.indexOf('start') >= 0 && f1.indexOf('total change') >= 0 && f1.indexOf('$834.7b (2024-08 to 2025-07) to $864.0b') >= 0,
+        'Figure 1 does not run from a Start of 0 to the Total change, with the gap in its sum-check line and the levels in its caption (and no not-allocated step for a $1,000 gap)');
       const apx = T.slice(T.indexOf('the tables of the figures'));
-      expect(lp, /not allocated: suppressed cells \$0\.0b/.test(apx) && /step contribution own change/.test(apx) && /ontario \+\$10\.2b \+3\.2%/.test(apx), 'the waterfall\'s table has no not-allocated row or no "Own change" column');
+      expect(lp, /start \$0 /.test(apx) && /total change \+\$29\.3b/.test(apx) && !/not allocated: suppressed cells \$0\.0b/.test(apx) && /step contribution own change/.test(apx) && /ontario \+\$10\.2b \+3\.2%/.test(apx), 'the waterfall\'s table has no Start and Total change rows or no "Own change" column');
       const wf = trace.filter((t) => t.kind === 'waterfall');
       expect(lp, wf.length === 1 && !wf[0].as, 'the contribution waterfall is not drawn as a figure: ' + JSON.stringify(trace.map((t) => [t.kind, t.as])));
       // the forecast's back-test, beside the range and in the engine's words
@@ -967,7 +974,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       const apxA = sp(between(r, 'APPENDIX A', 'APPENDIX B'));
       expect(lp, apxA.indexOf('columns read as categories, not personal data') >= 0 && apxA.indexOf(sp(RTR.privacy.released[0].text)) >= 0, 'the released category is not in the method and data quality');
       expect(lp, /table rows read 36,735 monthly values analysed 79 monthly values set aside 0/.test(apxA), 'the data table calls the 79 monthly values of a statistical table "rows", or loses the table\'s own 36,735 rows: ' + apxA.slice(apxA.indexOf('the data and its cleaning'), apxA.indexOf('the data and its cleaning') + 200));
-      expect(lp, apxA.indexOf('each total checked against its parts') >= 0 && /geo canada 13 265 265 \$3\.0k \$0\.0b/.test(apxA) && apxA.indexOf('the publisher\'s flags in the file: 5,430 rows suppressed') >= 0, 'the sum-check table or the publisher\'s flags are missing from Appendix A');
+      expect(lp, apxA.indexOf('each total checked against its parts') >= 0 && /geo canada 13 265 265 \$3\.0k [\u2212-]\$3,000 /.test(apxA) && apxA.indexOf('the publisher\'s flags in the file: 5,430 rows suppressed') >= 0, 'the sum-check table or the publisher\'s flags are missing from Appendix A');
       if (paper === 'letter') {
         // the name of the file the visitor sent is nowhere
         expect(lp, r.hay.indexOf('retail_sales_provinces') < 0, 'the file\'s name is in the PDF');

@@ -4189,6 +4189,8 @@ check('waterfall-shows-the-unallocated-step-and-each-parts-own-change', DESK, as
   ok(rec, 'the statistical table has no contribution waterfall');
   const steps = rec.data.data.steps, un = steps.filter((s) => s.label === 'Not allocated: suppressed cells');
   ok(un.length === 1 && rec.data.table.cols.indexOf('Own change') === 2 && rec.data.table.rows.some((r) => r[0] === 'Not allocated: suppressed cells'), 'the record does not carry the not-allocated step and the Own change column');
+  // the waterfall decomposes the CHANGE: a Start of 0 first, the Total change last (final integration pass)
+  ok(steps[0].label === 'Start' && steps[0].value === 0 && steps[steps.length - 1].label === 'Total change' && steps[steps.length - 1].text === rep.estimand.figures.change.text, 'the waterfall does not run from a Start of 0 to the Total change: ' + JSON.stringify([steps[0], steps[steps.length - 1]]));
   const p = await openCube(ctx, rep);
   const d = await p.evaluate(async () => {
     const svg = document.querySelector('#try-report svg.nlv .w-unalloc') ? document.querySelector('#try-report svg.nlv .w-unalloc').closest('svg') : null;
@@ -4203,6 +4205,30 @@ check('waterfall-shows-the-unallocated-step-and-each-parts-own-change', DESK, as
   ok(d.texts.every((t) => !/^\d{9,}$/.test(t.replace(/[,\s]/g, ''))), 'an axis prints a raw number: ' + d.texts.join(' | '));
   // its table (the Table button): the step is a row, and each part has its own change
   ok(d.btn && d.th && d.th.indexOf('Own change') >= 0 && d.rows.some((r) => r[0] === 'Not allocated: suppressed cells'), 'the waterfall\'s table has no not-allocated row or no Own change column: ' + JSON.stringify([d.th, d.rows]).slice(0, 300));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('waterfall-parts-fill-the-chart-and-a-rounding-step-is-drawn-like-a-suppressed-one', DESK, async (ctx) => {
+  const rep = cubeReport(), rec = rep.charts.filter((c) => c.id.indexOf('viz.') === 0 && c.data && c.data.kind === 'waterfall')[0];
+  ok(rec, 'the statistical table has no contribution waterfall');
+  // the same record with the step's cause read as rounding: the page draws it the same hatched way and says so
+  rec.data.data.steps.forEach((s) => { if (s.label === 'Not allocated: suppressed cells') s.label = 'Not allocated: rounding'; });
+  rec.data.table.rows.forEach((r) => { if (r[0] === 'Not allocated: suppressed cells') r[0] = 'Not allocated: rounding'; });
+  const p = await openCube(ctx, rep);
+  const d = await p.evaluate(() => {
+    const svg = document.querySelector('#try-report svg.nlv .w-unalloc') ? document.querySelector('#try-report svg.nlv .w-unalloc').closest('svg') : null;
+    if (!svg) return { missing: true };
+    const box = (e) => { const b = e.getBBox(); return { w: b.width, h: b.height }; };
+    const tot = Array.from(svg.querySelectorAll('rect.w-tot')).map(box), steps = Array.from(svg.querySelectorAll('rect.w-rise, rect.w-fall')).map(box);
+    const ext = (b) => Math.max(b.w, b.h);
+    return { un: svg.querySelectorAll('.w-unalloc').length, tips: Array.from(svg.querySelectorAll('[data-tip]')).map((g) => g.getAttribute('data-tip')),
+      texts: Array.from(svg.querySelectorAll('text')).map((t) => t.textContent), lastTot: ext(tot[tot.length - 1] || { w: 0, h: 0 }),
+      biggest: Math.max.apply(null, steps.map(ext).concat([0])), nTot: tot.length };
+  });
+  ok(!d.missing && d.un === 1, 'a "Not allocated: rounding" step is not drawn as the hatched step: ' + JSON.stringify(d).slice(0, 200));
+  ok(d.tips.some((t) => t.indexOf('Not allocated: rounding: \u2212$26.2M') === 0) && !d.tips.some((t) => /suppressed cells/.test(t)), 'the step is not named "Not allocated: rounding": ' + d.tips.join(' | '));
+  ok(d.nTot === 2 && d.tips[0].indexOf('Start: $0') === 0 && d.tips[d.tips.length - 1].indexOf('Total change: +$12.8M') === 0, 'the chart does not run from "Start: $0" to "Total change": ' + d.tips.join(' | '));
+  // the steps fill the chart: the largest part is a visible share of the Total change's bar (the levels view drew it as a hairline, about 1%)
+  ok(d.biggest >= 0.1 * d.lastTot && d.lastTot > 20, 'the parts do not fill the chart: the largest step is ' + d.biggest + ' of the total change\'s ' + d.lastTot);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 check('the-forecast-audit-is-printed-beside-the-range-and-a-failed-one-says-not-trusted', DESK, async (ctx) => {

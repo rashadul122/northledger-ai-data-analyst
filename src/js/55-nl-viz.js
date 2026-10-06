@@ -298,14 +298,17 @@
   }
   // the step the total less its published parts makes (the suppressed cells), in the words a reader needs and as a dashed
   // marker, never a filled bar: an older report's label is read the same way
-  var UNALLOC = /^(?:not allocated: suppressed cells|unallocated \(suppressed cells\))$/i;
+  // "Not allocated: suppressed cells", or "Not allocated: rounding" (no part of the dimension lacks a month's value), as the
+  // engine writes them now; an older report says "unallocated (suppressed cells)"
+  var UNALLOC = /^(?:not allocated: (?:suppressed cells|rounding)|unallocated \(suppressed cells\))$/i;
+  var UNALLOC_OLD = /^unallocated \(suppressed cells\)$/i;
   function isUnalloc(s) { return s.kind !== 'total' && UNALLOC.test(String(s.label)); }
-  function stepName(s) { return UNALLOC.test(String(s.label)) ? 'Not allocated: suppressed cells' : s.label; }
+  function stepName(s) { return UNALLOC_OLD.test(String(s.label)) ? 'Not allocated: suppressed cells' : s.label; }
   // an older report's table view says "unallocated (suppressed cells)": the same words as the drawing
   function relabelTable(t) {
-    if (!t || !Array.isArray(t.rows) || !t.rows.some(function (r) { return Array.isArray(r) && UNALLOC.test(String(r[0])); })) return t;
+    if (!t || !Array.isArray(t.rows) || !t.rows.some(function (r) { return Array.isArray(r) && UNALLOC_OLD.test(String(r[0])); })) return t;
     var o = {}; Object.keys(t).forEach(function (k) { o[k] = t[k]; });
-    o.rows = t.rows.map(function (r) { return Array.isArray(r) && UNALLOC.test(String(r[0])) ? ['Not allocated: suppressed cells'].concat(r.slice(1)) : r; });
+    o.rows = t.rows.map(function (r) { return Array.isArray(r) && UNALLOC_OLD.test(String(r[0])) ? ['Not allocated: suppressed cells'].concat(r.slice(1)) : r; });
     return o;
   }
   function wfClass(s) { return s.kind === 'total' ? 'w-tot' : isUnalloc(s) ? 'w-unalloc' : s.value > 0 ? 'w-rise' : 'w-fall'; }

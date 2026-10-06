@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import re
 import os
 import sys
@@ -473,6 +474,98 @@ def test_viz_structure_heatmaps_recompute_from_the_cube_and_every_record_is_in_t
     assert NV._short_label("Ontario") == "Ontario"
 
 
+# ----------------------------------------------------------------------------- the waterfall is the decomposition of the change
+# (final integration pass, 6 Oct 2026): a "Start" total of 0, each part's contribution, a "Total change" total, so the parts
+# fill the chart under the frozen spec's "the value axis always includes 0"; the not-allocated step is drawn only when it is
+# 1% or more of the change (or when leaving it out would break the spec's add-up), and says why it is there
+def _wf_case(parts, u, change=None, suppressed_parts=0, sum_check=True):
+    import nl_viz as NV
+    S = {"measure": {"type": "flow", "currency": True, "uom": "Dollars"}}
+    change = math.fsum(parts) + u if change is None else change
+    prior = 100e9
+    it = {"headline.prior": {"id": "headline.prior", "value": prior, "text": NS.money(prior, S)},
+          "headline.latest": {"id": "headline.latest", "value": prior + change, "text": NS.money(prior + change, S)},
+          "headline.change": {"id": "headline.change", "value": change, "text": NS.money(change, S, signed=True)}}
+    for i, v in enumerate(parts):
+        iid = "contribution.geo.p%d" % i
+        it[iid] = {"id": iid, "segment": "Part %d" % i, "value": v, "text": NS.money(v, S, signed=True)}
+        it["growth.geo.p%d" % i] = {"id": "growth.geo.p%d" % i, "segment": "Part %d" % i, "value": 1.0, "text": "+1.0%"}
+    it["contribution.geo.unallocated"] = {"id": "contribution.geo.unallocated", "segment": "unallocated (GEO)", "value": u,
+                                          "text": NS.money(u, S, signed=True, ref=change)}
+    rep = {"estimand": {"sum_checks": ([{"dim": "GEO", "total": "Canada", "suppressed_parts": suppressed_parts}]
+                                         if sum_check else [])}}
+    bd = {"key": "geo", "dim": "GEO", "parent": "Canada", "id": "B1"}
+    basis = {"windows": {"prior": ["2024-08", "2025-07"], "latest": ["2025-08", "2026-07"]}, "finding_id": None,
+             "measure": "Total retail sales", "estimand": "Canada · Total retail sales", "grade": None, "complete": True}
+    rec = NV._b_structure_waterfall(rep, bd, it, basis, {})
+    rec["id"], rec["why"] = "viz.1.contribution_waterfall", "Chosen by the engine: where the change came from"
+    assert not _spec_errors(rec), _spec_errors(rec)
+    return rec
+
+
+def test_the_waterfall_is_the_decomposition_of_the_change_and_the_parts_fill_the_chart():
+    parts = [10.2e9, 6.2e9, 5.9e9, 3.3e9, 1.0e9, 0.9e9, 0.9e9, 0.4e9, 0.3e9, 0.2e9, 0.07e9, 0.03e9]
+    rec = _wf_case(parts, 1000.0)
+    st = rec["data"]["steps"]
+    change = math.fsum(parts) + 1000.0
+    assert (st[0]["label"], st[0]["kind"], st[0]["value"], st[0]["from"], st[0]["to"], st[0]["text"]) == ("Start", "total", 0, 0, 0, "$0")
+    assert st[-1]["label"] == "Total change" and st[-1]["kind"] == "total" and st[-1]["from"] == 0
+    assert abs(st[-1]["value"] - change) < 1e-3 and rec["data"]["change"]["value"] == change
+    # the steps fill the chart: nothing is drawn beyond the change (the levels view put every step in 1% of the height)
+    assert max(abs(s["to"]) for s in st) <= abs(change) * (1 + 1e-6) and max(abs(s["value"]) for s in st[1:-1]) > 0.3 * change
+    assert [s["label"] for s in st[1:-1]][-1] == "other parts (2)" and len(st) == 1 + 10 + 1 + 1
+    # the levels are in the caption, not the chart
+    assert "$100.0B" in rec["subtitle"] and "$129.4B" in rec["subtitle"] and "2025-08 to 2026-07" in rec["subtitle"], rec["subtitle"]
+    assert rec["table"]["rows"][0][:2] == ["Start", "$0"] and rec["table"]["rows"][-1][0] == "Total change"
+    assert not any(r[0] == "12 months before" or r[0] == "Latest 12 months" for r in rec["table"]["rows"])
+
+
+def test_the_not_allocated_step_is_left_out_below_one_percent_and_the_sum_check_line_says_the_gap():
+    parts = [10.2e9, 6.2e9, 5.9e9, 3.3e9, 1.0e9]
+    for u, why in ((1000.0, "rounding"), (-6000.0, "rounding")):
+        rec = _wf_case(parts, u)
+        assert not any(s["label"].startswith("Not allocated") for s in rec["data"]["steps"]), rec["data"]["steps"]
+        assert not any(r[0].startswith("Not allocated") for r in rec["table"]["rows"])
+        gap = "$%s" % format(int(abs(u)), ",")
+        assert "(gap %s, %s)" % (gap, why) in rec["summary"], rec["summary"]
+        assert "adds up; gap %s, %s)" % (gap, why) in rec["source"], rec["source"]
+        assert "unallocated" not in rec["summary"].lower() and "$0.0B" not in rec["summary"] + rec["source"]
+    # suppressed cells in the windows name the cause of the gap
+    assert "gap $1,000, suppressed cells" in _wf_case(parts, 1000.0, suppressed_parts=2)["source"]
+    # nothing to say about a gap that is exactly zero
+    z = _wf_case(parts, 0.0)
+    assert "add up to the change exactly" in z["summary"] and "gap" not in z["source"], (z["summary"], z["source"])
+
+
+def test_the_not_allocated_step_is_drawn_from_one_percent_and_says_why():
+    parts = [10.2e9, 6.2e9, 5.9e9, 3.3e9, 1.0e9]
+    for u, kw, label in ((0.02 * 26.6e9, {}, "Not allocated: rounding"),
+                         (-0.02 * 26.6e9, {"suppressed_parts": 3}, "Not allocated: suppressed cells"),
+                         (0.5e9, {"suppressed_parts": 1}, "Not allocated: suppressed cells"),
+                         (0.5e9, {}, "Not allocated: rounding"),
+                         (0.2e9, {"sum_check": False}, "Not allocated: suppressed cells")):
+        rec = _wf_case(parts, u, **kw)
+        st = rec["data"]["steps"]
+        assert [s["label"] for s in st if s["label"].startswith("Not allocated")] == [label], [s["label"] for s in st]
+        step = next(s for s in st if s["label"] == label)
+        assert abs(step["value"] - u) < 1e-3 and step["kind"] == "step"
+        assert any(r[0] == label for r in rec["table"]["rows"]) and "adds up; gap" not in rec["source"]
+        assert "step is the total less its published parts" in rec["source"], rec["source"]
+    # between a millionth and one percent of the change the step cannot be left out: the spec's add-up (1e-6 of the change)
+    # would break, so it is drawn (and a record without it would be refused by the worker)
+    small = _wf_case(parts, 0.001 * 26.6e9)
+    assert any(s["label"].startswith("Not allocated") for s in small["data"]["steps"])
+
+
+def test_a_falling_total_decomposes_the_same_way():
+    parts = [-9.0e9, -4.0e9, 2.0e9, -1.0e9, 0.5e9]
+    rec = _wf_case(parts, 2000.0)
+    st = rec["data"]["steps"]
+    change = math.fsum(parts) + 2000.0
+    assert change < 0 and st[0]["value"] == 0 and abs(st[-1]["value"] - change) < 1e-3 and st[-1]["text"].startswith("\u2212$")
+    assert max(abs(s["to"]) for s in st) <= 1.2 * abs(change) and not any(s["label"].startswith("Not allocated") for s in st)
+
+
 def test_viz_structure_calendar_is_the_adjusted_slice_month_on_month_and_the_heatmaps_say_when_parts_are_too_few():
     data = MC.adjusted_additive()
     rep = _run(data, "adjusted.csv")
@@ -704,7 +797,9 @@ def test_e2e_a_headline_month_missing_from_a_window_is_compared_on_the_months_bo
     parts = [v["value"] for k, v in it.items() if k.startswith("contribution.geo.") and not k.endswith("unallocated")]
     assert len(parts) == 5 and abs(sum(parts) + it["contribution.geo.unallocated"]["value"] - it["headline.change"]["value"]) < 1e-3
     wf = next(c for c in rep["viz"]["charts"] if c["chart"] == "contribution_waterfall")
-    assert wf["data"]["steps"][0]["label"] == "11 matched months before", wf["data"]["steps"][0]["label"]
+    # the waterfall is the decomposition of the change (a "Start" of 0 and a "Total change"); the windows' months are in its words
+    assert wf["data"]["steps"][0]["label"] == "Start" and wf["data"]["steps"][-1]["label"] == "Total change", wf["data"]["steps"]
+    assert "11 matched months" in wf["subtitle"] and "11 matched months" in wf["summary"], (wf["subtitle"], wf["summary"])
     # fewer than 6 months with a value in both windows: no figure is printed (a total of 5 months is no year)
     d = df.copy()
     m = (d.GEO == "Total") & d.REF_DATE.isin(["2022-01", "2022-02", "2022-03", "2022-04", "2022-05", "2022-06", "2022-07"])
@@ -853,6 +948,17 @@ def test_acceptance_statcan_retail_planner_off_and_an_unadjusted_only_plan():
         kinds.count("calendar_heatmap") == 1, kinds
     for c in rep["viz"]["charts"]:
         assert not _spec_errors(c), (c["id"], _spec_errors(c))
+    # the two waterfalls decompose the +$29.3B change (a Start of 0 to the Total change); the $1,000 and $6,000 gaps are
+    # rounding (no part lacks a month's value in the windows), under 1% of the change: no step, the gap is in the sum-check line
+    wfs = [c for c in rep["viz"]["charts"] if c["chart"] == "contribution_waterfall"]
+    for c, gap in zip(wfs, ("$1,000", "$6,000")):
+        st = c["data"]["steps"]
+        assert (st[0]["label"], st[0]["value"], st[-1]["label"], st[-1]["text"]) == ("Start", 0, "Total change", "+$29.3B"), st
+        assert not any(x["label"].startswith("Not allocated") for x in st), [x["label"] for x in st]
+        assert max(abs(x["value"]) for x in st[1:-1]) > 0.25 * st[-1]["value"], "the largest part fills a quarter of the chart"
+        assert "(gap %s, rounding)" % gap in c["summary"] and "adds up; gap %s, rounding" % gap in c["source"], (c["summary"], c["source"])
+    assert [c["suppressed_parts"] for c in est["sum_checks"]] == [0, 0], est["sum_checks"]
+    assert [c["unallocated_latest"]["text"] for c in est["sum_checks"]] == ["\u2212$3,000", "\u2212$2,000"], est["sum_checks"]
     cal = next(c for c in rep["viz"]["charts"] if c["chart"] == "calendar_heatmap")
     assert "seasonally adjusted" in cal["title"] and max(n for row in cal["data"]["n"] for n in row if n) == 13, cal["title"]
     geo = next(c for c in rep["viz"]["charts"] if c["chart"] == "change_heatmap" and c["data"]["row_label"] == "GEO")

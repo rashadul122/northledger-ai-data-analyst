@@ -1817,8 +1817,11 @@ def sum_at(S: Dict[str, Any], months: Sequence[str], vals: Any, at: Sequence[str
 _SUFFIX = ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K"))
 
 
-def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Optional[float] = None) -> str:
-    """A figure in the measure's unit: "$834.7B", "+$29.3B", "−$1.2M", "12.4M" (a count), "5.2%" (a rate)."""
+def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Optional[float] = None,
+          exact_small: bool = False) -> str:
+    """A figure in the measure's unit: "$834.7B", "+$29.3B", "−$1.2M", "12.4M" (a count), "5.2%" (a rate).
+    exact_small (a gap, never a headline figure): an amount that would read as zero in the scale of `ref` is written out
+    in whole units, "$1,000" and "−$3,000", not "$0.0B" (final integration pass, 6 Oct 2026)."""
     if v is None or v != v:
         return "n/a"
     t = S["measure"]["type"]
@@ -1838,6 +1841,8 @@ def money(v: Optional[float], S: Dict[str, Any], signed: bool = False, ref: Opti
                 break
         if body is None:
             body = "%.0f" % x if x >= 1 else "%.3g" % x
+        elif exact_small and x > 0 and not re.search(r"[1-9]", body):
+            body = format(int(round(x)), ",") if x >= 1 else "%.3g" % x
     if not re.search(r"[1-9]", body):
         v = 0.0                               # rounds to zero: no sign ("$0.0B", never "−$0.0B")
     sign = ("+" if v > 0 else "−" if v < 0 else "") if signed else ("−" if v < 0 else "")
@@ -1916,6 +1921,7 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
     return {"id": bd["id"], "dim": bd["dim"], "parent": bd["parent"], "depth": bd.get("depth", 1),
             "prior": T0, "latest": T1, "change": change, "parts": parts,
             "unallocated": {"prior": u0, "latest": u1, "contribution": u_contrib},
+            "suppressed_parts": sum(1 for p in parts if not p["complete"]),
             "shares_given": bool(same), "reconciles": bool(ok), "months": len(lat_m)}
 
 
@@ -1985,10 +1991,13 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                        "max_residual": {"value": _r(sc.get("max_residual")),
                                         "text": money(sc.get("max_residual"), S) if sc.get("max_residual") is not None
                                         else "n/a"},
+                       "suppressed_parts": res["suppressed_parts"] if res else None,
                        "unallocated_latest": {"value": _r(res["unallocated"]["latest"]) if res else None,
-                                              "text": money(res["unallocated"]["latest"], S, ref=T1) if res else "n/a"},
+                                              "text": money(res["unallocated"]["latest"], S, ref=T1, exact_small=True)
+                                              if res else "n/a"},
                        "unallocated_prior": {"value": _r(res["unallocated"]["prior"]) if res else None,
-                                             "text": money(res["unallocated"]["prior"], S, ref=T1) if res else "n/a"},
+                                             "text": money(res["unallocated"]["prior"], S, ref=T1, exact_small=True)
+                                             if res else "n/a"},
                        "verdict": "adds_up"})
     excluded = []
     for d in S["dims"]:

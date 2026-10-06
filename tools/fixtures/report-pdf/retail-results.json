@@ -2,7 +2,7 @@
  "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset), on Statistics Canada table 20-10-0056-01, retail trade by province and by store type, 36,735 rows, 465 series x 79 months (the file is not in the repository: it is the visitor's CSV; this maker reads it from --csv, or from $NL_RETAIL_CSV, or from the owner's .work/eval folder, and records its sha256), the planner off (decisions {}), analysis date 2026-09-30: rep = nl_browser.run_json(...); results = nl_browser.results_json(rep), whole. What the page POSTs to /report as `results`. It holds an estimand (what the headline measures: the 12-month total of Total retail sales in Canada, the change and its units), a sum-check, the engine's grade as a PROCESS grade (month-to-month noise of 36 monthly totals, not a test of a published total), a forecast with its back-test (nl_inference.forecast_audit), a contribution waterfall with its not-allocated step and each part's own change, and 53 of the 75 scenario items (the payload budget keeps the parts that moved against the change). The hand-written report that goes with it is retail-response.json (a TEST FIXTURE, never a live reply).",
  "made_with": "python3 tools/fixtures/report-pdf/make_retail.py (the packed engine, run natively)",
  "engine_snapshot": "19ec81d19e0d",
- "zip_sha256": "62a145d3fbe8969827580faf847fcf2394c43d0c88b6e22afead09ba7185d227",
+ "zip_sha256": "3d6b682ab0b917262b6f0fda8c958f791b0fe72a7e917ea3f79ec88fa1a1d73f",
  "csv_sha256": "a3ffa24023ea00dab4626f12b5256e70402b289bfa2225ad94ebd4ea82cae388",
  "as_of": "2026-09-30",
  "name": "retail_sales_provinces_2020_2026.csv",
@@ -77,7 +77,7 @@
      "verdict": "adds_up",
      "unallocated_latest": {
       "value": -3000.0,
-      "text": "$0.0B"
+      "text": "−$3,000"
      },
      "complete_cells": 265,
      "within_tolerance": 265,
@@ -94,7 +94,7 @@
      "verdict": "adds_up",
      "unallocated_latest": {
       "value": -2000.0,
-      "text": "$0.0B"
+      "text": "−$2,000"
      },
      "complete_cells": 838,
      "within_tolerance": 838,
@@ -252,7 +252,7 @@
     "chart": "contribution_waterfall",
     "kind": "waterfall",
     "title": "Where the change in Total retail sales came from, by GEO",
-    "subtitle": "Canada · Retail trade [44-45] · Total retail sales ·…, 2024-08 to 2025-07 against 2025-08 to 2026-07: each published part's contribution (the parts of Canada…",
+    "subtitle": "Total retail sales went from $834.7B (2024-08 to 2025-07) to $864.0B (2025-08 to 2026-07); each published part's contribution to the +$29.3B change",
     "section": "drove",
     "supports": "Change in the average month of total_retail_sales, latest 12 months against the 12 before",
     "anchors": [
@@ -284,116 +284,108 @@
     "data": {
      "steps": [
       {
-       "label": "12 months before",
-       "value": 834657569000,
-       "text": "$834.7B",
+       "label": "Start",
+       "value": 0,
+       "text": "$0",
        "kind": "total",
        "from": 0,
-       "to": 834657569000
+       "to": 0
       },
       {
        "label": "Ontario",
        "value": 10157607000,
        "text": "+$10.2B",
        "kind": "step",
-       "from": 834657569000,
-       "to": 844815176000
+       "from": 0,
+       "to": 10157607000
       },
       {
        "label": "Quebec",
        "value": 6232641000,
        "text": "+$6.2B",
        "kind": "step",
-       "from": 844815176000,
-       "to": 851047817000
+       "from": 10157607000,
+       "to": 16390248000
       },
       {
        "label": "Alberta",
        "value": 5884568000,
        "text": "+$5.9B",
        "kind": "step",
-       "from": 851047817000,
-       "to": 856932385000
+       "from": 16390248000,
+       "to": 22274816000
       },
       {
        "label": "British Columbia",
        "value": 3258912000,
        "text": "+$3.3B",
        "kind": "step",
-       "from": 856932385000,
-       "to": 860191297000
+       "from": 22274816000,
+       "to": 25533728000
       },
       {
        "label": "New Brunswick",
        "value": 983524000,
        "text": "+$983.5M",
        "kind": "step",
-       "from": 860191297000,
-       "to": 861174821000
+       "from": 25533728000,
+       "to": 26517252000
       },
       {
        "label": "Nova Scotia",
        "value": 944801000,
        "text": "+$944.8M",
        "kind": "step",
-       "from": 861174821000,
-       "to": 862119622000
+       "from": 26517252000,
+       "to": 27462053000
       },
       {
        "label": "Manitoba",
        "value": 939371000,
        "text": "+$939.4M",
        "kind": "step",
-       "from": 862119622000,
-       "to": 863058993000
+       "from": 27462053000,
+       "to": 28401424000
       },
       {
        "label": "Saskatchewan",
        "value": 354798000,
        "text": "+$354.8M",
        "kind": "step",
-       "from": 863058993000,
-       "to": 863413791000
+       "from": 28401424000,
+       "to": 28756222000
       },
       {
        "label": "Newfoundland and Labrador",
        "value": 303319000,
        "text": "+$303.3M",
        "kind": "step",
-       "from": 863413791000,
-       "to": 863717110000
+       "from": 28756222000,
+       "to": 29059541000
       },
       {
        "label": "Prince Edward Island",
        "value": 208467000,
        "text": "+$208.5M",
        "kind": "step",
-       "from": 863717110000,
-       "to": 863925577000
+       "from": 29059541000,
+       "to": 29268008000
       },
       {
        "label": "other parts (3)",
        "value": 70686000,
        "text": "+$70.7M",
        "kind": "step",
-       "from": 863925577000,
-       "to": 863996263000
+       "from": 29268008000,
+       "to": 29338694000
       },
       {
-       "label": "Not allocated: suppressed cells",
-       "value": 1000,
-       "text": "$0.0B",
-       "kind": "step",
-       "from": 863996263000,
-       "to": 863996264000
-      },
-      {
-       "label": "Latest 12 months",
-       "value": 863996264000,
-       "text": "$864.0B",
+       "label": "Total change",
+       "value": 29338695000,
+       "text": "+$29.3B",
        "kind": "total",
        "from": 0,
-       "to": 863996264000
+       "to": 29338695000
       }
      ],
      "basis": {
@@ -422,8 +414,8 @@
      ],
      "rows": [
       [
-       "12 months before",
-       "$834.7B",
+       "Start",
+       "$0",
        ""
       ],
       [
@@ -482,23 +474,18 @@
        ""
       ],
       [
-       "Not allocated: suppressed cells",
-       "$0.0B",
-       ""
-      ],
-      [
-       "Latest 12 months",
-       "$864.0B",
+       "Total change",
+       "+$29.3B",
        ""
       ]
      ]
     },
-    "summary": "Canada · Retail trade [44-45] · Total retail sales · Unadjusted went from $834.7B in the 12 months before to $864.0B in the latest 12 months, a change of +$29.3B (descriptive arithmetic on published totals). The largest contributions by GEO: Ontario +$10.2B and Quebec +$6.2B; the unallocated part (the total less its published parts) is $0.0B. Where the change sits, not what caused it.",
+    "summary": "Canada · Retail trade [44-45] · Total retail sales · Unadjusted went from $834.7B in the 12 months before to $864.0B in the latest 12 months, a change of +$29.3B (descriptive arithmetic on published totals). The largest contributions by GEO: Ontario +$10.2B and Quebec +$6.2B. The parts add up to the change (gap $1,000, rounding). Where the change sits, not what caused it.",
     "suppressed": {
      "cells": 0,
      "why": "3 smaller parts folded into 'other parts'"
     },
-    "source": "structure: the published parts of Canada by GEO (each total checked against its parts); the unallocated step is the total less its published parts",
+    "source": "structure: the published parts of Canada by GEO (each total checked against its parts: adds up; gap $1,000, rounding)",
     "inputs": {
      "columns": [
       "Total retail sales",
@@ -517,7 +504,7 @@
     "chart": "contribution_waterfall",
     "kind": "waterfall",
     "title": "Where the change in Total retail sales came from, by North American Industry Classification System (NAICS)",
-    "subtitle": "Canada · Retail trade [44-45] · Total retail sales ·…, 2024-08 to 2025-07 against 2025-08 to 2026-07: each published part's contribution (the parts of Retail…",
+    "subtitle": "Total retail sales went from $834.7B (2024-08 to 2025-07) to $864.0B (2025-08 to 2026-07); each published part's contribution to the +$29.3B change",
     "section": "drove",
     "supports": "Change in the average month of total_retail_sales, latest 12 months against the 12 before",
     "anchors": [
@@ -548,100 +535,92 @@
     "data": {
      "steps": [
       {
-       "label": "12 months before",
-       "value": 834657569000,
-       "text": "$834.7B",
+       "label": "Start",
+       "value": 0,
+       "text": "$0",
        "kind": "total",
        "from": 0,
-       "to": 834657569000
+       "to": 0
       },
       {
        "label": "General merchandise retailers [455]",
        "value": 8072506000,
        "text": "+$8.1B",
        "kind": "step",
-       "from": 834657569000,
-       "to": 842730075000
+       "from": 0,
+       "to": 8072506000
       },
       {
        "label": "Health and personal care retailers [456]",
        "value": 6606528000,
        "text": "+$6.6B",
        "kind": "step",
-       "from": 842730075000,
-       "to": 849336603000
+       "from": 8072506000,
+       "to": 14679034000
       },
       {
        "label": "Gasoline stations and fuel vendors [457]",
        "value": 6109232000,
        "text": "+$6.1B",
        "kind": "step",
-       "from": 849336603000,
-       "to": 855445835000
+       "from": 14679034000,
+       "to": 20788266000
       },
       {
        "label": "Sporting goods, hobby, musical instrument, book, and miscellaneous retail… [459]",
        "value": 3375901000,
        "text": "+$3.4B",
        "kind": "step",
-       "from": 855445835000,
-       "to": 858821736000
+       "from": 20788266000,
+       "to": 24164167000
       },
       {
        "label": "Clothing, clothing accessories, shoes, jewellery, luggage and leather goo… [458]",
        "value": 3118928000,
        "text": "+$3.1B",
        "kind": "step",
-       "from": 858821736000,
-       "to": 861940664000
+       "from": 24164167000,
+       "to": 27283095000
       },
       {
        "label": "Food and beverage retailers [445]",
        "value": 2599756000,
        "text": "+$2.6B",
        "kind": "step",
-       "from": 861940664000,
-       "to": 864540420000
+       "from": 27283095000,
+       "to": 29882851000
       },
       {
        "label": "Furniture, home furnishings, electronics and appliances retailers [449]",
        "value": -1677374000,
        "text": "−$1.7B",
        "kind": "step",
-       "from": 864540420000,
-       "to": 862863046000
+       "from": 29882851000,
+       "to": 28205477000
       },
       {
        "label": "Motor vehicle and parts dealers [441]",
        "value": 1277929000,
        "text": "+$1.3B",
        "kind": "step",
-       "from": 862863046000,
-       "to": 864140975000
+       "from": 28205477000,
+       "to": 29483406000
       },
       {
        "label": "Building material and garden equipment and supplies dealers [444]",
        "value": -144705000,
        "text": "−$144.7M",
        "kind": "step",
-       "from": 864140975000,
-       "to": 863996270000
+       "from": 29483406000,
+       "to": 29338701000
       },
       {
-       "label": "Not allocated: suppressed cells",
-       "value": -6000,
-       "text": "$0.0B",
-       "kind": "step",
-       "from": 863996270000,
-       "to": 863996264000
-      },
-      {
-       "label": "Latest 12 months",
-       "value": 863996264000,
-       "text": "$864.0B",
+       "label": "Total change",
+       "value": 29338695000,
+       "text": "+$29.3B",
        "kind": "total",
        "from": 0,
-       "to": 863996264000
+       "to": 29338695000
       }
      ],
      "basis": {
@@ -670,8 +649,8 @@
      ],
      "rows": [
       [
-       "12 months before",
-       "$834.7B",
+       "Start",
+       "$0",
        ""
       ],
       [
@@ -720,23 +699,18 @@
        "−0.3%"
       ],
       [
-       "Not allocated: suppressed cells",
-       "$0.0B",
-       ""
-      ],
-      [
-       "Latest 12 months",
-       "$864.0B",
+       "Total change",
+       "+$29.3B",
        ""
       ]
      ]
     },
-    "summary": "Canada · Retail trade [44-45] · Total retail sales · Unadjusted went from $834.7B in the 12 months before to $864.0B in the latest 12 months, a change of +$29.3B (descriptive arithmetic on published totals). The largest contributions by North American Industry Classification System (NAICS): General merchandise retailers [455] +$8.1B and Health and personal care retailers [456] +$6.6B; the…",
+    "summary": "Total retail sales went from $834.7B in the 12 months before to $864.0B in the latest 12 months, a change of +$29.3B (descriptive arithmetic on published totals). The largest contributions by NAICS: General merchandise retailers [455] +$8.1B and Health and personal care retailers [456] +$6.6B. The parts add up to the change (gap $6,000, rounding). Where the change sits, not what caused it.",
     "suppressed": {
      "cells": 0,
      "why": ""
     },
-    "source": "structure: the published parts of Retail trade [44-45] by North American Industry Classification System (NAICS) (each total checked against its parts); the unallocated step is the total less its…",
+    "source": "structure: the published parts of Retail trade [44-45] by North American Industry Classification System (NAICS) (each total checked against its parts: adds up; gap $6,000, rounding)",
     "inputs": {
      "columns": [
       "Total retail sales",
@@ -5494,6 +5468,27 @@
      }
     },
     {
+     "id": "share_level.naics.441",
+     "group": "contribution",
+     "segment": "Motor vehicle and parts dealers [441]",
+     "label": "Motor vehicle and parts dealers [441]: share of Canada · Retail trade [44-45] · Total retail sales · Unadjusted in the latest 12 months",
+     "value": 26.754373,
+     "text": "26.8%",
+     "kind": "percent",
+     "unit": "",
+     "grade": null,
+     "parent_grade": "NOT_ENOUGH_DATA",
+     "grade_words": "descriptive arithmetic on published totals; part of a change graded NOT_ENOUGH_DATA, not graded itself",
+     "assumes": null,
+     "inputs": {
+      "columns": [
+       "Total retail sales"
+      ],
+      "window": "both",
+      "op": "the part's latest window / the total's"
+     }
+    },
+    {
      "id": "contribution.geo.new_brunswick",
      "group": "contribution",
      "segment": "New Brunswick",
@@ -5789,7 +5784,7 @@
     }
    ],
    "refused": [
-    "22 of the 75 scenario items are left out to keep what the report writer receives under 90,000 bytes: the facts first, then the parts with the smallest contributions; a part that moved against the change and the unallocated part are kept to the end",
+    "21 of the 75 scenario items are left out to keep what the report writer receives under 90,000 bytes: the facts first, then the parts with the smallest contributions; a part that moved against the change and the unallocated part are kept to the end",
     "shares of the change are not given: segments moved in opposite directions, so shares of the net change would exceed 100% (GEO)",
     "shares of the change are not given: segments moved in opposite directions, so shares of the net change would exceed 100% (North American Industry Classification System (NAICS))",
     "the forecast is not yet shown usable, so it is not added up into scenarios"

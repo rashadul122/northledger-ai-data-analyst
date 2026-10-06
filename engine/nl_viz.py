@@ -2398,9 +2398,17 @@ R_NO_SA = ("the table publishes no seasonally adjusted series: the month-on-mont
            "its season, not momentum")
 R_RATE_CAL = "a rate or an index changes in points, not percent: its published aggregate is charted by its trend"
 STRUCTURE_WATERFALL_PARTS = 10          # the largest parts shown; the rest folded into "other parts", then unallocated
-# the step the total less its published parts makes (the publisher's suppressed cells), in the words a reader needs:
-# not "unallocated", a word of accounting, but what it is (wave 4, track B)
+# the step the total less its published parts makes, in the words a reader needs: not "unallocated", a word of
+# accounting, but what it is (wave 4, track B). Final integration pass (6 Oct 2026): the waterfall shows the DECOMPOSITION OF
+# THE CHANGE (a "Start" total of 0, each part's contribution, a "Total change" total), so the parts fill the chart (the
+# frozen spec's 0 on the axis holds by construction); the step is drawn only when it is 1% or more of the change (the share
+# the worker names it from, G20), and says why it is there: the suppressed cells of the table, or the rounding of its
+# published figures. Below that it is left out, and the figure's own sum-check line says "adds up; gap ..., rounding".
 UNALLOCATED_STEP = "Not allocated: suppressed cells"
+UNALLOCATED_ROUNDING = "Not allocated: rounding"
+UNALLOCATED_SHOW_SHARE = 0.01
+WATERFALL_START = "Start"
+WATERFALL_TOTAL = "Total change"
 
 
 def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[str, Dict[str, Any]],
@@ -2418,65 +2426,103 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     shown, rest = parts[:STRUCTURE_WATERFALL_PARTS], parts[STRUCTURE_WATERFALL_PARTS:]
     growth = {str(it["segment"]): it for iid, it in items.items() if iid.startswith("growth.%s." % key)}
     wlabels = _unique_labels([str(it["segment"]) for it in shown])
+    change = float(hc["value"])
+    u = float(unal["value"])
+    # the not-allocated step: drawn when it is 1% or more of the change, or whenever leaving it out would break the
+    # frozen spec's add-up (the steps add up to the change to 1e-6 of it); below both, left out and said in the sum-check
+    # line. Its cause: suppressed cells when a part of this dimension lacks a month's value in either window (the sum-check's
+    # `suppressed_parts`), else the rounding of the published figures (a table in thousands adds up to within a few units).
+    n_mid = len(shown) + (1 if rest else 0)
+    tol = RECONCILE_TOL * max(1.0, abs(change)) + 1e-6 * (n_mid + 2)
+    omit = u == 0 or (abs(u) < UNALLOCATED_SHOW_SHARE * abs(change) and abs(u) <= 0.5 * tol)
+    chk = next((c for c in (rep.get("estimand") or {}).get("sum_checks") or []
+                if isinstance(c, dict) and c.get("dim") == bd["dim"] and c.get("total") == bd["parent"]), None)
+    rounding = chk is not None and chk.get("suppressed_parts") == 0
+    cause_words = "rounding" if rounding else "suppressed cells"
+    step_label = UNALLOCATED_ROUNDING if rounding else UNALLOCATED_STEP
+    zero_text = _money_like(0.0, str(hc["text"]), signed=False)
+    gap_text = _money_like(abs(u), str(hc["text"]), signed=False, ref=change, exact_small=True)
     steps = [(wlabels[i], float(it["value"]), str(it["text"])) for i, it in enumerate(shown)]
     if rest:
         v = math.fsum(float(it["value"]) for it in rest)
         steps.append(("other parts (%d)" % len(rest), v, _money_like(v, str(hc["text"]))))
-    steps.append((UNALLOCATED_STEP, float(unal["value"]), str(unal["text"])))
+    if not omit:
+        steps.append((step_label, u, str(unal["text"])))
     bs = {"split": "segment", "finding_id": basis.get("finding_id"), "column": str(bd["dim"])[:120],
           "prior": list(basis["windows"]["prior"]), "latest": list(basis["windows"]["latest"])}
     full = basis.get("complete") is not False
     k_used = int(basis.get("months_used") or 12)
-    w_before, w_latest = ("12 months before", "Latest 12 months") if full else \
-        ("%d matched months before" % k_used, "%d matched latest months" % k_used)
-    data = _waterfall_data((w_before, float(hp["value"]), str(hp["text"])), steps,
-                           (w_latest, float(hl["value"]), str(hl["text"])),
-                           (float(hc["value"]), str(hc["text"])), bs)
+    data = _waterfall_data((WATERFALL_START, 0.0, zero_text), steps, (WATERFALL_TOTAL, change, str(hc["text"])),
+                           (change, str(hc["text"])), bs)
     _check_waterfall(data)
     measure = str(basis.get("measure") or "the total")
     what = str(basis.get("estimand") or measure).split(";")[0]
     grade = basis.get("grade")
     big = shown[:2]
     lead = " and ".join("%s %s" % (it["segment"], it["text"]) for it in big)
-    span = "the 12 months before to %s in the latest 12 months" if full else \
-        "the %d matched months before to %%s in the same months of the latest 12" % k_used
-    summary = ("%s went from %s in " + span + ", a change of %s (descriptive arithmetic on published totals). The "
-               "largest contributions by %s: %s; the unallocated part (the total less its published parts) is %s. "
-               "Where the change sits, not what caused it.") % (
-                   _cut(what, 120), hp["text"], hl["text"], hc["text"], bd["dim"], lead, unal["text"])
-    rows = [[w_before, str(hp["text"]), ""]]
+    pw, lw = basis["windows"]["prior"], basis["windows"]["latest"]
+    levels = ("went from %s in the 12 months before to %s in the latest 12 months" if full else
+              "went from %%s in the %d matched months before to %%s in the same months of the latest 12" % k_used) % (
+                  hp["text"], hl["text"])
+    closing = ("The parts add up to the change%s." % (" exactly" if u == 0 else " (gap %s, %s)" % (gap_text, cause_words))) \
+        if omit else ("Not allocated (the total less its published parts, %s): %s." % (cause_words, unal["text"]))
+
+    def summary_of(w: str, dim: str, ld: str) -> str:
+        return "%s %s, a change of %s (descriptive arithmetic on published totals). The largest contributions by %s: " \
+               "%s. %s Where the change sits, not what caused it." % (w, levels, hc["text"], dim, ld, closing)
+    sdim = _short_dim(str(bd["dim"]))
+    summary = summary_of(_cut(what, 120), str(bd["dim"]), lead)
+    for w_, d_, l_ in ((_cut(what, 120), sdim, lead), (_cut(measure, 60), sdim, lead),
+                       (_cut(measure, 60), sdim, "%s %s" % (shown[0]["segment"], shown[0]["text"]))):
+        if len(summary) <= 400:
+            break
+        summary = summary_of(w_, d_, l_)
+    rows = [[WATERFALL_START, zero_text, ""]]
     for i, it in enumerate(shown):
         g = growth.get(str(it["segment"]))
         rows.append([wlabels[i], str(it["text"]), str(g["text"]) if g else "n/a"])
     if rest:
         rows.append([steps[len(shown)][0], steps[len(shown)][2], ""])
-    rows.append([UNALLOCATED_STEP, str(unal["text"]), ""])
-    rows.append([w_latest, str(hl["text"]), ""])
+    if not omit:
+        rows.append([step_label, str(unal["text"]), ""])
+    rows.append([WATERFALL_TOTAL, str(hc["text"]), ""])
     fid = str(basis.get("finding_id") or "")
     anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.prior"] + \
         ["scenario:" + str(it["id"]) for it in shown] + ["scenario:" + str(unal["id"]), "scenario:headline.latest",
                                                          "scenario:headline.change"]
+    sub_levels = "%s (%s to %s) to %s (%s to %s)" % (hp["text"], pw[0], pw[1], hl["text"], lw[0], lw[1]) if full else \
+        "%s to %s (%d matched months of each window)" % (hp["text"], hl["text"], k_used)
     return _record(
         "contribution_waterfall", "Where the change in %s came from, by %s" % (_cut(measure, 60), bd["dim"]),
-        "%s, %s to %s against %s to %s: each published part's contribution (the parts of %s, sum-checked)" % (
-            _cut(what, 60), basis["windows"]["prior"][0], basis["windows"]["prior"][1], basis["windows"]["latest"][0],
-            basis["windows"]["latest"][1], bd["parent"]),
+        "%s went from %s; each published part's contribution to the %s change" % (
+            _cut(measure, 40), sub_levels, hc["text"]),
         "drove", str((findings.get(fid) or {}).get("claim") or what), anchors, None, grade,
         {"label": measure, "unit": "", "kind": "amount"}, data,
         {"cols": ["Step", "Contribution", "Own change"], "rows": rows}, summary,
         (0, "%d smaller parts folded into 'other parts'" % len(rest) if rest else ""),
-        "structure: the published parts of %s by %s (each total checked against its parts); the unallocated step is the "
-        "total less its published parts" % (bd["parent"], bd["dim"]),
+        ("structure: the published parts of %s by %s (each total checked against its parts: adds up%s)" % (
+            bd["parent"], bd["dim"], "" if u == 0 else "; gap %s, %s" % (gap_text, cause_words))) if omit else
+        ("structure: the published parts of %s by %s (each total checked against its parts); the not-allocated step is "
+         "the total less its published parts (%s)" % (bd["parent"], bd["dim"], cause_words)),
         {"columns": [measure, str(bd["dim"])], "rows": None, "months": [basis["windows"]["prior"][0],
                                                                          basis["windows"]["latest"][1]],
          "op": "each part's 12-month total in each window, from the table's own series"})
 
 
-def _money_like(v: float, like: str) -> str:
-    """A figure written as the headline's change is ("+$1.2B"): its currency sign and suffix."""
+def _short_dim(dim: str, n: int = 30) -> str:
+    """A dimension's name in a sentence: its own abbreviation in brackets when the name is long ("... (NAICS)" is "NAICS")."""
+    if len(dim) <= n:
+        return dim
+    m = re.search(r"\(([^()]{2,12})\)\s*$", dim)
+    return m.group(1) if m else _cut(dim, n)
+
+
+def _money_like(v: float, like: str, signed: bool = True, ref: Optional[float] = None, exact_small: bool = False) -> str:
+    """A figure written as the headline's change is ("+$1.2B"): its currency sign and suffix. ref: the figure whose scale
+    it is written in; exact_small: a gap that would read as zero there is written out ("$1,000")."""
     import nl_structure as NST
     S = {"measure": {"type": "flow", "currency": like.lstrip("+" + MINUS).startswith("$"), "uom": "Dollars"}}
-    return NST.money(v, S, signed=True)
+    return NST.money(v, S, signed=signed, ref=ref, exact_small=exact_small)
 
 
 def _short_label(s: Any, n: int = LABEL_MAX) -> str:

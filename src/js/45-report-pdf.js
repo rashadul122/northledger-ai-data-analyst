@@ -236,10 +236,11 @@
     var r = step / u[0], dp = r >= 1 ? 0 : Math.min(2, Math.ceil(-Math.log10(r) - 1e-9));
     return function (t) { return t === 0 ? cur + '0' : (t < 0 ? '\u2212' : '') + cur + nf(dp, dp).format(Math.abs(t) / u[0]) + u[1]; };
   }
-  // the unallocated step's label, as the engine now writes it and as an older report did
-  var UNALLOCATED = /^(?:not allocated: suppressed cells|unallocated \(suppressed cells\))$/i;
+  // the not-allocated step's label, as the engine now writes it ("Not allocated: suppressed cells", or "Not allocated:
+  // rounding" when no part of the dimension lacks a month's value) and as an older report did ("unallocated (suppressed cells)")
+  var UNALLOCATED = /^(?:not allocated: (?:suppressed cells|rounding)|unallocated \(suppressed cells\))$/i;
   var UNALLOCATED_WORDS = 'Not allocated: suppressed cells';
-  function stepLabel(s) { return UNALLOCATED.test(String(s)) ? UNALLOCATED_WORDS : String(s); }
+  function stepLabel(s) { return /^unallocated \(suppressed cells\)$/i.test(String(s)) ? UNALLOCATED_WORDS : String(s); }
   var CORRECTION_WORDS = { total_with_parts: 'a total kept together with its own parts', two_adjustments: 'both the adjusted and the unadjusted series',
     component_with_parent: 'a component kept with the total that already holds it', alt_with_total: 'an alternative total kept with the total',
     mixed_units: 'different units mixed', rate_members: 'several members of a rate or an index', unverified_members: 'several members of a dimension no total was verified for' };

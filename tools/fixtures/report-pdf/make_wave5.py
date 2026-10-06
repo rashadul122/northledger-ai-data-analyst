@@ -1,4 +1,4 @@
-"""Builds wave5-results.json: the engine's results on three SYNTHETIC statistical tables, for the report writer's wave 5 checks.
+"""Builds wave5-results.json: the engine's results on five SYNTHETIC statistical tables, for the report writer's wave 5 checks.
 
     python3 tools/fixtures/report-pdf/make_wave5.py
 
@@ -13,6 +13,12 @@ results = nl_browser.results_json(nl_browser.run_json(...)), whole, what the pag
              quarters in every word, no forecast and no audit
   measures   a Total and three regions in two measures held in one value column (make_cubes.measures_units_dollars): one measure
              shown (Sales value, chosen by the engine's default order), the other listed under left out and why
+  onemember  (wave 5b) a rate of six provinces with NO total member, the first province in the middle of the others' range
+             (make_cubes.rate_table): one member shown by dominance, "one member shown: Echo; this table has no total member, so
+             this is not a national figure", never described as a published total
+  refused    (wave 5b) a table of series with totals (make_cubes.partition) read while the structure layer cannot run (nl_structure
+             is made unimportable in the run): the business analysis did not run, structure {kind: "error", error: {stage, type,
+             message}}, no estimand, no figure
 """
 import hashlib
 import json
@@ -35,7 +41,10 @@ CASES = {
     "nototal": ("regions_no_total.csv", lambda: MC.no_total(hide=[("Charlie", 38), ("Bravo", 34)])),
     "quarterly": ("population_quarterly.csv", lambda: MC.periodic("quarter", "iso", stock=True)),
     "measures": ("sales_and_units.csv", MC.measures_units_dollars),
+    "onemember": ("provinces_no_total.csv", lambda: MC.rate_table("none")),
+    "refused": ("regions_layer_down.csv", MC.partition),
 }
+BLOCKED = {"refused"}                          # the structure layer cannot be imported in these runs
 RUN = r"""
 import json, os, sys
 pack = sys.argv[1]
@@ -45,6 +54,8 @@ os.environ.pop("NL_BROWSER_STRICT", None)
 import nl_browser as NB
 assert NB.__file__.startswith(pack), NB.__file__
 req = json.load(sys.stdin)
+if req.get("block"):
+    sys.modules["nl_structure"] = None             # `import nl_structure` raises: the layer cannot run
 rep = json.loads(NB.run_json(open(req["csv"], "rb").read(), req["name"], "", json.dumps({}), req["as_of"]))
 assert rep["ok"], rep["error"]
 json.dump({"snapshot": rep["engine"]["snapshot"], "results": json.loads(NB.results_json(json.dumps(rep)))}, sys.stdout,
@@ -63,11 +74,15 @@ def main() -> None:
             csv = os.path.join(tmp, name)
             with open(csv, "wb") as fh:
                 fh.write(mk())
-            got = subprocess.run([sys.executable, "-c", RUN, tmp], input=json.dumps({"csv": csv, "name": name, "as_of": AS_OF}),
+            got = subprocess.run([sys.executable, "-c", RUN, tmp], input=json.dumps({"csv": csv, "name": name, "as_of": AS_OF,
+                                                                                    "block": key in BLOCKED}),
                                  capture_output=True, text=True, cwd=tmp, check=True)
             run = json.loads(got.stdout)
             res = run["results"]
-            assert res.get("estimand"), "%s: the run carries no estimand" % key
+            if key in BLOCKED:
+                assert not res.get("estimand") and res["structure"]["kind"] == "error", "%s: the run was not refused" % key
+            else:
+                assert res.get("estimand"), "%s: the run carries no estimand" % key
             out["engine_snapshot"] = run["snapshot"]
             out["cases"][key] = {"name": name, "csv_sha256": hashlib.sha256(open(csv, "rb").read()).hexdigest(), "results": res}
     finally:
@@ -76,7 +91,8 @@ def main() -> None:
         json.dump(out, fh, ensure_ascii=False, indent=1, allow_nan=False)
         fh.write("\n")
     print("wrote %s (%d bytes; %s)" % (OUT, os.path.getsize(OUT), ", ".join(
-        "%s: %s" % (k, v["results"]["estimand"]["text"][:70]) for k, v in out["cases"].items())))
+        "%s: %s" % (k, (v["results"].get("estimand") or {"text": v["results"]["structure"]["reason"]})["text"][:70])
+        for k, v in out["cases"].items())))
 
 
 if __name__ == "__main__":

@@ -2869,7 +2869,7 @@ check('try-sample-profile-through-the-real-engine-after-the-choices', DESK, asyn
 const PY = process.env.PY || path.join(SITE_DIR, '..', 'agent-demo', 'venv', 'bin', 'python');
 const FX_NAMES = ['sample', 'rent-roll', 'sales-ledger', 'web-analytics', 'cafe-invoices-18m', 'rent-roll-gated', 'shop-margins-36m'];
 // a statistical table read by its structure (wave 4, track B): only its report is read by the checks (no profile or landed files)
-const FX_STRUCT = ['official-cube.json', 'wave5-no-total.json', 'wave5-quarterly.json'];
+const FX_STRUCT = ['official-cube.json', 'wave5-no-total.json', 'wave5-quarterly.json', 'wave5b-one-member.json', 'wave5b-refused.json'];
 // every file the checks read: each report, the profile the page would send /plan for it, and the planned
 // orders-private run (its CSV too, for the personal values that must never show)
 const FX_FILES = FX_NAMES.concat(['orders-private']).map((n) => n + '.json').concat(FX_NAMES.concat(['orders-private']).map((n) => n + '.profile.json'),
@@ -4163,6 +4163,38 @@ check('wave5-no-total-row-and-quarterly-tables-are-said-on-the-page', DESK, asyn
   ok(b.figs.join('|') === '4 quarters before|Latest 4 quarters|Change|Change, %' && /4-quarter averages Q1 2023–Q4 2023 vs Q1 2022–Q4 2022/.test(b.what), 'a quarterly table\'s estimand card does not say quarters: ' + JSON.stringify([b.figs, b.what]));
   ok(!/\bmonths?\b/i.test(b.figs.join(' ') + ' ' + b.what + ' ' + b.checks.join(' ')) && /on 48 of 48 quarters/.test(b.checks[0]) && /in the latest 4 quarters/.test(b.checks[0]), 'a quarterly table\'s estimand card says months: ' + JSON.stringify([b.figs, b.what, b.checks]));
   ok(qt.forecast.available === false && /forecast reads monthly series only/.test(qt.forecast.reason) && !qt.forecast.audit, 'the quarterly table has a forecast or an audit: ' + JSON.stringify(qt.forecast.reason));
+  await p2.close();
+});
+/* wave 5b: a rate table with no total member shows ONE member and says it is not a national figure (the estimand card, its left-out line and the
+   headline), and is never described as a published total; a table of series whose structure layer could not run is refused with the plain
+   reason, the page draws no estimand card and no structure table, and says it once. SYNTHETIC tables (make_ui_fixtures.py "wave5b-one-member",
+   "wave5b-refused": the second is read while nl_structure cannot be imported). */
+check('wave5b-one-member-and-a-refused-table-are-said-on-the-page', DESK, async (ctx) => {
+  const om = vizCopy(fixture('wave5b-one-member')), rf = vizCopy(fixture('wave5b-refused'));
+  ok(om.estimand && om.estimand.single_member && om.estimand.single_member.member === 'Echo' && !om.estimand.inference, 'the one-member fixture carries no single_member, or is described: ' + JSON.stringify(om.estimand && om.estimand.single_member));
+  ok(rf.structure && rf.structure.kind === 'error' && rf.structure.usable === false && !rf.estimand && /^The business analysis did not run: this file looks like a table of series with totals/.test(rf.story.headline), 'the refused fixture is not a refusal: ' + JSON.stringify([rf.structure, rf.story.headline]));
+  const p1 = await openCube(ctx, om);
+  const a = await p1.evaluate(() => {
+    const t = (e) => e ? e.textContent.replace(/\s+/g, ' ').trim() : null;
+    return { what: t(document.querySelector('#nl2-manager .nl2-est-what')), excl: Array.from(document.querySelectorAll('#nl2-manager .nl2-est-excl li')).map(t),
+      described: !!document.querySelector('#nl2-manager .nl2-est-desc'), page: t(document.getElementById('try-report')),
+      structure: t(document.querySelector('#nl2-analyst .nl2-structure')) || '' };
+  });
+  ok(/one member shown: Echo; this table has no total member, so this is not a national figure/.test(a.what), 'the estimand card does not say one member is shown and it is not a national figure: ' + a.what);
+  ok(a.excl.some((x) => /one member shown, not a national figure: this table has no total member, and a rate is never added or averaged across members/.test(x)), 'the left-out line does not say it: ' + JSON.stringify(a.excl));
+  ok(!a.described && !/published total/i.test(a.what), 'a table with one member shown is described as a published total');
+  ok(a.page.indexOf('(one member shown, not a national figure)') >= 0, 'the headline does not say one member is shown: ' + om.story.headline);
+  ok(/GEO/.test(a.structure) && /single/.test(a.structure), 'the analyst view does not list GEO as read one member at a time: ' + a.structure.slice(0, 200));
+  ok(!p1.__errs.length, 'page error: ' + p1.__errs[0]);
+  await p1.close();
+  const p2 = await openTry(ctx, { stubReport: rf, proxy: 'unset' });
+  await runReport(p2);
+  const b = await p2.evaluate(() => ({ text: document.getElementById('try-report').textContent.replace(/\s+/g, ' '), card: !!document.querySelector('#try-report .nl2-estimand'),
+    structure: !!document.querySelector('#try-report .nl2-structure'), kpis: !!document.querySelector('#try-report .tr-kpis') }));
+  ok(b.text.split(rf.story.headline).length - 1 === 1 && /could not run\. An average over its rows would count totals and parts together, so no figure is shown/.test(b.text), 'the refusal is not said once, in full: ' + b.text.slice(0, 300));
+  ok(!b.card && !b.structure, 'a refused table draws an estimand card or a structure table');
+  ok(!/months? to [A-Z][a-z]{2} 20\d\d: [+-]/.test(b.text), 'a refused table prints a change');
+  ok(!p2.__errs.length, 'page error: ' + p2.__errs[0]);
   await p2.close();
 });
 check('estimand-leads-the-report-and-the-headline-is-the-estimands', DESK, async (ctx) => {

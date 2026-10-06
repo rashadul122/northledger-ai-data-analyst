@@ -428,6 +428,36 @@ def main(argv=None):
             json.dump(rep, f)
         print("%-18s %s" % (name, rep.get("__fixture_error") or rep["estimand"]["text"][:80]),
               file=sys.stderr if "__fixture_error" in rep else sys.stdout)
+    # wave 5b: a rate table with NO total member (one member shown, not a national figure) and a table of series with totals read while
+    # the structure layer cannot run (nl_structure unimportable: the business analysis did not run), both synthetic (make_cubes.py)
+    for name, mk, need, block in (("wave5b-one-member", lambda: MC.rate_table("none"),
+                                   lambda r: (r.get("estimand") or {}).get("single_member"), False),
+                                  ("wave5b-refused", MC.partition,
+                                   lambda r: (r.get("structure") or {}).get("kind") == "error" and not r.get("estimand"), True)):
+        saved = sys.modules.get("nl_structure", "__absent__")
+        try:
+            if block:
+                sys.modules["nl_structure"] = None             # `import nl_structure` raises: the layer cannot run
+            data = mk()
+            with open(os.path.join(a.out, name + ".csv"), "wb") as f:
+                f.write(data)
+            rep = nl_browser.run(data, name + ".csv", "", None, AS_OF)
+            if not rep.get("ok"):
+                rep = {"__fixture_error": "the run failed: %s" % rep.get("error")}
+            elif not need(rep):
+                rep = {"__fixture_error": "the run carries no single_member / structure error: %s" % json.dumps(
+                    {k: rep.get(k) for k in ("estimand", "structure")})[:300]}
+        except Exception as e:
+            rep = {"__fixture_error": "the run raised %s: %s" % (type(e).__name__, e)}
+        finally:
+            if saved == "__absent__":
+                sys.modules.pop("nl_structure", None)
+            else:
+                sys.modules["nl_structure"] = saved
+        with open(os.path.join(a.out, name + ".json"), "w", encoding="utf-8") as f:
+            json.dump(rep, f)
+        print("%-18s %s" % (name, rep.get("__fixture_error") or rep["story"]["headline"][:90]),
+              file=sys.stderr if "__fixture_error" in rep else sys.stdout)
     # a header that is markup, in a chart the engine refuses (the chart review of 30 Sep 2026)
     name = "viz-hostile-header"
     write_hostile(a.out)

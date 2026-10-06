@@ -1,5 +1,5 @@
 {
- "about": "Builds wave5-results.json: the engine's results on three SYNTHETIC statistical tables, for the report writer's wave 5 checks.",
+ "about": "Builds wave5-results.json: the engine's results on five SYNTHETIC statistical tables, for the report writer's wave 5 checks.",
  "made_with": "python3 tools/fixtures/report-pdf/make_wave5.py (the packed engine, run natively)",
  "zip_sha256": "3e69f065c8be0fd90d04d8dbf2506c9d2b9f098574c7ff8c891d13b6c3e1da5f",
  "as_of": "2026-09-30",
@@ -2941,6 +2941,456 @@
      "claim": "Change in the average month of sales_value_total, latest 12 months against the 12 before",
      "grade": "NOT_ENOUGH_DATA"
     }
+   }
+  },
+  "onemember": {
+   "name": "provinces_no_total.csv",
+   "csv_sha256": "81353837d5ff764a2f73a0c937fbf71ce4a2e3cb1b65ef18ad51e8a28818130d",
+   "results": {
+    "ok": true,
+    "estimand": {
+     "text": "Echo; one member shown: Echo; this table has no total member, so this is not a national figure; percent; 12-month averages Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
+     "slice": [
+      {
+       "dim": "GEO",
+       "member": "Echo",
+       "why": "read one member at a time (no relation verified)"
+      }
+     ],
+     "measure": {
+      "label": "Unemployment rate",
+      "uom": "Percent",
+      "scale": "units",
+      "scale_applied": 1.0,
+      "type": "rate",
+      "type_basis": "a rate: a level, never summed",
+      "aggregation": "mean over months"
+     },
+     "comparison": {
+      "latest": [
+       "2022-01",
+       "2022-12"
+      ],
+      "prior": [
+       "2021-01",
+       "2021-12"
+      ]
+     },
+     "figures": {
+      "prior": {
+       "value": 11.283333,
+       "text": "11.28%"
+      },
+      "latest": {
+       "value": 12.008333,
+       "text": "12.01%"
+      },
+      "change": {
+       "value": 0.725,
+       "text": "+0.725 percentage points"
+      },
+      "change_pct": {
+       "value": 6.425406,
+       "text": "+6.4%"
+      }
+     },
+     "sum_checks": [],
+     "excluded": [
+      {
+       "what": "5 other members",
+       "why": "one member shown, not a national figure: this table has no total member, and a rate is never added or averaged across members"
+      }
+     ],
+     "plan_source": "engine_default",
+     "inference": null,
+     "single_member": {
+      "dim": "GEO",
+      "member": "Echo",
+      "noun": "national figure",
+      "statement": "one member shown: Echo; this table has no total member, so this is not a national figure"
+     }
+    },
+    "structure": {
+     "kind": "cube",
+     "usable": true,
+     "publisher": "statcan",
+     "series": 6,
+     "months": 48,
+     "dims": [
+      {
+       "column": "GEO",
+       "role": "single",
+       "members": 6,
+       "total": "Echo"
+      }
+     ],
+     "slice": {
+      "id": "S1",
+      "where": {
+       "GEO": "Echo"
+      },
+      "column": "value"
+     },
+     "reason": "",
+     "flags": null,
+     "corrections": []
+    },
+    "input": {
+     "name": "[your file]",
+     "rows": 288,
+     "columns": 14
+    },
+    "goal": "Unemployment rate, Echo (one member shown, not a national figure): no settled change; the data cannot say yet (INSUFFICIENT)",
+    "reading": "",
+    "quality_risks": [],
+    "plan_applied": [],
+    "plan_refused": [],
+    "findings": [
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "business",
+      "claim": "Change in the average month of value, latest 12 months against the 12 before",
+      "value": 6.425406203840467,
+      "why": "Based on 24 rows over 11 periods -- too little history to act on yet. The 6.4% difference is real in this sample, but a sample this small moves that much on its own.",
+      "interval_coverage": {
+       "measured": 0.9525368248772504,
+       "lo": 0.9326664308074086,
+       "hi": 0.9667524226417121
+      }
+     },
+     {
+      "verdict": "INSUFFICIENT",
+      "kind": "forecast",
+      "claim": "Forecast of monthly value for 2023-01",
+      "value": 11.558394644103023,
+      "why": "The data stops at 2022-12, but the analysis date is 2026-09-30: a forecast of 2023-01 is history, not a plan."
+     }
+    ],
+    "analyses": [],
+    "charts": [],
+    "tables": [],
+    "analyses_refused": [],
+    "story": {
+     "headline": "Unemployment rate, Echo (one member shown, not a national figure): no settled change; the data cannot say yet (INSUFFICIENT)",
+     "what_happened": [
+      "Average value (the average month) moved from 11.3 in the year before to 12.0 in the latest year, a change of +6.4%. The same test's interval for the change runs from -7.6% to +20.4%. It is a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true change 95"
+     ],
+     "why": [
+      "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+     ],
+     "what_to_do": [
+      "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+     ],
+     "whats_next": [
+      "No forecast of monthly value is offered: the data stops at 2022-12, before the analysis date (2026-09), so a forecast of 2023-01 would be history, not a plan."
+     ],
+     "cannot_answer": [
+      "The data cannot support this claim: Change in the average month of value, latest 12 months against the 12 before. Why: Based on 24 rows over 11 periods -- too little history to act on yet. The 6.4% difference is real in this sample, but a sample this small moves that much on its own. What would sett",
+      "The data cannot support this claim: Forecast of monthly value for 2023-01. Why: The data stops at 2022-12, but the analysis date is 2026-09-30: a forecast of 2023-01 is history, not a plan. What would settle it: Data up to the month before the analysis date; then this forecast can be re-run unchange"
+     ]
+    },
+    "forecast": {},
+    "health_score": 0.0,
+    "health_explain": "0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 93.8.",
+    "health_issues": [
+     "The health score is 0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 93.8.",
+     "Newest row in ref_date is 2022-12-01, 1399 days old as of 2026-09-30."
+    ],
+    "plan_row_drops": [],
+    "cleaning": {
+     "rows_in": 48,
+     "rows_clean": 48,
+     "rows_quarantined": 0,
+     "fixes": [
+      "A statistical table read as one series: 288 rows to 48 monthly values of value (base units, the file's scale applied)",
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+     ]
+    },
+    "limitations": [
+     "This file is a statistical table: 288 rows, 6 series over 48 months (GEO: single). Adding its rows would count the same value more than once, so the report reads one series, the headline the structure chooses: Echo; one member shown: Echo; ",
+     "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+     "horizon shortened to 4 month(s): a longer one would leave fewer than 12 backtest months with a band",
+     "The data cannot support this claim: Change in the average month of value, latest 12 months against the 12 before. Why: Based on 24 rows over 11 periods -- too little history to act on yet. The 6.4% difference is real in this sample, but a s",
+     "The data cannot support this claim: Forecast of monthly value for 2023-01. Why: The data stops at 2022-12, but the analysis date is 2026-09-30: a forecast of 2023-01 is history, not a plan. What would settle it: Data up to the month before ",
+     "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea"
+    ],
+    "scenarios": {
+     "basis": {
+      "source": "structure",
+      "finding_id": "measure.value.change",
+      "claim": "Change in the average month of value, latest 12 months against the 12 before",
+      "grade": "NOT_ENOUGH_DATA",
+      "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+      "measure": "value",
+      "how": "average",
+      "unit": "Percent",
+      "windows": {
+       "prior": [
+        "2021-01",
+        "2021-12"
+       ],
+       "latest": [
+        "2022-01",
+        "2022-12"
+       ]
+      },
+      "slice": {
+       "GEO": "Echo"
+      },
+      "slice_id": "S1",
+      "breakdowns": [],
+      "estimand": "Echo; one member shown: Echo; this table has no total member, so this is not a national figure; percent; 12-month averages Jan 2022–Dec 2022 vs Jan 2021–Dec 2021",
+      "reconciles": true,
+      "complete": true,
+      "months_used": 12
+     },
+     "items": [
+      {
+       "id": "headline.prior",
+       "group": "headline",
+       "segment": null,
+       "label": "Echo, the 12 months before (2021-01 to 2021-12)",
+       "value": 11.283333,
+       "text": "11.28%",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "prior",
+        "op": "mean of the slice's months"
+       }
+      },
+      {
+       "id": "headline.latest",
+       "group": "headline",
+       "segment": null,
+       "label": "Echo, the latest 12 months (2022-01 to 2022-12)",
+       "value": 12.008333,
+       "text": "12.01%",
+       "kind": "amount",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "latest",
+        "op": "mean of the slice's months"
+       }
+      },
+      {
+       "id": "headline.change",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in Echo, the latest 12 months against the 12 before",
+       "value": 0.725,
+       "text": "+0.725 percentage points",
+       "kind": "change",
+       "unit": "",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest less prior"
+       }
+      },
+      {
+       "id": "headline.change_pct",
+       "group": "headline",
+       "segment": null,
+       "label": "Change in Echo in percent, the latest 12 months against the 12 before",
+       "value": 6.425406,
+       "text": "+6.4%",
+       "kind": "change",
+       "unit": "%",
+       "grade": "NOT_ENOUGH_DATA",
+       "parent_grade": null,
+       "grade_words": "the claim itself, graded NOT_ENOUGH_DATA",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": "both",
+        "op": "latest / prior - 1"
+       }
+      },
+      {
+       "id": "facts.months",
+       "group": "facts",
+       "segment": null,
+       "label": "Months with a value in the headline series",
+       "value": 48.0,
+       "text": "48",
+       "kind": "count",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": null,
+        "op": "count months"
+       }
+      },
+      {
+       "id": "facts.first",
+       "group": "facts",
+       "segment": null,
+       "label": "The first month of the headline series",
+       "value": "2019-01",
+       "text": "2019-01",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": null,
+        "op": "min"
+       }
+      },
+      {
+       "id": "facts.last",
+       "group": "facts",
+       "segment": null,
+       "label": "The last month of the headline series",
+       "value": "2022-12",
+       "text": "2022-12",
+       "kind": "date",
+       "unit": "",
+       "grade": null,
+       "parent_grade": null,
+       "grade_words": "a fact about the rows, not graded",
+       "assumes": null,
+       "inputs": {
+        "columns": [
+         "value"
+        ],
+        "window": null,
+        "op": "max"
+       }
+      }
+     ],
+     "refused": [
+      "a rate is never added or averaged across members: each member's own rate is published, and the headline is the published aggregate, so there are no contributions"
+     ],
+     "note": "Descriptive arithmetic on the table's own published series, in the engine's comparison windows (the latest 12 months against the 12 before): the headline is the series the table's structure chooses, and each breakdown's parts are that total's verified parts (each total checked against its parts). The unallocated part is the total less the parts the publisher shows (its suppressed cells); the parts and the unallocated add up to the change exactly. A contribution says where the change sits, not what caused it."
+    },
+    "primary": {
+     "id": "measure.value.change",
+     "claim": "Change in the average month of value, latest 12 months against the 12 before",
+     "grade": "NOT_ENOUGH_DATA"
+    }
+   }
+  },
+  "refused": {
+   "name": "regions_layer_down.csv",
+   "csv_sha256": "833dba2ce93d3959b44882e2e33527a69762ddc036ea035e3221fc8519d97ec7",
+   "results": {
+    "ok": true,
+    "estimand": null,
+    "structure": {
+     "kind": "error",
+     "usable": false,
+     "publisher": null,
+     "series": null,
+     "months": null,
+     "dims": [],
+     "slice": null,
+     "reason": "This file looks like a table of series with totals, and the part of the engine that finds them could not run. An average over its rows would count totals and parts together, so no figure is shown.",
+     "flags": null,
+     "corrections": [],
+     "error": {
+      "stage": "import",
+      "type": "ModuleNotFoundError",
+      "message": "import of nl_structure halted; None in sys.modules"
+     }
+    },
+    "input": {
+     "name": "[your file]",
+     "rows": 48,
+     "columns": 7
+    },
+    "goal": "The business analysis did not run: this file looks like a table of series with totals, and the part of the engine that finds them could not run. An average over its rows would count totals and parts together, so no figure is shown.",
+    "reading": "",
+    "quality_risks": [],
+    "plan_applied": [],
+    "plan_refused": [],
+    "findings": [],
+    "analyses": [],
+    "charts": [],
+    "tables": [],
+    "analyses_refused": [],
+    "story": {
+     "headline": "The business analysis did not run: this file looks like a table of series with totals, and the part of the engine that finds them could not run. An average over its rows would count totals and parts together, so no figure is shown.",
+     "what_happened": [],
+     "why": [],
+     "what_to_do": [],
+     "whats_next": [],
+     "cannot_answer": [
+      "This run produced no gated facts at all. There is nothing to report, nothing to act on, and no evidence base behind this brief."
+     ]
+    },
+    "forecast": {},
+    "health_score": 0.0,
+    "health_explain": "0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 89.3.",
+    "health_issues": [
+     "The health score is 0 because the newest row is 3.8 years old (the timeliness check); the other checks averaged 89.3.",
+     "Newest row in ref_date is 2022-12-01, 1399 days old as of 2026-09-30."
+    ],
+    "plan_row_drops": [],
+    "cleaning": {
+     "rows_in": 48,
+     "rows_clean": 48,
+     "rows_quarantined": 0,
+     "fixes": [
+      "A long table of 6 series turned into one column per series, one row per date (288 rows in, 48 dates out; 6 series compared from 2019-01-01)",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+      "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+      "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+     ]
+    },
+    "limitations": [
+     "This file is a long statistical table: 288 rows, one row per date and series, all values in the column VALUE, 6 series named by GEO. It was read as one column per series, one row per date with a value (48 dates from 2019-01-01), so every se",
+     "This run produced no gated facts at all. There is nothing to report, nothing to act on, and no evidence base behind this brief.",
+     "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+     "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that.",
+     "Accuracy, whether the values match reality, is not measured: no rows were checked against their source."
+    ],
+    "scenarios": {
+     "basis": null,
+     "items": [],
+     "refused": [
+      "the engine's business analysis did not run, so there is no claim to break down"
+     ],
+     "note": "No scenario or contribution figures for this file; the reasons are listed."
+    },
+    "primary": null
    }
   }
  },

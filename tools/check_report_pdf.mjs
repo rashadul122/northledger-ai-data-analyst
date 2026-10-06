@@ -1059,6 +1059,17 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       'a quarterly table\'s estimand says months: ' + JSON.stringify([QT && QT.figures.map((f) => f.label), QT && QT.what, QT && QT.checks]));
     expect(L5 + ': one measure', MS && /^one measure shown: Sales value, chosen by the engine's default order \(a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member\); dollars; 12-month totals /.test(MS.what) &&
       MS.excluded.some((x) => x.what === 'Units sold' && /another measure/.test(x.why) && /never mixed/.test(x.why)), 'the estimand does not name the one measure shown, the rule that chose it and the one left out: ' + JSON.stringify([MS && MS.what, MS && MS.excluded]));
+    // wave 5b: a table with no total member shows one member and says it is not a national figure (never "a published total"); a table of
+    // series whose structure layer could not run is refused, with the plain reason and the stage, and carries no estimand at all
+    const OM = V('onemember'), RF = W5.refused.results;
+    expect(L5 + ': one member shown', OM && /one member shown: Echo; this table has no total member, so this is not a national figure/.test(OM.what) &&
+      OM.excluded.some((x) => /^one member shown, not a national figure: this table has no total member, and a rate is never added or averaged across members$/.test(x.why)) && !OM.described &&
+      W5.onemember.results.estimand.single_member.member === 'Echo' && /\(one member shown, not a national figure\)/.test(W5.onemember.results.story.headline) && !/published totals/.test(W5.onemember.results.story.headline),
+      'the estimand of a table with no total member does not say one member is shown and it is not a national figure: ' + JSON.stringify([OM && OM.what, OM && OM.excluded, W5.onemember.results.story.headline]));
+    expect(L5 + ': refused', !RF.estimand && RF.structure.kind === 'error' && RF.structure.usable === false && RF.structure.error.stage === 'import' && RF.structure.error.type === 'ModuleNotFoundError' &&
+      /^This file looks like a table of series with totals, and the part of the engine that finds them could not run\. An average over its rows would count totals and parts together, so no figure is shown\.$/.test(RF.structure.reason) &&
+      /^The business analysis did not run: this file looks like a table of series with totals/.test(RF.story.headline) && !(RF.findings || []).some((f) => f.kind === 'business') && !RF.key_figures,
+      'a refused table carries an estimand, a figure or no reason: ' + JSON.stringify([RF.structure, RF.story.headline, !!RF.estimand]));
     const q = W5.quarterly.results;
     expect(L5 + ': quarterly payload', q.estimand.period && q.estimand.period.noun === 'quarter' && q.estimand.period.window === 4 && q.estimand.measure.type_basis === 'positively a stock' &&
       q.forecast && q.forecast.frequency === 'quarter' && /forecast reads monthly series only/.test(q.forecast.reason) && q.story.whats_next.length === 1,
@@ -1067,7 +1078,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     const RV = W.facts.estimandView(J('retail-results.json').results);
     expect(L5 + ': monthly unchanged', RV.figures[0].label === '12 months before' && RV.figures[1].label === 'Latest 12 months' && /on 265 of 265 months, largest gap/.test(RV.checks[0]), 'a monthly table\'s estimand words moved: ' + JSON.stringify([RV.figures.map((f) => f.label), RV.checks[0]]));
     // the report PDF is made from them: the appendix says "no total row" and "Quarters checked"
-    for (const key of ['nototal', 'quarterly']) {
+    for (const key of ['nototal', 'quarterly', 'onemember', 'refused']) {
       const resp = J('retail-response.json');
       const m = W.model({ report: resp.report, sources: [], model: resp.model, repaired: resp.repaired, removed_figures: [], results: W5[key].results, kept: [], name: W5[key].name, showName: false, date, goal: W5[key].results.goal });
       let u8, T = '';
@@ -1075,8 +1086,11 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       const f = path.join(tmp, 'wave5-' + key + '.pdf'); writeFileSync(f, u8);
       const r = checkPdf(u8, { file: f, forbid, name: path.basename(W5[key].name, '.csv'), removed: 0 });
       T = sp(r.text || '');
-      expect(L5 + ': ' + key + ' PDF', key === 'nototal' ? /no total row/.test(T) && /not possible to check: geo has no total row/.test(T) : /4 quarters/.test(T) && /quarters checked/.test(T) && !/not allocated, latest 12 months/.test(T),
-        'the PDF of the ' + key + ' table does not carry its estimand words');
+      expect(L5 + ': ' + key + ' PDF', key === 'nototal' ? /no total row/.test(T) && /not possible to check: geo has no total row/.test(T) :
+        key === 'onemember' ? /one member shown: echo; this table has no total member, so this is not a national figure/.test(T) :
+          key === 'refused' ? /the business analysis did not run: this file looks like a table of series with totals, and the part of the engine that finds them could not run/.test(T) :
+            /4 quarters/.test(T) && /quarters checked/.test(T) && !/not allocated, latest 12 months/.test(T),
+        'the PDF of the ' + key + ' table does not carry its estimand words' + (key === 'refused' || key === 'onemember' ? ': ' + T.slice(0, 200) : ''));
     }
   }
 

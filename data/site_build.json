@@ -1,7 +1,7 @@
 {
  "schema": "site_build/1",
  "what": "Figures the page shows that are derived from other files (a share turned into a percentage, a count of sessions, a file size). Written by build.py; each key names its source.",
- "built_at": "2026-10-06T13:39:08Z",
+ "built_at": "2026-10-06T17:12:49Z",
  "display": {
   "fixture_lost": "0",
   "fixture_quarantine_pct": "4.0%",
@@ -309,7 +309,7 @@
   "try_fc_replay": "12",
   "try_rec_rows": "1,000",
   "build_checks_passed": "47",
-  "built_at_label": "2026-10-06 13:39:08 UTC"
+  "built_at_label": "2026-10-06 17:12:49 UTC"
  },
  "derived_from": {
   "fixture_lost": "engine_scorecard fixture.rows - after.clean - after.quarantined",
@@ -854,7 +854,7 @@
   {
    "check": "every bound figure on index.html and case-study.html equals its JSON",
    "ok": true,
-   "detail": "1522 bound figure(s) checked against 14 JSON source(s)"
+   "detail": "1522 bound figure(s) checked against 15 JSON source(s)"
   }
  ],
  "contrast": [

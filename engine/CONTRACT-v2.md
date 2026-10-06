@@ -429,6 +429,27 @@ number` or `street address`. It is registered as the engine registers a flagged 
 column register), so the engine's own decide, code and withhold apply to it. A column of names under a heading
 the check does not know ("Stylist") can still be missed, and the page says so before anything is sent.
 
+**A column that would name a series (wave 5d, 6 October 2026; the fuzz tester's privacy finding).** A long statistical table that
+the layout pass reads one column a series is NAMED from its text columns before it is landed ("Tarnstead | Michael Penhallow"),
+so a personal column among them (a region's account owner, its contact phone number) went into the series' names, past every scan
+(the scan reads the reshaped table's headers as headers), into the findings, the charts and what the report writer is given: 3 of
+the 33 tables with a personal column in the first 300 fuzz tables (6 of them were not flagged at all). A table with such a column
+was also read as if the column were its one dimension (the regions an alias of it), so the structure layer, which lands the file
+and hides what is flagged, was never asked. Now the text columns that would name a series (`_reshape_long_panel`) and the file the
+structure pre-check judges (`_long_has_structure`) are first checked, before anything is read: by the engine's own scan
+(`intake.scan_pii`: a name hint, a value shape) and by this check (`_personal_kind`), which gains one rule for this use: a column
+whose members are numbers of 9 to 19 digits, with at most 400 different values and at most 30% of its cells different (a category
+called by an ID number, never a column of measures: a measure has a different value on most rows) is `long ID number`. A column that
+looks personal never names a series and is never part of the judgement of the table's structure; a file the structure layer reads
+is landed as it was sent and the column is flagged and withheld as any other (the structure then runs without it); a file the
+layout pass still reshapes lists it in `input.layout.personal_set_aside {header: kind}` and in `privacy.flagged` (column = its
+landed name, `decision: "withhold"`), its values go to the scrubber and the token filter like a withheld column's, and the series
+are named by the other columns. The visitor can keep it (`decisions[column] = "keep"` by the file's header or the landed name): it
+then names the series, `input.layout.personal_kept` lists it and `privacy.flagged` says `decision: "keep"`. Never flagged: the
+codes a table carries (2002=100, a region code, a NAICS bracket, a year, a range of years, a month, a currency's name, a unit,
+"Group A"). Before and after, the 6 tables: not flagged in 6 and 3 with values in `results_for_ai` (fuzz seeds 66, 181, 217), then
+flagged in all 33 of 33 and none with a value in the report.
+
 **A category is not free text: `privacy.released` (WAVE 4, the lead's amendment AM1, 1 October 2026).** The engine's scan
 flags any column of 20 or more different wordy values as free text, so an official table's industry column (30 NAICS
 labels, each on 1,185 rows) was withheld and the table read as nonsense. Before any decision (`_decide_and_guard`), the
@@ -1046,12 +1067,15 @@ official table (a publisher's signature from `engine/flag_vocab.json`, or 3 or m
 *Relations, per dimension, on the unadjusted cells* (another dimension's adjusted copy left out). A sum-check of a total T
 against parts P: on the cells where T has a value and every part has a row, the residual r = T − Σ(parts with a value);
 tolerance `max(0.5 × 10^-DECIMALS × factor × (|P| + 1), 1e-6 × |T|)` (half a unit of the last published digit, in base
-units, per term; DECIMALS from the metadata, else from the values); it passes on 95% or more of the complete cells, 6 or
-more of them over 3 or more months, and, for a non-negative flow, no incomplete cell's r below −tolerance (an incomplete
-cell's r is the UNALLOCATED, suppressed share). Search: (1) flat: the 3 most dominant members (the share of cells where a
+units, per term; DECIMALS from the metadata, else from the values; wave 5d: the half unit is each SERIES' own, its
+SCALAR_FACTOR and its DECIMALS, and a dimension's check takes the largest of the series it reads, so a table of dollars in
+millions beside units sold is checked to within the dollars' own half million, not to within 0.05); it passes on 95% or more
+of the complete cells, 6 or more of them over 3 or more months (wave 5d: 3 cells are enough when the total is at least 100
+tolerances, a match then being no coincidence: under heavy suppression a table may hold 5 complete cells), and, for a
+non-negative flow, no incomplete cell's r below −tolerance (an incomplete cell's r is the UNALLOCATED, suppressed share). Search: (1) flat: the 3 most dominant members (the share of cells where a
 member is at least every other) and any named as a total (total, all, overall, grand, aggregate, combined; a range code
-[44-45]; _T, TOTAL, _Z) against every other member but the alternatives named "excluding/except/ex./less/without/other
-than" outside brackets; (2) a hierarchy from codes (a bracket suffix, a leading code, dotted codes: a member's parent is
+[44-45]; _T, TOTAL, _Z) against every other member but the alternatives named "excluding/excl./except/ex./less/without/w/o/other
+than/not including/net of/minus" outside brackets (wave 5d: a whole country's name in a geographic dimension is tried too); (2) a hierarchy from codes (a bracket suffix, a leading code, dotted codes: a member's parent is
 the most specific code that contains it, a prefix or a range), each family sum-checked and a failing family repaired by
 dropping its deepest-coded members (459 = 459A + 459B); (3) a hierarchy without codes: for each parent, the most dominant
 first (at most 30), the members it bounds in 99% of its cells (at most 22, the largest), a meet-in-the-middle subset sum on
@@ -1067,7 +1091,8 @@ never summed or averaged across members (AM4): its published aggregate (`rate_ag
 member (`single`: the total-named one, else the most covered and dominant), a business export adds its members up
 (`flat_additive`, read as before). An adjusted pair is found first, by behaviour: two members (of a dimension of 2 to 4)
 whose calendar-year totals agree within 3% and one three times as seasonal (the variance of its month means, detrended
-by a centred 2×12 average, of the logs) is the unadjusted copy (`adjustment`, `nsa`, `sa`); whether the adjusted parts
+by a centred 2×12 average, of the logs) is the unadjusted copy (`adjustment`, `nsa`, `sa`; wave 5d: in a QUARTERLY table too, four seasons a year, at least 4 years, a complete year being 4 quarters);
+whether the adjusted parts
 of each partition add up to the adjusted total is recorded (`sa_adds_up`: retail's do). A dimension whose unit of measure
 changes with its members (dollars beside units, an index on two bases) is a `measure` dimension with `unit_of`: each slice
 fixes one member, never mixed. Roles: partition | hierarchy | adjustment | measure | components | rate_aggregate | single |
@@ -1124,7 +1149,11 @@ groups or filters by a structure dimension is refused ("compare: it reads GEO, a
 rows mix totals and parts; the structure's breakdowns answer it"); `long_to_wide` is not needed.
 
 *The refusal.* A table whose readable columns cannot tell its rows apart (`cube_incomplete`: a dimension withheld or set
-aside) gets no business analysis: the story's headline is "The business analysis did not run: the date and the columns
+aside), or an OFFICIAL table whose value column (VALUE, OBS_VALUE) is withheld (wave 5d: the engine's scan flags a count of nine
+or more digits as a possible national ID number, so the column is withheld by default, and no other number column, a unit id or a
+vector coordinate, may stand in for the measure: the reason says "the column that holds the table's figures (VALUE) is withheld as
+possibly personal, so no figure can be read: choose Keep for it on the consent card if it holds numbers only"; kept, the table is
+read), gets no business analysis: the story's headline is "The business analysis did not run: the date and the columns
 the engine may read (GEO, Sales, Adjustments) do not tell the rows apart: 34,365 of 36,735 rows repeat a date and a
 series, so a column that names the series is withheld or set aside." and no chart reads its rows.
 

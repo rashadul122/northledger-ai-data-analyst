@@ -2382,10 +2382,16 @@ def test_w5d_a_combined_member_beside_regions_with_no_total_row_is_never_the_tot
     # negative: with a total row it is a partition, as before
     g2 = dim(detect(MC.small_combined(total=True)), "GEO")
     assert g2["role"] in ("partition", "hierarchy") and g2["total"] == "Total", g2
-    # negative: a component that lies inside one of the parts is still found, under an unnamed root (nothing says "total")
-    d = dim(detect(MC.component_under_a_part()), "Type of business")
-    assert d["role"] in ("partition", "hierarchy") and d["total"] == "Full range", d
-    assert list(d["components"]) == ["Online stationery"] and d["components"]["Online stationery"] != "Full range", d["components"]
+    # a third region smaller than Birch in every month is a region, not a component of Birch (fuzz seeds 7106, 7121): in a geographic
+    # dimension nothing is a component by bounding, so the group is still no total
+    gs = dim(detect(MC.small_combined(sibling=True)), "GEO")
+    assert gs["role"] == "parts" and sorted(gs["parts"]) == ["Alder", "Birch", "Cedar"] and "Inland provinces" in gs["combined"], gs
+    # negative: a component that lies inside one of the parts is still found, under an unnamed root (nothing says "total"), in a dimension
+    # that is not a place; and a single-child copy of a member does not count against the root (fuzz seed 7049)
+    for copy in (False, True):
+        d = dim(detect(MC.component_under_a_part(copy=copy)), "Type of business")
+        assert d["role"] in ("partition", "hierarchy") and d["total"] == "Full range", d
+        assert "Online stationery" in d["components"] and d["components"]["Online stationery"] != "Full range", d["components"]
 
 
 def test_w5d_a_combined_member_of_a_rate_or_an_index_is_not_its_aggregate():
@@ -2564,6 +2570,32 @@ def test_w5d_the_adapters_pre_landing_check_flags_phones_emails_ids_and_names_an
     # measures are never "long ID numbers": a column of nine-digit counts with a different value on most rows
     counts = pd.DataFrame({"Units": ["%d" % (100000000 + 7919 * i) for i in range(120)]})
     assert NB._personal_kind("Units", counts["Units"]) is None
+
+
+def test_w5d_a_combined_member_stands_in_for_the_parts_it_sums_when_one_of_them_is_blank():
+    """Wave 5d (fuzz seeds 7155, 7260). A table with no total row whose regions are split into sub-regions (Centre block = Charlie + Delta,
+    both also members): the parts are the finest members, and a month in which one of them is suppressed was summed from the REPORTED parts,
+    flagged incomplete, a figure 5% short, although the combined member holds the family's value that month and a complete figure is
+    in the cells. The combined member now stands in for the family in a month a part of it is blank (the family's published value, not
+    an estimate); the sum is then complete, the part is not counted as suppressed, and the unallocated part says what the blank cell held.
+    Where no combined member covers the blank part, the sum of the reported parts stays incomplete, as before."""
+    vals = MC.no_total_values(41, list(MC.REGIONS))
+    last = len(MC.MONTHS) - 1
+    full = 1000.0 * sum(float(vals[r][i]) for r in MC.REGIONS for i in range(last - 11, last + 1))
+    S = detect(MC.no_total(hide=[("Charlie", last)], nested=True))
+    g = dim(S, "GEO")
+    assert g["role"] == "parts" and "Centre block" in g["combined"], g
+    m, v = NS._monthly(S, S["default"])
+    win = NS.windows(m, v)
+    est = NS.estimand(S, S["default"], win)
+    assert est["figures"]["latest"]["value"] == full and est["complete"] is True, (est["figures"]["latest"], full, est["complete"])
+    assert est["built_from"]["incomplete"] is False and est["built_from"]["suppressed_part_months"] == 0, est["built_from"]
+    assert est["months_used"] == 12 and est["built_from"]["months_dropped"] == [] and est["comparison"]["latest"][1] == MC.MONTHS[last]
+    # negative: with no combined member to stand in for it, the blank month is left out (the windows move back a month) and says so
+    S2 = detect(MC.no_total(hide=[("Charlie", last)]))
+    m2, v2 = NS._monthly(S2, S2["default"])
+    est2 = NS.estimand(S2, S2["default"], NS.windows(m2, v2))
+    assert est2["built_from"]["months_dropped"] == [MC.MONTHS[last]] and est2["figures"]["latest"]["value"] != full, est2["built_from"]
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

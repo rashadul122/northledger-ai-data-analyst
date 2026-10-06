@@ -701,11 +701,14 @@ def dollars_beside_units(seed: int = 91, scale: str = "millions", industry: bool
     return _official_v(["Estimates"] + (["Type of business"] if industry else []), rec, spec)
 
 
-def small_combined(seed: int = 92, total: bool = False) -> bytes:
+def small_combined(seed: int = 92, total: bool = False, sibling: bool = False) -> bytes:
     """Wave 5d, cause B (a flow). Three regions and "Inland provinces", which is the sum of two of them (Alder and Birch) and larger than the
-    third (Cedar); NO total row. With `total` (the negative case) a "Total" row is added: the sum of the three."""
+    third (Cedar); NO total row. With `total` (the negative case) a "Total" row is added: the sum of the three. With `sibling` the third
+    region is smaller than Birch (not than the group) in every month: a region that bounds it, as a component would be bounded."""
     rng = np.random.RandomState(seed)
     vals = {r: _series(rng, lv) for r, lv in zip(("Alder", "Birch", "Cedar"), (1000, 750, 1350))}
+    if sibling:
+        vals = {r: _series(rng, lv, growth=0.003) for r, lv in zip(("Alder", "Birch", "Cedar"), (1000, 1500, 600))}
     rec = []
     for i, mo in enumerate(MONTHS):
         if total:
@@ -716,9 +719,10 @@ def small_combined(seed: int = 92, total: bool = False) -> bytes:
     return _official(["Characteristics"], rec)
 
 
-def component_under_a_part(seed: int = 93) -> bytes:
+def component_under_a_part(seed: int = 93, copy: bool = False) -> bytes:
     """Wave 5d, the negative of cause B: one place and an industry dimension with NO codes, an unnamed total "Full range" over
-    Stationery, Bicycles and Toys, and "Online stationery", a component INSIDE Stationery (smaller than it everywhere)."""
+    Stationery, Bicycles and Toys, and "Online stationery", a component INSIDE Stationery (smaller than it everywhere). With `copy`, also
+    "Stationery (own brand)", a single-child member that is the same series as Stationery."""
     rng = np.random.RandomState(seed)
     vals = {m: _series(rng, lv) for m, lv in (("Stationery", 1500), ("Bicycles", 1000), ("Toys", 800))}
     online = np.round(vals["Stationery"] * 0.4)
@@ -728,6 +732,8 @@ def component_under_a_part(seed: int = 93) -> bytes:
         for m in vals:
             rec.append((mo, "Canada", (m,), vals[m][i], "A"))
         rec.append((mo, "Canada", ("Online stationery",), online[i], "A"))
+        if copy:
+            rec.append((mo, "Canada", ("Stationery (own brand)",), vals["Stationery"][i], "A"))
     return _official(["Type of business"], rec)
 
 

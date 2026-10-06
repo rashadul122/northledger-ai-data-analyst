@@ -1932,7 +1932,11 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     # group, no Canada row): a member left over is explained when it is an alternative total or a component of one tree
     # member, and a component found only by bounding (no code says so) is weak evidence, so only a few are taken
     # (wave 5, gap 1). A table that fails this has no total row: its parts are added up (_parts_only)
-    if len(trial.get("components") or {}) > max(1, M // 6):
+    # wave 5d: a "component" that is an exact copy of the member it sits under (a single-child industry equal to its parent) is no
+    # weak evidence of anything: only the components found by bounding alone are counted against the limit
+    weak = [x for x, parent in (trial.get("components") or {}).items()
+            if x in labels and parent in labels and not _close_cells(A[labels.index(x)], A[labels.index(parent)], tol_u * 2)]
+    if len(weak) > max(1, M // 6):
         return False
     # wave 5d: a member left over is a component of the ROOT itself only when the root says it is the total. Found by bounding
     # alone, with no member below the root that could hold it, it is as likely a sibling the root leaves out: a combined member
@@ -1942,9 +1946,15 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     if not _TOTAL_HINT.search(root_label) and _agg_name_tier(root_label) != 2:
         explained = set(trial.get("depth") or {}) | {labels.index(x) for x in (trial.get("alternatives") or {}) if x in labels} | \
             {labels.index(x) for x in (trial.get("components") or {}) if x in labels} | set(alts_label)
+        # a copy of a member the root explains (a single-child industry equal to its parent) is explained too
+        for x in range(M):
+            if x not in explained and any(y != x and _close_cells(A[x], A[y], tol_u * 2) for y in list(explained)):
+                explained.add(x)
         # ... and it explains every member: each is under it, an alternative total, or a component of a member below it. A member
-        # the root leaves unexplained (a region that is neither inside it nor a copy of it) makes the root a subtotal
-        if any(parent == root_label for parent in (trial.get("components") or {}).values()) or len(explained) < M:
+        # the root leaves unexplained (a region that is neither inside it nor a copy of it) makes the root a subtotal; and in a
+        # geographic dimension nothing is a component by bounding: a region smaller than another is a region, not a part of it
+        if (any(parent == root_label for parent in (trial.get("components") or {}).values()) or len(explained) < M
+                or (_GEO_WORDS.search(rec["column"]) and trial.get("components"))):
             return False
     rec.update(trial)
     return True
@@ -2611,6 +2621,49 @@ def _series_exist(S: Dict[str, Any], where: Dict[str, Any]) -> bool:
     return sel is not None and len(sel) > 0 and bool(S["_E"][sel].any())
 
 
+def _parts_cells(S: Dict[str, Any], where: Dict[str, Any], sel: Any) -> Tuple[Any, Any]:
+    """(the values, which of them count as present) of a slice's series. For the parts of a dimension with no total row (wave 5d): where
+    a part is blank in a month and a COMBINED member that equals the sum of a family of the parts has a value that month (a region
+    split into sub-regions, a group of regions), the combined member's published value stands in for the family that month, so a
+    figure the cells give is never left incomplete: the family's first part carries the value, the others carry 0 and count as present."""
+    import numpy as np
+    V = S["_V"][sel]
+    have = ~np.isnan(V)
+    ds = [d for d in S["dims"] if d.get("role") == "parts" and where.get(d["column"]) == PARTS_TOKEN and d.get("combined")]
+    if not ds or have.all():
+        return V, have
+    d = ds[0]
+    j = S["dims"].index(d)
+    labels = d["labels"]
+    SM = S["_SM"]
+    others = [k for k in range(SM.shape[1]) if k != j]
+    row_of = {(tuple(int(x) for x in SM[r, others]), int(SM[r, j])): r for r in range(SM.shape[0])}
+    pos_of = {int(r): i for i, r in enumerate(sel)}
+    W, H = V.copy(), have.copy()
+    kept = set(int(x) for x in d.get("part_index") or [])
+    for comb, fam in (d.get("combined") or {}).items():
+        if comb not in labels or any(f not in labels for f in fam):
+            continue
+        fam_idx = [labels.index(f) for f in fam]
+        if not set(fam_idx) <= kept:
+            continue
+        for ctx in {tuple(int(x) for x in SM[r, others]) for r in sel}:
+            leaf = [pos_of.get(row_of.get((ctx, m), -1)) for m in fam_idx]
+            c_row = row_of.get((ctx, labels.index(comb)))
+            if c_row is None or any(x is None for x in leaf):
+                continue
+            C = S["_V"][c_row]
+            L = V[leaf]
+            miss = np.isnan(L).any(axis=0) & ~np.isnan(C)
+            if miss.any():
+                W[leaf[0], miss] = C[miss]
+                for x in leaf[1:]:
+                    W[x, miss] = 0.0
+                for x in leaf:
+                    H[x, miss] = True
+    return W, H
+
+
 def series(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any, Any]:
     """(times, the slice's values in base units (NaN where no member has a value), how many member cells were blank)."""
     import numpy as np
@@ -2618,9 +2671,8 @@ def series(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any, An
     T = len(S["_times"])
     if sel is None or not len(sel):
         return list(S["_times"]), np.full(T, np.nan), np.zeros(T, dtype=int)
-    V = S["_V"][sel]
+    V, have = _parts_cells(S, where, sel)
     E = S["_E"][sel]
-    have = ~np.isnan(V)
     val = np.where(have.any(axis=0), np.where(have, V, 0.0).sum(axis=0), np.nan)
     if _needs_complete(S, where):
         # a dimension with no total row: its parts are summed in the months where EVERY part has a value (a month with a
@@ -3168,11 +3220,12 @@ def parts_info(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str
     sel = _select(S, where)
     if sel is None or not len(sel):
         return None
-    times, V = S["_times"], S["_V"][sel]
+    times = S["_times"]
+    _V, H = _parts_cells(S, where, sel)                     # a combined member that stands in for a blank part counts the part as present
     at: Dict[str, List[int]] = {}
     for i, t in enumerate(times):
         at.setdefault(t[:7], []).append(i)
-    has = {m: (~np.isnan(V[:, idx])).any(axis=1) for m, idx in at.items() if m >= win["prior"][0]}     # series with a value
+    has = {m: H[:, idx].any(axis=1) for m, idx in at.items() if m >= win["prior"][0]}     # series with a value
     wmonths = set(_prange(S, win["latest"][0], win["latest"][1])) | set(_prange(S, win["prior"][0], win["prior"][1]))
     suppressed = sum(int((~h).sum()) for m, h in has.items() if m in wmonths and h.any())
     dropped = sorted(m for m, h in has.items() if h.any() and not h.all())

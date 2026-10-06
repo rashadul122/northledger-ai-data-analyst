@@ -4439,7 +4439,7 @@ def _profile_facts(R: "_Reading", headers: List[str], hidden: Iterable[str] = ()
 
 
 def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: Optional[str] = None,
-                         structure: bool = True) -> Dict[str, Any]:
+                         structure: bool = True, wide: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The engine lands the file, the decide stage runs as a run's does (_decide_and_guard: the adapter's
     personal-column check, the visitor's decisions, a withheld column landed as codes, a coded one coded), and
     the engine profiles and cleans it (its own code); its reading gives the profile's facts, so the planner
@@ -4484,7 +4484,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         out = {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap, "released": released,
                "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
         if structure and STRUCTURE_ON:
-            S = _structure_detect(R, hidden)
+            S = _structure_detect(R, hidden, wide)
             out[_PROFILE_CACHE_STRUCTURE] = S
             if S is not None:
                 withheld = {str(f["column"]) for f in flagged if f.get("decision") == "withhold"}
@@ -8697,9 +8697,12 @@ def _structure_cached(sha: str, decisions: Any) -> Optional[Dict[str, Any]]:
     return got.get(_PROFILE_CACHE_STRUCTURE)
 
 
-def _structure_detect(reading: Any, hidden: Any) -> Optional[Dict[str, Any]]:
+def _structure_detect(reading: Any, hidden: Any, wide: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     try:
-        return _ns().detect(reading, set(hidden or ()), budget_s=STRUCTURE_BUDGET_S)
+        S = _ns().detect(reading, set(hidden or ()), budget_s=STRUCTURE_BUDGET_S)
+        if wide and S is not None:
+            S["wide"] = dict(wide)                 # the file was a wide table of periods, reshaped to long before it was read
+        return S
     except Exception:  # noqa: BLE001 - the structure is an aid; the file is then read as before
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
@@ -8933,6 +8936,12 @@ def _structure_notes(rep: Dict[str, Any], S: Dict[str, Any], est: Dict[str, Any]
                 ("The table has no total row: the headline is the sum of its parts; the other totals were checked "
                  "against their parts." if any(d["role"] == "parts" for d in S["dims"]) else
                  "Each total was checked against its parts.")))
+    if S.get("wide"):
+        w_ = S["wide"]
+        text += (" The file was a wide table (%d columns of %s, %s to %s); it was reshaped to one row per series and %s, and a "
+                 "flag written in a cell (a colon, a letter after the number) was read as the publisher's flag, not as part of "
+                 "the value." % (int(w_.get("periods") or 0), "years" if w_.get("family") == "year" else "periods",
+                                 w_.get("first"), w_.get("last"), per.get("noun") or "period"))
     rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": text})
     rep.setdefault("cleaning", {}).setdefault("fixes", []).insert(0, {
         "rule": "structure_slice", "column": S["measure"]["column"], "count": int(S.get("rows") or 0),
@@ -9227,6 +9236,17 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if isinstance(decisions, dict) and "__structure_inner__" in decisions:
             decisions = dict(decisions)
             structure_inner = decisions.pop("__structure_inner__")
+        # a WIDE table of periods (2019Q1, 2020Q1 ... as columns; Eurostat's shape) is read as one row per series and period
+        wide_info = None
+        if structure_inner is None and STRUCTURE_ON:
+            try:
+                w_ = _ns().wide_to_long(data, MAX_ROWS)
+            except Exception:  # noqa: BLE001 - the file is then read as it stands
+                if os.environ.get("NL_BROWSER_STRICT"):
+                    raise
+                w_ = None
+            if w_ is not None:
+                data, wide_info = w_["csv"], w_["info"]
         if isinstance(decisions, dict) and "__plan_review__" in decisions:
             decisions = dict(decisions)
             plan_review = _clean_plan_review(decisions.pop("__plan_review__"))
@@ -9254,7 +9274,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             sha_sent = hashlib.sha256(data).hexdigest()
             S_pre = _structure_cached(sha_sent, vis_dec)
             if S_pre is None and has_plan:
-                got = _engine_profile_pass(data, name, vis_dec, as_of, structure=True)
+                got = _engine_profile_pass(data, name, vis_dec, as_of, structure=True, wide=wide_info)
                 if got.get("ok"):
                     _PROFILE_CACHE.clear()
                     _PROFILE_CACHE.update(sha=sha_sent, value=got)
@@ -9350,7 +9370,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             2026: the downloads numbered the plan's re-written file, so a row after a filtered one, a quoted
             line break or a blank line carried the wrong line). ONE mapping for every download. None when the
             file was read reshaped: a long table read as one column per series has no such line."""
-            if layout is not None or structure_inner is not None:
+            if layout is not None or structure_inner is not None or wide_info is not None:
                 return None
             lines = _record_lines(sent)
             if sent_rows is None:
@@ -9436,7 +9456,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 S_hook = None
                 hidden_early = [str(f["column"]) for f in flagged if f.get("decision") != "keep"]
                 if early_reading is not None:
-                    S_hook = _structure_detect(early_reading, hidden_early)
+                    S_hook = _structure_detect(early_reading, hidden_early, wide_info)
                 if S_hook is not None:
                     outer_info = _hook_cache(sent, early_reading, flagged, released, colmap, S_hook, audit, wh_list=withheld,
                                              rep=rep, name=name, pub_lite=lambda t: public_text(scrub.clean(t), table, name))

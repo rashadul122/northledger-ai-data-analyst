@@ -99,8 +99,8 @@ _ALT_HINT = re.compile(r"(?i)\b(?:excluding|except|ex\.|less|without|other than)
 _STOCK_WORDS = re.compile(r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|debts?|stocks?)\b")
 _POP_WORDS = re.compile(r"(?i)\b(?:employment|employed|population|labour force|labor force|persons employed)\b")
 _CURRENCY = re.compile(r"(?i)\b(?:dollars?|euros?|pounds?|yen|yuan|francs?|krona|kronor|krone|rupees?|pesos?|reais|"
-                       r"real|rand|won|currency|canadian dollars|us dollars)\b|[$€£¥]|\b(?:CAD|USD|EUR|GBP|"
-                       r"JPY|CNY|CHF|AUD|NZD|SEK|NOK|DKK|INR|MXN|BRL|ZAR|KRW)\b")
+                       r"real|rand|won|currency|canadian dollars|us dollars)\b|[$€£¥]|(?<![A-Za-z])(?:CAD|USD|EUR|GBP|"
+                       r"JPY|CNY|CHF|AUD|NZD|SEK|NOK|DKK|INR|MXN|BRL|ZAR|KRW)(?![A-Za-z])")        # MIO_EUR, MEUR, CP_MEUR
 _RATE_WORDS = re.compile(r"(?i)\b(?:percent(?:age)?|rate|ratio|per\s+(?:cent|\d[\d,]*|capita|hour|person))\b|%")
 _INDEX_WORDS = re.compile(r"(?i)\bindex\b|\b(?:19|20)\d\d\s*=\s*100\b")
 _INDEX_BASE = re.compile(r"((?:19|20)\d\d(?:\s*[-/]\s*\d{2,4})?)\s*=\s*100")
@@ -395,6 +395,89 @@ def _embedded_share(R: Any, land: str) -> float:
     m = f.head(5000).str.extract(_EMBED)
     ok = m["num"].notna() | m["flag"].notna()
     return float(ok.mean()) if float(m["num"].notna().mean()) >= 0.5 else 0.0
+
+
+# --------------------------------------------------------------------------------------------- 0. a wide table of periods
+# wave 5, G7 (stretch): a WIDE table whose columns are periods (2019-01, 2019Q1, 2019: the shape Eurostat publishes) is reshaped to
+# one row per series and period before anything else reads it; a cell's embedded flag (":" , "123.4 p") stays in the value cell,
+# where the structure layer strips it and counts it by the publisher's vocabulary (engine/flag_vocab.json).
+_WIDE_MONTH = re.compile(r"^(\d{4})\s*[-_/M]\s*(0?[1-9]|1[0-2])$")
+WIDE_MIN_PERIODS = 6
+WIDE_MIN_YEARS = 5
+
+
+def _header_period(h: str) -> Optional[Tuple[str, str]]:
+    """(the family "month" | "quarter" | "half-year" | "year", the header as one period label) for a column header that is a period,
+    else None: 2019-01 and 2019M01 are months, 2019Q1 and 2019-Q1 quarters, 2019H1 and 2019-S2 half-years, 2019 a year."""
+    t = str(h).strip()
+    m = _WIDE_MONTH.match(t)
+    if m:
+        return "month", "%s-%02d" % (m.group(1), int(m.group(2)))
+    if _Q_A.match(t) or _Q_B.match(t):
+        return "quarter", t
+    if _H_A.match(t):
+        return "half-year", t
+    if _Y_ONLY.match(t) and 1800 <= int(t) <= 2200:
+        return "year", t
+    return None
+
+
+def wide_to_long(data: bytes, max_rows: int = 200000) -> Optional[Dict[str, Any]]:
+    """The long form of a wide table of periods: {"csv": bytes, "info": {family, periods, first, last, id_columns, rows_in,
+    rows_out}}, or None when the table is not one (fewer than 6 period columns, 5 years; period columns of two families; no
+    column that names the series; most period cells empty; or the long table would pass max_rows). The id columns keep their
+    headers (a "geo\\TIME_PERIOD" is "geo"); the period and the value are columns TIME_PERIOD and OBS_VALUE, the cell's own
+    text, flags in it; an empty cell is no observation and is left out."""
+    import csv
+    import io
+    import pandas as pd
+    # the header row first: a long table (no run of period headers) is left at once, before any row is read
+    try:
+        head = next(csv.reader(io.StringIO(data[:262144].decode("utf-8-sig", errors="ignore"))), [])
+    except Exception:  # noqa: BLE001
+        return None
+    kinds0 = [_header_period(c) for c in head]
+    if sum(1 for k in kinds0 if k) < WIDE_MIN_YEARS:
+        return None
+    try:
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    except Exception:  # noqa: BLE001 - not a table this can read
+        return None
+    cols = [str(c) for c in df.columns]
+    kinds = [_header_period(c) for c in cols]
+    fams = {k[0] for k in kinds if k}
+    if len(fams) != 1:
+        return None
+    fam = next(iter(fams))
+    pcols = [c for c, k in zip(cols, kinds) if k]
+    ids = [c for c, k in zip(cols, kinds) if not k]
+    if len(pcols) < (WIDE_MIN_YEARS if fam == "year" else WIDE_MIN_PERIODS) or not ids or len(ids) > len(pcols):
+        return None
+    if len(set(pcols)) != len(pcols) or len(df) * len(pcols) > 4 * max_rows:
+        return None
+    label = {c: k[1] for c, k in zip(cols, kinds) if k}
+    body = df[pcols].apply(lambda s: s.str.strip())
+    if float((body != "").to_numpy().mean()) < 0.5:
+        return None
+    long = df[ids].copy()
+    long.columns = [re.split(r"\\", c)[0] if "\\" in c else c for c in ids]
+    if len(set(long.columns)) != len(long.columns):
+        return None
+    frames = []
+    for c in pcols:
+        keep = body[c] != ""
+        f = long[keep].copy()
+        f["TIME_PERIOD"] = label[c]
+        f["OBS_VALUE"] = body.loc[keep, c]
+        frames.append(f)
+    out = pd.concat(frames, ignore_index=True)
+    if len(out) < 2 or len(out) > max_rows:
+        return None
+    buf = io.StringIO()
+    out.to_csv(buf, index=False, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+    return {"csv": buf.getvalue().encode("utf-8"),
+            "info": {"family": fam, "periods": len(pcols), "first": label[pcols[0]], "last": label[pcols[-1]],
+                     "id_columns": list(long.columns), "rows_in": int(len(df)), "rows_out": int(len(out))}}
 
 
 # --------------------------------------------------------------------------------------------- 1. cube roles
@@ -2959,6 +3042,7 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
            "slices": [{k: v for k, v in s.items()} for s in S.get("slices") or []],
            "breakdowns": [dict(b) for b in S.get("breakdowns") or []],
            "flags": S.get("flags"), "corrections": list(S.get("corrections") or []), "keys": list(S.get("keys") or []),
+           "wide": dict(S["wide"]) if S.get("wide") else None,
            "hash": S.get("hash"), "detect_seconds": S.get("detect_seconds")}
     return out
 

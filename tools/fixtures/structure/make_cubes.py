@@ -557,6 +557,36 @@ def periodic(freq: str = "quarter", style: str = "iso", stock: bool = False, yea
             rec.append((label(i), r, ("Population" if stock else "Retail sales",), vals[r][i], "A"))
     return _official(["Sales"], rec, uom="Persons" if stock else "Dollars", scalar="units" if stock else "thousands")
 
+def wide_period(freq: str = "quarter", flags: bool = True, years: int = 8, first_year: int = 2016, seed: int = 81):
+    """G7: a Eurostat-style WIDE table: columns freq, unit, geo\\TIME_PERIOD and one column per period (2016Q1 ... or 2016-01 ... or
+    2016 ...); EU27_2020 is the exact sum of DE, FR and IT. With flags, ":" stands for a value not available (IT in some periods,
+    EU27 stays whole) and "123.4 p" for a provisional one (DE's last two periods). Returns (csv bytes, {"periods", "colon", "p",
+    "values": {geo: [true values]}, "labels": [...]})."""
+    rng = np.random.RandomState(seed)
+    geos = ["DE", "FR", "IT"]
+    per_year = {"quarter": 4, "month": 12, "year": 1}[freq]
+    n = years * per_year
+    labels = []
+    for i in range(n):
+        y, k = first_year + i // per_year, i % per_year
+        labels.append({"quarter": "%dQ%d" % (y, k + 1), "month": "%d-%02d" % (y, k + 1), "year": "%d" % y}[freq])
+    vals = {g: np.round(_series(rng, lv / 10.0, n=n, growth=0.004 if freq != "month" else 0.0004, seasonal=False), 1)
+            for g, lv in zip(geos, (4000, 3000, 2000))}
+    vals["EU27_2020"] = sum(vals[g] for g in geos)
+    rows, colon, prov = [], 0, 0
+    for g in ["EU27_2020"] + geos:
+        cells = []
+        for i in range(n):
+            txt = "%.1f" % vals[g][i]
+            if flags and g == "IT" and i % 7 == 2:
+                txt, colon = ":", colon + 1
+            elif flags and g == "DE" and i >= n - 2:
+                txt, prov = txt + " p", prov + 1
+            cells.append(txt)
+        rows.append([("Q" if freq == "quarter" else "M" if freq == "month" else "A"), "MIO_EUR", g] + cells)
+    data = _csv(["freq", "unit", "geo\\TIME_PERIOD"] + labels, rows)
+    return data, {"periods": n, "colon": colon, "p": prov, "values": vals, "labels": labels}
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

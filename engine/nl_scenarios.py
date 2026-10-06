@@ -1297,7 +1297,9 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
     # a flow's window lacking a period in either window is compared on the periods both have (nl_structure.matched_months)
     pw = NST.period_words(Sp, None if complete else k_used)
     ext, pri_w, lat_w = pw["against"], pw["prior"], pw["latest"]
-    basis["complete"], basis["months_used"], basis["period"] = complete, k_used, dict(P)
+    basis["complete"], basis["months_used"] = complete, k_used
+    if int(P.get("step") or 1) != 1:
+        basis["period"] = dict(P)                        # a quarterly or an annual table; a monthly table's basis is unchanged
     what = (est.get("text") or col).split(";")[0]
 
     def item(iid: str, group: str, label: str, value: Any, kind: str, text: str, grade_own: Optional[str],
@@ -1339,7 +1341,7 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
             dk = dim_key(bd["dim"])
             mk = member_keys(bd["parts"])
             basis["breakdowns"].append({"id": bd["id"], "dim": bd["dim"], "key": dk, "parent": bd["parent"],
-                                        "no_total": bool(bd.get("no_total")),
+                                        **({"no_total": True} if bd.get("no_total") else {}),
                                         "parts": len(bd["parts"]), "depth": bd.get("depth", 1),
                                         "shares_given": res["shares_given"],
                                         "unallocated": {k: NST._r(v) for k, v in res["unallocated"].items()}})

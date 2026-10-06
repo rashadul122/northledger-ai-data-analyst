@@ -1506,6 +1506,43 @@ def test_g6_the_unallocated_item_names_its_cause_by_the_charts_rule_and_prints_t
     assert it["text"] == "+$1,000" and abs(it["value"] - 1000.0) < 1e-6, it
 
 
+# ----------------------------------------------------------------------------- wave 5, gap 7 (stretch): a wide table of periods
+def test_g7_a_wide_table_of_periods_is_reshaped_to_long_and_its_embedded_flags_are_counted():
+    """A table whose columns are periods (Eurostat's shape: 2016Q1 ... 2023Q4) with ":" and "123.4 p" in its cells: one row per
+    series and period, the flags left in the value cell where the structure layer strips and counts them by the publisher's
+    vocabulary; the headline is EU27 and the estimand says quarters. A long table, and a table whose headers are not periods,
+    are left alone."""
+    data, truth = MC.wide_period("quarter")
+    w = NS.wide_to_long(data)
+    assert w and w["info"]["family"] == "quarter" and w["info"]["periods"] == 32 and w["info"]["rows_in"] == 4 and w["info"]["rows_out"] == 128, w and w["info"]
+    long = pd.read_csv(io.BytesIO(w["csv"]), dtype=str, keep_default_na=False)
+    assert list(long.columns) == ["freq", "unit", "geo", "TIME_PERIOD", "OBS_VALUE"], list(long.columns)
+    assert (long.OBS_VALUE == ":").sum() == truth["colon"] and long.OBS_VALUE.str.endswith(" p").sum() == truth["p"], long.OBS_VALUE.value_counts().head()
+    # negatives: a long table, a wide table of month NAMES, a table with fewer than 6 period columns
+    assert NS.wide_to_long(MC.partition()) is None and NS.wide_to_long(MC.eurostat()) is None
+    names = pd.DataFrame({"region": ["a", "b"], **{m: ["1", "2"] for m in ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul")}})
+    assert NS.wide_to_long(names.to_csv(index=False).encode()) is None
+    few = pd.DataFrame({"region": ["a", "b"], "2020Q1": ["1", "2"], "2020Q2": ["1", "2"], "2020Q3": ["1", "2"]})
+    assert NS.wide_to_long(few.to_csv(index=False).encode()) is None
+    rep = _run(data, "eurostat_wide.csv")
+    est = rep["estimand"]
+    assert est["period"]["kind"] == "quarter" and est["slice"][0]["member"] == "EU27_2020" and "4-quarter totals Q1 2023" in est["text"], (est["text"], est["slice"])
+    eu = truth["values"]["EU27_2020"]
+    assert abs(est["figures"]["latest"]["value"] - float(eu[-4:].sum())) < 1e-6 and abs(est["figures"]["prior"]["value"] - float(eu[-8:-4].sum())) < 1e-6, est["figures"]
+    fl = rep["structure"]["flags"]
+    assert fl["by_kind"] == {"not_available": truth["colon"]} and fl["codes"][":"]["kind"] == "not_available" and fl["codes"]["p"]["rows"] == truth["p"], fl
+    assert rep["structure"]["wide"]["periods"] == 32 and rep["structure"]["wide"]["family"] == "quarter"
+    assert "wide table (32 columns of periods, 2016Q1 to 2023Q4)" in rep["limitations"][0]["text"], rep["limitations"][0]["text"]
+    json.dumps(rep, allow_nan=False)
+    # annual and monthly wide tables read the same way
+    for freq, kind in (("year", "year"), ("month", "month")):
+        d2, tr = MC.wide_period(freq)
+        S = NS.wide_to_long(d2)
+        assert S and S["info"]["family"] == freq, freq
+        r2 = _run(d2, "eurostat_wide_%s.csv" % freq)
+        assert r2["estimand"] and r2["estimand"]["period"]["kind"] == kind, (freq, r2["estimand"] and r2["estimand"]["text"])
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

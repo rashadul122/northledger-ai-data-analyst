@@ -1418,5 +1418,16 @@ def _structure_table(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             for g in seen[:12]]
     cols = [str(bd["dim"]), "Contribution to the change", "Share of the change", "Own change", "Share of the latest year"]
     use = [0] + [j for j in range(1, len(cols)) if any(r[j] for r in rows)]
-    return {"title": "Where the change in %s came from" % str(basis.get("estimand") or basis.get("measure") or "")
-            .split(";")[0][:120], "cols": [cols[j] for j in use], "rows": [[r[j] for j in use] for r in rows]}
+    return {"title": _structure_table_title(basis), "cols": [cols[j] for j in use], "rows": [[r[j] for j in use] for r in rows]}
+
+
+def _structure_table_title(basis: Dict[str, Any]) -> str:
+    """"Where the change in Total retail sales (Canada · Retail trade [44-45] · Unadjusted) came from": the measure, then the
+    rest of the slice the estimand names (the slice's other members, never the measure twice). The estimand's own words
+    first read "Where the change in Canada · Retail trade [44-45] · Total retail sales · Unadjusted came from"."""
+    measure = str(basis.get("measure") or "").strip()
+    head = str(basis.get("estimand") or "").split(";")[0]
+    rest = [x.strip() for x in head.split(" \u00b7 ") if x.strip() and x.strip() != measure]
+    if not measure:
+        return "Where the change in %s came from" % (head[:120] or "the total")
+    return "Where the change in %s%s came from" % (measure[:60], (" (%s)" % " \u00b7 ".join(rest))[:110] if rest else "")

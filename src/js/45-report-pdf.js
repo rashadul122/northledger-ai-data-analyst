@@ -766,13 +766,13 @@
   /* ---- tables: numbers right-aligned, cells wrap (never cut), zebra rows, the header again on a new page ---- */
   // a number, a range or a percentage, with at most three words of unit after it ("58,453 CAD", "6.87 percentage points")
   var NUMERIC = /^[-+\u2212\u2013]?[$\u00a3\u20ac\u00a5]?[\d,]*\.?\d+(%|x)?( to [-+\u2212\u2013]?[$\u00a3\u20ac\u00a5]?[\d,]*\.?\d+%?)?( [A-Za-z%]{1,16}){0,3}$/;
-  Doc.prototype.table = function (t, meta) {
-    meta = meta || {};
-    if (meta.fit && !meta.part) return this.fitTable(t, meta);
+  // a table's measures, taken once: the page break, the caption and the drawing read the same numbers (and a heading that
+  // keeps its paragraph and the table under it with it asks how tall the table is before it is drawn)
+  Doc.prototype.tableLay = function (t, meta) {
     var cols = (t.cols || []).map(String), rows = (t.rows || []).map(function (r) { return cols.map(function (_, j) { return String(r[j] === null || r[j] === undefined ? '' : r[j]); }); });
-    if (!cols.length) return;
+    if (!cols.length) return null;
     // meta.size and meta.pad: a chart's table view set to fit (fitTable)
-    var n = cols.length, size = meta.size || 8.3, hs = meta.size ? Math.round((meta.size - 1) * 10) / 10 : 7.3, pad = meta.pad || 5, ld = meta.size ? size + 2.7 : 11, hld = meta.size ? hs + 2.2 : 9.5, self = this;
+    var n = cols.length, size = meta.size || 8.3, hs = meta.size ? Math.round((meta.size - 1) * 10) / 10 : 7.3, pad = meta.pad || 5, ld = meta.size ? size + 2.7 : 11, hld = meta.size ? hs + 2.2 : 9.5;
     // a chart's table view (meta.fit): a suppressed cell ("<5") is one of a column's numbers, right-aligned with them
     var num = cols.map(function (_, j) { var a = rows.map(function (r) { return r[j].trim(); }), v = a.filter(function (s) { return s && !(meta.fit && s === '<5'); }); return v.length > 0 ? v.every(function (s) { return NUMERIC.test(s); }) : !!meta.fit && a.indexOf('<5') >= 0; });
     var nat = cols.map(function (c, j) { return Math.max(tw(enc(c), hs, 'B') + 0.4 * c.length, Math.max.apply(null, rows.map(function (r) { return tw(enc(smart(r[j])), size, 'R'); }).concat([12]))) + 2 * pad; });
@@ -789,6 +789,16 @@
     var rowL = rows.map(function (r) { return r.map(function (s, j) { return cell(s, j); }); });
     var rowH = rowL.map(function (r) { return Math.max(1, Math.max.apply(null, r.map(function (l) { return l.length; }))) * ld + 6; });
     var capLines = 16, noteH = meta.source ? 20 : 6, whole = capLines + headH + rowH.reduce(function (a, b) { return a + b; }, 0) + noteH;
+    return { cols: cols, rows: rows, size: size, hs: hs, pad: pad, ld: ld, hld: hld, num: num, widths: widths, tabW: tabW, headL: headL, headH: headH, rowL: rowL, rowH: rowH, capLines: capLines, noteH: noteH, whole: whole };
+  };
+  Doc.prototype.tableHeight = function (t, meta) { var L = this.tableLay(t || {}, meta || {}); return L ? L.whole : 0; };
+  Doc.prototype.table = function (t, meta) {
+    meta = meta || {};
+    if (meta.fit && !meta.part) return this.fitTable(t, meta);
+    var L = this.tableLay(t, meta), self = this;
+    if (!L) return;
+    var cols = L.cols, rows = L.rows, size = L.size, hs = L.hs, pad = L.pad, ld = L.ld, hld = L.hld, num = L.num, widths = L.widths, tabW = L.tabW, headL = L.headL, headH = L.headH, rowL = L.rowL, rowH = L.rowH,
+      capLines = L.capLines, noteH = L.noteH, whole = L.whole;
     if (whole > this.room() && whole < (this.TOP - this.BOT) * 0.6) this.newPage();
     this.need(capLines + headH + (rowH[0] || 0) + 10);
     this.tab += 1;
@@ -845,9 +855,17 @@
     };
     if (meta.flip && this.flipped && rows.length && whole([String(meta.flip)].concat(rows.map(function (r) { return r[0]; })), cols.slice(1).map(function (c, j) { return [c].concat(rows.map(function (r) { return r[j + 1]; })); }))) return;
     if (whole(cols, rows)) return;
-    var w7 = width(units(cols, rows), 7), parts = [], cur = [], acc = w7[0];
-    for (var j = 1; j < cols.length; j++) { if (cur.length && acc + w7[j] > CW) { parts.push(cur); cur = []; acc = w7[0]; } cur.push(j); acc += w7[j]; }
-    parts.push(cur);
+    var w7 = width(units(cols, rows), 7);
+    var split = function (lim) {
+      var ps = [], cu = [], ac = w7[0];
+      for (var j = 1; j < cols.length; j++) { if (cu.length && ac + w7[j] > lim) { ps.push(cu); cu = []; ac = w7[0]; } cu.push(j); ac += w7[j]; }
+      ps.push(cu);
+      return ps;
+    };
+    // the fewest parts that fit, then the narrowest width that still makes that many: the parts are about equal, never a
+    // last part of one lone column (25 months: 9, 8 and 8, not 12, 12 and 1)
+    var parts = split(CW), lo = w7[0] + Math.max.apply(null, w7.slice(1)), hi = CW;
+    if (parts.length > 1 && lo < hi) { for (var it = 0; it < 30 && hi - lo > 0.25; it++) { var mid = (lo + hi) / 2; if (split(mid).length <= parts.length) hi = mid; else lo = mid; } parts = split(hi); }
     parts.forEach(function (p, k) {
       self.table({ title: t.title + ' (' + (k + 1) + ' of ' + parts.length + ')', cols: [cols[0]].concat(p.map(function (x) { return cols[x]; })), rows: rows.map(function (r) { return [r[0]].concat(p.map(function (x) { return r[x]; })); }) },
         { source: k === parts.length - 1 ? meta.source : '', fit: true, part: true, size: 7, pad: 3 });
@@ -1625,7 +1643,17 @@
       d.h1(p.kicker, p.title, p.id);
       (p.blocks || []).forEach(function (b, bi) {
         var nb = p.blocks[bi + 1] || {};
-        if (b.type === 'h2') d.h2(b.num, b.text, b.id, nb.type === 'chart' ? d.figureHeight(nb) : nb.type === 'table' || nb.type === 'findings' ? 90 : nb.type === 'cards' ? 150 : 44);
+        if (b.type === 'h2') {
+          var nextMin = nb.type === 'chart' ? d.figureHeight(nb) : nb.type === 'table' || nb.type === 'findings' ? 90 : nb.type === 'cards' ? 150 : 44;
+          // a heading, its paragraph and then a table that is moved whole to the next page when it does not fit (a table under
+          // 60% of a page is): the heading and its paragraph go with it, never alone at the foot of a page
+          var n2 = p.blocks[bi + 2] || {};
+          if (nb.type === 'p' && n2.type === 'table' && n2.table && !n2.fit) {
+            var th = d.tableHeight(n2.table, n2);
+            if (th && th < (d.TOP - d.BOT) * 0.6) nextMin = d.linesHeight(nb.text, nb.size || 10, d.TW, nb.lead || (nb.size || 10) * 1.45) + 6 + th;
+          }
+          d.h2(b.num, b.text, b.id, nextMin);
+        }
         else if (b.type === 'p') d.para(b.text, b.wide ? { x: d.L, width: d.CW, size: b.size, lead: b.lead, font: b.font, color: b.color, after: b.after } : b);
         else if (b.type === 'bullets') d.bullets(b.items);
         else if (b.type === 'numbered') d.bullets(b.items, { numbered: true });
@@ -2009,7 +2037,7 @@
     // table's layout fixes is one line saying why, never a number
     var FCR = R && R.forecast, fcb = [];
     if (FCR && (FCR.row_forecast_dropped === true || FCR.available || AV)) {
-      fcb.push({ type: 'h2', num: '', text: 'The forecast and how its range held when back-tested', id: 'sc-audit', engine: true });
+      fcb.push({ type: 'h2', num: '', text: AV ? 'The forecast and how its range held when back-tested' : 'The forecast', id: 'sc-audit', engine: true });
       if (FCR.available && Array.isArray(FCR.points) && FCR.points.length) {
         var pts = [0, 2, 5, 11].filter(function (k) { return k < FCR.points.length; }).map(function (k) { return FCR.points[k]; });
         var money = function (v) { return isFinite(v) && v !== null ? (U && Math.abs(v) >= 1e6 ? U(v) : fmtVal(v)) : 'n/a'; };

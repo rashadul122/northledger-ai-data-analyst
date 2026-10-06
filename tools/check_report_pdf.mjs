@@ -980,9 +980,9 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
         dr.forecast = { row_forecast_dropped: true, reason: 'the table\'s layout fixes the rows a month, so a forecast of them would forecast the layout' };
         const rd = check4('retail: a dropped row forecast', rtInp(dr), 'letter', { name: 'retail_sales_provinces', refs: false });
         const pd = sp(between(rd, 'PART 3', 'PART 4'));
-        const blk = pd.slice(pd.indexOf('the forecast and how its range held when back-tested'));     // the engine's block (the AI's own paragraph above it still speaks of the range)
-        expect('retail dropped forecast', blk.length < pd.length && blk.indexOf('the table\'s layout fixes the rows a month, so a forecast of them would forecast the layout') >= 0 && blk.indexOf('back-test of the range shown') < 0 &&
-          blk.indexOf('the engine\'s forecast:') < 0 && !/\$7\d\.\db/.test(blk.slice(0, 400)), 'a dropped forecast does not say why in one line, or shows a number or a back-test: ' + blk.slice(0, 400));
+        const blk = pd.slice(pd.indexOf('the table\'s layout fixes the rows a month, so a forecast of them would forecast the layout'));     // the engine's line (the AI's own paragraph above it still speaks of the range)
+        expect('retail dropped forecast', blk.length < pd.length && pd.indexOf('how its range held when back-tested') < 0 && pd.indexOf('back-test of the range shown') < 0 &&
+          pd.indexOf('the engine\'s forecast:') < 0 && !/\$7\d\.\db/.test(blk.slice(0, 400)), 'a dropped forecast does not say why in one line, or shows a number or a back-test: ' + pd.slice(-600));
         // no estimand (an older report, a table the structure did not read): no panel, no chip, and the report still holds together
         const none = copy(RTR); none.estimand = null; none.structure = null;
         const rn = check4('retail: no estimand', rtInp(none), 'letter', { name: 'retail_sales_provinces', refs: false });

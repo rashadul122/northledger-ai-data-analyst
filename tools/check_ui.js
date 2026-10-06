@@ -4226,7 +4226,7 @@ check('waterfall-parts-fill-the-chart-and-a-rounding-step-is-drawn-like-a-suppre
   });
   ok(!d.missing && d.un === 1, 'a "Not allocated: rounding" step is not drawn as the hatched step: ' + JSON.stringify(d).slice(0, 200));
   ok(d.tips.some((t) => t.indexOf('Not allocated: rounding: \u2212$26.2M') === 0) && !d.tips.some((t) => /suppressed cells/.test(t)), 'the step is not named "Not allocated: rounding": ' + d.tips.join(' | '));
-  ok(d.nTot === 2 && d.tips[0].indexOf('Start: $0') === 0 && d.tips[d.tips.length - 1].indexOf('Total change: +$12.8M') === 0, 'the chart does not run from "Start: $0" to "Total change": ' + d.tips.join(' | '));
+  ok(d.nTot === 2 && d.tips[0].indexOf('Start: $0') === 0 && d.tips[d.tips.length - 1].indexOf('Total change: ' + rep.estimand.figures.change.text) === 0, 'the chart does not run from "Start: $0" to "Total change": ' + d.tips.join(' | '));
   // the steps fill the chart: the largest part is a visible share of the Total change's bar (the levels view drew it as a hairline, about 1%)
   ok(d.biggest >= 0.1 * d.lastTot && d.lastTot > 20, 'the parts do not fill the chart: the largest step is ' + d.biggest + ' of the total change\'s ' + d.lastTot);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);

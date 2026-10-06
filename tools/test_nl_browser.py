@@ -366,6 +366,18 @@ def _check_numbers(rep, data, name, objective="", as_of=None):
         for c in f.get("caveats") or []:            # the story quotes a fact's caveats
             claim_nums |= _numbers(c)
     universe |= fact_forms
+    # wave 4 (T2, CONTRACT 5.11): an interval's measured coverage, from the benchmark receipt the engine ships, replaces
+    # the core's "built to hold" (each finding's effect.coverage; tools/test_nl_inference.py checks it against the
+    # receipt itself)
+    receipt = set()
+    for f in rep["findings"]:
+        cov = (f.get("effect") or {}).get("coverage") or {}
+        for k in ("measured", "lo", "hi"):
+            if cov.get(k) is not None:
+                receipt |= _numbers("%.1f" % (100.0 * cov[k]))
+        if cov:
+            receipt |= _numbers("95")
+    universe |= receipt
     # 1. no text field carries a number the engine did not write
     for t in _texts(rep):
         extra = _numbers(t) - universe
@@ -375,7 +387,7 @@ def _check_numbers(rep, data, name, objective="", as_of=None):
     s = rep["story"]
     strict = [s["headline"]] + s["what_happened"] + s["why"] + s["whats_next"]
     for t in strict:
-        extra = _numbers(t) - fact_forms - claim_nums - {_canon("80")}
+        extra = _numbers(t) - fact_forms - claim_nums - receipt - {_canon("80")}
         assert not extra, "story numbers %s in %r are not fact values" % (sorted(extra), t[:160])
     # 3. a finding's claim is the fact's own claim, and its value is the fact's value
     by_id = {f["id"]: f for f in facts}
@@ -2784,7 +2796,7 @@ def test_review_run3_control_the_headline_is_true():
     tr = next(a for a in rep["ai_analyses"]["items"] if a["type"] == "trend")
     assert h.endswith("From the AI plan's analyses: " + NB._first_sentence(tr["sentence"])), h
     # review H3: the yearly TOTAL of every row (142,875 a year), not a sum of each region's yearly mean (11,906)
-    assert tr["sentence"].startswith("sales rose by 142,875 per year over 2016 to 2025 (the yearly total over the 3 region "
+    assert tr["sentence"].startswith("sales rose by 142,542 per year over 2016 to 2025 (the yearly total over the 3 region "
                                      "entries") and "Dates from the month column." in tr["method"], tr
     assert all(f["verdict"] == "INSUFFICIENT" for f in rep["findings"] if f["kind"] == "business")
 
@@ -3354,7 +3366,12 @@ def test_a_panel_trend_is_the_yearly_total_of_every_row_and_a_level_is_the_yearl
     y = kept.groupby(kept["month"].astype(str).str[:4])["sales"].sum()
     slope = np.polyfit(np.asarray(y.index, float), y.values, 1)[0]
     tr = _items(rep, "trend")[0]
-    assert tr["sentence"].startswith("sales rose by %s per year" % NB._fmt(slope)), (NB._fmt(slope), tr["sentence"])
+    # wave 4 (T1): the slope is the trend test's (Prais-Winsten), on the same yearly totals; it is within 1% of their
+    # least-squares slope (142,875) and nowhere near the sum of yearly means (11,906)
+    import nl_inference as NI
+    rec = NI.trend_test(np.asarray(y.index, float), y.values)
+    assert tr["test"]["slope"] == rec["slope"] and abs(rec["slope"] / slope - 1.0) < 0.01, (rec["slope"], slope)
+    assert tr["sentence"].startswith("sales rose by %s per year" % NB._fmt(rec["slope"])), (NB._fmt(rec["slope"]), tr["sentence"])
     ex = _items(rep, "extremes")[0]
     assert ex["table"]["rows"][0][1:3] == [y.idxmax(), NB._fmt(y.max())], (ex["table"]["rows"][0], y.max())
     # a level (GDP per country) is the yearly average over the countries, and the sentence says so
@@ -4579,10 +4596,21 @@ def test_eval_a_rates_placeholder_zeros_are_not_counted_and_its_trend_is_the_rat
     assert set(A) == {"trend", "distribution"}, (sorted(A), rep["ai_analyses"]["refused"])
     tr, dist = A["trend"], A["distribution"]
     slope = float(tr["table"]["rows"][0][3].replace("−", "-"))
-    assert tr["table"]["cols"][3] == "Change per year" and abs(slope - want) <= 0.00005 + 1e-12, (tr["table"], want)
+    # wave 4 (T1): the slope is the trend test's (Prais-Winsten) on the rates' own yearly averages: this test's yearly
+    # averages give the same record, near the rates' least-squares 0.0104 and far from the zeros-as-rates 0.0721
+    import nl_inference as NI
+    vals = {}
+    for d, v in rates:
+        vals.setdefault(int(d[:4]), []).append(v)
+    yrs = [y for y in sorted(vals) if len({d[5:7] for d, _v in rates if int(d[:4]) == y}) == 12]
+    rec = NI.trend_test(yrs, [math.fsum(vals[y]) / len(vals[y]) for y in yrs])
+    assert abs(tr["test"]["slope"] - rec["slope"]) < 1e-12 and abs(rec["slope"] - want) < 0.002, (tr["test"], rec, want)
+    assert tr["table"]["cols"][3] == "Change per year" and abs(slope - rec["slope"]) <= 0.00005 + 1e-12, (tr["table"], rec)
+    assert abs(slope - as_rates) > 0.05, slope
     assert tr["table"]["rows"][0][1:3] == ["2017 to 2025", "9"], tr["table"]["rows"][0]
     assert ZERO_NOTE_FX in tr["sentence"] and ZERO_NOTE_FX in dist["sentence"], (tr["sentence"], dist["sentence"])
-    assert "0.0104 CAD per USD per year" in tr["sentence"], tr["sentence"]
+    assert ("%s CAD per USD per year" % NB._fmt(rec["slope"])) in tr["sentence"] and \
+        "shows no clear rise or fall" in tr["sentence"], tr["sentence"]
     assert dist["table"]["rows"][0][0] == "2,407" and "exactly zero" not in dist["sentence"], dist
     q = pd.Series([v for _d, v in rates]).quantile([0.1, 0.25, 0.5, 0.75, 0.9], interpolation="linear").tolist()
     got = [float(x) for x in dist["table"]["rows"][0][1:]]
@@ -4768,7 +4796,11 @@ def _history_want(pairs, lag):
         return "%04d-%02d" % (y, k)
     ch = [mm[m] - mm[back(m)] for m in sorted(mm) if back(m) in mm]
     q = pd.Series(ch).quantile([0.1, 0.5, 0.9], interpolation="linear").tolist()
-    return {"p10": q[0], "p50": q[1], "p90": q[2], "rose": 100.0 * sum(1 for x in ch if x > 0) / len(ch),
+    last = max(mm)
+    gap = lambda m: (int(last[:4]) * 12 + int(last[5:7])) - (int(m[:4]) * 12 + int(m[5:7]))   # noqa: E731
+    nov = [mm[m] - mm[back(m)] for m in sorted(mm) if back(m) in mm and gap(m) % lag == 0]
+    return {"p10": q[0], "p50": q[1], "p90": q[2], "rose": float(sum(1 for x in ch if x > 0)), "changes": ch,
+            "nonoverlap": nov,
             "windows": float(len(ch)), "first": min(mm), "last": max(mm)}
 
 
@@ -4776,6 +4808,7 @@ def test_eval_d_a_level_gets_its_historical_range_as_history_not_a_forecast():
     # the engine forecasts counts and totals only: the FX report's only outlook was "20 rows for 2026-09". A level
     # (a rate, a price, an index) with 3 years or more of history now gets the range of its past 12-month and 3-month
     # moves, recomputed here from the fixture's rates, as facts about the past (no grade, group history_range)
+    import numpy as np
     import nl_scenarios as NS
     pairs = _fx_rates()
     flat = _run(open(EVAL_FX, "rb").read(), "fx_usd_cad.csv", "", {"__plan__": EVAL_FX_PLAN}, "2026-09-29")
@@ -4783,26 +4816,44 @@ def test_eval_d_a_level_gets_its_historical_range_as_history_not_a_forecast():
     for rep, where in ((flat, "the fixture's columns"), (long_, "the published layout")):
         sc = _sc(rep)
         H = {it["id"]: it for it in sc["items"] if it["group"] == "history_range"}
-        assert len(H) == 10, (where, sorted(H), sc["refused"])
+        # wave 4 (T3): per lag the windows, their effective count, the 10th/50th/90th percentiles (13 and 43
+        # independent windows here, so not the extremes), the windows that rose (a count), and the non-overlapping
+        # changes (n, min, median, max)
+        assert len(H) == 20, (where, sorted(H), sc["refused"])
+        import nl_inference as NI
         for lag in NS.HISTORY_LAGS:
             want = _history_want(pairs, lag)
+            want.update({"n_eff": float(round(NI.n_eff_overlapping(want["changes"], lag))),
+                         "nonoverlap.n": float(len(want["nonoverlap"])),
+                         "nonoverlap.min": min(want["nonoverlap"]), "nonoverlap.max": max(want["nonoverlap"]),
+                         "nonoverlap.median": float(np.percentile(want["nonoverlap"], 50))})
             b = "history_range.m%d" % lag
-            for k in ("p10", "p50", "p90", "rose", "windows"):
+            for k in ("p10", "p50", "p90", "rose", "windows", "n_eff", "nonoverlap.n", "nonoverlap.min",
+                      "nonoverlap.median", "nonoverlap.max"):
                 it = H["%s.%s" % (b, k)]
-                assert abs(it["value"] - want[k]) <= 1e-6, (where, it["id"], it["value"], want[k])
+                w = NI.sig2(want[k]) if it["kind"] == "change" else want[k]       # 2 significant figures
+                assert abs(it["value"] - w) <= 1e-6, (where, it["id"], it["value"], w)
                 assert it["grade"] is None and it["parent_grade"] is None, it
                 assert it["grade_words"] == "a fact about the file's past, not graded: history, not a forecast", it
-                assert it["text"] == NS._fmt_item(it["value"], it["kind"], it["unit"]), it
+                assert it["text"] == NS._fmt_item(it["value"], it["kind"], it["unit"],
+                                                  sig=2 if it["kind"] == "change" else None), it
                 assert "history" in it["label"] and "not a forecast" in it["label"], it["label"]
                 assert it["inputs"]["window"] == "history" and it["inputs"]["columns"] == ["ref_date", "value"], it
             assert (H[b + ".p10"]["kind"], H[b + ".p10"]["unit"]) == ("change", "CAD per USD"), H[b + ".p10"]
-            assert (H[b + ".rose"]["kind"], H[b + ".rose"]["unit"]) == ("percent", "%"), H[b + ".rose"]
+            assert (H[b + ".rose"]["kind"], H[b + ".rose"]["unit"]) == ("count", ""), H[b + ".rose"]
             assert want["windows"] == {12: 104.0, 3: 113.0}[lag] and (want["first"], want["last"]) == ("2017-01", "2026-08")
-            t = {k: H["%s.%s" % (b, k)]["text"] for k in ("p10", "p50", "p90")}
+            assert H[b + ".n_eff"]["value"] == {12: 13.0, 3: 43.0}[lag], H[b + ".n_eff"]
+            t = {k: H["%s.%s" % (b, k)]["text"] for k in ("p10", "p50", "p90", "nonoverlap.min", "nonoverlap.max",
+                                                          "nonoverlap.median")}
+            every = "one window a year, each ending in Aug" if lag == 12 else \
+                "one window every 3 months, the latest ending in Aug 2026"
             assert H[b + ".windows"]["label"] == (
-                "In the %d past %d-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month), the change "
-                "in the monthly average of value ran from %s (1 in 10 lower) to %s (1 in 10 higher); the middle was %s. "
-                "This is history, not a forecast." % (want["windows"], lag, t["p10"], t["p90"], t["p50"])), \
+                "In the %d past %d-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month, so they are "
+                "worth about %d independent ones), the change in the monthly average of value ran from %s (1 in 10 "
+                "lower) to %s (1 in 10 higher); the middle was %s, and it rose in %d of the %d. Taking %s, the %d "
+                "changes ran from %s to %s, with a middle of %s. This is history, not a forecast."
+                % (want["windows"], lag, want["n_eff"], t["p10"], t["p90"], t["p50"], want["rose"], want["windows"],
+                   every, want["nonoverlap.n"], t["nonoverlap.min"], t["nonoverlap.max"], t["nonoverlap.median"])), \
                 H[b + ".windows"]["label"]
         assert NS.HISTORY_NOTE in sc["note"], sc["note"]
     # the fixture's own path keeps the engine's zeros (its downloads do): the range counts them as no rate, and says so

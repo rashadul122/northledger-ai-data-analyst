@@ -897,7 +897,10 @@ def test_the_byte_budget_drops_viz_records_after_the_scenario_items_and_before_t
     n_ana = sum(1 for c in whole["charts"] if not nv.is_record(c))
     assert n_ana == 2 and len(whole["charts"]) == nv.AI_CHARTS_MAX, [c.get("kind") for c in whole["charts"]]
     size = len(json.dumps(whole))
-    cut = size - 15000                         # room for all but about two records, once every scenario item is gone
+    # room for all but about two records, once every scenario item is gone (measured from the payload: the FX case's
+    # scenario items grew with wave 4's history items, n_eff and the non-overlapping changes)
+    rec = max(len(json.dumps(c)) for c in whole["charts"] if nv.is_record(c))
+    cut = size - len(json.dumps(whole["scenarios"]["items"])) - 2 * rec + 1000
     NB.RESULTS_MAX_BYTES = cut
     try:
         got = NB.results_for_ai(rep)

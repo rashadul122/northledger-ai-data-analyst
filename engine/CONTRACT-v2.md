@@ -18,7 +18,9 @@ needs. Tests: `tools/test_nl_browser.py` (the `test_v2_*` tests).*
    statistic `t = (delta_hat - bar_log(bar, direction)) / se`, from the engine's own recorded
    estimate, standard error and `stats.bar_log`, and (b) the chart data of §3, which is descriptive
    (counts, means, shares, bins, correlations) and is re-computed from the two CSV downloads by
-   the tests.
+   the tests. Wave 4 (track A2) adds the inference of section 5.11, computed by `engine/nl_inference.py` from the
+   engine's own tables and results and from the benchmark receipt the engine ships: the trend test, an interval's
+   measured coverage, the history windows' effective count, the forecast audit and the official-aggregate record.
 3. **Absent means absent.** A number the engine does not measure in this release is `null`, never
    `0`, and the enclosing object says why in a `note` or `not_measured` field. Lists that nothing
    filled are `[]`.
@@ -112,7 +114,7 @@ v1 `id, claim, verdict, why, kind, value`, plus:
 | `grade` | `CONFIRMED` (RECOMMEND), `WATCH`, `NOT_ENOUGH_DATA` (INSUFFICIENT); internal code stays in `verdict` |
 | `role` | the gate's family (`primary`/`secondary`) for a tested claim, else `secondary`; `parent_id`: for a like-for-like claim (its test's `like_for_like_of`), the claim it restates on the levels present throughout; else null |
 | `estimand`, `unit` | `ratio_of_average_month`/`month` for a change claim; `next_month_value`/`month` for a forecast; null otherwise |
-| `effect` | `{estimate, ci [lo,hi], level, ci_fcr [lo,hi], fcr_level, method, scale, unit, note}`. Change claims: fractions (0.2 = +20%), the 95% test-inversion interval and, for a CONFIRMED claim, the selection-adjusted (FCR) bound: one-sided (Benjamini-Yekutieli), so the far end is null (a rise reads `[lower, null]`) and `fcr_level` is its level, e.g. 0.9933. A change claim with no ratio (monthly averages at or below zero, `gate._no_ratio`): `scale: "difference"`, `estimate` the difference in the measure's own units (the fact's value), `unit` that unit, no interval, never a percentage. Forecast: the next month's point and 80% range; when the engine does not offer the forecast (`forecast.available` false or grade NOT_ENOUGH_DATA), `estimate`, `ci` and `level` are null and `note` says it is not offered. State facts: the value, no interval. `scale: "money"` marks the forecast of a series the engine totals as money (its additive kind `money`): the page prints it and its range in whole units. |
+| `effect` | `{estimate, ci [lo,hi], level, ci_fcr [lo,hi], fcr_level, method, scale, unit, note, coverage}`. `coverage` (wave 4, T2, section 5.11): for a change claim with an interval, `{nominal: 0.95, measured, lo, hi, n, cell, bucket, claim_bucket, source}`: how often the 95% interval held the true change in the benchmark condition nearest the claim (`gate.nearest_benchmark_cell`), within the claim's momentum bucket when that bucket holds 100 intervals or more (`bucket` names it; `"all"` when the whole condition is quoted), with its 95% Wilson interval (`lo`, `hi`, fractions); `measured: null` and `unlike` (the reason) when no condition is like the claim (`gate.benchmark_far`); else null (no receipt measured this code, or no interval). Change claims: fractions (0.2 = +20%), the 95% test-inversion interval and, for a CONFIRMED claim, the selection-adjusted (FCR) bound: one-sided (Benjamini-Yekutieli), so the far end is null (a rise reads `[lower, null]`) and `fcr_level` is its level, e.g. 0.9933. A change claim with no ratio (monthly averages at or below zero, `gate._no_ratio`): `scale: "difference"`, `estimate` the difference in the measure's own units (the fact's value), `unit` that unit, no interval, never a percentage. Forecast: the next month's point and 80% range; when the engine does not offer the forecast (`forecast.available` false or grade NOT_ENOUGH_DATA), `estimate`, `ci` and `level` are null and `note` says it is not offered. State facts: the value, no interval. `scale: "money"` marks the forecast of a series the engine totals as money (its additive kind `money`): the page prints it and its range in whole units. |
 | `test` | null, or `{name, method, ran, not_run_reason, null (min_effect), bar, n_months, n_rows, phi_hat, B, statistic, statistic_name, df, p, p_mc_interval, p_point_null, q, family, family_size, fdr_method, family_line}`. Forecast: the Diebold-Mariano test against seasonal-naive (`statistic`, `p`, `n_months`). |
 | `health` | the claim health (the minimum over the columns it reads, M9) |
 | `checks` | `{claim_health, drift_screen{hit, reason}, tipping_point{value: null, ..., source: "not_computed"}, reversal{flagged: null, segment: null}}` (S1/S2 are not built in R1) |
@@ -123,6 +125,8 @@ v1 `id, claim, verdict, why, kind, value`, plus:
 | `posterior` | `{shown: false, p_exceeds_bar: null, calibration_ref: null}` |
 | `power` | `{at_bar: null, bar, months_to_80pct: null, nearest, routed, routed_rule, design}`; `routed_rule` `{kind: "total"|"count", rows_a_month, effective_rows_a_month, line}` names the rule that holds the claim at WATCH, else null: `nearest` is the receipt's power cell (a true 20% change planted) nearest the claim's months, noise, estimated momentum and, for a volume, rows a month, by `gate.nearest_benchmark_cell` (cell fields as above, percent); `routed` true when the claim is held at WATCH by rule, so no power applies |
 | `needed_to_upgrade`, `columns_read`, `verified`, `tested_times` (null), `chart_ids`, `trace` | the engine's settle text; the columns the claim reads; whether the ledger re-ran it; the charts that show it; fact ids |
+| `inference` | wave 4, T4 (section 5.11): null, or for an official aggregate (a published total or level) `{mode: "official_aggregate", publisher, how_known[], describe{change_pct, prior, latest}, revisions, quality, grade_label}`: the change is described, not tested; the engine's grade stands and `grade_label` says what it is a grade of ("process grade: month-to-month noise in 36 monthly averages; not a test of the published figure") |
+| `layout_artifact` | wave 4, P0-13: true for the forecast findings of a row count the table's layout or the calendar fixes (`forecast.row_forecast_dropped`); such a finding has no estimate or range, and is kept out of the headline tiles and the bottom line; else false |
 
 **A table read by its structure (WAVE 4, §5.10).** Its findings are the engine's own on the slice it chose (the headline
 series: one row a month, the measure in base units, named "Total retail sales" or "<label> total" so the engine adds it
@@ -134,6 +138,19 @@ the headline is in the reader's terms is the top-level `estimand` (§1).
 ### 2.5 `forecast`
 
 v1 keys plus `band{level, method, n_errors, max_level, conditional_coverage_p10_p90, scope, dependence, widened_by_max, n_effective_h1}`, `coverage{hits, n, wilson, binomial_p, christoffersen_ind_p, christoffersen_cc_p}`, `baseline_test{method, stat, df, n, p, gain}`, `models[]` ordered by MASE (the headline measure) with `{name, label, mase, mape, mape_suppressed, msis, skill_vs_sn, mae, coverage, dm, champion, baseline, applicable}`. `coverage` (`{hits, n, rate}`) is measured for the champion's shipped range only, and `dm` (`{stat, p, n, of}`) is the whole method's test (its model choice at each replayed month included) against seasonal-naive, carried on the champion's row; both null on the other rows, `break: null`, `interventions: []`, `forecastability: null`, `decision_edge: null`. All from the forecast result the engine verified.
+
+Wave 4 (P0-13, section 5.11):
+- `audit`: null, or the rolling-origin back-test of the series the block is about (`nl_inference.forecast_audit`):
+  `{method: "rolling origin", mode: "cheap", model, series, origins, first, last, min_history: 45, horizons[{h, held,
+  of, n_eff, wilson [lo, hi], mae, mae_seasonal_naive, rel_mae, mase, status}], status: "passes"|"fails"|"unclear"|
+  "not_run", trusted, label, grade_label, rule, why}`. `label` reads "back-tested: held 22 of 23 at 1 month, 21 of 21
+  at 3 months, ..."; `grade_label` is "the engine's grade (not trusted: the back-test failed)" when it fails.
+- `trusted`: the audit's verdict (true only when it passes), or null with no audit.
+- `row_forecast_dropped`: null, or `{kind: "layout"|"calendar", reason, rows_a_month, series, slug}` when the engine's
+  monthly row count is fixed by the table's layout (every month the same count, or a long table read one column per
+  series) or by the calendar (one row per date, 15 or more dates a month). The block then shows the next forecast
+  series the engine made, or none (`available: false`, `reason` "No forecast of the rows a month is shown: ..."), and
+  the story's "what's next" says so in one line.
 
 ### 2.6 `reproducibility` (provenance)
 
@@ -218,6 +235,13 @@ drops out of a time analysis and its sentence counts it; a kept cell the engine 
 missing and the sentence counts it. A flow or a count is aggregated by year as its yearly total (every row
 added), a level as its yearly average; the sentence says which. A year is complete when all 12 of its months
 (all 4 quarters for quarterly rows) hold a value. A trend whose 95% range includes zero claims no direction.
+**The trend test (wave 4, T1, section 5.11).** The trend item carries `test` (its lead series) and `tests` (every
+series): `{name, series, n, rho, rho_null, slope, se, t, ci [lo, hi], level: 0.95, p, p_random_walk, B, seed, size:
+{nominal: 0.05, simulated, claims, newey_west, series, cell: {n, rho}}, verdict: "rising"|"falling"|
+"no_settled_direction"|"not_graded", why}`. The sentence says "rose" or "fell" only on a rising or falling verdict, "shows
+no clear rise or fall" when p >= 0.05, and "moves by ..., but no direction is claimed: <why>" otherwise; the table's slope
+and range are the test's (per decade when the years span 20 or more). The method text quotes the simulated size of the
+condition nearest the lead series (`size_words`). Only rising or falling may appear in a title (track C).
 When the engine refuses its own business analysis (its gate: it set aside more than
 `gate.DEFAULT_POLICY.max_quarantine_rate`, 20%, of the rows), no analysis is drawn from the rows it kept either:
 `items` is empty, `refused` holds one line ("trend, extremes: the engine set aside 30.0% of the rows (180 of
@@ -444,6 +468,10 @@ plural as words for rows. A share link's copy of the results (src/js/45-report-p
 cap, `row_noun`, `health_explain` and every `plan_row_drops` item `{rows, of, pct, text, notice}`, so the worker's shared
 PDF says what set the health score and which rows the plan set aside.
 
+Wave 4 (section 5.11): `forecast.audit` `{label, status, trusted, grade_label}` when the forecast shown was
+back-tested, and `findings[].interval_coverage` `{measured, lo, hi}` (fractions) when its why quotes an interval's
+measured coverage; the worker keeps only keys it knows, so track C adds them to its schema and its guard.
+
 No text names a withheld column (a finding, health issue, fix or limitation about one is left out; any other
 mention reads "a column you withheld"), no withheld column's data test line is sent, and no text quotes a cell
 as an example ("(for example ...)" is cut). `plan_signals` (the planner's feedback) follows the same rules.
@@ -599,7 +627,21 @@ null. Every label says it is history, not a forecast; the windows item's label i
 monthly average of value ran from −0.0635 CAD (1 in 10 lower) to +0.0785 CAD (1 in 10 higher); the middle was
 +0.0162 CAD. This is history, not a forecast." (its figures are the percentile items' own texts). A level with
 fewer months adds "no historical range of <measure>: it has N months with a value, fewer than the 36 (3 years) it
-needs" to `refused`; a flow, a count, a rating or a row count has none. `note` then adds that the historical range
+needs" to `refused`; a flow, a count, a rating or a row count has none.
+**Wave 4 (T3, section 5.11): the windows overlap.** For each lag the block adds `history_range.mL.n_eff` (kind
+`count`): how many independent windows the n overlapping ones are worth, n / (1 + 2 x the sum of the changes'
+autocorrelations at lags 1 to L-1, stopped at the first negative one), at least 1, rounded (FX: 104 12-month windows,
+about 13). `history_range.mL.rose` is now the COUNT of windows that rose (kind `count`, "68"), never a percentage.
+With fewer than 10 independent windows (`HISTORY_NEFF_MIN`) the range is the lowest and the highest change
+(`history_range.mL.min`, `.max`) instead of the 10th and 90th percentiles. The non-overlapping changes go beside them:
+`history_range.mL.nonoverlap.{n, min, median, max}`, the change ending in the latest month and every L months before
+it (for 12 months, one a year ending in the same calendar month). Every change item's value and text are at 2
+significant figures ("−0.040 CAD"). The windows item's label is the sentence the writer may copy: "In the 104 past
+12-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month, so they are worth about 13 independent
+ones), the change in the monthly average of value ran from −0.063 CAD (1 in 10 lower) to +0.078 CAD (1 in 10 higher);
+the middle was +0.016 CAD, and it rose in 68 of the 104. Taking one window a year, each ending in Aug, the 9 changes ran
+from −0.062 CAD to +0.056 CAD, with a middle of +0.017 CAD. This is history, not a forecast." (with "(the lowest)" and
+"(the highest)" under 10 independent windows). `note` then adds that the historical range
 items are facts about the past, not a forecast and not graded. **The worker (`insight-proxy/src/report.js`
 `SCENARIO_GROUPS`) keeps only the groups it knows: until `history_range` is added there, it drops these items from
 `/report`.**
@@ -1040,6 +1082,62 @@ unrecognised[], blank_without_flag, quality_of_headline{code: months}}`; a code'
 (`engine/flag_vocab.json`, versioned), and which codes stand for a missing value is learned from the file (90% of its rows
 blank). Retail: `by_kind {suppressed: 5430, not_available: 533, too_unreliable: 162}`, `quality_of_headline {A: 45, "": 34}`.
 `structure.hash` is a deterministic hash of what was detected.
+
+### 5.11 Inference labels (wave 4, track A2: `engine/nl_inference.py`, `plan/WAVE4-A-DESIGN.md` section 3)
+
+**T1, the trend test** (`trend_test`, read by `nl_browser._a_trend`; Newey-West's `_hac_slope` is kept only as the size
+simulation's reference). Least squares gives residuals whose lag-1 autocorrelation, bias-corrected by one bootstrap
+round (rho~ = 2 rho^ - mean rho^*, the bias function simulated once per design on fixed draws), held to [-0.5, 0.95], is
+the momentum of a Prais-Winsten AR(1) GLS fit; its slope and t are the estimate and the statistic. The p-value is a
+parametric bootstrap (999 draws, seed 20261001) UNDER NO TREND, its momentum estimated with the null imposed
+(residuals from the mean, bias-corrected the same way): the design's first version drew at the trend line's own
+momentum, and its size at 9 years was 8.2% to 17.8% (momentum 0 to 0.8); imposing the null brings it to 3.8% to 5.6%.
+The 95% range is the slope plus or minus the 95th percentile of the draws' |t| times its standard error, so it
+excludes no change exactly when p < 0.05. The random-walk screen is the share of driftless random walks on the same
+years whose |t| reaches the observed one. Verdict: rising or falling only when p < 0.05, the screen's share is at most
+0.05 and the simulated size of the nearest condition is at most 7.5%; no_settled_direction when p >= 0.05; else
+not_graded. `engine/inference_tables.json` (written by `tools/sim_trend_size.py`; its script and the procedure's source
+are hashed, so a stale table fails `--check` and `tools/test_nl_inference.py`) holds, for 2,000 no-trend AR(1) series per
+condition, n in {8, 9, 10, 12, 15, 19, 30, 60, 120} x momentum in {0, 0.2, 0.4, 0.6, 0.8}: the test's false-alarm rate
+(2.6% to 7.0%; every condition at most 7.5%), how often it claimed a direction (0% to 2.5%) and the Newey-West range's
+rate (7.6% to 50.1%). The fixed-b critical-value cubic a design note recalled for Kiefer and Vogelsang (2005) is checked
+there by simulation and NOT used: it matches the fixed-b limit for a mean (within 0.04) but not for a trend's slope
+(off by up to 0.93), and a secondary source prints its last coefficient as -0.05324, which is off by 0.5 for the mean.
+
+**T2, an interval's measured coverage.** The core's clause "built to hold the true change 95% of the time; in simulated
+series with strong momentum, which the model can underestimate, it held it less often" (`gate.interval_caution`)
+becomes, in `findings[].why`, `watch.reason` and the story's sentence about that interval, "a 95% interval by
+construction; in the benchmark's simulated series nearest this one it held the true change 95.2% of the time (94.1% to
+96.1%)" (`coverage_clause`; "It is ..." in the story), from `effect.coverage`; with no receipt, or no condition like the
+claim, "labelled 95%; coverage not measured for this kind of series". The figures come from the benchmark receipt the
+engine ships (the pack's cut keeps them as `results.change_coverage`).
+
+**T3, the history windows**: section 5.8.
+
+**P0-13, the forecast audit** (`forecast_audit`, in `_forecast_block`): the origins are the last 23 months with 45 or
+more months before them (the core's minimum); at each, the shown model is refitted (`forecast.fit_predict`) on the
+months before it, and the 80% range actually shown at each horizon (its width relative to its point in ratio mode, its
+offsets in additive mode) is applied to the refit; seasonal naive is refitted the same way. Per horizon (1, 3, 6 and 12
+months, as far as the forecast reaches): held of checked; n_eff from the hits' lag-1 autocorrelation (the errors' when
+every check hit or every one missed), n (1 - r) / (1 + r) with r in [0, 0.95]; the Wilson interval of the coverage on
+n_eff; MAE, rel_MAE (against seasonal naive) and MASE. A horizon fails when the Wilson upper end is under 0.80 or
+rel_MAE is over 1, passes when the Wilson lower end is at least 0.60, n_eff at least 8 and rel_MAE under 1 (AM5), and is
+unclear otherwise; the audit fails if any horizon fails, passes if all pass, and is `trusted` only then. `mode="full"`
+re-runs the core's whole `run_forecast` at each origin (the test suite's check that the cheap audit agrees). The bottom
+line says "Plan on about ..." only for a CONFIRMED and trusted forecast; a CONFIRMED forecast whose audit is unclear is
+"a guide rather than a plan", and one whose audit fails reads "the engine graded it ..., but that grade is not trusted:
+the back-test of its range failed". The guard's wording rule (no "usable" or "plan on it" when the audit fails) is
+track C's.
+
+**T4, official aggregates** (`_official_inference`, after the v2 blocks; track A1 calls it again on a structured slice's
+inner report after copying its structure): `findings[].inference` (section 2.4) on the business change claims about the
+published measure, never a row count, when the file's header holds a publisher's signature (3 or more of StatCan's
+REF_DATE, DGUID, VECTOR, COORDINATE, STATUS, its date among them, or of Eurostat's; `engine/flag_vocab.json` takes over
+when it ships), the headline is the root of every additive dimension (with track A1's structure: its slice member of
+each partition or hierarchy is that dimension's total; without it: the engine read no dimension of two or more values,
+or read a long table one column per series) and no column publishes sampling errors. A withheld column is counted,
+never named. Track B shows "WATCH (process grade)" beside the described change; track C states such a change "in the
+published totals", never "significant" or "confirmed".
 
 ## 6. What this contract does not carry yet (R1)
 

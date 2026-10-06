@@ -116,8 +116,11 @@ NOTE_REFUSED = "No scenario or contribution figures for this file; the reasons a
 HISTORY_TYPES = ("level", "percentage")
 HISTORY_MIN_MONTHS = 36          # three years of monthly averages, at least
 HISTORY_LAGS = (12, 3)           # the 12-month and the 3-month changes
+HISTORY_NEFF_MIN = 10           # fewer independent windows than this: the extremes, not the 10th and 90th percentiles
 HISTORY_NOTE = ("The historical range items (group history_range) say how much the monthly average moved in the "
-                "file's own past windows: facts about the past, not a forecast and not graded.")
+                "file's own past windows: facts about the past, not a forecast and not graded. The windows overlap, so "
+                "each range says how many independent windows they are worth (n_eff), and the non-overlapping changes "
+                "are stated beside them; figures are given to 2 significant figures.")
 
 
 def blank() -> Dict[str, Any]:
@@ -126,7 +129,19 @@ def blank() -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- the one text function
-def _fmt_item(value: Any, kind: str, unit: str = "") -> str:
+def _sig_text(v: float, sig: int) -> str:
+    """v to `sig` significant figures, trailing zeros kept (0.040, not 0.04), thousands separated, true minus."""
+    if v == 0:
+        return "0"
+    a = abs(v)
+    e = int(math.floor(math.log10(a)))
+    dp = max(0, sig - 1 - e)
+    r = round(v, dp) if dp else float(round(v, sig - 1 - e))
+    s = ("%.*f" % (dp, r)) if dp else format(int(r), ",")
+    return s.replace("-", "\u2212")
+
+
+def _fmt_item(value: Any, kind: str, unit: str = "", sig: Optional[int] = None) -> str:
     """An item's text, from its value, kind and unit, in the adapter's own formats:
     amount / per_unit  _amt (3 significant digits, whole units from 1,000, the unit where a reader expects it)
     change             _amt with a "+" before a rise (a fall carries the true minus sign); unit "%" for a
@@ -145,9 +160,16 @@ def _fmt_item(value: Any, kind: str, unit: str = "") -> str:
     if kind == "percent":
         return NB._pct_text(v).replace("-", "−")
     if kind == "points":
-        s = NB._fmt(v)
+        s = _sig_text(v, sig) if sig else NB._fmt(v)
         return s if s == "n/a" else s + " percentage points"
-    s = NB._amt(v, unit)
+    if sig and kind in ("change", "amount", "per_unit"):
+        pre, post = NB._unit_parts(unit)
+        s = _sig_text(v, sig)
+        if pre:
+            s = ("\u2212" + pre + s[1:]) if s.startswith("\u2212") else pre + s
+        s += post
+    else:
+        s = NB._amt(v, unit)
     if kind == "change" and v > 0 and s != "n/a" and not s.startswith("−"):
         return "+" + s
     return s
@@ -994,7 +1016,13 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
     windows in which it rose, with the window count. The monthly average is the mean of the month's values in the rows
     the engine kept; a level's zeros that mark "no value" (the analyses' own evidence, nl_browser._zero_shape: weekend
     placeholders between non-zero rates) are not counted, and the items say so. Facts about the file's past: no grade,
-    group "history_range", every label saying it is history, not a forecast."""
+    group "history_range", every label saying it is history, not a forecast.
+
+    T3 (wave 4, plan/WAVE4-A-DESIGN.md 3): the windows overlap, so each lag also states how many independent windows
+    they are worth (n_eff, nl_inference.n_eff_overlapping), counts the windows that rose ("68 of the 104", never a
+    percentage), uses the lowest and highest change instead of the 10th and 90th percentiles under HISTORY_NEFF_MIN
+    independent windows, and adds the non-overlapping changes (the one ending in the latest month and every lag months
+    before it): their count, lowest, middle and highest. Change figures are given to 2 significant figures."""
     import numpy as np
     import pandas as pd
     m, st = _history_measure(rep, frame, claims, plan, landed, additive)
@@ -1036,33 +1064,91 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
     span = "%s to %s" % (NB._mon(ms[0]), NB._mon(ms[-1]))
     cols = [c for c in (date_col, m) if c]
     items: List[Dict[str, Any]] = []
+    import nl_inference as _ni
+    last_ix = int(ms[-1][:4]) * 12 + int(ms[-1][5:7]) - 1
     for lag in HISTORY_LAGS:
-        ch = [avg[mo] - avg[NB._shift_month(mo, -lag)] for mo in ms if NB._shift_month(mo, -lag) in avg]
+        ends = [mo for mo in ms if NB._shift_month(mo, -lag) in avg]
+        ch = [avg[mo] - avg[NB._shift_month(mo, -lag)] for mo in ends]
         if len(ch) < 2:
             continue
         n = len(ch)
-        p10, p50, p90 = (float(x) for x in np.percentile(np.asarray(ch, dtype=float), [10, 50, 90]))
-        rose = 100.0 * sum(1 for x in ch if x > 0) / n
+        arr = np.asarray(ch, dtype=float)
+        # T3 (wave 4): overlapping windows share months, so n of them are worth about n_eff independent ones; with
+        # fewer than HISTORY_NEFF_MIN the 10th and 90th percentiles are not estimable and the extremes are stated
+        neff = _ni.n_eff_overlapping(ch, lag)
+        m_ind = max(1, int(round(neff)))
+        wide = neff >= HISTORY_NEFF_MIN
+        lo_k, hi_k = ("p10", "p90") if wide else ("min", "max")
+        lo_v, hi_v = ((float(x) for x in np.percentile(arr, [10, 90])) if wide else (float(arr.min()), float(arr.max())))
+        p50 = float(np.percentile(arr, 50))
+        rose_k = sum(1 for x in ch if x > 0)
+        # the non-overlapping alternative: the change ending in the latest month, and every lag months before it
+        nov = [avg[mo] - avg[NB._shift_month(mo, -lag)] for mo in ends
+               if (last_ix - (int(mo[:4]) * 12 + int(mo[5:7]) - 1)) % lag == 0]
         base = "history_range.m%d" % lag
         wins = "%d past %d-month windows" % (n, lag)
         tail = "%s; history, not a forecast" % span
-        txt = {k: _fmt_item(round(x, 6), kind, unit) for k, x in (("p10", p10), ("p50", p50), ("p90", p90))}
+        v2 = {k: _ni.sig2(x) for k, x in ((lo_k, lo_v), ("p50", p50), (hi_k, hi_v))}
+        txt = {k: _fmt_item(x, kind, unit, sig=2) for k, x in v2.items()}
         of = "%s: the %%s of its changes over the %s%%s, %s" % (NB._cap(what), wins, tail)
+        every = "one window a year, each ending in %s" % NB._mon(ms[-1])[:3] if lag == 12 else \
+            "one window every %d months, the latest ending in %s" % (lag, NB._mon(ms[-1]))
+        nv = {}
+        if len(nov) >= 2:
+            na = np.asarray(nov, dtype=float)
+            nv = {"min": _ni.sig2(float(na.min())), "median": _ni.sig2(float(np.percentile(na, 50))),
+                  "max": _ni.sig2(float(na.max()))}
+        nvt = {k: _fmt_item(x, kind, unit, sig=2) for k, x in nv.items()}
+        sentence = ("In the %s (%s; they overlap, one ending each month, so they are worth about %d independent "
+                    "ones), the change in %s ran from %s (%s) to %s (%s); the middle was %s, and it rose in %d of the "
+                    "%d." % (wins, span, m_ind, what, txt[lo_k], "1 in 10 lower" if wide else "the lowest",
+                             txt[hi_k], "1 in 10 higher" if wide else "the highest", txt["p50"], rose_k, n))
+        if nv:
+            sentence += (" Taking %s, the %d changes ran from %s to %s, with a middle of %s."
+                         % (every, len(nov), nvt["min"], nvt["max"], nvt["median"]))
+        sentence += " This is history, not a forecast."
+        lo_words = ("10th percentile", " (1 in 10 was lower)") if wide else ("lowest", "")
+        hi_words = ("90th percentile", " (1 in 10 was higher)") if wide else ("highest", "")
         got = [
-            _item(base + ".windows", "history_range",
-                  "In the %s (%s; they overlap, one ending each month), the change in %s ran from %s (1 in 10 lower) "
-                  "to %s (1 in 10 higher); the middle was %s. This is history, not a forecast."
-                  % (wins, span, what, txt["p10"], txt["p90"], txt["p50"]),
-                  float(n), "count", "", None, cols, "history", "count of %d-month windows" % lag, assumes=note),
-            _item(base + ".p10", "history_range", of % ("10th percentile", " (1 in 10 was lower)"), p10, kind, unit,
-                  None, cols, "history", "p10 of %d-month changes" % lag, assumes=note),
-            _item(base + ".p50", "history_range", of % ("middle (median)", ""), p50, kind, unit, None, cols, "history",
-                  "p50 of %d-month changes" % lag, assumes=note),
-            _item(base + ".p90", "history_range", of % ("90th percentile", " (1 in 10 was higher)"), p90, kind, unit,
-                  None, cols, "history", "p90 of %d-month changes" % lag, assumes=note),
-            _item(base + ".rose", "history_range", "Share of the %s in which %s rose, %s" % (wins, what, tail), rose,
-                  "percent", "%", None, cols, "history", "share of %d-month windows that rose" % lag, assumes=note),
+            _item(base + ".windows", "history_range", sentence, float(n), "count", "", None, cols, "history",
+                  "count of %d-month windows" % lag, assumes=note),
+            _item(base + ".n_eff", "history_range",
+                  "About how many independent windows the %s are worth (they overlap: n / (1 + 2 x the changes' "
+                  "autocorrelations up to lag %d)), %s" % (wins, lag - 1, tail), float(m_ind), "count", "", None,
+                  cols, "history", "effective count of %d-month windows" % lag, assumes=note),
+            _item(base + "." + lo_k, "history_range", of % lo_words, v2[lo_k], kind, unit, None, cols, "history",
+                  "%s of %d-month changes" % (lo_k, lag), assumes=note),
+            _item(base + ".p50", "history_range", of % ("middle (median)", ""), v2["p50"], kind, unit, None, cols,
+                  "history", "p50 of %d-month changes" % lag, assumes=note),
+            _item(base + "." + hi_k, "history_range", of % hi_words, v2[hi_k], kind, unit, None, cols, "history",
+                  "%s of %d-month changes" % (hi_k, lag), assumes=note),
+            _item(base + ".rose", "history_range",
+                  "Of the %s (about %d independent), the windows in which %s rose, %s" % (wins, m_ind, what, tail),
+                  float(rose_k), "count", "", None, cols, "history", "count of %d-month windows that rose" % lag,
+                  assumes=note),
         ]
+        if nv:
+            nlab = "the %d non-overlapping %d-month changes (%s)" % (len(nov), lag, every)
+            got += [
+                _item(base + ".nonoverlap.n", "history_range", "The number of %s, %s" % (nlab, tail), float(len(nov)),
+                      "count", "", None, cols, "history", "count of non-overlapping %d-month changes" % lag,
+                      assumes=note),
+                _item(base + ".nonoverlap.min", "history_range", "%s: the lowest of %s, %s" % (NB._cap(what), nlab,
+                                                                                               tail),
+                      nv["min"], kind, unit, None, cols, "history", "min of non-overlapping %d-month changes" % lag,
+                      assumes=note),
+                _item(base + ".nonoverlap.median", "history_range", "%s: the middle of %s, %s" % (NB._cap(what), nlab,
+                                                                                                  tail),
+                      nv["median"], kind, unit, None, cols, "history",
+                      "median of non-overlapping %d-month changes" % lag, assumes=note),
+                _item(base + ".nonoverlap.max", "history_range", "%s: the highest of %s, %s" % (NB._cap(what), nlab,
+                                                                                                tail),
+                      nv["max"], kind, unit, None, cols, "history", "max of non-overlapping %d-month changes" % lag,
+                      assumes=note),
+            ]
+        for x in got:
+            if x is not None and x["kind"] in ("change", "points"):
+                x["text"] = _fmt_item(x["value"], x["kind"], x["unit"], sig=2)      # 2 significant figures (T3)
         items.extend(x for x in got if x is not None)
     return items, []
 

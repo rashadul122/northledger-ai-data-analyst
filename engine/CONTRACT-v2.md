@@ -1548,7 +1548,9 @@ min-max in at least 99% of its cells AND
   it to within one unit of the last published digit, while a typical member's own fit (each by the others without it) is at least 3
   units off and the member's is at most a quarter of that. An aggregate is an exact weighted average of its parts to the digit it
   publishes; a province in the middle of the range is not. Needs 3 or more parts beside it and at most 40 members, and 12 complete
-  cells, else there is no evidence. Its place in the file is no evidence either way. `sum_check` carries `{inside_range_share, cells,
+  cells, else there is no evidence. The search is bounded: the 5 candidates whose relation to the others' mean is the most stable
+  over the cells are fitted (a true aggregate is among them) against at most 8 peers, on at most 600 cells, within half a second
+  inside detect's budget (40 members: 0.02 s); out of time, or a fit that did not converge, is no evidence, never a guess. Its place in the file is no evidence either way. `sum_check` carries `{inside_range_share, cells,
   fit_rms, typical_member_fit_rms, unit, fit_cells, coverage}`.
 
 With none, the table has NO aggregate: rule 6 reads one member, `role: "single"`, `single_by: "dominance"` (the most covered, then the most

@@ -1607,6 +1607,237 @@ def test_every_pattern_the_engine_compiles_is_legal_in_python_3_12_pyodide():
     assert _re.compile("(?:(?i:rate)|index)")
 
 
+# ----------------------------------------------------------------------------- wave 5b, follow-up 1: fail closed
+import contextlib  # noqa: E402
+
+
+@contextlib.contextmanager
+def _patched(obj, name, value):
+    old = getattr(obj, name)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        setattr(obj, name, old)
+
+
+@contextlib.contextmanager
+def _strict(on: bool):
+    old = os.environ.get("NL_BROWSER_STRICT")
+    if on:
+        os.environ["NL_BROWSER_STRICT"] = "1"
+    else:
+        os.environ.pop("NL_BROWSER_STRICT", None)
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("NL_BROWSER_STRICT", None)
+        else:
+            os.environ["NL_BROWSER_STRICT"] = old
+
+
+def _boom(*_a, **_k):
+    raise ValueError("boom with a cell Alberta 123 in it " + "x" * 400)
+
+
+def _unimportable():
+    """nl_structure cannot be imported (`import nl_structure` raises), as in the page's Pyodide when a pattern is illegal."""
+    return _patched_modules({"nl_structure": None})
+
+
+@contextlib.contextmanager
+def _patched_modules(mods):
+    saved = {k: sys.modules.get(k, "__absent__") for k in mods}
+    sys.modules.update(mods)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v == "__absent__":
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+
+def _csv_of(df) -> bytes:
+    return df.to_csv(index=False).encode()
+
+
+def _business_shape(extra=None, rows_per=1):
+    """A plain business CSV shaped like a long table (a date, two dimensions, a measure) with no metadata column."""
+    rng = np.random.RandomState(5)
+    recs = []
+    for d in pd.date_range("2021-01-01", periods=36, freq="MS").strftime("%Y-%m-%d"):
+        for r in ("North", "South", "East"):
+            for p in ("Widget", "Gadget", "Gizmo"):
+                recs.append([d, r, p, round(100 * rng.rand(), 1)])
+    df = pd.DataFrame(recs, columns=["date", "region", "product", "sales"])
+    for k, v in (extra or {}).items():
+        df[k] = v(df) if callable(v) else v
+    return df
+
+
+def test_w5b_the_series_table_guard_decides_from_the_files_own_columns_and_not_from_nl_structure():
+    """One helper (nl_browser.looks_like_series_table) says what a table of series with totals looks like, without nl_structure:
+    a publisher's signature, 3 or more metadata-like columns, or a date + a measure + 2 dimensions + a flag column."""
+    with _unimportable():
+        yes = {"statcan": MC.partition(), "eurostat": MC.eurostat()}
+        for k, data in yes.items():
+            got = NB.looks_like_series_table(data)
+            assert got and got["by"] == "publisher" and got["publisher"] == k, (k, got)
+        # 3 metadata-like columns and no signature (REF_DATE/DGUID/VECTOR/COORDINATE/STATUS: fewer than 3 of them)
+        df = _business_shape(extra={"unit": "Dollars", "scalar_factor": "units", "decimals": "0"})
+        got = NB.looks_like_series_table(_csv_of(df))
+        assert got and got["by"] == "metadata" and got["columns"] == ["unit", "scalar_factor", "decimals"], got
+        # a date, a measure, 2 dimensions and a flag column: x on a blank measure (learned from the file), or a STATUS with a publisher's code
+        df = _business_shape(extra={"flag": ""})
+        idx = df.sample(frac=0.1, random_state=3).index
+        df["sales"] = df["sales"].astype(object)
+        df.loc[idx, "sales"] = ""
+        df.loc[idx, "flag"] = "x"
+        got = NB.looks_like_series_table(_csv_of(df))
+        assert got and got["by"] == "long format" and got["columns"][-1] == "flag", got
+        df2 = _business_shape(extra={"status": lambda d: np.where(np.arange(len(d)) % 7 == 0, "E", "")})
+        got = NB.looks_like_series_table(_csv_of(df2))
+        assert got and got["by"] == "long format" and got["columns"][-1] == "status", got
+        # NEGATIVE: the same shape with no metadata and no flag; a "returned" of Y/blank; a "status" of open/done; a grade of A to D
+        assert NB.looks_like_series_table(_csv_of(_business_shape())) is None
+        assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"returned": lambda d: np.where(np.arange(len(d)) % 5 == 0, "Y", "")}))) is None
+        assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"status": lambda d: np.array(["open", "done", "new", "paid"])[np.arange(len(d)) % 4]}))) is None
+        assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"grade": lambda d: np.array(["A", "B", "C", "D"])[np.arange(len(d)) % 4]}))) is None
+        # NEGATIVE: two metadata-like names only; a file with no dates; reviews; a file the reader cannot parse
+        assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"unit": "kg", "status": "ok"}))) is None
+        assert NB.looks_like_series_table(b"") is None and NB.looks_like_series_table(b"\x00\x01 not a csv") is None
+        assert NB.looks_like_series_table(MC.business_export()) is None
+        assert NB.looks_like_series_table(MC.category_long()) is None
+    # the stand-ins the helper falls back on equal what the structure layer reads (so the two cannot drift apart)
+    sigs, codes = NB._guard_vocab()
+    assert sigs == {k: v["signature"] for k, v in NS.flag_vocab()["publishers"].items() if v.get("signature")}, sigs
+    assert NB._GUARD_SIGNATURES == {k: sigs[k] for k in NB._GUARD_SIGNATURES}, "the stand-in signatures differ from flag_vocab.json"
+    assert NB._PANEL_META == NS._META and NB._GUARD_FLAG_NAMES == frozenset(NS._FLAG_NAMES), "the metadata names differ"
+    assert set(NB._GUARD_CODES) <= set(codes) | {"-"}, set(NB._GUARD_CODES) - set(codes)
+
+
+def _is_refusal(rep, stage, type_=None):
+    st = rep["structure"]
+    assert st and st["kind"] == "error" and st["usable"] is False, st
+    assert st["reason"] == NB.SERIES_GUARD_REASON or st["reason"] == NB.SLICE_GUARD_REASON, st["reason"]
+    assert st["error"]["stage"] == stage and (type_ is None or st["error"]["type"] == type_), st["error"]
+    assert len(st["error"]["message"]) <= 200 and "_exc" not in st["error"], st["error"]
+    h = rep["story"]["headline"]
+    assert h.startswith(NB.GATE_TRIPPED + ":") and "no figure is shown" in h and "could not run" in h, h
+    assert "An average over its rows would count totals and parts together" in h, h
+    assert rep["estimand"] is None and rep["scenarios"]["items"] == [] and not [f for f in rep["findings"] if f["kind"] == "business"], \
+        [f["id"] for f in rep["findings"]]
+    assert not any(c.get("data", {}).get("kind") for c in rep["charts"] if c.get("type") == "viz"), "no chart reads the rows"
+    json.dumps(rep, allow_nan=False)                           # no exception object is left in the record
+    return st
+
+
+def test_w5b_a_table_of_series_is_refused_when_the_structure_layer_throws_and_never_read_the_old_way():
+    """Before: detect threw, the file was read the old way, and every row of the table of series was averaged (retail took 57 s
+    and had no waterfalls in the page). Now: a refusal with a plain reason, the stage and the exception, and no figure."""
+    for data, name, stage in ((MC.partition(), "regions.csv", "detect"),                           # a long table of 6 series: the layout check asks first
+                              (MC.big(n_geo=8, n_ind=9, n_months=36), "many_series.csv", "detect")):   # 72 series: the hook asks
+        with _patched(NS, "detect", _boom):
+            NB._PROFILE_CACHE.clear()
+            rep = NB.run(data, name, "", {}, AS_OF)
+        assert rep["ok"], rep["error"]
+        st = _is_refusal(rep, stage, "ValueError")
+        assert st["error"]["message"].startswith("boom with a cell") and st["looks_like"]["by"] == "publisher", st
+        # the same file with the layer working is read by its structure (the contrast)
+        good = _run(data, name)
+        assert good["estimand"] and good["structure"]["kind"] == "cube", good["structure"]
+    # the writer is told what stopped the layer (the stage and the exception's name; the message is scrubbed), never a row
+    out = NB.results_for_ai(rep)
+    assert out["structure"]["kind"] == "error" and out["structure"]["usable"] is False, out["structure"]
+    assert out["structure"]["error"]["stage"] == "detect" and out["structure"]["error"]["type"] == "ValueError", out["structure"]
+    assert out["structure"]["reason"].startswith("This file looks like a table of series"), out["structure"]
+    assert out.get("estimand") is None
+    # a plan does not get round it: the plan's run refuses too, and so does a run after the planner's profile
+    plan = {"goal": "How did sales change?", "columns": [{"name": "VALUE", "semantic_type": "flow_amount", "role": "target"}],
+            "operations": [], "primary": "VALUE", "analyses": []}
+    with _patched(NS, "detect", _boom):
+        NB._PROFILE_CACHE.clear()
+        rep = NB.run(MC.partition(), "regions.csv", "", {"__plan__": plan}, AS_OF)
+        _is_refusal(rep, "detect")
+        NB._PROFILE_CACHE.clear()
+        prof = NB.profile_for_ai(MC.partition(), "regions.csv", decisions={})
+        assert prof.get("ok") and "structure" not in prof, "the planner still gets the columns, with no structure block"
+        assert NB._PROFILE_CACHE["value"].get(NB._PROFILE_CACHE_ERROR)["error"]["stage"] == "detect", "the profile pass kept the refusal"
+        rep = NB.run(MC.partition(), "regions.csv", "", {}, AS_OF)
+        _is_refusal(rep, "detect")
+
+
+def test_w5b_a_table_of_series_is_refused_when_nl_structure_cannot_be_imported():
+    """The page's failure of 6 October: the import failed (a regex Python 3.12 refuses), the engine read the file the old way."""
+    with _unimportable():
+        NB._PROFILE_CACHE.clear()
+        t0 = time.perf_counter()
+        rep = NB.run(MC.partition(), "regions.csv", "", {}, AS_OF)
+        took = time.perf_counter() - t0
+        st = _is_refusal(rep, "import", "ModuleNotFoundError")
+        assert st["looks_like"]["by"] == "publisher" and took < 20, (st, took)
+        # a plan does not get round it either
+        plan = {"goal": "How did sales change?", "columns": [], "operations": [], "primary": "VALUE", "analyses": []}
+        NB._PROFILE_CACHE.clear()
+        _is_refusal(NB.run(MC.partition(), "regions.csv", "", {"__plan__": plan}, AS_OF), "import")
+    # the same failure for a file that is NOT a table of series: read as before, in full
+    biz = _csv_of(_business_shape())
+    with _strict(False):
+        with _unimportable():
+            NB._PROFILE_CACHE.clear()
+            got = NB.run(biz, "sales.csv", "", {}, AS_OF)
+    with _patched(NB, "STRUCTURE_ON", False):
+        NB._PROFILE_CACHE.clear()
+        want = NB.run(biz, "sales.csv", "", {}, AS_OF)
+    assert got["ok"] and got["structure"] is None and got["estimand"] is None
+    pick = lambda r: (r["story"], [(f["id"], f["value"], f["grade"]) for f in r["findings"]], r["scenarios"]["items"],
+                      [c["id"] for c in r["charts"]], r["downloads"]["clean_csv"])
+    assert pick(got) == pick(want)
+
+
+def test_w5b_a_plain_business_file_with_a_similar_shape_is_read_the_old_way_when_the_layer_throws():
+    """Negative: a date, two dimensions and a measure with no metadata (and with a business file's own Y/blank, open/done columns)
+    is not a table of series: when detect throws it is read the old way, unchanged, and says nothing about a structure."""
+    for extra in (None, {"returned": lambda d: np.where(np.arange(len(d)) % 5 == 0, "Y", "")},
+                  {"status": lambda d: np.array(["open", "done", "new", "paid"])[np.arange(len(d)) % 4]}):
+        data = _csv_of(_business_shape(extra=extra))
+        with _strict(False):
+            with _patched(NS, "detect", _boom):
+                NB._PROFILE_CACHE.clear()
+                got = NB.run(data, "sales.csv", "", {}, AS_OF)
+        with _patched(NB, "STRUCTURE_ON", False):
+            NB._PROFILE_CACHE.clear()
+            want = NB.run(data, "sales.csv", "", {}, AS_OF)
+        assert got["ok"] and got["structure"] is None and got["estimand"] is None, got["structure"]
+        assert not got["story"]["headline"].startswith(NB.GATE_TRIPPED), got["story"]["headline"]
+        pick = lambda r: (r["story"], [(f["id"], f["value"], f["grade"]) for f in r["findings"]], r["scenarios"]["items"],
+                          [c["id"] for c in r["charts"]], r["downloads"]["clean_csv"], r["health"])
+        assert pick(got) == pick(want)
+        # a strict run still raises the layer's exception for such a file (the test suites' own switch: never silent in tests)
+        with _strict(True):
+            with _patched(NS, "detect", _boom):
+                NB._PROFILE_CACHE.clear()
+                rep = NB.run(data, "sales.csv", "", {}, AS_OF)
+        assert not rep["ok"] and "ValueError" in rep["error"], rep.get("error")
+
+
+def test_w5b_a_verified_table_whose_slice_cannot_be_run_is_refused_not_read_as_a_plain_table():
+    """The layer ran and found the table's totals and parts, but its headline slice could not be run: the old reading would add the
+    totals to their parts, so this is a refusal too (stage "slice")."""
+    with _patched(NB, "_run_slice", lambda *a, **k: None):
+        NB._PROFILE_CACHE.clear()
+        rep = NB.run(MC.partition(), "regions.csv", "", {}, AS_OF)
+        st = _is_refusal(rep, "slice", "SliceNotRun")
+        assert st["reason"] == NB.SLICE_GUARD_REASON and st["looks_like"]["by"] == "structure", st
+        plan = {"goal": "How did sales change?", "columns": [], "operations": [], "primary": "VALUE", "analyses": []}
+        NB._PROFILE_CACHE.clear()
+        rep = NB.run(MC.partition(), "regions.csv", "", {"__plan__": plan}, AS_OF)
+        _is_refusal(rep, "slice", "SliceNotRun")
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

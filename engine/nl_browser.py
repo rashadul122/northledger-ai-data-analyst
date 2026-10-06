@@ -4484,8 +4484,14 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         out = {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap, "released": released,
                "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
         if structure and STRUCTURE_ON:
-            S = _structure_detect(R, hidden, wide)
+            fail: Dict[str, Any] = {}
+            S = _structure_detect(R, hidden, wide, fail=fail)
             out[_PROFILE_CACHE_STRUCTURE] = S
+            if S is None and fail:
+                # the structure layer could not run: a table of series is refused (the run reads this), any other file is read as before
+                rec = _guard_failure(data, fail)
+                if rec is not None:
+                    out[_PROFILE_CACHE_ERROR] = rec
             if S is not None:
                 withheld = {str(f["column"]) for f in flagged if f.get("decision") == "withhold"}
                 cleaning = {"rows_in": int(cr.total_in), "rows_clean": int(cr.rows_clean),
@@ -5046,13 +5052,18 @@ def _structure_for_ai(st: Any, safe: Any) -> Optional[Dict[str, Any]]:
              for k in ("column", "role", "members", "total", "parts", "nsa", "sa", "depths") if k in d}
             for d in st.get("dims") or [] if isinstance(d, dict)][:8]
     fl = st.get("flags") if isinstance(st.get("flags"), dict) else None
-    return {"kind": st.get("kind"), "usable": st.get("usable"), "publisher": st.get("publisher"),
-            "series": st.get("series"), "months": st.get("months"), "dims": dims,
-            "slice": st.get("slice"), "reason": safe(st.get("reason") or "", 300),
-            "flags": {"column": fl.get("column"), "by_kind": fl.get("by_kind"),
-                      "quality_of_headline": fl.get("quality_of_headline")} if fl else None,
-            "corrections": [{"dim": safe(c.get("dim"), 120), "kind": c.get("kind")} for c in st.get("corrections") or []
-                            if isinstance(c, dict)][:6]}
+    out = {"kind": st.get("kind"), "usable": st.get("usable"), "publisher": st.get("publisher"),
+           "series": st.get("series"), "months": st.get("months"), "dims": dims,
+           "slice": st.get("slice"), "reason": safe(st.get("reason") or "", 300),
+           "flags": {"column": fl.get("column"), "by_kind": fl.get("by_kind"),
+                     "quality_of_headline": fl.get("quality_of_headline")} if fl else None,
+           "corrections": [{"dim": safe(c.get("dim"), 120), "kind": c.get("kind")} for c in st.get("corrections") or []
+                           if isinstance(c, dict)][:6]}
+    err = st.get("error")
+    if st.get("kind") == "error" and isinstance(err, dict):
+        # the structure layer could not run on a table of series (wave 5b): what stopped it, never a cell of the file
+        out["error"] = {"stage": safe(err.get("stage"), 40), "type": safe(err.get("type"), 80), "message": safe(err.get("message"), 200)}
+    return out
 
 
 def results_for_ai(rep: Any) -> Dict[str, Any]:
@@ -8682,11 +8693,203 @@ STRUCTURE_ON = True                        # the tests switch it off to prove a 
 STRUCTURE_BUDGET_S = 1.0
 STRUCTURE_LAYOUT = "structured cube slice"
 _PROFILE_CACHE_STRUCTURE = "structure"
+_PROFILE_CACHE_ERROR = "structure_error"      # the refusal made when the structure layer could not run on a table of series
 
 
 def _ns() -> Any:
     import nl_structure
     return nl_structure
+
+
+# ----------------------------------------------------------------------------- the series-table guard (wave 5b)
+# The structure layer is an aid for most files and a safeguard for one kind: a table of series with totals (an official
+# table: Statistics Canada, Eurostat, the ONS). Read the old way, such a table has its totals and its parts averaged
+# together, a figure that looks right and is wrong. The page's Pyodide once failed to import nl_structure (a regex flag
+# Python 3.12 refuses and 3.9 only warns about) and the engine silently read the file the old way: retail took 57 s and
+# the figure was an average over 36,735 rows. So: when the structure layer cannot run (it cannot be imported, detect
+# throws, the slice cannot be run) on a file that LOOKS LIKE a table of series with totals, no business analysis is made;
+# the "did not run" path says so and `structure` is {kind: "error", usable: false, error: {stage, type, message}}.
+# Any other file keeps the old behaviour. `looks_like_series_table` is the one place that decides what "looks like" means,
+# and it must not depend on nl_structure (it is what runs when nl_structure cannot).
+SERIES_GUARD_REASON = ("This file looks like a table of series with totals, and the part of the engine that finds them could "
+                       "not run. An average over its rows would count totals and parts together, so no figure is shown.")
+_GUARD_ROWS = 50000                         # rows read to decide what a file looks like (a failure path only)
+_GUARD_FLAG_CODES = 20                      # a flag column: at most 20 short codes ...
+_GUARD_FLAG_LEN = 4                         # ... of at most 4 characters ...
+_GUARD_BLANK_MEASURE = 0.90                 # ... one of which is a publisher's code or has a blank measure on 90% of its rows
+_GUARD_DIM_MAX = 400                        # a dimension: 2 to 400 members
+_GUARD_MIN_DATES = 6
+# the publishers' signature columns are read from engine/flag_vocab.json (the structure layer reads the same file); this is only
+# the stand-in for a file that cannot be read, and a test keeps it equal to the file
+_GUARD_SIGNATURES = {"statcan": ["REF_DATE", "DGUID", "VECTOR", "COORDINATE", "STATUS"],
+                     "eurostat": ["TIME_PERIOD", "OBS_VALUE", "OBS_FLAG"]}
+_GUARD_CODES = frozenset((":", "x", "..", "...", "F", "E", "A", "B", "C", "D", "r", "p", "c", "e", "b", "u", "z", "[x]", "[c]",
+                          "[z]", "[u]", "n/a", "-", "*"))
+_GUARD_FLAG_NAMES = frozenset(("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", "obsconf", "symbol"))
+_GUARD_DATE_NAMES = frozenset(_PANEL_DATE) | {"year", "yr", "fiscalyear", "fy", "calendaryear", "obstime", "refperiod"}
+_GUARD_ISO = re.compile(r"^\d{4}(?:[-/.]\d{1,2}){0,2}$")
+_GUARD_PERIOD = re.compile(r"^(?:\d{4}\s*[-_/ ]?\s*[QqHhSs][1-4]|[Qq][1-4]\s*[-_/ ]?\s*\d{4}|\d{4}\s*[-_ ]?[Mm]\d{1,2})$")
+
+
+def _guard_vocab() -> Tuple[Dict[str, List[str]], FrozenSet[str]]:
+    """({publisher: signature columns}, every flag code any publisher lists) from engine/flag_vocab.json, beside this file;
+    the stand-ins above when it cannot be read (the guard must still work then)."""
+    try:
+        with open(os.path.join(HERE, "flag_vocab.json"), encoding="utf-8") as fh:
+            pubs = (json.load(fh) or {}).get("publishers") or {}
+        sigs = {str(k): [str(x) for x in (v or {}).get("signature") or []] for k, v in pubs.items() if (v or {}).get("signature")}
+        codes = frozenset(str(c) for v in pubs.values() for c in ((v or {}).get("codes") or {}))
+        return sigs or dict(_GUARD_SIGNATURES), codes or _GUARD_CODES
+    except (OSError, ValueError, AttributeError):
+        return dict(_GUARD_SIGNATURES), _GUARD_CODES
+
+
+def _guard_is_dates(f: Any, name: str) -> bool:
+    """Whether a column's filled cells are dates or periods (95% of them, at least 6 different)."""
+    import pandas as pd
+    import warnings
+    if int(f.nunique()) < _GUARD_MIN_DATES:
+        return False
+    sample = list(f.drop_duplicates().head(400))
+    hits = sum(1 for v in sample if _GUARD_PERIOD.match(v) or (_GUARD_ISO.match(v) and (len(v) > 4 or name in _GUARD_DATE_NAMES)))
+    if hits >= 0.95 * len(sample):
+        return True
+    if all(re.fullmatch(r"[-+]?[\d,]*\.?\d+", v) for v in sample):
+        return False                               # numbers are never read as dates by their look alone
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        got = pd.to_datetime(pd.Series(sample), errors="coerce")
+    return bool(got.notna().mean() >= 0.95)
+
+
+def _guard_long_shape(df: Any) -> Optional[Dict[str, Any]]:
+    """A long statistical table by what its columns hold: a date column, a measure column, two or more dimensions and a
+    flag column (a few short codes, with blanks, one a publisher's code or standing for a blank measure)."""
+    import pandas as pd
+    if len(df) < 24:
+        return None
+    _sigs, codes = _guard_vocab()
+    text = {c: df[c].astype(str).str.strip() for c in df.columns}
+    date, numbers, texts = None, [], []
+    for c in df.columns:
+        f = text[c][text[c] != ""]
+        if len(f) < 24:
+            continue
+        nums = pd.to_numeric(f.str.replace(",", "", regex=False), errors="coerce")
+        n = _pnorm(c)
+        numeric = bool(nums.notna().mean() >= 0.95)
+        if date is None and (not numeric or n in _GUARD_DATE_NAMES) and _guard_is_dates(f, n):
+            date = c
+        elif numeric:
+            if int(nums.nunique()) >= 2:
+                numbers.append((c, f))
+        else:
+            texts.append(c)
+    if date is None or not numbers:
+        return None
+    hinted = [x for x in numbers if _pnorm(x[0]) in _PANEL_VALUE]
+    measure = (hinted[0] if hinted else max(numbers, key=lambda x: int(x[1].nunique())))[0]
+    blank_measure = pd.to_numeric(text[measure].str.replace(",", "", regex=False), errors="coerce").isna()
+    flags: List[str] = []
+    dims: List[str] = []
+    for c in texts:
+        f = text[c][text[c] != ""]
+        members = [str(v) for v in f.unique()]
+        if not 1 <= len(members) <= _GUARD_DIM_MAX:
+            continue
+        short = len(members) <= _GUARD_FLAG_CODES and all(len(m) <= _GUARD_FLAG_LEN for m in members)
+        if short:
+            # a flag marks a missing value: a code whose rows have a blank measure (learned from the file), or a column the
+            # publishers name as a flag (STATUS, OBS_FLAG ...) that holds one of their codes; a "status" of open/done, a "returned"
+            # of Y/blank or a grade of A to D is a business file's own column, not a flag
+            predicts = any(int((text[c] == m).sum()) >= 3 and float(blank_measure[text[c] == m].mean()) >= _GUARD_BLANK_MEASURE
+                           for m in members)
+            if predicts or (_pnorm(c) in _GUARD_FLAG_NAMES and any(m in codes for m in members)):
+                flags.append(c)
+                continue
+        if len(members) >= 2 and _pnorm(c) not in _PANEL_META:
+            dims.append(c)
+    if len(dims) < 2 or not flags:
+        return None
+    return {"date": str(date), "measure": str(measure), "dimensions": [str(d) for d in dims[:8]], "flags": [str(x) for x in flags]}
+
+
+def looks_like_series_table(data: bytes) -> Optional[Dict[str, Any]]:
+    """None, or why the file looks like a table of series with totals (an official table whose rows hold totals beside their
+    parts), from the file's own columns, with no help from nl_structure. It does, when ANY of these holds:
+      publisher   the header holds a publisher's signature columns (engine/flag_vocab.json: 3 of them, or all of a shorter one);
+      metadata    the header holds 3 or more metadata-like columns (_PANEL_META: UOM, VECTOR, DGUID, SCALAR_FACTOR, STATUS ...);
+      long format a date column, a measure column, 2 or more dimension columns and a flag column.
+    {"by": "publisher" | "metadata" | "long format", "publisher"?, "columns": [...]}."""
+    try:
+        import pandas as pd
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig", nrows=_GUARD_ROWS)
+    except Exception:  # noqa: BLE001 - a file the reader cannot parse is refused by the engine's own intake
+        return None
+    header = [str(c) for c in df.columns]
+    norm = [_pnorm(h) for h in header]
+    sigs, _codes = _guard_vocab()
+    best: Optional[Tuple[str, List[str]]] = None
+    for name, sig in sigs.items():
+        s = [_pnorm(x) for x in sig]
+        hit = [h for h, n in zip(header, norm) if n in s]
+        if len(set(n for n in norm if n in s)) >= min(3, len(s)) and (best is None or len(hit) > len(best[1])):
+            best = (name, hit)
+    if best is not None:
+        return {"by": "publisher", "publisher": best[0], "columns": best[1][:8]}
+    meta = [h for h, n in zip(header, norm) if n in _PANEL_META]
+    if len(meta) >= 3:
+        return {"by": "metadata", "columns": meta[:8]}
+    shape = _guard_long_shape(df)
+    if shape is not None:
+        return {"by": "long format", "columns": [shape["date"], shape["measure"]] + shape["dimensions"][:3] + shape["flags"][:1]}
+    return None
+
+
+def _failure(stage: str, exc: BaseException) -> Dict[str, Any]:
+    """{stage, type, message trimmed to 200 characters} of an exception; `_exc` (kept for a strict run) is never serialised."""
+    return {"stage": stage, "type": type(exc).__name__, "message": " ".join(str(exc).split())[:200], "_exc": exc}
+
+
+def _structure_import_failure() -> Optional[Dict[str, Any]]:
+    """The failure of importing nl_structure (None when it imports)."""
+    try:
+        _ns()
+        return None
+    except Exception as exc:  # noqa: BLE001 - what is asked is whether the structure layer can run at all
+        return _failure("import", exc)
+
+
+def _guard_failure(data: bytes, fail: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The `structure` record of a refusal when the structure layer could not run on a file that looks like a table of series
+    with totals; None for any other file (it is read as before: a strict run raises the exception that stopped the layer)."""
+    exc = fail.get("_exc")
+    why = looks_like_series_table(data)
+    if why is None:
+        if exc is not None and os.environ.get("NL_BROWSER_STRICT"):
+            raise exc
+        return None
+    err = {k: v for k, v in fail.items() if k != "_exc"}
+    return {"kind": "error", "usable": False, "reason": SERIES_GUARD_REASON, "error": err, "looks_like": why}
+
+
+SLICE_GUARD_REASON = ("This file is a table of series with totals, and the part of the engine that reads it one series at a time "
+                      "could not run. An average over its rows would count totals and parts together, so no figure is shown.")
+
+
+def _slice_failure(S: Dict[str, Any]) -> Dict[str, Any]:
+    """The `structure` record of a refusal when the structure layer found a table of series and its slice could not be run
+    (fewer than 2 values, or the engine's run on the slice stopped): the file is never read as a plain table instead."""
+    return {"kind": "error", "usable": False, "reason": SLICE_GUARD_REASON,
+            "error": {"stage": "slice", "type": "SliceNotRun",
+                      "message": "the headline slice could not be run (fewer than 2 values, or the engine's run on it stopped)"},
+            "looks_like": {"by": "structure", "columns": [str(d.get("column")) for d in S.get("dims") or [] if d.get("column")][:8]}}
+
+
+def _reason_in_sentence(rec: Dict[str, Any]) -> str:
+    """The refusal's reason as the story's headline carries it ("The business analysis did not run: <this>.")."""
+    r = str(rec.get("reason") or SERIES_GUARD_REASON)
+    return r[0].lower() + r[1:]
 
 
 def _structure_cached(sha: str, decisions: Any) -> Optional[Dict[str, Any]]:
@@ -8697,13 +8900,27 @@ def _structure_cached(sha: str, decisions: Any) -> Optional[Dict[str, Any]]:
     return got.get(_PROFILE_CACHE_STRUCTURE)
 
 
-def _structure_detect(reading: Any, hidden: Any, wide: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def _structure_cached_error(sha: str, decisions: Any) -> Optional[Dict[str, Any]]:
+    """The refusal the last reading of these bytes made (the structure layer could not run on a table of series), under these choices."""
+    got = _PROFILE_CACHE.get("value") if _PROFILE_CACHE.get("sha") == sha else None
+    if not got or not got.get("ok") or not _same_choices(got, decisions):
+        return None
+    return got.get(_PROFILE_CACHE_ERROR)
+
+
+def _structure_detect(reading: Any, hidden: Any, wide: Optional[Dict[str, Any]] = None,
+                      fail: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The structure of the table, or None. A caller that passes `fail` is handed the failure (the file is refused when it looks
+    like a table of series: _guard_failure); without it the structure is an aid and the file is read as before."""
     try:
         S = _ns().detect(reading, set(hidden or ()), budget_s=STRUCTURE_BUDGET_S)
         if wide and S is not None:
             S["wide"] = dict(wide)                 # the file was a wide table of periods, reshaped to long before it was read
         return S
-    except Exception:  # noqa: BLE001 - the structure is an aid; the file is then read as before
+    except Exception as exc:  # noqa: BLE001 - the structure is an aid; the file is then read as before
+        if fail is not None:
+            fail.update(_failure("detect", exc))
+            return None
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         return None
@@ -8791,10 +9008,11 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
             "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap)}
 
 
-def _long_has_structure(data: bytes) -> bool:
+def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None) -> bool:
     """Whether a long table the layout pass would turn into one column per series holds totals beside their parts (or
     an adjusted copy): a quick reading of the file's text (dates as dates, numbers as numbers), only to decide not to
-    reshape it; the structure itself is read after landing, from the engine's reading, without a withheld column."""
+    reshape it; the structure itself is read after landing, from the engine's reading, without a withheld column. A caller
+    that passes `fail` is handed the failure of the structure layer (it could not be asked), and the answer is False."""
     try:
         import numpy as np
         import pandas as pd
@@ -8820,7 +9038,10 @@ def _long_has_structure(data: bytes) -> bool:
                                                            "rate_aggregate", "parts")
                                              or (d["role"] == "single" and S.get("official") and d.get("noun") == "national figure")
                                              for d in S.get("dims") or [])
-    except Exception:  # noqa: BLE001 - the layout pass then reads it as before
+    except Exception as exc:  # noqa: BLE001 - the layout pass then reads it as before
+        if fail is not None:
+            fail.update(_failure("detect", exc))
+            return False
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         return False
@@ -9238,15 +9459,22 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             structure_inner = decisions.pop("__structure_inner__")
         # a WIDE table of periods (2019Q1, 2020Q1 ... as columns; Eurostat's shape) is read as one row per series and period
         wide_info = None
+        # wave 5b, fail closed: the structure layer could not run on a file that looks like a table of series with totals
+        # (nl_structure cannot be imported, detect throws, the slice cannot be run): a refusal, never the old reading
+        # (struct_error is the `structure` record; cube_refusal below carries the reason to the "did not run" path)
+        struct_error: Optional[Dict[str, Any]] = None
         if structure_inner is None and STRUCTURE_ON:
-            try:
-                w_ = _ns().wide_to_long(data, MAX_ROWS)
-            except Exception:  # noqa: BLE001 - the file is then read as it stands
-                if os.environ.get("NL_BROWSER_STRICT"):
-                    raise
-                w_ = None
-            if w_ is not None:
-                data, wide_info = w_["csv"], w_["info"]
+            f_imp = _structure_import_failure()
+            if f_imp is not None:
+                struct_error = _guard_failure(data, f_imp)       # None: not a table of series, read as before (strict: raises)
+            else:
+                try:
+                    w_ = _ns().wide_to_long(data, MAX_ROWS)
+                except Exception as exc_w:  # noqa: BLE001 - the file is then read as it stands (a table of series: refused)
+                    struct_error = _guard_failure(data, _failure("wide", exc_w))
+                    w_ = None
+                if w_ is not None:
+                    data, wide_info = w_["csv"], w_["info"]
         if isinstance(decisions, dict) and "__plan_review__" in decisions:
             decisions = dict(decisions)
             plan_review = _clean_plan_review(decisions.pop("__plan_review__"))
@@ -9270,15 +9498,17 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         cube_refusal = ""
         has_plan = isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict)
         vis_dec = {k: v for k, v in dict(decisions or {}).items() if not str(k).startswith("__")}
-        if structure_inner is None and STRUCTURE_ON:
+        if structure_inner is None and STRUCTURE_ON and struct_error is None:
             sha_sent = hashlib.sha256(data).hexdigest()
             S_pre = _structure_cached(sha_sent, vis_dec)
-            if S_pre is None and has_plan:
+            struct_error = _structure_cached_error(sha_sent, vis_dec)
+            if S_pre is None and struct_error is None and has_plan:
                 got = _engine_profile_pass(data, name, vis_dec, as_of, structure=True, wide=wide_info)
                 if got.get("ok"):
                     _PROFILE_CACHE.clear()
                     _PROFILE_CACHE.update(sha=sha_sent, value=got)
                     S_pre = got.get(_PROFILE_CACHE_STRUCTURE)
+                    struct_error = got.get(_PROFILE_CACHE_ERROR)
             if S_pre is not None and S_pre.get("kind") == "cube_incomplete":
                 cube_refusal = S_pre.get("reason") or "the table's rows cannot be told apart"
             if S_pre is not None and S_pre.get("usable") and not has_plan:
@@ -9288,6 +9518,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                    outer=_outer_of(outer, rep, data), timings={})
                 if inner is not None:
                     return inner
+                struct_error = _slice_failure(S_pre)                # a verified table whose slice could not be run
+        if struct_error is not None:
+            cube_refusal = _reason_in_sentence(struct_error)
+            rep["structure"] = struct_error
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
@@ -9324,6 +9558,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         if plan_review:
                             inner.setdefault("ai_plan", {})["review"] = plan_review
                         return inner
+                    struct_error = _slice_failure(S_use)             # a verified table whose slice could not be run
+                    cube_refusal = _reason_in_sentence(struct_error)
+                    rep["structure"] = struct_error
                 data, applied, layout = _apply_plan(data, ai_plan)
                 sent_rows = (applied.get("positions"), applied.get("rows_in"))
                 ai_plan["applied"] = applied["applied"]
@@ -9350,8 +9587,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if layout is None and structure_inner is None:
             try:
                 reshaped, layout = _reshape_long_panel(data)
-                if layout and STRUCTURE_ON and int(layout.get("series") or 0) >= 2 and _long_has_structure(data):
-                    layout = None                 # totals beside parts: the structure reads it (the hook below)
+                if layout and STRUCTURE_ON and int(layout.get("series") or 0) >= 2:
+                    f_long: Dict[str, Any] = {}
+                    if _long_has_structure(data, fail=f_long):
+                        layout = None             # totals beside parts: the structure reads it (the hook below)
+                    elif f_long and struct_error is None:
+                        struct_error = _guard_failure(sent, f_long)      # the structure layer could not be asked: refused
+                        if struct_error is not None:
+                            cube_refusal = _reason_in_sentence(struct_error)
+                            rep["structure"] = struct_error
                 if layout:
                     data = reshaped
                     reshaped_after = True
@@ -9446,17 +9690,24 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             early_reading = None
             if structure_inner is None and STRUCTURE_ON and ai_plan is None and layout is None and not cube_refusal:
                 t_s = time.perf_counter()
+                f_read: Dict[str, Any] = {}
                 try:
                     early_reading = _engine_reading(eng.db_path, table, _clean.standard_rules(audit.health, as_of=as_of_eff),
                                                     audit.clean, colmap)
-                except Exception:  # noqa: BLE001 - the reading is built again below
-                    if os.environ.get("NL_BROWSER_STRICT"):
-                        raise
+                except Exception as exc_r:  # noqa: BLE001 - the reading is built again below (a table of series: refused here)
+                    f_read = _failure("reading", exc_r)
                     early_reading = None
                 S_hook = None
                 hidden_early = [str(f["column"]) for f in flagged if f.get("decision") != "keep"]
+                f_hook: Dict[str, Any] = dict(f_read)
                 if early_reading is not None:
-                    S_hook = _structure_detect(early_reading, hidden_early, wide_info)
+                    S_hook = _structure_detect(early_reading, hidden_early, wide_info, fail=f_hook)
+                if S_hook is None and f_hook:
+                    # the structure layer could not run: a table of series is refused here, any other file is read as before
+                    struct_error = _guard_failure(sent, f_hook)
+                    if struct_error is not None:
+                        cube_refusal = _reason_in_sentence(struct_error)
+                        rep["structure"] = struct_error
                 if S_hook is not None:
                     outer_info = _hook_cache(sent, early_reading, flagged, released, colmap, S_hook, audit, wh_list=withheld,
                                              rep=rep, name=name, pub_lite=lambda t: public_text(scrub.clean(t), table, name))
@@ -9470,12 +9721,16 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                            outer=outer_info, timings=tm_outer)
                         if inner is not None:
                             return inner
+                        struct_error = _slice_failure(S_hook)       # a verified table whose slice could not be run
+                        cube_refusal = _reason_in_sentence(struct_error)
                     elif S_hook.get("kind") == "cube_incomplete":
                         cube_refusal = S_hook.get("reason") or "the table's rows cannot be told apart"
                     # a table refused for its structure, or one whose slice could not run, says so; a file read as
                     # before (a business export whose members add up, a panel with no relation) carries none
                     rep["structure"] = _ns().public(S_hook) if (S_hook.get("kind") == "cube_incomplete" or
                                                                 S_hook.get("usable")) else None
+                    if struct_error is not None:
+                        rep["structure"] = struct_error                   # the slice could not be run: said as such
             # -- the business analysis: measures, forecast, story
             try:
                 pol = None

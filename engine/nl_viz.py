@@ -2419,15 +2419,16 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     if len(parts) < 2:
         raise Refused("the breakdown has fewer than two parts")
     unal = items.get(pre + "unallocated")
+    no_total = bool(bd.get("no_total"))                 # a table with no total row: its headline IS the sum of these parts
     hp, hl, hc = items.get("headline.prior"), items.get("headline.latest"), items.get("headline.change")
-    if not hp or not hl or not hc or unal is None:
+    if not hp or not hl or not hc or (unal is None and not no_total):
         raise Refused(R_RECON)
     parts.sort(key=lambda it: (-abs(float(it["value"])), str(it["segment"])))
     shown, rest = parts[:STRUCTURE_WATERFALL_PARTS], parts[STRUCTURE_WATERFALL_PARTS:]
     growth = {str(it["segment"]): it for iid, it in items.items() if iid.startswith("growth.%s." % key)}
     wlabels = _unique_labels([str(it["segment"]) for it in shown])
     change = float(hc["value"])
-    u = float(unal["value"])
+    u = float(unal["value"]) if unal is not None else 0.0
     # the not-allocated step: drawn when it is 1% or more of the change, or whenever leaving it out would break the
     # frozen spec's add-up (the steps add up to the change to 1e-6 of it); below both, left out and said in the sum-check
     # line. Its cause: suppressed cells when a part of this dimension lacks a month's value in either window (the sum-check's
@@ -2488,8 +2489,8 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     rows.append([WATERFALL_TOTAL, str(hc["text"]), ""])
     fid = str(basis.get("finding_id") or "")
     anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.prior"] + \
-        ["scenario:" + str(it["id"]) for it in shown] + ["scenario:" + str(unal["id"]), "scenario:headline.latest",
-                                                         "scenario:headline.change"]
+        ["scenario:" + str(it["id"]) for it in shown] + (["scenario:" + str(unal["id"])] if unal is not None else []) + \
+        ["scenario:headline.latest", "scenario:headline.change"]
     sub_levels = "%s (%s to %s) to %s (%s to %s)" % (hp["text"], pw[0], pw[1], hl["text"], lw[0], lw[1]) if full else \
         "%s to %s (%d matched months of each window)" % (hp["text"], hl["text"], k_used)
     return _record(
@@ -2500,8 +2501,10 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
         {"label": measure, "unit": "", "kind": "amount"}, data,
         {"cols": ["Step", "Contribution", "Own change"], "rows": rows}, summary,
         (0, "%d smaller parts folded into 'other parts'" % len(rest) if rest else ""),
-        ("structure: the published parts of %s by %s (each total checked against its parts: adds up%s)" % (
-            bd["parent"], bd["dim"], "" if u == 0 else "; gap %s, %s" % (gap_text, cause_words))) if omit else
+        ("structure: the parts of the table by %s (it has no total row: the headline is built by adding them)" % bd["dim"]
+         if no_total else
+         "structure: the published parts of %s by %s (each total checked against its parts: adds up%s)" % (
+             bd["parent"], bd["dim"], "" if u == 0 else "; gap %s, %s" % (gap_text, cause_words))) if omit else
         ("structure: the published parts of %s by %s (each total checked against its parts); the not-allocated step is "
          "the total less its published parts (%s)" % (bd["parent"], bd["dim"], cause_words)),
         {"columns": [measure, str(bd["dim"])], "rows": None, "months": [basis["windows"]["prior"][0],

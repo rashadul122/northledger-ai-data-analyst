@@ -1339,6 +1339,7 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
             dk = dim_key(bd["dim"])
             mk = member_keys(bd["parts"])
             basis["breakdowns"].append({"id": bd["id"], "dim": bd["dim"], "key": dk, "parent": bd["parent"],
+                                        "no_total": bool(bd.get("no_total")),
                                         "parts": len(bd["parts"]), "depth": bd.get("depth", 1),
                                         "shares_given": res["shares_given"],
                                         "unallocated": {k: NST._r(v) for k, v in res["unallocated"].items()}})
@@ -1362,13 +1363,21 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
                     if it is not None:
                         items.append(it)
             u = res["unallocated"]
-            it = item("contribution.%s.unallocated" % dk, "contribution",
-                      "Unallocated within %s: %s less its published parts (suppressed cells), its change, %s"
-                      % (bd["dim"], bd["parent"], ext), u["contribution"], "change",
-                      NST.money(u["contribution"], S_local, signed=True, ref=ref), grade, segment="unallocated (%s)" % bd["dim"],
-                      window="both", op="the change less the parts' contributions",
-                      assumes="the total less the parts the publisher shows: %s in the latest 12 months, %s before"
-                              % (NST.money(u["latest"], S_local, ref=ref), NST.money(u["prior"], S_local, ref=ref)))
+            # a table with no total row has nothing unallocated: its headline IS the sum of the parts
+            # the cause of a gap, by the chart's own rule (the sum-check's suppressed_parts): suppressed cells when a part
+            # lacks a month's value in either window, else the rounding of the published figures; the real residual is
+            # printed (a gap too small for the headline's scale is written out, "$1,000", never "$0.0B")
+            cause = "rounding" if res["suppressed_parts"] == 0 else "suppressed cells"
+            it = None if bd.get("no_total") else item(
+                "contribution.%s.unallocated" % dk, "contribution",
+                "Unallocated within %s: %s less its published parts (%s), its change, %s"
+                % (bd["dim"], bd["parent"], cause, ext), u["contribution"], "change",
+                NST.money(u["contribution"], S_local, signed=True, ref=ref, exact_small=True), grade,
+                segment="unallocated (%s)" % bd["dim"],
+                window="both", op="the change less the parts' contributions",
+                assumes="the total less the parts the publisher shows (%s): %s in the latest 12 months, %s before"
+                        % (cause, NST.money(u["latest"], S_local, ref=ref, exact_small=True),
+                           NST.money(u["prior"], S_local, ref=ref, exact_small=True)))
             if it is not None:
                 items.append(it)
             if not res["shares_given"]:

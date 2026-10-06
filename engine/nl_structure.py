@@ -74,7 +74,11 @@ BREAKDOWN_ID = re.compile(r"^B\d{1,2}$")
 RECONCILE_TOL = 1e-6
 
 ROLES = ("partition", "hierarchy", "adjustment", "measure", "components", "flat_additive", "single", "rate_aggregate",
-         "constant")
+         "constant", "parts")
+PARTS_TOKEN = "(sum of the parts)"           # a slice's member of a dimension that has NO total row: its parts, added up
+_GEO_WORDS = re.compile(r"(?i)\b(?:geo|geography|geographies|region|regions|province|provinces|state|states|country|"
+                        r"countries|area|areas|territor(?:y|ies)|district|districts|nation|county|counties|"
+                        r"municipalit(?:y|ies)|city|cities|zone|zones|nuts\d?)\b")
 KINDS = ("cube", "cube_incomplete", "panel_no_relations", "not_cube")
 
 # names (normalised: lower case, letters and digits only) that are hints, never proof
@@ -108,7 +112,7 @@ _FLOW_WORDS = re.compile(
     r"departures?|nights?|starts?|completions?|shipments?|orders?|bookings?|transactions?|claims?|admissions?|discharges?|"
     r"exports?|imports?|production|output|spending|expenditures?|purchases?|payments?|deliver(?:y|ies|ed)|accidents?|"
     r"collisions?|crimes?|offen[cs]es?|bankruptcies|insolvenc(?:y|ies)|layoffs?|hires?|separations?|immigrants?|"
-    r"emigrants?|passengers?|downloads?|tickets?|registrations?|openings|closures|launches)\b")
+    r"emigrants?|passengers?|downloads?|tickets?|registrations?|openings|closures|launches|sold)\b")
 _STOCK_LEVEL_WORDS = re.compile(
     r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|liabilit(?:y|ies)|debts?|stocks?|population|"
     r"populations|employment|employed|unemployed|labou?r force|residents?|households?|dwellings|vacanc(?:y|ies)|"
@@ -233,6 +237,14 @@ def _spec(code: str) -> int:
 
 def _fmt_count(n: int) -> str:
     return format(int(n), ",")
+
+
+def _join_names(xs: Sequence[str], limit: int = 6) -> str:
+    """"Alpha, Bravo and Charlie"; past `limit` names, "Alpha, Bravo, ... and 3 more"."""
+    xs = [str(x) for x in xs]
+    if len(xs) > limit:
+        return ", ".join(xs[:limit - 1]) + " and %d more" % (len(xs) - limit + 1)
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
 
 
 # --------------------------------------------------------------------------------------------- the measure's values
@@ -822,12 +834,14 @@ def _usable(S: Dict[str, Any]) -> bool:
     copy, components, a rate's published aggregate). A panel with no relation (currencies in two units, an official
     table whose members only differ) is read side by side by the long-table layout, as before, when it has at most 60
     series (kind "panel_no_relations"); past that, the layout cannot, and the table is read one member at a time."""
-    rel = [d for d in S["dims"] if d["role"] in ("partition", "hierarchy", "adjustment", "components", "rate_aggregate")
+    rel = [d for d in S["dims"] if d["role"] in ("partition", "hierarchy", "adjustment", "components", "rate_aggregate", "parts")
            or (d["role"] == "measure" and not d.get("mixed_units"))]
     if rel:
         return True
     if any(d["role"] in ("single", "measure") for d in S["dims"]):
-        if int(S.get("series") or 0) <= PANEL_MAX_SERIES:
+        # an official table is read one member at a time (it is never added across a dimension it could not verify: wave 5,
+        # gap 1 says so in the estimand); any other table of at most 60 series is read side by side by the layout
+        if int(S.get("series") or 0) <= PANEL_MAX_SERIES and not S.get("official"):
             S["kind"] = "panel_no_relations"
             S["reason"] = ("no member of the table is a total, a part or an adjusted copy of another: its %d series are "
                            "read side by side" % int(S.get("series") or 0))
@@ -997,18 +1011,94 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     # 3. HIERARCHY WITHOUT CODES
     if not tm.over() and _codefree_hierarchy(S, rec, A, X, tol_u, nonneg, alts_label, dom, tm):
         return
-    # 4. components: one member bounds every other (total sales and e-commerce sales)
+    # 4. components: one member bounds every other (total sales and e-commerce sales), under a total's name or in a
+    # dimension that names measures; a plain dimension of an official table (13 provinces, none a total) is not read so: the
+    # largest province bounds the others without being their parent (wave 5, gap 1)
     top = int(order[0])
     others = [m for m in range(M) if m != top]
-    if others and (S["official"] or top in hint or _measure_dim_name(rec["column"], labels)) and \
+    if others and (top in hint or _measure_dim_name(rec["column"], labels)) and \
             all(_bounds(A, top, m, tol_u) for m in others):
         name = rec["column"]
         role = "measure" if _measure_dim_name(name, labels) else "components"
         rec.update(role=role, total=labels[top], total_index=top, components={labels[m]: labels[top] for m in others},
                    alternatives={}, why="%s bounds every other member everywhere and is not their sum" % labels[top])
         return
+    # 5. NO TOTAL ROW (wave 5, gap 1): no member is the total of the others and none stands as their parent. A combined
+    # member (one that equals the sum of 2 or more others) is left out; the rest are the parts, and a flow's headline is
+    # their sum. Any other measure has no valid aggregate: one member is read (rule 6)
+    if _parts_only(S, rec, A, X, tol_u, nonneg, alts_label, dom, hint, tm):
+        return
+    # an official table whose largest member bounds the others and whose measure cannot be added (a stock, a rate): one
+    # member shown, as rule 6 reads it
     rec["role"] = "unresolved"
     rec["why"] = "no member is the sum of others (sum-checks failed)"
+
+
+def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: float, nonneg: bool, alts_label: Set[int],
+                dom: Any, hint: List[int], tm: _Timer) -> bool:
+    """The dimension of an official table whose members are all parts: no total row, no hierarchy found. Members that equal
+    the sum of 2 or more others (a combined member, found by a subset-sum search on a few cells and verified on every
+    cell), a member identical to an earlier one, and a member inside a coded parent that is also listed (459993 inside
+    459) are left out; the remaining members are the parts. Only a flow is added across them: any other measure (a stock,
+    a rate, an index, an ambiguous count) has no valid aggregate and is read one member at a time."""
+    import numpy as np
+    if not S["official"] or not sums_over_time(S["measure"]) or hint:
+        return False
+    labels = rec["labels"]
+    M = len(labels)
+    if M < 2 or _measure_dim_name(rec["column"], labels):
+        return False
+    cand = [m for m in range(M) if m not in alts_label]
+    if len(cand) < 2:
+        return False
+    t_end = time.perf_counter() + min(CODEFREE_BUDGET_S, max(0.0, tm.left()))
+    sizes = np.array([float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0 for m in range(M)])
+    order = [m for m in np.argsort(-dom, kind="stable").tolist() if m in cand]
+    order = sorted(order, key=lambda m: (-sizes[m], m))
+    combined: Dict[int, List[int]] = {}
+    dup: Dict[int, int] = {}
+    for p in order[:PARENTS_MAX]:
+        if time.perf_counter() > t_end:
+            break
+        if p in dup or p in combined:
+            continue
+        bnd = _bounded_by(A, p, tol_u)
+        cs = [m for m in cand if m != p and bnd[m] and m not in dup]
+        cs = sorted(cs, key=lambda m: (-sizes[m], m))[:CANDIDATES_MAX]
+        if not cs:
+            continue
+        sol = _subset_partition(A, X, p, cs, tol_u, nonneg, t_end)
+        if sol is None:
+            continue
+        fam = sol[0]
+        if len(fam) == 1:
+            dup[max(p, fam[0])] = min(p, fam[0])
+        else:
+            combined[p] = fam
+    removed = set(combined) | set(dup)
+    keep = [m for m in cand if m not in removed]
+    # a member inside a coded parent that is also listed (the parent is bigger everywhere): never added to it
+    codes = {m: _label_code(labels[m]) for m in keep}
+    nested: Dict[int, int] = {}
+    for m in keep:
+        c = codes[m]
+        if not c:
+            continue
+        anc = [o for o in keep if o != m and codes[o] and _contains(codes[o], c) and _bounds(A, o, m, tol_u)]
+        if anc:
+            nested[m] = max(anc, key=lambda o: _spec(codes[o]))
+    keep = [m for m in keep if m not in nested]
+    if len(keep) < 2:
+        return False
+    rec.update(role="parts", total=None, total_index=None, parts=[labels[m] for m in keep], part_index=keep,
+               combined={labels[p]: [labels[x] for x in sorted(f)] for p, f in sorted(combined.items())},
+               duplicates={labels[d]: labels[k] for d, k in sorted(dup.items())},
+               nested={labels[m]: labels[o] for m, o in sorted(nested.items())},
+               alternatives={labels[m]: "the sum of the parts" for m in sorted(alts_label)}, components={},
+               sum_check=None, noun="regions" if _GEO_WORDS.search(rec["column"]) else "members",
+               why="no member is a total of the others: the table has no total row, so a flow's headline is the sum of its "
+                   "%d parts" % len(keep))
+    return True
 
 
 def _sa_record(S: Dict[str, Any], j: int, rec: Dict[str, Any], tol_u: float, nonneg: bool) -> None:
@@ -1238,11 +1328,19 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
             if c not in depth:
                 depth[c] = depth[p] + 1
                 q.append(c)
-    rec.update(role="hierarchy" if any(depth[p] >= 1 for p in tree) else "partition", total=labels[root],
-               total_index=root, tree=tree, depth=depth, parts=[labels[c] for c in tree[root]], part_index=tree[root],
-               sum_check=checks[root], family_checks={labels[p]: checks[p] for p in tree}, components={},
-               alternatives={}, by="subset sums")
-    _alternatives(S, rec, A, tol_u, alts_label)
+    trial = dict(rec)
+    trial.update(role="hierarchy" if any(depth[p] >= 1 for p in tree) else "partition", total=labels[root],
+                 total_index=root, tree=tree, depth=depth, parts=[labels[c] for c in tree[root]], part_index=tree[root],
+                 sum_check=checks[root], family_checks={labels[p]: checks[p] for p in tree}, components={},
+                 alternatives={}, by="subset sums")
+    _alternatives(S, trial, A, tol_u, alts_label)
+    # a root that leaves several members unexplained is a SUBTOTAL, not the table's total (13 provinces and a Prairies
+    # group, no Canada row): a member left over is explained when it is an alternative total or a component of one tree
+    # member, and a component found only by bounding (no code says so) is weak evidence, so only a few are taken
+    # (wave 5, gap 1). A table that fails this has no total row: its parts are added up (_parts_only)
+    if len(trial.get("components") or {}) > max(1, M // 6):
+        return False
+    rec.update(trial)
     return True
 
 
@@ -1332,13 +1430,15 @@ def _rate_aggregate(S: Dict[str, Any], j: int) -> None:
         rec["why"] = "a rate or an index is never added up; no member is a published aggregate"
         return
     _s, m, inside, n = best
-    rec.update(role="rate_aggregate", total=labels[m], total_index=m,
+    by = "name" if _s == 2 else "first in file"
+    rec.update(role="rate_aggregate", total=labels[m], total_index=m, aggregate_by=by,
                parts=[labels[x] for x in range(M) if x != m], part_index=[x for x in range(M) if x != m],
                components={}, alternatives={},
                sum_check={"inside_range_share": round(inside, 4), "cells": n},
                why="a %s is never added or averaged across members: %s lies inside the others' range in %s%% of %s "
-                   "cells and is read as the published aggregate" % (S["measure"]["type"], labels[m],
-                                                                     round(100 * inside, 1), _fmt_count(n)))
+                   "cells and is read as the published aggregate%s" % (
+                       S["measure"]["type"], labels[m], round(100 * inside, 1), _fmt_count(n),
+                       "" if by == "name" else " (no member is named as a total: it comes first in the file)"))
 
 
 def _adjustment(S: Dict[str, Any], j: int) -> None:
@@ -1441,9 +1541,11 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
     j = S["dims"].index(rec)
     if S["official"] or S["measure"]["type"] in ("rate", "index"):
         hint = [m for m in range(len(labels)) if _TOTAL_HINT.search(labels[m])]
+        by = "name"
         if hint:
             m = hint[0]
         else:
+            by = "dominance"
             SM, E = S["_SM"], S["_E"]
             cover = np.bincount(SM[:, j], weights=E.sum(axis=1), minlength=len(labels))
             try:
@@ -1453,7 +1555,8 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                 dom = np.zeros(len(labels))
             m = int(sorted(range(len(labels)), key=lambda x: (-cover[x], -dom[x], x))[0])
         prior = rec.get("why")
-        rec.update(role="single", total=labels[m], total_index=m, components={}, alternatives={},
+        rec.update(role="single", total=labels[m], total_index=m, components={}, alternatives={}, single_by=by,
+                   noun="national figure" if _GEO_WORDS.search(rec["column"]) else "total",
                    why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
                                                        "added across a dimension it could not verify)")
     else:
@@ -1511,6 +1614,10 @@ def _slices(S: Dict[str, Any]) -> None:
         elif r == "flat_additive":
             where[d["column"]] = "*"
             why[d["column"]] = "every member, added up (no member is a total of the others)"
+        elif r == "parts":
+            where[d["column"]] = PARTS_TOKEN
+            why[d["column"]] = ("no total row: the headline is the sum of the %d %s, month by month" % (
+                len(d.get("parts") or []), d.get("noun") or "members"))
         elif d.get("total") is not None:
             where[d["column"]] = d["total"]
             why[d["column"]] = {
@@ -1528,6 +1635,7 @@ def _slices(S: Dict[str, Any]) -> None:
         S["reason"] = "the default slice has no series in the table"
         S["slices"] = []
         return
+    _parts_mode(S, where)
     slices.append({"id": "S1", "default": True, "where": dict(where), "use": "headline", "why": why})
     adj = next((d for d in S["dims"] if d["role"] == "adjustment"), None)
     if adj is not None:
@@ -1561,6 +1669,12 @@ def _slices(S: Dict[str, Any]) -> None:
     bds = []
     if S["measure"]["type"] not in ("rate", "index"):
         for d in S["dims"]:
+            if d["role"] == "parts" and where.get(d["column"]) == PARTS_TOKEN:
+                bd = {"id": "B%d" % (len(bds) + 1), "dim": d["column"], "parent": None, "no_total": True,
+                      "parts": list(d["parts"]), "depth": 1}
+                if all(_series_exist(S, dict(where, **{d["column"]: p})) for p in bd["parts"]):
+                    bds.append(bd)
+                continue
             if d["role"] not in ("partition", "hierarchy") or where.get(d["column"]) != d.get("total"):
                 continue
             parts = list(d.get("part_index") or [])
@@ -1594,6 +1708,9 @@ def _members(S: Dict[str, Any], where: Dict[str, Any]) -> Optional[List[Optional
         w = where.get(d["column"], "*")
         if w == "*" or w is None:
             out.append(None)
+            continue
+        if w == PARTS_TOKEN and d.get("role") == "parts":
+            out.append(list(d["part_index"]))
             continue
         ws = w if isinstance(w, (list, tuple)) else [w]
         idx = []
@@ -1634,8 +1751,54 @@ def series(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any, An
     E = S["_E"][sel]
     have = ~np.isnan(V)
     val = np.where(have.any(axis=0), np.where(have, V, 0.0).sum(axis=0), np.nan)
+    if _needs_complete(S, where):
+        # a dimension with no total row: its parts are summed in the months where EVERY part has a value (a month with a
+        # suppressed part would understate the sum), else the reported parts are summed (the estimand says so)
+        val = np.where(have.all(axis=0), val, np.nan)
     blank = (E & ~have).sum(axis=0)
     return list(S["_times"]), val, blank
+
+
+def _needs_complete(S: Dict[str, Any], where: Dict[str, Any]) -> bool:
+    """Whether a slice sums a dimension's parts in complete months only: it names that dimension's parts (the token or a
+    list of 2 or more of its members) and the table's reading found enough complete months (parts_mode)."""
+    for d in S["dims"]:
+        if d.get("role") != "parts" or not d.get("complete_only"):
+            continue
+        w = where.get(d["column"])
+        if w == PARTS_TOKEN or (isinstance(w, (list, tuple)) and len(w) >= 2):
+            return True
+    return False
+
+
+def _parts_mode(S: Dict[str, Any], where: Dict[str, Any]) -> None:
+    """For each dimension with no total row: complete months only when the table's own latest windows (anchored at the last
+    month any part has a value) hold at least MIN_MATCHED months complete in both, and the last complete month is within 3
+    months of the last month with any value; else the reported parts are summed in every month and the estimand says how many
+    region-months are suppressed (the headline is then incomplete). Never silent."""
+    import numpy as np
+    pd_ = [d for d in S["dims"] if d.get("role") == "parts" and where.get(d["column"]) == PARTS_TOKEN]
+    if not pd_:
+        return
+    for d in pd_:
+        d["complete_only"] = False
+    months, rep_vals = _monthly(S, where)                   # every part with a value, summed
+    win = windows(months, rep_vals)
+    for d in pd_:
+        d["complete_only"] = True
+    ok = False
+    if win is not None:
+        cm, cv = _monthly(S, where)                         # complete months only
+        have = [m for m, v in zip(cm, cv) if v == v]
+        anchor = max(m for m, v in zip(months, rep_vals) if v == v)
+        if have and max(have) >= _mshift(anchor, -3):
+            lat, pri = _prange(S, win["latest"][0], win["latest"][1]), _prange(S, win["prior"][0], win["prior"][1])
+            hs = set(have)
+            pairs = [(a, b) for a, b in zip(pri, lat) if a in hs and b in hs]
+            ok = len(pairs) >= _min_matched(S)
+    for d in pd_:
+        d["complete_only"] = bool(ok)
+    S["parts_mode"] = {"dims": [d["column"] for d in pd_], "complete_only": bool(ok)}
 
 
 def slice_by_id(S: Dict[str, Any], sid: str) -> Optional[Dict[str, Any]]:
@@ -1730,6 +1893,12 @@ def check_rows(S: Dict[str, Any], positions: Optional[Sequence[int]]) -> List[Di
             if pairs:
                 out.append({"dim": d["column"], "kind": "total_with_parts",
                             "members": sorted(set(x for p in pairs for x in p))[:12]})
+        if role == "parts":
+            cmb = d.get("combined") or {}
+            hit = [(c, f) for c, f in cmb.items() if c in names and any(x in names for x in f)]
+            if hit:
+                out.append({"dim": d["column"], "kind": "combined_with_parts",
+                            "members": sorted(set([c for c, _f in hit] + [x for _c, f in hit for x in f if x in names]))[:12]})
         if role == "adjustment" and d.get("nsa_index") in kept and d.get("sa_index") in kept:
             out.append({"dim": d["column"], "kind": "two_adjustments", "members": [d["nsa"], d["sa"]]})
         comps = d.get("components") or {}
@@ -1779,6 +1948,8 @@ def plan_where(S: Dict[str, Any], positions: Sequence[int]) -> Dict[str, Any]:
         kept = sorted(set(int(x) for x in S["_SM"][ser, j]))
         if len(kept) == len(d["labels"]) and d["role"] == "flat_additive":
             w[d["column"]] = "*"
+        elif d["role"] == "parts" and sorted(kept) == sorted(d["part_index"]):
+            w[d["column"]] = PARTS_TOKEN
         elif len(kept) == 1:
             w[d["column"]] = d["labels"][kept[0]]
         else:
@@ -1852,6 +2023,16 @@ def window_figure(S: Dict[str, Any], months: Sequence[str], vals: Any, w: Sequen
 
 
 MIN_MATCHED = 6                 # months with a value in both windows a flow's comparison needs
+
+
+def _min_matched(S: Dict[str, Any]) -> int:
+    """Periods with a value in both windows a flow's comparison needs: half of a window (6 months)."""
+    return MIN_MATCHED
+
+
+def _prange(S: Dict[str, Any], a: str, b: str) -> List[str]:
+    """The periods from a to b (month keys): every month of a monthly table."""
+    return _mrange(a, b)
 
 
 def _mshift(ym: str, k: int) -> str:
@@ -2011,13 +2192,47 @@ def _label_of(S: Dict[str, Any], where: Dict[str, Any]) -> List[str]:
         w = where.get(d["column"])
         if d["role"] == "constant":
             continue
-        if w == "*":
+        if d["role"] == "parts" and w == PARTS_TOKEN:
+            out.append("the sum of %d %s" % (len(d.get("parts") or []), d.get("noun") or "members"))
+        elif w == "*":
             out.append("all %s" % d["column"])
         elif isinstance(w, list):
             out.append("%d %s members" % (len(w), d["column"]))
         elif w is not None:
             out.append(str(w))
     return out
+
+
+def parts_info(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]) -> Optional[Dict[str, Any]]:
+    """estimand.built_from for a slice that sums the parts of a dimension that has no total row: how many parts, whether only
+    the months where every part has a value were summed, which months a suppressed part left out, how many part-months are
+    suppressed in the two comparison windows (a part with no value that month), and whether the sum is incomplete (the
+    reported parts were summed, some being suppressed). None for any other slice."""
+    import numpy as np
+    ds = [d for d in S["dims"] if d.get("role") == "parts" and where.get(d["column"]) == PARTS_TOKEN]
+    if not ds or win is None:
+        return None
+    d = ds[0]
+    n = len(d["parts"])
+    noun = d.get("noun") or "members"
+    sel = _select(S, where)
+    if sel is None or not len(sel):
+        return None
+    times, V = S["_times"], S["_V"][sel]
+    at: Dict[str, List[int]] = {}
+    for i, t in enumerate(times):
+        at.setdefault(t[:7], []).append(i)
+    has = {m: (~np.isnan(V[:, idx])).any(axis=1) for m, idx in at.items() if m >= win["prior"][0]}     # series with a value
+    wmonths = set(_prange(S, win["latest"][0], win["latest"][1])) | set(_prange(S, win["prior"][0], win["prior"][1]))
+    suppressed = sum(int((~h).sum()) for m, h in has.items() if m in wmonths and h.any())
+    dropped = sorted(m for m, h in has.items() if h.any() and not h.all())
+    last = max((m for m, h in has.items() if h.any()), default=None)
+    complete_only = bool(d.get("complete_only"))
+    return {"dim": d["column"], "noun": noun, "n": n, "text": "built from %d %s; this table has no total row" % (n, noun),
+            "complete_months_only": complete_only, "incomplete": bool((not complete_only) and suppressed > 0),
+            "suppressed_part_months": int(suppressed), "months_dropped": dropped if complete_only else [],
+            "latest_month_in_table": last, "combined": sorted((d.get("combined") or {}).keys()),
+            "duplicates": sorted((d.get("duplicates") or {}).keys()), "dims": [x["column"] for x in ds]}
 
 
 def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]], plan_source: str = "engine_default",
@@ -2041,8 +2256,20 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     if m.get("factor") and m["factor"] != 1:
         scale_txt = " (file in %s ×%s)" % (m.get("scale"), format(int(m["factor"]), ","))
     unit = (str(m.get("uom") or "") or m["type"]).lower()
-    text = "%s; %s%s; %s %s–%s vs %s–%s" % (
-        " · ".join(_label_of(S, where)) or "the whole table", unit, scale_txt, agg,
+    built = parts_info(S, where, win)
+    built_txt = ""
+    if built:
+        bits = [built["text"]]
+        cells = "region-months" if built["noun"] == "regions" else "member-months"
+        if built["incomplete"]:
+            bits.append("%s %s suppressed in the two windows, so this sum of the reported parts is incomplete" % (
+                _fmt_count(built["suppressed_part_months"]), cells))
+        elif built["complete_months_only"] and built["months_dropped"]:
+            bits.append("complete months only: the %s months where a part is suppressed are left out" % _fmt_count(
+                len(built["months_dropped"])))
+        built_txt = "; ".join(bits) + "; "
+    text = "%s; %s%s%s; %s %s–%s vs %s–%s" % (
+        " · ".join(_label_of(S, where)) or "the whole table", built_txt, unit, scale_txt, agg,
         _mon(win["latest"][0]), _mon(win["latest"][1]), _mon(win["prior"][0]), _mon(win["prior"][1]))
     why = why or {}
     sl = []
@@ -2050,8 +2277,9 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         w = where.get(d["column"])
         if d["role"] == "constant":
             continue
-        sl.append({"dim": d["column"], "member": w, "role": d["role"],
-                   "why": why.get(d["column"]) or d.get("why") or ""})
+        sl.append({"dim": d["column"], "member": ("the sum of %d %s" % (len(d.get("parts") or []), d.get("noun") or "members")
+                                                  if d["role"] == "parts" and w == PARTS_TOKEN else w),
+                   "role": d["role"], "why": why.get(d["column"]) or d.get("why") or ""})
     change = (T1 - T0) if T0 is not None and T1 is not None else None
     chg_pct = (100.0 * (T1 / T0 - 1.0)) if T0 and T1 is not None and T0 > 0 else None
     figures = {"prior": {"value": _r(T0), "text": money(T0, S), "months": n0},
@@ -2059,7 +2287,20 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                "change": {"value": _r(change), "text": points(change) if _percent_rate(S) else money(change, S, signed=True)},
                "change_pct": {"value": _r(chg_pct, 6), "text": pct(chg_pct)}}
     checks = []
+    built = parts_info(S, where, win)
     for d in S["dims"]:
+        if d["role"] == "parts" and where.get(d["column"]) == PARTS_TOKEN:
+            bd = next((b for b in S.get("breakdowns") or [] if b["dim"] == d["column"]), None)
+            res = breakdown(S, bd, where, win) if bd else None
+            checks.append({"dim": d["column"], "total": None, "parts": len(d.get("parts") or []), "by": "parts",
+                           "complete_cells": None, "within_tolerance": None, "max_rel_residual": None,
+                           "max_residual": {"value": None, "text": "n/a"},
+                           "suppressed_parts": res["suppressed_parts"] if res else None,
+                           "unallocated_latest": {"value": 0.0, "text": "none: the headline is the sum of its parts"},
+                           "unallocated_prior": {"value": 0.0, "text": "none: the headline is the sum of its parts"},
+                           "verdict": "not possible (no total row)", "built_from_parts": True,
+                           "suppressed_part_months": (built or {}).get("suppressed_part_months")})
+            continue
         if d["role"] not in ("partition", "hierarchy") or where.get(d["column"]) != d.get("total"):
             continue
         bd = next((b for b in S.get("breakdowns") or [] if b["dim"] == d["column"]), None)
@@ -2093,6 +2334,20 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         for alt, of in (d.get("alternatives") or {}).items():
             if d["role"] != "adjustment":
                 excluded.append({"what": alt, "dim": d["column"], "why": "an alternative total (%s)" % of})
+        if d["role"] == "parts" and w == PARTS_TOKEN:
+            for cmb, fam in (d.get("combined") or {}).items():
+                excluded.append({"what": cmb, "dim": d["column"],
+                                 "why": "equals the sum of %s (each also a member): left out of the sum, never added to "
+                                        "its own parts" % _join_names(fam)})
+            for x, keep in (d.get("duplicates") or {}).items():
+                excluded.append({"what": x, "dim": d["column"],
+                                 "why": "the same series as %s: left out, never counted twice" % keep})
+            for x, parent in (d.get("nested") or {}).items():
+                excluded.append({"what": x, "dim": d["column"],
+                                 "why": "a part of %s, which is also a member: left out, never added to it" % parent})
+            for alt in (d.get("alternatives") or {}):
+                excluded.append({"what": alt, "dim": d["column"],
+                                 "why": "an alternative total (it says it leaves something out): never added to the parts"})
         if d["role"] in ("partition", "hierarchy") and w == d.get("total"):
             n = len(d["labels"]) - 1
             excluded.append({"what": "%d other members" % n, "dim": d["column"],
@@ -2101,16 +2356,22 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                              "why": "each member's own %s; never added or averaged across members" % S["measure"]["type"]})
         if d["role"] == "single":
-            excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
-                             "why": "no total was verified, so members are never added across this dimension"})
+            if d.get("single_by") == "dominance":
+                excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
+                                 "why": "one member shown, not a %s: this table has no total row, and a %s is never added "
+                                        "or averaged across members" % (d.get("noun") or "total", m["type"]
+                                                                        if m["type"] != "count" else "count")})
+            else:
+                excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
+                                 "why": "no total was verified, so members are never added across this dimension"})
     return {"text": text, "slice": sl,
             "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": m.get("scale"),
                         "scale_applied": m.get("factor"), "type": m["type"], "type_basis": m.get("type_basis"),
                         "type_why": m.get("type_why"), "aggregation": m["aggregation"]},
             "comparison": {"latest": list(win["latest"]), "prior": list(win["prior"])},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
-            "complete": bool(complete), "months_used": len(lat_m) if flow else n1,
-            "months_left_out": [] if complete else left_out, "inference": None}
+            "complete": bool(complete) and not (built or {}).get("incomplete"), "months_used": len(lat_m) if flow else n1,
+            "months_left_out": [] if complete else left_out, "inference": None, "built_from": built}
 
 
 def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
@@ -2119,7 +2380,7 @@ def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
     for d in S["dims"]:
         if d["role"] in ("measure", "components") and isinstance(where.get(d["column"]), str):
             return str(where[d["column"]])
-    return str(S["measure"]["column"])
+    return str(S["measure"].get("label_hint") or S["measure"]["column"])
 
 
 def _r(v: Optional[float], nd: int = 6) -> Optional[float]:
@@ -2144,11 +2405,17 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
     dims = []
     for d in S.get("dims") or []:
         x: Dict[str, Any] = {"column": d["column"], "role": d["role"], "members": len(d["labels"])}
-        for k in ("total", "nsa", "sa", "by", "why"):
+        for k in ("total", "nsa", "sa", "by", "why", "single_by", "noun"):
             if d.get(k) is not None:
                 x[k] = d[k]
-        if d.get("parts") is not None and d["role"] in ("partition", "hierarchy", "rate_aggregate"):
+        if d.get("parts") is not None and d["role"] in ("partition", "hierarchy", "rate_aggregate", "parts"):
             x["parts"] = len(d["parts"])
+        if d["role"] == "parts":
+            x["no_total"] = True
+            for k in ("combined", "duplicates", "nested"):
+                if d.get(k):
+                    x[k] = dict(d[k])
+            x["complete_only"] = bool(d.get("complete_only"))
         if d["role"] == "hierarchy":
             depth = d.get("depth") or {}
             levels: Dict[int, int] = {}
@@ -2217,9 +2484,15 @@ def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: i
     dims = []
     for d in S["dims"]:
         col = d["column"]
-        if col not in values_of:
+        if col not in values_of or d["role"] == "constant":
             continue
-        x: Dict[str, Any] = {"column": col, "role": d["role"], "members": len(d["labels"])}
+        # the worker's vocabulary of roles (insight-proxy src/plan.js STRUCTURE_ROLES): a table's published aggregate of a
+        # rate is "aggregate"; a dimension with no total row is a "partition" with no total and `no_total` set
+        x: Dict[str, Any] = {"column": col, "role": {"rate_aggregate": "aggregate", "parts": "partition"}.get(d["role"], d["role"]),
+                             "members": len(d["labels"])}
+        if d["role"] == "parts":
+            x["no_total"] = True
+            x["parts"] = len(d.get("parts") or [])
         if d.get("total") is not None and mem(col, d["total"]):
             x["total"] = mem(col, d["total"])
         if d["role"] in ("partition", "hierarchy"):
@@ -2255,6 +2528,8 @@ def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: i
                 continue
             if v == "*":
                 w[col] = "*"
+            elif v == PARTS_TOKEN:
+                continue                       # a dimension with no total row: its parts, added up (no member to name)
             elif isinstance(v, list):
                 ok = False
             else:
@@ -2275,6 +2550,9 @@ def profile_block(S: Dict[str, Any], values_of: Dict[str, Sequence[str]], cap: i
         if d["role"] == "partition" and tot:
             rules.append("never add rows across %s: %s is the sum of the other %d members" % (d["column"], tot,
                                                                                           len(d.get("parts") or [])))
+        elif d["role"] == "parts":
+            rules.append("%s has no total row: its %d parts are added up (never with a combined member); do not add rows "
+                         "across it yourself" % (d["column"], len(d.get("parts") or [])))
         elif d["role"] == "hierarchy" and tot:
             rules.append("never add rows across %s: it holds nested levels under %s" % (d["column"], tot))
         elif d["role"] == "adjustment":

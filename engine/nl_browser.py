@@ -4864,7 +4864,7 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
                                                                       else json.dumps(x.get("member")), 120),
                       "why": safe(x.get("why"), 200)} for x in est.get("slice") or [] if isinstance(x, dict)][:8],
            "measure": {k: (est.get("measure") or {}).get(k) for k in ("label", "uom", "scale", "scale_applied", "type",
-                                                                      "aggregation")},
+                                                                      "type_basis", "aggregation")},
            "comparison": est.get("comparison"),
            "figures": {k: {"value": (v or {}).get("value"), "text": safe((v or {}).get("text"), 40)}
                        for k, v in (est.get("figures") or {}).items() if isinstance(v, dict)},
@@ -4874,7 +4874,8 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
                                                        "text": safe((c.get("unallocated_latest") or {}).get("text"), 40)}},
                                # how it adds up, for the report's estimand block (the worker keeps complete_cells and
                                # max_rel_residual; the page's own copy keeps the rest)
-                               **{k: c[k] for k in ("complete_cells", "within_tolerance", "max_rel_residual") if k in c},
+                               **{k: c[k] for k in ("complete_cells", "within_tolerance", "max_rel_residual",
+                                                    "built_from_parts", "suppressed_part_months") if k in c},
                                **({"max_residual": {"value": (c.get("max_residual") or {}).get("value"),
                                                     "text": safe((c.get("max_residual") or {}).get("text"), 40)}}
                                   if isinstance(c.get("max_residual"), dict) else {}))
@@ -4882,6 +4883,15 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
            "excluded": [{"what": safe(x.get("what"), 120), "why": safe(x.get("why"), 200)}
                         for x in est.get("excluded") or [] if isinstance(x, dict)][:8],
            "plan_source": est.get("plan_source"), "inference": _inference_for_ai(est.get("inference"), safe)}
+    bf = est.get("built_from")
+    if isinstance(bf, dict) and bf.get("n"):
+        # a table with no total row: the headline is the sum of its parts (nl_structure.parts_info), said in its own words
+        out["built_from"] = {"dim": safe(bf.get("dim"), 120), "noun": safe(bf.get("noun"), 20), "n": bf.get("n"),
+                             "text": safe(bf.get("text"), 160), "complete_months_only": bool(bf.get("complete_months_only")),
+                             "incomplete": bool(bf.get("incomplete")),
+                             "suppressed_part_months": bf.get("suppressed_part_months"),
+                             "months_dropped": [str(x)[:7] for x in (bf.get("months_dropped") or [])][:12],
+                             "combined": [safe(x, 120) for x in (bf.get("combined") or [])][:6]}
     return out
 
 
@@ -8697,7 +8707,9 @@ def _long_has_structure(data: bytes) -> bool:
         R = _Reading(values, texts, np.ones(len(df), bool), land, {})
         S = _ns().detect(R, (), budget_s=0.3)
         return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
-                                                           "rate_aggregate") for d in S.get("dims") or [])
+                                                           "rate_aggregate", "parts")
+                                             or (d["role"] in ("single", "measure") and S.get("official"))
+                                             for d in S.get("dims") or [])
     except Exception:  # noqa: BLE001 - the layout pass then reads it as before
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
@@ -8939,6 +8951,11 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
             str(d.get("column")) for d in st.get("dims") or [] if d.get("role") in ("partition", "hierarchy")) \
             if any(d.get("role") in ("partition", "hierarchy") for d in st.get("dims") or []) else \
             "the headline is one published series"
+        bf = (rep.get("estimand") or {}).get("built_from") if isinstance(rep.get("estimand"), dict) else None
+        if isinstance(bf, dict) and bf.get("n"):
+            # a table with no total row: the headline is the sum of its published parts (nothing is sampled by the sum)
+            why_total = "the headline is the sum of the table's %d published %s (it has no total row)" % (
+                int(bf["n"]), str(bf.get("noun") or "members"))
     elif layout:
         why_total = "a long table read one column per series: the headline is one published series (%s)" % \
             str(layout.get("lead") or "")

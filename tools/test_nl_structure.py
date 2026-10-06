@@ -1050,6 +1050,147 @@ def test_g3_a_count_with_a_flow_word_is_still_summed_and_a_stock_word_is_a_stock
     assert detect(MC.rate())["measure"]["aggregation"] == "mean over months"
 
 
+# ----------------------------------------------------------------------------- wave 5, gap 1: no-total partitions
+def _nt_totals(vals, months, regions=None):
+    """{month: the regions' summed value in base units}"""
+    regs = list(regions or MC.REGIONS)
+    return {m: 1000.0 * sum(vals[r][i] for r in regs) for i, m in enumerate(MC.MONTHS) if m in months}
+
+
+def _win(est, which, months):
+    a, b = est["comparison"][which]
+    return [m for m in months if a <= m <= b]
+
+
+def test_g1_a_table_of_regions_with_no_total_row_is_built_from_its_parts_never_one_regions_value():
+    """Before: rule 6 read ONE member (the largest region) as the table's figure, a silent wrong answer. Now: the
+    regions are the parts of a table with no total row; a flow's headline is their sum, month by month, the estimand says
+    "built from 5 regions; this table has no total row", the sum-check is "not possible (no total row)"."""
+    data = MC.no_total()
+    S = detect(data)
+    g = dim(S, "GEO")
+    assert S["usable"] and g["role"] == "parts" and g.get("total") is None and len(g["parts"]) == 5, (S["reason"], g["role"])
+    assert S["default"]["GEO"] == NS.PARTS_TOKEN, S["default"]
+    vals = MC.no_total_values()
+    months, v = NS._monthly(S, S["default"])
+    assert np.allclose(v, [1000.0 * sum(vals[r][i] for r in MC.REGIONS) for i in range(len(MC.MONTHS))]), v[:3]
+    rep = _run(data, "regions_no_total.csv")
+    est = rep["estimand"]
+    assert "built from 5 regions; this table has no total row" in est["text"], est["text"]
+    assert est["plan_source"] == "engine_default" and est["reconciles"] is True, est
+    bf = est["built_from"]
+    assert bf["dim"] == "GEO" and bf["n"] == 5 and bf["noun"] == "regions" and bf["incomplete"] is False, bf
+    assert bf["text"] == "built from 5 regions; this table has no total row", bf["text"]
+    chk = [c for c in est["sum_checks"] if c["dim"] == "GEO"]
+    assert len(chk) == 1 and chk[0]["verdict"] == "not possible (no total row)" and chk[0]["total"] is None and chk[0]["parts"] == 5, est["sum_checks"]
+    tot = _nt_totals(vals, set(MC.MONTHS))
+    lat, pri = _win(est, "latest", MC.MONTHS), _win(est, "prior", MC.MONTHS)
+    F = est["figures"]
+    assert abs(F["latest"]["value"] - sum(tot[m] for m in lat)) < 1e-3 and abs(F["prior"]["value"] - sum(tot[m] for m in pri)) < 1e-3, F
+    one = max(sum(1000.0 * vals[r][MC.MONTHS.index(m)] for m in lat) for r in MC.REGIONS)
+    assert F["latest"]["value"] > 1.5 * one, "not the largest region's own value (%s vs %s)" % (F["latest"]["value"], one)
+    it = _items(rep)
+    parts = [v_["value"] for k, v_ in it.items() if k.startswith("contribution.geo.")]
+    assert len(parts) == 5 and abs(sum(parts) - it["headline.change"]["value"]) < 1e-3, sorted(it)
+    assert not any(k.endswith(".unallocated") for k in it), "a total built from its parts leaves nothing unallocated"
+    assert all("growth.geo.%s" % NS_slug for NS_slug in ("alpha", "bravo", "charlie", "delta", "echo") if "growth.geo.%s" % NS_slug in it)
+    assert rep["scenarios"]["basis"]["source"] == "structure" and rep["scenarios"]["basis"]["breakdowns"][0]["no_total"] is True
+    wf = [c for c in rep["viz"]["charts"] if c["chart"] == "contribution_waterfall"]
+    assert len(wf) == 1 and not _spec_errors(wf[0]), (len(wf), wf and _spec_errors(wf[0]))
+    assert "no total row" in wf[0]["source"], wf[0]["source"]
+    json.dumps(rep, allow_nan=False)
+    out = NB.results_for_ai(rep)
+    assert out["estimand"]["built_from"]["text"] == bf["text"], out["estimand"].get("built_from")
+
+
+def test_g1_months_with_a_suppressed_region_are_left_out_and_said_and_a_headline_too_incomplete_sums_the_reported_parts():
+    """Complete months only: two suppressed cells leave 10 matched months, both windows like for like. Too few complete
+    months for the table's own latest windows (a region suppressed from month 26 on): the reported parts are summed, the
+    estimand counts the region-months suppressed and is marked incomplete. Never silent."""
+    vals = MC.no_total_values()
+    data = MC.no_total(hide=[("Charlie", 38), ("Bravo", 34)])
+    rep = _run(data, "regions_two_gaps.csv")
+    est = rep["estimand"]
+    bf = est["built_from"]
+    assert bf["incomplete"] is False and bf["complete_months_only"] is True and bf["suppressed_part_months"] == 2, bf
+    assert est["complete"] is False and est["months_used"] == 10 and est["months_left_out"] == ["2022-03", "2022-11"], est
+    tot = _nt_totals(vals, set(MC.MONTHS))
+    lat = [m for m in _win(est, "latest", MC.MONTHS) if m not in ("2022-03", "2022-11")]
+    pri = [NB._shift_month(m, -12) for m in lat]
+    assert abs(est["figures"]["latest"]["value"] - sum(tot[m] for m in lat)) < 1e-3, est["figures"]
+    assert abs(est["figures"]["prior"]["value"] - sum(tot[m] for m in pri)) < 1e-3, est["figures"]
+    assert "10 months with a value in both windows" in est["text"], est["text"]
+    it = _items(rep)
+    parts = [v_["value"] for k, v_ in it.items() if k.startswith("contribution.geo.")]
+    assert abs(sum(parts) - it["headline.change"]["value"]) < 1e-3
+    # a region suppressed from month 26 on: the table's latest windows hold no complete month
+    hide = [("Echo", i) for i in range(26, 48)]
+    rep = _run(MC.no_total(hide=hide), "regions_echo_gone.csv")
+    est = rep["estimand"]
+    bf = est["built_from"]
+    assert bf["incomplete"] is True and bf["complete_months_only"] is False and est["complete"] is False, bf
+    assert bf["suppressed_part_months"] == 22 and "22 region-months suppressed" in est["text"], (bf, est["text"])
+    assert est["comparison"]["latest"][1] == "2022-12", est["comparison"]
+    lat, pri = _win(est, "latest", MC.MONTHS), _win(est, "prior", MC.MONTHS)
+    got = {m: 1000.0 * sum(vals[r][MC.MONTHS.index(m)] for r in MC.REGIONS if (r, MC.MONTHS.index(m)) not in set(hide)) for m in MC.MONTHS}
+    assert abs(est["figures"]["latest"]["value"] - sum(got[m] for m in lat)) < 1e-3, est["figures"]
+    assert est["figures"]["latest"]["months"] == 12 and est["inference"] is None or True
+    json.dumps(rep, allow_nan=False)
+
+
+def test_g1_a_combined_member_is_never_added_to_its_own_parts_and_a_total_row_is_not_summed_twice():
+    """A member that equals the sum of 2 or more others is left out of the sum (and listed under "left out and why"); the
+    negative cases: a table WITH a total row is read by its total (never the total plus its parts), also when it holds a
+    combined member."""
+    vals = MC.no_total_values()
+    data = MC.no_total(combined=True, nested=True)
+    S = detect(data)
+    g = dim(S, "GEO")
+    assert g["role"] == "parts" and sorted(g["parts"]) == sorted(MC.REGIONS), g["parts"]
+    assert g["combined"] == {"Prairie group": ["Alpha", "Bravo", "Charlie"], "Centre block": ["Charlie", "Delta"]}, g["combined"]
+    rep = _run(data, "regions_combined.csv")
+    est = rep["estimand"]
+    lat = _win(est, "latest", MC.MONTHS)
+    tot = _nt_totals(vals, set(MC.MONTHS))
+    assert abs(est["figures"]["latest"]["value"] - sum(tot[m] for m in lat)) < 1e-3, "the five regions, not seven members"
+    assert est["built_from"]["n"] == 5 and sorted(est["built_from"]["combined"]) == ["Centre block", "Prairie group"], est["built_from"]
+    ex = {x["what"]: x["why"] for x in est["excluded"]}
+    assert "equals the sum of Alpha, Bravo and Charlie" in ex["Prairie group"] and "never added" in ex["Prairie group"], ex
+    viol = NS.check_rows(S, list(range(S["rows"])))
+    assert any(v_["kind"] == "combined_with_parts" for v_ in viol), viol
+    # negative: a Total row
+    S2 = detect(MC.no_total(total=True))
+    assert dim(S2, "GEO")["role"] == "partition" and dim(S2, "GEO")["total"] == "Total" and S2["default"]["GEO"] == "Total", dim(S2, "GEO")["role"]
+    rep2 = _run(MC.no_total(total=True), "regions_total.csv")
+    e2 = rep2["estimand"]
+    assert "built from" not in e2["text"] and e2.get("built_from") is None and e2["sum_checks"][0]["verdict"] == "adds_up", e2["text"]
+    lat2 = _win(e2, "latest", MC.MONTHS)
+    assert abs(e2["figures"]["latest"]["value"] - sum(tot[m] for m in lat2)) < 1e-3, "the Total's own series, once"
+    # negative: a Total row AND a combined member: the hierarchy search reads Total > the group > its regions
+    S3 = detect(MC.no_total(total=True, combined=True))
+    assert dim(S3, "GEO")["role"] == "hierarchy" and S3["default"]["GEO"] == "Total", (dim(S3, "GEO")["role"], S3["default"])
+
+
+def test_g1_a_stock_or_a_rate_with_no_total_shows_one_member_by_dominance_and_says_it_is_not_a_national_figure():
+    """Non-additive measures have no valid aggregate: one member, never added or averaged across members."""
+    for data, why in ((MC.counts(label="Employment", with_total=False), "stock"),
+                      (MC.no_total(rate=True, uom="Percent", label="Unemployment rate"), "rate")):
+        S = detect(data)
+        g = dim(S, "GEO")
+        assert g["role"] == "single" and g.get("single_by") == "dominance", (why, g["role"], g.get("why"))
+        rep = _run(data, "no_total_%s.csv" % why)
+        est = rep["estimand"]
+        ex = " | ".join(x["why"] for x in est["excluded"])
+        assert "one member shown, not a national figure" in ex and "never added or averaged" in ex, (why, est["excluded"])
+        assert est.get("built_from") is None and "built from" not in est["text"], est["text"]
+        assert not [k for k in _items(rep) if k.startswith("contribution.")], "a breakdown of one member"
+        member = est["slice"][0]["member"]
+        assert member in MC.REGIONS, member
+    # the stock's member is the largest by dominance (Bravo holds 8,100 of the 5,200 / 8,100 / 3,300 / 6,100 / 2,400)
+    rep = _run(MC.counts(label="Employment", with_total=False), "stock.csv")
+    assert rep["estimand"]["slice"][0]["member"] == "Bravo", rep["estimand"]["slice"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

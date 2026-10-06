@@ -57,7 +57,7 @@ def _official(header_dims, records, uom="Dollars", scalar="thousands", decimals=
         u = uom(key) if callable(uom) else uom
         rows.append([mo, geo, geos[geo]] + list(dims) + [u, "81", scalar, "3" if scalar == "thousands" else "0",
                                                          vec[key], "" if val is None else "%d" % val
-                     if float(val) == int(val) else "%.1f" % val, st, "", "", decimals])
+                     if float(val) == int(val) else "%.*f" % (max(1, int(decimals)), val), st, "", "", decimals])
     return _csv(head, rows)
 
 
@@ -371,44 +371,98 @@ def counts(uom: str = "Persons", label: str = "Group A", with_total: bool = True
     return _official([header], rec, uom=uom, scalar="units")
 
 
-def no_total(blank_share: float = 0.0, combined: bool = False, uom: str = "Dollars", label: str = "Retail sales",
-             months=None, seed: int = 41, regions=None, nested: bool = False, geo_header: str = "GEO") -> bytes:
-    """G1: a table of regions with NO total row (the national figure is the sum of its provinces, and the table does not
-    list it). blank_share suppresses that share of the cells ("x", blank value); combined adds "Prairie group" = the sum of
-    its three regions (a member that equals the sum of 2 or more others: never added together with its own parts);
-    nested adds "Centre block" = Charlie + Delta (the same, one level down)."""
+def no_total_values(seed: int = 41, regions=None) -> dict:
+    """The regions' true monthly values (thousands of dollars), before any cell is suppressed: {region: array of 48}."""
     rng = np.random.RandomState(seed)
     regs = list(regions or REGIONS)
-    vals = {r: _series(rng, lv) for r, lv in zip(regs, _LV * 4)}
-    hide = rng.rand(len(regs), len(MONTHS)) < blank_share
-    mon = list(months or MONTHS)
+    return {r: _series(rng, lv) for r, lv in zip(regs, _LV * 4)}
+
+
+def no_total(hide=(), combined: bool = False, nested: bool = False, uom: str = "Dollars", label: str = "Retail sales",
+             seed: int = 41, regions=None, geo_header: str = "GEO", rate: bool = False, total: bool = False) -> bytes:
+    """G1: a table of regions with NO total row (the national figure is the sum of its regions, and the table does not
+    list it). hide: [(region, month index)] cells suppressed ("x", blank value). combined adds "Prairie group" = Alpha +
+    Bravo + Charlie (a member that equals the sum of 2 or more others: never added together with its own parts); nested
+    adds "Centre block" = Charlie + Delta. rate: the values are percentages (first region the highest, so no member is
+    mistaken for a published aggregate). total adds the "Total" row (the NEGATIVE case: a table with a total row is read by
+    its total and never summed twice)."""
+    regs = list(regions or REGIONS)
+    vals = no_total_values(seed, regs)
+    if rate:
+        vals = {r: np.round(np.array([14.0 - 1.5 * k + 0.4 * np.sin(i / 5.0) + 0.1 * (i % 3) for i in range(len(MONTHS))]), 1)
+                for k, r in enumerate(regs)}
+    gone = {(r, int(i)) for r, i in hide}
     rec = []
-    for i, mo in enumerate(mon):
-        for k, r in enumerate(regs):
-            rec.append((mo, r, (label,), None if hide[k, i] else vals[r][i], "x" if hide[k, i] else "A"))
+    for i, mo in enumerate(MONTHS):
+        if total:
+            rec.append((mo, "Total", (label,), sum(vals[r][i] for r in regs), "A"))
+        for r in regs:
+            if (r, i) in gone:
+                rec.append((mo, r, (label,), None, "x"))
+            else:
+                rec.append((mo, r, (label,), vals[r][i], "A"))
         if combined:
             rec.append((mo, "Prairie group", (label,), vals[regs[0]][i] + vals[regs[1]][i] + vals[regs[2]][i], "A"))
         if nested:
             rec.append((mo, "Centre block", (label,), vals[regs[2]][i] + vals[regs[3]][i], "A"))
-    head = ["Sales"]
-    data = _official(head, rec, uom=uom, scalar="thousands" if uom == "Dollars" else "units")
+    data = _official(["Sales"], rec, uom=uom, scalar="thousands" if uom == "Dollars" else "units",
+                     decimals="1" if rate else "0")
     if geo_header != "GEO":
         data = data.replace(b'"GEO"', ('"%s"' % geo_header).encode(), 1)
     return data
 
-
-def no_total_sum(blank_share: float = 0.0, seed: int = 41, regions=None, combined_never: bool = True):
-    """The parts' own monthly sums, in base units, for the checks of the no_total cubes: {month: sum of the regions' values,
-    or None when any region is suppressed}, and the number of suppressed region-months."""
+def measures_units_dollars(seed: int = 51) -> bytes:
+    """G2: Total and 3 regions, each in two measures held in ONE value column under "Statistics": "Sales value" (Dollars, in
+    thousands) and "Units sold" (Number). Total is the exact sum of its regions for both."""
     rng = np.random.RandomState(seed)
-    regs = list(regions or REGIONS)
-    vals = {r: _series(rng, lv) for r, lv in zip(regs, _LV * 4)}
-    hide = rng.rand(len(regs), len(MONTHS)) < blank_share
-    out, n = {}, int(hide.sum())
+    regs = ["Alpha", "Bravo", "Charlie"]
+    units = {r: _series(rng, lv / 20.0) for r, lv in zip(regs, (5200, 8100, 3300))}
+    price = {r: 3.2 + 0.4 * k for k, r in enumerate(regs)}
+    dol = {r: np.round(units[r] * price[r]) for r in regs}
+    rec = []
     for i, mo in enumerate(MONTHS):
-        out[mo] = None if hide[:, i].any() else 1000.0 * sum(vals[r][i] for r in regs)
-    return out, n, {r: (1000.0 * vals[r]) for r in regs}, hide
+        rec.append((mo, "Total", ("Sales value",), sum(dol[r][i] for r in regs), "A"))
+        rec.append((mo, "Total", ("Units sold",), sum(units[r][i] for r in regs), "A"))
+        for r in regs:
+            rec.append((mo, r, ("Sales value",), dol[r][i], "A"))
+            rec.append((mo, r, ("Units sold",), units[r][i], "A"))
 
+    def uom(key):
+        return "Dollars" if key[1] == "Sales value" else "Number"
+    return _official(["Statistics"], rec, uom=uom, scalar="units")
+
+
+def measures_rate_se(seed: int = 53, members=None) -> bytes:
+    """G2: Canada and 4 provinces; "Labour force characteristics" holds, in one value column, an Unemployment rate (Percent,
+    Canada the employment-weighted average of the provinces), Employment (Persons, Canada the exact sum) and the Standard
+    error of the unemployment rate (Percent: small numbers that must never be the headline or be summed)."""
+    rng = np.random.RandomState(seed)
+    provs = ["Alpha", "Bravo", "Charlie", "Delta"]
+    emp = {p: np.round(_series(rng, lv, growth=0.002)) for p, lv in zip(provs, (5200, 8100, 3300, 6100))}
+    rate = {p: np.round(5.0 + k + 0.5 * np.sin(np.arange(len(MONTHS)) / 6.0 + k) + 0.1 * rng.standard_normal(len(MONTHS)), 1)
+            for k, p in enumerate(provs)}
+    names = members or ("Unemployment rate", "Employment", "Standard error of the unemployment rate")
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        tot_emp = sum(emp[p][i] for p in provs)
+        can_rate = round(float(sum(rate[p][i] * emp[p][i] for p in provs) / tot_emp), 1)
+        for nm in names:
+            if nm == "Unemployment rate":
+                rec.append((mo, "Canada", (nm,), can_rate, "A"))
+                for p in provs:
+                    rec.append((mo, p, (nm,), rate[p][i], "A"))
+            elif nm == "Employment":
+                rec.append((mo, "Canada", (nm,), tot_emp, "A"))
+                for p in provs:
+                    rec.append((mo, p, (nm,), emp[p][i], "A"))
+            else:
+                rec.append((mo, "Canada", (nm,), round(0.08 + 0.01 * np.cos(i / 4.0), 2), "A"))
+                for k, p in enumerate(provs):
+                    rec.append((mo, p, (nm,), round(0.15 + 0.03 * k + 0.01 * np.cos(i / 4.0 + k), 2), "A"))
+
+    def uom(key):
+        return "Persons" if key[1] == "Employment" else "Percent"
+    return _official(["Labour force characteristics"], rec, uom=uom, scalar="units", decimals="2")
 
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,

@@ -1769,6 +1769,49 @@ def window_figure(S: Dict[str, Any], months: Sequence[str], vals: Any, w: Sequen
     return math.fsum(xs) / len(xs), len(xs)
 
 
+MIN_MATCHED = 6                 # months with a value in both windows a flow's comparison needs
+
+
+def _mshift(ym: str, k: int) -> str:
+    i = int(ym[:4]) * 12 + (int(ym[5:7]) - 1) + k
+    return "%04d-%02d" % (i // 12, i % 12 + 1)
+
+
+def _mrange(a: str, b: str) -> List[str]:
+    out, m = [], a
+    while m <= b and len(out) < 600:
+        out.append(m)
+        m = _mshift(m, 1)
+    return out
+
+
+def matched_months(S: Dict[str, Any], months: Sequence[str], tot: Any, win: Dict[str, List[str]]
+                   ) -> Tuple[List[str], List[str], bool]:
+    """(the latest window's months, the months a year before, whether both are the whole 12): a flow's or a count's
+    window figure adds up its months, so a month the headline lacks in either window would make the change compare 11
+    months with 12; the comparison then uses the months with a value in both windows (the same calendar month in each:
+    like for like). A level's window figure is the mean of the months it has, so its windows stay whole."""
+    lat = _mrange(win["latest"][0], win["latest"][1])
+    pri = _mrange(win["prior"][0], win["prior"][1])
+    if S["measure"]["type"] not in ("flow", "count") or len(lat) != len(pri):
+        return lat, pri, True
+    have = {m for m, v in zip(months, tot) if v == v}
+    pairs = [(a, b) for a, b in zip(pri, lat) if a in have and b in have]
+    full = len(pairs) == len(lat) == len(pri) == 12
+    return [b for _a, b in pairs], [a for a, _b in pairs], full
+
+
+def sum_at(S: Dict[str, Any], months: Sequence[str], vals: Any, at: Sequence[str]) -> Tuple[Optional[float], int]:
+    """A figure over the given months: a flow's or a count's sum, a level's mean, and how many of them hold a value."""
+    want = set(at)
+    xs = [float(v) for m, v in zip(months, vals) if m in want and v == v]
+    if not xs:
+        return None, 0
+    if S["measure"]["type"] in ("flow", "count"):
+        return math.fsum(xs), len(xs)
+    return math.fsum(xs) / len(xs), len(xs)
+
+
 _SUFFIX = ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K"))
 
 
@@ -1833,28 +1876,29 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
     share) per window. The parts and the unallocated add up to the change exactly (math.fsum)."""
     import numpy as np
     months, tot = _monthly(S, where)
-    T0, n0 = window_figure(S, months, tot, win["prior"])
-    T1, n1 = window_figure(S, months, tot, win["latest"])
-    if T0 is None or T1 is None or n0 < 12 or n1 < 12:
-        return None
+    lat_m, pri_m, _full = matched_months(S, months, tot, win)
+    T0, n0 = sum_at(S, months, tot, pri_m)
+    T1, n1 = sum_at(S, months, tot, lat_m)
     flow = S["measure"]["type"] in ("flow", "count")
+    need = MIN_MATCHED if flow else 12
+    if T0 is None or T1 is None or n0 < need or n1 < need or (not flow and (n0 < 12 or n1 < 12)):
+        return None
     change = T1 - T0
     parts = []
     sums0, sums1 = [], []
     for p in bd["parts"]:
         m2, pv = _monthly(S, dict(where, **{bd["dim"]: p}))
-        a, na = window_figure(S, m2, pv, win["prior"])
-        b, nb = window_figure(S, m2, pv, win["latest"])
+        a, na = sum_at(S, m2, pv, pri_m)
+        b, nb = sum_at(S, m2, pv, lat_m)
         if not flow:
             # a stock's window mean: its months' values over the 12 months (a blank month is unallocated)
             a = math.fsum(float(v) for m, v in zip(m2, pv) if win["prior"][0] <= m <= win["prior"][1] and v == v) / 12.0
             b = math.fsum(float(v) for m, v in zip(m2, pv) if win["latest"][0] <= m <= win["latest"][1] and v == v) / 12.0
-            na_ok, nb_ok = na, nb
         a = a or 0.0
         b = b or 0.0
         sums0.append(a)
         sums1.append(b)
-        complete = na == 12 and nb == 12
+        complete = na == len(pri_m) and nb == len(lat_m)
         parts.append({"member": p, "prior": a, "latest": b, "contribution": b - a, "complete": complete,
                       "growth_pct": (100.0 * (b / a - 1.0)) if complete and a > 0 else None,
                       "share_level_pct": 100.0 * b / T1 if T1 else None})
@@ -1870,7 +1914,7 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
     return {"id": bd["id"], "dim": bd["dim"], "parent": bd["parent"], "depth": bd.get("depth", 1),
             "prior": T0, "latest": T1, "change": change, "parts": parts,
             "unallocated": {"prior": u0, "latest": u1, "contribution": u_contrib},
-            "shares_given": bool(same), "reconciles": bool(ok)}
+            "shares_given": bool(same), "reconciles": bool(ok), "months": len(lat_m)}
 
 
 def _label_of(S: Dict[str, Any], where: Dict[str, Any]) -> List[str]:
@@ -1893,10 +1937,17 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     """rep["estimand"]: what the headline is (the slice, the measure, the unit and scale, the windows), its figures in
     base units with their texts, each sum-check behind the slice, and what was left out and why."""
     months, vals = _monthly(S, where)
-    T0, n0 = window_figure(S, months, vals, win["prior"])
-    T1, n1 = window_figure(S, months, vals, win["latest"])
+    lat_m, pri_m, complete = matched_months(S, months, vals, win)
+    T0, n0 = sum_at(S, months, vals, pri_m)
+    T1, n1 = sum_at(S, months, vals, lat_m)
     m = S["measure"]
-    agg = "12-month totals" if m["type"] in ("flow", "count") else "12-month averages"
+    flow = m["type"] in ("flow", "count")
+    if flow and len(lat_m) < MIN_MATCHED:
+        T0 = T1 = None                                   # too few months in both windows to compare like for like
+    left_out = sorted(set(_mrange(win["latest"][0], win["latest"][1])) - set(lat_m))
+    agg = ("12-month totals" if complete else "totals of the %d months with a value in both windows (%s left out)" % (
+        len(lat_m), ", ".join(_mon(x) for x in left_out[:3]) + (", ..." if len(left_out) > 3 else ""))) if flow else \
+        "12-month averages"
     scale_txt = ""
     if m.get("factor") and m["factor"] != 1:
         scale_txt = " (file in %s ×%s)" % (m.get("scale"), format(int(m["factor"]), ","))
@@ -1963,7 +2014,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                         "aggregation": m["aggregation"]},
             "comparison": {"latest": list(win["latest"]), "prior": list(win["prior"])},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
-            "inference": None}
+            "complete": bool(complete), "months_used": len(lat_m) if flow else n1,
+            "months_left_out": [] if complete else left_out, "inference": None}
 
 
 def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:

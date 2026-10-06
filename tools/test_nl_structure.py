@@ -475,6 +475,42 @@ def test_the_payload_budget_drops_the_unallocated_part_last_and_the_forecast_lab
     assert fl and all(", forecast for " in x for x in fl), rep["summary"]["labels"]
 
 
+def test_e2e_a_headline_month_missing_from_a_window_is_compared_on_the_months_both_windows_have():
+    """A flow's window figure adds its months up: a month the headline lacks in one window must not make the change
+    compare 11 months with 12. The comparison uses the months with a value in both windows and says so."""
+    df = pd.read_csv(io.BytesIO(MC.partition(0.0)), dtype=str, keep_default_na=False)
+    m = (df.GEO == "Total") & (df.REF_DATE == "2022-06")
+    df.loc[m, "VALUE"], df.loc[m, "STATUS"] = "", "x"
+    rep = _run(df.to_csv(index=False).encode(), "gap.csv")
+    est = rep["estimand"]
+    assert est["complete"] is False and est["months_used"] == 11 and est["months_left_out"] == ["2022-06"], est
+    assert "11 months with a value in both windows (Jun 2022 left out)" in est["text"], est["text"]
+    tot = df[df.GEO == "Total"].set_index("REF_DATE").VALUE
+    tot = pd.to_numeric(tot.where(tot != "")) * 1000.0
+    lat = [x for x in est["comparison"]["latest"]]
+    months = [mo for mo in tot.index if lat[0] <= mo <= lat[1] and mo != "2022-06"]
+    want1 = sum(tot[mo] for mo in months)
+    want0 = sum(tot[NB._shift_month(mo, -12)] for mo in months)
+    F = est["figures"]
+    assert abs(F["latest"]["value"] - want1) < 1e-3 and abs(F["prior"]["value"] - want0) < 1e-3, (F, want1, want0)
+    assert abs(F["change_pct"]["value"] - 100.0 * (want1 / want0 - 1.0)) < 1e-4 and F["latest"]["months"] == 11
+    it = _items(rep)
+    assert "11 matched" in it["headline.latest"]["label"], it["headline.latest"]["label"]
+    parts = [v["value"] for k, v in it.items() if k.startswith("contribution.geo.") and not k.endswith("unallocated")]
+    assert len(parts) == 5 and abs(sum(parts) + it["contribution.geo.unallocated"]["value"] - it["headline.change"]["value"]) < 1e-3
+    wf = next(c for c in rep["viz"]["charts"] if c["chart"] == "contribution_waterfall")
+    assert wf["data"]["steps"][0]["label"] == "11 matched months before", wf["data"]["steps"][0]["label"]
+    # fewer than 6 months with a value in both windows: no figure is printed (a total of 5 months is no year)
+    d = df.copy()
+    m = (d.GEO == "Total") & d.REF_DATE.isin(["2022-01", "2022-02", "2022-03", "2022-04", "2022-05", "2022-06", "2022-07"])
+    d.loc[m, "VALUE"], d.loc[m, "STATUS"] = "", "x"
+    rep = _run(d.to_csv(index=False).encode(), "gap2.csv")
+    F = rep["estimand"]["figures"]
+    assert rep["estimand"]["complete"] is False and F["change_pct"]["value"] is None and F["prior"]["value"] is None, F
+    assert not [k for k in _items(rep) if k.startswith("contribution.")], "a breakdown of a change that is not stated"
+    json.dumps(rep, allow_nan=False)
+
+
 def test_e2e_a_rate_table_reads_its_published_aggregate_and_never_adds_or_averages_members():
     NB._PROFILE_CACHE.clear()
     rep = json.loads(NB.run_json(MC.rate(), "rates.csv", "", None, AS_OF))

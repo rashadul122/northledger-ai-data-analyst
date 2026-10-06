@@ -2422,8 +2422,12 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     steps.append(("unallocated (suppressed cells)", float(unal["value"]), str(unal["text"])))
     bs = {"split": "segment", "finding_id": basis.get("finding_id"), "column": str(bd["dim"])[:120],
           "prior": list(basis["windows"]["prior"]), "latest": list(basis["windows"]["latest"])}
-    data = _waterfall_data(("12 months before", float(hp["value"]), str(hp["text"])), steps,
-                           ("Latest 12 months", float(hl["value"]), str(hl["text"])),
+    full = basis.get("complete") is not False
+    k_used = int(basis.get("months_used") or 12)
+    w_before, w_latest = ("12 months before", "Latest 12 months") if full else \
+        ("%d matched months before" % k_used, "%d matched latest months" % k_used)
+    data = _waterfall_data((w_before, float(hp["value"]), str(hp["text"])), steps,
+                           (w_latest, float(hl["value"]), str(hl["text"])),
                            (float(hc["value"]), str(hc["text"])), bs)
     _check_waterfall(data)
     measure = str(basis.get("measure") or "the total")
@@ -2431,18 +2435,20 @@ def _b_structure_waterfall(rep: Dict[str, Any], bd: Dict[str, Any], items: Dict[
     grade = basis.get("grade")
     big = shown[:2]
     lead = " and ".join("%s %s" % (it["segment"], it["text"]) for it in big)
-    summary = ("%s went from %s in the 12 months before to %s in the latest 12 months, a change of %s (descriptive "
-               "arithmetic on published totals). The largest contributions by %s: %s; the unallocated part (the total "
-               "less its published parts) is %s. Where the change sits, not what caused it." % (
-                   _cut(what, 120), hp["text"], hl["text"], hc["text"], bd["dim"], lead, unal["text"]))
-    rows = [["12 months before", str(hp["text"]), ""]]
+    span = "the 12 months before to %s in the latest 12 months" if full else \
+        "the %d matched months before to %%s in the same months of the latest 12" % k_used
+    summary = ("%s went from %s in " + span + ", a change of %s (descriptive arithmetic on published totals). The "
+               "largest contributions by %s: %s; the unallocated part (the total less its published parts) is %s. "
+               "Where the change sits, not what caused it.") % (
+                   _cut(what, 120), hp["text"], hl["text"], hc["text"], bd["dim"], lead, unal["text"])
+    rows = [[w_before, str(hp["text"]), ""]]
     for i, it in enumerate(shown):
         g = growth.get(str(it["segment"]))
         rows.append([wlabels[i], str(it["text"]), str(g["text"]) if g else "n/a"])
     if rest:
         rows.append([steps[len(shown)][0], steps[len(shown)][2], ""])
     rows.append(["unallocated (suppressed cells)", str(unal["text"]), ""])
-    rows.append(["Latest 12 months", str(hl["text"]), ""])
+    rows.append([w_latest, str(hl["text"]), ""])
     fid = str(basis.get("finding_id") or "")
     anchors = (["finding:" + fid] if fid in findings else []) + ["scenario:headline.prior"] + \
         ["scenario:" + str(it["id"]) for it in shown] + ["scenario:" + str(unal["id"]), "scenario:headline.latest",

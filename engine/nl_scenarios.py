@@ -1204,7 +1204,14 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
         return out
     items: List[Dict[str, Any]] = []
     fig = est.get("figures") or {}
-    ext = "the latest 12 months against the 12 before"
+    complete = est.get("complete") is not False
+    k_used = int(est.get("months_used") or 12)
+    # a flow's window lacking a month in either window is compared on the months both have (nl_structure.matched_months)
+    ext = "the latest 12 months against the 12 before" if complete else \
+        "the %d months with a value in both the latest 12 months and the 12 before" % k_used
+    pri_w = "the 12 months before" if complete else "the %d matched months before" % k_used
+    lat_w = "the latest 12 months" if complete else "the %d matched latest months" % k_used
+    basis["complete"], basis["months_used"] = complete, k_used
     what = (est.get("text") or col).split(";")[0]
 
     def item(iid: str, group: str, label: str, value: Any, kind: str, text: str, grade_own: Optional[str],
@@ -1219,9 +1226,9 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
                 if grade else STRUCTURE_GRADE_WORDS
         return it
     for key, label, kind, unit, win_k, op in (
-            ("prior", "%s, the 12 months before (%s to %s)" % (what, win["prior"][0], win["prior"][1]), "amount", "",
+            ("prior", "%s, %s (%s to %s)" % (what, pri_w, win["prior"][0], win["prior"][1]), "amount", "",
              "prior", "sum of the slice's months" if meas["type"] in ("flow", "count") else "mean of the slice's months"),
-            ("latest", "%s, the latest 12 months (%s to %s)" % (what, win["latest"][0], win["latest"][1]), "amount", "",
+            ("latest", "%s, %s (%s to %s)" % (what, lat_w, win["latest"][0], win["latest"][1]), "amount", "",
              "latest", "sum of the slice's months" if meas["type"] in ("flow", "count") else "mean of the slice's months"),
             ("change", "Change in %s, %s" % (what, ext), "change", "", "both", "latest less prior"),
             ("change_pct", "Change in %s in percent, %s" % (what, ext), "change", "%", "both", "latest / prior - 1")):
@@ -1258,7 +1265,7 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
                          "the part's latest window less its window before"),
                         ("growth.%s.%s" % (dk, m), "%s: its own change in percent, %s" % (seg, ext),
                          p["growth_pct"], "change", NST.pct(p["growth_pct"]), "%", "latest / prior - 1"),
-                        ("share_level.%s.%s" % (dk, m), "%s: share of %s in the latest 12 months" % (seg, what),
+                        ("share_level.%s.%s" % (dk, m), "%s: share of %s in %s" % (seg, what, lat_w),
                          p["share_level_pct"], "percent", NST.pct(p["share_level_pct"], signed=False), "",
                          "the part's latest window / the total's"),
                         ("share_change.%s.%s" % (dk, m), "%s: share of the change in %s" % (seg, what),

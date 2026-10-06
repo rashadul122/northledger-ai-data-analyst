@@ -4703,7 +4703,22 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
                           for c in est.get("sum_checks") or [] if isinstance(c, dict)][:8],
            "excluded": [{"what": safe(x.get("what"), 120), "why": safe(x.get("why"), 200)}
                         for x in est.get("excluded") or [] if isinstance(x, dict)][:8],
-           "plan_source": est.get("plan_source"), "inference": est.get("inference")}
+           "plan_source": est.get("plan_source"), "inference": _inference_for_ai(est.get("inference"), safe)}
+    return out
+
+
+def _inference_for_ai(inf: Any, safe: Any) -> Optional[Dict[str, Any]]:
+    """An official aggregate's record (findings[].inference, estimand.inference) for the writer: every word through the
+    same scrubber as the rest of the payload (the record counts a withheld column, never names it), figures as they are."""
+    if not isinstance(inf, dict):
+        return None
+    out: Dict[str, Any] = {k: inf.get(k) for k in ("mode", "publisher", "describe") if k in inf}
+    out["how_known"] = [safe(x, 300) for x in inf.get("how_known") or [] if isinstance(x, str)][:6]
+    for k in ("revisions", "grade_label"):
+        if isinstance(inf.get(k), str):
+            out[k] = safe(inf[k], 300)
+    q = inf.get("quality")
+    out["quality"] = {"column": safe(q.get("column"), 120), "codes": q.get("codes")} if isinstance(q, dict) else None
     return out
 
 
@@ -8592,6 +8607,9 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
     import nl_inference as _ni
     for f in rep.get("findings") or []:
         f["inference"] = None                 # this function owns the field: a second call replaces the first's records
+    est_rec = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
+    if est_rec is not None:
+        est_rec["inference"] = None           # the estimand's own slot (track A1 reserved it): the headline claim's record
     st = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
     pubr = _ni.publisher_of(header)
     if pubr is None and st and st.get("publisher"):
@@ -8672,6 +8690,10 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
             pubr, hide, why_total, words,
             {"change_pct": _num(f.get("value")), "prior": _num(prior), "latest": _num(latest)},
             (f.get("test") or {}).get("n_months"), "sum" if total else "mean", quality, revisions)
+        if est_rec is not None and est_rec["inference"] is None and f["inference"]:
+            # the table's headline IS this claim: its record goes where the writer reads what the headline is
+            # (results_for_ai sends the estimand first), a copy, so the two never share a list
+            est_rec["inference"] = json.loads(json.dumps(f["inference"]))
 
 
 def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict[str, Any]] = None,

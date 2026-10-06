@@ -383,6 +383,13 @@ def test_e2e_an_official_cube_gets_the_described_change_in_the_estimands_own_fig
     assert "flow" in " ".join(inf["how_known"]) and "sum-check" in " ".join(inf["how_known"]), inf["how_known"]
     # a forecast is not an official figure: no record on it
     assert all(f.get("inference") is None for f in rep["findings"] if not f["id"].endswith(".change")), rep["findings"]
+    # the estimand's own slot (track A1 reserved it for A2) holds the headline claim's record, a copy; the writer reads it
+    # first, with the words through the payload's scrubber and the figures as they are
+    assert est["inference"] == inf and est["inference"] is not inf and est["inference"]["how_known"] is not inf["how_known"], est
+    got = NB.results_for_ai(rep)["estimand"]["inference"]
+    assert got["mode"] == "official_aggregate" and got["describe"] == inf["describe"], got
+    assert got["quality"] == {"column": "STATUS", "codes": {"A": 45, "r": 2, "p": 1}} and got["revisions"] == inf["revisions"], got
+    assert got["grade_label"] == inf["grade_label"] and got["how_known"] == inf["how_known"], got
     # the same file with the publisher's signature columns renamed: nothing is described, the engine's grade stands alone
     df = pd.read_csv(io.BytesIO(MC.partition(0.10)), dtype=str, keep_default_na=False)
     plain = df.rename(columns={"DGUID": "region_key", "VECTOR": "series_key", "STATUS": "mark"}).to_csv(
@@ -390,6 +397,7 @@ def test_e2e_an_official_cube_gets_the_described_change_in_the_estimands_own_fig
     rep2 = _run(plain, "regions.csv")
     assert rep2["estimand"] and all(f.get("inference") is None for f in rep2["findings"]), \
         [(f["id"], f.get("inference")) for f in rep2["findings"]]
+    assert rep2["estimand"]["inference"] is None and NB.results_for_ai(rep2)["estimand"]["inference"] is None
     json.dumps(rep, allow_nan=False)
 
 
@@ -400,10 +408,12 @@ def test_the_official_inference_records_are_replaced_by_a_second_call_never_kept
     f = next(x for x in rep["findings"] if x["id"].endswith(".change"))
     assert f["inference"] and f["inference"]["mode"] == "official_aggregate"
     header = list(pd.read_csv(io.BytesIO(MC.partition(0.10)), dtype=str, nrows=0).columns)
+    assert rep["estimand"]["inference"] == f["inference"]
     NB._official_inference(rep, header + ["Standard error"], None, [])
-    assert f["inference"] is None, f["inference"]
+    assert f["inference"] is None and rep["estimand"]["inference"] is None, (f["inference"], rep["estimand"]["inference"])
     NB._official_inference(rep, header, None, [])
     assert f["inference"] and f["inference"]["describe"]["prior"] == rep["estimand"]["figures"]["prior"]["value"]
+    assert rep["estimand"]["inference"] == f["inference"]
 
 
 def _spec_errors(rec):

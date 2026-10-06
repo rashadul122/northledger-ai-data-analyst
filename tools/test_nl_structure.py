@@ -1309,6 +1309,67 @@ def test_g2_negatives_a_precision_member_first_in_the_file_is_not_the_default_an
     assert dim(S3, "GEO")["role"] == "partition" and not any(x.get("measure_dim") for x in S3["dims"]), dim(S3, "GEO")["role"]
 
 
+# ----------------------------------------------------------------------------- wave 5, gap 5: repeated member names
+def _strip_q(label: str) -> str:
+    return re.sub(r"\s*\([^()]*\)\s*$", "", label)
+
+
+def test_g5_repeated_member_names_are_keyed_by_an_id_a_code_or_a_parent_and_printed_qualified():
+    """Before: a repeated name (Other under three parents) made the date and the dimensions fail to tell the rows apart, and the
+    table was refused (or read as one industry). Now each member is keyed by a one-to-one id (a part of the dotted COORDINATE,
+    found by checking every part against the dimension, or an id column) or by its parent's name; the name is printed, and
+    qualified when two members share it."""
+    ser = MC.dup_names_series()
+    for variant, by in (("coordinate", "COORDINATE part 2"), ("code", "Industry code"), ("parent", "Industry group")):
+        data = MC.dup_names(variant)
+        S = detect(data)
+        assert S["kind"] == "cube" and S["usable"], (variant, S["kind"], S["reason"])
+        d = dim(S, "Industry")
+        assert d["role"] == "hierarchy" and d["total"] == "All industries", (variant, d["role"], d.get("why"))
+        labs = d["labels"]
+        assert len(labs) == 13 and len(set(labs)) == 13, (variant, labs)
+        assert [x for x in labs if _strip_q(x) == "Other"] and all(x != "Other" for x in labs), labs
+        assert "Food" in labs and "Retail" in labs and "Machinery" in labs, "a name that is not shared is printed plain: %s" % labs
+        assert S["keys"] == [{"dim": "Industry", "by": by, "duplicates": ["Other", "Services"]}], (variant, S["keys"])
+        tree = {_strip_q(labs[p]): sorted(_strip_q(labs[c]) for c in ch) for p, ch in d["tree"].items() if labs[p] != "All industries"}
+        assert tree == {"Retail": ["Food", "Other", "Services"], "Wholesale": ["Machinery", "Other", "Services"],
+                        "Transport": ["Other", "Road", "Services"]}, (variant, tree)
+        for p, ch in d["tree"].items():
+            if labs[p] == "All industries":
+                assert sorted(labs[c] for c in ch) == ["Retail", "Transport", "Wholesale"]
+        # each qualified member is its own series: three different "Other" values
+        others = [x for x in labs if _strip_q(x) == "Other"]
+        times, v1, _b = NS.series(S, {"Industry": others[0]})
+        times, v2, _b = NS.series(S, {"Industry": others[1]})
+        assert not np.allclose(v1, v2), "two members named Other are two series"
+    rep = _run(MC.dup_names("coordinate"), "industries.csv")
+    est = rep["estimand"]
+    lat = est["comparison"]["latest"]
+    mons = [m for m in MC.MONTHS if lat[0] <= m <= lat[1]]
+    want = 1000.0 * sum(ser[("", "All industries")][MC.MONTHS.index(m)] for m in mons)
+    assert abs(est["figures"]["latest"]["value"] - want) < 1e-3, (est["figures"], want)
+    assert [x["member"] for x in est["slice"] if x["dim"] == "Industry"] == ["All industries"]
+    it = _items(rep)
+    parts = sorted(k for k in it if k.startswith("contribution.industry.") and not k.endswith("unallocated"))
+    assert len(parts) == 3, parts
+    json.dumps(rep, allow_nan=False)
+
+
+def test_g5_names_that_repeat_inside_the_same_parent_with_no_id_are_refused_with_a_plain_reason():
+    """The only refusal: no id, and the names repeat so that nothing tells the rows apart (two members named Other under the same
+    parent, or no parent column at all). The reason names the repeated member."""
+    for variant in ("same_parent", "plain"):
+        S = detect(MC.dup_names(variant))
+        assert S["kind"] == "cube_incomplete" and not S["usable"], (variant, S["kind"])
+        assert "\"Other\" appears more than once for the same date" in S["reason"] and "tell the rows apart" in S["reason"], S["reason"]
+        rep = _run(MC.dup_names(variant), "industries_%s.csv" % variant)
+        assert rep["estimand"] is None and "Other" in rep["story"]["headline"] and "tell the rows apart" in rep["story"]["headline"], \
+            rep["story"]["headline"]
+    # negative: unique names are never touched (no key record, no qualified label)
+    S = detect(MC.partition())
+    assert S.get("keys") == [] and all("(" not in x for x in dim(S, "GEO")["labels"]), S.get("keys")
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

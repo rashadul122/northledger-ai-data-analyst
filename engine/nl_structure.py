@@ -405,6 +405,9 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
             continue
         if 2 <= nl <= MAX_MEMBERS:
             dims0.append(c)
+    # repeated member names (wave 5, gap 5): a name that stands for two members is keyed by a one-to-one id (an id column, or
+    # the one part of a dotted COORDINATE that tells that dimension's members apart), else by its parent's name
+    keys, base_names = _key_members(cat, dims0, head, metadata, n_rows)
     # aliases: 1:1 with a dimension (DGUID with GEO, UOM_ID with UOM); the metadata-named one is the alias
     alias_of: Dict[str, str] = {}
     for c in cat:
@@ -461,9 +464,14 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     n_pairs = len(pd.unique(pair))
     dup = 1.0 - n_pairs / max(1, n_rows)
     if dup > DUP_MAX:
-        why = ("the date and the columns the engine may read (%s) do not tell the rows apart: %s of %s rows repeat "
-               "a date and a series, so a column that names the series is withheld or set aside"
-               % (", ".join(head[d] for d in dims), _fmt_count(n_rows - n_pairs), _fmt_count(n_rows)))
+        rep_txt = _repeat_phrase(pair, [(head[d], cat[d][0], cat[d][1]) for d in dims],
+                                 {head[k]: v for k, v in base_names.items() if k in head})
+        series_code = [h for h in sorted(hidden) if _norm(h) in ("coordinate", "vector", "dguid")]
+        why = ("the date and the columns the engine may read (%s) do not tell the rows apart: %s%s of %s rows repeat "
+               "a date and a series, so a column that names the series is withheld or set aside%s"
+               % (", ".join(head[d] for d in dims), rep_txt, _fmt_count(n_rows - n_pairs), _fmt_count(n_rows),
+                  ("; %s is withheld: a series code may tell them apart (keep it on the consent card to read the table)"
+                   % series_code[0]) if rep_txt and series_code else ""))
         return _empty("cube_incomplete" if official else "not_cube", why, **base)
     n_series = int(s_index.shape[0])
     if n_series > MAX_SERIES:
@@ -518,7 +526,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
                     "decimals": _decimals(R, measure, metadata), **scale_info, **unit_info["measure"]},
         "metadata": metadata, "dims": dimrecs, "series": n_series, "times": len(times), "months": len(months),
         "monthly": monthly, "rows": int(R.n), "rows_read": n_rows, "duplicates": int(n_rows - n_pairs),
-        "slices": [], "breakdowns": [], "default": None, "flags": None, "corrections": [],
+        "slices": [], "breakdowns": [], "default": None, "flags": None, "corrections": [], "keys": keys,
         "_V": V, "_E": E, "_F": F, "_flag_labels": fl_labels, "_flag_column": head[flag_col] if flag_col else
         ("%s (embedded)" % head[measure] if embedded else None),
         "_SM": s_index, "_times": times, "_months": [t[:7] for t in times],
@@ -570,6 +578,182 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     S["hash"] = structure_hash(S)
     S["detect_seconds"] = round(time.perf_counter() - tm.t0, 4)
     return S
+
+
+_COORD = re.compile(r"^\d+(?:\.\d+)+$")
+KEY_UNIQUE_SHARE = 0.5          # a name column is a NAME column (not a grouping) when this share of its names has one member
+
+
+def _functional(b: Any, a: Any) -> bool:
+    """Whether every value of b has exactly one value of a (b determines a)."""
+    import numpy as np
+    import pandas as pd
+    pairs = len(pd.unique(b.astype(np.int64) * (int(a.max()) + 2) + a))
+    return pairs == len(pd.unique(b))
+
+
+def _key_members(cat: Dict[str, Any], dims0: List[str], head: Dict[str, str], metadata: List[Dict[str, Any]], n_rows: int
+                 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, str]]]:
+    """Members named by a repeated name are keyed by what tells them apart. For each dimension whose name column has a finer
+    key beside it (an id: at least as many distinct values as the names, each of which belongs to ONE name, and most names
+    belong to one id) the members are the id's values, printed by their name and qualified by the id when two share a
+    name ("Other (id 5)"). The ids are looked for among the other readable columns, and among the parts of a dotted
+    COORDINATE (each part checked against the dimension, never assumed by position). With no id, a parent column (its values are
+    members' names, and the pair name and parent is finer than the name) qualifies the name by its parent's: "Other
+    (Retail)". Mutates cat, dims0 and metadata; returns the records of what keyed what and each qualified label's base name."""
+    import numpy as np
+    import pandas as pd
+    keys: List[Dict[str, Any]] = []
+    base: Dict[str, Dict[str, str]] = {}
+    parts: List[Tuple[str, int, Any, List[str]]] = []                 # (column, part number, per-label codes, part values)
+    for c, (codes, labels, _f) in list(cat.items()):
+        nb = [lb for lb in labels if lb != ""]
+        if len(nb) >= 2 and all(_COORD.match(lb) for lb in nb):
+            n_parts = {lb.count(".") for lb in nb}
+            if len(n_parts) == 1:
+                split = [lb.split(".") if lb != "" else [""] * (n_parts.copy().pop() + 1) for lb in labels]
+                for k in range(n_parts.copy().pop() + 1):
+                    vals = [x[k] for x in split]
+                    parts.append((c, k + 1, np.array(pd.factorize(np.array(vals, dtype=object))[0]), vals))
+    for a in list(dims0):
+        if a not in cat or a not in dims0:
+            continue
+        ca, la, fa = cat[a]
+        na = len([x for x in la if x != ""])
+        done = False
+        # 1. an id column (another readable dimension candidate that is finer and belongs to this name)
+        for b in list(dims0):
+            if b == a or b not in cat or done:
+                continue
+            cb, lb_, fb = cat[b]
+            nb_ = len([x for x in lb_ if x != ""])
+            if nb_ <= na or not _functional(cb, ca):
+                continue
+            # the names that belong to one id only
+            per_name = pd.Series(cb).groupby(ca).nunique()
+            if float((per_name == 1).mean()) < KEY_UNIQUE_SHARE:
+                continue
+            _fold(cat, dims0, a, b, cb, lb_, ca, la, base, keys, head, "id", None)
+            metadata.append({"column": head[b], "landed": b, "class": "member_id", "id_of": head[a]})
+            done = True
+        if done:
+            continue
+        # 2. a part of a dotted COORDINATE
+        for (c, k, pc, pv) in parts:
+            if c not in cat:
+                continue
+            cc = cat[c][0]
+            row_part = pc[cc]
+            nb_ = len(pd.unique(row_part))
+            if nb_ <= na or not _functional(row_part, ca):
+                continue
+            per_name = pd.Series(row_part).groupby(ca).nunique()
+            if float((per_name == 1).mean()) < KEY_UNIQUE_SHARE:
+                continue
+            labs = [None] * nb_
+            for code, val in zip(pc, pv):
+                if labs[int(code)] is None:
+                    labs[int(code)] = val
+            _fold(cat, dims0, a, None, row_part, labs, ca, la, base, keys, head, "%s part %d" % (head[c], k), "id")
+            done = True
+            break
+        if done:
+            continue
+        # 3. a parent column: its values are names of this dimension's members
+        for b in list(dims0):
+            if b == a or b not in cat or done:
+                continue
+            cb, lb_, fb = cat[b]
+            vals_b = {x for x in lb_ if x != ""}
+            if not vals_b or not vals_b <= set(la):
+                continue
+            pairs = pd.factorize(ca.astype(np.int64) * (int(cb.max()) + 2) + cb)[0]
+            if len(pd.unique(pairs)) <= na:
+                continue
+            per_name = pd.Series(pairs).groupby(ca).nunique()
+            if float((per_name == 1).mean()) < KEY_UNIQUE_SHARE:
+                continue
+            labs = [None] * (int(pairs.max()) + 1)
+            first = {}
+            for i, pcode in enumerate(pairs):
+                first.setdefault(int(pcode), i)
+            lab_pair = {pc_: (la[int(ca[i])], lb_[int(cb[i])]) for pc_, i in first.items()}
+            _fold(cat, dims0, a, b, pairs, [lab_pair[i] for i in range(len(lab_pair))], ca, la, base, keys, head, "parent", None)
+            metadata.append({"column": head[b], "landed": b, "class": "parent", "parent_of": head[a]})
+            done = True
+    return keys, base
+
+
+def _fold(cat: Dict[str, Any], dims0: List[str], a: str, b: Optional[str], new_codes: Any, id_labels: List[Any], ca: Any,
+          la: List[str], base: Dict[str, Dict[str, str]], keys: List[Dict[str, Any]], head: Dict[str, str], by: str,
+          kind: Optional[str]) -> None:
+    """Replace dimension a's members by the keyed ones: label = the name, qualified by the id (or the parent) when two members
+    share the name; the id column b leaves the dimension candidates."""
+    import numpy as np
+    first: Dict[int, int] = {}
+    for i, code in enumerate(new_codes):
+        first.setdefault(int(code), i)
+    n = len(id_labels)
+    names, quals = [], []
+    for m in range(n):
+        i = first[m]
+        names.append(la[int(ca[i])])
+        quals.append(id_labels[m] if not isinstance(id_labels[m], tuple) else id_labels[m][1])
+    count: Dict[str, int] = {}
+    for nm in names:
+        count[nm] = count.get(nm, 0) + 1
+    labels: List[str] = []
+    for m in range(n):
+        nm = names[m]
+        if nm != "" and count[nm] > 1:
+            q = quals[m]
+            if by == "parent":
+                lab = "%s (%s)" % (nm, q or "no parent")
+            elif kind == "id":
+                lab = "%s (id %s)" % (nm, q)               # a part of a dotted coordinate
+            else:
+                lab = "%s (%s)" % (nm, q)                  # an id column's own code
+        else:
+            lab = nm
+        labels.append(lab)
+    # a label that still repeats (a parent's name that repeats too) keeps its place: the duplicates are then true duplicates
+    base[a] = {labels[m]: names[m] for m in range(n)}
+    filled = cat[a][2]
+    cat[a] = (np.asarray(new_codes, dtype=np.int64), labels, filled)
+    if b is not None:
+        cat.pop(b, None)
+        if b in dims0:
+            dims0.remove(b)
+    dup_names = sorted(nm for nm, k in count.items() if k > 1 and nm != "")
+    keys.append({"dim": head[a], "by": head[b] if b is not None else by, "duplicates": dup_names})
+
+
+def _repeat_phrase(pair: Any, dims: List[Tuple[str, Any, List[str]]], base: Dict[str, Dict[str, str]]) -> str:
+    """Why the rows repeat, in the reader's words: the member name that appears more than once for the same date
+    ('"Other" appears more than once for the same date (up to 3 times)'), else nothing."""
+    import numpy as np
+    import pandas as pd
+    s = pd.Series(pair)
+    dup = s.duplicated(keep=False).to_numpy()
+    if not dup.any():
+        return ""
+    worst = int(s[dup].value_counts().max())
+    best = None
+    for head_name, codes, labels in dims:
+        sub = pd.Series(np.asarray(codes)[dup])
+        top = sub.value_counts()
+        if not len(top):
+            continue
+        lab = labels[int(top.index[0])]
+        if lab == "":
+            continue
+        k = len(top)
+        if best is None or k < best[0]:
+            best = (k, head_name, lab)
+    if best is None:
+        return ""
+    name = (base.get(best[1]) or {}).get(best[2], best[2])
+    return '"%s" appears more than once for the same date (up to %d times); ' % (name, worst)
 
 
 def _factor_text(R: Any, c: str, rows: Any) -> Tuple[Any, List[str], Any]:
@@ -2593,7 +2777,7 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
            "flag_column": (S.get("flags") or {}).get("column"), "dims": dims,
            "slices": [{k: v for k, v in s.items()} for s in S.get("slices") or []],
            "breakdowns": [dict(b) for b in S.get("breakdowns") or []],
-           "flags": S.get("flags"), "corrections": list(S.get("corrections") or []),
+           "flags": S.get("flags"), "corrections": list(S.get("corrections") or []), "keys": list(S.get("keys") or []),
            "hash": S.get("hash"), "detect_seconds": S.get("detect_seconds")}
     return out
 

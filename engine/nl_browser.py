@@ -8629,7 +8629,7 @@ def _file_health(score: Any, findings: Iterable[Any], S: Dict[str, Any], withhel
     metadata and flag columns (an empty SYMBOL column, the letter case of STATUS codes, a constant UOM): those columns
     describe the series, they are not data. The core's score is unchanged."""
     meta = {str(m.get("landed")) for m in S.get("metadata") or [] if m.get("class") in
-            ("constant", "empty", "flag", "series_id", "alias", "unit", "other")}
+            ("constant", "empty", "flag", "series_id", "alias", "unit", "other", "member_id", "parent")}
     kept, dropped = [], []
     for x in findings or []:
         if not _issue_is_safe(x, withheld) or _is_text_numbers_line(x):

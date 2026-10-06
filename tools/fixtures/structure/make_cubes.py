@@ -476,8 +476,8 @@ _DUP_LEAF = {("Retail", "Food"): 3000, ("Retail", "Other"): 1200, ("Retail", "Se
 def dup_names(variant: str = "coordinate", seed: int = 61) -> bytes:
     """G5: the industry names "Other" and "Services" repeat under three parents. variant: "coordinate" (a dotted COORDINATE
     "1.<member id>": the member id is its second part), "code" (an "Industry code" column), "parent" (an "Industry group" column
-    holding the parent's name), "none" (nothing tells the repeats apart, but they sit under different parents ... no: the same
-    parent, so they are true duplicates: the table is refused) or "plain" (the same names, no id, no parent column)."""
+    holding the parent's name), "plain" (the same names, no id and no parent column: nothing tells the repeats apart, the table
+    is refused) or "same_parent" (a parent column, but a second "Other" under the same parent: true duplicates, refused)."""
     rng = np.random.RandomState(seed)
     leaf = {k: _series(rng, v) for k, v in _DUP_LEAF.items()}
     members = []                                              # (id, name, parent, series)
@@ -492,17 +492,17 @@ def dup_names(variant: str = "coordinate", seed: int = 61) -> bytes:
         members.append((mid, par, "All industries", par_sum[par]))
     mid += 1
     members.append((mid, "All industries", "", sum(par_sum.values())))
-    if variant == "none":
+    if variant == "same_parent":
         # two rows named "Other" under Retail on every date: true duplicates
         members.append((mid + 1, "Other", "Retail", leaf[("Retail", "Other")] * 0 + 7))
-    head = ["REF_DATE", "GEO", "DGUID", "Industry"] + (["Industry group"] if variant == "parent" else []) + \
+    head = ["REF_DATE", "GEO", "DGUID", "Industry"] + (["Industry group"] if variant in ("parent", "same_parent") else []) + \
         (["Industry code"] if variant == "code" else []) + ["UOM", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID", "VECTOR"] + \
         (["COORDINATE"] if variant == "coordinate" else []) + ["VALUE", "STATUS", "SYMBOL", "TERMINATED", "DECIMALS"]
     rows = []
     for i, mo in enumerate(MONTHS):
         for (m_id, name, par, ser) in members:
             r = [mo, "Canada", "2021A000000011", name]
-            if variant == "parent":
+            if variant in ("parent", "same_parent"):
                 r.append(par)
             if variant == "code":
                 r.append("C%03d" % (100 + m_id))

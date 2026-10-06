@@ -1838,6 +1838,171 @@ def test_w5b_a_verified_table_whose_slice_cannot_be_run_is_refused_not_read_as_a
         _is_refusal(rep, "slice", "SliceNotRun")
 
 
+# ----------------------------------------------------------------------------- wave 5b, follow-up 3: aggregates of a rate
+def _rate_series(data: bytes, geo: str) -> pd.Series:
+    df = pd.read_csv(io.BytesIO(data), dtype=str)
+    d = df[df.GEO == geo]
+    return d.set_index("REF_DATE").VALUE.astype(float)
+
+
+def _latest_mean(est, ser: pd.Series) -> float:
+    a, b = est["comparison"]["latest"]
+    return float(ser[(ser.index >= a) & (ser.index <= b)].mean())
+
+
+def test_w5b_a_rate_table_of_provinces_with_no_total_member_shows_one_member_and_never_the_first_in_the_file():
+    """Before: the first province in the file (Alpha, strictly inside the others' range in every cell) was read as the published
+    aggregate (aggregate_by "first in file") and the headline called it a published total. Now no member is an aggregate: one
+    member is shown by dominance and the estimand, the headline and the card say it is not a national figure."""
+    for kind, label in ((False, "rate"), (True, "index")):
+        data = MC.rate_table("none", index=kind)
+        # the failing table: the first province lies strictly inside the others' range in every cell
+        df = pd.read_csv(io.BytesIO(data), dtype=str)
+        wide = df.pivot(index="REF_DATE", columns="GEO", values="VALUE").astype(float)
+        first = wide["Alpha"]
+        others = wide.drop(columns="Alpha")
+        assert ((first > others.min(axis=1)) & (first < others.max(axis=1))).mean() == 1.0, "Alpha is in the middle of the range"
+        assert list(pd.unique(df.GEO))[0] == "Alpha", "and it comes first in the file"
+        S = detect(data)
+        g = dim(S, "GEO")
+        assert S["measure"]["type"] == ("index" if kind else "rate"), S["measure"]
+        assert g["role"] == "single" and g.get("single_by") == "dominance" and g.get("no_total_member") is True, (label, g["role"], g.get("total"))
+        assert g["total"] == "Echo" and g.get("aggregate_by") is None, "the most covered, most dominant member, not the first: %s" % g["total"]
+        rep = _run(data, "provinces_%s.csv" % label)
+        est = rep["estimand"]
+        want = "one member shown: Echo; this table has no total member, so this is not a national figure"
+        assert want in est["text"] and est["single_member"]["statement"] == want, est["text"]
+        assert est["single_member"] == {"dim": "GEO", "member": "Echo", "noun": "national figure", "statement": want}
+        assert est["slice"][0]["member"] == "Echo" and est["slice"][0]["role"] == "single", est["slice"]
+        assert abs(est["figures"]["latest"]["value"] - _latest_mean(est, _rate_series(data, "Echo"))) < 1e-6, "Echo's own series"
+        assert any("one member shown, not a national figure: this table has no total member" in x["why"] and "never added or averaged" in x["why"]
+                   for x in est["excluded"]), est["excluded"]
+        assert "one member shown, not a national figure" in rep["story"]["headline"] and "published totals" not in rep["story"]["headline"], \
+            rep["story"]["headline"]
+        assert est["inference"] is None and all(f.get("inference") is None for f in rep["findings"]), "never described as a published total"
+        assert not [k for k in _items(rep) if k.startswith("contribution.")], "no breakdown of a rate or an index"
+        out = NB.results_for_ai(rep)
+        assert out["estimand"]["single_member"]["statement"] == want, out["estimand"].get("single_member")
+        assert out["structure"]["dims"][0]["role"] == "single", out["structure"]
+        json.dumps(rep, allow_nan=False)
+    # two countries named as whole countries (Canada and the United States, both mid-range) do not say which is the total
+    S = detect(MC.rate_table("none", countries=True))
+    g = dim(S, "GEO")
+    assert g["role"] == "single" and g.get("no_total_member") and g["total"] not in ("Canada", "United States"), (g["role"], g.get("total"))
+
+
+def test_w5b_a_named_total_is_read_by_its_name_wherever_it_is_listed_and_a_named_canada_row_is_unchanged():
+    """Negative cases: a rate table with a named Canada row (first in the file, as before, and last in the file, where the old
+    rule read the first PROVINCE instead), a row named All provinces, and a table of countries with only one whole-country name."""
+    data = MC.rate()
+    S = detect(data)
+    g = dim(S, "GEO")
+    assert g["role"] == "rate_aggregate" and g["total"] == "Canada" and g["aggregate_by"] == "name" and S["default"]["GEO"] == "Canada", g
+    rep = _run(data, "rates.csv")
+    est = rep["estimand"]
+    assert abs(est["figures"]["latest"]["value"] - _latest_mean(est, _rate_series(data, "Canada"))) < 1e-6 and "single_member" not in est
+    assert est["inference"] and est["inference"]["mode"] == "official_aggregate", "a published aggregate is still described, not tested"
+    assert rep["story"]["headline"].endswith("in the published totals"), rep["story"]["headline"]
+    for agg, name in (("Canada", "Canada"), ("total", "All provinces")):
+        d2 = MC.rate_table(agg)
+        assert list(pd.unique(pd.read_csv(io.BytesIO(d2), dtype=str).GEO))[0] == "Alpha", "the aggregate is listed last"
+        g2 = dim(detect(d2), "GEO")
+        assert g2["role"] == "rate_aggregate" and g2["total"] == name and g2["aggregate_by"] == "name", (agg, g2["role"], g2.get("total"))
+        r2 = _run(d2, "last_%s.csv" % agg)
+        assert abs(r2["estimand"]["figures"]["latest"]["value"] - _latest_mean(r2["estimand"], _rate_series(d2, name))) < 1e-6
+    # a name that says "excluding" is an alternative, never the aggregate
+    d3 = MC.rate_table("Canada").replace(b'"Canada"', b'"Canada excluding Alpha"')
+    assert dim(detect(d3), "GEO")["role"] != "rate_aggregate" or dim(detect(d3), "GEO")["total"] != "Canada excluding Alpha"
+
+
+def test_w5b_an_unnamed_member_is_an_aggregate_only_when_the_others_reproduce_it_and_never_by_its_place():
+    """No name: a member inside the others' range is an aggregate only when it has the table's full coverage AND the others'
+    weighted average reproduces it to the last published digit while a typical member is far off. Its place in the file is no
+    evidence either way. Not enough evidence (a coarse table, 2 parts) means no aggregate."""
+    for first in (False, True):
+        data = MC.rate_table("unnamed", agg_first=first)
+        g = dim(detect(data), "GEO")
+        assert g["role"] == "rate_aggregate" and g["total"] == "Zeta group" and g["aggregate_by"] == "range and fit", (first, g["role"], g.get("total"))
+        sc = g["sum_check"]
+        assert sc["fit_rms"] <= sc["unit"] and sc["typical_member_fit_rms"] >= 3 * sc["unit"] and sc["coverage"] == 1.0, sc
+        assert "weighted average reproduces it to the last published digit" in g["why"], g["why"]
+        rep = _run(data, "unnamed_%s.csv" % ("first" if first else "last"))
+        assert rep["estimand"]["slice"][0]["member"] == "Zeta group" and "single_member" not in rep["estimand"]
+        assert abs(rep["estimand"]["figures"]["latest"]["value"] - _latest_mean(rep["estimand"], _rate_series(data, "Zeta group"))) < 1e-6
+    # an aggregate listed first that is a member of the middle instead is not one: the table has none (the failing case above)
+    # NEGATIVES: a table too coarse to tell (whole percents), two provinces and an aggregate, and no-aggregate tables
+    for kw in ({"aggregate": "unnamed", "decimals": 0}, {"aggregate": "unnamed", "parts": 2}, {"aggregate": "none", "decimals": 0}):
+        g = dim(detect(MC.rate_table(**kw)), "GEO")
+        assert g["role"] == "single" and g.get("single_by") == "dominance", (kw, g["role"], g.get("total"))
+    # a member that is a copy of a weighted average of the others with a gap in its own coverage is not "the" aggregate
+    df = pd.read_csv(io.BytesIO(MC.rate_table("unnamed")), dtype=str, keep_default_na=False)
+    z = df.GEO == "Zeta group"
+    hole = df[z].index[::6]
+    df.loc[hole, "VALUE"] = ""
+    df.loc[hole, "STATUS"] = "x"
+    g = dim(detect(_csv_of(df)), "GEO")
+    assert g["role"] != "rate_aggregate" or g.get("aggregate_by") != "range and fit", (g["role"], g.get("aggregate_by"))
+
+
+def test_w5b_an_index_table_with_two_bases_is_unchanged_by_the_rate_rule():
+    """The structure, the figures and the words of the two-base index table (Canada and Ontario, one measure shown per base) are
+    those of before the change: its figures were read from the run of 6 October (387c876)."""
+    S = detect(MC.index_two_bases())
+    assert S["hash"] == "2a7fac4ff75acb3d", "the structure record is byte for byte the one of 387c876"
+    assert [(d["column"], d["role"], d.get("total"), d.get("single_by")) for d in NS.public(S)["dims"]] == \
+        [("GEO", "single", "Ontario", "dominance"), ("Base", "measure", "2002 base", None)]
+    assert not dim(S, "GEO").get("no_total_member"), "a member is named Canada: its range cannot be checked against one other member"
+    rep = _run(MC.index_two_bases(), "index.csv")
+    est = rep["estimand"]
+    assert est["figures"]["latest"]["value"] == 156.841667 and est["figures"]["change"]["value"] == 4.008333, est["figures"]
+    assert est["figures"]["change_pct"]["value"] == 2.622683, est["figures"]
+    assert est["text"].startswith("Ontario · 2002 base; one measure shown: 2002 base") and "one member shown:" not in est["text"], est["text"]
+    assert "single_member" not in est and any("this table has no total row" in x["why"] for x in est["excluded"]), est["excluded"]
+    assert rep["story"]["headline"] == "2002 base, Ontario, 12 months to Dec 2022: +4.008 (156.8) in the published totals", rep["story"]["headline"]
+
+
+def test_w5b_the_pyodide_checks_cube_matches_its_pandas_reference_and_reads_the_same_natively():
+    """tools/check_pyodide_cube.mjs generates a synthetic Statistics Canada layout cube and pins the headline a pandas reference
+    gives it. Here the same bytes (`--emit-cube`) are read by pandas and by the native engine, so the number pinned in the check,
+    the pandas number and the engine's number are one number, and the check's other expectations hold natively too."""
+    import shutil
+    import subprocess
+    mjs = os.path.join(HERE, "check_pyodide_cube.mjs")
+    if shutil.which("node") is None:
+        print("    SKIP: node is not installed")
+        return
+    cube = subprocess.run(["node", mjs, "--emit-cube"], check=True, capture_output=True).stdout
+    with open(mjs, encoding="utf-8") as fh:
+        ref = json.loads(re.search(r"const REFERENCE = (\{.*?\});", fh.read()).group(1))
+    df = pd.read_csv(io.BytesIO(cube), dtype=str, keep_default_na=False)
+    ind = "North American Industry Classification System (NAICS)"
+    assert len(df) == ref["rows"] == 24 * 36 and set(df.GEO) == {"Canada"} | set(["Atlantic", "Quebec", "Ontario", "Prairies", "Pacific"])
+    assert set(df[ind]) == {"Total retail trade", "Food and beverage retailers", "Motor vehicle and parts dealers", "General merchandise retailers"}
+    assert df.STATUS.value_counts().to_dict() == {"A": 860, "x": 4}, "a few suppressed cells and a status column"
+    # the pandas reference: the Canada x Total series, the latest 12 months against the 12 before, in base units (thousands x 1000)
+    s = df[(df.GEO == "Canada") & (df[ind] == "Total retail trade")].sort_values("REF_DATE")
+    v = s.VALUE.astype(float) * 1000
+    L, P = float(v.iloc[-12:].sum()), float(v.iloc[-24:-12].sum())
+    assert (L, P) == (ref["latest_total"], ref["prior_total"]) and abs(100 * (L / P - 1) - ref["change_pct"]) < 1e-9, (L, P, ref)
+    assert list(s.REF_DATE.iloc[[-12, -1, -24, -13]]) == ["2022-01", "2022-12", "2021-01", "2021-12"]
+    rep = _run(cube, "cube.csv")
+    est, st = rep["estimand"], rep["structure"]
+    assert st["kind"] == "cube" and st["usable"] is True and "error" not in st, st.get("error")
+    assert est["plan_source"] == "engine_default" and est["reconciles"] is True, est
+    assert est["comparison"] == {"latest": ref["latest_months"], "prior": ref["prior_months"]}, est["comparison"]
+    assert abs(est["figures"]["latest"]["value"] - ref["latest_total"]) < 1e-3 and abs(est["figures"]["prior"]["value"] - ref["prior_total"]) < 1e-3
+    assert abs(est["figures"]["change_pct"]["value"] - ref["change_pct"]) < 1e-6, est["figures"]
+    assert {(x["dim"], x["member"]) for x in est["slice"]} == {("GEO", "Canada"), (ind, "Total retail trade")}, est["slice"]
+    assert rep["input"]["layout"]["layout"] == NB.STRUCTURE_LAYOUT and rep["input"]["layout"]["series"] == 24 and rep["input"]["layout"]["where"]["GEO"] == "Canada"
+    assert [(d["column"], d["role"], d["total"]) for d in st["dims"] if d["role"] == "partition"] == \
+        [("GEO", "partition", "Canada"), (ind, "partition", "Total retail trade")], st["dims"]
+    assert est["figures"]["change_pct"]["text"] in rep["story"]["headline"] and rep["story"]["headline"].endswith("in the published totals")
+    # the same file read the old way (the structure layer off) is the wrong answer the check exists to catch: every row added
+    with _patched(NB, "STRUCTURE_ON", False):
+        old = _run(cube, "cube.csv")
+    assert old["estimand"] is None and old["structure"] is None
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

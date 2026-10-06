@@ -1893,16 +1893,131 @@ def _subset_partition(A: Any, X: Any, p: int, cands: List[int], tol_u: float, no
     return best
 
 
+# wave 5b: a rate or an index has a published aggregate only when something other than its place in the file says so. The names
+# below are hints (a total's words, a whole country's name as the table of its provinces or states lists it); with no such name
+# the member must be shown to be the others' weighted average (_unnamed_aggregate), else the table has NO aggregate and one
+# member is shown by dominance, never as the national figure.
+_AGG_TOTAL_WORD = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|combined|national|nationwide)(?:\b|$)|"
+                             r"^\s*(?:_T|TOTAL|_Z)\s*$")
+_AGG_WHOLE = re.compile(r"(?i)^\s*(?:canada|united states(?: of america)?|u\.?s\.?a?\.?|united kingdom|u\.?k\.?|great britain|"
+                        r"australia|new zealand|euro(?:pean)? (?:area|union|zone)|eu\s?-?\s?\d{2}(?:_\d{4})?|oecd|world)"
+                        r"\s*(?:\(\s*\d+\s+(?:countries|member states)\s*\))?\s*$")
+AGG_MIN_MEMBERS = 4             # an unnamed aggregate needs at least 3 parts beside it to be told from a member
+AGG_MAX_MEMBERS = 40            # ... and at most this many members (the fit is run for each)
+AGG_MIN_FIT_CELLS = 12          # complete cells (every member has a value) the weighted-average fit is made on
+AGG_FIT_ROWS = 3000             # at most this many cells are fitted (evenly spaced)
+AGG_FIT_UNITS = 1.0             # the fit's RMS residual: at most 1 unit of the last published digit ...
+AGG_PEER_UNITS = 3.0            # ... while a typical member's own fit is at least 3 units off (else the table cannot tell) ...
+AGG_PEER_RATIO = 0.25           # ... and the member's fit is at most a quarter of a typical member's
+
+
+def _agg_name_tier(label: str) -> int:
+    """2 when the name says total (total, all, overall, national, _T ...), 1 when it is a whole country's name as the table of
+    its provinces or states lists it (Canada, United States, Great Britain, Euro area ...), 0 otherwise; an alternative
+    ("excluding ...") is never an aggregate."""
+    if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", label)):
+        return 0
+    if _AGG_TOTAL_WORD.search(label):
+        return 2
+    return 1 if _AGG_WHOLE.match(label) else 0
+
+
+def _nnls(X: Any, y: Any) -> Any:
+    """Non-negative least squares (Lawson and Hanson, active set), numpy only: min ||X w - y|| with w >= 0."""
+    import numpy as np
+    n = X.shape[1]
+    P = np.zeros(n, dtype=bool)
+    w = np.zeros(n)
+    g = X.T @ (y - X @ w)
+    it, cap = 0, 6 * n + 10
+    while (~P).any() and g[~P].max() > 1e-10 and it < cap:
+        P[np.flatnonzero(~P)[int(np.argmax(g[~P]))]] = True
+        while it < cap:
+            it += 1
+            z = np.zeros(n)
+            z[P] = np.linalg.lstsq(X[:, P], y, rcond=None)[0]
+            if z[P].min() > 0:
+                w = z
+                break
+            neg = P & (z <= 0)
+            a = float(np.min(w[neg] / np.maximum(w[neg] - z[neg], 1e-300)))
+            w = w + a * (z - w)
+            P &= w > 1e-12
+        g = X.T @ (y - X @ w)
+    return w
+
+
+def _convex_rms(y: Any, X: Any) -> float:
+    """The RMS residual of y reproduced as a weighted average of the columns of X (weights >= 0 adding to 1, fixed over the cells)."""
+    import numpy as np
+    lam = 1e3 * max(1.0, float(np.abs(y).max()))
+    w = _nnls(np.vstack([X, lam * np.ones((1, X.shape[1]))]), np.r_[y, lam])
+    return float(np.sqrt(np.mean((X @ w - y) ** 2)))
+
+
+def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, int]], labels: Sequence[str]
+                       ) -> Optional[Tuple[int, Dict[str, Any]]]:
+    """A member with no name that says it is the aggregate of a rate or an index is one only when ALL of these hold, whatever
+    its place in the file (first in the file is no evidence): it lies STRICTLY inside the others' min-max in at least 99% of its
+    cells (`stats`); it has the table's full coverage (a value wherever any member has one, at least every other member's); and the
+    others reproduce it: on the cells where every member has a value, a weighted average of the others (weights fixed, at
+    least 0, adding to 1) matches it to within one unit of the last published digit, a typical member's own fit being at least
+    3 units off and its own a quarter of that (an aggregate is an exact weighted average of its parts to the digit published, a
+    member in the middle of the range is not). With fewer than 3 parts, over 40 members, or fewer than 12 complete cells there is
+    no evidence to tell them apart. (index, evidence) or None."""
+    import numpy as np
+    M, C, T = A.shape
+    if not AGG_MIN_MEMBERS <= M <= AGG_MAX_MEMBERS:
+        return None
+    anyv = ~np.isnan(A).all(axis=0)
+    if not anyv.any():
+        return None
+    cover = np.array([float((~np.isnan(A[m]))[anyv].mean()) for m in range(M)])
+    complete = ~np.isnan(A).any(axis=0)
+    if int(complete.sum()) < AGG_MIN_FIT_CELLS:
+        return None
+    cells = np.flatnonzero(complete.reshape(-1))
+    if len(cells) > AGG_FIT_ROWS:
+        cells = cells[np.linspace(0, len(cells) - 1, AGG_FIT_ROWS).astype(int)]
+    B = A.reshape(M, -1)[:, cells]
+    unit = (10.0 ** -int(S["measure"].get("decimals") or 0)) * float(S["measure"].get("factor") or 1.0)
+    found = []
+    for m in range(M):
+        share_strict, n = stats.get(m, (0.0, 0))
+        if n < MIN_COMPLETE or share_strict < BOUND_SHARE or cover[m] < 0.99 or cover[m] < float(np.delete(cover, m).max()):
+            continue
+        if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", labels[m])):
+            continue                                  # a member that says it leaves something out is an alternative, never the aggregate
+        rest = [x for x in range(M) if x != m]
+        rm = _convex_rms(B[m], B[rest].T)
+        if rm > AGG_FIT_UNITS * unit:
+            continue
+        peers = [_convex_rms(B[i], B[[x for x in rest if x != i]].T) for i in rest]
+        med = float(np.median(peers))
+        if med < AGG_PEER_UNITS * unit or rm > AGG_PEER_RATIO * med:
+            continue
+        found.append((rm, m, med))
+    if len(found) != 1:
+        return None                               # none, or two that cannot be told apart: no aggregate
+    rm, m, med = found[0]
+    return m, {"fit_rms": round(rm, 6), "typical_member_fit_rms": round(med, 6), "unit": unit, "fit_cells": int(len(cells)),
+               "coverage": round(float(cover[m]), 4)}
+
+
 def _rate_aggregate(S: Dict[str, Any], j: int) -> None:
-    """A rate or an index is never summed or averaged across members (AM4): the published aggregate is the member that
-    lies inside the range of the others in 99% of the cells and carries a total's name, or comes first in the file."""
+    """A rate or an index is never summed or averaged across members (AM4). Its published aggregate is a member that lies inside
+    the range of the others in 99% of its cells AND (a) carries a total's name, or a whole country's (Canada), or (b) is shown to
+    be the others' weighted average (`_unnamed_aggregate`). First in the file is no evidence (it read one province as the
+    national figure when it lay in the others' range). With none, the table has no aggregate: rule 6 reads one member, by
+    dominance, and the estimand says it is not a national figure."""
     import numpy as np
     rec = S["dims"][j]
     labels = rec["labels"]
     A, X, _c = _dim_tensor(S, j)
     M = len(labels)
+    stats: Dict[int, Tuple[float, int]] = {}
+    named: List[Tuple[int, int, float, int]] = []
     with np.errstate(all="ignore"):
-        best = None
         for m in range(M):
             rest = [x for x in range(M) if x != m]
             if not rest:
@@ -1914,25 +2029,37 @@ def _rate_aggregate(S: Dict[str, Any], j: int) -> None:
             if n < MIN_COMPLETE:
                 continue
             inside = float(((A[m][have] >= lo[have] - 1e-12) & (A[m][have] <= hi[have] + 1e-12)).mean())
-            if inside < BOUND_SHARE:
-                continue
-            score = (2 if _TOTAL_HINT.search(labels[m]) else 1 if m == 0 else 0)
-            if score and (best is None or score > best[0]):
-                best = (score, m, inside, n)
-    if best is None:
+            stats[m] = (float(((A[m][have] > lo[have]) & (A[m][have] < hi[have])).mean()), n)
+            tier = _agg_name_tier(labels[m])
+            if tier and inside >= BOUND_SHARE:
+                named.append((tier, m, inside, n))
+    pick, by, evidence = None, "", {}
+    if named:
+        top = max(t for t, _m, _i, _n in named)
+        pool = [x for x in named if x[0] == top]
+        if top == 2 or len(pool) == 1:            # two whole countries' names (a table of countries) do not say which is the total
+            pick, by = pool[0], "name"
+    if pick is None:
+        try:
+            got = _unnamed_aggregate(S, A, stats, labels)
+        except (np.linalg.LinAlgError, ValueError, FloatingPointError):      # a fit that cannot be made is no evidence
+            got = None
+        if got is not None:
+            pick, by, evidence = (2, got[0], stats[got[0]][0], stats[got[0]][1]), "range and fit", got[1]
+    if pick is None:
         rec["role"] = "unresolved"
         rec["why"] = "a rate or an index is never added up; no member is a published aggregate"
         return
-    _s, m, inside, n = best
-    by = "name" if _s == 2 else "first in file"
+    _s, m, inside, n = pick
     rec.update(role="rate_aggregate", total=labels[m], total_index=m, aggregate_by=by,
                parts=[labels[x] for x in range(M) if x != m], part_index=[x for x in range(M) if x != m],
                components={}, alternatives={},
-               sum_check={"inside_range_share": round(inside, 4), "cells": n},
+               sum_check=dict({"inside_range_share": round(inside, 4), "cells": n}, **evidence),
                why="a %s is never added or averaged across members: %s lies inside the others' range in %s%% of %s "
                    "cells and is read as the published aggregate%s" % (
                        S["measure"]["type"], labels[m], round(100 * inside, 1), _fmt_count(n),
-                       "" if by == "name" else " (no member is named as a total: it comes first in the file)"))
+                       "" if by == "name" else " (no member is named as a total: it has full coverage and the others' "
+                                               "weighted average reproduces it to the last published digit)"))
 
 
 def _adjustment(S: Dict[str, Any], j: int) -> None:
@@ -2053,6 +2180,11 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                    noun="national figure" if _GEO_WORDS.search(rec["column"]) else "total",
                    why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
                                                        "added across a dimension it could not verify)")
+        tiers = [_agg_name_tier(lb) for lb in labels]
+        if by == "dominance" and not any(_TOTAL_HINT.search(lb) or t == 2 for lb, t in zip(labels, tiers)) and tiers.count(1) != 1:
+            # no member is named as a total (one whole country's name, Canada, among provinces would be; two of them are a table of
+            # countries): the one shown is not the table's figure
+            rec["no_total_member"] = True
     else:
         rec.update(role="flat_additive", total=None, total_index=None, components={}, alternatives={},
                    why=rec.get("why") or "no member is a total of the others; the members are added up")
@@ -2852,6 +2984,16 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             bits.append("complete months only: the %s months where a part is suppressed are left out" % _fmt_count(
                 len(built["months_dropped"])))
         built_txt += "; ".join(bits) + "; "
+    single_member = None
+    for d in S["dims"]:
+        # a dimension with no total member (a table of provinces with no Canada row; a rate, an index or a stock is never
+        # added or averaged across them): one member is shown, and the estimand says so, with its name
+        if d["role"] == "single" and d.get("no_total_member") and isinstance(where.get(d["column"]), str) \
+                and where.get(d["column"]) == d.get("total"):
+            what = "a national figure" if d.get("noun") == "national figure" else "the table's total"
+            single_member = {"dim": d["column"], "member": d["total"], "noun": d.get("noun") or "total",
+                             "statement": "one member shown: %s; this table has no total member, so this is not %s" % (d["total"], what)}
+            built_txt += single_member["statement"] + "; "
     def span(w: List[str]) -> str:
         a, b = (_mon(w[0]), _mon(w[1])) if P["step"] == 1 else (_plabel(S, w[0]), _plabel(S, w[1]))
         return a if a == b else "%s–%s" % (a, b)
@@ -2953,13 +3095,14 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         if d["role"] == "single":
             if d.get("single_by") == "dominance":
                 excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
-                                 "why": "one member shown, not a %s: this table has no total row, and a %s is never added "
-                                        "or averaged across members" % (d.get("noun") or "total", m["type"]
+                                 "why": "one member shown, not a %s: this table has no total %s, and a %s is never added "
+                                        "or averaged across members" % (d.get("noun") or "total",
+                                                                        "member" if d.get("no_total_member") else "row", m["type"]
                                                                         if m["type"] != "count" else "count")})
             else:
                 excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                                  "why": "no total was verified, so members are never added across this dimension"})
-    return {"text": text, "slice": sl,
+    out = {"text": text, "slice": sl,
             "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": m.get("scale"),
                         "scale_applied": m.get("factor"), "type": m["type"], "type_basis": m.get("type_basis"),
                         "type_why": m.get("type_why"),
@@ -2970,6 +3113,9 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             "periods_used": len(lat_m) if flow else n1,
             "months_left_out": [] if complete else left_out, "inference": None, "built_from": built,
             "measure_choice": choice}
+    if single_member is not None:
+        out["single_member"] = single_member           # only when it applies, so every other estimand keeps its keys
+    return out
 
 
 def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
@@ -3005,7 +3151,7 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
     dims = []
     for d in S.get("dims") or []:
         x: Dict[str, Any] = {"column": d["column"], "role": d["role"], "members": len(d["labels"])}
-        for k in ("total", "nsa", "sa", "by", "why", "single_by", "noun"):
+        for k in ("total", "nsa", "sa", "by", "why", "single_by", "noun", "no_total_member", "aggregate_by"):
             if d.get(k) is not None:
                 x[k] = d[k]
         if d.get("parts") is not None and d["role"] in ("partition", "hierarchy", "rate_aggregate", "parts"):

@@ -2175,6 +2175,10 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
     subject = label + (", " + member if member else "") if label else member
     if not subject:
         return None
+    sm = est.get("single_member") if isinstance(est.get("single_member"), dict) else None
+    if sm:
+        # one member of a table with no total member: never a national figure, said in the headline too
+        subject += " (one member shown, not %s)" % ("a national figure" if sm.get("noun") == "national figure" else "the table's total")
     level = meas.get("type") in ("rate", "index")
     chg = (fig.get("change") if level else fig.get("change_pct")) or {}
     lvl = fig.get("latest") or {}
@@ -4985,6 +4989,11 @@ def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
                              "suppressed_part_months": bf.get("suppressed_part_months"),
                              "months_dropped": [str(x)[:7] for x in (bf.get("months_dropped") or [])][:12],
                              "combined": [safe(x, 120) for x in (bf.get("combined") or [])][:6]}
+    sm = est.get("single_member")
+    if isinstance(sm, dict) and sm.get("member"):
+        # a table with no total member: one member is shown, said in the estimand's own words (nl_structure.estimand)
+        out["single_member"] = {"dim": safe(sm.get("dim"), 120), "member": safe(sm.get("member"), 120),
+                                "noun": safe(sm.get("noun"), 20), "statement": safe(sm.get("statement"), 240)}
     return out
 
 
@@ -9310,6 +9319,8 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
     est_rec = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
     if est_rec is not None:
         est_rec["inference"] = None           # the estimand's own slot (track A1 reserved it): the headline claim's record
+        if est_rec.get("single_member"):
+            return                            # one member of a table with no total member is not a published total: not described as one
     st = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
     pubr = _ni.publisher_of(header)
     if pubr is None and st and st.get("publisher"):

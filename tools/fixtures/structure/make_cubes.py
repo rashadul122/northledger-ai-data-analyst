@@ -587,6 +587,40 @@ def wide_period(freq: str = "quarter", flags: bool = True, years: int = 8, first
     data = _csv(["freq", "unit", "geo\\TIME_PERIOD"] + labels, rows)
     return data, {"periods": n, "colon": colon, "p": prov, "values": vals, "labels": labels}
 
+# wave 5b: rate and index tables whose published aggregate is read by its name, by evidence, or not at all
+RATE_PROVINCES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]
+_RATE_BASE = (8.0, 5.0, 6.5, 10.0, 11.5, 4.0)          # Alpha, first in the file, lies in the MIDDLE of the others' range
+_RATE_WEIGHT = (0.30, 0.22, 0.18, 0.14, 0.10, 0.06)
+
+
+def rate_table(aggregate: str = "none", agg_first: bool = False, parts: int = 6, noise: float = 0.5, decimals: int = 1,
+               seed: int = 71, index: bool = False, countries: bool = False) -> bytes:
+    """Wave 5b, follow-up 3: an unemployment-like rate (Percent; with index=True a price index on one base, "2012=100") of
+    `parts` provinces. aggregate: "none" (NO total member: the first province lies strictly inside the others' range in every
+    cell, the table the old rule read as the published aggregate: "one province reported as the national figure"), "Canada" (a row
+    named as a whole country), "total" (a row named "All provinces"), "unnamed" (a row called "Zeta group", the labour-force-weighted
+    average of the provinces, to the digit published). agg_first lists that row first, else last. countries=True names the
+    provinces after countries (Canada and the United States, both in the middle of the range, among them, none a total): two
+    whole countries' names say nothing about which is the table's total."""
+    rng = np.random.RandomState(seed)
+    names = (["Canada", "Mexico", "United States", "Brazil", "Chile", "Peru"] if countries else RATE_PROVINCES)[:parts]
+    base = np.array(_RATE_BASE[:parts]) * (14.0 if index else 1.0)
+    w = np.array(_RATE_WEIGHT[:parts])
+    w = w / w.sum()
+    agg_name = {"Canada": "Canada", "total": "All provinces", "unnamed": "Zeta group"}.get(aggregate)
+    label = "Consumer price index" if index else "Unemployment rate"
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        r = np.round(base + (0.6 * (14.0 if index else 1.0)) * np.sin(i / 5.0) + noise * (14.0 if index else 1.0) * rng.standard_normal(parts), decimals)
+        rows = [(mo, p, (label,), float(x), "") for p, x in zip(names, r)]
+        if agg_name:
+            agg = (mo, agg_name, (label,), round(float((r * w).sum()), decimals), "")
+            rows = [agg] + rows if agg_first else rows + [agg]
+        rec.extend(rows)
+    return _official(["Labour force characteristics"], rec, uom="2012=100" if index else "Percent", scalar="units",
+                     decimals=str(decimals))
+
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

@@ -1951,6 +1951,31 @@ def test_w5b_an_unnamed_member_is_an_aggregate_only_when_the_others_reproduce_it
     assert g["role"] != "rate_aggregate" or g.get("aggregate_by") != "range and fit", (g["role"], g.get("aggregate_by"))
 
 
+def test_w5b_the_aggregate_search_is_quick_quiet_and_bounded_for_a_table_of_forty_members():
+    """The evidence search fits at most 5 candidates against at most 8 peers within half a second, raises no floating-point warning
+    (some BLAS builds do), and reads 40 members as before: the aggregate found when there is one, none when there is not."""
+    import warnings
+    for agg in (True, False):
+        data = MC.rate_panel(39, 79, aggregate=agg)
+        R = reading(data)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            t0 = time.perf_counter()
+            S = NS.detect(R, ())
+            took = time.perf_counter() - t0
+        g = dim(S, "GEO")
+        assert took < 0.5, (agg, took)
+        if agg:
+            assert g["role"] == "rate_aggregate" and g["total"] == "Zeta group" and g["aggregate_by"] == "range and fit", (g["role"], g.get("total"))
+        else:
+            assert g["role"] == "single" and g.get("no_total_member") is True and g["total"].startswith("Prov"), (g["role"], g.get("total"))
+    # out of time means no evidence (never a guess): with no time left the true aggregate is not read
+    with _patched(NS, "AGG_BUDGET_S", 0.0):
+        S0 = NS.detect(reading(MC.rate_panel(39, 79, aggregate=True)), ())
+    g0 = dim(S0, "GEO")
+    assert g0["role"] == "single" and g0.get("no_total_member") is True, (g0["role"], g0.get("total"))
+
+
 def test_w5b_an_index_table_with_two_bases_is_unchanged_by_the_rate_rule():
     """The structure, the figures and the words of the two-base index table (Canada and Ontario, one measure shown per base) are
     those of before the change: its figures were read from the run of 6 October (387c876)."""

@@ -762,7 +762,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
             continue
         try:
             if S["measure"]["type"] in ("rate", "index"):
-                _rate_aggregate(S, j)
+                _rate_aggregate(S, j, tm)
             else:
                 _relations(S, j, tm)
         except _TooLarge:
@@ -1905,7 +1905,10 @@ _AGG_WHOLE = re.compile(r"(?i)^\s*(?:canada|united states(?: of america)?|u\.?s\
 AGG_MIN_MEMBERS = 4             # an unnamed aggregate needs at least 3 parts beside it to be told from a member
 AGG_MAX_MEMBERS = 40            # ... and at most this many members (the fit is run for each)
 AGG_MIN_FIT_CELLS = 12          # complete cells (every member has a value) the weighted-average fit is made on
-AGG_FIT_ROWS = 3000             # at most this many cells are fitted (evenly spaced)
+AGG_FIT_ROWS = 600              # at most this many cells are fitted (evenly spaced)
+AGG_TRIES = 5                   # the candidates fitted: the 5 whose relation to the others' mean is the most stable (a true aggregate is among them)
+AGG_PEERS = 8                   # the typical member's own fit is the median of at most this many members' fits
+AGG_BUDGET_S = 0.5              # the whole search, inside detect's budget: out of time means no evidence
 AGG_FIT_UNITS = 1.0             # the fit's RMS residual: at most 1 unit of the last published digit ...
 AGG_PEER_UNITS = 3.0            # ... while a typical member's own fit is at least 3 units off (else the table cannot tell) ...
 AGG_PEER_RATIO = 0.25           # ... and the member's fit is at most a quarter of a typical member's
@@ -1951,12 +1954,14 @@ def _convex_rms(y: Any, X: Any) -> float:
     """The RMS residual of y reproduced as a weighted average of the columns of X (weights >= 0 adding to 1, fixed over the cells)."""
     import numpy as np
     lam = 1e3 * max(1.0, float(np.abs(y).max()))
-    w = _nnls(np.vstack([X, lam * np.ones((1, X.shape[1]))]), np.r_[y, lam])
-    return float(np.sqrt(np.mean((X @ w - y) ** 2)))
+    with np.errstate(all="ignore"):               # some BLAS builds (macOS Accelerate) raise spurious floating-point flags in matmul
+        w = _nnls(np.vstack([X, lam * np.ones((1, X.shape[1]))]), np.r_[y, lam])
+        rms = float(np.sqrt(np.mean((X @ w - y) ** 2)))
+    return rms if np.isfinite(rms) else float("inf")      # a fit that did not converge is no evidence
 
 
-def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, int]], labels: Sequence[str]
-                       ) -> Optional[Tuple[int, Dict[str, Any]]]:
+def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, int]], labels: Sequence[str],
+                       t_end: Optional[float] = None) -> Optional[Tuple[int, Dict[str, Any]]]:
     """A member with no name that says it is the aggregate of a rate or an index is one only when ALL of these hold, whatever
     its place in the file (first in the file is no evidence): it lies STRICTLY inside the others' min-max in at least 99% of its
     cells (`stats`); it has the table's full coverage (a value wherever any member has one, at least every other member's); and the
@@ -1964,7 +1969,8 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
     least 0, adding to 1) matches it to within one unit of the last published digit, a typical member's own fit being at least
     3 units off and its own a quarter of that (an aggregate is an exact weighted average of its parts to the digit published, a
     member in the middle of the range is not). With fewer than 3 parts, over 40 members, or fewer than 12 complete cells there is
-    no evidence to tell them apart. (index, evidence) or None."""
+    no evidence to tell them apart. The 5 candidates whose relation to the others' mean is the most stable over the cells are
+    fitted (a true aggregate is among them), within a time budget (out of time: no evidence). (index, evidence) or None."""
     import numpy as np
     M, C, T = A.shape
     if not AGG_MIN_MEMBERS <= M <= AGG_MAX_MEMBERS:
@@ -1981,7 +1987,9 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
         cells = cells[np.linspace(0, len(cells) - 1, AGG_FIT_ROWS).astype(int)]
     B = A.reshape(M, -1)[:, cells]
     unit = (10.0 ** -int(S["measure"].get("decimals") or 0)) * float(S["measure"].get("factor") or 1.0)
-    found = []
+    if t_end is None:
+        t_end = time.perf_counter() + AGG_BUDGET_S
+    cands = []
     for m in range(M):
         share_strict, n = stats.get(m, (0.0, 0))
         if n < MIN_COMPLETE or share_strict < BOUND_SHARE or cover[m] < 0.99 or cover[m] < float(np.delete(cover, m).max()):
@@ -1989,10 +1997,22 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
         if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", labels[m])):
             continue                                  # a member that says it leaves something out is an alternative, never the aggregate
         rest = [x for x in range(M) if x != m]
+        d = B[m] - B[rest].mean(axis=0)
+        cands.append((float(d.std()), m))             # the stability of its relation to the others' mean over the cells
+    found = []
+    for _sd, m in sorted(cands)[:AGG_TRIES]:
+        if time.perf_counter() > t_end:
+            return None                               # out of time: no evidence
+        rest = [x for x in range(M) if x != m]
         rm = _convex_rms(B[m], B[rest].T)
         if rm > AGG_FIT_UNITS * unit:
             continue
-        peers = [_convex_rms(B[i], B[[x for x in rest if x != i]].T) for i in rest]
+        step = max(1, len(rest) // AGG_PEERS)
+        peers = []
+        for i in rest[::step][:AGG_PEERS]:
+            if time.perf_counter() > t_end:
+                return None
+            peers.append(_convex_rms(B[i], B[[x for x in rest if x != i]].T))
         med = float(np.median(peers))
         if med < AGG_PEER_UNITS * unit or rm > AGG_PEER_RATIO * med:
             continue
@@ -2004,7 +2024,7 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
                "coverage": round(float(cover[m]), 4)}
 
 
-def _rate_aggregate(S: Dict[str, Any], j: int) -> None:
+def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> None:
     """A rate or an index is never summed or averaged across members (AM4). Its published aggregate is a member that lies inside
     the range of the others in 99% of its cells AND (a) carries a total's name, or a whole country's (Canada), or (b) is shown to
     be the others' weighted average (`_unnamed_aggregate`). First in the file is no evidence (it read one province as the
@@ -2041,7 +2061,7 @@ def _rate_aggregate(S: Dict[str, Any], j: int) -> None:
             pick, by = pool[0], "name"
     if pick is None:
         try:
-            got = _unnamed_aggregate(S, A, stats, labels)
+            got = _unnamed_aggregate(S, A, stats, labels, time.perf_counter() + (min(AGG_BUDGET_S, max(0.0, tm.left())) if tm else AGG_BUDGET_S))
         except (np.linalg.LinAlgError, ValueError, FloatingPointError):      # a fit that cannot be made is no evidence
             got = None
         if got is not None:

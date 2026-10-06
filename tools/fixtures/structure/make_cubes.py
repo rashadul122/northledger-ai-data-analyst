@@ -621,6 +621,24 @@ def rate_table(aggregate: str = "none", agg_first: bool = False, parts: int = 6,
                      decimals=str(decimals))
 
 
+def rate_panel(n_members: int = 39, months: int = 79, aggregate: bool = True, decimals: int = 1, seed: int = 5) -> bytes:
+    """Wave 5b: a rate of many members (provinces drawn with a common factor, loadings, a base each and their own noise, one decimal)
+    and, with `aggregate`, a row called "Zeta group" that is their weighted average to the digit published. For the search's time."""
+    rng = np.random.RandomState(seed)
+    base, load = rng.uniform(3, 12, n_members), rng.uniform(0.5, 1.5, n_members)
+    f = np.cumsum(rng.normal(0, 0.15, months)) + 0.8 * np.sin(np.arange(months) / 6.0)
+    x = np.array([np.round(base[p] + load[p] * f + rng.normal(0, rng.uniform(0.1, 0.7), months), decimals) for p in range(n_members)])
+    w = rng.dirichlet(np.ones(n_members))
+    agg = np.round((x * w[:, None]).sum(axis=0), decimals)
+    rec = []
+    for t in range(months):
+        mo = "%04d-%02d" % (2016 + t // 12, t % 12 + 1)
+        rec.extend((mo, "Prov %02d" % p, ("Unemployment rate",), float(x[p, t]), "") for p in range(n_members))
+        if aggregate:
+            rec.append((mo, "Zeta group", ("Unemployment rate",), float(agg[t]), ""))
+    return _official(["Labour force characteristics"], rec, uom="Percent", scalar="units", decimals=str(decimals))
+
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

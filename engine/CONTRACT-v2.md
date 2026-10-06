@@ -1526,7 +1526,8 @@ writer's copy (`results_for_ai.structure.error`) passes it through the same scru
 }
 ```
 
-(`looks_like.by` is "publisher", "metadata" or "long format".) Not covered: a business export whose
+(`looks_like.by` is "publisher" or "metadata", with the signature or metadata column names, or "long format", with only the counts of its
+dimensions and flag columns: a dimension may be a column the visitor withholds, so no name of one is kept.) Not covered: a business export whose
 members include "All" and "Total" rows and has none of the three marks, a wide table of periods whose reshape could not run when
 the file has no mark in its header, and a file the reader cannot parse (the engine's own intake refuses it).
 

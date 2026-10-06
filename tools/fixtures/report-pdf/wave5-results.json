@@ -1,7 +1,7 @@
 {
  "about": "Builds wave5-results.json: the engine's results on five SYNTHETIC statistical tables, for the report writer's wave 5 checks.",
  "made_with": "python3 tools/fixtures/report-pdf/make_wave5.py (the packed engine, run natively)",
- "zip_sha256": "07a5af806b58a2ef0443f644a9b5ffe724bb598f6b61eb827886e738a5e3534d",
+ "zip_sha256": "3f4fbb36af21cad545fa69143609afc95572c8cd6b05ba8b9222461be30dea30",
  "as_of": "2026-09-30",
  "cases": {
   "nototal": {

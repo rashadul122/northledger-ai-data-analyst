@@ -2,7 +2,7 @@
  "about": "The site's packed engine (engine/northledger-browser.zip), unzipped into a temporary folder and run natively as the page's engine worker runs it (the source trees off sys.path, NL_BROWSER_STRICT unset), on Statistics Canada table 20-10-0056-01, retail trade by province and by store type, 36,735 rows, 465 series x 79 months (the file is not in the repository: it is the visitor's CSV; this maker reads it from --csv, or from $NL_RETAIL_CSV, or from the owner's .work/eval folder, and records its sha256), the planner off (decisions {}), analysis date 2026-09-30: rep = nl_browser.run_json(...); results = nl_browser.results_json(rep), whole. What the page POSTs to /report as `results`. It holds an estimand (what the headline measures: the 12-month total of Total retail sales in Canada, the change and its units), a sum-check, the engine's grade as a PROCESS grade (month-to-month noise of 36 monthly totals, not a test of a published total), a forecast with its back-test (nl_inference.forecast_audit), a contribution waterfall with its not-allocated step and each part's own change, and 53 of the 75 scenario items (the payload budget keeps the parts that moved against the change). The hand-written report that goes with it is retail-response.json (a TEST FIXTURE, never a live reply).",
  "made_with": "python3 tools/fixtures/report-pdf/make_retail.py (the packed engine, run natively)",
  "engine_snapshot": "19ec81d19e0d",
- "zip_sha256": "07a5af806b58a2ef0443f644a9b5ffe724bb598f6b61eb827886e738a5e3534d",
+ "zip_sha256": "3f4fbb36af21cad545fa69143609afc95572c8cd6b05ba8b9222461be30dea30",
  "csv_sha256": "a3ffa24023ea00dab4626f12b5256e70402b289bfa2225ad94ebd4ea82cae388",
  "as_of": "2026-09-30",
  "name": "retail_sales_provinces_2020_2026.csv",

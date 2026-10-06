@@ -8829,10 +8829,14 @@ def looks_like_series_table(data: bytes) -> Optional[Dict[str, Any]]:
       publisher   the header holds a publisher's signature columns (engine/flag_vocab.json: 3 of them, or all of a shorter one);
       metadata    the header holds 3 or more metadata-like columns (_PANEL_META: UOM, VECTOR, DGUID, SCALAR_FACTOR, STATUS ...);
       long format a date column, a measure column, 2 or more dimension columns and a flag column.
-    {"by": "publisher" | "metadata" | "long format", "publisher"?, "columns": [...]}."""
+    {"by": "publisher" | "metadata", "publisher"?, "columns": [the signature or metadata names]} or {"by": "long format",
+    "dimensions": n, "flags": n}."""
     try:
         import pandas as pd
-        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig", nrows=_GUARD_ROWS)
+        first = data[:8192].decode("utf-8-sig", "replace").split("\n", 1)[0]
+        sep = max(",;\t|", key=lambda c: (first.count(c), c == ","))          # the delimiter of the header line (the engine's intake sniffs it too)
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig", encoding_errors="replace",
+                         sep=sep, nrows=_GUARD_ROWS)
     except Exception:  # noqa: BLE001 - a file the reader cannot parse is refused by the engine's own intake
         return None
     header = [str(c) for c in df.columns]
@@ -8851,7 +8855,8 @@ def looks_like_series_table(data: bytes) -> Optional[Dict[str, Any]]:
         return {"by": "metadata", "columns": meta[:8]}
     shape = _guard_long_shape(df)
     if shape is not None:
-        return {"by": "long format", "columns": [shape["date"], shape["measure"]] + shape["dimensions"][:3] + shape["flags"][:1]}
+        # counts, never the columns' names: a dimension of a table may be a column the visitor withholds
+        return {"by": "long format", "dimensions": len(shape["dimensions"]), "flags": len(shape["flags"])}
     return None
 
 

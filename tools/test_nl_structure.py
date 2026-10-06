@@ -1697,15 +1697,21 @@ def test_w5b_the_series_table_guard_decides_from_the_files_own_columns_and_not_f
         df.loc[idx, "sales"] = ""
         df.loc[idx, "flag"] = "x"
         got = NB.looks_like_series_table(_csv_of(df))
-        assert got and got["by"] == "long format" and got["columns"][-1] == "flag", got
+        assert got == {"by": "long format", "dimensions": 2, "flags": 1}, got
         df2 = _business_shape(extra={"status": lambda d: np.where(np.arange(len(d)) % 7 == 0, "E", "")})
         got = NB.looks_like_series_table(_csv_of(df2))
-        assert got and got["by"] == "long format" and got["columns"][-1] == "status", got
+        assert got == {"by": "long format", "dimensions": 2, "flags": 1}, got
         # NEGATIVE: the same shape with no metadata and no flag; a "returned" of Y/blank; a "status" of open/done; a grade of A to D
         assert NB.looks_like_series_table(_csv_of(_business_shape())) is None
         assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"returned": lambda d: np.where(np.arange(len(d)) % 5 == 0, "Y", "")}))) is None
         assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"status": lambda d: np.array(["open", "done", "new", "paid"])[np.arange(len(d)) % 4]}))) is None
         assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"grade": lambda d: np.array(["A", "B", "C", "D"])[np.arange(len(d)) % 4]}))) is None
+        # a semicolon-delimited or tab-delimited table, and a Latin-1 file, are read for what they are
+        cube = MC.partition().decode("utf-8")
+        for sep in (";", "\t"):
+            got = NB.looks_like_series_table(pd.read_csv(io.StringIO(cube), dtype=str, keep_default_na=False).to_csv(index=False, sep=sep).encode())
+            assert got and got["by"] == "publisher", (sep, got)
+        assert NB.looks_like_series_table(cube.replace("Retail sales", "Vente d\u00e9taillants").encode("latin-1"))["by"] == "publisher"
         # NEGATIVE: two metadata-like names only; a file with no dates; reviews; a file the reader cannot parse
         assert NB.looks_like_series_table(_csv_of(_business_shape(extra={"unit": "kg", "status": "ok"}))) is None
         assert NB.looks_like_series_table(b"") is None and NB.looks_like_series_table(b"\x00\x01 not a csv") is None

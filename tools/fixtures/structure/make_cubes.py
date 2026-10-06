@@ -807,6 +807,44 @@ def quarterly_adjusted(years: int = 9, basis: bool = True, neutral: bool = False
 
 
 
+OWNERS = ("Michael Penhallow", "Karen Telford", "Daniel Askerby", "Laura Quillon", "Peter Brandmoor")
+
+
+def long_panel_with_owner(seed: int = 98, column: str = "Account owner", phones: bool = False, neutral: bool = False) -> bytes:
+    """Wave 5d, the privacy gap. A long statistical table of five exchange-rate-like series with no relation among them (a panel: the
+    layout pass turns it into one column per series, each series named from its text columns), and a personal column beside the
+    currency: the series' account owner (a person's name; with `phones`, a phone number written 555-010-xxxx under "Contact"; with
+    `neutral`, "Group A" ... "Group E": a category, the negative case)."""
+    rng = np.random.RandomState(seed)
+    n = 60
+    months = ["%04d-%02d" % (2018 + i // 12, i % 12 + 1) for i in range(n)]
+    cur = (("U.S. dollar", 1.30), ("Euro", 1.45), ("Japanese yen", 0.0095), ("Pound sterling", 1.70), ("Swiss franc", 1.40))
+    level = {c: base * np.exp(np.cumsum(0.01 * rng.standard_normal(n))) for c, base in cur}
+    rec = []
+    for i, mo in enumerate(months):
+        for k, (c, _b) in enumerate(cur):
+            who = ("Group %s" % "ABCDE"[k]) if neutral else (("555-010-%04d" % (1100 + 137 * k)) if phones else OWNERS[k])
+            rec.append((mo, "Canada", (c, who), float(level[c][i]), ""))
+    return _official_v(["Type of currency", column], rec, lambda key: ("Dollars", "units", 4))
+
+
+def regions_with_personal(column: str = "Account owner", phones: bool = False, seed: int = 99, months: int = 48) -> bytes:
+    """Wave 5d, the privacy gap (fuzz seeds 13, 66, 147, 181, 217, 218): a stock (labour force, persons in thousands) for three regions and NO
+    total row, and a personal column that is one to one with the region: the region's account owner (a person's name) or, with `phones`,
+    its contact phone number (555-010-xxxx). The personal column's labels are longer than the regions', so the table's one
+    dimension was the personal column and the regions an alias of it, the structure layer found nothing to slice, and the layout pass named
+    each series from ALL its text columns: "Tarnstead | Michael Penhallow" was a column of the table the report was written from."""
+    rng = np.random.RandomState(seed)
+    regs = (("Dunham", 10112.0), ("Tarnstead", 2045.0), ("Elmvale", 3363.0))
+    mo = ["%04d-%02d" % (2020 + i // 12, i % 12 + 1) for i in range(months)]
+    rec = []
+    for i, m in enumerate(mo):
+        for k, (r, lv) in enumerate(regs):
+            who = ("555-010-%04d" % (3016 + 291 * k)) if phones else OWNERS[k]
+            rec.append((m, r, ("Labour force", who), round(lv * (1.0 + 0.002 * i) * (1.0 + 0.01 * rng.standard_normal())), "A"))
+    return _official_v(["Statistics", column], rec, lambda key: ("Persons", "thousands", 0))
+
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

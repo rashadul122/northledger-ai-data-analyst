@@ -2490,6 +2490,78 @@ def test_w5d_quarterly_adjusted_copies_are_found_and_two_copies_are_never_added(
     assert gt["role"] == "single" and "same calendar-year totals" in gt["why"], gt
 
 
+def test_w5d_a_personal_column_beside_the_regions_never_names_a_series_and_never_reaches_the_report():
+    """Wave 5d, the privacy gap (fuzz seeds 13, 66, 147, 181, 217, 218). A personal column one to one with the region (the region's account
+    owner, its contact phone number) was longer than the region's own name, so it was the table's one dimension and the regions an alias
+    of it; the structure layer found nothing to slice, and the layout pass NAMED each series from all its text columns: "Tarnstead |
+    Michael Penhallow" was a column of the table, past the scan (the file was landed after it was reshaped), in the series names of the
+    findings, the charts and the text the report writer is given. Now the table is judged without a column that looks personal (the
+    engine's scan, this adapter's check), which is landed and withheld as any flagged column is; and a long table that is still reshaped
+    never names a series by one (the consent step lists it, withheld; kept by the visitor, it names the series, as chosen)."""
+    names = list(MC.OWNERS[:3])
+    phones = ["555-010-3016", "555-010-3307", "555-010-3598"]
+    for kw, vals, toks in (({}, names, ["penhallow", "telford", "askerby"]),
+                           ({"column": "Contact", "phones": True}, phones, ["3016", "3307", "3598"]),
+                           ({"column": "Phone", "phones": True}, phones, ["3016", "3307", "3598"])):
+        rep = _run(MC.regions_with_personal(**kw), "t.csv")
+        col = NB._engine_slug(kw.get("column", "Account owner"))
+        assert {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]} == {col: "withhold"}, (kw, rep["privacy"]["flagged"])
+        blob = json.dumps(rep, default=str)
+        ai = json.dumps(NB.results_for_ai(rep), default=str)
+        assert not [v for v in vals if v in blob or v in ai], (kw, "a personal value is in the report")
+        assert not [t for t in toks if t in ai.lower()], (kw, "a personal token is in what the writer sees")
+        assert rep["structure"]["kind"] == "cube" and rep["structure"]["usable"] is True, rep["structure"]
+    # the long table that is still reshaped (a panel of currencies, no relation among them): the owner names no series
+    data = MC.long_panel_with_owner()
+    rep = _run(data, "fx.csv")
+    lay = rep["input"]["layout"]
+    assert lay["layout"] == "long statistical table" and "Account owner" in lay["personal_set_aside"] and lay["personal_kept"] == {}, lay
+    assert [f["column"] for f in rep["privacy"]["flagged"]] == ["account_owner"] and rep["privacy"]["flagged"][0]["decision"] == "withhold"
+    assert rep["roles"]["measures"] == ["u_s_dollar", "euro", "japanese_yen", "pound_sterling", "swiss_franc"], rep["roles"]["measures"]
+    ai = json.dumps(NB.results_for_ai(rep), default=str)
+    assert not [n for n in MC.OWNERS if n in json.dumps(rep, default=str) or n in ai or n.split()[1].lower() in ai.lower()]
+    # kept by the visitor: it names the series (their choice), and the report says it was flagged and kept
+    rep_k = _run(data, "fx.csv", {"account_owner": "keep"})
+    assert rep_k["input"]["layout"]["personal_set_aside"] == {} and "Account owner" in rep_k["input"]["layout"]["personal_kept"]
+    assert rep_k["privacy"]["flagged"] == [{"column": "account_owner", "kind": rep_k["privacy"]["flagged"][0]["kind"], "decision": "keep"}]
+    assert "u_s_dollar_michael_penhallow" in rep_k["roles"]["measures"], rep_k["roles"]["measures"]
+    # negative: a category beside the currency ("Group A" ...) is no personal column: nothing flagged, nothing set aside
+    rep_n = _run(MC.long_panel_with_owner(column="Series group", neutral=True), "fx.csv")
+    assert rep_n["privacy"]["flagged"] == [] and not (rep_n["input"].get("layout") or {}).get("personal_set_aside"), rep_n["privacy"]
+
+
+def test_w5d_the_adapters_pre_landing_check_flags_phones_emails_ids_and_names_and_never_an_ordinary_code():
+    """Wave 5d. The check on the columns that would name a series (`_raw_personal_columns`: the engine's scan, then the adapter's) flags a
+    phone number (written 555-010-3016, (416) 555-0173, +1 416 555 0173), an email, a nine to nineteen digit ID number a category column
+    holds, and a person's name under a heading that says people hold it; and flags none of the codes a table carries: a base
+    (2002=100), a region code, a NAICS bracket, a year, a range of years, a month, a currency's name, a unit."""
+    n = 6
+    ordinary = pd.DataFrame({
+        "Base": ["2002=100", "2012=100"] * 3, "Region code": ["ON", "QC", "BC", "AB", "MB", "SK"],
+        "NAICS": ["Retail trade [44-45]", "Food and beverage retailers [445]", "Gasoline stations [457]", "Total retail", "Clothing [458]",
+                  "Motor vehicle dealers [441]"],
+        "Year": ["2015", "2016", "2017", "2018", "2019", "2020"], "Span": ["2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021"],
+        "Month": ["2019-01", "2019-02", "2019-03", "2019-04", "2019-05", "2019-06"],
+        "Type of currency": ["U.S. dollar", "Euro", "Japanese yen", "Pound sterling", "Swiss franc", "Australian dollar"],
+        "Unit": ["Dollars"] * n, "Group": ["Group A", "Group B", "Group C", "Group D", "Group E", "Group F"]})
+    assert NB._raw_personal_columns(ordinary, ordinary.columns) == {}, NB._raw_personal_columns(ordinary, ordinary.columns)
+    personal = pd.DataFrame({
+        "Contact": ["555-010-3016", "(416) 555-0173", "+1 416 555 0173", "416.555.0199", "416 555 0188", "905-555-0142"] * 20,
+        "Mail": ["ann@example.org", "bo@example.org", "cy@example.org", "di@example.org", "ed@example.org", "fay@example.org"] * 20,
+        "Ref": ["100234567", "200345678", "300456789", "400567890", "500678901", "600789012"] * 20,
+        "Account owner": ["Michael Penhallow", "Karen Telford", "Daniel Askerby", "Laura Quillon", "Peter Brandmoor", "Maria Telford"] * 20,
+        "Year": ["2015", "2016", "2017", "2018", "2019", "2020"] * 20})
+    got = NB._raw_personal_columns(personal, personal.columns)
+    assert set(got) == {"Contact", "Mail", "Ref", "Account owner"}, got
+    assert got["Ref"] == "long ID number" and got["Mail"] == "email", got
+    # a phone column under a neutral heading is found by its values (the engine's scan or the adapter's check), whatever the heading
+    neutral = pd.DataFrame({"Line": ["(416) 555-0173", "+1 416 555 0173", "416.555.0199", "905-555-0142", "416 555 0188", "613-555-0111"] * 20})
+    assert NB._raw_personal_columns(neutral, neutral.columns).get("Line") == "phone number", NB._raw_personal_columns(neutral, neutral.columns)
+    # measures are never "long ID numbers": a column of nine-digit counts with a different value on most rows
+    counts = pd.DataFrame({"Units": ["%d" % (100000000 + 7919 * i) for i in range(120)]})
+    assert NB._personal_kind("Units", counts["Units"]) is None
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

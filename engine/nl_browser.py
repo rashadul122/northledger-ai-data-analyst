@@ -1091,7 +1091,7 @@ _REASON_LABEL = {"name": "named like personal data", "free_text": "free text",
 _KIND_LABEL = {"email": "email", "credit_card": "card number", "phone_na": "phone number",
                "phone_intl": "phone number", "sin_ssn": "SIN or SSN", "postal_ca": "postal code",
                "ip": "IP address", "person_name": "person's name", "street_address": "street address",
-               "account_number": "account or card number"}
+               "account_number": "account or card number", "id_number": "long ID number"}
 
 
 def _kind_of(col: str, kinds: str, res: Any) -> str:
@@ -1201,6 +1201,8 @@ def _effective_decisions(flagged: List[Dict[str, str]], colmap: Dict[str, str], 
 # A column of names under a heading this check does not know ("Stylist", "Crew") can still be missed, and the
 # page says so.
 PERSONAL_MIN_SHARE = 0.60
+PERSONAL_ID_MAX_DISTINCT = 400          # wave 5d: a column of 9 to 19 digit numbers that names at most this many things ...
+PERSONAL_ID_MAX_SHARE = 0.30            # ... on at least 3 cells in 10 each (not a column of measures) is a column of ID numbers
 # words for a person, as a column's (last) word says it: in the file's own spelling, lower case, accents
 # dropped and plurals folded as _header_tokens gives them
 _PERSON_WORDS = frozenset((
@@ -1422,11 +1424,49 @@ def _street_value(v: str) -> bool:
     return False
 
 
+def _personal_kind(header: Any, values: Any) -> Optional[str]:
+    """The kind of personal data a column holds by this check (see above), or None: `email`, `phone_na`, `account_number`,
+    `street_address` or `person_name`. `header` is the column's name as the file writes it, `values` its cells (any type)."""
+    import numpy as np
+    import pandas as pd
+    nulls = _null_tokens()
+    t = values.astype(object).where(values.notna(), "").astype(str).str.split().str.join(" ")
+    t = t[~t.str.lower().isin(nulls)]
+    if not len(t):
+        return None
+    vc = t.value_counts()
+    vals = pd.Series([str(x) for x in vc.index], dtype=object)
+    w = vc.to_numpy(dtype=float)
+    total = float(w.sum())
+
+    def share(mask: Any) -> float:
+        return float(w[np.asarray(mask, dtype=bool)].sum()) / total if total else 0.0
+    toks = _header_tokens(header)
+    digits = vals.str.count(r"\d")
+    grouped = vals.str.match(_GROUPED_NUMBER)
+    if share(vals.str.match(_EMAIL_VALUE)) >= PERSONAL_MIN_SHARE:
+        return "email"
+    if share(vals.str.match(_PHONE_VALUE) & digits.between(10, 15) & ~grouped) >= PERSONAL_MIN_SHARE:
+        return "phone_na"
+    if share(grouped) >= PERSONAL_MIN_SHARE:
+        return "account_number"
+    # wave 5d: a column that names things (few different values, each on many rows: at most 400 and at most 30% of its cells) whose
+    # members are numbers of nine to nineteen digits is a column of ID numbers (a customer or account number, a phone number written
+    # with no separator): no category is called by 9 digits. A column of measures is never one: it has a different value on most rows
+    if len(vals) <= PERSONAL_ID_MAX_DISTINCT and len(vals) <= PERSONAL_ID_MAX_SHARE * total and \
+            share(vals.str.fullmatch(r"\d{9,19}")) >= PERSONAL_MIN_SHARE:
+        return "id_number"
+    if not set(toks) & _PLACE_WORDS and share([_street_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+        return "street_address"
+    if _person_hint(toks, header)[0] and share([_person_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+        return "person_name"
+    return None
+
+
 def _personal_columns(db_path: str, table: str, colmap: Dict[str, str], skip: Set[str]) -> List[Tuple[str, str]]:
     """[(landed column, kind)]: the columns this check adds to the visitor's choices (see above), in the
     file's order; `skip`: the columns the engine's scan already flagged. Kinds are the engine's own words
     (person_name, email, phone_na), street_address and account_number."""
-    import numpy as np
     import pandas as pd
     from northledger import clean as _clean
     from northledger._sqlite import connect_ro
@@ -1436,41 +1476,50 @@ def _personal_columns(db_path: str, table: str, colmap: Dict[str, str], skip: Se
     finally:
         con.close()
     head = {str(v): str(k) for k, v in (colmap or {}).items()}
-    nulls = _null_tokens()
     out: List[Tuple[str, str]] = []
     for col in df.columns:
         if col in skip:
             continue
-        s = df[col]
-        t = s.astype(object).where(s.notna(), "").astype(str).str.split().str.join(" ")
-        t = t[~t.str.lower().isin(nulls)]
-        if not len(t):
-            continue
-        vc = t.value_counts()
-        vals = pd.Series([str(x) for x in vc.index], dtype=object)
-        w = vc.to_numpy(dtype=float)
-        total = float(w.sum())
-
-        def share(mask: Any) -> float:
-            return float(w[np.asarray(mask, dtype=bool)].sum()) / total if total else 0.0
-        header = head.get(col, col)
-        toks = _header_tokens(header)
-        digits = vals.str.count(r"\d")
-        grouped = vals.str.match(_GROUPED_NUMBER)
-        kind = None
-        if share(vals.str.match(_EMAIL_VALUE)) >= PERSONAL_MIN_SHARE:
-            kind = "email"
-        elif share(vals.str.match(_PHONE_VALUE) & digits.between(10, 15) & ~grouped) >= PERSONAL_MIN_SHARE:
-            kind = "phone_na"
-        elif share(grouped) >= PERSONAL_MIN_SHARE:
-            kind = "account_number"
-        elif not set(toks) & _PLACE_WORDS and share([_street_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
-            kind = "street_address"
-        elif _person_hint(toks, header)[0] and share([_person_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
-            kind = "person_name"
+        kind = _personal_kind(head.get(col, col), df[col])
         if kind:
             out.append((str(col), kind))
     return out
+
+
+# wave 5d: a long table the layout pass turns into one column per series NAMES each series from its text columns, so a personal column
+# among them (an account owner, a contact phone) was written into the series names, past every scan: the file is landed AFTER it
+# is reshaped, and the scan reads the reshaped table's headers as headers. The text columns that would name the series are checked
+# first, by the engine's own scan (a name hint, a value shape) and by this check, and a personal one never names a series unless the
+# visitor chose to keep it (_decide_and_guard lists it with the flagged columns, the default being withhold, and scrubs its values).
+def _raw_personal_columns(df: Any, cols: Iterable[Any]) -> Dict[str, str]:
+    """{column header: kind label} for the columns among `cols` of a table as the file holds it (not yet landed) that look personal: the
+    engine's scan (a column named like personal data, values shaped like an email, a phone number, a national ID number ...) and this
+    adapter's check (_personal_kind)."""
+    found: Dict[str, str] = {}
+    cols = [c for c in cols if c in df.columns]
+    if not cols:
+        return found
+    try:
+        from northledger import intake as _intake
+        for f in _intake.scan_pii(df[cols]):
+            found.setdefault(str(f.column), _kind_label(str(f.kind)))
+    except Exception:  # noqa: BLE001 - the scan is one of two checks; the adapter's own still runs
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+    for c in cols:
+        if str(c) not in found:
+            k = _personal_kind(str(c), df[c])
+            if k:
+                found[str(c)] = _kind_label(k)
+    return found
+
+
+def _kind_label(kind: str) -> str:
+    """The words for one kind of personal data (as the consent step says it)."""
+    k = str(kind).strip()
+    if k.startswith("named_"):
+        return _REASON_LABEL["name"] if _KIND_LABEL.get(k) is None else _KIND_LABEL[k]       # "named like personal data", as landing says it
+    return _KIND_LABEL.get(k) or k.replace("_", " ")
 
 
 # --------------------------------------------------------------------------- a withheld column drives no rule
@@ -1651,7 +1700,25 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
     return out
 
 
-def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any
+def _raw_column_values(raw: Any, headers: Iterable[str]) -> Dict[str, List[str]]:
+    """{header: the distinct values of that column of the file as the visitor sent it} (for the scrubber: never printed)."""
+    import pandas as pd
+    out: Dict[str, List[str]] = {}
+    heads = [str(h) for h in headers]
+    if not heads or not raw:
+        return out
+    try:
+        df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding="utf-8-sig", keep_default_na=False, usecols=lambda c: str(c) in heads)
+    except Exception:  # noqa: BLE001 - the values are looked for where they might appear; a file that does not read gives none
+        return out
+    for h in heads:
+        if h in df.columns:
+            out[h] = sorted({" ".join(str(v).split()) for v in df[h] if str(v).strip()})
+    return out
+
+
+def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optional[Dict[str, str]] = None, raw: Any = None,
+                      kept: Optional[Dict[str, str]] = None
                       ) -> Tuple[List[Dict[str, str]], List[str], "Scrubber", List[Dict[str, Any]]]:
     """The decide stage, the same for a run and for the planner's profile: a free-text flag on a plain category is
     lifted (_release_categories, unless the visitor withheld or coded it), the adapter's personal-column check adds
@@ -1701,6 +1768,16 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any
     by = {str(f["column"]): _value_tokens(raw.get(str(f["column"]), ())) for f in flagged
           if _REASON_LABEL["free_text"] not in str(f.get("kind") or "")}
     codes = _neutralize_withheld(eng.db_path, res.table, withheld)
+    # wave 5d: the columns that looked personal before the table was reshaped (and so never named a series) are listed with the flagged
+    # ones, withheld; their values go to the scrubber and the token filter like any withheld column's (they are not in the landed table)
+    if aside:
+        aside_values = _raw_column_values(raw, aside)
+        for header, label in sorted(aside.items()):
+            flagged.append({"column": _engine_slug(header), "kind": str(label), "decision": "withhold"})
+            values = values + aside_values.get(header, [])
+            by[_engine_slug(header)] = _value_tokens(aside_values.get(header, []))
+    for header, label in sorted((kept or {}).items()):           # the visitor kept it: it names the series, and the report says it was flagged
+        flagged.append({"column": _engine_slug(header), "kind": str(label), "decision": "keep"})
     sc = Scrubber(values + codes, free_values)
     sc.flag_tokens_by = by
     sc.flag_tokens = frozenset().union(*by.values()) if by else frozenset()
@@ -4227,10 +4304,17 @@ def _pnorm(c: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(c).lower())
 
 
+def _kept_by_visitor(decisions: Any) -> Set[str]:
+    """The columns the visitor chose to keep (by the file's header or the landed name), for the passes that run before landing."""
+    return {str(k) for k, v in dict(decisions or {}).items() if not str(k).startswith("__") and str(v or "").strip().lower() == "keep"}
+
+
 def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[str] = None,
-                        value_col: Optional[str] = None) -> Tuple[bytes, Optional[Dict[str, Any]]]:
+                        value_col: Optional[str] = None, keep: Optional[Set[str]] = None
+                        ) -> Tuple[bytes, Optional[Dict[str, Any]]]:
     """A long statistical table as one column per series, or (data, None) when it is not one. An AI
-    plan may name the date and value columns (a 'Year' of months, a 'Mean' of anomalies)."""
+    plan may name the date and value columns (a 'Year' of months, a 'Mean' of anomalies). A column that looks personal never names a
+    series (wave 5d) unless the visitor kept it (`keep`: headers or landed names): it is listed in `personal_set_aside`."""
     import pandas as pd
     try:
         df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
@@ -4248,6 +4332,11 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     if not date or not value or (len(meta) < 3 and not planned) or len(df) < 50:
         return data, None
     dims = [c for c in df.columns if c not in meta and c not in (date, value)]
+    kept = set(keep or ())
+    found = _raw_personal_columns(df, dims)
+    personal = {c: k for c, k in found.items() if c not in kept and _engine_slug(c) not in kept}
+    personal_kept = {c: k for c, k in found.items() if c not in personal}
+    dims = [c for c in dims if c not in personal]
     varying = [c for c in dims if df[c].nunique() > 1]
     constant = [c for c in dims if c not in varying]
     if varying:
@@ -4319,6 +4408,8 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
         "value_column": str(value), "date_column": str(date), "metadata_set_aside": [str(c) for c in meta],
         "constant_set_aside": [str(c) for c in constant], "zeros_as_empty": zeroed,
         "units": sorted(set(u for u in units.values() if u)),
+        "personal_set_aside": {str(c): k for c, k in personal.items()},
+        "personal_kept": {str(c): k for c, k in personal_kept.items()},
     }
 
 
@@ -9073,7 +9164,7 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
             "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap)}
 
 
-def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None) -> bool:
+def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep: Optional[Set[str]] = None) -> bool:
     """Whether a long table the layout pass would turn into one column per series holds totals beside their parts (or
     an adjusted copy): a quick reading of the file's text (dates as dates, numbers as numbers), only to decide not to
     reshape it; the structure itself is read after landing, from the engine's reading, without a withheld column. A caller
@@ -9082,6 +9173,14 @@ def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None) -> b
         import numpy as np
         import pandas as pd
         df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig")
+        # wave 5d: a column that looks personal is a withheld column here too (it is, after landing): the table is judged without it,
+        # so an account owner beside every region is not a dimension that displaces the regions
+        kept = set(keep or ())
+        meta_like = [c for c in df.columns if _pnorm(c) in _PANEL_META or _pnorm(c) in _PANEL_DATE or _pnorm(c) in _PANEL_VALUE]
+        aside = [c for c in _raw_personal_columns(df, [c for c in df.columns if c not in meta_like])
+                 if c not in kept and _engine_slug(c) not in kept]
+        if aside:
+            df = df.drop(columns=aside)
         land = {h: _engine_slug(h) for h in df.columns}
         if len(set(land.values())) < len(land):
             return False
@@ -9666,10 +9765,11 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         reshaped_after = False                    # the rules read the planned file as a long table
         if layout is None and structure_inner is None:
             try:
-                reshaped, layout = _reshape_long_panel(data)
+                kept_cols = _kept_by_visitor(decisions)
+                reshaped, layout = _reshape_long_panel(data, keep=kept_cols)
                 if layout and STRUCTURE_ON and int(layout.get("series") or 0) >= 2:
                     f_long: Dict[str, Any] = {}
-                    if _long_has_structure(data, fail=f_long):
+                    if _long_has_structure(data, fail=f_long, keep=kept_cols):
                         layout = None             # totals beside parts: the structure reads it (the hook below)
                     elif f_long and struct_error is None:
                         struct_error = _guard_failure(sent, f_long)      # the structure layer could not be asked: refused
@@ -9747,7 +9847,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # -- decide: every flagged column (the engine's scan, then the adapter's personal-column check), the
         # visitor's choice or withhold; a withheld column is then landed as codes no cleaning rule reads
         t0 = time.perf_counter()
-        flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions)
+        flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions,
+                                                               aside=(layout or {}).get("personal_set_aside"), raw=sent,
+                                                               kept=(layout or {}).get("personal_kept"))
         rep["privacy"]["flagged"] = flagged
         rep["privacy"]["released"] = released
         timings["decide"] = time.perf_counter() - t0

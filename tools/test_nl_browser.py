@@ -2948,16 +2948,17 @@ def test_results_for_ai_forecast_reaches_the_proxy_as_the_page_shows_it():
     assert fc["series"] == f["label"].replace(rep["input"]["name"], "[your file]") and fc["series"].startswith("monthly total amount") \
         and "['" not in fc["series"] and fc["series"].endswith(" in [your file]"), fc["series"]
     assert fc["verdict"] == {"RECOMMEND": "usable for planning", "WATCH": "not yet shown usable"}[f["verdict"]], fc["verdict"]
-    assert fc["coverage"] == "%d of %d replayed months inside the 80%% range" % (f["coverage"]["hits"], f["coverage"]["n"]), fc["coverage"]
+    # wave 4, track B step 0: ONE count of how the range held, the audit's; the core's replay count is no longer sent beside it
+    assert f["audit"]["horizons"] and "coverage" not in fc and fc["audit"]["label"] == f["audit"]["label"], fc
     assert [p["date"] for p in fc["points"]] == [p["month"] for p in f["forecast"][:14]], fc["points"][:2]
     assert all(set(p) == {"date", "value", "lo", "hi"} and isinstance(p["value"], (int, float)) for p in fc["points"]), fc["points"][:2]
-    for k in ("series", "verdict", "champion", "coverage"):
+    for k in ("series", "verdict", "champion"):
         assert isinstance(fc[k], str) and len(fc[k]) <= (120 if k in ("champion", "coverage") else 200), (k, fc[k])
     got = _proxy_validate(NB.results_for_ai(rep))
     if got is not None:
         v = got["value"]["forecast"]
         assert got["ok"] and v["baseline_won"] is True and v["series"] == fc["series"] and v["verdict"] == fc["verdict"], v
-        assert v["coverage"] == fc["coverage"] and [p["date"] for p in v["points"]] == [p["date"] for p in fc["points"]], v["points"][:2]
+        assert [p["date"] for p in v["points"]] == [p["date"] for p in fc["points"]], v["points"][:2]
         assert all(isinstance(p.get("value"), (int, float)) for p in v["points"]), v["points"][:2]
 
 

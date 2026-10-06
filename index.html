@@ -885,6 +885,32 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
 .nl2-tile-g { margin-top: auto !important; padding-top: 4px; }
 /* a long grade word (a forecast's USABLE FOR PLANNING) in a narrow phone tile wraps inside the tile */
 .nl2-tile-g .nl2-grade { white-space: normal; max-width: 100%; }
+/* wave 4 (track B): the estimand, the process grade, the forecast audit, the not-allocated step */
+.nl2-estimand { border-top: 4px solid var(--accent); }
+.nl2-estimand .kicker { margin-bottom: 4px; }
+.nl2-estimand-in { border-top: 0; box-shadow: none; padding: 0; border: 0; background: none; }
+.nl2-est-title { margin: 0 0 4px; font-size: clamp(17px, 1.9vw, 21px); line-height: 1.3; letter-spacing: -0.01em; }
+.nl2-est-what { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+.nl2-est-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
+.nl2-est-fig { margin: 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--hairline); background: var(--bg); min-width: 0; }
+.nl2-est-fig dt { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.nl2-est-fig dd { margin: 2px 0 0; font-size: clamp(20px, 2.3vw, 26px); font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.nl2-est-lead { border-color: var(--accent); background: var(--surface); }
+.nl2-est-lead dd { color: var(--accent-ink); font-size: clamp(24px, 3vw, 32px); }
+.nl2-est-desc, .nl2-est-proc, .nl2-est-src { margin: 0 0 8px; font-size: 14.5px; }
+.nl2-est-proc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; color: var(--muted); }
+.nl2-est-src { color: var(--muted); font-style: italic; }
+.nl2-estimand h4 { margin: 12px 0 4px; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.nl2-est-checks, .nl2-est-excl { margin: 0 0 6px; padding-left: 20px; display: grid; gap: 3px; font-size: 14.5px; }
+.nl2-estimand .nl2-est-how { margin: 8px 0 0; }
+.nl2-proc { display: block; margin-top: 3px; font-size: 13.5px; color: var(--muted); }
+.nl2-untrusted { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--series-3); border: 1.5px solid currentColor; border-radius: 999px; padding: 0 8px; white-space: nowrap; vertical-align: 1px; }
+.nl2-audit { display: block; margin-top: 3px; font-size: 13.5px; color: var(--muted); }
+.nl2-audit[data-status="fails"] { color: var(--series-3); }
+.nl2-grade[data-process] { white-space: normal; }
+.nlv .w-unalloc { fill: var(--surface); stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 3 2; }
+@media (max-width: 720px) { .nl2-est-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media print { body.print-try .nl2-estimand { break-inside: avoid; } body.print-try .nl2-est-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); } body.print-try .nl2-untrusted, body.print-try .nl2-est-fig { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
 .nl2-drivers { margin: 0; font-size: 14px; color: var(--muted); }
 .nl2-drivers b { color: var(--ink); }
 .nl2-trustcard h3, .nl2-settle h3, .nl2-ftab-card h3 { margin: 0 0 8px; font-size: 18px; }
@@ -1338,7 +1364,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-06 11:23:52 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-06 12:22:18 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2051,7 +2077,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-06 11:23:52 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-06 12:22:18 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -3840,6 +3866,126 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return s.slice(0, max).replace(/\s+\S*$/, '').replace(/[,;:.\s]+$/, '') + '\u2026';
   }
 
+  /* ---------------------------------------------------------------- wave 4 (track B): the estimand, the inference labels and the forecast audit in words
+     The page (src/js/52-nl2-report.js) and this writer say these things the same way: NLReportPdf.facts holds the sentences
+     and figures, composed from the engine's records alone (nothing is computed here but a unit's suffix and a share). */
+  var SUFFIX = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  // the estimand's own units ("$864.0B", as nl_structure.money writes them): a function of one amount, or null when the
+  // report has no estimand or its measure is a rate or an index (never summed, never abbreviated)
+  function unitOf(R) {
+    var e = R && R.estimand, m = e && e.measure;
+    if (!m || m.type === 'rate' || m.type === 'index') return null;
+    var cur = /dollar|\$|CAD|USD/i.test(String(m.uom || '')) ? '$' : '';
+    return function (v, signed) {
+      v = Number(v);
+      if (!isFinite(v)) return 'n/a';
+      var a = Math.abs(v), body = null, i;
+      for (i = 0; i < SUFFIX.length; i++) if (a >= SUFFIX[i][0]) { body = (a / SUFFIX[i][0]).toFixed(1) + SUFFIX[i][1]; break; }
+      if (body === null) body = a >= 1 ? a.toFixed(0) : String(Number(a.toPrecision(3)));
+      if (!/[1-9]/.test(body)) v = 0;
+      return (signed ? (v > 0 ? '+' : v < 0 ? '\u2212' : '') : (v < 0 ? '\u2212' : '')) + cur + body;
+    };
+  }
+  // a waterfall's axis in the record's own units: "$200B" for ticks of 200,000,000,000 (a step label's own text names the
+  // currency); null for a small axis, which keeps its plain numbers
+  function compactTicks(lo, hi, step, cur) {
+    var top = Math.max(Math.abs(lo), Math.abs(hi)), u = null, i, k;
+    // the largest unit the step is a whole number of ("$200B", not "$0.2T"), else a tenth of one
+    for (k = 1; k >= 0.1 && !u; k /= 10) for (i = 0; i < SUFFIX.length; i++) if (top >= SUFFIX[i][0] && step >= SUFFIX[i][0] * k) { u = SUFFIX[i]; break; }
+    if (!u) return null;
+    var r = step / u[0], dp = r >= 1 ? 0 : Math.min(2, Math.ceil(-Math.log10(r) - 1e-9));
+    return function (t) { return t === 0 ? cur + '0' : (t < 0 ? '\u2212' : '') + cur + nf(dp, dp).format(Math.abs(t) / u[0]) + u[1]; };
+  }
+  // the unallocated step's label, as the engine now writes it and as an older report did
+  var UNALLOCATED = /^(?:not allocated: suppressed cells|unallocated \(suppressed cells\))$/i;
+  var UNALLOCATED_WORDS = 'Not allocated: suppressed cells';
+  function stepLabel(s) { return UNALLOCATED.test(String(s)) ? UNALLOCATED_WORDS : String(s); }
+  var CORRECTION_WORDS = { total_with_parts: 'a total kept together with its own parts', two_adjustments: 'both the adjusted and the unadjusted series',
+    component_with_parent: 'a component kept with the total that already holds it', alt_with_total: 'an alternative total kept with the total',
+    mixed_units: 'different units mixed', rate_members: 'several members of a rate or an index', unverified_members: 'several members of a dimension no total was verified for' };
+  // where the slice came from, in plain words (estimand.plan_source; structure.corrections names what was corrected)
+  function planSourceWords(est, st) {
+    var src = est && est.plan_source;
+    if (src === 'ai') return 'The AI plan chose this slice and the engine checked it: no rows of it add a total to its own parts.';
+    if (src === 'ai_corrected') {
+      var cs = ((st && st.corrections) || (est && est.corrections) || []).filter(function (c) { return c && c.kind; });
+      var why = cs.map(function (c) { return (CORRECTION_WORDS[c.kind] || String(c.kind).replace(/_/g, ' ')) + (c.dim ? ' (' + c.dim + ')' : ''); });
+      return 'Your plan was corrected: ' + (why.length ? 'its rows would have counted the same amount twice (' + why.join('; ') + '), so' : 'its rows mixed totals and parts, so') +
+        ' the engine read its default slice instead.';
+    }
+    if (src === 'engine_default') return 'The engine chose this slice: no plan asked for another, so it reads the table\'s own headline, the total of each dimension.';
+    return '';
+  }
+  // "adds up" for each dimension whose total was checked against its parts: the verdict, the count of months it holds
+  // on, the largest gap and what no published part holds in the latest 12 months
+  function sumCheckWords(c, U) {
+    var parts = c.parts === undefined || c.parts === null ? 'its' : 'the ' + c.parts;
+    var on = isFinite(c.complete_cells) ? (isFinite(c.within_tolerance) ? ' on ' + c.within_tolerance + ' of ' + c.complete_cells + ' months' : ' on the ' + c.complete_cells + ' months where every part has a value') : ' month by month';
+    var gap = '';
+    if (c.max_residual && c.max_residual.text && c.max_residual.text !== 'n/a') gap = ', largest gap ' + c.max_residual.text;
+    else if (isFinite(c.max_rel_residual)) gap = ', largest gap ' + (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') + ' of ' + c.total;
+    var un = c.unallocated_latest && c.unallocated_latest.text ? '; not allocated to a part in the latest 12 months: ' + c.unallocated_latest.text : '';
+    var head = c.verdict === 'adds_up' ? 'Adds up: ' : 'Does not add up cleanly: ';
+    return head + c.total + ' = ' + parts + ' parts of ' + c.dim + on + gap + un + '.';
+  }
+  // the report's headline claim: results.primary names it by id or claim; its finding gives the grade
+  function primaryFinding(R) {
+    var p = R && R.primary, fs = (R && R.findings) || [];
+    if (!p) return null;
+    return fs.filter(function (f) { return f && (f.claim === (p.claim || p) || (p.id && f.id === p.id)); })[0] || null;
+  }
+  // the process grade (T4): the engine still grades the claim, but when the headline is an official aggregate the grade
+  // is of the month-to-month noise behind the monthly figures, not of the published total
+  function processOf(R, f) {
+    var inf = R && R.estimand && R.estimand.inference;
+    if (!inf || inf.mode !== 'official_aggregate') return null;
+    var g = f && gradeOf(f.verdict || f.grade), note = String(inf.grade_label || '').replace(/^process grade:\s*/i, '');
+    return { grade: g || '', word: g ? (GRADE_LABEL[g] || g) : '', note: note || 'the month-to-month noise of the monthly figures; not a test of the published total' };
+  }
+  function estimandView(R) {
+    var e = R && R.estimand;
+    if (!e || typeof e !== 'object' || !e.text) return null;
+    var U = unitOf(R), F = e.figures || {}, semi = String(e.text).indexOf(';'), f = primaryFinding(R);
+    var months = function (x) { return x && x.months && x.months !== 12 ? 'the ' + x.months + ' matched months' : '12 months'; };
+    var figs = [];
+    if (F.prior && F.prior.text) figs.push({ label: (F.prior.months && F.prior.months !== 12 ? 'The ' + F.prior.months + ' matched months before' : '12 months before'), value: String(F.prior.text) });
+    if (F.latest && F.latest.text) figs.push({ label: (F.latest.months && F.latest.months !== 12 ? 'The ' + F.latest.months + ' matched months, latest' : 'Latest 12 months'), value: String(F.latest.text) });
+    if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text) });
+    if (F.change_pct && F.change_pct.text) figs.push({ label: 'Change, %', value: String(F.change_pct.text), lead: true });
+    var inf = e.inference || null, st = R.structure || null;
+    return { title: semi < 0 ? String(e.text) : String(e.text).slice(0, semi), what: semi < 0 ? '' : String(e.text).slice(semi + 1).trim(), figures: figs,
+      process: processOf(R, f), described: !!(inf && inf.mode === 'official_aggregate'),
+      checks: (e.sum_checks || []).filter(function (c) { return c && c.dim; }).map(function (c) { return sumCheckWords(c, U); }),
+      excluded: (e.excluded || []).filter(function (x) { return x && x.what; }).map(function (x) { return { what: String(x.what), why: String(x.why || '') }; }),
+      source: planSourceWords(e, st), how: inf && inf.how_known && inf.how_known.length ? inf.how_known.join('; ') : '',
+      revisions: inf && inf.revisions ? String(inf.revisions) : '', quality: inf && inf.quality && inf.quality.codes ? inf.quality : null };
+  }
+  var AUDIT_WORDS = { passes: 'the back-test passed', unclear: 'the back-test neither passed nor failed it', fails: 'the back-test failed' };
+  // the forecast's back-test (forecast.audit, nl_inference.forecast_audit): the label as the engine wrote it, the status and
+  // whether the engine's grade is trusted; a failed one marks the forecast "not trusted" beside its grade
+  function auditView(R) {
+    var a = R && R.forecast && R.forecast.audit;
+    if (!a || typeof a !== 'object' || !a.label) return null;
+    var st = String(a.status || 'unclear');
+    return { label: String(a.label), status: st, trusted: a.trusted === true, untrusted: st === 'fails', words: AUDIT_WORDS[st] || 'the back-test is not conclusive',
+      grade: String(a.grade_label || ''), line: String(a.label) + ' (' + (AUDIT_WORDS[st] || st) + (a.trusted === true ? '; trusted' : '; not trusted') + ')' };
+  }
+  // a trend test's method line (T1): what it fitted, its answer, and what it does in series known to have no trend
+  function trendLine(t, title) {
+    if (!t || typeof t !== 'object' || !t.verdict) return '';
+    var v = { rising: 'a rising trend', falling: 'a falling trend', no_settled_direction: 'no settled direction', not_graded: 'a direction it does not grade' }[t.verdict] || t.verdict;
+    var z = t.size || {}, c = z.cell || {};
+    var s = String(title || 'Trend') + ': ' + (t.name ? String(t.name) : 'a bootstrap trend test') + (t.n ? ' on ' + t.n + ' yearly values' : '') +
+      (isFinite(t.p) ? '; p ' + Number(t.p).toPrecision(2).replace(/\.?0+$/, '') : '') + (isFinite(t.p_random_walk) ? ', random-walk screen ' + Number(t.p_random_walk).toPrecision(2).replace(/\.?0+$/, '') : '') +
+      '; the verdict is ' + v + '.';
+    if (isFinite(z.simulated)) {
+      s += ' On ' + (z.series ? Number(z.series).toLocaleString('en-US') + ' ' : '') + 'simulated series with no trend' + (c.n ? ' like this one (' + c.n + ' years' + (isFinite(c.rho) ? ', momentum ' + c.rho : '') + ')' : '') +
+        ', the test found a trend in ' + (100 * z.simulated).toFixed(1) + '% at its ' + (100 * (z.nominal || 0.05)).toFixed(0) + '% level' +
+        (isFinite(z.newey_west) ? '; the Newey-West range used before found one in ' + (100 * z.newey_west).toFixed(1) + '%' : '') + '.';
+    }
+    return s;
+  }
+
   /* ---------------------------------------------------------------- the page model */
   function Doc(o) {
     var sz = PAPER[o.paper] || PAPER.letter;
@@ -4023,7 +4169,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     this.y = top - h - 12;
   };
   // the grade badge: a shape and the word, so a grade never rests on colour alone
-  Doc.prototype.badge = function (grade, x, yb) {
+  Doc.prototype.badge = function (grade, x, yb, note) {
     var g = gradeOf(grade), lab = enc(GRADE_LABEL[g] || g), c = COL.grade[g] || COL.muted;
     var w = twc(lab, 6.5, 'B', 0.5) + 20, h = 11, y = yb - 2.5;
     if (g === 'CONFIRMED') {
@@ -4040,6 +4186,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       this.rect(x, y, w, h, COL.white, c, 0.8, '2 1.5');
       this.text(lab, x + 6, y + 3.3, 6.5, 'B', c, 0.5);
     }
+    // what the grade is a grade of, in the words beside the pill ("process grade"), drawn on the next line when it does not fit
+    if (note && !(note.ok === false)) this.text(enc(note.text), note.x !== undefined ? note.x : x + w + 5, note.y !== undefined ? note.y : y + 3.3, note.size || 6.5, 'I', COL.muted);
     return w;
   };
   // a figure derived from a graded change (a run rate, a what-if) has no grade of its own: a neutral outline and
@@ -4074,6 +4222,61 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return '';
   }
 
+  /* ---- the estimand: what the headline measures, its three figures, how it was checked, what was left out (wave 4, track B) ---- */
+  Doc.prototype.estimand = function (v) {
+    var self = this, pad = 12, W = this.CW, inner = W - 2 * pad - 4, gap = 8;
+    var titleL = wrapTokens(tokens(v.title, 'B', COL.ink), 12, inner), whatL = v.what ? wrapTokens(tokens(v.what, 'R', COL.muted), 8.3, inner) : [];
+    var nf0 = v.figures.length, fw = (inner - gap * Math.max(0, nf0 - 1)) / Math.max(1, nf0), figH = 46;
+    var procNote = v.process ? 'process grade: ' + v.process.note : '';
+    var procW = v.process && v.process.word ? twc(enc(v.process.word), 6.5, 'B', 0.5) + 20 : 0;
+    var procL = procNote ? wrapTokens(tokens(procNote, 'R', COL.muted), 7.8, Math.max(120, inner - procW - 8)) : [];
+    var descL = v.described ? wrapTokens(tokens('Described, not tested: this is a published total, so the engine states the change and its checks rather than testing it.', 'I', COL.body), 8, inner) : [];
+    var lines = function (list, size, font, color) { return list.map(function (t) { return wrapTokens(tokens(t, font || 'R', color || COL.body), size, inner - 10); }); };
+    var chkL = lines(v.checks, 8.2), exL = lines(v.excluded.map(function (x) { return x.what + (x.why ? ': ' + x.why : ''); }), 8.2);
+    var srcL = v.source ? wrapTokens(tokens(v.source, 'I', COL.muted), 8, inner) : [];
+    var howL = v.how ? wrapTokens(tokens('How it is known: ' + v.how + '.' + (v.revisions ? ' ' + cap1(v.revisions) + '.' : ''), 'R', COL.muted), 7.6, inner) : [];
+    var count = function (ls) { return ls.reduce(function (a, l) { return a + l.length; }, 0); };
+    var h = pad + 14 + titleL.length * 14.5 + (whatL.length ? 3 + whatL.length * 10.5 : 0) + 8 + figH + 8 + Math.max(procL.length * 10 + 4, procNote ? 14 : 0) + (descL.length ? 4 + descL.length * 10 : 0) +
+      (chkL.length ? 6 + 11 + count(chkL) * 10.2 + chkL.length * 2 : 0) + (exL.length ? 6 + 11 + count(exL) * 10.2 + exL.length * 2 : 0) + (srcL.length ? 6 + srcL.length * 10 : 0) + (howL.length ? 5 + howL.length * 9.6 : 0) + pad;
+    this.need(h + 8);
+    var top = this.y, x0 = this.L + pad + 4, y = top - pad;
+    this.rect(this.L, top - h, W, h, COL.panel);
+    this.rect(this.L, top - h, 3, h, COL.accent);
+    this.text(enc('WHAT THIS REPORT MEASURES'), x0, y - 7, 7.5, 'B', COL.accentInk, 1); y -= 14;
+    titleL.forEach(function (ln) { self.drawLine(ln, x0, y - 12, 12); y -= 14.5; });
+    if (whatL.length) { y -= 3; whatL.forEach(function (ln) { self.drawLine(ln, x0, y - 8.3, 8.3); y -= 10.5; }); }
+    y -= 8;
+    v.figures.forEach(function (f, i) {
+      var fx = x0 + i * (fw + gap);
+      self.rect(fx, y - figH, fw, figH, COL.white, f.lead ? COL.accent : COL.hair, f.lead ? 1.1 : 0.8);
+      self.text(enc(String(f.label).toUpperCase()), fx + 7, y - 12, 6.4, 'B', COL.muted, 0.5);
+      var vb = enc(f.value), vs = f.lead ? 19 : 16;
+      while (tw(vb, vs, 'B') > fw - 14 && vs > 9) vs -= 1;
+      self.text(vb, fx + 7, y - 35, vs, 'B', f.lead ? COL.accentInk : COL.ink);
+    });
+    y -= figH + 8;
+    if (procNote) {
+      if (procW) self.badge(v.process.grade, x0, y - 9);
+      procL.forEach(function (ln, k) { self.drawLine(ln, x0 + (procW ? procW + 8 : 0), y - 9 - k * 10, 7.8); });
+      y -= Math.max(procL.length * 10 + 4, 14);
+    }
+    if (descL.length) { y -= 4; descL.forEach(function (ln) { self.drawLine(ln, x0, y - 8, 8); y -= 10; }); }
+    var list = function (head, ls) {
+      if (!ls.length) return;
+      y -= 6;
+      self.text(enc(head.toUpperCase()), x0, y - 7, 6.8, 'B', COL.muted, 0.8); y -= 11;
+      ls.forEach(function (one) {
+        one.forEach(function (ln, k) { if (k === 0) self.rect(x0 + 1, y - 7, 2.6, 2.6, COL.accent); self.drawLine(ln, x0 + 10, y - 8.2, 8.2); y -= 10.2; });
+        y -= 2;
+      });
+    };
+    list('How the figure was checked', chkL);
+    list('Left out, and why', exL);
+    if (srcL.length) { y -= 6; srcL.forEach(function (ln) { self.drawLine(ln, x0, y - 8, 8); y -= 10; }); }
+    if (howL.length) { y -= 5; howL.forEach(function (ln) { self.drawLine(ln, x0, y - 7.6, 7.6); y -= 9.6; }); }
+    this.y = top - h - 12;
+  };
+
   /* ---- key-figure tiles: the figures a reader should carry away ---- */
   Doc.prototype.kpis = function (list) {
     if (!list.length) return;
@@ -4082,6 +4285,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // tile grows with it; any other tile's words keep to two lines
     var subL = list.map(function (k) { var l = k.sub ? wrapTokens(tokens(k.sub, 'R', COL.muted), 7, w - 16) : []; return k.whole ? l : l.slice(0, 2); });
     list.forEach(function (k, i) { if (k.whole) h = Math.max(h, 60 + (subL[i].length - 1) * 8.5 + 12 + (gradeOf(k.grade) ? 20 : 0)); });
+    if (list.some(function (k) { return k.process; })) h += 12;
     this.need(h + 14);
     var top = this.y;
     list.forEach(function (k, i) {
@@ -4093,7 +4297,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       while (tw(v, vs, 'B') > w - 16 && vs > 11) vs -= 1;
       self.text(v, x + 8, top - 47, vs, 'B', COL.ink);
       subL[i].forEach(function (ln, j) { self.drawLine(ln, x + 8, top - 60 - j * 8.5, 7); });
-      if (g) self.badge(g, x + 8, top - h + 9);
+      if (g && k.process) self.badge(g, x + 8, top - h + 9, { text: 'process grade, not a test of the published total', x: x + 8, y: top - h + 19.5, size: 6 });
+      else if (g) self.badge(g, x + 8, top - h + 9);
     });
     this.y = top - h - 14;
   };
@@ -4373,15 +4578,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   }
   function tierFill(t, seq) { return t > 0 ? (seq ? VC.seq : VC.rises)[Math.min(3, t) - 1] : t < 0 ? VC.falls[Math.min(3, -t) - 1] : null; }
   // an axis's ticks for [lo, hi] and their labels, the only numbers a drawer formats
-  function axis(lo, hi, n) {
-    var nt = niceTicks(lo, hi, n);
-    nt.lab = nt.ticks.map(function (t) { return enc(fmtTick(t + 0, nt.step)); });
+  function axis(lo, hi, n, cur) {
+    var nt = niceTicks(lo, hi, n), cf = cur === undefined ? null : compactTicks(nt.lo, nt.hi, nt.step, cur);
+    nt.lab = nt.ticks.map(function (t) { return enc(cf ? cf(t + 0) : fmtTick(t + 0, nt.step)); });
     nt.w = nt.lab.map(function (b) { return tw(b, 7, 'R'); });
     nt.max = Math.max.apply(null, nt.w);
     return nt;
   }
   // a horizontal axis over width: as many ticks as have room for their labels (5 down to 2)
-  function axisFor(lo, hi, width) { var nt; for (var m = 5; m >= 2; m--) { nt = axis(lo, hi, m); if (width / Math.max(1, nt.ticks.length - 1) >= nt.max + 10) break; } return nt; }
+  function axisFor(lo, hi, width, cur) { var nt; for (var m = 5; m >= 2; m--) { nt = axis(lo, hi, m, cur); if (width / Math.max(1, nt.ticks.length - 1) >= nt.max + 10) break; } return nt; }
   // tick labels under a horizontal axis, each centred on its tick; one that would touch the one before is left out
   Doc.prototype.xTicks = function (nt, X, y) {
     var last = -Infinity, self = this;
@@ -4412,23 +4617,24 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       lay: function (r, CW) {
         var st = r.data.steps, lo = 0, hi = 0;
         st.forEach(function (s) { lo = Math.min(lo, s.from, s.to); hi = Math.max(hi, s.from, s.to); });
-        var font = st.map(function (s) { return s.kind === 'total' ? 'B' : 'R'; }), tb = st.map(function (s) { return enc(s.text); });
+        var font = st.map(function (s) { return s.kind === 'total' ? 'B' : UNALLOCATED.test(s.label) ? 'I' : 'R'; }), tb = st.map(function (s) { return enc(s.text); });
         var o = { n: st.length, font: font, tb: tb, tws: tb.map(function (b, k) { return tw(b, 7, font[k]); }) };
-        var nt = axis(lo, hi, 4), x0 = nt.max + 8, slot = (CW - x0) / o.n;
+        var cur = (/^[+\u2212-]?([$\u20ac\u00a3\u00a5])/.exec(String(st[0].text)) || [])[1] || '';
+        var nt = axis(lo, hi, 4, cur), x0 = nt.max + 8, slot = (CW - x0) / o.n;
         if (slot >= 44 && Math.max.apply(null, o.tws) <= slot - 4) {
           o.v = true; o.nt = nt; o.x0 = x0; o.slot = slot; o.down = st.some(function (s) { return s.to < s.from; });
-          o.labels = st.map(function (s, k) { return wrapLabel(s.label, 7, font[k], slot - 4, 2); });
+          o.labels = st.map(function (s, k) { return wrapLabel(stepLabel(s.label), 7, font[k], slot - 4, 2); });
           o.h = 12 + 150 + (o.down ? 11 : 0) + 24;
           return o;
         }
         var right = 0, left = 0;
         st.forEach(function (s, k) { if (s.to >= s.from) right = Math.max(right, o.tws[k] + 5); else left = Math.max(left, o.tws[k] + 5); });
-        var labW = Math.min(CW * 0.36, Math.max.apply(null, st.map(function (s, k) { return tw(enc(s.label), 7, font[k]); })) + 8);
+        var labW = Math.min(CW * 0.36, Math.max.apply(null, st.map(function (s, k) { return tw(enc(stepLabel(s.label)), 7, font[k]); })) + 8);
         o.labW = labW = Math.max(60, Math.min(labW, CW - left - right - 100));
         o.xa = labW + left;
-        o.nt = axisFor(lo, hi, CW - right - o.xa);
+        o.nt = axisFor(lo, hi, CW - right - o.xa, cur);
         o.xb = Math.min(CW - right, CW - o.nt.max / 2 - 1);
-        o.labels = st.map(function (s, k) { return wrapLabel(s.label, 7, font[k], labW - 8, 2); });
+        o.labels = st.map(function (s, k) { return wrapLabel(stepLabel(s.label), 7, font[k], labW - 8, 2); });
         o.rh = o.labels.map(function (ls) { return Math.max(17, ls.length * 8.5 + 8); });
         o.h = o.rh.reduce(function (a, b) { return a + b; }, 0) + 16;
         return o;
@@ -4443,7 +4649,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           for (i = 0; i < o.n; i++) {
             s = st[i];
             var cx = x0 + slot * (i + 0.5), y1 = Y(s.from), y2 = Y(s.to), f = o.font[i];
-            this.rect(cx - bw / 2, Math.min(y1, y2), bw, Math.max(0.8, Math.abs(y2 - y1)), col(s));
+            if (UNALLOCATED.test(s.label)) this.rect(cx - bw / 2, Math.min(y1, y2) - 2.5, bw, Math.max(0.8, Math.abs(y2 - y1)) + 5, COL.white, COL.muted, 0.8, '2 1.5');
+            else this.rect(cx - bw / 2, Math.min(y1, y2), bw, Math.max(0.8, Math.abs(y2 - y1)), col(s));
             if (i < o.n - 1) this.line(cx + bw / 2, y2, cx + slot - bw / 2, y2, VC.conn, 0.6, '2 2');
             this.text(o.tb[i], cx - o.tws[i] / 2, s.to >= s.from ? y2 + 3 : y2 - 8.5, 7, f, VC.ink);
             o.labels[i].forEach(function (b, k) { self.text(b, cx - tw(b, 7, f) / 2, pb - 9 - k * 8.5, 7, f, VC.body); });
@@ -4457,7 +4664,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         for (i = 0; i < o.n; i++) {
           s = st[i];
           var mid = y - o.rh[i] / 2, by = mid - 4.5, a = X(Math.min(s.from, s.to)), e = X(Math.max(s.from, s.to)), ls = o.labels[i], fo = o.font[i];
-          this.rect(a, by, Math.max(0.8, e - a), 9, col(s));
+          if (UNALLOCATED.test(s.label)) this.rect((a + e) / 2 - 3, by - 1, Math.max(6, e - a), 11, COL.white, COL.muted, 0.8, '2 1.5');
+          else this.rect(a, by, Math.max(0.8, e - a), 9, col(s));
           if (prev) this.line(X(prev.to), prev.by, X(prev.to), by + 9, VC.conn, 0.6, '2 2');
           this.text(o.tb[i], s.to >= s.from ? X(s.to) + 3 : X(s.to) - 3 - o.tws[i], mid - 2.5, 7, fo, VC.ink);
           ls.forEach(function (b, k) { self.text(b, L, mid + (ls.length - 1) * 4.25 - 2.5 - k * 8.5, 7, fo, VC.body); });
@@ -4829,7 +5037,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   /* ---- the graded findings as a table with badges ---- */
   Doc.prototype.findingsTable = function (items) {
     var self = this, cw = this.CW - 190;
-    var rowsH = items.map(function (f) { return Math.max(wrapTokens(tokens(f.claim, 'R', COL.body), 8.3, cw).length * 11 + 8, 20); });
+    var rowsH = items.map(function (f) { return Math.max(wrapTokens(tokens(f.claim, 'R', COL.body), 8.3, cw).length * 11 + 8, f.process || f.untrusted ? 28 : 20); });
     this.need(40 + (rowsH[0] || 0));
     this.tab += 1;
     var cap = enc('Table ' + this.tab + '.  ');
@@ -4849,6 +5057,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       wrapTokens(tokens(f.claim, 'R', COL.body), 8.3, cw).forEach(function (ln, k) { self.drawLine(ln, self.L + 5, top - 12 - k * 11, 8.3); });
       var v = enc(smart(f.value || '')); self.text(v, self.L + self.CW - 110 - tw(v, 8.3, 'R'), top - 12, 8.3, 'R', COL.ink);
       if (gradeOf(f.grade)) self.badge(f.grade, self.L + self.CW - 96, top - 12);
+      if (f.process || f.untrusted) self.text(enc(f.untrusted ? 'not trusted: back-test failed' : 'process grade'), self.L + self.CW - 96, top - 23.5, 6.2, 'I', f.untrusted ? COL.grade.WATCH : COL.muted);
       self.y = top - rowsH[i]; self.line(self.L, self.y, self.L + self.CW, self.y, i === items.length - 1 ? COL.ink : COL.hair, i === items.length - 1 ? 0.8 : 0.4);
     });
     this.y -= 14;
@@ -5065,6 +5274,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     d.newPage();
     if (!onCover) d.callout('About this report', m.notice, { size: 8.5, fill: COL.panel });
     d.h1('Executive summary', 'The headline', 'summary');
+    if (m.estimand) d.estimand(m.estimand);
     d.callout('Headline insight', m.headline, { size: 12.5, font: 'B' });
     d.kpis(m.kpis || []);
     if (m.summary && m.summary.length) { d.h2('', 'In brief', 'brief', 44); d.bullets(m.summary); }
@@ -5152,6 +5362,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return { title: n(t && t.title), cols: ((t && t.cols) || []).map(n).join('|') };
   }
   var MAX_SOURCES = 20;
+  // the adapter's note that the byte budget left scenario items out of what the writer received (nl_browser.BUDGET_REFUSED)
+  var LEFT_OUT = /scenario items are left out to keep what the report writer receives/i;
   // b's items added to the end of a, in place (a = a.concat(b) in a loop copies a each time: quadratic in sections)
   function append(a, b) { for (var i = 0; i < b.length; i++) a.push(b[i]); return a; }
   function model(inp) {
@@ -5174,6 +5386,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var P = parseReport(text);
     var rows = R && R.input && R.input.rows, cols = R && R.input && R.input.columns;
     var analyses = (R && R.analyses) || [];
+    var EV = R ? estimandView(R) : null, AV = R ? auditView(R) : null, U = R ? unitOf(R) : null;
     var methodOf = function (t) { var a = analyses.filter(function (x) { return x && x.title === t; })[0]; return a && a.method ? ' Method: ' + a.method : ''; };
     var srcNote = function (t) { return 'Source: NorthLedger engine, computed in the reader\'s browser from ' + fileWord + (rows ? ' (' + Number(rows).toLocaleString('en-US') + ' rows)' : '') + '.' + methodOf(t); };
     var usedTables = {}, usedCharts = {};
@@ -5294,8 +5507,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var lead = null;
     if (latest || pct) {
       lead = basisF;
-      if (latest) kpis.push({ label: latest.label, value: String(latest.text), sub: prior ? String(prior.text) + ' in the 12 months before' : '', grade: itemGrade(latest).grade });
-      if (pct) kpis.push({ label: 'Change on the 12 months before', value: String(pct.text), sub: [chg ? String(chg.text) : '', basisF && interval(basisF.why) ? '95% interval ' + interval(basisF.why) : ''].filter(Boolean).join('; '), grade: itemGrade(pct).grade });
+      var proc = !!(EV && EV.process);       // an official aggregate: the engine's grade is a process grade, said on the tile
+      if (latest) kpis.push({ label: EV && R.estimand.measure && R.estimand.measure.label ? R.estimand.measure.label + ', latest 12 months' : latest.label, value: String(latest.text),
+        sub: prior ? String(prior.text) + ' in the 12 months before' : '', grade: itemGrade(latest).grade, process: proc });
+      if (pct) kpis.push({ label: 'Change on the 12 months before', value: String(pct.text),
+        sub: [chg ? String(chg.text) : '', basisF && interval(basisF.why) && !proc ? '95% interval ' + interval(basisF.why) : ''].filter(Boolean).join('; ') + (proc ? ' (described)' : ''), grade: itemGrade(pct).grade, process: proc });
     } else if (kfs.length) {
       kfs.forEach(function (k) { kpis.push({ label: String(k.label || ''), value: String(k.text), sub: '', grade: gradeOf(k.grade) }); });
     } else {
@@ -5408,12 +5624,23 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       lags.forEach(function (lg) {
         var win = hi(lg, 'windows'), rose = hi(lg, 'rose');
         var of = win ? 'the ' + String(win.text) + ' past windows' : 'the past ' + lg + '-month windows';
+        // the overlapping windows are worth fewer independent ones: "the 104 past windows (about 13 independent)"
+        var ne = hi(lg, 'n_eff');
+        if (win && ne) of = 'the ' + String(win.text) + ' past windows (about ' + String(ne.text) + ' independent)';
         [['p10', '1 in 10 lower', '; 1 in 10 of ' + of + ' was lower'], ['p50', 'Middle', ', the middle of ' + of + (rose ? '; it rose in ' + String(rose.text) + ' of them' : '')],
           ['p90', '1 in 10 higher', '; 1 in 10 of ' + of + ' was higher']].forEach(function (pp) {
           var x = hi(lg, pp[0]);
           if (x) hcards.push({ name: lg + '-month: ' + pp[1], value: String(x.text), unit: 'The change in the monthly average' + pp[2], assumption: '', grade: '', parent: '', tag: 'history' });
         });
         if (win && win.label) hsays.push(sentence(win.label));
+        // the non-overlapping alternative: one window each year (or each quarter), none counted twice
+        var no = { n: hi(lg, 'nonoverlap.n'), min: hi(lg, 'nonoverlap.min'), med: hi(lg, 'nonoverlap.median'), max: hi(lg, 'nonoverlap.max') };
+        if (no.n && no.min && no.max) {
+          [['nonoverlap.min', 'lowest'], ['nonoverlap.median', 'middle'], ['nonoverlap.max', 'highest']].forEach(function (pp) {
+            var x = hi(lg, pp[0]);
+            if (x) hcards.push({ name: lg + '-month, none counted twice: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
+          });
+        }
       });
       hist.forEach(function (x) { if (!hzero && x.assumes) hzero = sentence(x.assumes); });
       if (hcards.length) {
@@ -5424,7 +5651,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (any) append(p3, hb);
     if (any && sc && sc.note) p3.push({ type: 'p', engine: true, text: sc.note, wide: true, size: 7.5, lead: 10.5, font: 'I', color: COL.muted, after: 10 });
     if (!any) {
-      var why = sc && Array.isArray(sc.refused) && sc.refused.length ? sc.refused.map(function (x) { return cap1(String(x).replace(/[.\s]+$/, '')) + '.'; }).join(' ') : '';
+      var seenWhy = {}, why = sc && Array.isArray(sc.refused) && sc.refused.length ? sc.refused.filter(function (x) { return !LEFT_OUT.test(String(x)); }).map(function (x) { return cap1(String(x).replace(/[.\s]+$/, '')) + '.'; })
+        .filter(function (x) { if (seenWhy[x]) return false; seenWhy[x] = true; return true; }).join(' ') : '';
       if (!why) { var nf = findings.filter(function (x) { return x.kind === 'forecast' && gradeOf(x.verdict) === 'INSUFFICIENT'; })[0]; if (nf && nf.why) why = 'No forecast: ' + nf.why; }
       if (!why) why = R ? 'The engine computed no run rate, sensitivity, gap or forecast for this file.'
         : inp.shared ? 'This shared copy doesn\'t carry the engine\'s full results; the figures shown are those in the report text.'
@@ -5433,6 +5661,26 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       // no scenario to add up, and the level's past range instead: the reason first, then the history
       append(p3, hb);
     }
+
+    // the forecast and its back-test (nl_inference.forecast_audit): the engine's range and how it held when the shown model
+    // was refitted at the last origins; a failed back-test marks the engine's grade "not trusted"; a row-count forecast the
+    // table's layout fixes is one line saying why, never a number
+    var FCR = R && R.forecast, fcb = [];
+    if (FCR && (FCR.row_forecast_dropped === true || FCR.available || AV)) {
+      fcb.push({ type: 'h2', num: '', text: 'The forecast and how its range held when back-tested', id: 'sc-audit', engine: true });
+      if (FCR.available && Array.isArray(FCR.points) && FCR.points.length) {
+        var pts = [0, 2, 5, 11].filter(function (k) { return k < FCR.points.length; }).map(function (k) { return FCR.points[k]; });
+        var money = function (v) { return isFinite(v) && v !== null ? (U && Math.abs(v) >= 1e6 ? U(v) : fmtVal(v)) : 'n/a'; };
+        fcb.push({ type: 'table', engine: true, table: { title: 'The engine\'s forecast' + (FCR.series ? ': ' + String(FCR.series).replace(/_/g, ' ') : ''), cols: ['Month', 'Forecast', '80% range'],
+          rows: pts.map(function (q) { return [String(q.date), money(q.value), q.lo !== null && q.hi !== null && q.lo !== undefined ? money(q.lo) + ' to ' + money(q.hi) : 'n/a']; }) },
+          source: 'Source: NorthLedger engine. The engine\'s grade of the forecast: ' + (FCR.verdict ? String(FCR.verdict).toUpperCase() : 'not stated') + (FCR.champion ? '; the model: ' + FCR.champion : '') + (FCR.baseline_won === true ? ' (the simple rule won the engine\'s replay)' : '') + '.' });
+      } else if (FCR.row_forecast_dropped === true) {
+        fcb.push({ type: 'p', engine: true, text: String(FCR.reason || 'No forecast of the rows a month is shown: rows per month are fixed by the table\'s layout.') });
+      }
+      if (AV) fcb.push({ type: 'callout', engine: true, label: AV.untrusted ? 'Back-test: not trusted' : 'Back-test of the range shown', size: 9.5, rule: AV.untrusted ? COL.grade.WATCH : COL.accent,
+        labelColor: AV.untrusted ? COL.grade.WATCH : COL.accentInk, text: cap1(AV.line) + '.' + (AV.untrusted ? ' The engine\'s grade of the forecast stands, but it is not trusted: the back-test of its range failed.' : AV.status === 'passes' ? ' A passed back-test says the range held often enough and the model is no worse than the simple rule; it is not a promise.' : ' A back-test that neither passes nor fails says the evidence is too thin to settle it.') });
+    }
+    append(p3, fcb);
 
     // ---- Part 4: what to do; Part 5: the risks and what the data cannot say
     var p4 = [], todo = secsOf('todo');
@@ -5471,6 +5719,25 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (R) {
       if (R.partial) pa.push({ type: 'p', text: 'This shared copy carries the engine\'s key figures and scenario figures, not its full results.', size: 8.5 });
       if (R.reading) pa.push({ type: 'h2', num: '', text: 'The data', id: 'm-data' }, { type: 'p', text: R.reading });
+      // a column the scan flagged as free text and the engine read as a category (privacy.released): said here as the reader
+      // was told on the consent step; the report's figures may show its labels
+      var rel = R.privacy && Array.isArray(R.privacy.released) ? R.privacy.released.filter(function (x) { return x && x.text; }) : [];
+      if (rel.length) pa.push({ type: 'h2', num: '', text: 'Columns read as categories, not personal data', id: 'm-released' }, { type: 'bullets', items: rel.map(function (x) { return String(x.text); }) });
+      if (EV) {
+        var chk = (R.estimand.sum_checks || []).filter(function (c) { return c && c.dim; });
+        pa.push({ type: 'h2', num: '', text: 'The table\'s structure and what was checked', id: 'm-structure' });
+        if (chk.length) pa.push({ type: 'table', table: { title: 'Each total checked against its parts', cols: ['Dimension', 'Total', 'Parts', 'Months checked', 'Within tolerance', 'Largest gap', 'Not allocated, latest 12 months'],
+          rows: chk.map(function (c) { return [String(c.dim), String(c.total), c.parts === undefined || c.parts === null ? '' : String(c.parts), isFinite(c.complete_cells) ? String(c.complete_cells) : '', isFinite(c.within_tolerance) ? String(c.within_tolerance) : '',
+            c.max_residual && c.max_residual.text ? String(c.max_residual.text) : isFinite(c.max_rel_residual) ? (c.max_rel_residual < 0.0001 ? 'under 0.01%' : (100 * c.max_rel_residual).toFixed(2) + '%') : '', c.unallocated_latest && c.unallocated_latest.text ? String(c.unallocated_latest.text) : '']; }) },
+          source: 'Source: NorthLedger engine, from the table\'s own published series. A total adds up when it is within half a unit of the last published digit of its parts on 95% or more of the months where every part has a value.' });
+        var fl = R.structure && R.structure.flags, byk = fl && fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return Number(fl.by_kind[k]).toLocaleString('en-US') + ' rows ' + k.replace(/_/g, ' '); }) : [];
+        var qh = EV.quality && EV.quality.codes ? Object.keys(EV.quality.codes).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + EV.quality.codes[k] + ' month' + (EV.quality.codes[k] === 1 ? '' : 's'); }) : [];
+        if (byk.length || qh.length) pa.push({ type: 'bullets', items: [byk.length ? 'The publisher\'s flags in the file: ' + byk.join(', ') + '.' : '', qh.length ? 'Quality marks on the headline\'s months: ' + qh.join(', ') + '.' : ''].filter(Boolean) });
+      }
+      var tests = analyses.filter(function (a) { return a && a.test; });
+      if (tests.length) pa.push({ type: 'h2', num: '', text: 'The trend test and its size', id: 'm-trend' }, { type: 'bullets', items: tests.map(function (a) { return trendLine(a.test, a.title); }).filter(Boolean) });
+      var cut = sc && Array.isArray(sc.refused) ? sc.refused.filter(function (x) { return LEFT_OUT.test(String(x)); })[0] : '';
+      if (cut) pa.push({ type: 'p', text: 'Scenario detail left out: ' + cap1(String(cut).replace(/[.\s]+$/, '')) + '.', size: 8.5 });
       // every step of the AI plan that set rows aside: its count, its share of the file's rows, the plan's reason and
       // the engine's check of it (the adapter's words)
       if (drops.length) pa.push({ type: 'h2', num: '', text: 'Rows the AI plan set aside', id: 'm-drops' }, { type: 'bullets', items: drops.map(function (d) { return d.text; }) });
@@ -5490,7 +5757,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         pa.push({ type: 'h2', num: '', text: 'Every finding and its grade', id: 'm-find' });
         pa.push({ type: 'findings', items: findings.map(function (x) {
           var ch = x.kind === 'business' && /^change in /i.test(x.claim) && isFinite(x.value);
-          return { claim: x.claim, value: ch ? sgnPct(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict };
+          // a row-count forecast the table's layout fixes: one line in the forecast block says why; here no number and no grade
+          if (x.layout_artifact === true) return { claim: x.claim, value: 'not shown', grade: '' };
+          var big = U && isFinite(x.value) && x.value !== null && x.kind === 'forecast' && Math.abs(x.value) >= 1e6;
+          return { claim: x.claim, value: ch ? sgnPct(x.value) : big ? U(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict,
+            process: !!(EV && EV.process && R.primary && x.claim === (R.primary.claim || R.primary)), untrusted: !!(AV && AV.untrusted && x.kind === 'forecast') };
         }) });
       }
       if (Array.isArray(R.limitations) && R.limitations.length && !secsOf('risks').length) pa.push({ type: 'h2', num: '', text: 'The engine\'s limitations', id: 'm-lim' }, { type: 'bullets', items: R.limitations.map(String) });
@@ -5514,7 +5785,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       subject: showName ? String(inp.name) : 'The reader\'s file (its name is left off unless they choose to show it)',
       dataLine: (rows ? Number(rows).toLocaleString('en-US') + ' rows' + (cols ? ' \u00d7 ' + cols + ' columns' : '') + '; ' : '') + 'analysed in the reader\'s browser; the file was never uploaded', shared: inp.shared === true,
       preparedBy: 'The NorthLedger engine (every figure it computed) and ' + (inp.model || 'an AI model') + ' (the wording, and any figure quoted from a source it cites), each figure checked against the engine\'s results or that source',
-      reportId: reportId(inp.report), kept: kept || [], notice: notice, headline: title, kpis: kpis.slice(0, 4), summary: summary,
+      reportId: reportId(inp.report), kept: kept || [], notice: notice, headline: title, kpis: kpis.slice(0, 4), summary: summary, estimand: EV,
       parts: [
         { kicker: 'Part 1' + DOT + 'What drove it', title: 'What the engine found, and why', id: 'drivers', blocks: p1 },
         { kicker: 'Part 2' + DOT + 'In the real world', title: 'What it means outside this file', id: 'context', blocks: p2 },
@@ -5640,6 +5911,20 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     });
     var hx = typeof R.health_explain === 'string' ? R.health_explain.trim() : '';
     var rn = typeof R.row_noun === 'string' && /^[a-z]{3,20}$/.test(R.row_noun) ? R.row_noun : '';
+    // the estimand (wave 4): what the headline measures, which the shared PDF prints first; the worker rebuilds it strictly
+    var est = null;
+    if (R.estimand && typeof R.estimand === 'object' && R.estimand.text) {
+      var E = R.estimand, fig = function (x) { return x && typeof x === 'object' && x.text ? (isFinite(x.value) && x.value !== null ? { value: x.value, text: str(x.text, 40) } : { text: str(x.text, 40) }) : null; };
+      est = { text: str(E.text, 400), slice: (E.slice || []).slice(0, 8).map(function (x) { return { dim: str(x.dim, 120), member: str(x.member, 120), why: str(x.why, 200) }; }),
+        measure: E.measure ? { label: str(E.measure.label, 120), uom: str(E.measure.uom, 40), type: str(E.measure.type, 20), aggregation: str(E.measure.aggregation, 60), scale_applied: E.measure.scale_applied } : null,
+        comparison: E.comparison || null, figures: {},
+        sum_checks: (E.sum_checks || []).slice(0, 4).map(function (c) { return { dim: str(c.dim, 120), total: str(c.total, 120), parts: c.parts, verdict: str(c.verdict, 20), complete_cells: c.complete_cells,
+          max_rel_residual: c.max_rel_residual, unallocated_latest: fig(c.unallocated_latest) || undefined }; }),
+        excluded: (E.excluded || []).slice(0, 6).map(function (x) { return { what: str(x.what, 120), why: str(x.why, 200) }; }), plan_source: E.plan_source };
+      ['prior', 'latest', 'change', 'change_pct'].forEach(function (k) { var f = fig(E.figures && E.figures[k]); if (f) est.figures[k] = f; });
+      var I = E.inference;
+      if (I && typeof I === 'object' && I.mode) est.inference = { mode: I.mode, publisher: I.publisher, how_known: (I.how_known || []).slice(0, 4).map(function (x) { return str(x, 200); }), describe: I.describe, revisions: str(I.revisions, 200), grade_label: str(I.grade_label, 200) };
+    }
     var render = function () {
       var out = { partial: true };
       if (R.input && typeof R.input === 'object') out.input = { rows: R.input.rows, columns: R.input.columns };
@@ -5649,6 +5934,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (rn) out.row_noun = rn;
       if (R.cleaning && typeof R.cleaning === 'object') out.cleaning = { rows_in: R.cleaning.rows_in, rows_clean: R.cleaning.rows_clean, rows_quarantined: R.cleaning.rows_quarantined };
       if (R.primary && !gone.primary) out.primary = R.primary;
+      if (est && !gone.est) out.estimand = est;
       out.findings = findings.filter(function (_, i) { return !gone['f' + i]; });
       if (story && !gone.story) out.story = story;
       if (sc && !gone.scen) out.scenarios = { basis: sc.basis && typeof sc.basis === 'object' ? sc.basis : null, refused: (Array.isArray(sc.refused) ? sc.refused : []).slice(0, 6).map(function (x) { return str(x, 300); }),
@@ -5659,7 +5945,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var order = dropOrder(items, SHARE_TOP_SEGMENTS), pre = function (p) { return function (i) { return p + i; }; };
     var fBack = findings.map(function (_, i) { return i; }).reverse();
     var units = [].concat(order.detail.map(pre('i')), fBack.filter(function (i) { return findings[i].kind !== 'business'; }).map(pre('f')), ['story'],
-      order.core.map(pre('i')), fBack.filter(function (i) { return findings[i].kind === 'business'; }).map(pre('f')), ['scen', 'primary']);
+      order.core.map(pre('i')), fBack.filter(function (i) { return findings[i].kind === 'business'; }).map(pre('f')), ['scen', 'est', 'primary']);
     var out = render(), size = function () { return utf8Len(JSON.stringify(out)); }, cut = [];
     for (var k = 0; k < units.length && size() > cap; k++) { gone[units[k]] = true; cut.push(units[k]); out = render(); }
     if (size() > cap) return null;
@@ -5701,6 +5987,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return base + (nm ? ' - ' + nm : '') + '.pdf';
   }
   var API = { build: build, model: model, fileName: fileName, paperFor: paperFor, shareResults: shareResults, sectionKind: kindOf, itemGrade: itemGrade,
+    facts: { estimandView: estimandView, auditView: auditView, unitOf: unitOf, sumCheckWords: sumCheckWords, planSourceWords: planSourceWords, trendLine: trendLine,
+      processOf: processOf, primaryFinding: primaryFinding, stepLabel: stepLabel, compactTicks: compactTicks, UNALLOCATED_WORDS: UNALLOCATED_WORDS },
     FILE_WORD: FILE_WORD, SHARE_MAX_BYTES: SHARE_MAX_BYTES, SHARE_MAX_ITEMS: SHARE_MAX_ITEMS, MAX_SOURCES: MAX_SOURCES, _enc: enc, _tw: tw, _smart: smart };
   if (typeof module === 'object' && module && module.exports) module.exports = API; else root.NLReportPdf = API;
 })(typeof window !== 'undefined' ? window : typeof globalThis !== 'undefined' ? globalThis : this);
@@ -8832,6 +9120,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         })) + '<p class="note">Withhold: never sent to an AI or put in a share link, not even its name, and its values are left out of the business analysis and the downloads; no cleaning rule reads or changes them, so they never set a row aside, and they only keep otherwise-identical rows apart, as they are in your file; the data-health findings still name the column and count its empty cells, never showing a value. Code: each value replaced by a code in the downloads; left out of the analyses, and an AI is told only its name, type and counts. Keep: used like any other column' +
           (CFG.ai_proxy_url ? '; its values went to the AI only if you ticked the box that named it' : '') + '.</p>'
         : '<p>No column was flagged as personal data.</p>') +
+        // the categories the engine read as categories (privacy.released), as the consent step said them: part of the
+        // report's method and data-quality account (wave 4, track B)
+        ((r.privacy.released || []).filter(function (x) { return x && x.text; }).length
+          ? '<h4 class="tr-rel-h">Read as categories, not personal data</h4><ul class="tr-rel-list" data-released="1">' + r.privacy.released.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
+            '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape and no sensitive name, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>'
+          : '') +
         '<p class="note">The scan reads column names and the shape of values, so names under a neutral heading can be missed: look over the story and the downloads before you share them.</p></article>';
       if (gated) h += priv;
       else {
@@ -9219,6 +9513,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   // a signed difference in a measure's own units (up to 3 decimals), never a percentage
   function sgnD(x) { var s = num(Math.abs(x), 3); return s === '0' ? '0' : (x > 0 ? '+' : '-') + s; }
   var COUNTY = ['rows', 'count', 'months'];
+  // the estimand's own units for a money amount ("$864.0B", never 864,000,000,000): set once per report that has an
+  // estimand (NL2.html); null for every other report, which keeps whole units
+  var UNIT = null;
   // a value in the scale the contract names: fraction (0.2 = +20%), pct (already percent), counts,
   // difference (a change in the measure's own units, where a percentage has no meaning)
   function val(v, scale, unit) {
@@ -9226,12 +9523,18 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (scale === 'difference') return sgnD(v);
     if (scale === 'fraction') return sgn1(unit === 'pct' ? v : v * 100) + '%';
     if (scale === 'pct') return num(v, 2) + '%';   // as the engine writes a share in its claims (45.2%, 2.45%)
-    if (scale === 'money') return num(v, 0);       // a money total or its forecast: whole units, no cents
+    if (scale === 'money') return UNIT ? UNIT(v) : num(v, 0);       // a money total or its forecast: whole units, no cents; the estimand's units when it has them
     if (COUNTY.indexOf(scale) >= 0) return num(Math.round(v), 0);
+    // a forecast's own scale is the measure's name ("total_retail_sales"): an amount of a million or more is the estimand's
+    // units, as its headline is
+    if (UNIT && Math.abs(v) >= 1e6) return UNIT(v);
     return num(v);
   }
   // how a chart prints one value of its series: whole units for money (contract v2: data.scale "money")
-  function vfmt(scale) { return scale === 'money' ? function (v) { return num(v, 0); } : function (v) { return num(v); }; }
+  function vfmt(scale) {
+    return scale === 'money' ? function (v) { return v === null || v === undefined || !isFinite(v) ? 'n/a' : UNIT ? UNIT(v) : num(v, 0); }
+      : function (v) { return UNIT && COUNTY.indexOf(scale) < 0 && v !== null && v !== undefined && isFinite(v) && Math.abs(v) >= 1e6 ? UNIT(v) : num(v); };
+  }
   function ci(pair, scale) {
     if (!pair || pair[0] === null || pair[1] === null || pair[0] === undefined || pair[1] === undefined) return null;
     return val(pair[0], scale) + ' to ' + val(pair[1], scale);
@@ -9252,12 +9555,16 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (v === null || v === undefined || !isFinite(v)) return '';
     if (isCount) return num(Math.round(v), 0);
     var a = Math.abs(v);
+    if (UNIT && a >= 1e6) return UNIT(v);          // the estimand's units, as short as the cell needs ("$37.1B")
     return num(v, a >= 100 ? 0 : a >= 10 ? 1 : 2);
   }
   function mon(ym) { return U.month ? U.month(ym) : ym; }
   function monShort(ym) { return (U.MON ? U.MON[+ym.slice(5, 7) - 1] : ym.slice(5, 7)) + ' ' + ym.slice(2, 4); }
   function tip(s) { return ' data-tip="' + esc(s) + '"'; }
-  C.fmt = { num: num, vfmt: vfmt, val: val, ci: ci, sgn1: sgn1, sgnD: sgnD, pct1: pct1, share0: share0, share1: share1, pval: pval, mon: mon };
+  C.setUnit = function (r) { var f = window.NLReportPdf && window.NLReportPdf.facts; UNIT = r && r.estimand && f ? f.unitOf(r) : null; };
+  // any amount in the estimand's units when it has them and is a million or more, else the plain number
+  function amt(v, dp) { return UNIT && v !== null && v !== undefined && isFinite(v) && Math.abs(v) >= 1e6 ? UNIT(v) : num(v, dp); }
+  C.fmt = { amt: amt, num: num, vfmt: vfmt, val: val, ci: ci, sgn1: sgn1, sgnD: sgnD, pct1: pct1, share0: share0, share1: share1, pval: pval, mon: mon };
 
   /* ------------------------------------------------------------ shared pieces */
   // a series' value axis: its data with 8% padding, and 0 only when the data cross it or come within a quarter of their
@@ -9467,7 +9774,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (band.n_errors && band.conditional_coverage_p10_p90 && band.conditional_coverage_p10_p90[0] !== null) s += ' With only ' + num(band.n_errors, 0) + ' past errors behind it, this particular range could be somewhat wider or narrower in truth: typically between ' +
       share0(band.conditional_coverage_p10_p90[0]) + ' and ' + share0(band.conditional_coverage_p10_p90[1]) + ' of months.';
     s += ' The range is for each month on its own, not for the whole path.';
-    if (fw.length && fw[0].lo !== null) s += ' Plan for either end: for ' + mon(fw[0].month) + ' the low end of the range is ' + num(fw[0].lo, 0) + ' and the high end ' + num(fw[0].hi, 0) + ', around a forecast of ' + num(fw[0].value, 0) + '.';
+    if (fw.length && fw[0].lo !== null) s += ' Plan for either end: for ' + mon(fw[0].month) + ' the low end of the range is ' + vf(fw[0].lo) + ' and the high end ' + vf(fw[0].hi) + ', around a forecast of ' + vf(fw[0].value) + '.';
     return {
       svg: U.svg(W, H, ch.title + ': ' + hist.length + ' months of actuals to ' + (last ? mon(last.month) : '') + ', then ' + fw.length + ' months forecast' + (ranged ? ' with the ' + lvl + '% range' : ''), b),
       table: { cols: ['Month', 'Actual', 'Forecast', lvl + '% low', lvl + '% high', 'Range widened'], rows: rows },
@@ -9476,8 +9783,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   };
 
   /* ------------------------------------------------------------ #5 backtest replay */
-  C.replay = function (W, ch) {
+  C.replay = function (W, ch, RR) {
     var d = ch.data, ms = d.months || [], vf = vfmt(d.scale);
+    // the engine's count of how the range held is the back-test of the range shown (forecast.audit); this chart shows the
+    // whole method's own replay, so it names no count of its own beside it (wave 4, track B: one statement)
+    var audit = RR && RR.forecast && RR.forecast.audit && RR.forecast.audit.label ? RR.forecast.audit : null;
     var L = 56, R = W - 12;
     var lg = legend([{ mark: MK.box('nl2-rbar'), label: 'range stated at the time' }, { mark: MK.line('ln nl2-tick'), label: 'forecast' },
       { mark: MK.dot('dot-s'), label: 'actual, inside' }, { mark: function (x, y) { return '<path class="nl2-miss" d="M' + (x + 5) + ' ' + (y - 4) + 'l8 8m0 -8l-8 8"/>'; }, label: 'actual, a miss' }], L, R, 10);
@@ -9496,9 +9806,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     });
     b += '<line x1="' + L + '" x2="' + R + '" y1="' + Bt + '" y2="' + Bt + '" stroke="var(--axis)"/>' + xMonths(ms.map(function (m) { return m.month; }), x, H - 8) + lg.svg;
     return {
-      svg: U.svg(W, H, ch.title + ': ' + num(d.hits, 0) + ' of ' + num(d.n, 0) + ' replayed months landed inside the range stated at the time', b),
+      svg: U.svg(W, H, audit ? ch.title + ': each month\'s actual against the range stated at the time' : ch.title + ': ' + num(d.hits, 0) + ' of ' + num(d.n, 0) + ' replayed months landed inside the range stated at the time', b),
       table: { cols: ['Month', 'Actual', 'Forecast', 'Low', 'High', 'Inside the range?'], rows: ms.map(function (m) { return [m.month, vf(m.actual), vf(m.point), vf(m.lo), vf(m.hi), m.in_band ? 'yes' : 'no, a miss']; }) },
-      note: 'Each month was forecast one month ahead from what was known then: <b>' + esc(num(d.hits, 0) + ' of ' + num(d.n, 0)) + '</b> actuals landed inside the range stated at the time. A replay this short can show a badly set range; it cannot prove a good one.'
+      note: audit ? 'Each month was forecast one month ahead from what was known then, and the mark says whether the actual landed inside the range stated at the time. The engine\'s count of how the range held is its back-test: <b>' + esc(String(audit.label)) + '</b>. A replay this short can show a badly set range; it cannot prove a good one.'
+        : 'Each month was forecast one month ahead from what was known then: <b>' + esc(num(d.hits, 0) + ' of ' + num(d.n, 0)) + '</b> actuals landed inside the range stated at the time. A replay this short can show a badly set range; it cannot prove a good one.'
     };
   };
 
@@ -9898,10 +10209,67 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     cross_env: 'the cross-environment check (the browser engine against the desktop engine, fact by fact)' };
   var LIM_KIND = [['data', 'Data'], ['statistical', 'Statistical'], ['causal', 'Causal'], ['forecast', 'Forecast'], ['external', 'External']];
 
-  function grade(g, kind) {
+  // process: the claim is about an official aggregate (a published total), so the engine's grade is a grade of the
+  // month-to-month noise of its monthly figures, not of the published total: the chip says so, in the same chip
+  function grade(g, kind, process) {
     var x = GRADES[g] || ['', String(g), ''];
     var word = kind === 'forecast' && FC_WORDS[g] ? FC_WORDS[g] : x[1];
-    return '<span class="nl2-grade ' + x[2] + '" data-grade="' + esc(g) + '"><span aria-hidden="true">' + x[0] + '</span> ' + esc(word) + '</span>';
+    return '<span class="nl2-grade ' + x[2] + '" data-grade="' + esc(g) + '"' + (process ? ' data-process="1"' : '') + '><span aria-hidden="true">' + x[0] + '</span> ' + esc(word) + (process ? ' (process grade)' : '') + '</span>';
+  }
+  /* ------------------------------------------------------------ wave 4 (track B): the estimand, the process grade, the forecast audit
+     The sentences come from NLReportPdf.facts (src/js/45-report-pdf.js), so the page and both PDFs say the same thing. */
+  function FA() { return (window.NLReportPdf && window.NLReportPdf.facts) || null; }
+  var PUBLISHER = { statcan: 'Statistics Canada', eurostat: 'Eurostat', ons: 'the Office for National Statistics' };
+  var GCODE = { CONFIRMED: 'CONFIRMED', WATCH: 'WATCH', INSUFFICIENT: 'NOT_ENOUGH_DATA' };
+  // the report as the writer's facts read it: its headline claim named by id
+  function asFacts(r) { var pm = r.primary_metric; return pm && pm.finding_id ? Object.assign({}, r, { primary: { id: pm.finding_id } }) : r; }
+  function estimandOf(r) { var F = FA(); return F && r.estimand ? F.estimandView(asFacts(r)) : null; }
+  function isOfficial(f) { return !!(f && f.inference && f.inference.mode === 'official_aggregate'); }
+  function cap1(x) { x = String(x || ''); return x.charAt(0).toUpperCase() + x.slice(1); }
+  // the back-test of the range shown, beside the forecast finding it is about (the series the audit was run on)
+  function auditFor(r, f) {
+    var F = FA(), A = F && f && f.kind === 'forecast' && !f.layout_artifact ? F.auditView(r) : null;
+    if (!A) return null;
+    var slug = String(f.id || '').split('.')[1] || '', ser = String((r.forecast.audit || {}).series || '').replace(/_/g, ' ').toLowerCase();
+    return !slug || !ser || ser.indexOf(slug.replace(/_/g, ' ').toLowerCase()) >= 0 ? A : null;
+  }
+  function auditTag(r, f) {
+    var A = auditFor(r, f);
+    if (!A) return '';
+    return (A.untrusted ? '<span class="nl2-untrusted" data-untrusted="1">not trusted: the back-test failed</span> ' : '') +
+      '<span class="nl2-audit" data-status="' + esc(A.status) + '" data-trusted="' + (A.trusted ? '1' : '0') + '">' + esc(cap1(A.line)) + '.</span>';
+  }
+  function droppedReason(r) { var d = r.forecast && r.forecast.row_forecast_dropped; return d && d.reason ? 'No forecast of the rows a month is shown: ' + String(d.reason).replace(/[.\s]+$/, '') + '.' : 'No forecast of the rows a month is shown: the table\'s layout fixes them.'; }
+  // the estimand: what the headline measures, in the first card of the report (and the first section of the paper)
+  function estimandCard(r, inSection) {
+    var V = estimandOf(r);
+    if (!V) return '';
+    var P = V.process, pg = P && P.grade ? GCODE[P.grade] : '';
+    return '<article class="tr-card nl2-estimand' + (inSection ? ' nl2-estimand-in' : '') + '" data-estimand="1"' + (inSection ? '' : ' aria-labelledby="nl2-est-h"') + '>' + (inSection ? '' : '<p class="kicker">What this report measures</p>') +
+      (inSection ? '<p class="nl2-est-title">' : '<h3 class="nl2-est-title" id="nl2-est-h">') + esc(V.title) + (inSection ? '</p>' : '</h3>') + (V.what ? '<p class="nl2-est-what">' + esc(V.what) + '</p>' : '') +
+      '<dl class="nl2-est-figs">' + V.figures.map(function (f) { return '<div class="nl2-est-fig' + (f.lead ? ' nl2-est-lead' : '') + '"><dt>' + esc(f.label) + '</dt><dd>' + esc(f.value) + '</dd></div>'; }).join('') + '</dl>' +
+      (V.described ? '<p class="nl2-est-desc" data-described="1"><b>Described, not tested.</b> This is a published total, so the engine states the change and its checks rather than testing it.</p>' : '') +
+      (P ? '<p class="nl2-est-proc" data-process-note="1">' + (pg ? grade(pg, 'business', true) + ' ' : '') + '<span>process grade: ' + esc(P.note) + '</span></p>' : '') +
+      (V.checks.length ? '<h4>How the figure was checked</h4><ul class="nl2-est-checks">' + V.checks.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '') +
+      (V.excluded.length ? '<h4>Left out, and why</h4><ul class="nl2-est-excl">' + V.excluded.map(function (x) { return '<li><b>' + esc(x.what) + '</b>' + (x.why ? ': ' + esc(x.why) : '') + '</li>'; }).join('') + '</ul>' : '') +
+      (V.source ? '<p class="nl2-est-src" data-source="' + esc(r.estimand.plan_source || '') + '">' + esc(V.source) + '</p>' : '') +
+      (V.how ? '<p class="note nl2-est-how">How it is known: ' + esc(V.how) + '.' + (V.revisions ? ' ' + esc(cap1(V.revisions)) + '.' : '') + '</p>' : '') + '</article>';
+  }
+  // the structure of a table of series, for the analyst: its dimensions and their roles, the publisher's flags, the corrections
+  function structureHtml(r) {
+    var st = r.structure;
+    if (!st || !st.kind || st.kind === 'none' || !arr(st.dims) || !st.dims.length) return '';
+    var num = fm().num, rows = st.dims.map(function (d) {
+      return '<tr><th scope="row">' + esc(d.column) + '</th><td>' + esc(String(d.role || '').replace(/_/g, ' ')) + '</td><td>' + esc(d.total || (d.nsa ? d.nsa + ' (unadjusted)' : '')) + '</td><td class="num">' + (d.parts !== undefined ? esc(num(d.parts, 0)) : '') + '</td><td class="num">' + (d.members !== undefined ? esc(num(d.members, 0)) : '') + '</td></tr>';
+    }).join('');
+    var fl = st.flags || {}, by = fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return num(fl.by_kind[k], 0) + ' rows ' + k.replace(/_/g, ' '); }).join(', ') : '';
+    var q = fl.quality_of_headline ? Object.keys(fl.quality_of_headline).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + num(fl.quality_of_headline[k], 0) + ' month' + (fl.quality_of_headline[k] === 1 ? '' : 's'); }).join(', ') : '';
+    var cs = (st.corrections || []).filter(function (c) { return c && c.kind; });
+    return '<h4>The table\'s structure</h4><p>A statistical table: ' + esc(num(st.rows, 0)) + ' rows, ' + esc(num(st.series, 0)) + ' series over ' + esc(num(st.months, 0)) + ' months' + (st.publisher ? ', published by ' + esc(PUBLISHER[st.publisher] || st.publisher) : '') +
+      '. Its totals sit beside their parts, so adding its rows would count the same amount more than once; the engine reads one series.</p>' +
+      '<div class="tscroll" tabindex="0" role="region" aria-label="The table\'s dimensions"><table class="dt nl2-structure"><thead><tr><th scope="col">Dimension</th><th scope="col">Role</th><th scope="col">The headline reads</th><th scope="col" class="num">Parts</th><th scope="col" class="num">Members</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      (by || q ? '<p class="note nl2-flags">' + (by ? 'The publisher\'s flags in the file: ' + esc(by) + '.' : '') + (q ? ' Quality marks on the headline\'s months: ' + esc(q) + '.' : '') + '</p>' : '') +
+      (cs.length ? '<p class="note nl2-corrections">Corrected: ' + cs.map(function (c) { return esc(String(c.kind).replace(/_/g, ' ') + (c.dim ? ' (' + c.dim + ')' : '')); }).join('; ') + '.</p>' : '');
   }
   // WATCH, split: a claim whose interval lies wholly on one side of zero moved; one whose interval
   // includes zero shows no clear movement (plan §2.4)
@@ -10074,19 +10442,20 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var h = '<div class="tscroll" tabindex="0" role="region" aria-label="' + (mode === 'manager' ? 'Every finding and its grade' : 'Findings with their tests') + '"><table class="dt nl2-ftab" data-cols="' + mode + '"><thead><tr>' +
       cols.map(sortBtn).join('') + '</tr></thead><tbody>';
     r.findings.forEach(function (f, i) {
-      var t = f.test, ran = !!(t && t.ran), e = f.effect || {}, ci = ciText(f), fc = fcrText(f);
+      var t = f.test, ran = !!(t && t.ran), e = f.effect || {}, ci = f.layout_artifact ? '' : ciText(f), fc = fcrText(f);
       var lv = e.level ? ' (' + lvl(e.level) + ')' : '';
       var claim = '<th scope="row"><span class="nl2-claim">' + esc(f.claim) + '</span>' + chips(f, CH, P) + '</th>';
-      var g = '<td data-sort="' + strength(f) + '">' + grade(f.grade, f.kind) + (moveTag(f, true) ? ' ' + moveTag(f, true) : '') + '</td>';
+      var g = '<td data-sort="' + strength(f) + '">' + (f.layout_artifact ? '<span class="muted">not shown</span>' : grade(f.grade, f.kind, isOfficial(f))) + (moveTag(f, true) ? ' ' + moveTag(f, true) : '') + (auditFor(r, f) && auditFor(r, f).untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted</span>' : '') + '</td>';
       var st = '<td class="nl2-settle-cell">' + esc(settleOf(f)) + '</td>';
       var hide = mode === 'manager' && i >= FIRST ? ' hidden class="nl2-more-row"' : '';
+      var eff = f.layout_artifact ? droppedReason(r) : effectText(f);
       if (mode === 'manager') {
-        h += '<tr data-fid="' + esc(f.id) + '"' + hide + '>' + claim + '<td data-sort="' + (e.estimate === null ? '' : e.estimate) + '">' + esc(effectText(f)) + (ci ? ' <span class="muted">[' + esc(ci) + ']</span>' : '') + '</td>' + g + st + '</tr>';
+        h += '<tr data-fid="' + esc(f.id) + '"' + hide + '>' + claim + '<td data-sort="' + (e.estimate === null ? '' : e.estimate) + '">' + esc(eff) + (ci ? ' <span class="muted">[' + esc(ci) + ']</span>' : '') + '</td>' + g + st + '</tr>';
       } else {
         var testCell = '<td class="nl2-test">' + (t ? esc(t.name || t.method || '') + (ran ? '' : ' <span class="muted">(not run' + (t.not_run_reason ? ': ' + esc(t.not_run_reason) : '') + ')</span>') : '') + '</td>';
         var nCell = '<td class="nl2-n" data-sort="' + (t && t.n_months !== null && t.n_months !== undefined ? t.n_months : '') + '">' + (t && t.n_months ? esc(fm().num(t.n_months, 0) + ' months') + (t.n_rows ? ', ' + esc(fm().num(t.n_rows, 0) + ' rows') : '') : '') + '</td>';
         h += '<tr data-fid="' + esc(f.id) + '">' + claim + g +
-          '<td class="num" data-sort="' + (e.estimate === null || e.estimate === undefined ? '' : e.estimate) + '">' + esc(effectText(f)) + '</td>' +
+          '<td class="num" data-sort="' + (e.estimate === null || e.estimate === undefined ? '' : e.estimate) + '">' + esc(eff) + '</td>' +
           '<td class="nl2-ci">' + (ci ? esc(ci) + esc(lv) + (fc ? '<br><span class="muted">' + esc(fc) + '</span>' : '') : '') + '</td>' +
           '<td class="num" data-sort="' + (ran && t.p !== null ? t.p : '') + '">' + (ran ? esc(fm().pval(t.p)) : '') + '</td>' +
           '<td class="num" data-sort="' + (ran && t.q !== null ? t.q : '') + '">' + (ran ? esc(fm().pval(t.q)) : '') + '</td>' + testCell + nCell +
@@ -10171,9 +10540,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var mv = (moveTag(f) ? ' ' + moveTag(f) : '') + (compText(f) ? ' <span class="nl2-comp">' + esc(compText(f)) + '</span>' : '');
       var pw = f.grade === 'WATCH' && powerText(f, r) ? ' <span class="nl2-power">' + esc(powerText(f, r)) + '</span>' : '';
       var er = f.error_rate && f.error_rate.sentence ? '<span class="nl2-er">' + esc(f.error_rate.sentence) + '</span>' : '';
+      var V = isOfficial(f) ? estimandOf(r) : null, Fg = V && r.estimand.figures || {};
+      if (V && Fg.change_pct && Fg.change_pct.text) {
+        // the described change is the figure; the engine's grade is secondary and says what it is a grade of
+        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published totals (' +
+          esc((Fg.prior && Fg.prior.text || '') + ' to ' + (Fg.latest && Fg.latest.text || '')) + ').' + ' <span class="nl2-proc">process grade: ' + esc(V.process ? V.process.note : 'the month-to-month noise of the monthly figures; not a test of the published total') + '.</span>' + held + '</li>';
+      }
       // a stepped claim's as-filed interval spans the step, so it says nothing about the business: not printed
-      return '<li data-fid="' + esc(f.id) + '"' + (isMonitoring(r, f) ? ' data-mon="1"' : '') + '>' + grade(f.grade, f.kind) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(effectText(f)) + '</b>' +
-        (stepped ? ' on the year before, as filed' : (ci ? ' (' + lvl(e.level) + ' ' + word + ' ' + esc(ci) + ')' : '') + (fc ? '; ' + esc(fc) : '')) + '.' + mv + held + pw + er + '</li>';
+      return '<li data-fid="' + esc(f.id) + '"' + (isMonitoring(r, f) ? ' data-mon="1"' : '') + '>' + grade(f.grade, f.kind) + (auditFor(r, f) && auditFor(r, f).untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted: the back-test failed</span>' : '') + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(effectText(f)) + '</b>' +
+        (stepped ? ' on the year before, as filed' : (ci ? ' (' + lvl(e.level) + ' ' + word + ' ' + esc(ci) + ')' : '') + (fc ? '; ' + esc(fc) : '')) + '.' + mv + held + pw + er + (auditFor(r, f) ? ' <span class="nl2-audit" data-status="' + esc(auditFor(r, f).status) + '" data-trusted="' + (auditFor(r, f).trusted ? '1' : '0') + '">' + esc(cap1(auditFor(r, f).line)) + '.</span>' : '') + '</li>';
     });
   }
   function tiles(r, K) {
@@ -10182,9 +10557,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var v = fm().val(t.value, t.scale, t.unit), ci = fm().ci(t.ci, t.scale), f = F[t.finding_id];
       var word = f && f.kind === 'forecast' ? 'range' : 'interval';
       var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit || '') + ' (own units)' : '';
-      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"><p class="nl2-tile-lab">' + esc(t.claim) + '</p>' +
+      var off = isOfficial(f), au = auditFor(r, f);
+      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published totals: ' + t.claim : t.claim) + '</p>' +
         '<p class="nl2-tile-num"><span class="nl2-tile-v">' + esc(v) + '</span>' + (unit ? ' <span class="nl2-tile-u">' + esc(unit) + '</span>' : '') + '</p>' +
-        (ci ? '<p class="nl2-tile-ci">' + esc(lvl(t.ci_level) + ' ' + word + ': ' + ci) + '</p>' : t.movement && t.movement.kind === 'stepped' ? '<p class="nl2-tile-note">on the year before, as filed; read it like for like</p>' : '') + '<p class="nl2-tile-g">' + grade(t.grade, f ? f.kind : t.kind) + (f && moveTag(f, true) ? ' ' + moveTag(f, true) : '') + '</p></div>';
+        (ci ? '<p class="nl2-tile-ci">' + esc(off ? 'the monthly noise\'s own ' + lvl(t.ci_level) + ' interval, not a test of the published change: ' + ci : lvl(t.ci_level) + ' ' + word + ': ' + ci) + '</p>' : t.movement && t.movement.kind === 'stepped' ? '<p class="nl2-tile-note">on the year before, as filed; read it like for like</p>' : '') +
+        '<p class="nl2-tile-g">' + grade(t.grade, f ? f.kind : t.kind, off) + (f && moveTag(f, true) ? ' ' + moveTag(f, true) : '') + (au && au.untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted</span>' : '') + '</p>' +
+        (au ? '<p class="nl2-tile-note nl2-audit" data-status="' + esc(au.status) + '" data-trusted="' + (au.trusted ? '1' : '0') + '">' + esc(cap1(au.line)) + '.</p>' : '') + '</div>';
     }).join('');
   }
   // the conditions a benchmark cell simulated, and what was true in it
@@ -10280,7 +10658,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // a step of the AI plan that set aside a tenth of the rows or more (ai_plan.row_drops[].notice, the adapter's words:
     // final evaluation, 1 Oct 2026): said beside the bottom line, so no one takes its figures for the whole file
     var drops = ((r.ai_plan && Array.isArray(r.ai_plan.row_drops)) ? r.ai_plan.row_drops : []).filter(function (d) { return d && typeof d.notice === 'string' && d.notice; });
-    var h = '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
+    var h = estimandCard(r) + '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +
       drops.map(function (d) { return '<p class="note nl2-plandrop">' + esc(d.notice) + '</p>'; }).join('') +
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
@@ -10320,7 +10698,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       '<th scope="col">Weakest</th><th scope="col" class="num">Claim health</th><th scope="col" class="num">Distinct</th><th scope="col">Values</th><th scope="col">Set aside, by rule</th><th scope="col">Fixed, by rule</th><th scope="col">Claims it supports</th></tr></thead><tbody>';
     r.health.columns.forEach(function (c) {
       var vals = c.withheld ? '<span class="muted">withheld: no value is shown</span>'
-        : c.numeric ? 'min ' + esc(num(c.numeric.min)) + ', median ' + esc(num(c.numeric.median)) + ', max ' + esc(num(c.numeric.max))
+        : c.numeric ? 'min ' + esc(fm().amt(c.numeric.min)) + ', median ' + esc(fm().amt(c.numeric.median)) + ', max ' + esc(fm().amt(c.numeric.max))
           : c.dates ? esc(c.dates.min + ' to ' + c.dates.max)
             : (c.top_values || []).slice(0, 3).map(function (tv) { return esc(String(tv[0])) + ' <span class="muted">(' + esc(num(tv[1], 0)) + ')</span>'; }).join(', ');
       h += '<tr data-col="' + esc(c.name) + '"><th scope="row"><code>' + esc(c.name) + '</code> <span class="muted">' + esc(c.type || '') + '</span>' + (c.flagged ? ' <span class="nl2-tag">' + (c.withheld ? 'withheld' : 'flagged') + '</span>' : '') + '</th>' +
@@ -10404,25 +10782,31 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   function forecastStats(r) {
     var F = r.forecast, num = fm().num, pv = fm().pval;
     if (!F || !F.available) return '<p class="nl2-nofc"><b>No forecast:</b> ' + esc(String((F && F.reason) || '').replace(/[.\s]+$/, '')) + '.</p>';
-    var cv = F.coverage || {}, bt = F.baseline_test || {}, bd = F.band || {};
-    return dl([
-      ['Range held in the replay', esc(num(cv.hits, 0) + ' of ' + num(cv.n, 0) + ' months') + (cv.wilson ? ' (95% Wilson interval ' + esc(fm().share1(cv.wilson[0]) + ' to ' + fm().share1(cv.wilson[1])) + ')' : '') +
+    var cv = F.coverage || {}, bt = F.baseline_test || {}, bd = F.band || {}, AU = F.audit && F.audit.label ? F.audit : null, FF = FA(), AV = FF ? FF.auditView(r) : null;
+    var auditRows = AU ? [['Back-test of the range shown', '<b>' + esc(AU.label) + '</b>. ' + esc(AV ? cap1(AV.words) : '') + (AU.trusted ? '; trusted' : '; not trusted') + '. ' + esc(AU.grade_label || '') + (AU.benchmark_is_model ? ' Passing needs the model to be no worse than seasonal naive; this model IS seasonal naive, so it is judged on how often its range held.' : '')],
+      ['The back-test, horizon by horizon', arr(AU.horizons) && AU.horizons.length ? '<div class="tscroll" tabindex="0" role="region" aria-label="Back-test by horizon"><table class="dt nl2-audit-table"><thead><tr><th scope="col">Months ahead</th><th scope="col">Held of checked</th><th scope="col" class="num">About independent</th><th scope="col">95% interval of the share held</th><th scope="col" class="num">Error against seasonal naive</th><th scope="col">Status</th></tr></thead><tbody>' +
+        AU.horizons.map(function (h) { return '<tr><th scope="row">' + esc(num(h.h, 0)) + '</th><td>' + esc(num(h.held, 0) + ' of ' + num(h.of, 0)) + '</td><td class="num">' + esc(num(h.n_eff, 0)) + '</td><td>' + (arr(h.wilson) ? esc(fm().share1(h.wilson[0]) + ' to ' + fm().share1(h.wilson[1])) : '') + '</td><td class="num">' + esc(h.rel_mae === null || h.rel_mae === undefined ? 'n/a' : Number(h.rel_mae).toFixed(2) + ' (mean absolute error ratio)') + '</td><td>' + esc(h.status || '') + '</td></tr>'; }).join('') + '</tbody></table></div>' : 'not run']] : [];
+    return dl(auditRows.concat([
+      [AU ? 'The core\'s replay of the whole method (a different replay: the back-test above is the evidence)' : 'Range held in the replay', esc(num(cv.hits, 0) + ' of ' + num(cv.n, 0) + ' months') + (cv.wilson ? ' (95% Wilson interval ' + esc(fm().share1(cv.wilson[0]) + ' to ' + fm().share1(cv.wilson[1])) + ')' : '') +
         '; binomial p ' + esc(pv(cv.binomial_p)) + ', Christoffersen independence p ' + esc(pv(cv.christoffersen_ind_p)) + ', conditional coverage p ' + esc(pv(cv.christoffersen_cc_p))],
       ['Against seasonal-naive', bt.method ? esc('DM ' + (bt.stat === null ? 'n/a' : Number(bt.stat).toFixed(2)) + ', df ' + num(bt.df, 0) + ', ' + num(bt.n, 0) + ' months, p ' + pv(bt.p) + (bt.gain !== null && bt.gain !== undefined ? ', error ' + (bt.gain * 100).toFixed(0) + '% lower' : '')) + ' <span class="muted">(' + esc(bt.method.replace(/_/g, ' ')) + ')</span>' : 'not run'],
       ['How the range is built', esc(String(bd.method || '').replace(/_/g, ' ') + ' from ' + num(bd.n_errors, 0) + ' replayed errors; the most it can reach is ' + fm().share1(bd.max_level) + '; widened up to ' + (bd.widened_by_max ? ((bd.widened_by_max - 1) * 100).toFixed(0) + '%' : 'n/a') + ' for errors that move together; scope: ' + String(bd.scope || '').replace(/_/g, ' '))],
       ['This range\'s own spread', bd.conditional_coverage_p10_p90 ? esc('true coverage typically ' + fm().share0(bd.conditional_coverage_p10_p90[0]) + ' to ' + fm().share0(bd.conditional_coverage_p10_p90[1]) + ' (10th to 90th percentile, given ' + num(bd.n_errors, 0) + ' errors)') : 'n/a']
-    ]);
+    ]));
   }
   function analyst(r, CH, parts) {
     var num = fm().num, R = r.reproducibility, P = R.parameters || {}, en = r.engine, env = en.environment || {}, h = r.health;
-    var secs = [['summary', 'Executive summary'], ['data', 'Data and provenance'], ['methods', 'Methods'], ['results', 'Results'], ['limits', 'Limitations and threats to validity'],
-      ['recs', 'Recommendations'], ['repro', 'Reproducibility'], ['appendix', 'Appendix: set-aside rows and the evidence ledger']];
+    var est = !!r.estimand;
+    var secs = (est ? [['estimand', 'What this report measures']] : []).concat([['summary', 'Executive summary'], ['data', 'Data and provenance'], ['methods', 'Methods'], ['results', 'Results'], ['limits', 'Limitations and threats to validity'],
+      ['recs', 'Recommendations'], ['repro', 'Reproducibility'], ['appendix', 'Appendix: set-aside rows and the evidence ledger']]);
+    var resN = secs.map(function (x) { return x[0]; }).indexOf('results') + 1;
     var S = {};
+    if (est) S.estimand = estimandCard(r, true) + structureHtml(r);
     var pm = r.primary_metric, F = byId(r);
     // the AI-written report's honesty check, filled in by N.aiAudit when that report arrives (50-try.js)
     S.summary = '<p class="nl2-ai-audit note" id="nl2-ai-audit" role="note" hidden></p>' + (pm ? '<p>The primary claim is <b>' + esc(F[pm.finding_id] ? F[pm.finding_id].claim : pm.finding_id) + '</b>, graded ' + grade(pm.grade) + '.</p>' : '<p>No claim was tested as the primary metric in this run.</p>') +
       (r.summary && r.summary.lines && r.summary.lines.length ? '<p class="nl2-engine-bottom"><b>Every graded claim, as the engine lists it:</b> ' + esc(r.story.headline) + '</p>' : '') +
-      '<p class="note">The engine\'s own narrative follows; every figure in it is a checked fact. The findings table in section 4 carries each test.</p>' + parts.story;
+      '<p class="note">The engine\'s own narrative follows; every figure in it is a checked fact. The findings table in section ' + resN + ' carries each test.</p>' + parts.story;
     S.data = dl([
       ['File', '<b>' + esc(r.input.name) + '</b>, ' + esc(num(r.input.rows, 0) + ' rows × ' + num(r.input.columns, 0) + ' columns, ' + num(r.input.bytes, 0) + ' bytes')],
       ['Fingerprint (sha256)', '<code>' + esc(r.input.sha256) + '</code>'],
@@ -10481,6 +10865,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   // parts: { story, rolesPriv, cleaning } HTML the demo page already writes for v1 (50-try.js), and ai: the
   // manager view's AI summaries card ('' when the page offers none)
   N.html = function (r, parts) {
+    if (C().setUnit) C().setUnit(r);
     var CH = chartMap(r);
     return '<div class="nl2" data-contract="2">' +
       '<div class="nl2-views" role="tablist" aria-label="How to read this report">' +
@@ -10558,6 +10943,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   var escBound = false;
   N.mount = function (root, r) {
     root.__rep = r;
+    if (C().setUnit) C().setUnit(r);
     draw(root.querySelector('#nl2-manager'), r);
     var tabs = root.querySelectorAll('.nl2-views [role="tab"]');
     Array.prototype.forEach.call(tabs, function (t, i) {
@@ -10920,7 +11306,19 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     }
     return wfH(rec, W, tws);
   }
-  function wfClass(s) { return s.kind === 'total' ? 'w-tot' : s.value > 0 ? 'w-rise' : 'w-fall'; }
+  // the step the total less its published parts makes (the suppressed cells), in the words a reader needs and as a dashed
+  // marker, never a filled bar: an older report's label is read the same way
+  var UNALLOC = /^(?:not allocated: suppressed cells|unallocated \(suppressed cells\))$/i;
+  function isUnalloc(s) { return s.kind !== 'total' && UNALLOC.test(String(s.label)); }
+  function stepName(s) { return UNALLOC.test(String(s.label)) ? 'Not allocated: suppressed cells' : s.label; }
+  // an older report's table view says "unallocated (suppressed cells)": the same words as the drawing
+  function relabelTable(t) {
+    if (!t || !Array.isArray(t.rows) || !t.rows.some(function (r) { return Array.isArray(r) && UNALLOC.test(String(r[0])); })) return t;
+    var o = {}; Object.keys(t).forEach(function (k) { o[k] = t[k]; });
+    o.rows = t.rows.map(function (r) { return Array.isArray(r) && UNALLOC.test(String(r[0])) ? ['Not allocated: suppressed cells'].concat(r.slice(1)) : r; });
+    return o;
+  }
+  function wfClass(s) { return s.kind === 'total' ? 'w-tot' : isUnalloc(s) ? 'w-unalloc' : s.value > 0 ? 'w-rise' : 'w-fall'; }
   function wfH(rec, W, tws) {
     var S = rec.data.steps, n = S.length, RH = 34, T = 4;
     var vals = [0]; S.forEach(function (s) { vals.push(s.from, s.to); });
@@ -10934,9 +11332,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     b += '<line class="nlv-zero" x1="' + f1(x(0)) + '" x2="' + f1(x(0)) + '" y1="' + T + '" y2="' + bot + '"/>';
     S.forEach(function (s, i) {
       var y = T + i * RH, a = x(s.from), z = x(s.to), right = s.to >= s.from, w = Math.abs(z - a), x0 = Math.min(a, z);
-      if (w < 2) { w = 2; x0 = right ? z - 2 : z; }
+      if (w < 2) { w = isUnalloc(s) ? 7 : 2; x0 = right ? z - w : z; }
       var total = s.kind === 'total';
-      b += '<g data-tip="' + esc(s.label + ': ' + s.text) + '">' + txt(0, y + 12, s.label, { cls: total ? 'nlv-t nlv-b nlv-halo' : 'nlv-t nlv-halo', maxW: W }) +
+      b += '<g data-tip="' + esc(stepName(s) + ': ' + s.text) + '">' + txt(0, y + 12, stepName(s), { cls: total ? 'nlv-t nlv-b nlv-halo' : 'nlv-t nlv-halo', maxW: W }) +
         '<rect class="' + wfClass(s) + '" x="' + f1(x0) + '" y="' + (y + 17) + '" width="' + f1(w) + '" height="12" rx="2"/>' +
         txt(right ? z + 5 : z - 5, y + 27, s.text, { anchor: right ? 'start' : 'end', cls: 'vlab nlv-halo' }) + '</g>';
       if (i < n - 1) b += '<line class="nlv-con" x1="' + f1(z) + '" x2="' + f1(z) + '" y1="' + (y + 29) + '" y2="' + (y + RH + 17) + '"/>';
@@ -10955,9 +11353,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     b += '<line class="nlv-zero" x1="' + L + '" x2="' + R + '" y1="' + f1(y(0)) + '" y2="' + f1(y(0)) + '"/>';
     S.forEach(function (s, i) {
       var cx = L + slot * (i + 0.5), a = y(s.from), z = y(s.to), up = s.to >= s.from, h = Math.abs(z - a), y0 = Math.min(a, z);
-      if (h < 2) { h = 2; y0 = up ? z : z - 2; }
-      var total = s.kind === 'total', lines = two(s.label, slot - 6, 12, total ? 700 : 400);
-      b += '<g data-tip="' + esc(s.label + ': ' + s.text) + '"><rect class="' + wfClass(s) + '" x="' + f1(cx - bw / 2) + '" y="' + f1(y0) + '" width="' + f1(bw) + '" height="' + f1(h) + '" rx="2"/>' +
+      if (h < 2) { h = isUnalloc(s) ? 7 : 2; y0 = up ? z - (h - 2) : z - 2; }
+      var total = s.kind === 'total', lines = two(stepName(s), slot - 6, 12, total ? 700 : 400);
+      b += '<g data-tip="' + esc(stepName(s) + ': ' + s.text) + '"><rect class="' + wfClass(s) + '" x="' + f1(cx - bw / 2) + '" y="' + f1(y0) + '" width="' + f1(bw) + '" height="' + f1(h) + '" rx="2"/>' +
         txt(cx, up ? z - 6 : z + 15, s.text, { anchor: 'middle', cls: 'vlab' }) +
         lines.map(function (l, k) {
           return l ? '<text x="' + f1(cx) + '" y="' + (Bt + LB + 13 + k * 14) + '" class="nlv-t' + (total ? ' nlv-b' : '') + '" text-anchor="middle"' + (rtl(s.label) ? ' direction="rtl"' : '') +
@@ -11200,7 +11598,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (!has(DRAW, kind)) return NLV.tableOut(rec);
     try { o = DRAW[kind](rec, W); } catch (e) { if (window.console) console.error(e); return NLV.tableOut(rec, 'This chart could not be drawn here, so its table is shown.'); }
     var svg = svgOf(W, o.H, label, o.body);
-    return { html: sub + svg + (o.after || ''), svg: svg, table: tableOk(rec.table) ? rec.table : null,
+    return { html: sub + svg + (o.after || ''), svg: svg, table: tableOk(rec.table) ? relabelTable(rec.table) : null,
       tnote: rec.subtitle ? '<p class="note">' + esc(rec.subtitle) + '</p>' : '', note: notes(rec, kind, o), label: label, kind: kind, layout: o.layout };
   };
 })();

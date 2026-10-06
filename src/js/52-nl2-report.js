@@ -39,10 +39,67 @@
     cross_env: 'the cross-environment check (the browser engine against the desktop engine, fact by fact)' };
   var LIM_KIND = [['data', 'Data'], ['statistical', 'Statistical'], ['causal', 'Causal'], ['forecast', 'Forecast'], ['external', 'External']];
 
-  function grade(g, kind) {
+  // process: the claim is about an official aggregate (a published total), so the engine's grade is a grade of the
+  // month-to-month noise of its monthly figures, not of the published total: the chip says so, in the same chip
+  function grade(g, kind, process) {
     var x = GRADES[g] || ['', String(g), ''];
     var word = kind === 'forecast' && FC_WORDS[g] ? FC_WORDS[g] : x[1];
-    return '<span class="nl2-grade ' + x[2] + '" data-grade="' + esc(g) + '"><span aria-hidden="true">' + x[0] + '</span> ' + esc(word) + '</span>';
+    return '<span class="nl2-grade ' + x[2] + '" data-grade="' + esc(g) + '"' + (process ? ' data-process="1"' : '') + '><span aria-hidden="true">' + x[0] + '</span> ' + esc(word) + (process ? ' (process grade)' : '') + '</span>';
+  }
+  /* ------------------------------------------------------------ wave 4 (track B): the estimand, the process grade, the forecast audit
+     The sentences come from NLReportPdf.facts (src/js/45-report-pdf.js), so the page and both PDFs say the same thing. */
+  function FA() { return (window.NLReportPdf && window.NLReportPdf.facts) || null; }
+  var PUBLISHER = { statcan: 'Statistics Canada', eurostat: 'Eurostat', ons: 'the Office for National Statistics' };
+  var GCODE = { CONFIRMED: 'CONFIRMED', WATCH: 'WATCH', INSUFFICIENT: 'NOT_ENOUGH_DATA' };
+  // the report as the writer's facts read it: its headline claim named by id
+  function asFacts(r) { var pm = r.primary_metric; return pm && pm.finding_id ? Object.assign({}, r, { primary: { id: pm.finding_id } }) : r; }
+  function estimandOf(r) { var F = FA(); return F && r.estimand ? F.estimandView(asFacts(r)) : null; }
+  function isOfficial(f) { return !!(f && f.inference && f.inference.mode === 'official_aggregate'); }
+  function cap1(x) { x = String(x || ''); return x.charAt(0).toUpperCase() + x.slice(1); }
+  // the back-test of the range shown, beside the forecast finding it is about (the series the audit was run on)
+  function auditFor(r, f) {
+    var F = FA(), A = F && f && f.kind === 'forecast' && !f.layout_artifact ? F.auditView(r) : null;
+    if (!A) return null;
+    var slug = String(f.id || '').split('.')[1] || '', ser = String((r.forecast.audit || {}).series || '').replace(/_/g, ' ').toLowerCase();
+    return !slug || !ser || ser.indexOf(slug.replace(/_/g, ' ').toLowerCase()) >= 0 ? A : null;
+  }
+  function auditTag(r, f) {
+    var A = auditFor(r, f);
+    if (!A) return '';
+    return (A.untrusted ? '<span class="nl2-untrusted" data-untrusted="1">not trusted: the back-test failed</span> ' : '') +
+      '<span class="nl2-audit" data-status="' + esc(A.status) + '" data-trusted="' + (A.trusted ? '1' : '0') + '">' + esc(cap1(A.line)) + '.</span>';
+  }
+  function droppedReason(r) { var d = r.forecast && r.forecast.row_forecast_dropped; return d && d.reason ? 'No forecast of the rows a month is shown: ' + String(d.reason).replace(/[.\s]+$/, '') + '.' : 'No forecast of the rows a month is shown: the table\'s layout fixes them.'; }
+  // the estimand: what the headline measures, in the first card of the report (and the first section of the paper)
+  function estimandCard(r, inSection) {
+    var V = estimandOf(r);
+    if (!V) return '';
+    var P = V.process, pg = P && P.grade ? GCODE[P.grade] : '';
+    return '<article class="tr-card nl2-estimand' + (inSection ? ' nl2-estimand-in' : '') + '" data-estimand="1"' + (inSection ? '' : ' aria-labelledby="nl2-est-h"') + '>' + (inSection ? '' : '<p class="kicker">What this report measures</p>') +
+      (inSection ? '<p class="nl2-est-title">' : '<h3 class="nl2-est-title" id="nl2-est-h">') + esc(V.title) + (inSection ? '</p>' : '</h3>') + (V.what ? '<p class="nl2-est-what">' + esc(V.what) + '</p>' : '') +
+      '<dl class="nl2-est-figs">' + V.figures.map(function (f) { return '<div class="nl2-est-fig' + (f.lead ? ' nl2-est-lead' : '') + '"><dt>' + esc(f.label) + '</dt><dd>' + esc(f.value) + '</dd></div>'; }).join('') + '</dl>' +
+      (V.described ? '<p class="nl2-est-desc" data-described="1"><b>Described, not tested.</b> This is a published total, so the engine states the change and its checks rather than testing it.</p>' : '') +
+      (P ? '<p class="nl2-est-proc" data-process-note="1">' + (pg ? grade(pg, 'business', true) + ' ' : '') + '<span>process grade: ' + esc(P.note) + '</span></p>' : '') +
+      (V.checks.length ? '<h4>How the figure was checked</h4><ul class="nl2-est-checks">' + V.checks.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '') +
+      (V.excluded.length ? '<h4>Left out, and why</h4><ul class="nl2-est-excl">' + V.excluded.map(function (x) { return '<li><b>' + esc(x.what) + '</b>' + (x.why ? ': ' + esc(x.why) : '') + '</li>'; }).join('') + '</ul>' : '') +
+      (V.source ? '<p class="nl2-est-src" data-source="' + esc(r.estimand.plan_source || '') + '">' + esc(V.source) + '</p>' : '') +
+      (V.how ? '<p class="note nl2-est-how">How it is known: ' + esc(V.how) + '.' + (V.revisions ? ' ' + esc(cap1(V.revisions)) + '.' : '') + '</p>' : '') + '</article>';
+  }
+  // the structure of a table of series, for the analyst: its dimensions and their roles, the publisher's flags, the corrections
+  function structureHtml(r) {
+    var st = r.structure;
+    if (!st || !st.kind || st.kind === 'none' || !arr(st.dims) || !st.dims.length) return '';
+    var num = fm().num, rows = st.dims.map(function (d) {
+      return '<tr><th scope="row">' + esc(d.column) + '</th><td>' + esc(String(d.role || '').replace(/_/g, ' ')) + '</td><td>' + esc(d.total || (d.nsa ? d.nsa + ' (unadjusted)' : '')) + '</td><td class="num">' + (d.parts !== undefined ? esc(num(d.parts, 0)) : '') + '</td><td class="num">' + (d.members !== undefined ? esc(num(d.members, 0)) : '') + '</td></tr>';
+    }).join('');
+    var fl = st.flags || {}, by = fl.by_kind ? Object.keys(fl.by_kind).map(function (k) { return num(fl.by_kind[k], 0) + ' rows ' + k.replace(/_/g, ' '); }).join(', ') : '';
+    var q = fl.quality_of_headline ? Object.keys(fl.quality_of_headline).map(function (k) { return (k === '' ? 'no mark' : 'mark ' + k) + ' on ' + num(fl.quality_of_headline[k], 0) + ' month' + (fl.quality_of_headline[k] === 1 ? '' : 's'); }).join(', ') : '';
+    var cs = (st.corrections || []).filter(function (c) { return c && c.kind; });
+    return '<h4>The table\'s structure</h4><p>A statistical table: ' + esc(num(st.rows, 0)) + ' rows, ' + esc(num(st.series, 0)) + ' series over ' + esc(num(st.months, 0)) + ' months' + (st.publisher ? ', published by ' + esc(PUBLISHER[st.publisher] || st.publisher) : '') +
+      '. Its totals sit beside their parts, so adding its rows would count the same amount more than once; the engine reads one series.</p>' +
+      '<div class="tscroll" tabindex="0" role="region" aria-label="The table\'s dimensions"><table class="dt nl2-structure"><thead><tr><th scope="col">Dimension</th><th scope="col">Role</th><th scope="col">The headline reads</th><th scope="col" class="num">Parts</th><th scope="col" class="num">Members</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      (by || q ? '<p class="note nl2-flags">' + (by ? 'The publisher\'s flags in the file: ' + esc(by) + '.' : '') + (q ? ' Quality marks on the headline\'s months: ' + esc(q) + '.' : '') + '</p>' : '') +
+      (cs.length ? '<p class="note nl2-corrections">Corrected: ' + cs.map(function (c) { return esc(String(c.kind).replace(/_/g, ' ') + (c.dim ? ' (' + c.dim + ')' : '')); }).join('; ') + '.</p>' : '');
   }
   // WATCH, split: a claim whose interval lies wholly on one side of zero moved; one whose interval
   // includes zero shows no clear movement (plan §2.4)
@@ -215,19 +272,20 @@
     var h = '<div class="tscroll" tabindex="0" role="region" aria-label="' + (mode === 'manager' ? 'Every finding and its grade' : 'Findings with their tests') + '"><table class="dt nl2-ftab" data-cols="' + mode + '"><thead><tr>' +
       cols.map(sortBtn).join('') + '</tr></thead><tbody>';
     r.findings.forEach(function (f, i) {
-      var t = f.test, ran = !!(t && t.ran), e = f.effect || {}, ci = ciText(f), fc = fcrText(f);
+      var t = f.test, ran = !!(t && t.ran), e = f.effect || {}, ci = f.layout_artifact ? '' : ciText(f), fc = fcrText(f);
       var lv = e.level ? ' (' + lvl(e.level) + ')' : '';
       var claim = '<th scope="row"><span class="nl2-claim">' + esc(f.claim) + '</span>' + chips(f, CH, P) + '</th>';
-      var g = '<td data-sort="' + strength(f) + '">' + grade(f.grade, f.kind) + (moveTag(f, true) ? ' ' + moveTag(f, true) : '') + '</td>';
+      var g = '<td data-sort="' + strength(f) + '">' + (f.layout_artifact ? '<span class="muted">not shown</span>' : grade(f.grade, f.kind, isOfficial(f))) + (moveTag(f, true) ? ' ' + moveTag(f, true) : '') + (auditFor(r, f) && auditFor(r, f).untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted</span>' : '') + '</td>';
       var st = '<td class="nl2-settle-cell">' + esc(settleOf(f)) + '</td>';
       var hide = mode === 'manager' && i >= FIRST ? ' hidden class="nl2-more-row"' : '';
+      var eff = f.layout_artifact ? droppedReason(r) : effectText(f);
       if (mode === 'manager') {
-        h += '<tr data-fid="' + esc(f.id) + '"' + hide + '>' + claim + '<td data-sort="' + (e.estimate === null ? '' : e.estimate) + '">' + esc(effectText(f)) + (ci ? ' <span class="muted">[' + esc(ci) + ']</span>' : '') + '</td>' + g + st + '</tr>';
+        h += '<tr data-fid="' + esc(f.id) + '"' + hide + '>' + claim + '<td data-sort="' + (e.estimate === null ? '' : e.estimate) + '">' + esc(eff) + (ci ? ' <span class="muted">[' + esc(ci) + ']</span>' : '') + '</td>' + g + st + '</tr>';
       } else {
         var testCell = '<td class="nl2-test">' + (t ? esc(t.name || t.method || '') + (ran ? '' : ' <span class="muted">(not run' + (t.not_run_reason ? ': ' + esc(t.not_run_reason) : '') + ')</span>') : '') + '</td>';
         var nCell = '<td class="nl2-n" data-sort="' + (t && t.n_months !== null && t.n_months !== undefined ? t.n_months : '') + '">' + (t && t.n_months ? esc(fm().num(t.n_months, 0) + ' months') + (t.n_rows ? ', ' + esc(fm().num(t.n_rows, 0) + ' rows') : '') : '') + '</td>';
         h += '<tr data-fid="' + esc(f.id) + '">' + claim + g +
-          '<td class="num" data-sort="' + (e.estimate === null || e.estimate === undefined ? '' : e.estimate) + '">' + esc(effectText(f)) + '</td>' +
+          '<td class="num" data-sort="' + (e.estimate === null || e.estimate === undefined ? '' : e.estimate) + '">' + esc(eff) + '</td>' +
           '<td class="nl2-ci">' + (ci ? esc(ci) + esc(lv) + (fc ? '<br><span class="muted">' + esc(fc) + '</span>' : '') : '') + '</td>' +
           '<td class="num" data-sort="' + (ran && t.p !== null ? t.p : '') + '">' + (ran ? esc(fm().pval(t.p)) : '') + '</td>' +
           '<td class="num" data-sort="' + (ran && t.q !== null ? t.q : '') + '">' + (ran ? esc(fm().pval(t.q)) : '') + '</td>' + testCell + nCell +
@@ -312,9 +370,15 @@
       var mv = (moveTag(f) ? ' ' + moveTag(f) : '') + (compText(f) ? ' <span class="nl2-comp">' + esc(compText(f)) + '</span>' : '');
       var pw = f.grade === 'WATCH' && powerText(f, r) ? ' <span class="nl2-power">' + esc(powerText(f, r)) + '</span>' : '';
       var er = f.error_rate && f.error_rate.sentence ? '<span class="nl2-er">' + esc(f.error_rate.sentence) + '</span>' : '';
+      var V = isOfficial(f) ? estimandOf(r) : null, Fg = V && r.estimand.figures || {};
+      if (V && Fg.change_pct && Fg.change_pct.text) {
+        // the described change is the figure; the engine's grade is secondary and says what it is a grade of
+        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published totals (' +
+          esc((Fg.prior && Fg.prior.text || '') + ' to ' + (Fg.latest && Fg.latest.text || '')) + ').' + ' <span class="nl2-proc">process grade: ' + esc(V.process ? V.process.note : 'the month-to-month noise of the monthly figures; not a test of the published total') + '.</span>' + held + '</li>';
+      }
       // a stepped claim's as-filed interval spans the step, so it says nothing about the business: not printed
-      return '<li data-fid="' + esc(f.id) + '"' + (isMonitoring(r, f) ? ' data-mon="1"' : '') + '>' + grade(f.grade, f.kind) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(effectText(f)) + '</b>' +
-        (stepped ? ' on the year before, as filed' : (ci ? ' (' + lvl(e.level) + ' ' + word + ' ' + esc(ci) + ')' : '') + (fc ? '; ' + esc(fc) : '')) + '.' + mv + held + pw + er + '</li>';
+      return '<li data-fid="' + esc(f.id) + '"' + (isMonitoring(r, f) ? ' data-mon="1"' : '') + '>' + grade(f.grade, f.kind) + (auditFor(r, f) && auditFor(r, f).untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted: the back-test failed</span>' : '') + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(effectText(f)) + '</b>' +
+        (stepped ? ' on the year before, as filed' : (ci ? ' (' + lvl(e.level) + ' ' + word + ' ' + esc(ci) + ')' : '') + (fc ? '; ' + esc(fc) : '')) + '.' + mv + held + pw + er + (auditFor(r, f) ? ' <span class="nl2-audit" data-status="' + esc(auditFor(r, f).status) + '" data-trusted="' + (auditFor(r, f).trusted ? '1' : '0') + '">' + esc(cap1(auditFor(r, f).line)) + '.</span>' : '') + '</li>';
     });
   }
   function tiles(r, K) {
@@ -323,9 +387,12 @@
       var v = fm().val(t.value, t.scale, t.unit), ci = fm().ci(t.ci, t.scale), f = F[t.finding_id];
       var word = f && f.kind === 'forecast' ? 'range' : 'interval';
       var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit || '') + ' (own units)' : '';
-      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"><p class="nl2-tile-lab">' + esc(t.claim) + '</p>' +
+      var off = isOfficial(f), au = auditFor(r, f);
+      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published totals: ' + t.claim : t.claim) + '</p>' +
         '<p class="nl2-tile-num"><span class="nl2-tile-v">' + esc(v) + '</span>' + (unit ? ' <span class="nl2-tile-u">' + esc(unit) + '</span>' : '') + '</p>' +
-        (ci ? '<p class="nl2-tile-ci">' + esc(lvl(t.ci_level) + ' ' + word + ': ' + ci) + '</p>' : t.movement && t.movement.kind === 'stepped' ? '<p class="nl2-tile-note">on the year before, as filed; read it like for like</p>' : '') + '<p class="nl2-tile-g">' + grade(t.grade, f ? f.kind : t.kind) + (f && moveTag(f, true) ? ' ' + moveTag(f, true) : '') + '</p></div>';
+        (ci ? '<p class="nl2-tile-ci">' + esc(off ? 'the monthly noise\'s own ' + lvl(t.ci_level) + ' interval, not a test of the published change: ' + ci : lvl(t.ci_level) + ' ' + word + ': ' + ci) + '</p>' : t.movement && t.movement.kind === 'stepped' ? '<p class="nl2-tile-note">on the year before, as filed; read it like for like</p>' : '') +
+        '<p class="nl2-tile-g">' + grade(t.grade, f ? f.kind : t.kind, off) + (f && moveTag(f, true) ? ' ' + moveTag(f, true) : '') + (au && au.untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted</span>' : '') + '</p>' +
+        (au ? '<p class="nl2-tile-note nl2-audit" data-status="' + esc(au.status) + '" data-trusted="' + (au.trusted ? '1' : '0') + '">' + esc(cap1(au.line)) + '.</p>' : '') + '</div>';
     }).join('');
   }
   // the conditions a benchmark cell simulated, and what was true in it
@@ -421,7 +488,7 @@
     // a step of the AI plan that set aside a tenth of the rows or more (ai_plan.row_drops[].notice, the adapter's words:
     // final evaluation, 1 Oct 2026): said beside the bottom line, so no one takes its figures for the whole file
     var drops = ((r.ai_plan && Array.isArray(r.ai_plan.row_drops)) ? r.ai_plan.row_drops : []).filter(function (d) { return d && typeof d.notice === 'string' && d.notice; });
-    var h = '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
+    var h = estimandCard(r) + '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +
       drops.map(function (d) { return '<p class="note nl2-plandrop">' + esc(d.notice) + '</p>'; }).join('') +
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
@@ -461,7 +528,7 @@
       '<th scope="col">Weakest</th><th scope="col" class="num">Claim health</th><th scope="col" class="num">Distinct</th><th scope="col">Values</th><th scope="col">Set aside, by rule</th><th scope="col">Fixed, by rule</th><th scope="col">Claims it supports</th></tr></thead><tbody>';
     r.health.columns.forEach(function (c) {
       var vals = c.withheld ? '<span class="muted">withheld: no value is shown</span>'
-        : c.numeric ? 'min ' + esc(num(c.numeric.min)) + ', median ' + esc(num(c.numeric.median)) + ', max ' + esc(num(c.numeric.max))
+        : c.numeric ? 'min ' + esc(fm().amt(c.numeric.min)) + ', median ' + esc(fm().amt(c.numeric.median)) + ', max ' + esc(fm().amt(c.numeric.max))
           : c.dates ? esc(c.dates.min + ' to ' + c.dates.max)
             : (c.top_values || []).slice(0, 3).map(function (tv) { return esc(String(tv[0])) + ' <span class="muted">(' + esc(num(tv[1], 0)) + ')</span>'; }).join(', ');
       h += '<tr data-col="' + esc(c.name) + '"><th scope="row"><code>' + esc(c.name) + '</code> <span class="muted">' + esc(c.type || '') + '</span>' + (c.flagged ? ' <span class="nl2-tag">' + (c.withheld ? 'withheld' : 'flagged') + '</span>' : '') + '</th>' +
@@ -545,25 +612,31 @@
   function forecastStats(r) {
     var F = r.forecast, num = fm().num, pv = fm().pval;
     if (!F || !F.available) return '<p class="nl2-nofc"><b>No forecast:</b> ' + esc(String((F && F.reason) || '').replace(/[.\s]+$/, '')) + '.</p>';
-    var cv = F.coverage || {}, bt = F.baseline_test || {}, bd = F.band || {};
-    return dl([
-      ['Range held in the replay', esc(num(cv.hits, 0) + ' of ' + num(cv.n, 0) + ' months') + (cv.wilson ? ' (95% Wilson interval ' + esc(fm().share1(cv.wilson[0]) + ' to ' + fm().share1(cv.wilson[1])) + ')' : '') +
+    var cv = F.coverage || {}, bt = F.baseline_test || {}, bd = F.band || {}, AU = F.audit && F.audit.label ? F.audit : null, FF = FA(), AV = FF ? FF.auditView(r) : null;
+    var auditRows = AU ? [['Back-test of the range shown', '<b>' + esc(AU.label) + '</b>. ' + esc(AV ? cap1(AV.words) : '') + (AU.trusted ? '; trusted' : '; not trusted') + '. ' + esc(AU.grade_label || '') + (AU.benchmark_is_model ? ' Passing needs the model to be no worse than seasonal naive; this model IS seasonal naive, so it is judged on how often its range held.' : '')],
+      ['The back-test, horizon by horizon', arr(AU.horizons) && AU.horizons.length ? '<div class="tscroll" tabindex="0" role="region" aria-label="Back-test by horizon"><table class="dt nl2-audit-table"><thead><tr><th scope="col">Months ahead</th><th scope="col">Held of checked</th><th scope="col" class="num">About independent</th><th scope="col">95% interval of the share held</th><th scope="col" class="num">Error against seasonal naive</th><th scope="col">Status</th></tr></thead><tbody>' +
+        AU.horizons.map(function (h) { return '<tr><th scope="row">' + esc(num(h.h, 0)) + '</th><td>' + esc(num(h.held, 0) + ' of ' + num(h.of, 0)) + '</td><td class="num">' + esc(num(h.n_eff, 0)) + '</td><td>' + (arr(h.wilson) ? esc(fm().share1(h.wilson[0]) + ' to ' + fm().share1(h.wilson[1])) : '') + '</td><td class="num">' + esc(h.rel_mae === null || h.rel_mae === undefined ? 'n/a' : Number(h.rel_mae).toFixed(2) + ' (mean absolute error ratio)') + '</td><td>' + esc(h.status || '') + '</td></tr>'; }).join('') + '</tbody></table></div>' : 'not run']] : [];
+    return dl(auditRows.concat([
+      [AU ? 'The core\'s replay of the whole method (a different replay: the back-test above is the evidence)' : 'Range held in the replay', esc(num(cv.hits, 0) + ' of ' + num(cv.n, 0) + ' months') + (cv.wilson ? ' (95% Wilson interval ' + esc(fm().share1(cv.wilson[0]) + ' to ' + fm().share1(cv.wilson[1])) + ')' : '') +
         '; binomial p ' + esc(pv(cv.binomial_p)) + ', Christoffersen independence p ' + esc(pv(cv.christoffersen_ind_p)) + ', conditional coverage p ' + esc(pv(cv.christoffersen_cc_p))],
       ['Against seasonal-naive', bt.method ? esc('DM ' + (bt.stat === null ? 'n/a' : Number(bt.stat).toFixed(2)) + ', df ' + num(bt.df, 0) + ', ' + num(bt.n, 0) + ' months, p ' + pv(bt.p) + (bt.gain !== null && bt.gain !== undefined ? ', error ' + (bt.gain * 100).toFixed(0) + '% lower' : '')) + ' <span class="muted">(' + esc(bt.method.replace(/_/g, ' ')) + ')</span>' : 'not run'],
       ['How the range is built', esc(String(bd.method || '').replace(/_/g, ' ') + ' from ' + num(bd.n_errors, 0) + ' replayed errors; the most it can reach is ' + fm().share1(bd.max_level) + '; widened up to ' + (bd.widened_by_max ? ((bd.widened_by_max - 1) * 100).toFixed(0) + '%' : 'n/a') + ' for errors that move together; scope: ' + String(bd.scope || '').replace(/_/g, ' '))],
       ['This range\'s own spread', bd.conditional_coverage_p10_p90 ? esc('true coverage typically ' + fm().share0(bd.conditional_coverage_p10_p90[0]) + ' to ' + fm().share0(bd.conditional_coverage_p10_p90[1]) + ' (10th to 90th percentile, given ' + num(bd.n_errors, 0) + ' errors)') : 'n/a']
-    ]);
+    ]));
   }
   function analyst(r, CH, parts) {
     var num = fm().num, R = r.reproducibility, P = R.parameters || {}, en = r.engine, env = en.environment || {}, h = r.health;
-    var secs = [['summary', 'Executive summary'], ['data', 'Data and provenance'], ['methods', 'Methods'], ['results', 'Results'], ['limits', 'Limitations and threats to validity'],
-      ['recs', 'Recommendations'], ['repro', 'Reproducibility'], ['appendix', 'Appendix: set-aside rows and the evidence ledger']];
+    var est = !!r.estimand;
+    var secs = (est ? [['estimand', 'What this report measures']] : []).concat([['summary', 'Executive summary'], ['data', 'Data and provenance'], ['methods', 'Methods'], ['results', 'Results'], ['limits', 'Limitations and threats to validity'],
+      ['recs', 'Recommendations'], ['repro', 'Reproducibility'], ['appendix', 'Appendix: set-aside rows and the evidence ledger']]);
+    var resN = secs.map(function (x) { return x[0]; }).indexOf('results') + 1;
     var S = {};
+    if (est) S.estimand = estimandCard(r, true) + structureHtml(r);
     var pm = r.primary_metric, F = byId(r);
     // the AI-written report's honesty check, filled in by N.aiAudit when that report arrives (50-try.js)
     S.summary = '<p class="nl2-ai-audit note" id="nl2-ai-audit" role="note" hidden></p>' + (pm ? '<p>The primary claim is <b>' + esc(F[pm.finding_id] ? F[pm.finding_id].claim : pm.finding_id) + '</b>, graded ' + grade(pm.grade) + '.</p>' : '<p>No claim was tested as the primary metric in this run.</p>') +
       (r.summary && r.summary.lines && r.summary.lines.length ? '<p class="nl2-engine-bottom"><b>Every graded claim, as the engine lists it:</b> ' + esc(r.story.headline) + '</p>' : '') +
-      '<p class="note">The engine\'s own narrative follows; every figure in it is a checked fact. The findings table in section 4 carries each test.</p>' + parts.story;
+      '<p class="note">The engine\'s own narrative follows; every figure in it is a checked fact. The findings table in section ' + resN + ' carries each test.</p>' + parts.story;
     S.data = dl([
       ['File', '<b>' + esc(r.input.name) + '</b>, ' + esc(num(r.input.rows, 0) + ' rows × ' + num(r.input.columns, 0) + ' columns, ' + num(r.input.bytes, 0) + ' bytes')],
       ['Fingerprint (sha256)', '<code>' + esc(r.input.sha256) + '</code>'],
@@ -622,6 +695,7 @@
   // parts: { story, rolesPriv, cleaning } HTML the demo page already writes for v1 (50-try.js), and ai: the
   // manager view's AI summaries card ('' when the page offers none)
   N.html = function (r, parts) {
+    if (C().setUnit) C().setUnit(r);
     var CH = chartMap(r);
     return '<div class="nl2" data-contract="2">' +
       '<div class="nl2-views" role="tablist" aria-label="How to read this report">' +
@@ -699,6 +773,7 @@
   var escBound = false;
   N.mount = function (root, r) {
     root.__rep = r;
+    if (C().setUnit) C().setUnit(r);
     draw(root.querySelector('#nl2-manager'), r);
     var tabs = root.querySelectorAll('.nl2-views [role="tab"]');
     Array.prototype.forEach.call(tabs, function (t, i) {

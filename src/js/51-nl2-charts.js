@@ -22,6 +22,9 @@
   // a signed difference in a measure's own units (up to 3 decimals), never a percentage
   function sgnD(x) { var s = num(Math.abs(x), 3); return s === '0' ? '0' : (x > 0 ? '+' : '-') + s; }
   var COUNTY = ['rows', 'count', 'months'];
+  // the estimand's own units for a money amount ("$864.0B", never 864,000,000,000): set once per report that has an
+  // estimand (NL2.html); null for every other report, which keeps whole units
+  var UNIT = null;
   // a value in the scale the contract names: fraction (0.2 = +20%), pct (already percent), counts,
   // difference (a change in the measure's own units, where a percentage has no meaning)
   function val(v, scale, unit) {
@@ -29,12 +32,18 @@
     if (scale === 'difference') return sgnD(v);
     if (scale === 'fraction') return sgn1(unit === 'pct' ? v : v * 100) + '%';
     if (scale === 'pct') return num(v, 2) + '%';   // as the engine writes a share in its claims (45.2%, 2.45%)
-    if (scale === 'money') return num(v, 0);       // a money total or its forecast: whole units, no cents
+    if (scale === 'money') return UNIT ? UNIT(v) : num(v, 0);       // a money total or its forecast: whole units, no cents; the estimand's units when it has them
     if (COUNTY.indexOf(scale) >= 0) return num(Math.round(v), 0);
+    // a forecast's own scale is the measure's name ("total_retail_sales"): an amount of a million or more is the estimand's
+    // units, as its headline is
+    if (UNIT && Math.abs(v) >= 1e6) return UNIT(v);
     return num(v);
   }
   // how a chart prints one value of its series: whole units for money (contract v2: data.scale "money")
-  function vfmt(scale) { return scale === 'money' ? function (v) { return num(v, 0); } : function (v) { return num(v); }; }
+  function vfmt(scale) {
+    return scale === 'money' ? function (v) { return v === null || v === undefined || !isFinite(v) ? 'n/a' : UNIT ? UNIT(v) : num(v, 0); }
+      : function (v) { return UNIT && COUNTY.indexOf(scale) < 0 && v !== null && v !== undefined && isFinite(v) && Math.abs(v) >= 1e6 ? UNIT(v) : num(v); };
+  }
   function ci(pair, scale) {
     if (!pair || pair[0] === null || pair[1] === null || pair[0] === undefined || pair[1] === undefined) return null;
     return val(pair[0], scale) + ' to ' + val(pair[1], scale);
@@ -55,12 +64,16 @@
     if (v === null || v === undefined || !isFinite(v)) return '';
     if (isCount) return num(Math.round(v), 0);
     var a = Math.abs(v);
+    if (UNIT && a >= 1e6) return UNIT(v);          // the estimand's units, as short as the cell needs ("$37.1B")
     return num(v, a >= 100 ? 0 : a >= 10 ? 1 : 2);
   }
   function mon(ym) { return U.month ? U.month(ym) : ym; }
   function monShort(ym) { return (U.MON ? U.MON[+ym.slice(5, 7) - 1] : ym.slice(5, 7)) + ' ' + ym.slice(2, 4); }
   function tip(s) { return ' data-tip="' + esc(s) + '"'; }
-  C.fmt = { num: num, vfmt: vfmt, val: val, ci: ci, sgn1: sgn1, sgnD: sgnD, pct1: pct1, share0: share0, share1: share1, pval: pval, mon: mon };
+  C.setUnit = function (r) { var f = window.NLReportPdf && window.NLReportPdf.facts; UNIT = r && r.estimand && f ? f.unitOf(r) : null; };
+  // any amount in the estimand's units when it has them and is a million or more, else the plain number
+  function amt(v, dp) { return UNIT && v !== null && v !== undefined && isFinite(v) && Math.abs(v) >= 1e6 ? UNIT(v) : num(v, dp); }
+  C.fmt = { amt: amt, num: num, vfmt: vfmt, val: val, ci: ci, sgn1: sgn1, sgnD: sgnD, pct1: pct1, share0: share0, share1: share1, pval: pval, mon: mon };
 
   /* ------------------------------------------------------------ shared pieces */
   // a series' value axis: its data with 8% padding, and 0 only when the data cross it or come within a quarter of their
@@ -270,7 +283,7 @@
     if (band.n_errors && band.conditional_coverage_p10_p90 && band.conditional_coverage_p10_p90[0] !== null) s += ' With only ' + num(band.n_errors, 0) + ' past errors behind it, this particular range could be somewhat wider or narrower in truth: typically between ' +
       share0(band.conditional_coverage_p10_p90[0]) + ' and ' + share0(band.conditional_coverage_p10_p90[1]) + ' of months.';
     s += ' The range is for each month on its own, not for the whole path.';
-    if (fw.length && fw[0].lo !== null) s += ' Plan for either end: for ' + mon(fw[0].month) + ' the low end of the range is ' + num(fw[0].lo, 0) + ' and the high end ' + num(fw[0].hi, 0) + ', around a forecast of ' + num(fw[0].value, 0) + '.';
+    if (fw.length && fw[0].lo !== null) s += ' Plan for either end: for ' + mon(fw[0].month) + ' the low end of the range is ' + vf(fw[0].lo) + ' and the high end ' + vf(fw[0].hi) + ', around a forecast of ' + vf(fw[0].value) + '.';
     return {
       svg: U.svg(W, H, ch.title + ': ' + hist.length + ' months of actuals to ' + (last ? mon(last.month) : '') + ', then ' + fw.length + ' months forecast' + (ranged ? ' with the ' + lvl + '% range' : ''), b),
       table: { cols: ['Month', 'Actual', 'Forecast', lvl + '% low', lvl + '% high', 'Range widened'], rows: rows },
@@ -279,8 +292,11 @@
   };
 
   /* ------------------------------------------------------------ #5 backtest replay */
-  C.replay = function (W, ch) {
+  C.replay = function (W, ch, RR) {
     var d = ch.data, ms = d.months || [], vf = vfmt(d.scale);
+    // the engine's count of how the range held is the back-test of the range shown (forecast.audit); this chart shows the
+    // whole method's own replay, so it names no count of its own beside it (wave 4, track B: one statement)
+    var audit = RR && RR.forecast && RR.forecast.audit && RR.forecast.audit.label ? RR.forecast.audit : null;
     var L = 56, R = W - 12;
     var lg = legend([{ mark: MK.box('nl2-rbar'), label: 'range stated at the time' }, { mark: MK.line('ln nl2-tick'), label: 'forecast' },
       { mark: MK.dot('dot-s'), label: 'actual, inside' }, { mark: function (x, y) { return '<path class="nl2-miss" d="M' + (x + 5) + ' ' + (y - 4) + 'l8 8m0 -8l-8 8"/>'; }, label: 'actual, a miss' }], L, R, 10);
@@ -299,9 +315,10 @@
     });
     b += '<line x1="' + L + '" x2="' + R + '" y1="' + Bt + '" y2="' + Bt + '" stroke="var(--axis)"/>' + xMonths(ms.map(function (m) { return m.month; }), x, H - 8) + lg.svg;
     return {
-      svg: U.svg(W, H, ch.title + ': ' + num(d.hits, 0) + ' of ' + num(d.n, 0) + ' replayed months landed inside the range stated at the time', b),
+      svg: U.svg(W, H, audit ? ch.title + ': each month\'s actual against the range stated at the time' : ch.title + ': ' + num(d.hits, 0) + ' of ' + num(d.n, 0) + ' replayed months landed inside the range stated at the time', b),
       table: { cols: ['Month', 'Actual', 'Forecast', 'Low', 'High', 'Inside the range?'], rows: ms.map(function (m) { return [m.month, vf(m.actual), vf(m.point), vf(m.lo), vf(m.hi), m.in_band ? 'yes' : 'no, a miss']; }) },
-      note: 'Each month was forecast one month ahead from what was known then: <b>' + esc(num(d.hits, 0) + ' of ' + num(d.n, 0)) + '</b> actuals landed inside the range stated at the time. A replay this short can show a badly set range; it cannot prove a good one.'
+      note: audit ? 'Each month was forecast one month ahead from what was known then, and the mark says whether the actual landed inside the range stated at the time. The engine\'s count of how the range held is its back-test: <b>' + esc(String(audit.label)) + '</b>. A replay this short can show a badly set range; it cannot prove a good one.'
+        : 'Each month was forecast one month ahead from what was known then: <b>' + esc(num(d.hits, 0) + ' of ' + num(d.n, 0)) + '</b> actuals landed inside the range stated at the time. A replay this short can show a badly set range; it cannot prove a good one.'
     };
   };
 

@@ -3125,6 +3125,12 @@
         })) + '<p class="note">Withhold: never sent to an AI or put in a share link, not even its name, and its values are left out of the business analysis and the downloads; no cleaning rule reads or changes them, so they never set a row aside, and they only keep otherwise-identical rows apart, as they are in your file; the data-health findings still name the column and count its empty cells, never showing a value. Code: each value replaced by a code in the downloads; left out of the analyses, and an AI is told only its name, type and counts. Keep: used like any other column' +
           (CFG.ai_proxy_url ? '; its values went to the AI only if you ticked the box that named it' : '') + '.</p>'
         : '<p>No column was flagged as personal data.</p>') +
+        // the categories the engine read as categories (privacy.released), as the consent step said them: part of the
+        // report's method and data-quality account (wave 4, track B)
+        ((r.privacy.released || []).filter(function (x) { return x && x.text; }).length
+          ? '<h4 class="tr-rel-h">Read as categories, not personal data</h4><ul class="tr-rel-list" data-released="1">' + r.privacy.released.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
+            '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape and no sensitive name, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>'
+          : '') +
         '<p class="note">The scan reads column names and the shape of values, so names under a neutral heading can be missed: look over the story and the downloads before you share them.</p></article>';
       if (gated) h += priv;
       else {

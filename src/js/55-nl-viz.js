@@ -296,7 +296,19 @@
     }
     return wfH(rec, W, tws);
   }
-  function wfClass(s) { return s.kind === 'total' ? 'w-tot' : s.value > 0 ? 'w-rise' : 'w-fall'; }
+  // the step the total less its published parts makes (the suppressed cells), in the words a reader needs and as a dashed
+  // marker, never a filled bar: an older report's label is read the same way
+  var UNALLOC = /^(?:not allocated: suppressed cells|unallocated \(suppressed cells\))$/i;
+  function isUnalloc(s) { return s.kind !== 'total' && UNALLOC.test(String(s.label)); }
+  function stepName(s) { return UNALLOC.test(String(s.label)) ? 'Not allocated: suppressed cells' : s.label; }
+  // an older report's table view says "unallocated (suppressed cells)": the same words as the drawing
+  function relabelTable(t) {
+    if (!t || !Array.isArray(t.rows) || !t.rows.some(function (r) { return Array.isArray(r) && UNALLOC.test(String(r[0])); })) return t;
+    var o = {}; Object.keys(t).forEach(function (k) { o[k] = t[k]; });
+    o.rows = t.rows.map(function (r) { return Array.isArray(r) && UNALLOC.test(String(r[0])) ? ['Not allocated: suppressed cells'].concat(r.slice(1)) : r; });
+    return o;
+  }
+  function wfClass(s) { return s.kind === 'total' ? 'w-tot' : isUnalloc(s) ? 'w-unalloc' : s.value > 0 ? 'w-rise' : 'w-fall'; }
   function wfH(rec, W, tws) {
     var S = rec.data.steps, n = S.length, RH = 34, T = 4;
     var vals = [0]; S.forEach(function (s) { vals.push(s.from, s.to); });
@@ -310,9 +322,9 @@
     b += '<line class="nlv-zero" x1="' + f1(x(0)) + '" x2="' + f1(x(0)) + '" y1="' + T + '" y2="' + bot + '"/>';
     S.forEach(function (s, i) {
       var y = T + i * RH, a = x(s.from), z = x(s.to), right = s.to >= s.from, w = Math.abs(z - a), x0 = Math.min(a, z);
-      if (w < 2) { w = 2; x0 = right ? z - 2 : z; }
+      if (w < 2) { w = isUnalloc(s) ? 7 : 2; x0 = right ? z - w : z; }
       var total = s.kind === 'total';
-      b += '<g data-tip="' + esc(s.label + ': ' + s.text) + '">' + txt(0, y + 12, s.label, { cls: total ? 'nlv-t nlv-b nlv-halo' : 'nlv-t nlv-halo', maxW: W }) +
+      b += '<g data-tip="' + esc(stepName(s) + ': ' + s.text) + '">' + txt(0, y + 12, stepName(s), { cls: total ? 'nlv-t nlv-b nlv-halo' : 'nlv-t nlv-halo', maxW: W }) +
         '<rect class="' + wfClass(s) + '" x="' + f1(x0) + '" y="' + (y + 17) + '" width="' + f1(w) + '" height="12" rx="2"/>' +
         txt(right ? z + 5 : z - 5, y + 27, s.text, { anchor: right ? 'start' : 'end', cls: 'vlab nlv-halo' }) + '</g>';
       if (i < n - 1) b += '<line class="nlv-con" x1="' + f1(z) + '" x2="' + f1(z) + '" y1="' + (y + 29) + '" y2="' + (y + RH + 17) + '"/>';
@@ -331,9 +343,9 @@
     b += '<line class="nlv-zero" x1="' + L + '" x2="' + R + '" y1="' + f1(y(0)) + '" y2="' + f1(y(0)) + '"/>';
     S.forEach(function (s, i) {
       var cx = L + slot * (i + 0.5), a = y(s.from), z = y(s.to), up = s.to >= s.from, h = Math.abs(z - a), y0 = Math.min(a, z);
-      if (h < 2) { h = 2; y0 = up ? z : z - 2; }
-      var total = s.kind === 'total', lines = two(s.label, slot - 6, 12, total ? 700 : 400);
-      b += '<g data-tip="' + esc(s.label + ': ' + s.text) + '"><rect class="' + wfClass(s) + '" x="' + f1(cx - bw / 2) + '" y="' + f1(y0) + '" width="' + f1(bw) + '" height="' + f1(h) + '" rx="2"/>' +
+      if (h < 2) { h = isUnalloc(s) ? 7 : 2; y0 = up ? z - (h - 2) : z - 2; }
+      var total = s.kind === 'total', lines = two(stepName(s), slot - 6, 12, total ? 700 : 400);
+      b += '<g data-tip="' + esc(stepName(s) + ': ' + s.text) + '"><rect class="' + wfClass(s) + '" x="' + f1(cx - bw / 2) + '" y="' + f1(y0) + '" width="' + f1(bw) + '" height="' + f1(h) + '" rx="2"/>' +
         txt(cx, up ? z - 6 : z + 15, s.text, { anchor: 'middle', cls: 'vlab' }) +
         lines.map(function (l, k) {
           return l ? '<text x="' + f1(cx) + '" y="' + (Bt + LB + 13 + k * 14) + '" class="nlv-t' + (total ? ' nlv-b' : '') + '" text-anchor="middle"' + (rtl(s.label) ? ' direction="rtl"' : '') +
@@ -576,7 +588,7 @@
     if (!has(DRAW, kind)) return NLV.tableOut(rec);
     try { o = DRAW[kind](rec, W); } catch (e) { if (window.console) console.error(e); return NLV.tableOut(rec, 'This chart could not be drawn here, so its table is shown.'); }
     var svg = svgOf(W, o.H, label, o.body);
-    return { html: sub + svg + (o.after || ''), svg: svg, table: tableOk(rec.table) ? rec.table : null,
+    return { html: sub + svg + (o.after || ''), svg: svg, table: tableOk(rec.table) ? relabelTable(rec.table) : null,
       tnote: rec.subtitle ? '<p class="note">' + esc(rec.subtitle) + '</p>' : '', note: notes(rec, kind, o), label: label, kind: kind, layout: o.layout };
   };
 })();

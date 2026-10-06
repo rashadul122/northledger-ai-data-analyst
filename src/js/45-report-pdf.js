@@ -1344,7 +1344,7 @@
     for (var r0 = 0; r0 < list.length; r0 += per) {
       var row = list.slice(r0, r0 + per);
       var shaped = row.map(function (k) {
-        return { k: k, lab: wrapTokens(tokens(k.unit || '', 'R', COL.muted), 7.5, w - 20).slice(0, 3),
+        return { k: k, lab: wrapTokens(tokens(k.unit || '', 'R', COL.muted), 7.5, w - 20).slice(0, 4),
           asm: wrapTokens(tokens(k.assumption ? 'Assumes ' + k.assumption : '', 'R', COL.body), 8, w - 20).slice(0, 4) };
       });
       var h = 58 + Math.max.apply(null, shaped.map(function (s) { return s.lab.length * 9.5 + (s.asm.length ? 6 + s.asm.length * 10.5 : 0); })) + 24;
@@ -1978,7 +1978,7 @@
         if (no.n && no.min && no.max) {
           [['nonoverlap.min', 'lowest'], ['nonoverlap.median', 'middle'], ['nonoverlap.max', 'highest']].forEach(function (pp) {
             var x = hi(lg, pp[0]);
-            if (x) hcards.push({ name: lg + '-month, none counted twice: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
+            if (x) hcards.push({ name: lg + '-month, spaced: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
           });
         }
       });
@@ -2228,7 +2228,7 @@
     });
     var story = R.story && Array.isArray(R.story.what_happened) ? { what_happened: R.story.what_happened.slice(0, 8).map(function (x) { return str(x, 300); }) } : null;
     var items = sc ? capItems((Array.isArray(sc.items) ? sc.items : []).filter(function (x) { return x && typeof x === 'object'; }), SHARE_MAX_ITEMS, SHARE_TOP_SEGMENTS).map(function (x) {
-      var o = {}; ITEM_KEYS.forEach(function (k) { if (x[k] !== undefined) o[k] = typeof x[k] === 'string' ? str(x[k], 300) : x[k]; }); return o;
+      var o = {}; ITEM_KEYS.forEach(function (k) { if (x[k] !== undefined) o[k] = typeof x[k] === 'string' ? str(x[k], k === 'label' ? 400 : 300) : x[k]; }); return o;
     }) : [];
     // gone: what the cap took ('i' + an item's index, 'f' + a finding's, 'story', 'scen', 'primary')
     var gone = {};

@@ -1099,14 +1099,14 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
             nv = {"min": _ni.sig2(float(na.min())), "median": _ni.sig2(float(np.percentile(na, 50))),
                   "max": _ni.sig2(float(na.max()))}
         nvt = {k: _fmt_item(x, kind, unit, sig=2) for k, x in nv.items()}
+        # one sentence within the writer's 400-character label cap (the longer one that also stated the non-overlapping
+        # changes reached the report writer cut mid-sentence, "the 9 changes ran from"; they are items of their own:
+        # .nonoverlap.n, .min, .median, .max)
         sentence = ("In the %s (%s; they overlap, one ending each month, so they are worth about %d independent "
                     "ones), the change in %s ran from %s (%s) to %s (%s); the middle was %s, and it rose in %d of the "
-                    "%d." % (wins, span, m_ind, what, txt[lo_k], "1 in 10 lower" if wide else "the lowest",
-                             txt[hi_k], "1 in 10 higher" if wide else "the highest", txt["p50"], rose_k, n))
-        if nv:
-            sentence += (" Taking %s, the %d changes ran from %s to %s, with a middle of %s."
-                         % (every, len(nov), nvt["min"], nvt["max"], nvt["median"]))
-        sentence += " This is history, not a forecast."
+                    "%d. This is history, not a forecast." % (
+                        wins, span, m_ind, what, txt[lo_k], "1 in 10 lower" if wide else "the lowest",
+                        txt[hi_k], "1 in 10 higher" if wide else "the highest", txt["p50"], rose_k, n))
         lo_words = ("10th percentile", " (1 in 10 was lower)") if wide else ("lowest", "")
         hi_words = ("90th percentile", " (1 in 10 was higher)") if wide else ("highest", "")
         got = [

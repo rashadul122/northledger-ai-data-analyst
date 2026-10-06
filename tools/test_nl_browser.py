@@ -4846,16 +4846,16 @@ def test_eval_d_a_level_gets_its_historical_range_as_history_not_a_forecast():
             assert H[b + ".n_eff"]["value"] == {12: 13.0, 3: 43.0}[lag], H[b + ".n_eff"]
             t = {k: H["%s.%s" % (b, k)]["text"] for k in ("p10", "p50", "p90", "nonoverlap.min", "nonoverlap.max",
                                                           "nonoverlap.median")}
-            every = "one window a year, each ending in Aug" if lag == 12 else \
-                "one window every 3 months, the latest ending in Aug 2026"
+            # one sentence that fits the writer's 400-character label (the longer one, which also stated the non-overlapping
+            # changes, reached the report writer cut mid-sentence, "the 9 changes ran from"; they are items of their own)
             assert H[b + ".windows"]["label"] == (
                 "In the %d past %d-month windows (Jan 2017 to Aug 2026; they overlap, one ending each month, so they are "
                 "worth about %d independent ones), the change in the monthly average of value ran from %s (1 in 10 "
-                "lower) to %s (1 in 10 higher); the middle was %s, and it rose in %d of the %d. Taking %s, the %d "
-                "changes ran from %s to %s, with a middle of %s. This is history, not a forecast."
-                % (want["windows"], lag, want["n_eff"], t["p10"], t["p90"], t["p50"], want["rose"], want["windows"],
-                   every, want["nonoverlap.n"], t["nonoverlap.min"], t["nonoverlap.max"], t["nonoverlap.median"])), \
+                "lower) to %s (1 in 10 higher); the middle was %s, and it rose in %d of the %d. This is history, not a "
+                "forecast."
+                % (want["windows"], lag, want["n_eff"], t["p10"], t["p90"], t["p50"], want["rose"], want["windows"])), \
                 H[b + ".windows"]["label"]
+            assert all(len(it["label"]) <= 400 for it in H.values()), [len(it["label"]) for it in H.values()]
         assert NS.HISTORY_NOTE in sc["note"], sc["note"]
     # the fixture's own path keeps the engine's zeros (its downloads do): the range counts them as no rate, and says so
     zero = [it["assumes"] for it in _sc(flat)["items"] if it["group"] == "history_range"]

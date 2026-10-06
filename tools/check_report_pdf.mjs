@@ -587,8 +587,8 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   expect('trimmed share f3 EUR', /run rate, a year/.test(p3s) && /sensitivity/.test(p3s) && /gap to the largest country/.test(p3s), 'the shared PDF lacks the run-rate, sensitivity or gap blocks: ' + p3s.slice(0, 300));
 
   // ---- a level's historical range (pre-deploy pass, 30 Sep 2026): fx-history-results.json, the FX run's results from
-  // the packed engine (make_fx_history.py), whose scenarios hold the ten history_range items (12-month and 3-month
-  // windows) and the facts, and no run rate, gap or forecast. Part 3 says why there are no scenarios, then draws "What
+  // the packed engine (make_fx_history.py), whose scenarios hold the twenty history_range items (12-month and 3-month
+  // windows: count, n_eff, 10th/50th/90th percentile, rose, and the non-overlapping changes) and the facts, and no run rate, gap or forecast. Part 3 says why there are no scenarios, then draws "What
   // past moves looked like (history, not a forecast)": a card per figure, the longest window first, each with its
   // window count, a neutral HISTORY label and never a grade's pill, every card's words whole, and the engine's own
   // sentences under them; the same in a shared copy; and a share's cut keeps the history after the facts and drops
@@ -604,14 +604,18 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
       fxAt('history_range.m3.p90').text + '.', '## What to do', '1. Compare the rate against its past range before committing money.',
     '## Risks and what the data cannot say', '- The range is history, not a forecast.'].join('\n');
   const fxInp = (res, o) => inp(res, fxReport, Object.assign({ name: 'fx_usd_cad.csv', charts: FXR.charts, tables: FXR.tables }, o || {}));
-  expect('FX history', FXH.engine_snapshot === '19ec81d19e0d' && fxHist.length === 10 && fxHist.every((x) => x.grade === null && !x.parent_grade) &&
-    !fxItems.some((x) => ['run_rate', 'sensitivity', 'gap', 'forecast'].indexOf(x.group) >= 0), 'the fixture is not the FX run with ten ungraded history items and no scenario to add up');
+  expect('FX history', FXH.engine_snapshot === '19ec81d19e0d' && fxHist.length === 20 && fxHist.every((x) => x.grade === null && !x.parent_grade) &&
+    !fxItems.some((x) => ['run_rate', 'sensitivity', 'gap', 'forecast'].indexOf(x.group) >= 0), 'the fixture is not the FX run with twenty ungraded history items and no scenario to add up');
   const HIST_CARDS = [];                  // [name, value, words] as the writer draws them, the 12-month window first
   [12, 3].forEach((lg) => {
-    const w = fxAt('history_range.m' + lg + '.windows').text, rose = fxAt('history_range.m' + lg + '.rose').text;
-    HIST_CARDS.push([lg + '-month: 1 in 10 lower', fxAt('history_range.m' + lg + '.p10').text, 'The change in the monthly average; 1 in 10 of the ' + w + ' past windows was lower'],
-      [lg + '-month: Middle', fxAt('history_range.m' + lg + '.p50').text, 'The change in the monthly average, the middle of the ' + w + ' past windows; it rose in ' + rose + ' of them'],
-      [lg + '-month: 1 in 10 higher', fxAt('history_range.m' + lg + '.p90').text, 'The change in the monthly average; 1 in 10 of the ' + w + ' past windows was higher']);
+    const w = fxAt('history_range.m' + lg + '.windows').text, rose = fxAt('history_range.m' + lg + '.rose').text, ne = fxAt('history_range.m' + lg + '.n_eff').text;
+    const nn = fxAt('history_range.m' + lg + '.nonoverlap.n').text, of = 'the ' + w + ' past windows (about ' + ne + ' independent)';
+    HIST_CARDS.push([lg + '-month: 1 in 10 lower', fxAt('history_range.m' + lg + '.p10').text, 'The change in the monthly average; 1 in 10 of ' + of + ' was lower'],
+      [lg + '-month: Middle', fxAt('history_range.m' + lg + '.p50').text, 'The change in the monthly average, the middle of ' + of + '; it rose in ' + rose + ' of them'],
+      [lg + '-month: 1 in 10 higher', fxAt('history_range.m' + lg + '.p90').text, 'The change in the monthly average; 1 in 10 of ' + of + ' was higher']);
+    // the non-overlapping alternative: one window a year (or a quarter), none counted twice
+    [['min', 'lowest'], ['median', 'middle'], ['max', 'highest']].forEach(([k, word]) => HIST_CARDS.push([lg + '-month, spaced: ' + word, fxAt('history_range.m' + lg + '.nonoverlap.' + k).text,
+      'The ' + word + ' of the ' + nn + ' non-overlapping ' + lg + '-month changes in the monthly average']));
   });
   const sp = (t) => plainText(t).replace(/\s+/g, ' ');
   const histCheck = (label, r) => {
@@ -619,7 +623,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     expect(label, at >= 0, 'Part 3 has no "What past moves looked like (history, not a forecast)" block: ' + p3.slice(0, 400));
     // the reason there is nothing to add up comes first, then the history
     const ns = p3.indexOf('no scenarios');
-    expect(label, ns >= 0 && ns < at && p3.indexOf('the forecast is not yet shown usable') >= 0, 'Part 3 does not say first why there are no scenarios');
+    expect(label, ns >= 0 && ns < at && p3.indexOf('the headline is an average, so it has no parts that add up') >= 0, 'Part 3 does not say first why there are no scenarios');
     let from = 0;
     HIST_CARDS.forEach(([name, value, words]) => {
       const i = blk.indexOf(sp(name), from), v = blk.indexOf(sp(value), i), wd = blk.indexOf(sp(words), i);
@@ -650,14 +654,14 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   const sizeOf = (x) => Buffer.byteLength(JSON.stringify(x), 'utf8');
   const facts = fxItems.filter((x) => x.group === 'facts');
   const tight = W.shareResults(FXR, sizeOf(fxShare) - 40), tI = tight ? tight.scenarios.items : [];
-  expect('FX history cap', !!tight && tI.filter((x) => x.group === 'history_range').length === 10 && tI.filter((x) => x.group === 'facts').length < facts.length,
+  expect('FX history cap', !!tight && tI.filter((x) => x.group === 'history_range').length === 20 && tI.filter((x) => x.group === 'facts').length < facts.length,
     'at ' + (sizeOf(fxShare) - 40) + ' bytes the share did not drop a fact before the history: ' + JSON.stringify(tI.map((x) => x.id)));
   const fcRes = JSON.parse(JSON.stringify(FXR));
   fcRes.scenarios.items.push({ id: 'forecast.3.base', group: 'forecast', segment: null, label: 'Base case, the next 3 months', value: 60, text: '60', kind: 'count', unit: '', grade: 'CONFIRMED' });
   let histGone = null;
   for (let cap = sizeOf(W.shareResults(fcRes)); cap > 400 && !histGone; cap -= 25) {
     const t = W.shareResults(fcRes, cap), it = t && t.scenarios ? t.scenarios.items : [];
-    if (t && t.scenarios && it.filter((x) => x.group === 'history_range').length < 10) histGone = { cap, it };
+    if (t && t.scenarios && it.filter((x) => x.group === 'history_range').length < 20) histGone = { cap, it };
   }
   expect('FX history cap', !!histGone && histGone.it.some((x) => x.group === 'forecast'),
     'the history did not go before the forecast: ' + JSON.stringify(histGone && histGone.it.map((x) => x.id)));

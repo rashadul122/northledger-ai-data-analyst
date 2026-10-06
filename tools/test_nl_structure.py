@@ -336,8 +336,10 @@ def test_e2e_the_slice_run_hands_track_a2_the_header_the_row_layout_and_the_hidd
             del NB._official_inference
         else:
             NB._official_inference = orig
-    assert len(seen) == 1, len(seen)
-    got = seen[0]
+    # on this branch alone the slice's run makes the one call; once w4-inference is merged its own run of the slice calls
+    # it first, with the slice's header, and the slice's call (with the file's) is the last
+    assert 1 <= len(seen) <= 2, len(seen)
+    got = seen[-1]
     assert got["header"] == list(pd.read_csv(io.BytesIO(data), dtype=str, nrows=0).columns), got["header"]
     assert got["layout"]["rows_a_month"] == 6 and got["layout"]["layout"] == NB.STRUCTURE_LAYOUT, got["layout"]
     assert got["structure"]["kind"] == "cube" and got["estimand"]["slice"][0]["member"] == "Total", got["estimand"]["slice"]

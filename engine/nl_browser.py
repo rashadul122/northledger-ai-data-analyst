@@ -8749,7 +8749,7 @@ def _inner_plan(ai_plan: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any
     rows would mix totals and parts; the breakdowns answer it)."""
     NS = _ns()
     st = NS.slice_type(S, where)
-    stype = {"flow": "flow_amount", "count": "count"}.get(st["type"], "level")
+    stype = {"flow": "flow_amount", "count": "count"}.get(st["type"], "level") if NS.sums_over_time(st) else "level"
     mh, dh = S["measure"]["column"], S["date"]["column"]
     pcs = {str(c.get("name")): c for c in ai_plan.get("columns") or [] if isinstance(c, dict)}
     pv = pcs.get(mh) or {}
@@ -8992,7 +8992,7 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
             # the estimand's own 12-month figures (the finding's are monthly averages): the same percent, in the
             # headline's own words
             prior, latest, total = est_fig["prior"]["value"], est_fig["latest"]["value"], \
-                m.get("type") in ("flow", "count")
+                str(m.get("aggregation") or "").startswith("sum")
         words = ("a %s in %s" % (m.get("type") or "measure", m.get("uom") or "its own units")) if m else \
             ("a total of the published values" if total else "a published level, averaged by month")
         f["inference"] = _ni.official_inference(

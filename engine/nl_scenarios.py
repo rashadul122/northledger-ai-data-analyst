@@ -1279,7 +1279,7 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
     col = str(inner.get("column") or S["measure"]["column"])
     basis = {"source": "structure", "finding_id": (head or {}).get("id"), "claim": (head or {}).get("claim"),
              "grade": grade, "grade_words": "the claim itself, graded %s" % grade if grade else None,
-             "measure": col, "how": "total" if meas["type"] in ("flow", "count") else "average", "unit": meas.get("uom") or "",
+             "measure": col, "how": "total" if NST.sums_over_time(meas) else "average", "unit": meas.get("uom") or "",
              "windows": win, "slice": dict(where), "slice_id": inner.get("slice_id"), "breakdowns": [],
              "estimand": est.get("text"), "reconciles": est.get("reconciles") is not False}
     out["basis"] = basis
@@ -1313,9 +1313,9 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
         return it
     for key, label, kind, unit, win_k, op in (
             ("prior", "%s, %s (%s to %s)" % (what, pri_w, win["prior"][0], win["prior"][1]), "amount", "",
-             "prior", "sum of the slice's months" if meas["type"] in ("flow", "count") else "mean of the slice's months"),
+             "prior", "sum of the slice's months" if NST.sums_over_time(meas) else "mean of the slice's months"),
             ("latest", "%s, %s (%s to %s)" % (what, lat_w, win["latest"][0], win["latest"][1]), "amount", "",
-             "latest", "sum of the slice's months" if meas["type"] in ("flow", "count") else "mean of the slice's months"),
+             "latest", "sum of the slice's months" if NST.sums_over_time(meas) else "mean of the slice's months"),
             ("change", "Change in %s, %s" % (what, ext), "change", "", "both", "latest less prior"),
             ("change_pct", "Change in %s in percent, %s" % (what, ext), "change", "%", "both", "latest / prior - 1")):
         f = fig.get(key) or {}

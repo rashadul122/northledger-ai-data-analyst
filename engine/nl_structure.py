@@ -100,6 +100,27 @@ _CURRENCY = re.compile(r"(?i)\b(?:dollars?|euros?|pounds?|yen|yuan|francs?|krona
 _RATE_WORDS = re.compile(r"(?i)\b(?:percent(?:age)?|rate|ratio|per\s+(?:cent|\d[\d,]*|capita|hour|person))\b|%")
 _INDEX_WORDS = re.compile(r"(?i)\bindex\b|\b(?:19|20)\d\d\s*=\s*100\b")
 _INDEX_BASE = re.compile(r"((?:19|20)\d\d(?:\s*[-/]\s*\d{2,4})?)\s*=\s*100")
+# G3 (wave 5): a measure is summed over time only when it is POSITIVELY a flow (a currency, or a word in the labels that
+# says the count accumulates over a period); a count with no such word is ambiguous (a stock added up is the harm) and is
+# averaged: the percent change is the same either way, and a total is never misstated.
+_FLOW_WORDS = re.compile(
+    r"(?i)\b(?:sales?|receipts?|revenues?|turnover|income|permits?|births?|deaths?|visits?|visitors?|trips?|arrivals?|"
+    r"departures?|nights?|starts?|completions?|shipments?|orders?|bookings?|transactions?|claims?|admissions?|discharges?|"
+    r"exports?|imports?|production|output|spending|expenditures?|purchases?|payments?|deliver(?:y|ies|ed)|accidents?|"
+    r"collisions?|crimes?|offen[cs]es?|bankruptcies|insolvenc(?:y|ies)|layoffs?|hires?|separations?|immigrants?|"
+    r"emigrants?|passengers?|downloads?|tickets?|registrations?|openings|closures|launches)\b")
+_STOCK_LEVEL_WORDS = re.compile(
+    r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|liabilit(?:y|ies)|debts?|stocks?|population|"
+    r"populations|employment|employed|unemployed|labou?r force|residents?|households?|dwellings|vacanc(?:y|ies)|"
+    r"subscribers?|headcount|members(?:hip)?|accounts|beds|backlog|unfilled)\b")
+# a price or an average in a currency is a level, not an amount that accumulates (member labels of a measure dimension)
+_LEVEL_PRICE = re.compile(r"(?i)\b(?:prices?|average|mean|median|per\s+(?:capita|unit|hour|person|household)|"
+                          r"unit (?:cost|value)|wages? rate|rates?)\b")
+# standard errors, margins of error and confidence intervals: the precision of another member, never a measure of its own
+_PRECISION = re.compile(
+    r"(?i)\b(?:standard errors?|std\.? ?err(?:or)?s?|sampling errors?|margins? of error|confidence (?:intervals?|limits?|bounds?)|"
+    r"coefficients? of variation|relative standard errors?|(?:lower|upper) (?:confidence )?(?:bound|limit|ci)|"
+    r"95% (?:ci|confidence)|moe|rse|cv)\b|\bse\b(?=\s*(?:of|\(|$))|\bCI\b")
 _COUNT_UNITS = re.compile(r"(?i)\b(?:persons?|people|number|units?|count|households?|businesses|establishments|"
                           r"jobs|vehicles|dwellings|permits|births|deaths)\b")
 _SCALE_FACTOR = {"units": 1.0, "unit": 1.0, "ones": 1.0, "tens": 10.0, "hundreds": 100.0, "thousand": 1e3,
@@ -665,18 +686,29 @@ def _units(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], alias_of
     return out
 
 
+def sums_over_time(m: Dict[str, Any]) -> bool:
+    """Whether a measure's months are added up: only when it is positively a flow (G3); anything else is averaged."""
+    return str((m or {}).get("aggregation") or "").startswith("sum")
+
+
 def _measure_type(S: Dict[str, Any]) -> None:
-    """flow | stock | rate | index | count | unknown, from the unit and the labels; how months are added up."""
+    """flow | stock | rate | index | count | unknown, from the unit and the labels, and the DECISION behind it (type_basis:
+    "positively a flow", "positively a stock", "ambiguous: averaged"); how months are added up."""
     m = S["measure"]
     uom = str(m.get("uom") or "")
-    labels = " ".join([m["column"]] + [lb for d in S["dims"] for lb in d["labels"][:60]])
+    # the words that may say what is counted: the measure's column, the members' labels, and the value of a column that
+    # holds one value throughout ("Characteristics: Building permits issued")
+    consts = [str(x.get("value") or "") for x in S.get("metadata") or []
+              if x.get("class") == "constant" and _norm(x.get("column")) not in _META]
+    labels = " ".join([m["column"]] + consts + [lb for d in S["dims"] for lb in d["labels"][:60]])
     if S.get("_member_unit"):
         uom = " ".join(sorted(set(v for per in S["_member_unit"].values() for v in per.values())))
-    t = _unit_type(uom, labels, m["column"])
-    m["type"] = t
-    m["aggregation"] = "sum over months" if t in ("flow", "count") else "mean over months"
+    m.update(_classify(uom, labels, m["column"]))
+    hint = next((c for c in consts if c.strip() and not re.fullmatch(r"[\d.,\s-]*", c)), "")
+    if hint:
+        m["label_hint"] = hint[:60]
     m["currency"] = bool(_CURRENCY.search(uom))
-    if t == "index":
+    if m["type"] == "index":
         bases = sorted(set(_INDEX_BASE.findall(uom)))
         m["index_bases"] = bases
     for j, per in (S.get("_member_unit") or {}).items():
@@ -684,24 +716,70 @@ def _measure_type(S: Dict[str, Any]) -> None:
         S["dims"][j]["unit_of"] = {S["dims"][j]["labels"][mi]: u for mi, u in per.items()}
 
 
-def _unit_type(uom: str, labels: str, column: str) -> str:
-    """flow | stock | rate | index | count | unknown for one unit of measure."""
-    if _INDEX_WORDS.search(uom):
-        return "index"
-    if _RATE_WORDS.search(uom):
-        return "rate"
-    if _CURRENCY.search(uom):
-        return "stock" if _STOCK_WORDS.search(labels) else "flow"
-    if _COUNT_UNITS.search(uom):
-        return "stock" if _POP_WORDS.search(labels) else "count"
-    if not uom:
+def _classify(uom: str, bag: str, column: str, member: str = "") -> Dict[str, Any]:
+    """One measure's type and the decision behind it: {type, type_basis, type_why, aggregation}. `bag` is the text whose
+    words may say what is counted (the measure's column and the table's member labels); `member` a measure dimension's
+    member label, whose own words decide first. A currency is a flow (a stock under inventories, balances, assets, debt),
+    unless the member is a price or an average (a level). A count (persons, a number) is a flow only when a word in the
+    labels says it accumulates over a period (permits issued, births, visits ...), a stock when a word says it is a level
+    (employment, population ...), and otherwise AMBIGUOUS: averaged. A rate or an index is a level, never summed."""
+    u = str(uom or "")
+    own = str(member or "")
+    out: Dict[str, Any] = {"type": "unknown", "type_basis": "ambiguous: averaged", "type_why": "", "aggregation": "mean over months"}
+
+    def done(t: str, basis: str, why: str, sums: bool) -> Dict[str, Any]:
+        out.update(type=t, type_basis=basis, type_why=why, aggregation="sum over months" if sums else "mean over months")
+        return out
+    if own and _PRECISION.search(own):
+        return done("precision", "precision: never the headline, never summed",
+                    "%s is the precision (standard error, margin of error or confidence interval) of another member" % own[:60], False)
+    if _INDEX_WORDS.search(u) or (own and _INDEX_WORDS.search(own)):
+        return done("index", "an index: a level, never summed", "the unit names an index (%s)" % (u or own)[:40], False)
+    if _RATE_WORDS.search(u) or (own and not u and _RATE_WORDS.search(own)):
+        return done("rate", "a rate: a level, never summed", "the unit names a rate or a percentage (%s)" % (u or own)[:40], False)
+    if _CURRENCY.search(u):
+        stock = _STOCK_WORDS.search(bag)
+        if stock:
+            return done("stock", "positively a stock", "currency, but the labels say %s" % stock.group(0).lower(), False)
+        if own and _LEVEL_PRICE.search(own):
+            return done("unknown", "ambiguous: averaged", "%s is a price or an average in a currency, a level" % own[:60], False)
+        return done("flow", "positively a flow", "a currency (%s)" % u[:30], True)
+    # an index or a rate named in the labels (not in a unit): never summed, whatever else the labels say
+    if _INDEX_WORDS.search(bag):
+        return done("index", "an index: a level, never summed", "the labels name an index", False)
+    if _RATE_WORDS.search(bag):
+        return done("rate", "a rate: a level, never summed", "the labels name a rate or a percentage", False)
+    stock_w = _STOCK_LEVEL_WORDS.search(own or "") or _STOCK_LEVEL_WORDS.search(bag)
+    flow_w = _FLOW_WORDS.search(own or "") or _FLOW_WORDS.search(u) or _FLOW_WORDS.search(bag)
+    count_unit = bool(_COUNT_UNITS.search(u))
+    if not u:
         try:
             from northledger.measure import additive_kind
             ak = additive_kind(column)
         except ImportError:
             ak = ""
-        return "flow" if ak == "money" else "count" if ak == "units" else "unknown"
-    return "unknown"
+        if ak == "money":
+            return done("flow", "positively a flow", "the measure's name says an amount of money (%s)" % column[:30], True)
+        count_unit = ak == "units"
+        if not count_unit and not (own or flow_w or stock_w):
+            return out
+    if stock_w and flow_w:
+        return done("count" if count_unit else "unknown", "ambiguous: averaged",
+                    "the labels hold a flow word (%s) and a stock word (%s)" % (flow_w.group(0).lower(), stock_w.group(0).lower()), False)
+    if stock_w:
+        return done("stock", "positively a stock", "the labels say %s, a level" % stock_w.group(0).lower(), False)
+    if flow_w:
+        return done("count" if count_unit else "flow", "positively a flow",
+                    "the labels say %s, which accumulates over a period" % flow_w.group(0).lower(), True)
+    if count_unit:
+        return done("count", "ambiguous: averaged",
+                    "a count (%s) with no word in the labels that says it accumulates over time" % (u or "units")[:30], False)
+    return out
+
+
+def _unit_type(uom: str, labels: str, column: str, member: str = "") -> str:
+    """flow | stock | rate | index | count | precision | unknown for one unit of measure."""
+    return str(_classify(uom, labels, column, member)["type"])
 
 
 def _mixed_measure(S: Dict[str, Any], j: int) -> None:
@@ -718,10 +796,9 @@ def _mixed_measure(S: Dict[str, Any], j: int) -> None:
                why="its members are measured in different units (%s): one at a time, never added or averaged together"
                    % ", ".join(sorted(set(str(u) for u in unit_of.values()))[:4]))
     u = str(unit_of.get(labels[m]) or "")
-    t = _unit_type(u, " ".join([S["measure"]["column"], labels[m]]), S["measure"]["column"])
-    S["measure"].update(uom=u, type=t, aggregation="sum over months" if t in ("flow", "count") else "mean over months",
-                        currency=bool(_CURRENCY.search(u)), units_vary_by=rec["column"])
-    if t == "index":
+    c = _classify(u, " ".join([S["measure"]["column"], labels[m]]), S["measure"]["column"], labels[m])
+    S["measure"].update(c, uom=u, currency=bool(_CURRENCY.search(u)), units_vary_by=rec["column"])
+    if c["type"] == "index":
         S["measure"]["index_bases"] = sorted(set(_INDEX_BASE.findall(u)))
 
 
@@ -730,11 +807,11 @@ def slice_type(S: Dict[str, Any], where: Dict[str, Any]) -> Dict[str, Any]:
     for d in S["dims"]:
         if d.get("mixed_units") and isinstance(where.get(d["column"]), str):
             u = str((d.get("unit_of") or {}).get(where[d["column"]]) or "")
-            t = _unit_type(u, " ".join([S["measure"]["column"], where[d["column"]]]), S["measure"]["column"])
-            return {"uom": u, "type": t, "currency": bool(_CURRENCY.search(u)),
-                    "aggregation": "sum over months" if t in ("flow", "count") else "mean over months"}
+            c = _classify(u, " ".join([S["measure"]["column"], where[d["column"]]]), S["measure"]["column"], where[d["column"]])
+            return dict(c, uom=u, currency=bool(_CURRENCY.search(u)))
     m = S["measure"]
-    return {"uom": m.get("uom"), "type": m["type"], "currency": m.get("currency"), "aggregation": m["aggregation"]}
+    return {"uom": m.get("uom"), "type": m["type"], "currency": m.get("currency"), "aggregation": m["aggregation"],
+            "type_basis": m.get("type_basis"), "type_why": m.get("type_why")}
 
 
 PANEL_MAX_SERIES = 60           # nl_browser's long-table layout reads at most this many series side by side
@@ -1568,11 +1645,14 @@ def slice_by_id(S: Dict[str, Any], sid: str) -> Optional[Dict[str, Any]]:
 def measure_label(S: Dict[str, Any], where: Dict[str, Any]) -> str:
     """The slice's measure column as the engine reads it: a currency flow "<label> total" (the core adds up and forecasts
     a column whose head word is a money word), a count "<label> count", a stock, rate or index "value" (a level)."""
-    t = S["measure"]["type"]
+    st = slice_type(S, where)
+    t = st["type"] if sums_over_time(st) else "level"
     label = ""
     for d in S["dims"]:
         if d["role"] in ("measure", "components") and isinstance(where.get(d["column"]), str):
             label = where[d["column"]]
+    if not label and not st.get("currency"):
+        label = str(S["measure"].get("label_hint") or "")        # a count's name comes from the table's one constant label
     label = re.sub(r"\s+", " ", re.sub(r"[^\w\s\-]", " ", label)).strip()
     try:
         from northledger.measure import additive_kind
@@ -1733,7 +1813,7 @@ def _monthly(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any]:
     for t, v in zip(times, val):
         if v == v:
             acc.setdefault(pos[t[:7]], []).append(float(v))
-    flow = S["measure"]["type"] in ("flow", "count")
+    flow = sums_over_time(S["measure"])
     for i, xs in acc.items():
         out[i] = math.fsum(xs) if flow else math.fsum(xs) / len(xs)
     return months, out
@@ -1766,7 +1846,7 @@ def window_figure(S: Dict[str, Any], months: Sequence[str], vals: Any, w: Sequen
     xs = [float(v) for m, v in zip(months, vals) if w[0] <= m <= w[1] and v == v]
     if not xs:
         return None, 0
-    if S["measure"]["type"] in ("flow", "count"):
+    if sums_over_time(S["measure"]):
         return math.fsum(xs), len(xs)
     return math.fsum(xs) / len(xs), len(xs)
 
@@ -1795,7 +1875,7 @@ def matched_months(S: Dict[str, Any], months: Sequence[str], tot: Any, win: Dict
     like for like). A level's window figure is the mean of the months it has, so its windows stay whole."""
     lat = _mrange(win["latest"][0], win["latest"][1])
     pri = _mrange(win["prior"][0], win["prior"][1])
-    if S["measure"]["type"] not in ("flow", "count") or len(lat) != len(pri):
+    if not sums_over_time(S["measure"]) or len(lat) != len(pri):
         return lat, pri, True
     have = {m for m, v in zip(months, tot) if v == v}
     pairs = [(a, b) for a, b in zip(pri, lat) if a in have and b in have]
@@ -1809,7 +1889,7 @@ def sum_at(S: Dict[str, Any], months: Sequence[str], vals: Any, at: Sequence[str
     xs = [float(v) for m, v in zip(months, vals) if m in want and v == v]
     if not xs:
         return None, 0
-    if S["measure"]["type"] in ("flow", "count"):
+    if sums_over_time(S["measure"]):
         return math.fsum(xs), len(xs)
     return math.fsum(xs) / len(xs), len(xs)
 
@@ -1886,7 +1966,7 @@ def breakdown(S: Dict[str, Any], bd: Dict[str, Any], where: Dict[str, Any], win:
     lat_m, pri_m, _full = matched_months(S, months, tot, win)
     T0, n0 = sum_at(S, months, tot, pri_m)
     T1, n1 = sum_at(S, months, tot, lat_m)
-    flow = S["measure"]["type"] in ("flow", "count")
+    flow = sums_over_time(S["measure"])
     need = MIN_MATCHED if flow else 12
     if T0 is None or T1 is None or n0 < need or n1 < need or (not flow and (n0 < 12 or n1 < 12)):
         return None
@@ -1949,13 +2029,14 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     T0, n0 = sum_at(S, months, vals, pri_m)
     T1, n1 = sum_at(S, months, vals, lat_m)
     m = S["measure"]
-    flow = m["type"] in ("flow", "count")
+    flow = sums_over_time(m)
     if flow and len(lat_m) < MIN_MATCHED:
         T0 = T1 = None                                   # too few months in both windows to compare like for like
     left_out = sorted(set(_mrange(win["latest"][0], win["latest"][1])) - set(lat_m))
+    ambiguous = str(m.get("type_basis") or "").startswith("ambiguous")
     agg = ("12-month totals" if complete else "totals of the %d months with a value in both windows (%s left out)" % (
         len(lat_m), ", ".join(_mon(x) for x in left_out[:3]) + (", ..." if len(left_out) > 3 else ""))) if flow else \
-        "12-month averages"
+        ("average level over the window (12-month averages)" if ambiguous else "12-month averages")
     scale_txt = ""
     if m.get("factor") and m["factor"] != 1:
         scale_txt = " (file in %s ×%s)" % (m.get("scale"), format(int(m["factor"]), ","))
@@ -2024,8 +2105,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                              "why": "no total was verified, so members are never added across this dimension"})
     return {"text": text, "slice": sl,
             "measure": {"label": _measure_name(S, where), "uom": m.get("uom"), "scale": m.get("scale"),
-                        "scale_applied": m.get("factor"), "type": m["type"],
-                        "aggregation": m["aggregation"]},
+                        "scale_applied": m.get("factor"), "type": m["type"], "type_basis": m.get("type_basis"),
+                        "type_why": m.get("type_why"), "aggregation": m["aggregation"]},
             "comparison": {"latest": list(win["latest"]), "prior": list(win["prior"])},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
             "complete": bool(complete), "months_used": len(lat_m) if flow else n1,

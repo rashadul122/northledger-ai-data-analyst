@@ -2588,7 +2588,7 @@ def _b_structure_yoy(rep: Dict[str, Any], S: Dict[str, Any], where: Dict[str, An
     labels = _unique_labels(names)
     cols_all = [m for m in span if NB._shift_month(m, -12) >= span[0]][-CHANGE_COLS:]
     measure = str(basis.get("measure") or "the total")
-    flow = S["measure"]["type"] in ("flow", "count")
+    flow = NST.sums_over_time(S["measure"])
     adj = next((d for d in S["dims"] if d["role"] == "adjustment"), None)
     nsa_note = "; unadjusted, so the same month a year before is a like-for-like comparison" \
         if adj is not None and where.get(adj["column"]) == adj.get("nsa") else ""

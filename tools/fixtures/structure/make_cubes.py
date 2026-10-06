@@ -347,6 +347,69 @@ def category_long(rows: int = 1000, labels: int = 30, header: str = "Industry se
     return _csv(["date", header, "amount"], out)
 
 
+# ----------------------------------------------------------------------------------------------- wave 5 (generality)
+# Every cube below is SYNTHETIC, built here from a description of a trap category (the sealed acceptance set was never
+# opened, and no official table is copied): a table of provinces with no national row, a combined member, units and
+# dollars in one VALUE column, a rate with standard-error members, a quarterly stock, repeated industry names under
+# different parents, a wide table whose columns are periods.
+REGIONS = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]
+_LV = (5200, 8100, 3300, 6100, 2400)
+
+
+def counts(uom: str = "Persons", label: str = "Group A", with_total: bool = True, seed: int = 31, header: str = "Group") -> bytes:
+    """G3: Total and 5 regions of a COUNT (persons or a number), whose label says what is counted (or nothing: "Group A"
+    is the ambiguous case: it cannot say whether the count accumulates over time or is a level)."""
+    rng = np.random.RandomState(seed)
+    vals = {r: _series(rng, lv / 10.0) for r, lv in zip(REGIONS, _LV)}
+    total = sum(vals.values())
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        if with_total:
+            rec.append((mo, "Total", (label,), total[i], "A"))
+        for r in REGIONS:
+            rec.append((mo, r, (label,), vals[r][i], "A"))
+    return _official([header], rec, uom=uom, scalar="units")
+
+
+def no_total(blank_share: float = 0.0, combined: bool = False, uom: str = "Dollars", label: str = "Retail sales",
+             months=None, seed: int = 41, regions=None, nested: bool = False, geo_header: str = "GEO") -> bytes:
+    """G1: a table of regions with NO total row (the national figure is the sum of its provinces, and the table does not
+    list it). blank_share suppresses that share of the cells ("x", blank value); combined adds "Prairie group" = the sum of
+    its three regions (a member that equals the sum of 2 or more others: never added together with its own parts);
+    nested adds "Centre block" = Charlie + Delta (the same, one level down)."""
+    rng = np.random.RandomState(seed)
+    regs = list(regions or REGIONS)
+    vals = {r: _series(rng, lv) for r, lv in zip(regs, _LV * 4)}
+    hide = rng.rand(len(regs), len(MONTHS)) < blank_share
+    mon = list(months or MONTHS)
+    rec = []
+    for i, mo in enumerate(mon):
+        for k, r in enumerate(regs):
+            rec.append((mo, r, (label,), None if hide[k, i] else vals[r][i], "x" if hide[k, i] else "A"))
+        if combined:
+            rec.append((mo, "Prairie group", (label,), vals[regs[0]][i] + vals[regs[1]][i] + vals[regs[2]][i], "A"))
+        if nested:
+            rec.append((mo, "Centre block", (label,), vals[regs[2]][i] + vals[regs[3]][i], "A"))
+    head = ["Sales"]
+    data = _official(head, rec, uom=uom, scalar="thousands" if uom == "Dollars" else "units")
+    if geo_header != "GEO":
+        data = data.replace(b'"GEO"', ('"%s"' % geo_header).encode(), 1)
+    return data
+
+
+def no_total_sum(blank_share: float = 0.0, seed: int = 41, regions=None, combined_never: bool = True):
+    """The parts' own monthly sums, in base units, for the checks of the no_total cubes: {month: sum of the regions' values,
+    or None when any region is suppressed}, and the number of suppressed region-months."""
+    rng = np.random.RandomState(seed)
+    regs = list(regions or REGIONS)
+    vals = {r: _series(rng, lv) for r, lv in zip(regs, _LV * 4)}
+    hide = rng.rand(len(regs), len(MONTHS)) < blank_share
+    out, n = {}, int(hide.sum())
+    for i, mo in enumerate(MONTHS):
+        out[mo] = None if hide[:, i].any() else 1000.0 * sum(vals[r][i] for r in regs)
+    return out, n, {r: (1000.0 * vals[r]) for r in regs}, hide
+
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

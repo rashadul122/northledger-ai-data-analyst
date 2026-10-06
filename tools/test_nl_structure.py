@@ -991,10 +991,72 @@ def test_acceptance_statcan_retail_planner_off_and_an_unadjusted_only_plan():
     assert {c["dim"] for c in rep["structure"]["corrections"]} >= {"GEO"}, rep["structure"]["corrections"]
 
 
+# ----------------------------------------------------------------------------- wave 5 (generality), gap 3: unknown-type counts
+def _total_series(data: bytes, col: str = "GEO", total: str = "Total", scale: float = 1.0):
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    return pd.to_numeric(df[df[col] == total].set_index("REF_DATE").VALUE) * scale
+
+
+def test_g3_a_count_with_no_clue_in_its_labels_is_averaged_over_time_never_summed():
+    """Persons or Number with no word that says the count accumulates over time (Group A): the engine used to SUM its months
+    (a stock added up). Now it is an average level over the window, the decision is in the measure record, and the percent
+    change is the same either way."""
+    data = MC.counts()
+    S = detect(data)
+    m = S["measure"]
+    assert S["usable"] and dim(S, "GEO")["role"] == "partition" and m["type"] == "count", (S["reason"], m)
+    assert m["type_basis"] == "ambiguous: averaged" and m["aggregation"] == "mean over months" and not NS.sums_over_time(m), m
+    body, info = NS.slice_bytes(S, S["default"])
+    assert info["column"] == "value", "the core reads a level, never a sum: %s" % info["column"]
+    rep = _run(data, "persons.csv")
+    est = rep["estimand"]
+    assert est["measure"]["type_basis"] == "ambiguous: averaged" and est["measure"]["aggregation"] == "mean over months", est["measure"]
+    assert "average level over the window" in est["text"] and "12-month totals" not in est["text"], est["text"]
+    tot = _total_series(data)
+    lat, pri = est["comparison"]["latest"], est["comparison"]["prior"]
+    L = tot[(tot.index >= lat[0]) & (tot.index <= lat[1])]
+    P = tot[(tot.index >= pri[0]) & (tot.index <= pri[1])]
+    F = est["figures"]
+    assert abs(F["latest"]["value"] - L.mean()) < 1e-6 and abs(F["prior"]["value"] - P.mean()) < 1e-6, (F, L.mean())
+    assert abs(F["change_pct"]["value"] - 100.0 * (L.sum() / P.sum() - 1.0)) < 1e-6, "the percent change is right either way"
+    basis = rep["scenarios"]["basis"]
+    assert basis["how"] == "average", basis["how"]
+    assert not any(f["id"].startswith("measure.volume") for f in rep["findings"])
+    json.dumps(rep, allow_nan=False)
+
+
+def test_g3_a_count_with_a_flow_word_is_still_summed_and_a_stock_word_is_a_stock_and_currency_is_a_flow():
+    """The negative cases: a flow word in the labels (permits issued) is positively a flow and is summed; a stock word
+    (employment) is positively a stock and is averaged; a currency is positively a flow (the retail table's own reading)."""
+    flow = MC.counts(uom="Number", label="Building permits issued")
+    S = detect(flow)
+    m = S["measure"]
+    assert m["type"] == "count" and m["type_basis"] == "positively a flow" and m["aggregation"] == "sum over months", m
+    assert "permits" in m["type_why"], m["type_why"]
+    body, info = NS.slice_bytes(S, S["default"])
+    assert info["column"].startswith("Building permits issued"), info["column"]
+    rep = _run(flow, "permits.csv")
+    est = rep["estimand"]
+    tot = _total_series(flow)
+    lat = est["comparison"]["latest"]
+    assert "12-month totals" in est["text"] and "average level" not in est["text"], est["text"]
+    assert abs(est["figures"]["latest"]["value"] - tot[(tot.index >= lat[0]) & (tot.index <= lat[1])].sum()) < 1e-6, est["figures"]
+    stock = detect(MC.counts(label="Employment"))["measure"]
+    assert stock["type"] == "stock" and stock["type_basis"] == "positively a stock" and stock["aggregation"] == "mean over months", stock
+    cur = detect(MC.partition())["measure"]
+    assert cur["type"] == "flow" and cur["type_basis"] == "positively a flow" and cur["aggregation"] == "sum over months", cur
+    assert "currency" in cur["type_why"], cur["type_why"]
+    # a rate and an index are read as levels, never summed
+    assert detect(MC.rate())["measure"]["aggregation"] == "mean over months"
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":
     failed = 0
+    only = os.environ.get("NL_ONLY")
+    if only:
+        TESTS = [t for t in TESTS if only in t.__name__]
     for fn in TESTS:
         try:
             fn()

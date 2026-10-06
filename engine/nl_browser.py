@@ -5099,8 +5099,13 @@ def _structure_for_ai(st: Any, safe: Any) -> Optional[Dict[str, Any]]:
     """The structure's summary for the writer: the dimensions and their roles, the slice, the flags' counts."""
     if not isinstance(st, dict) or not st.get("kind"):
         return None
-    dims = [{k: (safe(d[k], 120) if isinstance(d.get(k), str) else d[k])
-             for k in ("column", "role", "members", "total", "parts", "nsa", "sa", "depths") if k in d}
+    # wave 5c: no_total_member / single_by (one member shown by dominance, wave 5b) and aggregate_by (how a rate's or an index's published
+    # aggregate was found) are the keys contract section 5.12 ("For the worker") names; sum_check {verified: false} marks an aggregate that
+    # is one by its name alone (no check could verify it). Each is sent only where the dimension has it.
+    dims = [dict({k: (safe(d[k], 120) if isinstance(d.get(k), str) else d[k])
+                  for k in ("column", "role", "members", "total", "parts", "nsa", "sa", "depths", "no_total_member", "single_by", "aggregate_by")
+                  if k in d},
+                 **({"sum_check": {"verified": False}} if isinstance(d.get("sum_check"), dict) and d["sum_check"].get("verified") is False else {}))
             for d in st.get("dims") or [] if isinstance(d, dict)][:8]
     fl = st.get("flags") if isinstance(st.get("flags"), dict) else None
     out = {"kind": st.get("kind"), "usable": st.get("usable"), "publisher": st.get("publisher"),

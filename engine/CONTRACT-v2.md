@@ -1654,7 +1654,10 @@ word a partition with no `total` ("has no total row: its parts are added up") an
 keep the new estimand keys (`built_from`, `measure_choice`, `period`, `measure.type_basis`, `sum_checks[].built_from_parts` and
 `suppressed_part_months`, `figures.*.months`) and `forecast.frequency`; the engineTitle fallback says "in the sum of the published
 regions" for a headline with `built_from` and the period's words for a quarterly table; the guard should accept "4 quarters" where
-it accepts "12 months".
+it accepts "12 months". Wave 5c: `results_for_ai`'s `structure.dims[]` now carries `no_total_member`, `single_by`, `aggregate_by` and
+`sum_check {verified: false}` (an aggregate that is one by its name alone, item 9) only where the dimension has them; before, the summary
+listed `column`, `role`, `members`, `total`, `parts`, `nsa`, `sa` and `depths` only, so the keys this paragraph names never reached the
+worker (the page's `rep["structure"]` had them). The worker keeps them (`validStructureSummary`: short lower-case words and booleans only).
 
 ## 6. What this contract does not carry yet (R1)
 

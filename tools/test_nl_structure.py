@@ -2144,7 +2144,9 @@ def test_w5c_a_quarterly_or_annual_payload_counts_its_windows_in_its_own_periods
 def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
     """The scrub that puts a quarter's or a year's words into text the core wrote (`nl_browser._window_phrases`) touches window
     phrases only; a label that merely holds the word "months" is left alone, and a monthly table's text is never touched. The
-    monthly outputs below were read from the code BEFORE the change (529bf3f): every figure of every block is the same after it."""
+    monthly outputs below were read from the code BEFORE the change (529bf3f): every figure of every block is the same after it. (The
+    one move, rate_canada's results_for_ai hash acb73cf7ad309139 to 280f1b84c2c3381d, is the new `aggregate_by: "name"` that the
+    structure summary now carries, test_w5c_results_for_ai_carries_the_structure_keys...; its report's own blocks are the same.)"""
     Q = {"kind": "quarter", "noun": "quarter", "nouns": "quarters", "step": 3, "window": 4, "adjective": "quarterly"}
     Y = {"kind": "year", "noun": "year", "nouns": "years", "step": 12, "window": 1, "adjective": "annual"}
     M = {"kind": "month", "noun": "month", "nouns": "months", "step": 1, "window": 12, "adjective": "monthly"}
@@ -2169,7 +2171,7 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
         assert f(t, Q) == t, (t, f(t, Q))
     # a monthly slice: every block of the reports is what it was
     before = {"partition_suppressed": ("c976440ea05601af", "0b557e428676763d"), "partition_clean": ("3606b4083ccc30c9", "b876124a77c18de0"),
-              "hierarchy": ("f8772f0a999c4ce5", "9efb43e58e7a2c80"), "rate_canada": ("878aa9e7716fa3c1", "acb73cf7ad309139"),
+              "hierarchy": ("f8772f0a999c4ce5", "9efb43e58e7a2c80"), "rate_canada": ("878aa9e7716fa3c1", "280f1b84c2c3381d"),
               "mixed_units": ("5cec8f4300d961eb", "7021525ff667565b"), "no_total": ("4fd22be300dbcfd0", "b04ca379ab41e02b")}
     import hashlib
     keys = ("story", "summary", "findings", "scenarios", "charts", "viz", "forecast", "limitations", "methods", "cleaning", "estimand",
@@ -2216,6 +2218,27 @@ def test_w5c_a_residual_that_is_float_noise_prints_as_zero_and_a_real_one_does_n
     # the threshold itself: noise is relative to the figure, never to a few units
     assert NS.noise_zero(-3.41e-13, 5.0e4) == 0.0 and NS.noise_zero(1e-6, 5.0e4) == 1e-6 and NS.noise_zero(1000.0, 8.6e11) == 1000.0
     assert NS.noise_zero(-6000.0, 2.9e10) == -6000.0 and NS.noise_zero(0.4, 100.0) == 0.4 and NS.noise_zero(-0.0, 1.0) == 0.0
+
+
+def test_w5c_results_for_ai_carries_the_structure_keys_the_contract_names_for_the_worker():
+    """Contract 5.12 ("For the worker") names structure.dims[].no_total_member and aggregate_by, but results_for_ai's structure summary
+    only listed column, role, members, total, parts, nsa, sa and depths: the worker was ready for keys the engine never sent. They
+    are sent now (single_by with them, and sum_check {verified: false} for an aggregate no check could verify), and only where the
+    dimension has them: every other dimension's record, and every monthly official table's, is what it was."""
+    def dims_of(data, name):
+        return NB.results_for_ai(_run(data, name))["structure"]["dims"]
+    d1 = dims_of(MC.rate_table("none"), "rate_none.csv")
+    assert d1[0] == {"column": "GEO", "role": "single", "members": 6, "total": "Echo", "no_total_member": True, "single_by": "dominance"}, d1[0]
+    d2 = dims_of(MC.rate_table("Canada"), "rate_canada.csv")
+    assert d2[0] == {"column": "GEO", "role": "rate_aggregate", "members": 7, "total": "Canada", "parts": 6, "aggregate_by": "name"}, d2[0]
+    d3 = dims_of(MC.index_two_bases(), "index.csv")
+    assert d3[0] == {"column": "GEO", "role": "rate_aggregate", "members": 2, "total": "Canada", "parts": 1, "aggregate_by": "name",
+                     "sum_check": {"verified": False}}, d3[0]
+    d4 = dims_of(MC.rate_table("unnamed"), "rate_unnamed.csv")
+    assert d4[0]["aggregate_by"] == "range and fit" and "sum_check" not in d4[0], d4[0]
+    # a partition and a no-total partition: no new key
+    assert dims_of(MC.partition(), "p.csv")[0] == {"column": "GEO", "role": "partition", "members": 6, "total": "Total", "parts": 5}
+    assert set(dims_of(MC.no_total(), "n.csv")[0]) == {"column", "role", "members", "parts"}
 
 
 def test_w5b_the_pyodide_checks_cube_matches_its_pandas_reference_and_reads_the_same_natively():

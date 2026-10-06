@@ -1184,8 +1184,10 @@ def _unit_type(uom: str, labels: str, column: str, member: str = "") -> str:
 
 MEASURE_RULE = ("a currency flow, then a count flow, then a stock, then a rate or an index; never a precision member")
 _MEASURE_ID = re.compile(r"^M\d{1,2}$")
-_MEMBER_CUE = re.compile("|".join(x.pattern for x in (_PRECISION, _RATE_WORDS, _INDEX_WORDS, _STOCK_LEVEL_WORDS, _FLOW_WORDS)),
-                         re.I)
+# the patterns are joined without their own leading (?i): a global inline flag anywhere but the start of a pattern is an error
+# in Python 3.11+ (the page's Pyodide is 3.12; native 3.9 only warns), and the flag is passed instead
+_MEMBER_CUE = re.compile("|".join(x.pattern.replace("(?i)", "", 1) if x.pattern.startswith("(?i)") else x.pattern
+                                  for x in (_PRECISION, _RATE_WORDS, _INDEX_WORDS, _STOCK_LEVEL_WORDS, _FLOW_WORDS)), re.I)
 
 
 def _member_types(S: Dict[str, Any], j: int) -> List[Dict[str, Any]]:

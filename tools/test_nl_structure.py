@@ -1567,6 +1567,46 @@ def test_g4_an_annual_panel_of_near_equal_series_is_not_a_hierarchy_and_a_real_s
     assert d["role"] == "hierarchy" and tree_sets(S, "country") == want, (d["role"], tree_sets(S, "country"), d.get("why"))
 
 
+def test_every_pattern_the_engine_compiles_is_legal_in_python_3_12_pyodide():
+    """The page runs the engine in Pyodide (Python 3.12), where a global inline flag ((?i), (?s) ...) anywhere but the start of
+    a pattern is an ERROR (3.9 only warns): a pattern built by joining other patterns' text broke the structure layer there
+    (import failed, the file was read as before, 3x slower) while every native test passed. Every compiled pattern of the
+    engine's modules is checked for the 3.11+ rule, and the literal patterns of the sources are compiled with the warning as an
+    error. Negative: a pattern that starts with the flag, and a scoped group, are fine."""
+    import ast
+    import importlib
+    import re as _re
+    flag = _re.compile(r"\(\?[aiLmsux]+\)")
+    bad = []
+    for name in ("nl_structure", "nl_browser", "nl_scenarios", "nl_viz", "nl_inference"):
+        mod = importlib.import_module(name)
+        for k, v in vars(mod).items():
+            if isinstance(v, _re.Pattern):
+                for m in flag.finditer(v.pattern):
+                    if m.start() != 0:
+                        bad.append((name, k, m.start()))
+    assert not bad, bad
+    import warnings
+    ENG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine")
+    funcs = {"compile", "search", "match", "fullmatch", "sub", "subn", "findall", "finditer", "split"}
+    seen = 0
+    for name in ("nl_structure", "nl_browser", "nl_scenarios", "nl_viz", "nl_inference"):
+        with open(os.path.join(ENG, name + ".py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in funcs and n.args
+                    and isinstance(n.func.value, ast.Name) and n.func.value.id == "re"
+                    and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)):
+                seen += 1
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error")
+                    _re.compile(n.args[0].value)
+    assert seen > 50, seen
+    # negative: what is legal stays legal
+    assert not [m for m in flag.finditer("(?i)\\bpermits?\\b") if m.start() != 0]
+    assert _re.compile("(?:(?i:rate)|index)")
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

@@ -1472,6 +1472,15 @@ empty cell is no observation. `structure.wide` = `{family, periods, first, last,
 first limitation, and the downloads carry no visitor line numbers. The planner's profile reads the file as it was sent.
 Unit codes that hold a currency (MIO_EUR) are currencies.
 
+*Runtime.* The page runs the engine in Pyodide (Python 3.12.7, pandas 2.2.3, numpy 2.0.2); the native tests run on 3.9. A global inline
+regex flag ((?i)) anywhere but the start of a pattern is an error in 3.11+ and only a warning in 3.9: a pattern built by joining
+other patterns' text (`_MEMBER_CUE`) broke the structure layer in Pyodide (the import failed, the file was read as before, the
+retail run was 2x slower with no waterfalls) while every native test passed. `test_every_pattern_the_engine_compiles_is_legal_in_python_3_12_pyodide`
+now checks every compiled pattern of the five engine modules. Measured in Pyodide on this release: the retail file (36,000 rows)
+detects in 0.24 to 0.35 s and runs in 24 to 30 s on a busy machine (main: 26 to 31 s, same load); a 40,321-row synthetic cube detects in
+0.16 s and runs in 22 s; the 20 synthetic cubes of the wave (no-total, measures, counts, duplicate names, quarterly, annual, wide) give
+the same estimand, headline, structure kind, scenario ids and finding count as native.
+
 *For the worker.* `validateStructure` takes the roles as listed in section 5.4 and drops unknown keys: it needs `measures`
 (members validated as profile values), `no_total`, `period` and the plan's `measure_member` (`^M\d{1,2}$`); `structureRules` should
 word a partition with no `total` ("has no total row: its parts are added up") and a measure dimension. `validateResults` should

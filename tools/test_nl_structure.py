@@ -1543,6 +1543,30 @@ def test_g7_a_wide_table_of_periods_is_reshaped_to_long_and_its_embedded_flags_a
         assert r2["estimand"] and r2["estimand"]["period"]["kind"] == kind, (freq, r2["estimand"] and r2["estimand"]["text"])
 
 
+def test_g4_an_annual_panel_of_near_equal_series_is_not_a_hierarchy_and_a_real_subset_sum_family_still_is():
+    """A year column is read as annual dates (gap 4), so a country panel of 11 years is a table the structure layer reads.
+    Two series within one rounding unit of each other are a copy, not a partition: a family of one member is never a
+    hierarchy (the code-free search needs 2 parts). Negative: a parent that really is the sum of 2 members is still found."""
+    rows = ["country,year,co2"] + ["C%02d,%d,%d" % (i, y, 100 - i + y - 2000) for i in range(12) for y in range(2000, 2011)]
+    S = detect(("\n".join(rows) + "\n").encode())
+    assert S["period"]["kind"] == "year", S.get("period")
+    d = dim(S, "country")
+    assert d["role"] not in ("hierarchy", "partition") and not S.get("breakdowns"), (d["role"], tree_sets(S, "country"), S.get("breakdowns"))
+    # negative: a tree of sums with no codes and no total name (Group1 = Bravo + Charlie, Group2 = Echo + Foxtrot, All = both
+    # groups) is still found, in the same annual table: the family of 2 is a partition, not a copy
+    rows = ["country,year,co2"]
+    for y in range(2000, 2011):
+        k = y - 2000
+        b, c, e, f = 40 + 3 * k, 25 + k % 4, 30 + 2 * k + (k * k) % 5, 12 + (k * 7) % 6
+        vals = {"Bravo": b, "Charlie": c, "Echo": e, "Foxtrot": f, "Group1": b + c, "Group2": e + f, "Everything": b + c + e + f}
+        for name, v in vals.items():
+            rows.append("%s,%d,%d" % (name, y, v))
+    S = detect(("\n".join(rows) + "\n").encode())
+    d = dim(S, "country")
+    want = {"Everything": {"Group1", "Group2"}, "Group1": {"Bravo", "Charlie"}, "Group2": {"Echo", "Foxtrot"}}
+    assert d["role"] == "hierarchy" and tree_sets(S, "country") == want, (d["role"], tree_sets(S, "country"), d.get("why"))
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

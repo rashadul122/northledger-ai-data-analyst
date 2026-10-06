@@ -1796,7 +1796,7 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
         if not cands:
             continue
         cands = sorted(cands, key=lambda m: (-sizes[m], m))[:CANDIDATES_MAX]
-        sol = _subset_partition(A, X, p, cands, tol_u, nonneg, t_end)
+        sol = _subset_partition(A, X, p, cands, tol_u, nonneg, t_end, min_parts=2)
         if sol is None:
             continue
         fam, chk = sol
@@ -1831,8 +1831,11 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     return True
 
 
-def _subset_partition(A: Any, X: Any, p: int, cands: List[int], tol_u: float, nonneg: bool, t_end: float
-                      ) -> Optional[Tuple[List[int], Dict[str, Any]]]:
+def _subset_partition(A: Any, X: Any, p: int, cands: List[int], tol_u: float, nonneg: bool, t_end: float,
+                      min_parts: int = 1) -> Optional[Tuple[List[int], Dict[str, Any]]]:
+    """The coarsest verified subset of `cands` that sums to the parent. A hierarchy needs min_parts=2: a parent that equals ONE
+    member (within a rounding unit) is a copy of it, not a partition, and a table of near-equal series is not a hierarchy;
+    the no-total search takes a single member as the copy it is (a duplicate)."""
     import numpy as np
     k = len(cands)
     # the fingerprint: 3 cells where the parent and every candidate have a value, spread over the cells
@@ -1877,6 +1880,8 @@ def _subset_partition(A: Any, X: Any, p: int, cands: List[int], tol_u: float, no
     best = None
     # the coarsest verified partition (a member named "excluding ..." never takes part: _relations leaves it out)
     for fam in sorted(found, key=lambda f: (len(f), f)):
+        if len(fam) < min_parts:
+            continue
         chk = _sum_check(A, X, p, fam, tol_u, nonneg)
         if chk["pass"]:
             best = (fam, chk)

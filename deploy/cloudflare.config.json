@@ -1,0 +1,26 @@
+{
+  "_about": "The single source of the Cloudflare deployment's own values. Nothing here changes the page: tools/make_dist.py reads it to write dist/ (the folder Workers Static Assets serves), _headers, _redirects and the github.io redirect stub. The AI proxy address is NOT repeated here: it is site.config.json ai_proxy_url (the page reads it too). The owner types a value here only to change the address or the runtime source.",
+  "site_url": "https://northledger.halosyncs.com",
+  "aliases": [
+    "https://rashadul122.github.io/northledger-ai-data-analyst"
+  ],
+  "_aliases_about": "Old addresses that stay valid: the github.io project path redirects to site_url (deploy/gh-pages-stub), _redirects maps the old project path on the new host, and the worker keeps the old ORIGIN in ALLOWED_ORIGIN for 30 days (the longest share link lives 30 days). Remove an alias here, regenerate, and it is gone.",
+  "worker": {
+    "name": "northledger-site"
+  },
+  "runtime": {
+    "mode": "self",
+    "_mode_about": "self: Pyodide is served from this site (deploy/pyodide-pins.json, tools/fetch_pyodide.py). jsdelivr: the source build's behaviour (https://cdn.jsdelivr.net/pyodide/v0.27.7/full/), no rewrite, CSP allows that origin for the engine worker only.",
+    "pins": "deploy/pyodide-pins.json",
+    "dir": "engine/pyodide"
+  },
+  "headers": {
+    "csp_report_only": false,
+    "_csp_report_only_about": "true sends Content-Security-Policy-Report-Only instead (the plan's staging week). The enforced policy is the same text.",
+    "unsafe_eval_for_engine_worker": false,
+    "_unsafe_eval_about": "Leave false. Set true ONLY if the Playwright CSP check (tools/check_dist_csp.mjs) shows Pyodide's own glue needs eval; it adds 'unsafe-eval' to /engine/worker.js's policy alone, never to a page.",
+    "hsts_max_age": 31536000,
+    "hsts_include_subdomains": false,
+    "_hsts_about": "Leave includeSubDomains false: nothing lives below this host. NEVER set it if the site ever moves to the apex halosyncs.com, because that would cover www (Vercel) and api (StyleCast)."
+  }
+}

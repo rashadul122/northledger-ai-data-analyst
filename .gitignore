@@ -21,3 +21,8 @@ demo-data.json
 __pycache__/
 *.pyc
 node_modules/
+
+# Cloudflare deployment (tools/make_dist.py, tools/fetch_pyodide.py): build output and the verified
+# Pyodide download cache. Neither is ever committed; deploy/pyodide-pins.json holds the sha256 values.
+dist/
+.cache/

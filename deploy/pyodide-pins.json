@@ -1,0 +1,111 @@
+{
+  "_about": "What dist/engine/pyodide/<tag>/ is made of. tools/fetch_pyodide.py downloads each file, refuses any whose size or sha256 differs, and derives the served lock from the official one. The binaries are not in git. Re-pin (tools/fetch_pyodide.py --pin --from DIR) only to upgrade Pyodide.",
+  "version": "0.27.7",
+  "python": "3.12.7",
+  "platform": "emscripten_3_1_58",
+  "abi_version": "2024_0",
+  "sources": {
+    "primary": "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/",
+    "mirror": "https://unpkg.com/pyodide@0.27.7/",
+    "_checked": "the four core files and the official lock have the same sha256 on both"
+  },
+  "engine_packages": [
+    "numpy",
+    "pandas",
+    "sqlite3"
+  ],
+  "official_lock": {
+    "file": "pyodide-lock.json",
+    "bytes": 112205,
+    "sha256": "9c45b916001a750f4102fc287494f3eab215909c7535c626a20db80fd6333e2c",
+    "packages_in_lock": 351
+  },
+  "files": [
+    {
+      "name": "pyodide.js",
+      "kind": "core",
+      "bytes": 14913,
+      "sha256": "b4cb23a53aba19c221659b9fb40a2f18281d685691dc06647fb0afd0681baf98"
+    },
+    {
+      "name": "pyodide.asm.js",
+      "kind": "core",
+      "bytes": 1255688,
+      "sha256": "6b4c90de5b7172873f04f21884d0e9d2274e305fe32116558fe3e4fbe3618d51"
+    },
+    {
+      "name": "pyodide.asm.wasm",
+      "kind": "core",
+      "bytes": 10105545,
+      "sha256": "a50dd1843f805a0b7c45b61037ee0d7b26dfe85efe0e18ef95a34ad24e401f5f"
+    },
+    {
+      "name": "python_stdlib.zip",
+      "kind": "core",
+      "bytes": 2360737,
+      "sha256": "16611534726e5d8ac2bd8f926410b2dcb8d6f49aa24913463533b457a2115c16"
+    },
+    {
+      "name": "numpy-2.0.2-cp312-cp312-pyodide_2024_0_wasm32.whl",
+      "kind": "package",
+      "package": "numpy",
+      "version": "2.0.2",
+      "bytes": 3061133,
+      "sha256": "ebb61241d962b98b21597d7ce43b67668a6d5bab3acec4fbe958657320d7cd08"
+    },
+    {
+      "name": "pandas-2.2.3-cp312-cp312-pyodide_2024_0_wasm32.whl",
+      "kind": "package",
+      "package": "pandas",
+      "version": "2.2.3",
+      "bytes": 5707178,
+      "sha256": "5502f0f94f93a482b851d0b8ca43be692c1b8d20215a168313656847ff74d63a"
+    },
+    {
+      "name": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "kind": "package",
+      "package": "python-dateutil",
+      "version": "2.9.0.post0",
+      "bytes": 229892,
+      "sha256": "02811ea3714f6697d639c07dc5ec63f5774dc7a688e4e1cbbe9beb2f33c3e6c9"
+    },
+    {
+      "name": "pytz-2024.1-py2.py3-none-any.whl",
+      "kind": "package",
+      "package": "pytz",
+      "version": "2024.1",
+      "bytes": 505474,
+      "sha256": "fcfc168155da8d19057b17bee735fef71dc3a39f1dccd83514e16ecc6abaddc4"
+    },
+    {
+      "name": "six-1.16.0-py2.py3-none-any.whl",
+      "kind": "package",
+      "package": "six",
+      "version": "1.16.0",
+      "bytes": 11053,
+      "sha256": "f61235bc3a15086f0369585e5071ae9ba0bd244a111d12b37f683862e6850c0a"
+    },
+    {
+      "name": "sqlite3-1.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+      "kind": "package",
+      "package": "sqlite3",
+      "version": "1.0.0",
+      "bytes": 563076,
+      "sha256": "43061928762b03482676a1e11dcef99a003148e59fe914b6a3e41180c382cfc3"
+    }
+  ],
+  "served_lock": {
+    "file": "pyodide-lock.json",
+    "bytes": 1903,
+    "sha256": "9bb0949a60fff8956dd7319fb6c7135f8f6e8ec91dcf5f9471673e3c4757a9d5",
+    "packages": [
+      "numpy",
+      "pandas",
+      "python-dateutil",
+      "pytz",
+      "six",
+      "sqlite3"
+    ]
+  },
+  "tag": "0.27.7-65d3454d3f"
+}

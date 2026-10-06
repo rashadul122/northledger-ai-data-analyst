@@ -327,12 +327,15 @@ def test_e2e_the_slice_run_hands_track_a2_the_header_the_row_layout_and_the_hidd
         seen.append({"header": list(header), "layout": dict(layout), "hidden": list(hidden),
                      "structure": rep.get("structure"), "estimand": rep.get("estimand")})
     data = MC.partition(0.10)
-    assert not hasattr(NB, "_official_inference") or os.environ.get("NL_A2_MERGED")
+    orig = getattr(NB, "_official_inference", None)          # present once w4-inference is merged: put it back
     NB._official_inference = spy
     try:
         rep = _run(data, "regions.csv")
     finally:
-        del NB._official_inference
+        if orig is None:
+            del NB._official_inference
+        else:
+            NB._official_inference = orig
     assert len(seen) == 1, len(seen)
     got = seen[0]
     assert got["header"] == list(pd.read_csv(io.BytesIO(data), dtype=str, nrows=0).columns), got["header"]
@@ -456,6 +459,20 @@ def test_e2e_a_plan_names_a_slice_and_breakdowns_by_id_and_an_unknown_id_or_a_ro
     rep = _run(data, "adj.csv", {"__plan__": dict(plan, slice="S7", momentum_slice="S9", operations=[])})
     assert rep["estimand"]["slice_id"] == "S1" and rep["estimand"]["plan_source"] == "engine_default"
     assert any("not one of the table's slices" in x for x in rep["ai_plan"]["refused"]), rep["ai_plan"]["refused"]
+
+
+def test_the_payload_budget_drops_the_unallocated_part_last_and_the_forecast_label_never_stutters():
+    rep = _run(MC.partition(0.10), "regions.csv")
+    items = rep["scenarios"]["items"]
+    order = NB._budget_drop_order(items)
+    ids = [items[i]["id"] for i in order]
+    assert ids[-1] == "contribution.geo.unallocated" and "contribution.geo.unallocated" not in ids[:-1], ids[-4:]
+    assert sorted(order) == list(range(len(items))), "every item has a place in the drop order"
+    # a forecast of a series no claim names (a one-row-a-month slice) has a label of its own, not "The the forecast forecast"
+    text = " ".join(l["text"] for l in rep["summary"]["lines"])
+    assert "The the forecast" not in text and "forecast forecast" not in text, text
+    fl = [v for k, v in rep["summary"]["labels"].items() if k.startswith("forecast.")]
+    assert fl and all(", forecast for " in x for x in fl), rep["summary"]["labels"]
 
 
 def test_e2e_a_rate_table_reads_its_published_aggregate_and_never_adds_or_averages_members():

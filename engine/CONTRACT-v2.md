@@ -890,7 +890,8 @@ slice's monthly values equal the engine's charted series to 1e-6 (`estimand.reco
 out with a reason. A rate or an index has no contributions: "a rate is never added or averaged across members: each
 member's own rate is published, and the headline is the published aggregate, so there are no contributions". The writer's
 table (`nl_scenarios.table`) for a structure basis is the first breakdown: `[<dim>, "Contribution to the change", "Share
-of the change", "Own change", "Share of the latest year"]` less any column no row fills. Retail: 75 items (4 headline, 13
+of the change", "Own change", "Share of the latest year"]` less any column no row fills. In the payload byte budget (`_budget_drop_order`) a breakdown's `contribution.<dim>.unallocated` item is the last of the segment items
+dropped, however small, because it is what makes the parts add up to the change. Retail: 75 items (4 headline, 13
 GEO and 9 NAICS parts with contribution, growth and share_level, 2 unallocated, 3 facts; no share of the change: the
 Northwest Territories and furniture moved against the total).
 

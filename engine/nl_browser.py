@@ -3416,8 +3416,10 @@ class _V2:
             if f["kind"] == "forecast" and f["id"].endswith(".next"):
                 slug = f["id"][len("forecast."):-len(".next")]
                 month = fact.claim.rsplit(" for ", 1)[-1]
+                # a forecast of a series no claim names (a structured table's one-row-a-month slice) is named from its
+                # own slug, never left without a label ("The the forecast forecast for ...")
                 what = rows_word if slug == "monthly_rows" else \
-                    (self.name_of(by_slug[slug]) if slug in by_slug else "")
+                    (self.name_of(by_slug[slug]) if slug in by_slug else _human(slug))
                 if what:
                     labels[f["id"]] = "%s, forecast for %s" % (what, _mon(month))
                 if money and slug == "monthly_rows":
@@ -4953,13 +4955,16 @@ def _budget_drop_order(items: List[Dict[str, Any]]) -> List[int]:
         s = items[i].get("segment")
         return rank.get(s) if items[i].get("group") in per and isinstance(s, str) else None
     idx = list(range(len(items)))
+    # a table read by its structure: the unallocated part (the total less its published parts) is what makes a
+    # breakdown add up to the change, so it is the last of the segments' items to go, however small it is
+    keep_last = [i for i in idx if str(items[i].get("id") or "").endswith(".unallocated")]
     facts = [i for i in reversed(idx) if items[i].get("group") == "facts"]
-    beyond = [i for i in reversed(idx) if (seg_rank(i) or 0) >= _ns.TOP_SEGMENTS]
-    core_seg = sorted((i for i in idx if seg_rank(i) is not None and seg_rank(i) < _ns.TOP_SEGMENTS),
+    beyond = [i for i in reversed(idx) if (seg_rank(i) or 0) >= _ns.TOP_SEGMENTS and i not in keep_last]
+    core_seg = sorted((i for i in idx if seg_rank(i) is not None and seg_rank(i) < _ns.TOP_SEGMENTS and i not in keep_last),
                       key=lambda i: (-seg_rank(i), -i))
-    taken = set(facts) | set(beyond) | set(core_seg)
+    taken = set(facts) | set(beyond) | set(core_seg) | set(keep_last)
     rest = sorted((i for i in idx if i not in taken), key=lambda i: (-groups.get(items[i].get("group"), 0), -i))
-    return facts + beyond + core_seg + rest
+    return facts + beyond + core_seg + rest + sorted(keep_last, reverse=True)
 
 
 def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int,

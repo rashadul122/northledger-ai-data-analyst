@@ -331,7 +331,8 @@ def test_r07b_a_daily_table_without_weekend_rows_is_compared_over_whole_weeks_th
     assert 3.0 < pct < 8.0, "a business that grew 5% a year reads %.1f%%" % pct
     # holiday gaps: a gap of 5 days now and then is a hole, not another rhythm
     ts = [d.isoformat() for d in days if d not in (dt.date(2021, 4, 5), dt.date(2022, 4, 18), dt.date(2022, 4, 15))]
-    assert (NS._cadence(ts) or {}).get("cadence") == "day"
+    assert (NS._cadence(ts, tolerant=True) or {}).get("cadence") == "day"
+    assert NS._cadence(ts) is None          # a business file with such a gap is not read as daily (it is read as before)
 
 
 def test_r08_a_whole_country_row_is_the_headline_and_an_average_in_dollars_is_a_level():

@@ -275,9 +275,9 @@ DAY_MIN = 28                    # ... a daily one over at least 28 days (56 days
                                 # number of periods that fits twice in the table
 
 
-def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
+def _cadence(times: List[str], tolerant: bool = False) -> Optional[Dict[str, Any]]:
     """The period of a table with several dates a month (wave 5e, P6): weekly (80% of the gaps between its dates are 7 days) or daily (60%
-    of them 1 day and 95% of them at most 4: weekdays only is a daily table, a holiday's longer gap a hole). The window is 52 weeks or 365 days, or, for a shorter table, the largest
+    of them 1 day and none over 4; a publisher's table may have 5% of its gaps longer: weekdays only is a daily table, a holiday's longer gap a hole). The window is 52 weeks or 365 days, or, for a shorter table, the largest
     whole number of periods that fits twice (at least WEEK_MIN weeks, DAY_MIN days); a table too short for that, or with any other rhythm,
     is None and is not read as monthly. Keys are the dates themselves; `span_days` is the calendar span of one window."""
     import datetime as _d
@@ -291,9 +291,10 @@ def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
     gaps = [b - a for a, b in zip(days[:-1], days[1:])]
     n = len(gaps)
     weekly = sum(1 for g in gaps if g == 7) >= 0.8 * n
-    # a daily table: most gaps are one day and nearly all are at most 4 (a weekend is 3, a Monday holiday 4); a few longer gaps (Good Friday
-    # with Easter Monday and a weekend is 5, a year's end more) are holes in the data, not another rhythm: they cost matched days, said as such
-    daily = sum(1 for g in gaps if g == 1) >= 0.6 * n and sum(1 for g in gaps if g <= 4) >= 0.95 * n
+    # a daily table: most gaps are one day and none is over 4 (a weekend is 3, a Monday holiday 4). In a table from a PUBLISHER (`tolerant`) a
+    # few longer gaps (Good Friday with Easter Monday and a weekend is 5, a year's end more) are holes in the data, not another rhythm: 95% of
+    # the gaps at most 4 is enough, and the holes cost matched days, said as such. A business file with such a gap is not read as daily
+    daily = sum(1 for g in gaps if g == 1) >= 0.6 * n and (max(gaps) <= 4 or (tolerant and sum(1 for g in gaps if g <= 4) >= 0.95 * n))
     if not (weekly or daily):
         return None
     total = days[-1] - days[0] + 1
@@ -320,7 +321,7 @@ def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
             "per_span": max(1, int(round(len(ds) * n_win / float(total))))}       # the dates a window holds (weekdays only: fewer than its days)
 
 
-def _period_of(times: List[str], family: str = "") -> Dict[str, Any]:
+def _period_of(times: List[str], family: str = "", tolerant: bool = False) -> Dict[str, Any]:
     """The table's period from its dates: one value a period (not a daily or weekly table) and a steady gap of 3, 6 or 12
     months between periods (80% of the gaps) is quarterly, half-yearly or annual; several dates a month is a weekly or a daily table
     (`_cadence`: wave 5e, never "12 months" ending in a partial month); anything else is read by month, as before."""
@@ -335,7 +336,7 @@ def _period_of(times: List[str], family: str = "") -> Dict[str, Any]:
         if top in (3, 6, 12) and int(counts.max()) >= 0.8 * len(d):
             step = top
     elif len(months) < len(times):
-        got = _cadence(times)
+        got = _cadence(times, tolerant)
         if got is not None:
             return got
     noun, nouns, window = PERIOD_KINDS[step][0], PERIOD_KINDS[step][1], PERIOD_KINDS[step][2]
@@ -887,7 +888,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         F[s_codes[first], tix[first]] = fc[first]
     months = sorted({t[:7] for t in times})
     monthly = len(months) == len(times)
-    period = _period_of(times, date_family)
+    period = _period_of(times, date_family, official)
     if not monthly and not period.get("cadence"):
         # several dates a month that are neither a week nor a day apart (or too few to compare two windows): never read as monthly (P6)
         return _empty("not_cube", "the table's dates are several a month and not evenly spaced by the week or the day (or too few of "

@@ -1733,8 +1733,10 @@ RELEASE_MAX_DISTINCT = 300
 RELEASE_MAX_DISTINCT_CODED = 3000       # wave 5f (G): a column whose labels CARRY CODES ([4411], 4411 Used car dealers: NAICS at 6 digits, HS) has 400 to 2,500 labels
 _CODED_LABEL = re.compile(r"\[[0-9A-Za-z][0-9A-Za-z.\-]*\]\s*$|^\s*[0-9][0-9A-Za-z.\-]*\s+\S")
 RELEASE_MAX_SHARE = 0.05
-RELEASE_MAX_SHARE_CODED = 0.20          # wave 5g (F): a coded column (NAICS, HS) of a table with a few periods: a label is on one row a period, so 935 labels
-                                        # over 8 quarters are 12% of the rows; every label repeating RELEASE_MIN_REPEAT times already limits the share to 20%
+RELEASE_MAX_SHARE_CODED = 0.20          # wave 5g (F): a column of DESCRIBED CODES (NAICS, HS: a code of 4 or more characters and a description of 2 or more words,
+                                        # `_described_code`) in a table with a few periods: a label is on one row a period, so 935 labels over 8 quarters are
+                                        # 12% of the rows. Only for such labels: the 5% cap is the only thing that tells free text (an address, a name with an
+                                        # id, a postcode) from a category, and every label repeating RELEASE_MIN_REPEAT times limits the share to 20% by itself
 RELEASE_MIN_REPEAT = 5
 SENSITIVE_HEADER = re.compile(
     r"(?i)diagnos|condition|disease|illness|medic|health|symptom|treatment|drug|religio|faith|ethnic|race|"
@@ -1751,6 +1753,26 @@ RELEASED_MEASURE_WORDS = "Read as the table's measure, not personal data: %s"
 RELEASE_NAME_SHARE = 0.30
 _LABEL_GLUE = frozenset(("and", "of", "the", "for", "or", "with", "in", "on", "to", "at", "by", "from", "other", "all",
                          "total", "except", "excluding", "not", "nec", "n.e.c", "&"))
+
+
+def _described_code(label: Any) -> Optional[str]:
+    """The description of a label that is a CODE with words ("917725 Refined goods 82", "[4411] Used car dealers", "Used car dealers [4411]", "21058
+    Forged parts"), else None: a code of at least 4 characters holding a digit (before the words, in brackets or not, or in brackets after them), and
+    at least two words of letters in the description; no comma or semicolon (an address "14 Oak Lane, Springfield" has both)."""
+    t = " ".join(str(label).split())
+    if "," in t or ";" in t:
+        return None
+    m = re.match(r"^\[?([0-9A-Za-z][0-9A-Za-z.\-]{3,})\]?\s+(\S.*)$", t)
+    desc = None
+    if m and re.search(r"\d", m.group(1)):
+        desc = m.group(2)
+    else:
+        m = re.match(r"^(.*\S)\s*\[[0-9A-Za-z][0-9A-Za-z.\-]{2,}\]$", t)
+        if m:
+            desc = m.group(1)
+    if desc is None or len(re.findall(r"[^\W\d_]{2,}", desc)) < 2:
+        return None
+    return desc
 
 
 def _name_shaped(v: str) -> bool:
@@ -1888,7 +1910,11 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
                 continue
             counts[t] = counts.get(t, 0) + int(n)
         filled = sum(counts.values())
-        coded = bool(counts) and sum(1 for x in counts if _CODED_LABEL.search(x)) >= 0.8 * len(counts)
+        # wave 5g: the larger caps are for labels that are DESCRIBED CODES (and are no street address and no person's name behind an id); a label that
+        # merely opens with a number ("14 Oak Lane", "1012 AB") is read as any column is
+        coded = bool(counts) and sum(1 for x in counts if _described_code(x)) >= 0.8 * len(counts) and \
+            not any(_street_value(x) for x in counts) and \
+            sum(1 for x in counts if _name_shaped(_described_code(x) or "")) < RELEASE_NAME_SHARE * len(counts)
         if not counts or len(counts) > (RELEASE_MAX_DISTINCT_CODED if coded else RELEASE_MAX_DISTINCT) or \
                 len(counts) > (RELEASE_MAX_SHARE_CODED if coded else RELEASE_MAX_SHARE) * filled:
             continue
@@ -10366,7 +10392,10 @@ def _identifier_column(name: Any, values: Any, all_names: Iterable[Any]) -> bool
         return True
     try:
         from northledger import measure as _m
-        s = v.astype("int64") if float(v.abs().max()) < 9e18 else v
+        # the core reads a measure column as FLOAT (its cleaned frame casts every number to one): its "whole numbers nearly all different" rule never
+        # fires for an amount, only its rules on the column's NAME (id, key, number, code ...) do. The same here: the floats, never an integer cast
+        # (the reviewer's finding: a cast made every whole-number amount column named Value or Profit an "identifier")
+        s = v.astype(float)
         if _m._label_number(str(name), s, [str(x) for x in all_names]) or _m._id_like(str(name), s, {}):
             return True
     except Exception:  # noqa: BLE001 - the shape rule above still stands without the core
@@ -10448,7 +10477,6 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
     totals: List[Dict[str, Any]] = []
     valid_date = dts.notna().to_numpy()
     date_key = dts.dt.strftime("%Y-%m-%d").fillna("")
-    checks: List[Tuple[Any, ...]] = []
     for c, col in cats.items():
         members = [m for m in pd.unique(col[col != ""])]
         nominated = {m: _total_nomination(m) for m in members}
@@ -10461,24 +10489,22 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
             ctx = ctx + "\x1f" + cats[o]
         base = [m for m in members if m not in nominated]
         for m, kind in nominated.items():
-            checks.append((c, col, m, kind, _total_columns(NS, df, col, m, base, nums, ctx, date_key, valid_date)))
-    for c, col, m, kind, res in checks:
-        status, why = _total_verdict(res)
-        rows = np.flatnonzero((col == m).to_numpy())
-        rec = {"column": str(c), "member": str(m), "rows": int(len(rows)), "nomination": kind, "status": status, "why": why}
-        # a verified total is left out; a bare total phrase that no cell could verify, or that stands above the sum of the others (a total whose
-        # parts are not all listed), is left out too and said so; a name that merely holds a total word is a member until the cells say otherwise
-        if status == "verified" or (status in ("unresolved", "contradicted_bounding") and kind == "exact"):
-            drops.update(int(i) for i in rows)
-            why_row = ("left out of the figures: a row named %r that equals the sum of the other rows (a total)" % str(m)) \
-                if status == "verified" else \
-                ("left out of the figures: a row named %r that could not be checked against the other rows (treated as a total)" % str(m))
-            for i in rows:
-                reasons[int(i)] = why_row
-            rec["left_out"] = True
-        else:
-            rec["left_out"] = False
-        totals.append(rec)
+            status, why = _check_total(NS, df, col, m, base, nums, ctx, date_key, valid_date)
+            rows = np.flatnonzero((col == m).to_numpy())
+            rec = {"column": str(c), "member": str(m), "rows": int(len(rows)), "nomination": kind, "status": status, "why": why}
+            # a verified total is left out; a bare total phrase that no cell could verify, or that stands above the sum of the others (a total whose
+            # parts are not all listed), is left out too and said so; a name that merely holds a total word is a member until the cells say otherwise
+            if status == "verified" or (status in ("unresolved", "contradicted_bounding") and kind == "exact"):
+                drops.update(int(i) for i in rows)
+                why_row = ("left out of the figures: a row named %r that equals the sum of the other rows (a total)" % str(m)) \
+                    if status == "verified" else \
+                    ("left out of the figures: a row named %r that could not be checked against the other rows (treated as a total)" % str(m))
+                for i in rows:
+                    reasons[int(i)] = why_row
+                rec["left_out"] = True
+            else:
+                rec["left_out"] = False
+            totals.append(rec)
     partial = _partial_months(df, dts, drops)
     if not drops and not partial and not [t for t in totals if t["nomination"] == "exact"]:
         return None

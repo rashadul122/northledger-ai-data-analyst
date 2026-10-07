@@ -91,15 +91,15 @@
   "file": "g01_seed644_german_sa_nsa_panel.csv",
   "flagged": [],
   "kind": "cube",
-  "latest": 1330361.75,
+  "latest": 1220106.333333,
   "ledger_amount": [
    null,
    null
   ],
   "left_out": 0,
   "ok": true,
-  "pct": 8.557123,
-  "prior": 1225494.666667,
+  "pct": 6.462712,
+  "prior": 1146041.0,
   "refused": false,
   "roles": {
    "Saisonbereinigung": "single"

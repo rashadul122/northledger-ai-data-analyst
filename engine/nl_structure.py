@@ -1667,7 +1667,13 @@ def _member_types(S: Dict[str, Any], j: int) -> List[Dict[str, Any]]:
     return out
 
 
-_UNWORDED_TYPES = ("count", "unknown")      # a type nothing in the member's own words settled (no flow word, no stock word, no unit)
+_UNWORDED_TYPES = ("count", "unknown")      # a type nothing in the member's own words settled (no flow word, no stock word, no unit) ...
+
+
+def _unworded(c: Dict[str, Any]) -> bool:
+    """Whether a member's type is the absence of a word: a count or unknown whose basis is "ambiguous: averaged". A count that a flow word settled
+    ("Orders", "Births": type_basis "positively a flow") is typed positively and is not unworded."""
+    return c["type"] in _UNWORDED_TYPES and str(c.get("type_basis") or "").startswith("ambiguous")
 
 
 def _is_measure_dim(S: Dict[str, Any], j: int) -> Optional[List[Dict[str, Any]]]:
@@ -1679,18 +1685,17 @@ def _is_measure_dim(S: Dict[str, Any], j: int) -> Optional[List[Dict[str, Any]]]
     types = _member_types(S, j)
     if d.get("mixed_units"):
         return types
-    # wave 5g (C): members are DIFFERENT MEASURES only on positive evidence: a unit that varies (above), a precision member, or members whose
-    # own words type them as different kinds of quantity (a flow beside a stock, a level beside a rate). A member whose label says nothing
-    # (Other, Not stated, Unknown: a count with no word that says what it is) is typed "count" or "unknown" by the ABSENCE of a word, and that
-    # absence is no evidence that it is a different measure: Employed, Unemployed, Not in labour force, Other and Not stated are the parts of a
-    # population, not five measures (fuzz v2 seed 631: Employed was shown alone as "one measure shown" and the others never added).
-    # ... unless the dimension's HEADER says it names what is measured (Statistics, Indicator, Measure, Characteristics ...): then a member that says
-    # nothing is one more measure, as it was
-    named = bool(_MEASURE_DIM_HEADER.search(str(d.get("column") or "")))
-    kinds = {c["type"] for c in types if named or c["type"] not in _UNWORDED_TYPES}
+    kinds = {c["type"] for c in types}
     prec = any(c["type"] == "precision" for c in types)
     cued = sum(1 for lb in d["labels"] if _MEMBER_CUE.search(lb))
     if (len(kinds) >= 2 or prec) and cued >= 0.5 * len(d["labels"]) and any(c["type"] != "precision" for c in types):
+        # wave 5g (C): the dimension is a set of measures on STRONG evidence (a precision member, a header that names what is measured, or members whose
+        # own words type them as at least two different kinds of quantity) or on WEAK evidence only (one kind beside members that say nothing: Employed,
+        # Unemployed and Not in labour force beside Other and Not stated). A weak reading is kept, because it never adds, but it is DISCLOSED: one
+        # member is shown and it is not the table's total, since nothing says whether the members are different measures or the parts of one whole
+        # (fuzz v2 seed 631 printed "one measure shown" and the parts of a population were never added).
+        named = bool(_MEASURE_DIM_HEADER.search(str(d.get("column") or "")))
+        d["measure_weak"] = not (named or prec or len({c["type"] for c in types if not _unworded(c)}) >= 2)
         return types
     return None
 
@@ -3459,25 +3464,38 @@ def _copies_by_shape(S: Dict[str, Any], A: Any, members: Sequence[int]) -> Optio
 
 
 _UNADJUSTED = re.compile(r"(?i)\b(?:unadjusted|not seasonally adjusted|non[- ]?seasonally adjusted|raw|original|actual|brut(?:es?)?|"
-                         r"non d[\u00e9e]saisonnalis[\u00e9e]e?s?|nicht saisonbereinigt|sin desestacionalizar)\b")
+                         r"non d[\u00e9e]saisonnalis[\u00e9e]e?s?|nicht saisonbereinigt|sin desestacionalizar|originalwerte|ursprungswerte|"
+                         r"rohwerte|originales|sin ajustar|no ajustad[oa]s?|valeurs? brutes)\b")
 
 
 # wave 5g (B): the words that NOMINATE a dimension as one of bases (the same quantity measured on two or more bases: current and constant prices,
 # nominal and real, adjusted and unadjusted). A name only nominates; the cells decide (`_copies_by_shape`). Folded to lower case without accents.
-_BASIS_NAME = re.compile(r"\b(?:prices?|pricing|basis|bases|valuation|nominal|real|current|constant|chained|deflated|volume measures?|seasonally|"
-                         r"unadjusted|adjusted|prix|courants?|constants?|chainee?s?|reel(?:le)?s?|preis(?:e|en)?|laufend\w*|konstant\w*|verkettet\w*|"
-                         r"precios?|corrientes?|constantes?|encadenad\w+|saisonbereinigt\w*|desestacionalizad\w*|desaisonnalis\w*)\b")
+# MEMBER words are the names of the bases themselves; HEADER words name a dimension of them. "Pricing plan", "Price band", "Real estate" and a bare
+# "current" are not among them (a second reviewer showed that ordinary ledgers of plans and price bands were read as bases).
+_BASIS_MEMBER = re.compile(r"\b(?:(?:current|constant|chained|fixed)\s+(?:prices?|dollars?|euros?|pounds?|\d{4})|nominal|real|chained|deflated|"
+                           r"volume measures?|(?:seasonally\s+)?(?:un)?adjusted|at\s+(?:basic|market|producers?|factor)\s+(?:prices?|cost)|"
+                           r"prix\s+(?:courants?|constants?|chain\w*|enchain\w*)|valeurs?\s+(?:courantes?|constantes?)|laufende\s+preise|"
+                           r"konstante\s+preise|verkettet\w*|precios\s+(?:corrientes|constantes)|encadenad\w+|saisonbereinigt\w*|"
+                           r"desestacionalizad\w*|d\w*saisonnalis\w*|valeurs?\s+brutes)\b")
+_BASIS_HEADER = re.compile(r"\b(?:prices|basis|bases|valuation|prix|preise|precios|price\s+(?:basis|type|measure)|type\s+of\s+prices?)\b")
 BASIS_MAX_MEMBERS = 6           # wave 5g (B): a dimension of bases has a few members; one of more is a list of things that happen to share a word
 
 
-def _basis_nominated(rec: Dict[str, Any]) -> bool:
-    """Whether a dimension's header, or at least two of its members' names, are the words of bases (prices, nominal, real, constant ...)."""
+def _basis_level(rec: Dict[str, Any]) -> int:
+    """2 when at least two of a dimension's member names are the names of bases (STRONG nomination: "Current prices", "Constant prices"; "Nominal",
+    "Real"), 1 when only its header is (WEAK: Prices, Basis, Valuation, Type of prices), else 0. A dimension of at most BASIS_MAX_MEMBERS members."""
     labels = [lb for lb in rec["labels"] if lb != ""]
     if not 2 <= len(labels) <= BASIS_MAX_MEMBERS:
-        return False
-    if _BASIS_NAME.search(_fold_name(rec["column"])):
-        return True
-    return sum(1 for lb in labels if _BASIS_NAME.search(_fold_name(lb))) >= 2
+        return 0
+    if sum(1 for lb in labels if _BASIS_MEMBER.search(_fold_name(lb))) >= 2:
+        return 2
+    head = _fold_name(rec["column"])
+    return 1 if (_BASIS_HEADER.search(head) or _BASIS_MEMBER.search(head)) else 0
+
+
+def _basis_nominated(rec: Dict[str, Any]) -> bool:
+    """Whether a dimension's header, or at least two of its members' names, are the words of bases (see `_basis_level`)."""
+    return _basis_level(rec) > 0
 
 
 def _basis_copies(S: Dict[str, Any], j: int, rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -3486,22 +3504,26 @@ def _basis_copies(S: Dict[str, Any], j: int, rec: Dict[str, Any]) -> Optional[Di
     seeds 601 and 687; the figure was 1.77 times the truth). A name nominates the dimension (`_basis_nominated`), the cells decide: two members
     that move together under a steady ratio (`_copies_by_shape`, for a monthly, quarterly, weekly or daily table) are copies. None when the
     dimension is not nominated, or its members were compared and none is a copy (they are added, as before). A dict when its members must not
-    be added: {"pair": (a, b) | None, "why"}; pair None when the table is too short or too blank to tell a copy from a part: a dimension that names
-    bases and cannot be shown NOT to be copies is not added (the safe side: one member is shown)."""
-    if not _basis_nominated(rec):
+    be added: {"pair": (a, b) | None, "why"}; pair None when the table is too short or too blank to tell a copy from a part AND the member names
+    themselves are the names of bases (a strong nomination): members named as bases that cannot be shown NOT to be copies are not added (the safe
+    side: one member is shown). A header-only nomination that the table cannot test is added, as before."""
+    level = _basis_level(rec)
+    if not level:
         return None
     labels = rec["labels"]
     try:
         A, _X, _c = _dim_tensor(S, j)
     except _TooLarge:
-        return {"pair": None, "why": "%s names bases and was too large to compare, so its members are never added" % rec["column"]}
+        return {"pair": None, "why": "%s names bases and was too large to compare, so its members are never added" % rec["column"]} if level >= 2 else None
     got = _copies_by_shape(S, A, list(range(len(labels))))
     if got is None:
         return None
     a, b = got
     if a is None:
-        return {"pair": None, "why": "%s names bases and the table is too short or too blank to show that its members are not one quantity "
-                                     "twice, so they are never added" % rec["column"]}
+        if level < 2:
+            return None             # only the header names bases and the table cannot say: the members are added, as they always were
+        return {"pair": None, "why": "the members of %s are named as bases and the table is too short or too blank to show that they are not one "
+                                     "quantity twice, so they are never added" % rec["column"]}
     return {"pair": (labels[a], labels[b]),
             "why": "%s and %s move together under a steady ratio: one quantity on two bases, so they are never added" % (labels[a], labels[b])}
 
@@ -4468,6 +4490,17 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                 single_member["statement"] = "one member shown: %s; %s" % (d["total"], d["copies_why"])
                 single_member["copies"] = True
             built_txt += single_member["statement"] + "; "
+    if single_member is None and choice:
+        # wave 5g (C): a dimension read as a set of measures on weak evidence only (`_is_measure_dim`): one member shown, and it is not the table's
+        # total. Nothing in the table says whether its members are different measures or the parts of one whole, so none is added
+        wk = next((d for d in S["dims"] if d.get("measure_dim") and d.get("measure_weak") and isinstance(where.get(d["column"]), str)), None)
+        if wk is not None:
+            n_o = len(wk["labels"]) - 1
+            single_member = {"dim": wk["column"], "member": where[wk["column"]], "noun": "measure",
+                             "statement": "one member shown: %s; the other %d member%s of %s %s not added: nothing in the table says whether they are "
+                                          "different measures or the parts of one whole, so this is not the table's total" % (
+                                              where[wk["column"]], n_o, "" if n_o == 1 else "s", wk["column"], "is" if n_o == 1 else "are")}
+            built_txt = single_member["statement"] + "; " + built_txt
     for d in S["dims"]:
         # wave 5c: a rate's or an index's aggregate that is one by its name alone (no sum-check can verify it): the estimand says so,
         # first, so that a long text cut at its cap loses the windows' words and not this
@@ -4718,6 +4751,8 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
         if d.get("measure_dim"):
             x["measures"] = [{k: m[k] for k in ("id", "name", "uom", "type", "type_basis", "precision", "default")}
                              for m in d["measures"]]
+            if d.get("measure_weak"):
+                x["measure_weak"] = True
         dims.append(x)
     out = {"kind": S["kind"], "usable": bool(S.get("usable")), "reason": S.get("reason") or "",
            "version": S.get("version"), "publisher": S.get("publisher"), "official": bool(S.get("official")),

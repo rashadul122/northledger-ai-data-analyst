@@ -1903,22 +1903,27 @@ doc says so.
   total member, so this is not the table's total", headline "(one member shown, not the table's total)"), exactly as a table of more than 60 series was. A table that looks like a table of series
   (`looks_like_series_table`) and cannot be read so is refused: `structure {kind "error", reason "...stand in no relation to one another and could not be set side by side...", error.stage "panel"}` (`_panel_failure`).
   With an AI plan whose own columns give no layout the same refusal applies. The English twin of a table the layout reads (three years of active series) is read by the layout as before.
-- *B, a dimension of bases is never added.* `_BASIS_NAME` (header, or two member names: prices, nominal, real, current, constant, chained, adjusted ... in four languages) NOMINATES a dimension of at most `BASIS_MAX_MEMBERS` = 6
-  members of a LEDGER; `_copies_by_shape` decides, for monthly, quarterly, weekly and daily tables (`_copy_seasons`: the dates a year holds). Copies by shape, or a nominated dimension a short table cannot show not to be copies,
-  are read one member at a time: dimension role `single` with `copies` / `copies_why`, estimand `single_member.statement` "one member shown: X; X and Y move together under a steady ratio: one quantity on two bases, so they are never
-  added", `single_member.copies true`, headline "(one member shown, not the sum of the bases)". The table is sliced (`_usable`). `_round_unit` widens a sum-check's tolerance to the unit a series' figures were rounded to
-  (the largest power of ten dividing at least 12 non-zero whole figures), so a total rounded to the thousand and written in full is verified.
-- *C, a set of measures needs positive evidence.* `_is_measure_dim` counts only the members whose own words or unit settle a kind (`_UNWORDED_TYPES` = count, unknown add nothing): the parts of a population (Employed,
-  Unemployed, Not in labour force, Other, Not stated) are not five measures.
+- *B, a dimension of bases is never added.* A dimension of a LEDGER with at most `BASIS_MAX_MEMBERS` = 6 members is nominated STRONGLY when at least two member names are names of bases (`_BASIS_MEMBER`: Current prices,
+  Constant prices, Nominal, Real, Chained dollars, Seasonally adjusted ... in four languages) and WEAKLY when only its header is (`_BASIS_HEADER`: Prices, Basis, Valuation, Type of prices; "Pricing plan" and "Price band" nominate
+  nothing). `_copies_by_shape` decides, for monthly, quarterly, weekly and daily tables (`_copy_seasons`: the dates a year holds). Copies by shape are read one member at a time; so is a STRONGLY nominated dimension that a
+  short table cannot show not to be copies; a weakly nominated one that cannot be tested is added as before. Dimension role `single` with `copies` / `copies_why`, estimand `single_member.statement` "one member shown: X;
+  X and Y move together under a steady ratio: one quantity on two bases, so they are never added", `single_member.copies true`, headline "(one member shown, not the sum of the bases)". The table is sliced (`_usable`).
+  `_round_unit` widens a sum-check's tolerance to the unit a series' figures were rounded to (the largest power of ten dividing at least 12 non-zero whole figures), so a total rounded to the thousand and written in full
+  is verified. A consequence (test g12): because the copy test now runs at weekly and daily cadences, an official weekly or daily table of places with no total row is added (`parts`) when no two members are copies,
+  as a monthly one always was, and read one member at a time when two are.
+- *C, a dimension read as measures on weak evidence is disclosed.* `_is_measure_dim` keeps the reading "a set of measures" (never added) and grades its evidence: STRONG (a varying unit, a precision member, a header that names
+  what is measured, at least two members whose own words type them as different kinds) or WEAK (one kind beside members typed by the absence of a word: `_unworded`, a count or unknown whose `type_basis` is "ambiguous"). A weak
+  reading sets `structure.dims[].measure_weak true` and the estimand says so: `single_member {noun "measure", statement "one member shown: Employed; the other 4 members of Employment status are not added: nothing in the table
+  says whether they are different measures or the parts of one whole, so this is not the table's total"}`, the headline "(one member shown, not the table's total)".
 - *D, a total is verified on the amounts.* `ledger_tidy` checks a nominated total on the number columns the core will sum: `_identifier_column` leaves out whole numbers of one width of nine or more digits and what the core's
-  `measure._label_number` / `_id_like` read as a key; `_total_columns` / `_total_verdict` are the checks and the verdict (`_check_total` keeps its signature).
+  `measure._label_number` / `_id_like` read as a key (asked with the column as the float the core sees); `_total_columns` / `_total_verdict` are the checks and the verdict (`_check_total` keeps its signature).
 - *E, an averaged level is worded as an average.* A measure with `type_basis` "ambiguous: averaged" and a mean aggregation: headline "<measure>, <member>, 12 months to Sep 2025: +2.6% (average level $3.0K)" with no "published
   totals" (an evidence tail such as "(the table has no total row)" stays); `scenarios.items[headline.prior|latest].label` "..., the 12 months before, average month (2023-10 to 2024-09)"; the page's first-screen line and
   tile say "published figures (average level A to B)". A flow, a rate and an index keep their words. The worker's fallback title (report.js engineTitle) mirrors the headline and must switch on
   `estimand.measure.type_basis` / `aggregation`.
 - *F, fewer needless refusals, only where safe.* The documented value column is released when the header holds a publisher's signature OR three of the metadata columns only a statistical publisher uses
-  (`_release_value_column`); a coded category column is released up to 20% of its rows (`RELEASE_MAX_SHARE_CODED`); an id column (vector, coordinate) is not counted among the "other dimensions" that make a coded dimension
-  redundant. NOT changed: the real parts of a flow in a dimension that is not a set of places and has no total row are still not added (one member shown); the sensitive-category columns are still withheld by default.
+  (`_release_value_column`); a column of DESCRIBED CODES (`_described_code`: a code of 4 or more characters and two or more words, no comma, no street address, no name behind an id) is released up to 20% of its rows (`RELEASE_MAX_SHARE_CODED`),
+  any other column up to 5%; a series id (an id column one to one with the other dimensions: vector, coordinate) is not counted among the "other dimensions" that make a coded dimension redundant. NOT changed: the real parts of a flow in a dimension that is not a set of places and has no total row are still not added (one member shown); the sensitive-category columns are still withheld by default.
 
 Retail (StatCan 20-10-0008), the FX file and the Amazon reviews file are unchanged in every figure and scenario id; the only blocks that differ are listed in the design doc's "Measured (wave 5f)".
 

@@ -1446,8 +1446,17 @@ def test_g01_an_official_panel_the_layout_cannot_read_is_read_one_member_at_a_ti
     df = frame("g01_seed644_full_60_months.csv")
     rep = run_file("g01_seed644_full_60_months.csv")
     member = next(x["member"] for x in est(rep)["slice"] if x["dim"] == "Saisonbereinigung")
-    pri, lat = window_sums(df, df["Saisonbereinigung"] == member, 1000.0, date="BEZUGSZEITRAUM", value="WERT")
-    check_truth(rep, pri, lat, "seed 644")
+    sub = df[df["Saisonbereinigung"] == member].copy()
+    sub["v"] = pd.to_numeric(sub["WERT"], errors="coerce") * 1000.0
+    by = sub.groupby(sub["BEZUGSZEITRAUM"].str[:7])["v"].mean().dropna()
+    last = sorted(by.index)[-1]
+    y, mo = int(last[:4]), int(last[5:7])
+    mk = lambda k: "%04d-%02d" % ((y * 12 + mo - 1 + k) // 12, (y * 12 + mo - 1 + k) % 12 + 1)
+    matched = [k for k in range(-11, 1) if mk(k) in by.index and mk(k - 12) in by.index]      # the months with a value in both windows
+    assert len(matched) >= 6, matched
+    f644 = figs(rep)
+    assert close(f644[1], float(np.mean([by[mk(k)] for k in matched]))) and close(f644[0], float(np.mean([by[mk(k - 12)] for k in matched]))), \
+        (f644, [by[mk(k)] for k in matched][:3], member)
     # the plan's run of the same table (the live product) reads it the same way when the plan makes no layout: one member, said so; and a plan that
     # reshapes it (a long_to_wide on the layer's own date and value columns, in any language) gets the layout it asked for
     rep_p = run_file("g01_seed644_german_sa_nsa_panel.csv", plan=PLAN)
@@ -1583,47 +1592,55 @@ def test_g03_a_total_row_is_left_out_when_it_adds_up_on_the_amounts_whatever_ide
     assert t_bad["totals"][0]["status"] == "contradicted" and not t_bad["totals"][0]["left_out"], t_bad["totals"]
 
 
-def test_g04_the_parts_of_a_population_are_not_five_measures_and_a_dimension_of_measures_still_is():
+def test_g04_a_dimension_read_as_measures_on_weak_evidence_only_is_disclosed_as_one_member_not_the_total():
     """Wave 5g, C (fuzz v2 seed 631; seed 762 is not an engine failure, see test_g07). A plain file Date, Store, Employment status, Units read
     "Employed" alone as "one measure shown, chosen by the engine's default order" while Unemployed, Not in labour force, Other and Not stated were
     never added. The members were typed from their own label words: Employed, Unemployed and Not in labour force carry a stock word ("a stock"),
-    Other and Not stated carry none ("a count"), and two different types made the dimension "a set of different measures". A member with no word
-    is typed by the ABSENCE of one, and that is no evidence that it is another quantity: members are different measures only on positive evidence
-    (a unit that varies, a precision member, positively different kinds: a flow beside a stock, a level beside a rate). The parts of a population
-    are added, as the ledger they are in always did."""
-    df = frame("g04_seed631_employment_status_parts.csv")
+    Other and Not stated carry none ("a count": the ABSENCE of a word), and two types made the dimension "a set of different measures". That
+    evidence is WEAK (a kind beside members that say nothing) and nothing in the cells tells parts of a whole from different measures, so the
+    dimension is still never added (adding Orders to Stock on hand, or Cash to Current assets, is the worse error: a first attempt that dropped
+    the weak reading summed them, found by an independent reviewer), but it is now DISCLOSED: "one member shown: Employed; the other members of
+    Employment status are not added: nothing in the table says whether they are different measures or the parts of one whole, so this is not the
+    table's total" (`estimand.single_member`, the headline's "(one member shown, not the table's total)"). STRONG evidence (a unit that varies, a
+    precision member, a header that names what is measured, two members whose own words type them as different kinds) keeps the plain reading."""
     rep = run_file("g04_seed631_employment_status_parts.csv")
-    assert "one measure shown" not in json.dumps(est(rep)) and "Employed:" not in headline(rep)[:12], headline(rep)
+    e = est(rep)
+    assert e and one_member_shown(rep) and e["single_member"]["noun"] == "measure", (headline(rep), e.get("single_member"))
+    assert "the other" in e["single_member"]["statement"] and "parts of one whole" in e["single_member"]["statement"], e["single_member"]
+    assert "(one member shown, not the table's total)" in headline(rep), headline(rep)
     d = dim(rep, "Employment status")
-    assert d is None or d["role"] != "measure", d
-    led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
-    assert "measure.units.total.last12" in led, sorted(led)[:12]
-    d2 = df.copy()
-    d2["v"] = pd.to_numeric(d2["Units"])
-    d2["m"] = d2["Date"].str[:7]
-    by = d2.groupby("m")["v"].sum()
-    # the file stops in the middle of a month (left out) and the windows are whole months; the sum of ALL the statuses is the figure
-    months = sorted(by.index)
-    lat = None
-    for end in (0, 1):
-        sel = months[:len(months) - end]
-        if close(led["measure.units.total.last12"], float(by[sel[-12:]].sum())):
-            lat = float(by[sel[-12:]].sum())
-    assert lat is not None, (led["measure.units.total.last12"], [float(by[months[:len(months) - e][-12:]].sum()) for e in (0, 1, 2)])
-    # NEGATIVES. dollars beside units (the unit varies) and a rate beside its standard error stay a dimension of measures; so does a stock beside a rate
+    assert d["role"] == "measure" and d.get("measure_weak") is True, d
+    # the figure is the shown member's own (Employed), never the members added
+    df = frame("g04_seed631_employment_status_parts.csv")
+    shown = next(x["member"] for x in e["slice"] if x["dim"] == "Employment status")
+    assert shown == "Employed", shown
+    f = figs(rep)
+    assert f is not None, headline(rep)
+    d_all = df.copy()
+    d_all["v"] = pd.to_numeric(d_all["Units"])
+    d_all["w"] = pd.to_datetime(d_all["Date"])
+    emp = d_all[d_all["Employment status"] == "Employed"].groupby("w")["v"].sum().sort_index()
+    allm = d_all.groupby("w")["v"].sum().sort_index()
+    assert not (close(f[1], float(allm.iloc[-52:].mean())) and not close(f[1], float(emp.iloc[-52:].mean()))), "the members were added"
+    # NEGATIVES. Strong evidence keeps the plain reading (no weak mark, no single-member flag): dollars beside units (the unit varies), a rate beside its
+    # standard error, a table whose header names what is measured, and members of two different kinds by their own words (a flow beside a stock)
     rep_u = run_bytes(MC.measures_units_dollars())
-    assert any(x.get("role") == "measure" for x in st(rep_u)["dims"]), [(x["column"], x["role"]) for x in st(rep_u)["dims"]]
+    du = next(x for x in st(rep_u)["dims"] if x.get("role") == "measure")
+    assert not du.get("measure_weak") and not est(rep_u).get("single_member"), du
     rep_r = run_bytes(MC.measures_rate_se())
-    assert any(x.get("role") == "measure" for x in st(rep_r)["dims"]), [(x["column"], x["role"]) for x in st(rep_r)["dims"]]
-    S_stock_rate = {"dims": [{"column": "Indicator", "labels": ["Employment", "Unemployment rate", "Other"], "role": None}],
-                    "measure": {"column": "VALUE", "uom": ""}, "metadata": []}
-    assert NS._is_measure_dim(S_stock_rate, 0) is not None           # a stock beside a rate: different kinds, positively
+    dr = next(x for x in st(rep_r)["dims"] if x.get("role") == "measure")
+    assert not dr.get("measure_weak"), dr
     S_parts = {"dims": [{"column": "Employment status", "labels": ["Employed", "Unemployed", "Not in labour force", "Other", "Not stated"], "role": None}],
                "measure": {"column": "Units", "uom": ""}, "metadata": []}
-    assert NS._is_measure_dim(S_parts, 0) is None                      # one positive kind (a stock) and two members with no word
-    # ... but the same labels under a header that says what is measured are measures, as they were (a KPI table: Indicator / Value)
+    assert NS._is_measure_dim(S_parts, 0) is not None and S_parts["dims"][0]["measure_weak"] is True
     S_named = {"dims": [dict(S_parts["dims"][0], column="Indicator")], "measure": {"column": "Units", "uom": ""}, "metadata": []}
-    assert NS._is_measure_dim(S_named, 0) is not None
+    assert NS._is_measure_dim(S_named, 0) is not None and S_named["dims"][0]["measure_weak"] is False
+    S_kinds = {"dims": [{"column": "Item", "labels": ["Orders received", "Orders shipped", "Stock on hand"], "role": None}],
+               "measure": {"column": "Units", "uom": "Units"}, "metadata": []}
+    assert NS._is_measure_dim(S_kinds, 0) is not None and S_kinds["dims"][0]["measure_weak"] is False            # a flow beside a stock, by their own words
+    S_one = {"dims": [{"column": "Indicator", "labels": ["Employment", "Unemployment rate", "Other"], "role": None}],
+             "measure": {"column": "VALUE", "uom": ""}, "metadata": []}
+    assert NS._is_measure_dim(S_one, 0) is not None and S_one["dims"][0]["measure_weak"] is False               # a stock beside a rate
 
 
 def test_g05_a_measure_averaged_because_nothing_says_it_accumulates_is_worded_as_an_average_level():
@@ -1723,6 +1740,170 @@ def test_g08_the_pivot_corpus_with_an_identifier_column_is_still_right_the_margi
             assert any(x.get("rule") == "total_rows_left_out" for x in rep["cleaning"]["fixes"]), (i, rep["cleaning"]["fixes"][:3])
             checked += 1
     assert checked >= 5, checked
+
+
+def _ledger_csv(header, rows) -> bytes:
+    import csv as _csv
+    buf = io.StringIO()
+    w = _csv.writer(buf, lineterminator="\n")
+    w.writerow(header)
+    w.writerows(rows)
+    return buf.getvalue().encode()
+
+
+def test_g09_a_total_row_is_still_left_out_when_the_amounts_are_whole_numbers_under_names_the_core_does_not_list_as_quantities():
+    """Wave 5g, review finding 1 (an independent reviewer of the W5G build). The identifier test of g03 cast each number column to integers before
+    asking the core whether it is an id, and the core's rule "whole numbers nearly all different" only ever fires on an integer column: the core
+    reads a measure as FLOAT, so no amount column is ever an id by that rule. Every whole-number amount column called Value, Profit, Turnover,
+    Payment or Balance (names that are not in the core's list of quantity words) was taken for an identifier, no number column was left to check the
+    Total row on, and the Total rows were counted with the rows they total (the level twice the truth). The columns go to the core's rules as the
+    floats the core sees; only a NAME that says id, key, number or code (with whole numbers) or the fixed-width shape makes a column an identifier."""
+    rng = np.random.RandomState(11)
+    rows = []
+    for i in range(36):
+        d = "%04d-%02d-01" % (2019 + i // 12, i % 12 + 1)
+        v = [int(30000 + 900 * i + 7000 * rng.rand()) for _ in range(3)]
+        p_ = [int(0.3 * x + 500 * rng.rand()) for x in v]
+        for loc, vv, pp in zip(("North", "South", "East"), v, p_):
+            rows.append([d, loc, vv, pp])
+        rows.append([d, "Total", sum(v), sum(p_)])
+    for names in (("Value", "Profit"), ("Turnover", "Margin"), ("Payment", "Balance")):
+        data = _ledger_csv(["Date", "Location", names[0], names[1]], rows)
+        t = NB.ledger_tidy(data)
+        assert t and t["totals"][0]["status"] == "verified" and t["totals"][0]["left_out"], (names, t and t["totals"])
+        rep = run_bytes(data)
+        led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
+        key = "measure.%s.total.last12" % names[1].lower()
+        detail = sum(r[3] for r in rows[-4 * 12:] if r[1] != "Total")
+        if key in led:
+            assert close(led[key], detail), (names, led[key], detail)
+    # negatives: a column that IS an identifier (by its name, with whole numbers; by its shape) is still no amount, and a plain amount named Revenue is one
+    inv = pd.Series([10234, 10235, 10236, 10237, 10238, 10239])
+    assert NB._identifier_column("Invoice no", inv, ["Invoice no"]) and NB._identifier_column("Case number", inv, ["Case number"])
+    assert not NB._identifier_column("Value", pd.Series([503037, 223929, 150910, 67178, 81000, 99999, 120345]), ["Value"])
+    assert not NB._identifier_column("Profit", pd.Series([150910, 67178, 22222, 80123, 90432, 33011]), ["Profit"])
+    assert NB._identifier_column("Year", pd.Series([2019, 2020, 2021, 2022, 2023]), ["Year"])             # the core reads it as a year label
+
+
+def test_g10_a_column_that_opens_with_a_number_is_released_as_a_category_only_when_it_is_a_described_code_and_never_an_address_or_a_name():
+    """Wave 5g, review finding 3. The cap that tells a category from free text was raised from 5% to 20% of the rows for any label that opens with a
+    number, and 20% is what "every label repeats five times" already implies, so the cap decided nothing: a column of street addresses ("14 Oak
+    Lane, Springfield, IL 62000": 40 addresses, 8 rows each) was RELEASED as a category and printed in the report. The larger caps are now for
+    labels that are described codes (a code of four or more characters holding a digit, then two or more words of letters, no comma: "917725 Refined
+    goods 82", "Used car dealers [4411]"), and never for an address (`_street_value`) or a person's name behind an id."""
+    def one(labels, header="Job site", repeat=8):
+        rows = []
+        for k in range(repeat):
+            for i, lb in enumerate(labels):
+                rows.append(["2024-%02d-%02d" % (k % 12 + 1, 1 + i % 28), lb, 100 + i + k])
+        return run_bytes(_ledger_csv(["Date", header, "Cost"], rows))
+    streets = ["Oak Lane", "Main Street", "Pine Road", "Cedar Avenue", "Elm Court", "Birch Way", "Maple Drive", "Lake Boulevard"]
+    addr = ["%d %s, Springfield, IL 62%03d" % (10 + 3 * i, streets[i % 8], i) for i in range(40)]
+    rep = one(addr)
+    assert not rep["privacy"]["released"] and any(x["column"] == "job_site" and x["decision"] == "withhold" for x in rep["privacy"]["flagged"]), \
+        (rep["privacy"]["released"], rep["privacy"]["flagged"])
+    assert "Oak Lane" not in json.dumps(rep, default=str)
+    # a house number and a street name with no comma: still an address
+    addr2 = ["%d %s" % (100 + 7 * i, streets[i % 8]) for i in range(40)]
+    rep2 = one(addr2, header="Job site")
+    assert not rep2["privacy"]["released"]          # (the scan does not flag these under a header that names a place, before or after wave 5g: see "Not done")
+    # postcodes, and a person's name behind an id: read as any column is (the 5% cap holds), so with 20% of the rows they are withheld
+    rep3 = one(["%d %s" % (1000 + 3 * i, ("AB", "CD", "EF", "GH")[i % 4]) for i in range(40)], header="Area")
+    assert not rep3["privacy"]["released"], rep3["privacy"]["released"]
+    names = ["%d %s %s" % (10200 + i, ("Maria", "Daniel", "Priya", "Chen", "Laura")[i % 5], ("Quillon", "Telford", "Askerby", "Okafor", "Dray", "Hollin", "Brandmoor", "Ferreira")[i % 8]) for i in range(40)]
+    rep4 = one(names, header="Account")
+    assert not rep4["privacy"]["released"], rep4["privacy"]["released"]
+    # the pieces
+    assert NB._described_code("917725 Refined goods 82") == "Refined goods 82" and NB._described_code("Used car dealers [4411]") == "Used car dealers"
+    assert NB._described_code("[4411] Used car dealers") == "Used car dealers" and NB._described_code("21058 Forged parts")
+    for bad in ("14 Oak Lane, Springfield", "1012 AB", "10 Downing", "Smith Contracting", "12 ct", "SW1A 1AA", "Retail trade"):
+        assert NB._described_code(bad) is None, bad
+
+
+def test_g11_an_ordinary_ledger_with_a_dimension_of_plans_or_price_bands_is_added_up_and_only_members_named_as_bases_are_never_added_when_the_table_is_short():
+    """Wave 5g, review finding 4. Rule B nominated a dimension by any of price, pricing, real, current, valuation, basis, adjusted in its header or two
+    of its members, and a table too short to run the copy test ("cannot say") was then never added: ordinary ledgers of 13 to 23 months with a
+    "Pricing plan" (Standard, Premium, Enterprise) or a "Price band" column showed one plan alone. Now a STRONG nomination (at least two member names
+    are names of bases: Current prices, Constant prices, Nominal, Real) is never added when the table cannot say; a WEAK one (only the header names
+    bases: Prices, Basis, Valuation) is added when the table cannot say, and is never added when its members move together under a steady ratio.
+    "Pricing", a singular "price", a bare "current" and "real estate" nominate nothing."""
+    rng = np.random.RandomState(5)
+
+    def ledger(col, members, months, total=True, noise=0.05):
+        rows = []
+        for i in range(months):
+            d = "%04d-%02d-01" % (2022 + i // 12, i % 12 + 1)
+            for st_ in ("North", "South"):
+                vals = [int(1000 * (1 + 0.5 * k) * (1 + 0.01 * i) * (1 + noise * rng.randn())) for k in range(len(members))]
+                for m, v in zip(members, vals):
+                    rows.append([d, st_, m, v])
+                if total:
+                    pass
+        out = []
+        if total:
+            by = {}
+            for d, st_, m, v in rows:
+                by[(d, m)] = by.get((d, m), 0) + v
+            for (d, m), v in by.items():
+                out.append([d, "Total", m, v])
+        return _ledger_csv(["Date", "Store", col, "Amount"], rows + out)
+    for col, members in (("Pricing plan", ["Standard", "Premium", "Enterprise"]), ("Price band", ["Low", "Mid", "High"]),
+                         ("Account", ["Current assets", "Non-current assets", "Real estate", "Cash"])):
+        for months in (14, 20):
+            data = ledger(col, members, months)
+            rep = run_bytes(data)
+            d = dim(rep, col)
+            assert d is None or d["role"] in ("flat_additive", "measure"), (col, months, d)
+            assert "one quantity on two bases" not in json.dumps(est(rep)) and "named as bases" not in json.dumps(est(rep)), (col, months)
+    # a weak nomination (header Prices, members A and B) in a short table is added; strong (Current / Constant prices) is not
+    rep_w = run_bytes(ledger("Prices", ["A", "B"], 18))
+    assert dim(rep_w, "Prices") is None or dim(rep_w, "Prices")["role"] == "flat_additive", dim(rep_w, "Prices")
+    rep_s = run_bytes(ledger("Valuation", ["Current prices", "Constant prices"], 18))
+    ds = dim(rep_s, "Valuation")
+    assert ds is not None and ds["role"] == "single", ds
+    assert "named as bases" in json.dumps(est(rep_s)) and one_member_shown(rep_s), est(rep_s).get("text")
+    # the pieces
+    for c, labels, want in (("Pricing plan", ["Standard", "Premium"], 0), ("Price band", ["Low", "High"], 0), ("Prices", ["A", "B"], 1), ("Basis", ["A", "B"], 1),
+                            ("X", ["Current prices", "Constant prices"], 2), ("X", ["Nominal", "Real"], 2), ("Account", ["Current assets", "Real estate", "Cash"], 0),
+                            ("X", ["Chained (2017) dollars", "Current prices"], 2), ("Prix", ["A", "B"], 1)):
+        assert NS._basis_level({"column": c, "labels": labels}) == want, (c, labels, NS._basis_level({"column": c, "labels": labels}), want)
+
+
+def _weekly_regions(copy=False, weeks=130):
+    """An official weekly table of four regions with no total row: independent trends, and with `copy` the fourth is the third times 1.25."""
+    import datetime as dt
+    rng = np.random.RandomState(21)
+    d0 = dt.date(2021, 1, 4)
+    base = {r: 1000.0 * (1 + k) for k, r in enumerate(("North", "South", "East", "West"))}
+    level = dict(base)
+    rows = []
+    for w in range(weeks):
+        d = (d0 + dt.timedelta(days=7 * w)).isoformat()
+        for k, r in enumerate(("North", "South", "East", "West")):
+            level[r] *= 1 + 0.004 * rng.randn() + 0.001
+            v = level[r]
+            if copy and r == "West":
+                v = level["East"] * 1.25
+            rows.append([d, r, "2021A%08d" % (k + 1), "Dollars", "81", "units", "0", "v%d" % (41000000 + k), "1.%d" % (k + 1), "%d" % round(v), "", "", "", "0"])
+    return _ledger_csv(["REF_DATE", "GEO", "DGUID", "Estimates", "UOM", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID", "VECTOR", "COORDINATE", "VALUE", "STATUS",
+                        "SYMBOL", "TERMINATED", "DECIMALS"], [r[:3] + ["Retail sales"] + r[3:] for r in rows])
+
+
+def test_g12_the_places_of_a_weekly_table_with_no_total_row_are_added_when_no_two_move_together_and_a_copy_among_them_is_never_added():
+    """Wave 5g (found by the reviewer; a consequence of rule B that the first design note did not state). The copy-by-shape test now runs on weekly and
+    daily tables, so the wave-5e rule for an official table of places with no total row (`_parts_only`: members are added only with positive evidence
+    that they are disjoint parts, among them that no two are one quantity twice) can be CHECKED at those cadences, where it used to answer "cannot say"
+    and show one member. Four regions of a weekly flow are now the sum of the four; with two that move together under a steady ratio the dimension is
+    read one member at a time, as at a monthly cadence."""
+    df = pd.read_csv(io.BytesIO(_weekly_regions()), dtype=str)
+    rep = run_bytes(_weekly_regions())
+    assert dim(rep, "GEO")["role"] == "parts", (dim(rep, "GEO"), headline(rep))
+    pri, lat = trailing_sums(df, df["GEO"] != "", "REF_DATE", "VALUE", 52)
+    f = figs(rep)
+    assert f is not None and close(f[0], pri) and close(f[1], lat), (f, (pri, lat))
+    assert "no total row" in headline(rep), headline(rep)
+    rep_c = run_bytes(_weekly_regions(copy=True))
+    assert dim(rep_c, "GEO")["role"] == "single" and one_member_shown(rep_c), (dim(rep_c, "GEO"), headline(rep_c))
 
 
 # ----------------------------------------------------------------------------- runner

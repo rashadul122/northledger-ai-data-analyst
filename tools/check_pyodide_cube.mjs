@@ -235,7 +235,9 @@ for (const [name, want] of Object.entries(CASES)) {
   const g = got.cases[name] || { error: 'not run' };
   caseSeconds += g.seconds || 0;
   if (g.error) { ok('case ' + name + ': the run finished', false, g.error); continue; }
-  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // wave 5g: an object compares by its keys in sorted order (the native json is written sorted; a table's dimensions come in the file's order)
+  const canon = (x) => Array.isArray(x) ? x.map(canon) : (x && typeof x === 'object') ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, canon(x[k])])) : x;
+  const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
   ok('case ' + name + ': read as the native engine reads it (ok, kind, usable, estimand, refused)',
     g.ok === want.ok && g.kind === want.kind && g.usable === want.usable && g.estimand === want.estimand && g.refused === want.refused,
     JSON.stringify({ pyodide: [g.ok, g.kind, g.usable, g.estimand, g.refused], native: [want.ok, want.kind, want.usable, want.estimand, want.refused] }));

@@ -39,32 +39,55 @@ import math
 import os
 import re
 import time
+import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 VERSION = "2026-10-01.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FLAG_VOCAB_FILE = "flag_vocab.json"
 
-BUDGET_S = 1.0                  # detect, timer-guarded
-CODEFREE_BUDGET_S = 0.5         # the subset-sum search, inside that
+# wave 5e (P3): NO wall-clock decision. Every search below is bounded by a COUNT (parents tried, subsets tested, families verified,
+# leftover members searched), so the answer is a function of the file and the same on a slow and a fast machine. The one clock left
+# is a guard against a table that cannot be read at all in a reasonable time: when it trips, `detect` stops and the whole table is
+# unresolved (kind "not_cube", reason "took too long"; a table that looks like a series table is then refused); it never changes a figure.
+WALL_GUARD_S = 40.0
+BUDGET_S = WALL_GUARD_S         # kept under its old name for callers that pass budget_s
+PAIRS_MAX = 400_000             # (left, right) pairs a subset-sum search examines (a count; 2 x 2^11 subset sums are searched in about 2,000)
+MATCHES_MAX = 200               # fingerprint matches one subset-sum search verifies at most
+VERIFY_MAX = 40                 # families one subset-sum search verifies on every cell at most
+FP_GROUPS_MAX = 4               # availability patterns a subset-sum fingerprint is tried on (parts that report in different periods)
+LEFT_MAX = 60                   # leftover members searched for an alternative total or a component (a count)
+COPY_PAIR_MEMBERS = 40          # members a copy-by-shape test compares pairwise (the 40 largest)
 MAX_SERIES = 20000
 MAX_CELLS = 2_000_000           # series x dates held in memory (16 MB of floats): a larger table is not read as a cube
 MAX_TENSOR = 4_000_000          # a dimension's member x context x date block for its sum-checks
 MAX_DIMS = 8
-MAX_MEMBERS = 400               # a dimension has 2 to 400 members
+MAX_MEMBERS = 400               # the dimension whose RELATIONS are searched has at most 400 members; a larger one is a series key (wave 5e, P11)
+MAX_KEY_MEMBERS = 50000         # a column of more members than this is not a dimension (an id column)
 DUP_MAX = 0.01                  # date x dimensions repeat on at most 1% of the rows
 PASS_SHARE = 0.95               # a sum-check passes on 95% of its complete cells ...
 MIN_COMPLETE = 6                # ... with at least 6 complete cells ...
 MIN_MONTHS = 3                  # ... across at least 3 months
 STRONG_INFO = 100.0             # wave 5d: ... or, when the total is at least 100 rounding tolerances (a match is no coincidence), at least 3 cells
+POWER_K = 10.0                  # wave 5e, P1: a cell supports a total only when the larger of the total and its parts' sum is at least 10 rounding
+                                # tolerances: then a 10% error in the total is more than one tolerance and the check could have failed
+EXACT_MIN = 16                  # ... or the residual is EXACTLY nothing on 16 cells where something is counted (and the total varies): small counts
+EXACT_REL = 1e-9                # exact: within float noise of the larger of the total and the parts' sum
+FAIL_MIN = 3                    # a check is contradicted (not just unresolved) when 3 complete cells are off by more than the tolerance and under 95% hold
 BOUND_SHARE = 0.99              # a member bounds another in 99% of the cells
 CANDIDATES_MAX = 22             # the subset-sum search: at most 22 candidates (2^11 subsets a half)
 PARENTS_MAX = 30
+GEO_MIN_PARTS = 3               # wave 5e, P1: a geographic dimension with no total row is added only with at least 3 parts (two are a pair)
 FLAG_MAX_CODES = 20
 FLAG_CODE_LEN = 4
 FLAG_BLANK_SHARE = 0.90         # a code whose rows have a blank measure this often stands for a missing value
-ADJ_YEAR_TOL = 0.03             # an adjusted pair: calendar-year sums within 3% ...
-ADJ_SEASONAL_RATIO = 3.0        # ... and one three times more seasonal than the other
+ADJ_YEAR_TOL = 0.03             # (kept for the record: wave 5d's copy test; wave 5e reads a copy by SHAPE, see COPY_*) calendar-year sums within 3%
+COPY_CORR = 0.95                # wave 5e, P5: two members are one quantity twice when the changes of their smoothed (12-period moving average) logs
+                                # correlate at least 0.95 ...
+COPY_RATIO_SD = 0.15            # ... and the log of their smoothed ratio wanders at most 0.15 (the ratio is stable; a basis drifts, a copy does not jump)
+COPY_MIN_POINTS = 12            # smoothed points a copy-by-shape test needs (a table of 24 months, 16 quarters; 8 years of an annual table: COPY_MIN_ANNUAL)
+COPY_MIN_ANNUAL = 8
+ADJ_SEASONAL_RATIO = 3.0        # an adjusted pair is a copy where one is three times more seasonal than the other
 ADJ_MAX_MEMBERS = 4
 ADJ_MIN_PERIODS = {1: 24, 3: 16}      # wave 5d: periods an adjusted pair is looked for in, by the table's step (months: 2 years, quarters: 4)
 PROFILE_CAP = 6000              # the profile's structure block, bytes
@@ -81,7 +104,9 @@ ROLES = ("partition", "hierarchy", "adjustment", "measure", "components", "flat_
 PARTS_TOKEN = "(sum of the parts)"           # a slice's member of a dimension that has NO total row: its parts, added up
 _GEO_WORDS = re.compile(r"(?i)\b(?:geo|geography|geographies|region|regions|province|provinces|state|states|country|"
                         r"countries|area|areas|territor(?:y|ies)|district|districts|nation|county|counties|"
-                        r"municipalit(?:y|ies)|city|cities|zone|zones|nuts\d?)\b")
+                        r"municipalit(?:y|ies)|city|cities|zone|zones|nuts\d?|g[\u00e9e]ographie|g[\u00e9e]o|r[\u00e9e]gions?|"
+                        r"territoires?|pays|provinces?|[\u00e9e]tats?|villes?|gebiete?|bundesl\u00e4nder|bundesland|l\u00e4nder|land|"
+                        r"kanton|pa[i\u00ed]s|pa[i\u00ed]ses|regi[\u00f3o]n(?:es)?|provincias?|estados?|ciudad(?:es)?)\b")
 KINDS = ("cube", "cube_incomplete", "panel_no_relations", "not_cube")
 
 # names (normalised: lower case, letters and digits only) that are hints, never proof
@@ -89,19 +114,30 @@ _META = frozenset((
     "dguid", "uom", "uomid", "scalarfactor", "scalarid", "vector", "coordinate", "status", "symbol",
     "terminated", "decimals", "obsstatus", "obsflag", "obsconf", "unitmult", "unitmultiplier",
     "confstatus", "unitmeasure", "unit", "units", "flag", "flags", "footnote", "footnotes",
-    "timeformat", "freq", "frequency", "lastupdate", "dataflow", "structure", "structureid", "action"))
-_UNIT_META = ("uom", "unit", "units", "unitmeasure")
-_SCALE_WORDS = ("scalarfactor", "unitmult", "unitmultiplier", "multiplier")
-_SCALE_IDS = ("scalarid",)
-_DECIMALS = ("decimals",)
-_FLAG_NAMES = ("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", "obsconf", "symbol")
-_DATE_NAMES = ("refdate", "timeperiod", "date", "period", "time", "referenceperiod")
-_VALUE_NAMES = ("value", "obsvalue")
-_TOTAL_HINT = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|combined)(?:\b|$)|^\s*(?:_T|TOTAL|_Z)\s*$")
+    "timeformat", "freq", "frequency", "lastupdate", "dataflow", "structure", "structureid", "action",
+    # wave 5e (P9): the same columns of a French, Spanish or German table; the ids and coordinates are also found by behaviour
+    "vecteur", "coordonnee", "statut", "symbole", "termine", "decimales", "unitedemesure", "iddelunitedemesure",
+    "facteurscalaire", "iddufacteurscalaire", "indicateur", "unidaddemedida", "factorescalar", "estado", "decimales",
+    "einheit", "masseinheit", "maeinheit", "faktor", "skalierung", "dezimalstellen", "statusflag"))
+_UNIT_META = ("uom", "unit", "units", "unitmeasure", "unitedemesure", "unite", "unidaddemedida", "einheit", "masseinheit", "maeinheit")
+_SCALE_WORDS = ("scalarfactor", "unitmult", "unitmultiplier", "multiplier", "facteurscalaire", "factorescalar", "skalierung", "faktor")
+_SCALE_IDS = ("scalarid", "iddufacteurscalaire")
+_DECIMALS = ("decimals", "decimales", "dezimalstellen")
+_FLAG_NAMES = ("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", "obsconf", "symbol", "statut", "symbole", "estado")
+_DATE_NAMES = ("refdate", "timeperiod", "date", "period", "time", "referenceperiod", "periodedereference", "periodo", "zeitraum", "fecha",
+               "datum")
+_VALUE_NAMES = ("value", "obsvalue", "valeur", "valor", "wert")
+_TOTAL_HINT = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|combined|ensemble|tous|toutes|insgesamt|gesamt|alle|todos|todas)"
+                         r"(?:\b|$)|^\s*(?:_T|TOTAL|_Z)\s*$")
 # wave 5d: "excl." / "excl" / "w/o" / "net of" / "not including" / "minus" say it too (a member named "Total excl. Seasonal shops" was read as a
 # total beside "Total, all industries": the abbreviation's full stop meant `ex\.` could never match before a letter)
-_ALT_HINT = re.compile(r"(?i)(?<![A-Za-z])(?:excluding|excludes?|excluded|excl(?:uding)?\.?|except(?:ing)?|ex\.|less|without|w/o|"
-                       r"other than|not including|net of|minus)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])")
+_ALT_STRONG = (r"excluding|excludes?|excluded|excl(?:uding)?\.?|except(?:ing)?|ex\.|not including|net of|minus|sauf|excluant|hors|"
+               r"[\u00e0a] l'exclusion|excepto|ohne|au(?:ss|\u00df)er|abz\u00fcglich")
+_ALT_WEAK = r"less|without|w/o|other than|sans|moins|sin|menos|autres que|andere als"
+_ALT_HINT = re.compile(r"(?i)(?<![A-Za-z])(?:%s|%s)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])" % (_ALT_STRONG, _ALT_WEAK))
+_ALT_STRONG_RE = re.compile(r"(?i)(?<![A-Za-z])(?:%s)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])" % _ALT_STRONG)
+# the rest of something ("All other provinces", "Rest of Canada", "Autres provinces"): never a whole, in any branch
+_REST_NAME = re.compile(r"(?i)\b(?:other|others|rest of|remaining|remainder|autres?|reste|sonstige[nr]?|\u00fcbrige[nr]?|restliche[nr]?|otros|otras|resto)\b")
 _STOCK_WORDS = re.compile(r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|debts?|stocks?)\b")
 _POP_WORDS = re.compile(r"(?i)\b(?:employment|employed|population|labour force|labor force|persons employed)\b")
 _CURRENCY = re.compile(r"(?i)\b(?:dollars?|euros?|pounds?|yen|yuan|francs?|krona|kronor|krone|rupees?|pesos?|reais|"
@@ -135,7 +171,14 @@ _COUNT_UNITS = re.compile(r"(?i)\b(?:persons?|people|number|units?|count|househo
                           r"jobs|vehicles|dwellings|permits|births|deaths)\b")
 _SCALE_FACTOR = {"units": 1.0, "unit": 1.0, "ones": 1.0, "tens": 10.0, "hundreds": 100.0, "thousand": 1e3,
                  "thousands": 1e3, "millions": 1e6, "million": 1e6, "billions": 1e9, "billion": 1e9,
-                 "trillions": 1e12, "trillion": 1e12}
+                 "trillions": 1e12, "trillion": 1e12,
+                 # wave 5e (P9): the words of French, Spanish and German tables (accents folded by _scale_word). "milliards" are
+                 # billions in French (10^9), "milliarden" in German; "billion" is a million million in German and Spanish ("billones"):
+                 # those are left out on purpose, and an unknown word in a scale column refuses the table
+                 "unites": 1.0, "unite": 1.0, "unidades": 1.0, "unidad": 1.0, "einheiten": 1.0, "einheit": 1.0,
+                 "dizaines": 10.0, "centaines": 100.0, "milliers": 1e3, "millier": 1e3, "mille": 1e3, "miles": 1e3, "tausend": 1e3,
+                 "tausende": 1e3, "mil": 1e3, "millones": 1e6, "millon": 1e6, "mio": 1e6, "mill": 1e6,
+                 "milliards": 1e9, "milliard": 1e9, "milliarden": 1e9, "milliarde": 1e9, "mrd": 1e9, "mil millones": 1e9}
 _BRACKET_CODE = re.compile(r"\[([0-9A-Za-z][0-9A-Za-z.\-]*)\]\s*$")
 _LEAD_CODE = re.compile(r"^\s*([0-9][0-9A-Za-z]*(?:\.[0-9A-Za-z]+)*)\s+\S")
 _RANGE = re.compile(r"^(\d+)-(\d+)$")
@@ -259,7 +302,14 @@ class _TooLarge(Exception):
     """A dimension's sum-check block would not fit the memory budget: the dimension is left unresolved (rule 6)."""
 
 
+class _WallGuard(Exception):
+    """The wall-clock guard tripped: the table could not be read in WALL_GUARD_S seconds. The whole of `detect` stops and the table is
+    unresolved; no figure is ever chosen by how far a search got (wave 5e, P3)."""
+
+
 class _Timer:
+    """The wall-clock guard. `check()` raises `_WallGuard` past the budget; nothing else in this module reads the clock."""
+
     def __init__(self, budget: float) -> None:
         self.t0 = time.perf_counter()
         self.budget = float(budget)
@@ -270,9 +320,16 @@ class _Timer:
     def over(self) -> bool:
         return self.left() <= 0
 
+    def check(self) -> None:
+        if self.over():
+            raise _WallGuard()
+
 
 def _norm(c: Any) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(c).lower())
+    """A header or a name in lower-case letters and digits only, accents folded (GÉO is geo, UNITÉ DE MESURE unitedemesure): the same
+    function everywhere a header is compared with a vocabulary (wave 5e, P9)."""
+    t = unicodedata.normalize("NFKD", str(c))
+    return re.sub(r"[^a-z0-9]", "", "".join(ch for ch in t if not unicodedata.combining(ch)).lower())
 
 
 _VOCAB: Dict[str, Any] = {}
@@ -494,17 +551,19 @@ def _empty(kind: str, reason: str, **kw: Any) -> Dict[str, Any]:
     return S
 
 
-def detect(R: Any, hidden: Iterable[str] = (), budget_s: float = BUDGET_S, headers: Optional[Sequence[str]] = None
+def detect(R: Any, hidden: Iterable[str] = (), budget_s: Optional[float] = None, headers: Optional[Sequence[str]] = None
            ) -> Dict[str, Any]:
     """The structure of the table the engine read (R: nl_browser._Reading), from its landed, non-hidden columns only.
     Returns S: {kind, usable, reason, date, measure, metadata, dims, flags, slices, breakdowns, default, hash, ...}
     plus private arrays (keys starting with "_") the slices are cut from. Never raises on a table it cannot read: it
     returns kind "not_cube" with the reason."""
-    tm = _Timer(budget_s)
+    tm = _Timer(WALL_GUARD_S if budget_s is None else max(float(budget_s), WALL_GUARD_S))
     try:
         return _detect(R, set(str(h) for h in hidden or ()), tm, headers)
     except MemoryError:
-        return _empty("not_cube", "the table is too large to read as a cube")
+        return _empty("not_cube", "the table is too large to read as a cube", resolved=False)
+    except _WallGuard:
+        return _empty("not_cube", "the table took too long to read, so no structure was found in it", resolved=False)
 
 
 def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str]]) -> Dict[str, Any]:
@@ -619,7 +678,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         nl = len([lb for lb in labels if lb != ""])
         if _norm(head[c]) in _META:
             continue
-        if 2 <= nl <= MAX_MEMBERS:
+        if 2 <= nl <= MAX_KEY_MEMBERS:
             dims0.append(c)
     # repeated member names (wave 5, gap 5): a name that stands for two members is keyed by a one-to-one id (an id column, or
     # the one part of a dotted COORDINATE that tells that dimension's members apart), else by its parent's name
@@ -637,10 +696,14 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         if a in alias_of or b in alias_of:
             continue
         if _one_to_one(cat[a][0], cat[b][0]):
-            # neither is metadata-named: the one with the more readable labels is the dimension
+            # neither is metadata-named: the one whose labels are words is the dimension and the other an alias; a series id
+            # (v100000, 1.1.1, in any language: VECTEUR, COORDONNEE) is never the dimension (wave 5e, P9). With both or neither
+            # an id, the one with the more readable labels
+            ia, ib = _id_like(cat[a][1]), _id_like(cat[b][1])
             la = sum(len(x) for x in cat[a][1]) / max(1, len(cat[a][1]))
             lb_ = sum(len(x) for x in cat[b][1]) / max(1, len(cat[b][1]))
-            alias_of[b if la >= lb_ else a] = a if la >= lb_ else b
+            keep_a = (not ia) if ia != ib else la >= lb_
+            alias_of[b if keep_a else a] = a if keep_a else b
     dims = [d for d in dims0 if d not in alias_of]
     # series ids: a column that is 1:1 with the dimensions' key (VECTOR, COORDINATE), or any metadata-named column left
     if dims:
@@ -700,7 +763,11 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     trank[torder] = np.arange(len(torder))
     times = [tlabels[i] for i in torder]
     tix = trank[tcode]
-    scale_row, scale_info = _scale(R, cat, metadata, rows, head)
+    scale_row, scale_info = _scale(R, cat, metadata, rows, head, official)
+    if scale_info.get("scale_unknown"):
+        return _empty("cube_incomplete" if official else "not_cube",
+                      "a scale column (%s) holds a word the engine does not read, so no figure is shown at a scale it might get wrong"
+                      % "; ".join(scale_info["scale_unknown"][:3]), **base)
     v = vals[rows] * scale_row
     # wave 5d: half a unit of the last published digit of EACH series, in base units. A table whose members have different
     # scale factors (dollars in millions beside units sold) or different DECIMALS has no one unit: a sum-check's rounding
@@ -764,8 +831,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     _measure_dims(S)
     # -- relations, dimension by dimension (adjustment pairs first: the other sum-checks run on the unadjusted member)
     for j in range(len(dims)):
-        if tm.over():
-            break
+        tm.check()
         try:
             _adjustment(S, j)
         except _TooLarge:
@@ -777,10 +843,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         if len(rec["labels"]) == 1:
             rec["role"] = "constant"
             continue
-        if tm.over():
-            rec["role"] = "unresolved"
-            rec["why"] = "the time budget ran out"
-            continue
+        tm.check()
         if rec.get("mixed_units"):
             _mixed_measure(S, j)                       # a unit that varies with this dimension but is not a measure: typed anyway
             continue
@@ -807,6 +870,16 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
 
 _COORD = re.compile(r"^\d+(?:\.\d+)+$")
 KEY_UNIQUE_SHARE = 0.5          # a name column is a NAME column (not a grouping) when this share of its names has one member
+
+
+_ID_LIKE = re.compile(r"^[A-Za-z]{0,4}[\s_-]?\d[\d.\-_]*$")
+
+
+def _id_like(labels: Sequence[str]) -> bool:
+    """Whether a column's labels are ids (v100000, 1.1.1, C104, 2.15): every filled label has a digit and little else. A column of words
+    is never one, whatever its name."""
+    xs = [str(x) for x in labels if str(x) != ""]
+    return bool(xs) and all(_ID_LIKE.match(x) for x in xs)
 
 
 def _functional(b: Any, a: Any) -> bool:
@@ -1059,28 +1132,46 @@ def _row_decimals(cat: Dict[str, Any], head: Dict[str, str], rows: Any, base: in
     return np.full(len(rows), float(base))
 
 
-def _scale(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], rows: Any, head: Dict[str, str]
+def _fold(v: Any) -> str:
+    """A cell's words in lower case with accents folded and spaces kept (MILLIERS, millones, Tausend)."""
+    t = unicodedata.normalize("NFKD", str(v or ""))
+    return " ".join("".join(ch for ch in t if not unicodedata.combining(ch)).lower().split())
+
+
+def _scale(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], rows: Any, head: Dict[str, str], official: bool = False
            ) -> Tuple[Any, Dict[str, Any]]:
-    """Each row's scale factor (SCALAR_FACTOR "thousands", SCALAR_ID 3, UNIT_MULT 6), and what was read."""
+    """Each row's scale factor (SCALAR_FACTOR "thousands", SCALAR_ID 3, UNIT_MULT 6, FACTEUR SCALAIRE "milliers"), and what was read. A column
+    that is a scale by its name, or by its words (every value a scale word, one of them not "units"), that holds a word the engine does
+    not read is reported as `unknown`: the table is then refused, never read at a scale of 1 (wave 5e, P9)."""
     import numpy as np
     n = len(rows)
+    unknown: List[str] = []
     for m in metadata:
         nm = _norm(m["column"])
         if m["class"] == "constant" and (nm in _SCALE_WORDS or nm in _SCALE_IDS):
             f = _scale_word(m["value"], nm in _SCALE_IDS or nm in ("unitmult", "unitmultiplier"))
             if f:
                 return np.full(n, f), {"scale": str(m["value"]), "factor": f, "scale_column": m["column"]}
+            unknown.append("%s = %s" % (m["column"], str(m["value"])[:30]))
     for c, (codes, labels, _f) in cat.items():
         nm = _norm(head.get(c, c))
         if nm in _SCALE_WORDS or nm in _SCALE_IDS:
-            fs = [_scale_word(lb, nm in _SCALE_IDS or nm in ("unitmult", "unitmultiplier")) or 1.0 for lb in labels]
-            arr = np.array(fs)[codes]
-            return arr, {"scale": "varies by series", "factor": None, "scale_column": head.get(c, c)}
-    return np.ones(n), {"scale": "units", "factor": 1.0, "scale_column": None}
+            fs = [_scale_word(lb, nm in _SCALE_IDS or nm in ("unitmult", "unitmultiplier")) for lb in labels]
+            for lb, f in zip(labels, fs):
+                if f is None and lb != "":
+                    unknown.append("%s = %s" % (head.get(c, c), lb[:30]))
+            arr = np.array([f or 1.0 for f in fs])[codes]
+            return arr, {"scale": "varies by series", "factor": None, "scale_column": head.get(c, c), "scale_unknown": unknown}
+    # by behaviour: a constant column (or a few short words) that holds scale words and nothing else
+    for m in (metadata if official else []):
+        if m["class"] == "constant" and _fold(m.get("value")) in _SCALE_FACTOR and _fold(m.get("value")) not in ("unit", "units", "ones"):
+            f = _SCALE_FACTOR[_fold(m["value"])]
+            return np.full(n, f), {"scale": str(m["value"]), "factor": f, "scale_column": m["column"]}
+    return np.ones(n), {"scale": "units", "factor": 1.0, "scale_column": None, "scale_unknown": unknown}
 
 
 def _scale_word(v: Any, exponent: bool) -> Optional[float]:
-    s = str(v or "").strip().lower()
+    s = _fold(v)
     if s in _SCALE_FACTOR:
         return _SCALE_FACTOR[s]
     try:
@@ -1143,8 +1234,8 @@ def _measure_type(S: Dict[str, Any]) -> None:
     labels = " ".join([m["column"]] + consts + [lb for d in S["dims"] for lb in d["labels"][:60]])
     if S.get("_member_unit"):
         uom = " ".join(sorted(set(v for per in S["_member_unit"].values() for v in per.values())))
-    m.update(_classify(uom, labels, m["column"]))
-    hint = next((c for c in consts if c.strip() and not re.fullmatch(r"[\d.,\s-]*", c)), "")
+    m.update(_classify(uom, labels, m["column"], says=" ".join([m["column"]] + consts)))
+    hint = _label_hint(S)
     if hint:
         m["label_hint"] = hint[:60]
     m["currency"] = bool(_CURRENCY.search(uom))
@@ -1156,7 +1247,38 @@ def _measure_type(S: Dict[str, Any]) -> None:
         S["dims"][j]["unit_of"] = {S["dims"][j]["labels"][mi]: u for mi, u in per.items()}
 
 
-def _classify(uom: str, bag: str, column: str, member: str = "") -> Dict[str, Any]:
+# a constant column that says WHAT is measured (its header or its words), against one that says how it was taken (a basis, a data type)
+_MEASURE_HEADER = re.compile(r"(?i)\b(?:characteristics?|statistics?|indicators?|measures?|variables?|series|concepts?|items?|estimates?|"
+                             r"products?|commodit(?:y|ies)|industr(?:y|ies)|trade|sector|activity|caract[\u00e9e]ristiques?|indicateurs?|"
+                             r"mesures?|variables?|concepts?|[\u00e9e]l[\u00e9e]ments?|merkmale?|indikatoren?|kennzahlen?|kriterien|"
+                             r"indicadores?|medidas?|variables?|conceptos?)\b")
+_BASIS_WORDS = re.compile(r"(?i)\b(?:seasonally|unadjusted|adjusted|current (?:prices|dollars)|constant (?:prices|dollars)|chained|nominal|real|"
+                          r"annual rate|calendar|trend|data type|basis|valeurs? (?:brutes|ajust[\u00e9e]es)|d[\u00e9e]saisonnalis[\u00e9e]|"
+                          r"saisonbereinigt|desestacionalizad)")
+_MEASURE_WORDS = re.compile("|".join(x.pattern.replace("(?i)", "", 1) if x.pattern.startswith("(?i)") else x.pattern
+                                     for x in (_FLOW_WORDS, _STOCK_LEVEL_WORDS, _RATE_WORDS, _INDEX_WORDS, _LEVEL_PRICE)), re.I)
+
+
+def _label_hint(S: Dict[str, Any]) -> str:
+    """The words that name what the table's one measure is (wave 5e, P12): a constant column whose HEADER says what is measured
+    (Labour force characteristics, Statistics, Indicator) or whose value holds a measure word (permits, sales, employed, rate, index), and
+    never one that says how it was taken ("Seasonally adjusted": a basis); never a constant that says neither (an analyst's name, a
+    note): the measure column's own name stands then. The first such column in the file."""
+    best = ("", -1)
+    for x in S.get("metadata") or []:
+        if x.get("class") != "constant" or _norm(x.get("column")) in _META:
+            continue
+        v = str(x.get("value") or "").strip()
+        if not v or re.fullmatch(r"[\d.,\s-]*", v):
+            continue
+        score = (2 if _MEASURE_HEADER.search(str(x.get("column") or "")) else 0) + (1 if _MEASURE_WORDS.search(v) else 0) \
+            - (3 if _BASIS_WORDS.search(v) else 0)
+        if score > 0 and score > best[1]:
+            best = (v, score)
+    return best[0]
+
+
+def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "") -> Dict[str, Any]:
     """One measure's type and the decision behind it: {type, type_basis, type_why, aggregation}. `bag` is the text whose
     words may say what is counted (the measure's column and the table's member labels); `member` a measure dimension's
     member label, whose own words decide first. A currency is a flow (a stock under inventories, balances, assets, debt),
@@ -1181,8 +1303,11 @@ def _classify(uom: str, bag: str, column: str, member: str = "") -> Dict[str, An
         stock = _STOCK_WORDS.search(bag)
         if stock:
             return done("stock", "positively a stock", "currency, but the labels say %s" % stock.group(0).lower(), False)
-        if own and _LEVEL_PRICE.search(own):
-            return done("unknown", "ambiguous: averaged", "%s is a price or an average in a currency, a level" % own[:60], False)
+        lvl = own or says
+        if lvl and _LEVEL_PRICE.search(lvl):
+            # wave 5e: an average, a median, a price or a rate in a currency is a level, whether a measure dimension's member says so
+            # or the measure's own name and the table's constant labels do ("Average weekly earnings"): never summed over months
+            return done("unknown", "ambiguous: averaged", "%s is a price or an average in a currency, a level" % lvl[:60], False)
         return done("flow", "positively a flow", "a currency (%s)" % u[:30], True)
     # an index or a rate named in the labels (not in a unit): never summed, whatever else the labels say
     if _INDEX_WORDS.search(bag):
@@ -1281,7 +1406,7 @@ def _rank(c: Dict[str, Any], label: str) -> Tuple[int, int]:
     t = c["type"]
     r = 0 if t == "flow" and c.get("currency") else 1 if (t in ("flow", "count") and sums_over_time(c)) else \
         2 if t == "stock" else 4 if t in ("rate", "index") else 9 if t == "precision" else 3
-    return r, 0 if _TOTAL_HINT.search(label) else 1
+    return r, 0 if _says_total(label) else 1
 
 
 def _measure_dim(S: Dict[str, Any], j: int, types: List[Dict[str, Any]]) -> None:
@@ -1351,6 +1476,15 @@ def local(S: Dict[str, Any], where: Dict[str, Any]) -> Dict[str, Any]:
 PANEL_MAX_SERIES = 60           # nl_browser's long-table layout reads at most this many series side by side
 
 
+def reads_one_member(S: Dict[str, Any]) -> bool:
+    """Whether an official table with a dimension it could not read (role "single") is read one member at a time and says so, instead of
+    side by side by the long-table layout: a dimension of places (a national figure), or the members of a FLOW picked by dominance (wave
+    5e: a flow's members are never a side-by-side panel; a currency's or an index's are)."""
+    return bool(S.get("official")) and any(
+        d.get("role") == "single" and (d.get("noun") == "national figure" or (
+            d.get("single_by") == "dominance" and sums_over_time(S["measure"]))) for d in S.get("dims") or [])
+
+
 def _usable(S: Dict[str, Any]) -> bool:
     """Slice the table when adding its rows would be wrong: a relation between members (a verified total, an adjusted
     copy, components, a rate's published aggregate). A panel with no relation (currencies in two units, an official
@@ -1363,7 +1497,7 @@ def _usable(S: Dict[str, Any]) -> bool:
     if any(d["role"] in ("single", "measure") for d in S["dims"]):
         # an official table whose geography has no total row is read one member at a time, and says it is not a national
         # figure (wave 5, gap 1); any other table of at most 60 series (currencies, say) is read side by side by the layout
-        geo_single = S.get("official") and any(d["role"] == "single" and d.get("noun") == "national figure" for d in S["dims"])
+        geo_single = reads_one_member(S)
         if int(S.get("series") or 0) <= PANEL_MAX_SERIES and not geo_single:
             S["kind"] = "panel_no_relations"
             S["reason"] = ("no member of the table is a total, a part or an adjusted copy of another: its %d series are "
@@ -1452,16 +1586,33 @@ def _tol_unit(S: Dict[str, Any], j: Optional[int] = None, restrict: bool = True,
 
 def _sum_check(A: Any, X: Any, t: int, parts: Sequence[int], tol_unit: float, nonneg: bool,
                months: Optional[Sequence[str]] = None) -> Dict[str, Any]:
-    """Whether member t is the sum of `parts`: on the cells where t has a value and every part has a row, the residual
-    t - (the parts with a value) is within the tolerance on 95% of the complete cells (6 or more, over 3 or more
-    months); a non-negative flow's parts with a value never exceed it by more than the tolerance (an incomplete cell's
-    residual is the unallocated, suppressed share)."""
+    """Whether member t is the sum of `parts`, and whether the check COULD HAVE FAILED (wave 5e, P1 and P2).
+
+    On the cells where t has a value and every part has a row, the residual r = t - (the parts with a value) is compared with the
+    rounding tolerance of the n+1 values (half a unit of the last published digit each). Only a COMPLETE cell (every part has a
+    value) is tested, and a cell SUPPORTS the relation only when it is informative: the larger of |t| and the parts' sum is at least
+    POWER_K = 10 tolerances, so that a 10% error in the total would have been seen. A check has one of three results:
+
+      pass        at least 6 informative cells in 3 months are within tolerance (3 when the total is at least 100 tolerances), and
+                  they are at least 95% of the informative cells within tolerance plus the cells that are off by more than it; or the
+                  residual is EXACTLY nothing (float noise) on 16 cells where something is counted, 3 of them different totals
+                  (a count of 0 to 3 has no rounding tolerance worth the name, and 16 exact matches are no coincidence);
+      fail        the relation is contradicted: 3 or more complete cells off by more than the tolerance and under 95% hold, or a
+                  non-negative flow's parts exceed the total in a cell that is incomplete;
+      unresolved  neither: too few informative cells, because the table's magnitudes are as small as its rounding (the tolerance of
+                  2.5 counts for four parts is as big as a table of 0 to 2 events a month, which no residual can contradict), or too
+                  few complete cells. An unresolved check is NOT a pass and is NOT a fail: nothing is learned from it.
+
+    A cell that is off by more than the tolerance counts against the relation whatever its size."""
     import numpy as np
     P = list(parts)
+    out: Dict[str, Any] = {"pass": False, "status": "unresolved", "complete": 0, "within": 0, "months": 0, "incomplete": 0,
+                           "share": 0.0, "negative_unallocated": False, "max_rel_residual": None, "max_residual": None,
+                           "info": 0.0, "informative": 0, "support": 0, "violated": 0, "exact": 0, "by": None}
+    if not P:
+        return out
     tgt = A[t]
     have_t = ~np.isnan(tgt)
-    if not P:
-        return {"pass": False, "complete": 0}
     pa = A[P]
     rows = X[P].all(axis=0)
     present = ~np.isnan(pa)
@@ -1469,24 +1620,47 @@ def _sum_check(A: Any, X: Any, t: int, parts: Sequence[int], tol_unit: float, no
     complete = testable & present.all(axis=0)
     incomplete = testable & ~present.all(axis=0)
     s = np.where(present, pa, 0.0).sum(axis=0)
-    r = tgt - s
-    tol = np.maximum(tol_unit * (len(P) + 1), 1e-6 * np.abs(tgt))
-    nc = int(complete.sum())
-    ok = (np.abs(r) <= tol) & complete
-    months_c = int(complete.any(axis=0).sum())
-    share = float(ok.sum()) / nc if nc else 0.0
-    neg = bool(((r < -tol) & incomplete).any()) if nonneg else False
+    with np.errstate(invalid="ignore"):
+        r = tgt - s
+        tol = np.maximum(tol_unit * (len(P) + 1), 1e-6 * np.abs(tgt))
+        within = (np.abs(r) <= tol) & complete
+        scale = np.maximum(np.abs(tgt), np.abs(s))
+        informative = complete & (scale >= POWER_K * tol)
+        support = within & informative
+        violated = complete & ~within
+        neg = bool(((r < -tol) & incomplete).any()) if nonneg else False
+    nc, n_inf = int(complete.sum()), int(informative.sum())
+    n_sup, n_vio = int(support.sum()), int(violated.sum())
+    months_c = int(support.any(axis=0).sum())
+    share = float(n_sup) / (n_sup + n_vio) if (n_sup + n_vio) else 0.0
     rel = np.abs(r[complete]) / np.maximum(np.abs(tgt[complete]), 1e-300) if nc else np.array([])
-    # wave 5d: the cells a pass needs depend on how much a match tells. A total many times the rounding tolerance that equals the sum
-    # of its parts to the digit is no coincidence in 3 cells; under heavy suppression a table may hold only 5 complete cells, and a
-    # total read as one of its own parts was counted twice
-    info = float(np.median(np.abs(tgt[complete]) / np.maximum(tol[complete], 1e-300))) if nc else 0.0
+    # the cells a pass needs depend on how much a match tells. A total many times the rounding tolerance that equals the sum of its
+    # parts to the digit is no coincidence in 3 cells; under heavy suppression a table may hold only 5 complete cells
+    info = float(np.median(np.abs(tgt[informative]) / np.maximum(tol[informative], 1e-300))) if n_inf else 0.0
     need = MIN_COMPLETE if info < STRONG_INFO else MIN_MONTHS
-    out = {"pass": nc >= need and months_c >= MIN_MONTHS and share >= PASS_SHARE and not neg,
-           "complete": nc, "within": int(ok.sum()), "months": months_c, "incomplete": int(incomplete.sum()),
-           "share": round(share, 4), "negative_unallocated": neg,
-           "max_rel_residual": float(rel.max()) if len(rel) else None,
-           "max_residual": float(np.abs(r[complete]).max()) if nc else None, "info": round(info, 1)}
+    by_tol = n_sup >= need and months_c >= MIN_MONTHS and share >= PASS_SHARE and not neg
+    # the exact route: nothing left over, to float noise, wherever something is counted
+    with np.errstate(invalid="ignore"):
+        exact_tol = EXACT_REL * np.maximum(scale, 1e-300)
+        ex_ok = complete & (np.abs(r) <= exact_tol) & (scale > 0)
+        ex_off = complete & (np.abs(r) > exact_tol)
+    n_ex, n_exoff = int(ex_ok.sum()), int(ex_off.sum())
+    distinct = int(len(np.unique(np.round(tgt[ex_ok], 9)))) if n_ex else 0
+    months_x = int(ex_ok.any(axis=0).sum())
+    by_exact = (n_ex >= EXACT_MIN and n_ex >= PASS_SHARE * (n_ex + n_exoff) and distinct >= 3 and months_x >= MIN_MONTHS and not neg)
+    ok_pass = bool(by_tol or by_exact)
+    if ok_pass:
+        status = "pass"
+    elif neg or (n_vio >= FAIL_MIN and share < PASS_SHARE):
+        status = "fail"
+    else:
+        status = "unresolved"
+    out.update({"pass": ok_pass, "status": status, "complete": nc, "within": int(within.sum()), "months": months_c if by_tol or not by_exact
+                else months_x, "incomplete": int(incomplete.sum()),
+                "share": round(share if by_tol or not by_exact else float(n_ex) / max(1, n_ex + n_exoff), 4),
+                "negative_unallocated": neg, "max_rel_residual": float(rel.max()) if len(rel) else None,
+                "max_residual": float(np.abs(r[complete]).max()) if nc else None, "info": round(info, 1), "informative": n_inf,
+                "support": n_sup, "violated": n_vio, "exact": n_ex, "by": "tolerance" if by_tol else ("exact" if by_exact else None)})
     if nc == 0 and int(incomplete.sum()) > 0 and not neg:
         out["bound_only"] = True
     return out
@@ -1543,9 +1717,20 @@ def _nonneg(S: Dict[str, Any]) -> bool:
     return bool(not have.any() or float(V[have].min()) >= 0)
 
 
+def _is_geographic(column: str) -> bool:
+    """Whether a dimension's header says its members are places (geo, region, province, state, territory ...: wave 5e adds the words
+    the French, German and Spanish tables use). A header is a hint; it is the only reading of what the members ARE that the cells
+    cannot give, and the evidence that a no-total dimension is a set of disjoint parts (_parts_only)."""
+    return bool(_GEO_WORDS.search(str(column)))
+
+
 def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     """The dimension's role: flat partition, a coded hierarchy, a hierarchy found by subset sums, components and
-    alternatives; else unresolved (rule 6 reads it)."""
+    alternatives; else unresolved (rule 6 reads it).
+
+    Wave 5e: a total is VERIFIED by a sum-check that could have failed (`_sum_check`), or it is NAMED (it says total, no check
+    contradicts it, none could verify it: evidence "named", said so in every sentence that follows). A check that could not decide is
+    neither: a candidate total it leaves undecided keeps the dimension from being read as a set of parts."""
     import numpy as np
     rec = S["dims"][j]
     labels = rec["labels"]
@@ -1554,38 +1739,60 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     nonneg = _nonneg(S)
     dom = _dominance(A)
     M = len(labels)
-    # "excluding" outside brackets names an alternative total ("Retail trade excluding gasoline"); inside them it defines
-    # a member ("Supermarkets and other grocery retailers (except convenience retailers) [44511]")
-    alts_label = {m for m in range(M) if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", labels[m]))}
+    # the members whose NAMES nominate them as alternative totals ("excluding ...", "less ...", "without ...", "other than ..."): they
+    # stay candidates for parts until the sums decide (P4)
+    nominated = {m for m in range(M) if _is_alt(labels[m])}
     hint = [m for m in range(M) if (_says_total(labels[m]) or (_label_code(labels[m]) or "").count("-") == 1
-                                    and _RANGE.match(_label_code(labels[m]) or "")) and m not in alts_label]
+                                    and _RANGE.match(_label_code(labels[m]) or "")) and m not in nominated]
     order = list(np.argsort(-dom, kind="stable"))
     # wave 5d: a whole country's name in a geographic dimension (Canada beside its provinces) is a total's name too: tried as the
-    # total, and never added to the parts when no check could verify it
-    whole = [m for m in range(M) if m not in hint and m not in alts_label and _agg_name_tier(labels[m]) == 1
-             and _GEO_WORDS.search(rec["column"])]
-    # 1. FLAT: the top 3 by dominance and any name-hinted member, against every other member (alternatives left out)
-    tried = []
+    # total, and never added to the parts when no check could verify it (wave 5e: not when the column holds countries)
+    whole = [m for m in range(M) if m not in hint and m not in nominated and _agg_name_tier(labels[m]) == 1
+             and _is_geographic(rec["column"]) and not _COUNTRY_COLUMN.search(rec["column"])]
+    # 1. FLAT: the top 3 by dominance and any name-hinted member, against every other member. Two readings of the members whose names
+    # nominate them as alternatives: left out of the parts, or parts; the sums decide which (or neither)
+    undecided: List[int] = []
     for t in list(dict.fromkeys([int(x) for x in order[:3]] + hint + whole)):
-        P = [m for m in range(M) if m != t and m not in alts_label]
-        if len(P) < 1:
+        variants = [[m for m in range(M) if m != t and m not in nominated]]
+        if nominated - {t}:
+            variants.append([m for m in range(M) if m != t])
+        done: List[Tuple[List[int], Dict[str, Any]]] = []
+        for P in variants:
+            if len(P) < 1:
+                continue
+            chk = _sum_check(A, X, t, P, tol_u, nonneg)
+            done.append((P, chk))
+            if chk["pass"]:
+                _set_partition(S, j, rec, A, tol_u, nonneg, nominated, t, P, chk, "verified")
+                return
+        if not done:
             continue
-        chk = _sum_check(A, X, t, P, tol_u, nonneg)
-        tried.append((t, chk))
-        if chk["pass"] or (chk.get("bound_only") and t in hint):
-            rec.update(role="partition", total=labels[t], total_index=t, parts=[labels[p] for p in P],
-                       part_index=P, tree={t: P}, depth={t: 0, **{p: 1 for p in P}},
-                       sum_check=_public_check(chk), components={}, alternatives={})
-            _alternatives(S, rec, A, tol_u, alts_label)
-            _sa_record(S, j, rec, tol_u, nonneg)
-            return
+        P0, chk0 = done[0]
+        if chk0["status"] == "unresolved":
+            if t in hint:
+                # named as the total, nothing contradicts it, nothing could check it (no complete cell, or magnitudes as small as the
+                # rounding): the member is shown as the named total and never said to add up
+                _set_partition(S, j, rec, A, tol_u, nonneg, nominated, t, P0, chk0, "named")
+                return
+            undecided.append(t)
+    rec["undecided_totals"] = [labels[t] for t in undecided]
+    if M > MAX_MEMBERS:
+        # a series key with more members than the relation search reads (NAICS at 6 digits, HS codes): the flat check above (linear) is
+        # all that is searched, and the reason says so (wave 5e, P11); one member is shown, or the table is refused by its caller
+        rec["role"] = "unresolved"
+        rec["why"] = "more than %d members in %s; totals were not searched beyond the flat check" % (MAX_MEMBERS, rec["column"])
+        return
     # 2. HIERARCHY FROM CODES
     codes = {m: _label_code(labels[m]) for m in range(M)}
     if sum(1 for c in codes.values() if c) >= max(3, int(0.5 * M)):
-        if _coded_hierarchy(S, rec, A, X, codes, tol_u, nonneg, alts_label, dom):
+        if _coded_hierarchy(S, rec, A, X, codes, tol_u, nonneg, nominated, dom):
+            return
+        if nominated and _coded_hierarchy(S, rec, A, X, codes, tol_u, nonneg, set(), dom):
             return
     # 3. HIERARCHY WITHOUT CODES
-    if not tm.over() and _codefree_hierarchy(S, rec, A, X, tol_u, nonneg, alts_label, dom, tm):
+    if _codefree_hierarchy(S, rec, A, X, tol_u, nonneg, nominated, dom, tm):
+        return
+    if nominated and _codefree_hierarchy(S, rec, A, X, tol_u, nonneg, set(), dom, tm):
         return
     # 4. components: one member bounds every other (total sales and e-commerce sales), under a total's name or in a
     # dimension that names measures; a plain dimension of an official table (13 provinces, none a total) is not read so: the
@@ -1601,8 +1808,9 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
         return
     # 5. NO TOTAL ROW (wave 5, gap 1): no member is the total of the others and none stands as their parent. A combined
     # member (one that equals the sum of 2 or more others) is left out; the rest are the parts, and a flow's headline is
-    # their sum. Any other measure has no valid aggregate: one member is read (rule 6)
-    if _parts_only(S, rec, A, X, tol_u, nonneg, alts_label, dom, hint + whole, tm):
+    # their sum (wave 5e: only where the dimension is positively a set of disjoint parts). Any other measure has no valid aggregate:
+    # one member is read (rule 6)
+    if _parts_only(S, rec, A, X, tol_u, nonneg, nominated, dom, hint + whole, tm):
         return
     # an official table whose largest member bounds the others and whose measure cannot be added (a stock, a rate): one
     # member shown, as rule 6 reads it
@@ -1610,13 +1818,38 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     rec["why"] = rec.pop("twin_why", None) or "no member is the sum of others (sum-checks failed)"
 
 
-def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: float, nonneg: bool, alts_label: Set[int],
+def _set_partition(S: Dict[str, Any], j: int, rec: Dict[str, Any], A: Any, tol_u: float, nonneg: bool, nominated: Set[int], t: int,
+                   P: List[int], chk: Dict[str, Any], evidence: str) -> None:
+    """Record member t as the total of P: evidence "verified" (a sum-check that could have failed passed) or "named" (it says total
+    and nothing could check it)."""
+    labels = rec["labels"]
+    rec.update(role="partition", total=labels[t], total_index=t, parts=[labels[p] for p in P],
+               part_index=P, tree={t: P}, depth={t: 0, **{p: 1 for p in P}},
+               sum_check=dict(_public_check(chk), verified=(evidence == "verified")), evidence=evidence,
+               components={}, alternatives={})
+    _alternatives(S, rec, A, tol_u, nominated)
+    _sa_record(S, j, rec, tol_u, nonneg)
+
+
+def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: float, nonneg: bool, nominated: Set[int],
                 dom: Any, hint: List[int], tm: _Timer) -> bool:
-    """The dimension of an official table whose members are all parts: no total row, no hierarchy found. Members that equal
-    the sum of 2 or more others (a combined member, found by a subset-sum search on a few cells and verified on every
-    cell), a member identical to an earlier one, and a member inside a coded parent that is also listed (459993 inside
-    459) are left out; the remaining members are the parts. Only a flow is added across them: any other measure (a stock,
-    a rate, an index, an ambiguous count) has no valid aggregate and is read one member at a time."""
+    """The dimension of an official table whose members are all parts: no total row, no hierarchy found. Wave 5e (P1): members are
+    ADDED only with positive evidence that they are disjoint parts. "No relation was found" is never that evidence. It takes ALL of:
+
+      * the measure is a flow (a stock, a rate, an index or an ambiguous count has no valid sum across members);
+      * the dimension is geographic (its header names places) and has at least 3 members that are parts: two members are a pair
+        (a total and a part, a copy and its original), three or more that stand in no relation are a set of regions;
+      * no member that could be the total was left undecided: each of the three most dominant members is the sum of the others
+        decidedly NOT (a check with the power to fail, which failed): a total hidden by small magnitudes or heavy suppression is
+        never added to its parts;
+      * the search for combined members (a member that equals the sum of 2 or more others) was complete: every parent searched, every
+        candidate covered, the search never cut off ("unresolved" is not "none found", P2); the combined members, a member identical
+        to an earlier one, and a member inside a coded parent that is also listed (459993 inside 459) are left out;
+      * no two members of what remains are one quantity twice, by SHAPE (P5): the same movement under a stable level ratio
+        (a seasonally adjusted copy, current and chained dollars), whatever their annual totals;
+      * no member that says it leaves something out ("excluding ...") and is not a verified combined member remains.
+
+    Else the dimension is read one member at a time (rule 6), and says so."""
     import numpy as np
     if not S["official"] or not sums_over_time(S["measure"]) or hint:
         return False
@@ -1624,43 +1857,52 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
     M = len(labels)
     if M < 2 or _measure_dim_name(rec["column"], labels):
         return False
-    cand = [m for m in range(M) if m not in alts_label]
-    if len(cand) < 2:
+    cand = list(range(M))
+    if not _is_geographic(rec["column"]):
+        rec["twin_why"] = ("%s is not a dimension of places and no member is a total of the others: nothing shows that its members are "
+                           "disjoint parts, so one member is shown and the members are never added" % rec["column"])
         return False
-    # wave 5d: a member that equals the sum of ALL the others in every cell where that can be checked (even a few, under heavy
-    # suppression), and is never below their reported sum in the cells that cannot, is the total, whatever its name: it is never
-    # one of its own parts. The dimension is then read one member at a time (the total is shown, and says it was not verified)
+    # a total that could not be told from a part: every top candidate must be decidedly not the sum of the others
     for t in sorted(cand, key=lambda m: (-float(dom[m]), m))[:3]:
         chk = _sum_check(A, X, t, [m for m in cand if m != t], tol_u, nonneg)
-        if (chk["complete"] >= 1 and chk["within"] == chk["complete"] and not chk["negative_unallocated"] and chk["months"] >= 1
-                and (chk["info"] >= STRONG_INFO or chk["complete"] >= MIN_COMPLETE)):
-            rec["twin_why"] = ("%s equals the sum of the other members in every cell where that can be checked (%d), so it is their "
-                               "total, never one of their parts" % (labels[t], chk["complete"]))
+        if chk["status"] != "fail":
+            rec["twin_why"] = ("%s may be the total of the other members (%s), so it is never one of their parts" % (
+                labels[t], "equals their sum in every cell that can be checked (%d)" % chk["complete"] if chk["pass"] else
+                "the check could not decide: the table's magnitudes are as small as its rounding, or too few cells are complete"))
             return False
-    t_end = time.perf_counter() + min(CODEFREE_BUDGET_S, max(0.0, tm.left()))
     sizes = np.array([float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0 for m in range(M)])
     order = [m for m in np.argsort(-dom, kind="stable").tolist() if m in cand]
     order = sorted(order, key=lambda m: (-sizes[m], m))
     combined: Dict[int, List[int]] = {}
     dup: Dict[int, int] = {}
+    unresolved = ""
+    if len(order) > PARENTS_MAX:
+        unresolved = "more than %d members: combined members were not searched for among all of them" % PARENTS_MAX
     for p in order[:PARENTS_MAX]:
-        if time.perf_counter() > t_end:
-            break
         if p in dup or p in combined:
             continue
         bnd = _bounded_by(A, p, tol_u)
         cs = [m for m in cand if m != p and bnd[m] and m not in dup]
-        cs = sorted(cs, key=lambda m: (-sizes[m], m))[:CANDIDATES_MAX]
+        cs = sorted(cs, key=lambda m: (-sizes[m], m))
+        if len(cs) > CANDIDATES_MAX:
+            unresolved = unresolved or "%s bounds more than %d members: a combined member could be among them" % (labels[p], CANDIDATES_MAX)
+            cs = cs[:CANDIDATES_MAX]
         if not cs:
             continue
-        sol = _subset_partition(A, X, p, cs, tol_u, nonneg, t_end)
-        if sol is None:
+        sol = _subset_partition(A, X, p, cs, tol_u, nonneg)
+        if sol["status"] == "unresolved":
+            unresolved = unresolved or "%s could not be searched for a combined member (%s)" % (labels[p], sol.get("why"))
             continue
-        fam = sol[0]
+        if sol["status"] == "none":
+            continue
+        fam = sol["fam"]
         if len(fam) == 1:
             dup[max(p, fam[0])] = min(p, fam[0])
         else:
             combined[p] = fam
+    if unresolved:
+        rec["twin_why"] = "no member is a total of the others, but the search for combined members did not finish: " + unresolved
+        return False
     removed = set(combined) | set(dup)
     keep = [m for m in cand if m not in removed]
     # a member inside a coded parent that is also listed (the parent is bigger everywhere): never added to it
@@ -1674,23 +1916,29 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
         if anc:
             nested[m] = max(anc, key=lambda o: _spec(codes[o]))
     keep = [m for m in keep if m not in nested]
-    if len(keep) < 2:
+    if len(keep) < GEO_MIN_PARTS:
+        rec["twin_why"] = ("%s holds only %d members that are parts: two are a pair (a total and a part, a copy and its original), "
+                           "not a set of regions, so one member is shown" % (rec["column"], len(keep)))
         return False
-    # wave 5d: two members whose calendar-year totals agree in every year are one quantity twice (a seasonally adjusted copy beside
-    # the unadjusted one), never parts: adding them counts every dollar twice. A table too short to say which is which still says
-    # that much
-    twin = _same_quantity(A, keep, S["_months"], S["measure"]["type"], (S.get("period") or {}).get("step", 1)) \
-        if len(keep) <= ADJ_MAX_MEMBERS else None
-    if twin is not None:
-        rec["twin_why"] = ("%s and %s have the same calendar-year totals: one quantity twice (an adjusted copy beside an unadjusted "
-                           "one), so they are never added" % (labels[twin[0]], labels[twin[1]]))
+    leaving = [m for m in keep if _is_strong_alt(labels[m])]
+    if leaving:
+        rec["twin_why"] = ("%s says it leaves something out and is not a sum of the other members: it may contain them, so the "
+                           "members are never added" % labels[leaving[0]])
+        return False
+    copy = _copies_by_shape(S, A, keep)
+    if copy is not None:
+        a, b = copy
+        rec["twin_why"] = ("%s and %s move together under a steady ratio: one quantity twice (an adjusted copy, another price basis), "
+                           "so they are never added" % (labels[a], labels[b]) if a is not None else
+                           "the members' movements could not be compared (the table is too short to tell a copy from a part), so "
+                           "they are never added")
         return False
     rec.update(role="parts", total=None, total_index=None, parts=[labels[m] for m in keep], part_index=keep,
                combined={labels[p]: [labels[x] for x in sorted(f)] for p, f in sorted(combined.items())},
                duplicates={labels[d]: labels[k] for d, k in sorted(dup.items())},
                nested={labels[m]: labels[o] for m, o in sorted(nested.items())},
-               alternatives={labels[m]: "the sum of the parts" for m in sorted(alts_label)}, components={},
-               sum_check=None, noun="regions" if _GEO_WORDS.search(rec["column"]) else "members",
+               alternatives={}, components={}, evidence="built",
+               sum_check=None, noun="regions",
                why="no member is a total of the others: the table has no total row, so a flow's headline is the sum of its "
                    "%d parts" % len(keep))
     return True
@@ -1724,12 +1972,59 @@ def _measure_dim_name(name: str, labels: List[str]) -> bool:
 
 def _public_check(chk: Dict[str, Any]) -> Dict[str, Any]:
     return {k: chk.get(k) for k in ("complete", "within", "months", "incomplete", "share", "max_rel_residual",
-                                    "max_residual")}
+                                    "max_residual", "informative", "by")}
 
 
-def _alternatives(S: Dict[str, Any], rec: Dict[str, Any], A: Any, tol_u: float, alts_label: Set[int]) -> None:
-    """Members left out of the tree: an alternative total (named "excluding ...", or a total less one or two members),
-    else a component of the smallest verified member that bounds it everywhere."""
+def _diff_members(A: Any, V: Any, order: List[int], ok_fp: Any, fp: Any, diff: Any, tol_u: float) -> Optional[List[int]]:
+    """One or two of the members `order` (rows of V, [member, cell]) that sum to `diff` (the total less a leftover member), verified on
+    every cell as `_close_cells` does; None when no member or pair does. A single member is looked for over every member at once; a
+    pair by a SORTED LOOKUP on a 3-cell fingerprint (O(M log M), not O(M^2)): for each first member, the second is searched in the
+    members' sorted values where the fingerprint says it must be, and only those matches are verified (at most 50)."""
+    import numpy as np
+    d = diff.reshape(-1)
+    live = ~np.isnan(d)
+    if int(live.sum()) < MIN_COMPLETE:
+        return None
+    tol1 = np.maximum(tol_u * 2, 1e-6 * np.abs(d))
+    with np.errstate(invalid="ignore"):
+        both = live[None, :] & ~np.isnan(V)
+        near = both & (np.abs(V - d[None, :]) <= tol1[None, :])
+    n = both.sum(axis=1)
+    hit = np.flatnonzero((n >= MIN_COMPLETE) & (near.sum(axis=1) >= PASS_SHARE * np.maximum(n, 1)))
+    if len(hit):
+        return [order[int(hit[0])]]
+    if fp is None or not len(ok_fp):
+        return None
+    tgt = d[fp]
+    if np.isnan(tgt).any():
+        return None
+    tol3 = np.maximum(tol_u * 3, 1e-6 * np.abs(tgt))
+    cand = ok_fp                                                   # rows of V whose fingerprint cells all hold a value
+    f0 = V[cand, fp[0]]
+    srt = np.argsort(f0, kind="stable")
+    f0s = f0[srt]
+    tried = 0
+    for ia, a in enumerate(cand):
+        need0 = tgt[0] - V[a, fp[0]]
+        lo = np.searchsorted(f0s, need0 - tol3[0], "left")
+        hi = np.searchsorted(f0s, need0 + tol3[0], "right")
+        for kk in range(lo, hi):
+            b = cand[srt[kk]]
+            if b <= a:
+                continue
+            if np.all(np.abs(V[a, fp] + V[b, fp] - tgt) <= tol3):
+                tried += 1
+                if tried > 50:
+                    return None
+                if _close_cells(diff, (V[a] + V[b]).reshape(diff.shape), tol_u * 3):
+                    return [order[int(a)], order[int(b)]]
+    return None
+
+
+def _alternatives(S: Dict[str, Any], rec: Dict[str, Any], A: Any, tol_u: float, nominated: Set[int]) -> None:
+    """Members left out of the tree: an alternative total (the total less one or two tree members, or named "excluding ..." and bounded
+    by the total), else a component of the smallest verified member that bounds it everywhere. Bounded by counts (wave 5e, P11):
+    at most LEFT_MAX leftover members are searched, each by a lookup that is linear in the members, never quadratic."""
     import numpy as np
     labels = rec["labels"]
     placed = set(rec.get("depth") or {})
@@ -1738,28 +2033,28 @@ def _alternatives(S: Dict[str, Any], rec: Dict[str, Any], A: Any, tol_u: float, 
         return
     t = rec.get("total_index")
     tree_members = sorted(placed)
-    for x in left:
-        if x in alts_label and t is not None and _bounds(A, t, x, tol_u):
-            rec["alternatives"][labels[x]] = labels[t]
-            continue
+    cand = [m for m in tree_members if m != t]
+    V = fp = ok_fp = None
+    for n_done, x in enumerate(left):
+        if n_done >= LEFT_MAX:
+            break                                   # past the count budget a leftover is left as it is: a member with no relation
         found = False
         if t is not None and _bounds(A, t, x, tol_u):
             diff = A[t] - A[x]
-            cand = [m for m in tree_members if m != t]
-            for a in cand:
-                if _close_cells(diff, A[a], tol_u * 2):
-                    rec["alternatives"][labels[x]] = "%s less %s" % (labels[t], labels[a])
-                    found = True
-                    break
-            if not found:
-                for i, a in enumerate(cand):
-                    for b in cand[i + 1:]:
-                        if _close_cells(diff, A[a] + A[b], tol_u * 3):
-                            rec["alternatives"][labels[x]] = "%s less %s and %s" % (labels[t], labels[a], labels[b])
-                            found = True
-                            break
-                    if found:
-                        break
+            if V is None and cand:
+                V = np.stack([A[a].reshape(-1) for a in cand])
+                cnt = (~np.isnan(V)).sum(axis=0)
+                best = np.argsort(-cnt, kind="stable")[:3]
+                fp = np.sort(best) if len(best) == 3 else None
+                ok_fp = np.flatnonzero(~np.isnan(V[:, fp]).any(axis=1)) if fp is not None else np.array([], dtype=int)
+            hit = _diff_members(A, V, cand, ok_fp, fp, diff, tol_u) if V is not None else None
+            if hit:
+                names = [labels[a] for a in hit]
+                rec["alternatives"][labels[x]] = "%s less %s" % (labels[t], " and ".join(names))
+                found = True
+            elif x in nominated:
+                rec["alternatives"][labels[x]] = labels[t]
+                found = True
         if found:
             continue
         bounders = [m for m in tree_members if _bounds(A, m, x, tol_u)]
@@ -1827,7 +2122,7 @@ def _coded_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, cod
     elif uncoded:
         cand = sorted(uncoded, key=lambda m: (-dom[m], m))
         top = cand[0]
-        if _TOTAL_HINT.search(labels[top]) or dom[top] >= 0.99:
+        if _says_total(labels[top]) or dom[top] >= 0.99:
             root = top
             for r in roots:
                 parent[r] = top
@@ -1871,19 +2166,18 @@ def _coded_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, cod
     tree = {p: ch for p, ch in tree.items() if p in depth}
     rec.update(role="hierarchy" if any(depth[p] >= 1 for p in tree) else "partition", total=labels[root],
                total_index=root, tree=tree, depth=depth, parts=[labels[c] for c in tree[root]], part_index=tree[root],
-               sum_check=checks[root], family_checks={labels[p]: checks[p] for p in tree}, components={},
-               alternatives={}, by="codes")
+               sum_check=dict(checks[root], verified=True), family_checks={labels[p]: checks[p] for p in tree}, components={},
+               alternatives={}, by="codes", evidence="verified")
     _alternatives(S, rec, A, tol_u, alts_label)
     return True
 
 
 def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: float, nonneg: bool,
-                        alts_label: Set[int], dom: Any, tm: _Timer) -> bool:
+                        alts_label: Set[int], dom: Any, tm: Optional[_Timer] = None) -> bool:
     """The hierarchy found by subset sums: for each parent (the most dominant first, at most 30), the members it bounds
     (at most 22, the largest), a meet-in-the-middle subset sum on a 3-cell fingerprint, each match verified on every
-    cell; the coarsest verified partition gives its children, and each child is searched in turn."""
+    cell; the coarsest verified partition gives its children, and each child is searched in turn. Bounded by counts only."""
     import numpy as np
-    t_end = time.perf_counter() + min(CODEFREE_BUDGET_S, max(0.0, tm.left()))
     labels = rec["labels"]
     M = len(labels)
     order = [int(x) for x in np.argsort(-dom, kind="stable") if int(x) not in alts_label]
@@ -1896,7 +2190,7 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     queue = [root]
     done = 0
     sizes = np.array([float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0 for m in range(M)])
-    while queue and done < PARENTS_MAX and time.perf_counter() < t_end:
+    while queue and done < PARENTS_MAX:
         p = queue.pop(0)
         done += 1
         bnd = _bounded_by(A, p, tol_u)
@@ -1904,10 +2198,10 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
         if not cands:
             continue
         cands = sorted(cands, key=lambda m: (-sizes[m], m))[:CANDIDATES_MAX]
-        sol = _subset_partition(A, X, p, cands, tol_u, nonneg, t_end, min_parts=2)
-        if sol is None:
+        sol = _subset_partition(A, X, p, cands, tol_u, nonneg, min_parts=2)
+        if sol["status"] != "found":
             continue
-        fam, chk = sol
+        fam, chk = sol["fam"], sol["chk"]
         tree[p] = fam
         checks[p] = _public_check(chk)
         for c in fam:
@@ -1926,8 +2220,8 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     trial = dict(rec)
     trial.update(role="hierarchy" if any(depth[p] >= 1 for p in tree) else "partition", total=labels[root],
                  total_index=root, tree=tree, depth=depth, parts=[labels[c] for c in tree[root]], part_index=tree[root],
-                 sum_check=checks[root], family_checks={labels[p]: checks[p] for p in tree}, components={},
-                 alternatives={}, by="subset sums")
+                 sum_check=dict(checks[root], verified=True), family_checks={labels[p]: checks[p] for p in tree}, components={},
+                 alternatives={}, by="subset sums", evidence="verified")
     _alternatives(S, trial, A, tol_u, alts_label)
     # a root that leaves several members unexplained is a SUBTOTAL, not the table's total (13 provinces and a Prairies
     # group, no Canada row): a member left over is explained when it is an alternative total or a component of one tree
@@ -1944,7 +2238,7 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
     # (Inland provinces = two of the three regions) is a subtotal, and the third region a part of the table, not a component
     # of it. An unnamed root with such a leftover is no total: the dimension is read by its parts (_parts_only)
     root_label = labels[root]
-    if not _TOTAL_HINT.search(root_label) and _agg_name_tier(root_label) != 2:
+    if not _says_total(root_label) and _agg_name_tier(root_label) != 2:
         explained = set(trial.get("depth") or {}) | {labels.index(x) for x in (trial.get("alternatives") or {}) if x in labels} | \
             {labels.index(x) for x in (trial.get("components") or {}) if x in labels} | set(alts_label)
         # a copy of a member the root explains (a single-child industry equal to its parent) is explained too
@@ -1955,77 +2249,141 @@ def _codefree_hierarchy(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, 
         # the root leaves unexplained (a region that is neither inside it nor a copy of it) makes the root a subtotal; and in a
         # geographic dimension nothing is a component by bounding: a region smaller than another is a region, not a part of it
         if (any(parent == root_label for parent in (trial.get("components") or {}).values()) or len(explained) < M
-                or (_GEO_WORDS.search(rec["column"]) and trial.get("components"))):
+                or (_is_geographic(rec["column"]) and trial.get("components"))):
             return False
     rec.update(trial)
     return True
 
 
-def _subset_partition(A: Any, X: Any, p: int, cands: List[int], tol_u: float, nonneg: bool, t_end: float,
-                      min_parts: int = 1) -> Optional[Tuple[List[int], Dict[str, Any]]]:
-    """The coarsest verified subset of `cands` that sums to the parent. A hierarchy needs min_parts=2: a parent that equals ONE
-    member (within a rounding unit) is a copy of it, not a partition, and a table of near-equal series is not a hierarchy;
-    the no-total search takes a single member as the copy it is (a duplicate)."""
+def _fingerprint_groups(A: Any, p: int, cands: List[int]) -> Tuple[List[Tuple[List[int], List[int]]], bool]:
+    """Where to read a parent's fingerprint (wave 5e, P2): groups of 3 cells where the PARENT has a value, and the candidates that have
+    one in all three. Parts that report in different periods (one stops in month 21, another starts in month 29) are never all present
+    in one cell, so a single group of cells where everything is present does not exist; each group covers the candidates present in
+    its three cells, and the next group the candidates not covered yet (at most FP_GROUPS_MAX). (the groups: [(cells, candidates)],
+    whether every candidate was covered by some group)."""
     import numpy as np
-    k = len(cands)
-    # the fingerprint: 3 cells where the parent and every candidate have a value, spread over the cells
-    have = ~np.isnan(A[p])
-    for c in cands:
-        have &= ~np.isnan(A[c])
-    idx = np.flatnonzero(have.ravel())
-    if len(idx) < 3:
-        return None
-    pick = idx[[0, len(idx) // 2, len(idx) - 1]]
-    tgt = A[p].ravel()[pick]
-    vals = np.stack([A[c].ravel()[pick] for c in cands])          # k x 3
-    tol = np.maximum(tol_u * (k + 1), 1e-6 * np.abs(tgt))
-    h = k // 2
-    left, right = vals[:h], vals[h:]
+    pa = A[p].reshape(-1)
+    live = np.flatnonzero(~np.isnan(pa))
+    if len(live) < 3:
+        return [], False
+    pres = np.stack([~np.isnan(A[c].reshape(-1))[live] for c in cands])             # k x live
+    uncovered = set(range(len(cands)))
+    groups: List[Tuple[List[int], List[int]]] = []
+    while uncovered and len(groups) < FP_GROUPS_MAX:
+        cur = np.array(sorted(uncovered))
+        chosen: List[int] = []
+        have = np.ones(len(cands), dtype=bool)
+        have[:] = False
+        have[cur] = True
+        for _ in range(3):
+            score = pres[have].sum(axis=0).astype(float)
+            score[chosen] = -1.0
+            # ties go to the cell the earliest, middle and latest of the parent's: a spread, not three neighbours
+            order = np.argsort(-score, kind="stable")
+            pick = int(order[0]) if score[order[0]] > 0 else -1
+            if pick < 0:
+                break
+            if chosen and len(chosen) < 3:
+                top = [int(x) for x in order if score[int(x)] == score[pick]]
+                pick = top[len(top) // 2] if len(chosen) == 1 else top[-1]
+            chosen.append(pick)
+            have = have & pres[:, pick]
+        if len(chosen) < 3 or not have.any():
+            break
+        members = sorted(int(i) for i in np.flatnonzero(pres[:, chosen].all(axis=1)))
+        groups.append(([int(live[c]) for c in chosen], members))
+        uncovered -= set(members)
+    return groups, not uncovered
 
-    def sums(v: Any) -> Tuple[Any, Any]:
-        s = np.zeros((1, 3))
-        masks = np.zeros(1, dtype=np.int64)
-        for i in range(v.shape[0]):
-            s = np.concatenate([s, s + v[i]])
-            masks = np.concatenate([masks, masks | (1 << i)])
-        return s, masks
-    sl, ml = sums(left)
-    sr, mr = sums(right)
-    o = np.argsort(sr[:, 0], kind="stable")
-    sr, mr = sr[o], mr[o]
-    need = tgt[0] - sl[:, 0]
-    lo = np.searchsorted(sr[:, 0], need - tol[0], "left")
-    hi = np.searchsorted(sr[:, 0], need + tol[0], "right")
-    found: List[List[int]] = []
-    for i in np.flatnonzero(hi > lo):
-        for jj in range(lo[i], hi[i]):
-            tot = sl[i] + sr[jj]
-            if np.all(np.abs(tot - tgt) <= tol):
-                members = [cands[b] for b in range(h) if ml[i] >> b & 1] + \
-                          [cands[h + b] for b in range(k - h) if mr[jj] >> b & 1]
-                if members:
-                    found.append(sorted(members))
-        if len(found) > 200 or time.perf_counter() > t_end:
+
+def _subset_partition(A: Any, X: Any, p: int, cands: List[int], tol_u: float, nonneg: bool, min_parts: int = 1
+                      ) -> Dict[str, Any]:
+    """The coarsest verified subset of `cands` that sums to the parent: {"status": "found", "fam", "chk"}, {"status": "none"} (every
+    candidate was searched and none sums to it) or {"status": "unresolved", "why"} (the search could not run or could not decide:
+    fewer than 3 cells where the parent has a value, a candidate that no 3 cells cover, a match that no check had the power to
+    verify, a search cut off by its COUNT budget). "unresolved" is never "none found" (wave 5e, P2). A hierarchy needs
+    min_parts=2: a parent that equals ONE member (within a rounding unit) is a copy of it, not a partition, and a table of
+    near-equal series is not a hierarchy; the no-total search takes a single member as the copy it is (a duplicate).
+    Bounded by counts only (PAIRS_MAX, MATCHES_MAX, VERIFY_MAX, FP_GROUPS_MAX): the result is the same on any machine."""
+    import numpy as np
+    if not cands:
+        return {"status": "none"}
+    groups, covered_all = _fingerprint_groups(A, p, cands)
+    if not groups:
+        return {"status": "unresolved", "why": "the parent has too few cells where its parts can be read together"}
+    pflat = A[p].reshape(-1)
+    seen_fam = set()
+    fams: List[List[int]] = []
+    cut = False
+    pairs_done = 0
+    for cells, members in groups:
+        cs = [cands[i] for i in members]
+        k = len(cs)
+        pick = np.array(cells)
+        tgt = pflat[pick]
+        vals = np.stack([A[c].reshape(-1)[pick] for c in cs])          # k x 3
+        tol = np.maximum(tol_u * (k + 1), 1e-6 * np.abs(tgt))
+        h = k // 2
+        left, right = vals[:h], vals[h:]
+
+        def sums(v: Any) -> Tuple[Any, Any]:
+            s_ = np.zeros((1, 3))
+            masks = np.zeros(1, dtype=np.int64)
+            for i in range(v.shape[0]):
+                s_ = np.concatenate([s_, s_ + v[i]])
+                masks = np.concatenate([masks, masks | (1 << i)])
+            return s_, masks
+        sl, ml = sums(left)
+        sr, mr = sums(right)
+        o = np.argsort(sr[:, 0], kind="stable")
+        sr, mr = sr[o], mr[o]
+        need = tgt[0] - sl[:, 0]
+        lo = np.searchsorted(sr[:, 0], need - tol[0], "left")
+        hi = np.searchsorted(sr[:, 0], need + tol[0], "right")
+        for i in np.flatnonzero(hi > lo):
+            for jj in range(lo[i], hi[i]):
+                pairs_done += 1
+                tot = sl[i] + sr[jj]
+                if np.all(np.abs(tot - tgt) <= tol):
+                    members_ = [cs[b] for b in range(h) if ml[i] >> b & 1] + [cs[h + b] for b in range(k - h) if mr[jj] >> b & 1]
+                    key = tuple(sorted(members_))
+                    if members_ and key not in seen_fam:
+                        seen_fam.add(key)
+                        fams.append(sorted(members_))
+            if len(fams) > MATCHES_MAX or pairs_done > PAIRS_MAX:
+                cut = True
+                break
+        if cut:
             break
     best = None
-    # the coarsest verified partition (a member named "excluding ..." never takes part: _relations leaves it out)
-    for fam in sorted(found, key=lambda f: (len(f), f)):
+    undecided = False
+    for n, fam in enumerate(sorted(fams, key=lambda f: (len(f), f))):
         if len(fam) < min_parts:
             continue
+        if n >= VERIFY_MAX:
+            cut = True
+            break
         chk = _sum_check(A, X, p, fam, tol_u, nonneg)
         if chk["pass"]:
             best = (fam, chk)
             break
-        if time.perf_counter() > t_end:
-            break
-    return best
+        if chk["status"] == "unresolved":
+            undecided = True
+    if best is not None:
+        return {"status": "found", "fam": best[0], "chk": best[1]}
+    if cut or undecided or not covered_all:
+        return {"status": "unresolved", "why": "the search was cut off by its count budget" if cut else
+                ("a match could not be checked (the table's magnitudes are as small as its rounding)" if undecided else
+                 "a part is blank where the others are present, so it could not be searched with them")}
+    return {"status": "none"}
 
 
 # wave 5b: a rate or an index has a published aggregate only when something other than its place in the file says so. The names
 # below are hints (a total's words, a whole country's name as the table of its provinces or states lists it); with no such name
 # the member must be shown to be the others' weighted average (_unnamed_aggregate), else the table has NO aggregate and one
 # member is shown by dominance, never as the national figure.
-_AGG_TOTAL_WORD = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|combined|national|nationwide)(?:\b|$)|"
+_AGG_TOTAL_WORD = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|combined|national|nationwide|ensemble|tous|toutes|insgesamt|gesamt|"
+                             r"alle|todos|todas)(?:\b|$)|"
                              r"^\s*(?:_T|TOTAL|_Z)\s*$")
 _AGG_WHOLE = re.compile(r"(?i)^\s*(?:canada|united states(?: of america)?|u\.?s\.?a?\.?|united kingdom|u\.?k\.?|great britain|"
                         r"australia|new zealand|euro(?:pean)? (?:area|union|zone)|eu\s?-?\s?\d{2}(?:_\d{4})?|oecd|world)"
@@ -2036,7 +2394,6 @@ AGG_MIN_FIT_CELLS = 12          # complete cells (every member has a value) the 
 AGG_FIT_ROWS = 600              # at most this many cells are fitted (evenly spaced)
 AGG_TRIES = 5                   # the candidates fitted: the 5 whose relation to the others' mean is the most stable (a true aggregate is among them)
 AGG_PEERS = 8                   # the typical member's own fit is the median of at most this many members' fits
-AGG_BUDGET_S = 0.5              # the whole search, inside detect's budget: out of time means no evidence
 AGG_FIT_UNITS = 1.0             # the fit's RMS residual: at most 1 unit of the last published digit ...
 AGG_PEER_UNITS = 3.0            # ... while a typical member's own fit is at least 3 units off (else the table cannot tell) ...
 AGG_PEER_RATIO = 0.25           # ... and the member's fit is at most a quarter of a typical member's
@@ -2045,11 +2402,25 @@ AGG_SMALL_TABLE = 12            # ... in a table of at most this many members; i
 AGG_SUPPORT_SHARE = 0.5         # ... the members carrying 95% of the weight are at least this share of them
 
 
+_BRACKETS = re.compile(r"\([^()]*\)|\[[^\[\]]*\]")
+_COUNTRY_COLUMN = re.compile(r"(?i)\b(?:country|countries|nation|nations|pays|land|l\u00e4nder|pa[i\u00ed]s|pa[i\u00ed]ses)\b")
+
+
+def _outside_brackets(label: Any) -> str:
+    """A label without its bracketed words: they define a member ("... (except convenience retailers) [44511]") and say nothing."""
+    return _BRACKETS.sub(" ", str(label))
+
+
+def _is_rest(label: Any) -> bool:
+    """Whether a name says the rest of something ("All other provinces", "Rest of Canada", "Autres provinces"): never a whole."""
+    return bool(_REST_NAME.search(_outside_brackets(label)))
+
+
 def _agg_name_tier(label: str) -> int:
     """2 when the name says total (total, all, overall, national, _T ...), 1 when it is a whole country's name as the table of
     its provinces or states lists it (Canada, United States, Great Britain, Euro area ...), 0 otherwise; an alternative
-    ("excluding ...") is never an aggregate."""
-    if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", label)):
+    ("excluding ...") and the rest of something ("All other provinces") are never an aggregate (wave 5e: in every branch)."""
+    if _is_alt(label) or _is_rest(label):
         return 0
     if _AGG_TOTAL_WORD.search(label):
         return 2
@@ -2057,15 +2428,23 @@ def _agg_name_tier(label: str) -> int:
 
 
 def _is_alt(label: str) -> bool:
-    """Whether a member's name says it leaves something out ("Total excl. Seasonal shops", "Retail trade excluding gasoline"): an
-    alternative total, never the total, never a part (words inside brackets define a member and say nothing)."""
-    return bool(_ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", str(label))))
+    """Whether a member's name NOMINATES it as an alternative total ("Total excl. Seasonal shops", "Retail trade excluding gasoline"):
+    never the total by its words (words inside brackets define a member and say nothing). A nomination only: "Less than 15 years" is a
+    part, and what decides is the sum-check (wave 5e, P4)."""
+    return bool(_ALT_HINT.search(_outside_brackets(label)))
+
+
+def _is_strong_alt(label: str) -> bool:
+    """A nomination by a word that says it leaves something out (excluding, except, net of ...); "less", "without", "other than" are
+    ordinary words of a part's name and are weak."""
+    return bool(_ALT_STRONG_RE.search(_outside_brackets(label)))
 
 
 def _says_total(label: str) -> bool:
     """A total's words ("Total", "All", "Overall" ...) in a name that does not say it leaves something out (wave 5d: "Total except
-    Footwear and Grocery" is an alternative, and was read as the table's total by its first word)."""
-    return bool(_TOTAL_HINT.search(label)) and not _is_alt(label)
+    Footwear and Grocery" is an alternative, and was read as the table's total by its first word) and is not the rest of something
+    (wave 5e: "All other provinces")."""
+    return bool(_TOTAL_HINT.search(label)) and not _is_alt(label) and not _is_rest(label)
 
 
 def _coded_totals(labels: Sequence[str]) -> Set[int]:
@@ -2077,9 +2456,6 @@ def _coded_totals(labels: Sequence[str]) -> Set[int]:
         if c and _RANGE.match(c) and sum(1 for x, cx in enumerate(codes) if x != m and cx and _contains(c, cx)) >= 2:
             out.add(m)
     return out
-
-
-_REST_NAME = re.compile(r"(?i)\b(?:other|others|rest of|remaining|remainder)\b")
 
 
 def _named_unverified(d: Dict[str, Any]) -> bool:
@@ -2146,7 +2522,7 @@ def _convex_rms(y: Any, X: Any) -> float:
 
 
 def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, int]], labels: Sequence[str],
-                       t_end: Optional[float] = None, unit: Optional[float] = None) -> Optional[Tuple[int, Dict[str, Any]]]:
+                       unit: Optional[float] = None) -> Optional[Tuple[int, Dict[str, Any]]]:
     """A member with no name that says it is the aggregate of a rate or an index is one only when ALL of these hold, whatever
     its place in the file (first in the file is no evidence): it lies STRICTLY inside the others' min-max in at least 99% of its
     cells (`stats`); it has the table's full coverage (a value wherever any member has one, at least every other member's); and the
@@ -2155,7 +2531,8 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
     3 units off and its own a quarter of that (an aggregate is an exact weighted average of its parts to the digit published, a
     member in the middle of the range is not). With fewer than 3 parts, over 40 members, or fewer than 12 complete cells there is
     no evidence to tell them apart. The 5 candidates whose relation to the others' mean is the most stable over the cells are
-    fitted (a true aggregate is among them), within a time budget (out of time: no evidence). (index, evidence) or None."""
+    fitted (a true aggregate is among them), against at most 8 peers, on at most 600 cells: a COUNT budget (wave 5e, P3: never a clock),
+    so the answer is the same on any machine. (index, evidence) or None."""
     import numpy as np
     M, C, T = A.shape
     if not AGG_MIN_MEMBERS <= M <= AGG_MAX_MEMBERS:
@@ -2173,8 +2550,6 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
     B = A.reshape(M, -1)[:, cells]
     if unit is None:
         unit = (10.0 ** -int(S["measure"].get("decimals") or 0)) * float(S["measure"].get("factor") or 1.0)
-    if t_end is None:
-        t_end = time.perf_counter() + AGG_BUDGET_S
     cands = []
     alt = {x for x in range(M) if _is_alt(labels[x])}      # wave 5d: an alternative total is never one of the aggregate's parts
     for m in range(M):
@@ -2188,8 +2563,6 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
         cands.append((float(d.std()), m))             # the stability of its relation to the others' mean over the cells
     found = []
     for _sd, m in sorted(cands)[:AGG_TRIES]:
-        if time.perf_counter() > t_end:
-            return None                               # out of time: no evidence
         rest = [x for x in range(M) if x != m and x not in alt]
         rm, wts = _convex_fit(B[m], B[rest].T)
         if rm > AGG_FIT_UNITS * unit:
@@ -2204,8 +2577,6 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
         step = max(1, len(rest) // AGG_PEERS)
         peers = []
         for i in rest[::step][:AGG_PEERS]:
-            if time.perf_counter() > t_end:
-                return None
             peers.append(_convex_rms(B[i], B[[x for x in rest if x != i]].T))
         med = float(np.median(peers))
         if med < AGG_PEER_UNITS * unit or rm > AGG_PEER_RATIO * med:
@@ -2239,6 +2610,8 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
             if not rest:
                 continue
             tier = 2 if (m in coded_tot and not _is_alt(labels[m])) else _agg_name_tier(labels[m])
+            if tier == 1 and (not _is_geographic(rec["column"]) or _COUNTRY_COLUMN.search(rec["column"])):
+                tier = 0            # a whole country is the aggregate of its provinces, never of other countries (wave 5e)
             lo = np.nanmin(np.where(np.isnan(A[rest]), np.inf, A[rest]), axis=0)
             hi = np.nanmax(np.where(np.isnan(A[rest]), -np.inf, A[rest]), axis=0)
             have = ~np.isnan(A[m]) & np.isfinite(lo) & np.isfinite(hi)
@@ -2265,7 +2638,7 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
         # sum-check, two bases or one other member leave no range to lie in, and a weighted-average fit has too little to fit. The
         # name is then the only evidence, and the table says so (sum_check.verified false). Exactly one such name, and never a
         # member that says it is the rest ("All other provinces").
-        cands = [x for x in named_any if (x[0] == 2 or _GEO_WORDS.search(rec["column"])) and not _REST_NAME.search(labels[x[1]])]
+        cands = [x for x in named_any if (x[0] == 2 or _is_geographic(rec["column"])) and not _is_rest(labels[x[1]])]
         if cands:
             top = max(t for t, _m, _i, _n in cands)
             pool = [x for x in cands if x[0] == top]
@@ -2274,8 +2647,7 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
                 evidence = {"verified": False}
     if pick is None:
         try:
-            got = _unnamed_aggregate(S, A, stats, labels, time.perf_counter() + (min(AGG_BUDGET_S, max(0.0, tm.left())) if tm else AGG_BUDGET_S),
-                                     unit=2.0 * _tol_unit(S, j))
+            got = _unnamed_aggregate(S, A, stats, labels, unit=2.0 * _tol_unit(S, j))
         except (np.linalg.LinAlgError, ValueError, FloatingPointError):      # a fit that cannot be made is no evidence
             got = None
         if got is not None:
@@ -2301,8 +2673,9 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
 
 
 def _adjustment(S: Dict[str, Any], j: int) -> None:
-    """A seasonally adjusted copy beside the unadjusted one, by behaviour: their calendar-year totals agree within 3%
-    and one is three times as seasonal as the other (the variance of its month means, detrended). Labels are hints."""
+    """A seasonally adjusted copy beside the unadjusted one, by behaviour: the two series have the same SHAPE (wave 5e, P5: the changes of
+    their smoothed logs correlate and their ratio is steady, whatever the gap between their levels) and one is three times as seasonal
+    as the other (the variance of its month means, detrended). Labels are hints."""
     import numpy as np
     rec = S["dims"][j]
     labels = rec["labels"]
@@ -2311,15 +2684,18 @@ def _adjustment(S: Dict[str, Any], j: int) -> None:
     # wave 5d: a QUARTERLY table too (four seasons a year, at least 4 years); a monthly one needs 2 years, as before
     if not (2 <= M <= ADJ_MAX_MEMBERS) or not S.get("monthly") or step not in ADJ_MIN_PERIODS or S["months"] < ADJ_MIN_PERIODS[step]:
         return
+    if _is_geographic(rec["column"]):
+        return                                  # a dimension of places is never an adjustment: two regions that move together are two regions
     A, X, _c = _dim_tensor(S, j, restrict=False)
     months = S["_months"]
     best = None
     for a in range(M):
         for b in range(a + 1, M):
-            year_ok, ratio = _pair_behaviour(A[a], A[b], months, S["measure"]["type"], step)
-            if year_ok is None:
+            copy = _pair_is_copy(A[a], A[b], step) or _year_agree(A[a], A[b], months, S["measure"]["type"], step)
+            if not copy:
                 continue
-            if year_ok and ratio is not None and (ratio >= ADJ_SEASONAL_RATIO or ratio <= 1.0 / ADJ_SEASONAL_RATIO):
+            ratio = _seasonal_ratio(A[a], A[b], months, S["measure"]["type"], step)
+            if ratio is not None and (ratio >= ADJ_SEASONAL_RATIO or ratio <= 1.0 / ADJ_SEASONAL_RATIO):
                 nsa, sa = (a, b) if ratio >= 1 else (b, a)
                 strength = ratio if ratio >= 1 else 1.0 / ratio
                 if best is None or strength > best[2]:
@@ -2329,7 +2705,7 @@ def _adjustment(S: Dict[str, Any], j: int) -> None:
     nsa, sa, strength = best
     rec.update(role="adjustment", nsa=labels[nsa], sa=labels[sa], nsa_index=nsa, sa_index=sa,
                total=labels[nsa], total_index=nsa, components={}, alternatives={},
-               why="calendar-year totals agree within 3%%; %s is %s times as seasonal as %s" % (
+               why="the two series move together under a steady ratio; %s is %s times as seasonal as %s" % (
                    labels[nsa], round(strength, 1), labels[sa]))
     for m in range(M):
         if m not in (nsa, sa):
@@ -2370,64 +2746,153 @@ def _seasonal_strength(y: Any, months: Sequence[str], step: int = 1) -> Optional
     return float(np.var(means))
 
 
-def _year_gaps(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1, with_strength: bool = False
-               ) -> Tuple[List[float], List[float]]:
-    """(each complete calendar year's relative gap between two members' totals, in every context (up to 60); and, with
-    `with_strength`, the ratio of their seasonal strengths per context). A year is complete when it holds every period of it
-    (12 months, 4 quarters) with a value in both."""
+def _year_gaps(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1) -> List[float]:
+    """Each complete calendar year's relative gap between two members' totals (a mean for a level), in every context (up to 60). A year is
+    complete when it holds every period of it (12 months, 4 quarters) with a value in both."""
     import numpy as np
     years = sorted({m[:4] for m in months})
     mon = np.array(months)
     per = 12 // step
-    agree, ratios, n = [], [], 0
-    for c in range(a.shape[0]):
+    agree = []
+    for c in range(min(a.shape[0], 60)):
         ya, yb = a[c], b[c]
         if np.isnan(ya).all() or np.isnan(yb).all():
             continue
         for y in years:
             sel = np.array([m.startswith(y) for m in mon])
             if sel.sum() == per and not np.isnan(ya[sel]).any() and not np.isnan(yb[sel]).any():
-                fa, fb = (ya[sel].sum(), yb[sel].sum()) if mtype in ("flow", "count", "unknown") else \
-                    (ya[sel].mean(), yb[sel].mean())
+                fa, fb = (ya[sel].sum(), yb[sel].sum()) if mtype in ("flow", "count", "unknown") else (ya[sel].mean(), yb[sel].mean())
                 if fb != 0:
                     agree.append(abs(fa / fb - 1.0))
-        if with_strength:
-            sa_, sb_ = _seasonal_strength(ya, months, step), _seasonal_strength(yb, months, step)
-            if sa_ is not None and sb_ is not None and sb_ > 0 and sa_ > 0:
-                ratios.append(sa_ / sb_)
-        n += 1
-        if n >= 60:
-            break
-    return agree, ratios
+    return agree
 
 
-def _pair_behaviour(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1) -> Tuple[Optional[bool], Optional[float]]:
-    """(calendar-year totals agree within 3% in every context, the median ratio of a's seasonal strength to b's)."""
+def _year_agree(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1) -> bool:
+    """The wave 5d test, kept as one more way to see a copy (never the only one; wave 5e, P5): calendar-year totals within 3% in at least
+    two years, the largest gap within 6% (a statistical office benchmarks its adjusted series to the unadjusted annual totals). It errs
+    towards calling two members copies, which only ever shows one member, never adds two."""
     import numpy as np
-    agree, ratios = _year_gaps(a, b, months, mtype, step, with_strength=True)
-    if not agree or not ratios:
-        return None, None
-    return bool(float(np.median(agree)) <= ADJ_YEAR_TOL), float(np.median(ratios))
+    agree = _year_gaps(a, b, months, mtype, step)
+    return len(agree) >= 2 and float(np.median(agree)) <= ADJ_YEAR_TOL and float(np.max(agree)) <= 2 * ADJ_YEAR_TOL
 
 
-def _same_quantity(A: Any, members: Sequence[int], months: Sequence[str], mtype: str, step: int) -> Optional[Tuple[int, int]]:
-    """Two of `members` whose calendar-year totals agree within 3% in every year they can be compared (at least 2 comparisons):
-    the same quantity twice (an adjusted copy beside an unadjusted one), whatever the table is long enough to say about which is
-    which. Parts of a total are never so alike. (a, b) or None."""
+def _seasonal_ratio(a: Any, b: Any, months: Sequence[str], mtype: str, step: int = 1) -> Optional[float]:
+    """The median, over the contexts (up to 60), of the ratio of a's seasonal strength to b's; None when no context can say."""
     import numpy as np
-    if step not in ADJ_MIN_PERIODS:
+    ratios = []
+    for c in range(min(a.shape[0], 60)):
+        ya, yb = a[c], b[c]
+        if np.isnan(ya).all() or np.isnan(yb).all():
+            continue
+        sa_, sb_ = _seasonal_strength(ya, months, step), _seasonal_strength(yb, months, step)
+        if sa_ is not None and sb_ is not None and sb_ > 0 and sa_ > 0:
+            ratios.append(sa_ / sb_)
+    return float(np.median(ratios)) if ratios else None
+
+
+def _smooth_log(y: Any, per: int) -> Any:
+    """The log of a series' centred moving average over one season (12 months, 4 quarters, 2 half-years; the series itself for a year),
+    for a gap of at most 3 periods filled by a straight line first (a smoothing input only, never a figure). NaN where the window is
+    incomplete or the level is not positive."""
+    import numpy as np
+    v = np.array(y, dtype=float)
+    n = len(v)
+    ok = ~np.isnan(v)
+    if ok.sum() >= 2:
+        idx = np.flatnonzero(ok)
+        for a, b in zip(idx[:-1], idx[1:]):
+            if 1 < b - a <= 4:
+                v[a + 1:b] = np.interp(np.arange(a + 1, b), [a, b], [v[a], v[b]])
+    if per > 1:
+        k = np.r_[0.5, np.ones(per - 1), 0.5] / float(per) if per % 2 == 0 else np.ones(per) / float(per)
+        h = len(k) // 2
+        sm = np.full(n, np.nan)
+        for i in range(h, n - h):
+            w = v[i - h:i + h + 1]
+            if not np.isnan(w).any():
+                sm[i] = float(np.dot(w, k))
+        v = sm
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(v > 0, np.log(np.where(v > 0, v, 1.0)), np.nan)
+
+
+def _shape_copy(la: Any, lb: Any, need: int) -> Optional[bool]:
+    """Whether two smoothed-log series are one quantity twice: the changes of the two correlate at least COPY_CORR and the log of
+    their ratio wanders at most COPY_RATIO_SD. None when the test cannot run (fewer than `need` points where both are read, or a
+    series that does not move)."""
+    import numpy as np
+    ok = np.isfinite(la) & np.isfinite(lb)
+    if int(ok.sum()) < need:
         return None
-    for i, a in enumerate(members):
-        for b in members[i + 1:]:
-            agree, _r = _year_gaps(A[a], A[b], months, mtype, step)
-            if len(agree) >= 2 and float(np.median(agree)) <= ADJ_YEAR_TOL and float(np.max(agree)) <= 2 * ADJ_YEAR_TOL:
-                return a, b
-    return None
+    da, db = np.diff(la), np.diff(lb)
+    pair = ok[:-1] & ok[1:]
+    da, db = da[pair], db[pair]
+    if len(da) < need - 1 or float(da.std()) < 1e-9 or float(db.std()) < 1e-9:
+        return None
+    corr = float(np.corrcoef(da, db)[0, 1])
+    sd = float(np.std((la - lb)[ok]))
+    return bool(corr >= COPY_CORR and sd <= COPY_RATIO_SD)
+
+
+def _pair_is_copy(a: Any, b: Any, step: int) -> bool:
+    """Whether members a and b (arrays [context, time]) are one quantity twice by shape in most of the contexts that can say."""
+    per = 12 // max(1, step)
+    need = COPY_MIN_ANNUAL if per == 1 else COPY_MIN_POINTS
+    tested = copies = 0
+    for c in range(min(a.shape[0], 60)):
+        got = _shape_copy(_smooth_log(a[c], per), _smooth_log(b[c], per), need)
+        if got is None:
+            continue
+        tested += 1
+        copies += 1 if got else 0
+    return bool(tested and 2 * copies >= tested)
+
+
+def _copies_by_shape(S: Dict[str, Any], A: Any, members: Sequence[int]) -> Optional[Tuple[Optional[int], Optional[int]]]:
+    """Two of `members` that are one quantity twice by SHAPE (an adjusted copy, another price basis: the same movement under a steady
+    ratio, whatever the gap between their levels): (a, b). (None, None) when no pair could be compared (the table is too short or too
+    blank to tell a copy from a part), which is no evidence either way; None when the pairs were compared and none is a copy. Parts of
+    a total are almost never so alike for 24 periods, and when they are, one member shown is the right answer. At most the
+    COPY_PAIR_MEMBERS largest members are compared (a count)."""
+    import numpy as np
+    step = int((S.get("period") or {}).get("step") or 1)
+    if step not in (1, 3, 6, 12):
+        return (None, None)
+    per = 12 // step
+    need = COPY_MIN_ANNUAL if per == 1 else COPY_MIN_POINTS
+    size = {m: (float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0) for m in members}
+    mem = sorted(members, key=lambda m: (-size[m], m))[:COPY_PAIR_MEMBERS]
+    C = min(A.shape[1], 60)
+    sm = {m: [_smooth_log(A[m][c], per) for c in range(C)] for m in mem}
+    any_tested = False
+    months, mtype = S.get("_months") or [], S["measure"]["type"]
+    for i, a in enumerate(mem):
+        for b in mem[i + 1:]:
+            if step in (1, 3) and months and _year_agree(A[a], A[b], months, mtype, step):
+                return (a, b)
+            tested = copies = 0
+            for c in range(C):
+                got = _shape_copy(sm[a][c], sm[b][c], need)
+                if got is None:
+                    continue
+                tested += 1
+                copies += 1 if got else 0
+            if tested:
+                any_tested = True
+                if 2 * copies >= tested:
+                    return (a, b)
+    return None if any_tested else (None, None)
+
+
+_UNADJUSTED = re.compile(r"(?i)\b(?:unadjusted|not seasonally adjusted|non[- ]?seasonally adjusted|raw|original|actual|brut(?:es?)?|"
+                         r"non d[\u00e9e]saisonnalis[\u00e9e]e?s?|nicht saisonbereinigt|sin desestacionalizar)\b")
 
 
 def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
-    """No relation found: an official table is read one member at a time (the total-named member, else the one with the
-    most cells that dominates); a business export adds its members up as the engine always has."""
+    """No relation verified: an official table is read one member at a time (the member that says total, else a whole country's name
+    in a dimension of places, else the one with the most cells that dominates, and then the table says it is not a total); a business
+    export adds its members up as the engine always has (the file is a ledger: wave 5e keeps that reading, and a member that says
+    total is never added to the rows it totals, see `_relations`)."""
     import numpy as np
     labels = rec["labels"]
     j = S["dims"].index(rec)
@@ -2435,8 +2900,13 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
         coded = _coded_totals(labels)
         hint = [m for m in range(len(labels)) if _says_total(labels[m]) or m in coded]
         by = "name"
+        whole = [m for m in range(len(labels)) if _agg_name_tier(labels[m]) == 1 and _is_geographic(rec["column"])
+                 and not _COUNTRY_COLUMN.search(rec["column"])]
         if hint:
             m = hint[0]
+        elif len(whole) == 1:
+            # a whole country's name among its provinces (wave 5e: tried before dominance; "one member shown" says it is unverified)
+            m = whole[0]
         else:
             by = "dominance"
             SM, E = S["_SM"], S["_E"]
@@ -2446,19 +2916,23 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                 dom = _dominance(A)
             except _TooLarge:
                 dom = np.zeros(len(labels))
-            m = int(sorted(range(len(labels)), key=lambda x: (-cover[x], -dom[x], x))[0])
+            # the contract's default prefers the unadjusted copy (S1: "the unadjusted series"), whichever is larger
+            m = int(sorted(range(len(labels)), key=lambda x: (0 if _UNADJUSTED.search(labels[x]) else 1, -cover[x], -dom[x], x))[0])
         prior = rec.get("why")
         rec.update(role="single", total=labels[m], total_index=m, components={}, alternatives={}, single_by=by,
-                   noun="national figure" if _GEO_WORDS.search(rec["column"]) else "total",
+                   evidence="named" if by == "name" else "single",
+                   noun="national figure" if _is_geographic(rec["column"]) else "total",
                    why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
                                                        "added across a dimension it could not verify)")
         tiers = [_agg_name_tier(lb) for lb in labels]
+        if (not _is_geographic(rec["column"]) or _COUNTRY_COLUMN.search(rec["column"])):
+            tiers = [0 if t == 1 else t for t in tiers]       # a country's name is no whole in a table of countries
         if by == "dominance" and not any(_says_total(lb) or t == 2 for lb, t in zip(labels, tiers)) and tiers.count(1) != 1:
             # no member is named as a total (one whole country's name, Canada, among provinces would be; two of them are a table of
             # countries): the one shown is not the table's figure
             rec["no_total_member"] = True
     else:
-        rec.update(role="flat_additive", total=None, total_index=None, components={}, alternatives={},
+        rec.update(role="flat_additive", total=None, total_index=None, components={}, alternatives={}, evidence="ledger",
                    why=rec.get("why") or "no member is a total of the others; the members are added up")
 
 
@@ -3526,13 +4000,25 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
            "measure": ({k: (str(v).replace("over months", "over %s" % (S.get("period") or {}).get("nouns", "months"))
                             if k == "aggregation" else v) for k, v in (S.get("measure") or {}).items() if k != "landed"}
                        if S.get("measure") else None),
-           "metadata": [{k: v for k, v in m.items() if k != "landed"} for m in S.get("metadata") or []],
+           "metadata": [_public_meta(m) for m in S.get("metadata") or []],
            "flag_column": (S.get("flags") or {}).get("column"), "dims": dims,
            "slices": [{k: v for k, v in s.items()} for s in S.get("slices") or []],
            "breakdowns": [dict(b) for b in S.get("breakdowns") or []],
            "flags": S.get("flags"), "corrections": list(S.get("corrections") or []), "keys": list(S.get("keys") or []),
            "wide": dict(S["wide"]) if S.get("wide") else None,
            "hash": S.get("hash"), "detect_seconds": S.get("detect_seconds")}
+    return out
+
+
+def _public_meta(m: Dict[str, Any]) -> Dict[str, Any]:
+    """A metadata column as the report carries it. The VALUE of a constant column is echoed only for the metadata the layer understands
+    (UOM, SCALAR_FACTOR, DECIMALS ... : a unit, a scale word, a code); for any other column that holds one value (an analyst's name, a note
+    the scan did not flag) the column's name and class are listed and its value is not (wave 5e, P12: the scan's blind spot is not
+    printed)."""
+    out = {k: v for k, v in m.items() if k != "landed"}
+    if "value" in out and _norm(m.get("column")) not in _META:
+        out.pop("value")
+        out["value_not_shown"] = True
     return out
 
 

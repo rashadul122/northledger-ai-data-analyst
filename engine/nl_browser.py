@@ -9203,7 +9203,7 @@ def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep
         S = _ns().detect(R, (), budget_s=0.3)
         return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
                                                            "rate_aggregate", "parts")
-                                             or (d["role"] == "single" and S.get("official") and d.get("noun") == "national figure")
+                                             or (d["role"] == "single" and _ns().reads_one_member(S))
                                              for d in S.get("dims") or [])
     except Exception as exc:  # noqa: BLE001 - the layout pass then reads it as before
         if fail is not None:

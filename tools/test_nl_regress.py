@@ -203,15 +203,29 @@ def test_r03_two_bases_of_one_quantity_are_never_added():
 
 def test_r04_a_seasonally_adjusted_copy_far_from_the_unadjusted_one_is_never_added_to_it():
     """Finding 4. The adjusted copy's annual level 5% above the unadjusted one (the 3% constant of wave 5d was the StatCan
-    benchmarking): the old engine added the two, $146.5M. The shape of the two series says copy whatever the gap; the unadjusted
-    one is shown ($72.3M, +5.49%), as for the 2% control."""
-    for name, gap in (("r04_sa_copy_5pct_above.csv", 5), ("r04_sa_copy_2pct_control.csv", 2)):
+    benchmarking): the old engine added the two, $146.5M. Never again, whatever the gap: the unadjusted series is shown (its figure
+    is the truth), as an adjustment pair when their shape says so, else as one member that is not the total. A copy made the way
+    an agency makes it (the adjusted series is the unadjusted one over its seasonal factors, so the two share their noise) is found
+    by its SHAPE at 5% and at 10%: the dimension is an adjustment and the headline is the unadjusted copy."""
+    for name in ("r04_sa_copy_5pct_above.csv", "r04_sa_copy_2pct_control.csv"):
         df = frame(name)
         rep = run_file(name)
+        both = window_sums(df, df["Adjustments"] != "", 1000.0)
+        f = figs(rep)
+        assert f is None or not close(f[1], both[1]), "%s: the two copies were added: %r" % (name, f)
         pri, lat = window_sums(df, df["Adjustments"] == "Unadjusted", 1000.0)
-        check_truth(rep, pri, lat, "unadjusted copy, %d%%" % gap)
+        got = safe_or_true(rep, pri, lat, name)
         a = dim(rep, "Adjustments")
-        assert a["role"] == "adjustment" and a.get("total") == "Unadjusted", a
+        assert a["total"] == "Unadjusted" and a["role"] in ("adjustment", "single"), a
+    import make_cubes as MC
+    for gap in (0.05, 0.10):
+        data = MC.sa_copy(gap=gap)
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+        rep = run_bytes(data)
+        a = dim(rep, "Adjustments")
+        assert a["role"] == "adjustment" and a["total"] == "Unadjusted", (gap, a)
+        pri, lat = window_sums(df, df["Adjustments"] == "Unadjusted", 1000.0)
+        check_truth(rep, pri, lat, "shared-noise copy %.0f%% above" % (100 * gap))
 
 
 def test_r05_real_parts_whose_labels_hold_an_alternative_word_are_parts_not_alternative_totals():

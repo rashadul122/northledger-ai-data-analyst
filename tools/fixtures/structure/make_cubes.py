@@ -901,3 +901,20 @@ if __name__ == "__main__":
         with open(os.path.join(out, name + ".csv"), "wb") as fh:
             fh.write(fn())
     print("wrote %d cubes to %s" % (len(ALL), out))
+
+
+def sa_copy(gap: float = 0.05, seed: int = 211, years: int = 4) -> bytes:
+    """Wave 5e (P5): a table of Canada's retail-like flow as an unadjusted series and a seasonally adjusted copy the way an agency makes
+    it (the unadjusted one over its seasonal factors, so the two share their noise), whose level is `gap` above the unadjusted one for
+    every year (not benchmarked to it). Two members, no total, one region: the copy is told by its shape, not by a 3% constant."""
+    rng = np.random.RandomState(seed)
+    n = 12 * years
+    t = np.arange(n)
+    months = ["%d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(n)]
+    nsa = np.round(5000.0 * 1.004 ** t * SEASON[t % 12] * (1.0 + 0.02 * rng.standard_normal(n)))
+    sa = np.round(nsa / SEASON[t % 12] * (1.0 + gap))
+    rec = []
+    for i, mo in enumerate(months):
+        rec.append((mo, "Canada", ("Unadjusted",), nsa[i], ""))
+        rec.append((mo, "Canada", ("Seasonally adjusted",), sa[i], ""))
+    return _official(["Adjustments"], rec)

@@ -1020,3 +1020,27 @@ def countries_table(words: str = "", seed: int = 421, months: int = 48, leftover
         for g, _lv in geos:
             rec.append((m, g, (words,) if words else (), series[g][i], "A"))
     return _official(["Estimates"] if words else [], rec)
+
+
+def spanish_with_coordinate(seed: int = 431, months: int = 36) -> bytes:
+    """Wave 5f (E; fuzz v2 seed 129). A Spanish StatCan-style table (PERIODO DE REFERENCIA ... COORDENADA, VALOR ...): three regions and their total
+    in two price bases, with a COORDENADA column that is one to one with the combination of region and base (a series id the engine's list of
+    metadata names did not know in Spanish). Read as a dimension (14 members, one shown) it left the headline slice empty and the old
+    row-average path ran."""
+    rng = np.random.RandomState(seed)
+    mo = ["%04d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(months)]
+    regs = (("Aldea", 800.0), ("Brisa", 1300.0), ("Cumbre", 500.0))
+    rows, vid, coord = [], {}, {}
+    ser = {(r, b): _series(rng, lv * (1.0 if b == "Precios corrientes" else 0.9), n=months) for r, lv in regs for b in ("Precios corrientes", "Precios constantes (2017)")}
+    head = ["PERIODO DE REFERENCIA", "GEO", "DGUID", "Base de precios", "UNIDAD DE MEDIDA", "ID DE UNIDAD", "FACTOR ESCALAR", "ID DE FACTOR ESCALAR",
+            "VECTOR", "COORDENADA", "VALOR", "ESTADO", "S\u00cdMBOLO", "TERMINADO", "DECIMALES"]
+    for i, m in enumerate(mo):
+        for b in ("Precios corrientes", "Precios constantes (2017)"):
+            tot = sum(ser[(r, b)][i] for r, _l in regs)
+            for g, v in [("Todas las regiones", tot)] + [(r, ser[(r, b)][i]) for r, _l in regs]:
+                key = (g, b)
+                vid.setdefault(key, "v%d" % (41000000 + len(vid)))
+                coord.setdefault(key, "%d.%d" % (len(coord) // 2 + 1, 1 + len(coord) % 2))
+                rows.append([m, g, "2021A0000000%d" % (list(dict.fromkeys(k[0] for k in vid)).index(g) + 1), b, "Pesos", "81", "millones", "6",
+                             vid[key], coord[key], "%d" % v, "", "", "", "0"])
+    return _csv(head, rows)

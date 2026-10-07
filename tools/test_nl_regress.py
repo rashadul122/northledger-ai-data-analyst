@@ -684,11 +684,14 @@ def test_r24_an_ordinary_ledger_with_a_status_column_and_a_second_number_is_read
                 rows.append([d.isoformat(), team, cat, ("p", "c", "r")[int(rng.randint(3))], hrs, round(hrs * 40, 2)])
     rep2 = run_bytes(_csv_rows(["Date", "Team", "Category", "Status", "Hours", "Cost"], rows))
     assert rep2.get("ok") and not refused(rep2) and st(rep2).get("kind") != "error", headline(rep2)[:300]
-    # negative: a publisher's table with a second varying number column is still refused, never read the old way
+    # negative: a publisher's table with a second varying number column is never read the old way: it is refused, or (wave 5f: a number the date
+    # and the other dimensions already tell apart is a second measure, not a dimension) read by its structure with the VALUE column as the measure
     df = frame("r10_partition_for_caps.csv")
     df["EXTRA"] = (pd.to_numeric(df["VALUE"], errors="coerce").fillna(0) * 0.37 + np.arange(len(df)) % 7).round(2).astype(str)
     rep3 = run_bytes(df.to_csv(index=False).encode())
-    assert refused(rep3), headline(rep3)[:300]
+    if not refused(rep3):
+        pri, lat = window_sums(df.drop(columns="EXTRA"), df["GEO"] == "Total", 1000.0)
+        check_truth(rep3, pri, lat, "the VALUE column is the measure, the extra number is not")
 
 
 def test_r25_a_scale_word_in_a_column_of_any_header_is_applied_and_an_ambiguous_word_is_not():
@@ -1138,6 +1141,184 @@ def test_f07_a_whole_countrys_name_among_other_countries_is_one_more_member_neve
     rep_m = run_bytes(d2[keep].to_csv(index=False).encode())
     g_m = dim(rep_m, "GEO")
     assert g_m["total"] == "Canada" and g_m.get("named_contradicted"), g_m
+
+
+def _daily_ledger(fmt_date, days: int = 800, start=(2021, 1, 1), branches=("North", "South"), seed: int = 5):
+    """A plain daily ledger: Date, Branch, Amount (a row a day and branch), dates rendered by fmt_date(datetime.date)."""
+    import datetime as dt
+    rng = np.random.RandomState(seed)
+    d0 = dt.date(*start)
+    rows = []
+    for k in range(days):
+        d = d0 + dt.timedelta(days=k)
+        for bi, b in enumerate(branches):
+            rows.append([fmt_date(d), b, "%d" % round((900 + 300 * bi) * (1.0 + 0.0004 * k) * (1.0 + 0.05 * rng.randn()))])
+    import csv as _csv
+    buf = io.StringIO()
+    w = _csv.writer(buf, lineterminator="\n")
+    w.writerow(["Date", "Branch", "Amount"])
+    w.writerows(rows)
+    return buf.getvalue().encode()
+
+
+def test_f08_dates_in_formats_the_core_cannot_read_are_rewritten_before_the_file_is_read():
+    """Wave 5f, H (the second review's R06). Dates written 31.12.2019, 12/31/2019, "Jan 2019", "2019 Jan", 2019M01 or 20190131 gave NO
+    analysis (the core reads year-month-day): a European d.m.y export is common. They are rewritten as ISO dates in the adapter before the
+    file is landed, and the analysis is the one the ISO twin gets. A day/month pair that could be read either way round (03/04/2019) is settled
+    by the column's other rows (a first or second field above 12), else the file is refused with a plain reason."""
+    import datetime as dt
+    iso = _daily_ledger(lambda d: d.isoformat())
+    base = headline(run_bytes(iso))
+    assert base and "Total amount" in base, base
+    fmts = {"d.m.Y": lambda d: d.strftime("%d.%m.%Y"), "m/d/Y": lambda d: d.strftime("%m/%d/%Y"), "d/m/Y": lambda d: d.strftime("%d/%m/%Y"),
+            "b d, Y": lambda d: d.strftime("%b %d, %Y"), "d b Y": lambda d: d.strftime("%d %b %Y"), "Ymd": lambda d: d.strftime("%Y%m%d"),
+            "m/d/Y H:M": lambda d: d.strftime("%m/%d/%Y 00:00")}
+    for name, f in fmts.items():
+        rep = run_bytes(_daily_ledger(f))
+        assert rep["ok"] and headline(rep) == base, (name, headline(rep)[:200], base[:200])
+        assert any(x.get("rule") == "dates_read" for x in rep["cleaning"]["fixes"]), (name, rep["cleaning"]["fixes"][:2])
+    monthly = lambda fn: ("Date,Region,Amount\n" + "\n".join("%s,%s,%d" % (fn(dt.date(2019 + i // 12, i % 12 + 1, 1)), r, 500 + 40 * i + 90 * k)
+                                                              for i in range(36) for k, r in enumerate(("East", "West")))).encode() + b"\n"
+    base_m = headline(run_bytes(monthly(lambda d: d.isoformat())))
+    for name, fn in {"b Y": lambda d: d.strftime("%b %Y"), "Y b": lambda d: d.strftime("%Y %b"), "YMmm": lambda d: d.strftime("%YM%m"),
+                     "B Y": lambda d: d.strftime("%B %Y")}.items():
+        rep = run_bytes(monthly(fn))
+        assert rep["ok"] and headline(rep) == base_m, (name, headline(rep)[:200], base_m[:200])
+    # ambiguous: every day is 12 or below
+    amb = ("Date,Branch,Amount\n" + "\n".join("%02d/%02d/%d,N,%d" % (1 + i % 12, 1 + (i * 5) % 12, 2020 + i // 144, 100 + i) for i in range(300))).encode()
+    r_amb = run_bytes(amb)
+    assert r_amb["error"] and "day/month/year or month/day/year" in r_amb["error"] and not r_amb["ok"], r_amb["error"]
+    # settled by another row: one date has a first field of 25
+    settled = amb.replace(b"01/01/2020", b"25/01/2020", 1)
+    assert run_bytes(settled)["ok"]
+    # negatives: an ISO file passes through byte for byte; a text column that only holds a date now and then is left alone; an Amount column of
+    # six-digit numbers is no date (the heading must say so)
+    assert NB.normalize_file(iso)[0] is iso
+    mixed = ("Date,Branch,Note,Amount\n" + "\n".join("2021-%02d-01,N,%s,%d" % (1 + i % 12, "call on 03/04/2019" if i % 7 == 0 else "ok", 100 + i) for i in range(40))).encode()
+    assert NB.normalize_file(mixed)[0] is mixed
+    six = ("Date,Branch,Amount\n" + "\n".join("2021-%02d-01,N,%d" % (1 + i % 12, 201901 + i) for i in range(40))).encode()
+    assert NB.normalize_file(six)[0] is six
+
+
+def test_f09_numbers_written_with_spaces_and_a_decimal_comma_are_read_and_a_series_id_is_found_by_behaviour():
+    """Wave 5f, E (fuzz v2 seeds 44 and 177: French tables, "708 219,6"; seed 129: Spanish, COORDENADA). The core reads neither "708 219,6" (a space
+    between the thousands, a decimal comma) nor a column the engine's list of metadata names does not know in Spanish. The value column was
+    text, a coordinate was the 'measure' (a constant figure) or a dimension of 14 members, the structure layer found no headline slice, and
+    the OLD path ran: 'average coordonnee 0.0%' led the report. Now the numbers are rewritten before the file is read, a column one to one with
+    the combination of the others is a series id in any language, and a table of series the layer finds no headline in is refused."""
+    df = frame("f10_seed44_french_spaced_numbers.csv")
+    val = [c for c in df.columns if c.upper() == "VALEUR"][0]
+    assert any("\xa0" in v for v in df[val]), "the fixture holds a non-breaking space between the thousands"
+    rep = run_file("f10_seed44_french_spaced_numbers.csv")
+    twin = df.copy()
+    twin[val] = twin[val].str.replace("\xa0", "", regex=False).str.replace(",", ".", regex=False)
+    rep_t = run_bytes(twin.to_csv(index=False).encode())
+    assert figs(rep) is not None and figs(rep) == figs(rep_t), (figs(rep), figs(rep_t), headline(rep))
+    assert any(x.get("rule") == "numbers_read" for x in rep["cleaning"]["fixes"]), rep["cleaning"]["fixes"][:3]
+    assert "coordonn" not in headline(rep).lower(), headline(rep)
+    # a series id by behaviour (Spanish COORDENADA is no name the engine lists)
+    rep_s = run_bytes(MC.spanish_with_coordinate())
+    assert est(rep_s) and "COORDENADA" not in [d["column"] for d in st(rep_s)["dims"] if d.get("role") != "constant"], st(rep_s)["dims"]
+    g = dim(rep_s, "GEO")
+    assert g["role"] == "partition" and g["total"] == "Todas las regiones", g
+    # fail closed: a value column that cannot be read as numbers is a refusal naming the reason, never the row-average path
+    bad = df.copy()
+    bad[val] = bad[val] + " $"
+    rep_b = run_bytes(bad.to_csv(index=False).encode())
+    assert refused(rep_b) or est(rep_b), headline(rep_b)
+    assert "coordonn" not in headline(rep_b).lower() and "average" not in headline(rep_b).lower().split("(")[0], headline(rep_b)
+    # negatives: US thousands "1,234" and a bare decimal comma "123,4" are left to the core (ambiguous / already read)
+    us = ("Date,Branch,Amount\n" + "\n".join("2021-%02d-01,N,\"%s\"" % (1 + i % 12, "{:,}".format(1000 + 37 * i)) for i in range(40))).encode()
+    assert NB.normalize_file(us)[0] is us
+    comma = ("Date,Branch,Amount\n" + "\n".join("2021-%02d-01,N,\"%d,%d\"" % (1 + i % 12, 10 + i, i % 10) for i in range(40))).encode()
+    assert NB.normalize_file(comma)[0] is comma
+
+
+def test_f10_a_daily_or_weekly_file_is_compared_over_whole_months_never_a_month_the_file_stops_in_the_middle_of():
+    """Wave 5f, D (fuzz v2 seeds 34 65 79 131 132). A daily file ending on 21 November was read "12 months to Nov 2023": 26 days of the last month
+    against a whole month a year before (-1.8% where the 365 days say +0.6%). The rows of a month the file stops in the middle of (and a first
+    month that enters the comparison) are left out and said so; the months compared are whole."""
+    import datetime as dt
+    full = _daily_ledger(lambda d: d.isoformat(), days=730 + 31 + 30)                  # 2021-01-01 .. 2023-02-06 + : ends mid-month
+    last = dt.date(2021, 1, 1) + dt.timedelta(days=730 + 31 + 30 - 1)
+    assert last.day not in (28, 29, 30, 31)
+    rep = run_bytes(full)
+    assert any(x.get("rule") == "partial_month_left_out" for x in rep["cleaning"]["fixes"]), rep["cleaning"]["fixes"][:3]
+    assert any("in the middle of" in x["text"] for x in rep["limitations"]), [x["text"][:90] for x in rep["limitations"]]
+    # the figure: the plain monthly totals of the whole months only
+    df = pd.read_csv(io.BytesIO(full), dtype=str)
+    df["v"] = pd.to_numeric(df["Amount"])
+    df["m"] = df["Date"].str[:7]
+    by = df.groupby("m")["v"].sum()
+    whole = [m for m in sorted(by.index) if m < last.strftime("%Y-%m")]
+    lat, pri = by[whole[-12:]].sum(), by[whole[-24:-12]].sum()
+    led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
+    assert close(led["measure.amount.total.last12"], lat) and close(led["measure.amount.total.prior12"], pri), \
+        (led.get("measure.amount.total.last12"), led.get("measure.amount.total.prior12"), lat, pri)
+    # the repro of seed 34 (a daily file whose first month is partial too: the comparison is refused as too short, never made over a partial month)
+    r34 = run_file("f11_seed34_daily_partial_month.csv")
+    assert "12 months to Nov 2023" not in headline(r34) and ("too short" in headline(r34) or "Oct 2023" in headline(r34)), headline(r34)
+    # negatives: a daily file that ends on the last day of a month is not trimmed; a monthly file is untouched
+    whole_file = _daily_ledger(lambda d: d.isoformat(), days=365 + 365 + 31 + 28)                  # 2021-01-01 .. 2023-02-28
+    assert NB.ledger_tidy(whole_file) is None
+    monthly = ("Date,Region,Amount\n" + "\n".join("%04d-%02d-01,E,%d" % (2019 + i // 12, i % 12 + 1, 500 + i) for i in range(36))).encode()
+    assert NB.ledger_tidy(monthly) is None
+
+
+def test_f11_total_rows_in_a_plain_file_are_left_out_when_the_cells_say_they_are_totals_and_a_real_branch_is_never_dropped():
+    """Wave 5f, B (fuzz v2 seeds 4 13 29 36 88 126 140 163 176 193 201 203 217 229 246 257 270 294, and the live product today). A business file with
+    a literal Total / All row in the branch column, the product column or both, and two number columns (units and an amount), is not read by the
+    structure layer, so the plain path ADDED the Total rows to the rows they total: the level 2 to 4 times too big (the % change was right). A
+    member NOMINATED by a total word is a total only if the cells say so (its rows equal the sum of the others', cell by cell, by a check that could
+    have failed): then it is left out and said so. A name that merely holds a total word (All Saints Church, Total Wine, Head Office) is a member and
+    is counted. A bare total phrase that no cell can verify is left out too, with a plain word in the headline; a loose name never."""
+    import test_nl_business as TB
+    import check_business_corpus as CBC
+    import make_business as MB
+    for i in (203, 204, 207, 209, 212, 215):
+        full, _detail, sp = MB.make_pivot(i)
+        NB._PROFILE_CACHE.clear()
+        rep = NB.run(full, "table.csv", "", {}, AS_OF)
+        why = TB.judge_pivot(i, CBC.pivot_summary(rep))
+        assert not why, (i, sp["freq"], sp["margin"], sp["measure_names"], why)
+        if sp["margin"] is not None and sp["measures"] == 2:
+            assert any(x.get("rule") == "total_rows_left_out" for x in rep["cleaning"]["fixes"]), (i, rep["cleaning"]["fixes"][:3])
+    # the repro of seed 4 (Store: Total, All other branches, Tarnfield; Qty and Amount; weekly): the level is the plain sum, not twice
+    df = frame("f12_seed4_weekly_total_rows_two_measures.csv")
+    rep = run_file("f12_seed4_weekly_total_rows_two_measures.csv")
+    led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
+    d2 = df[df["Store"] != "Total"].copy()
+    d2["v"] = pd.to_numeric(d2["Amount"])
+    d2["m"] = d2["Date"].str[:7]
+    by = d2.groupby("m")["v"].sum()
+    months = sorted(by.index)
+    assert close(led["measure.amount.total.last12"], by[months[-12:]].sum()) or close(led["measure.amount.total.last12"], by[months[-13:-1]].sum()), \
+        (led["measure.amount.total.last12"], by[months[-12:]].sum())
+    # negatives: a REAL branch with a total word is counted (its rows are in the sums), and says nothing
+    big = ["Date,Store,Amount"] + ["%04d-%02d-01,%s,%d" % (2019 + i // 12, i % 12 + 1, s, 100 * (k + 1) + i) for i in range(36)
+                                  for k, s in enumerate(("All Saints Church", "North", "South"))]
+    t = NB.ledger_tidy(("\n".join(big) + "\n").encode())
+    assert t is None or not [x for x in t["totals"] if x["left_out"]], t
+    # a bare Total that is NOT the sum and is not above it is a member of its own (counted, said so); one above the sum is left out, unverified
+    # (two number columns, so the structure layer does not read the file and the adapter decides)
+    def ledger2(total_of):
+        rows = ["Date,Store,Qty,Amount"]
+        for i in range(36):
+            d = "%04d-%02d-01" % (2019 + i // 12, i % 12 + 1)
+            a, b = 100 + i, 150 + 2 * i
+            rows += ["%s,North,%d,%d" % (d, i % 4, a), "%s,South,%d,%d" % (d, (i + 1) % 4, b), "%s,Total,%d,%d" % (d, i % 4 + (i + 1) % 4, total_of(a, b, i))]
+        return ("\n".join(rows) + "\n").encode()
+    t2 = NB.ledger_tidy(ledger2(lambda a, b, i: 120 + i))
+    assert t2 and t2["totals"][0]["status"] == "contradicted" and not t2["totals"][0]["left_out"], t2
+    rep2 = run_bytes(ledger2(lambda a, b, i: 120 + i))
+    assert any("not the sum of the other rows" in x["text"] for x in rep2["limitations"]), [x["text"][:80] for x in rep2["limitations"]]
+    t3 = NB.ledger_tidy(ledger2(lambda a, b, i: a + b + 40))
+    assert t3 and t3["totals"][0]["status"] == "contradicted_bounding" and t3["totals"][0]["left_out"], t3
+    rep3 = run_bytes(ledger2(lambda a, b, i: a + b + 40))
+    assert "could not be checked" in headline(rep3), headline(rep3)
+    # the same file with the Total equal to the sum: verified, left out, no word in the headline
+    rep4 = run_bytes(ledger2(lambda a, b, i: a + b))
+    assert "could not be checked" not in headline(rep4) and any(x.get("rule") == "total_rows_left_out" for x in rep4["cleaning"]["fixes"]), headline(rep4)
 
 
 # ----------------------------------------------------------------------------- runner

@@ -72,22 +72,50 @@ def summarise(rep: dict) -> dict:
     return out
 
 
-def run_corpus(start: int = 0, count: int = 200, detail: bool = False, log=None) -> list:
+def pivot_summary(rep: dict) -> dict:
+    """What the engine said of a pivot file (wave 5f): the estimand's windows and figures when the structure layer read it, else the analysis
+    ledger's last-12 and prior-12 totals of every measure (units, amount)."""
+    est = rep.get("estimand") or {}
+    out = {"ok": bool(rep.get("ok")), "error": str(rep.get("error") or "")[:160], "estimand": bool(est),
+           "headline": str((rep.get("story") or {}).get("headline") or "")[:300],
+           "refused": (not est) and "business analysis did not run" in str((rep.get("story") or {}).get("headline") or ""),
+           "limitations": [str(x.get("text") or "")[:240] for x in (rep.get("limitations") or [])[:6]]}
+    fig = est.get("figures") or {}
+    if fig.get("latest", {}).get("value") is not None:
+        out.update(source="estimand", comparison=est.get("comparison"), aggregation=(est.get("measure") or {}).get("aggregation"),
+                   measures={"": [fig["prior"]["value"], fig["latest"]["value"]]})
+        return out
+    led = {}
+    try:
+        for x in json.loads(rep["downloads"]["ledger_json"]).get("analysis_ledger") or []:
+            led[str(x.get("id"))] = x.get("value")
+    except Exception:  # noqa: BLE001
+        led = {}
+    ms = {}
+    for k, v in led.items():
+        if k.startswith("measure.") and k.endswith(".total.last12") and v is not None:
+            m = k[len("measure."):-len(".total.last12")]
+            ms[m] = [led.get(k.replace("last12", "prior12")), v]
+    out.update(source="ledger", measures=ms)
+    return out
+
+
+def run_corpus(start: int = 0, count: int = 200, detail: bool = False, log=None, pivot: bool = False) -> list:
     res = []
     for i in range(start, start + count):
-        full, plain, sp = MB.make(i)
+        full, plain, sp = (MB.make_pivot if pivot else MB.make)(i)
         t0 = time.perf_counter()
         NB._PROFILE_CACHE.clear()
         try:
             rep = NB.run(plain if detail else full, "table.csv", "", {}, AS_OF)
-            rec = summarise(rep)
+            rec = pivot_summary(rep) if pivot else summarise(rep)
         except Exception as exc:  # noqa: BLE001 - a crash is a result
             rec = {"ok": False, "error": "%s: %s" % (type(exc).__name__, str(exc)[:200]), "crash": True}
-        rec.update(i=i, freq=sp["freq"], kind=sp["kind"], total=sp["total"], total_name=sp["total_name"],
+        rec.update(i=i, freq=sp["freq"], kind=sp.get("kind"), total=sp.get("total", sp.get("margin")), total_name=sp.get("total_name", sp.get("total_branch")),
                    seconds=round(time.perf_counter() - t0, 2))
         res.append(rec)
         if log:
-            log("%3d %-5s %-6s total=%-7s %s pct=%s %s" % (i, sp["freq"], sp["kind"], sp["total"], rec.get("source"),
+            log("%3d %-5s %-6s total=%-7s %s pct=%s %s" % (i, sp["freq"], sp.get("kind"), sp.get("total", sp.get("margin")), rec.get("source"),
                                                           rec.get("pct"), "REFUSED" if rec.get("refused") else ""))
     return res
 

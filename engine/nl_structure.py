@@ -64,6 +64,7 @@ MAX_TENSOR = 4_000_000          # a dimension's member x context x date block fo
 MAX_DIMS = 8
 MAX_MEMBERS = 400               # the dimension whose RELATIONS are searched has at most 400 members; a larger one is a series key (wave 5e, P11)
 MAX_KEY_MEMBERS = 50000         # a column of more members than this is not a dimension (an id column)
+CODE_MIN_REPEAT = 3.0           # wave 5f (G): a column of whole numbers whose every code returns on at least 3 rows on average is a column of codes
 DUP_MAX = 0.01                  # date x dimensions repeat on at most 1% of the rows
 PASS_SHARE = 0.95               # a sum-check passes on 95% of its complete cells ...
 MIN_COMPLETE = 6                # ... with at least 6 complete cells ...
@@ -730,8 +731,12 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
                              "blank_rows": int(n_rows - nf)})
             continue
         if R.kind(c) == "number" and _norm(head[c]) not in _META and len(uniq) > MAX_MEMBERS:
-            other_numbers.append(c)
-            continue
+            # wave 5f (G): a column of whole numbers that each repeat on several rows (a 6-digit industry or product code: 417 codes on 41,700
+            # rows) is a column of CODES, a dimension; a measure moves, a code returns unchanged. Only a number that rarely repeats is a second measure.
+            if not (nf >= CODE_MIN_REPEAT * len(uniq) and
+                    sum(1 for x in uniq if re.fullmatch(r"\d{1,12}", str(x))) >= 0.95 * len(uniq)):
+                other_numbers.append(c)
+                continue
         codes, labels = _factorize(np.where(filled, t, ""))
         cat[c] = (codes, labels, filled)
     # flags by strong evidence: a few short codes, with blanks, or a code whose rows have a blank measure
@@ -790,6 +795,38 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
             keep_a = (not ia) if ia != ib else la >= lb_
             alias_of[b if keep_a else a] = a if keep_a else b
     dims = [d for d in dims0 if d not in alias_of]
+    # wave 5f: a column of NUMBERS with a few different values that the date and the OTHER dimensions already tell apart (units sold 0 to 3 a row,
+    # beside a branch and a product) is a second MEASURE that moves within a series, not a dimension: read as one, its members split every series
+    # into the dates that happened to share a count. A dimension is a column the rows cannot be told apart without.
+    for d in list(dims):
+        if R.kind(d) != "number" or len(dims) < 2:
+            continue
+        rest = [x for x in dims if x != d]
+        rc, _ri = _series_index([cat[x][0] for x in rest])
+        tc0, _tl0 = _factorize(dts[dated].dt.strftime("%Y-%m-%d").to_numpy())
+        pairs = rc.astype(np.int64) * (len(_tl0) + 1) + tc0
+        if 1.0 - len(pd.unique(pairs)) / max(1, n_rows) <= DUP_MAX:
+            dims.remove(d)
+            other_numbers.append(d)
+    # wave 5f (E): a series id by BEHAVIOUR, in any language (COORDONNEE, COORDENADA, KOORDINATE ...): a column that is one to one with the
+    # combination of the OTHER dimensions says nothing they do not (each of its members is one series: 14 coordinates for 7 regions in 2 bases).
+    # It is never a dimension: read as one, its default member is one series and the table's headline slice is empty. Of several that qualify
+    # (each is a function of the others'), the one whose labels are ids goes first, then the one with the most members.
+    changed = True
+    while changed and len(dims) >= 3:
+        changed = False
+        found = []
+        for d in dims:
+            rest = [x for x in dims if x != d]
+            if len(rest) >= 2 and _one_to_one(cat[d][0], _combine([cat[x][0] for x in rest])):
+                found.append(d)
+        if found:
+            gone = sorted(found, key=lambda d: (0 if _id_like(cat[d][1]) else 1, -len(cat[d][1]), d))[0]
+            alias_of[gone] = None
+            dims = [x for x in dims if x != gone]
+            changed = True
+    series_ids = {c for c, v in alias_of.items() if v is None}
+    alias_of = {c: v for c, v in alias_of.items() if v is not None}
     # series ids: a column that is 1:1 with the dimensions' key (VECTOR, COORDINATE), or any metadata-named column left
     if dims:
         key_codes = _combine([cat[d][0] for d in dims])
@@ -798,8 +835,14 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     for c in cat:
         if c in dims or c in alias_of:
             continue
-        cls = "series_id" if _one_to_one(cat[c][0], key_codes) else ("unit" if _norm(head[c]) in _UNIT_META else
-                                                                      "series_id" if _norm(head[c]) in _META else "other")
+        # wave 5f: a column of NUMBERS called Units (units sold, 0 to 3 a row) is a measure, not the unit of measure (Dollars, Persons): the
+        # unit column holds words
+        if c in series_ids or _one_to_one(cat[c][0], key_codes):
+            cls = "series_id"
+        elif _norm(head[c]) in _UNIT_META:
+            cls = "unit" if R.kind(c) != "number" else "other"
+        else:
+            cls = "series_id" if _norm(head[c]) in _META else "other"
         metadata.append({"column": head[c], "landed": c, "class": cls, "distinct": len(cat[c][1])})
     for c, d in alias_of.items():
         metadata.append({"column": head[c], "landed": c, "class": "alias", "alias_of": head[d]})
@@ -1358,7 +1401,7 @@ def _units(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], alias_of
         if m["class"] == "constant" and _norm(m["column"]) in _UNIT_META:
             out["measure"]["uom"] = m["value"]
             return out
-    ucol = next((c for c in cat if _norm(head.get(c, c)) in _UNIT_META), None)
+    ucol = next((c for c in cat if _norm(head.get(c, c)) in _UNIT_META and R.kind(c) != "number"), None)
     if ucol is None:
         return out
     codes, labels, _f = cat[ucol]
@@ -3421,6 +3464,7 @@ def _slices(S: Dict[str, Any]) -> None:
     if not _series_exist(S, where):
         S["usable"] = False
         S["reason"] = "the default slice has no series in the table"
+        S["code"] = "no_default_slice"          # wave 5f (E): a table of series the layer found no headline in is refused, never read the old way
         S["slices"] = []
         return
     _parts_mode(S, where)

@@ -1683,7 +1683,7 @@ def _neutralize_withheld(db_path: str, table: str, columns: List[str]) -> List[s
 # engine code), so the engine reads it like any column, and is recorded in privacy.released. The page's consent step
 # shows every released column ("Read as a category, not personal data: <column> (<n> labels)") and the visitor can still
 # withhold it: a withhold or code decision for it keeps the flag.
-RELEASE_MAX_DISTINCT = 300
+RELEASE_MAX_DISTINCT = 3000            # wave 5f (G): was 300; a code-bearing dimension of a real table (NAICS at 6 digits, HS codes) has 400 to 2,500 labels
 RELEASE_MAX_SHARE = 0.05
 RELEASE_MIN_REPEAT = 5
 SENSITIVE_HEADER = re.compile(
@@ -4831,7 +4831,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
                 rec = _guard_failure(data, fail)
                 if rec is not None:
                     out[_PROFILE_CACHE_ERROR] = rec
-            elif S is not None and S.get("kind") == "not_cube":
+            elif S is not None and _refusable_verdict(S):
                 rec = _verdict_failure(data, S)           # the layer answered "not a cube" for a table of series: refused, never averaged
                 if rec is not None:
                     out[_PROFILE_CACHE_ERROR] = rec
@@ -4954,6 +4954,10 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
     column the engine flagged or the adapter's personal-column check added counts as flagged, whatever the
     caller passes in `flagged`."""
     data = _as_bytes(data)
+    try:
+        data = normalize_file(data)[0]              # wave 5f (H, E): the bytes the run reads (dates and numbers the core cannot read, rewritten)
+    except Refusal as exc:
+        return {"ok": False, "error": str(exc)}
     sha = hashlib.sha256(data).hexdigest()
     got = _PROFILE_CACHE.get("value") if _PROFILE_CACHE.get("sha") == sha else None
     if got is not None and not _same_choices(got, decisions):
@@ -9035,6 +9039,58 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
     rep.setdefault("input", {})["layout"] = lay
 
 
+def _tidy_notes(rep: Dict[str, Any], tidy: Optional[Dict[str, Any]], date_notes: List[Dict[str, Any]],
+                number_notes: Optional[List[Dict[str, Any]]] = None) -> None:
+    """Say in the report what was done to a plain file before it was read (wave 5f): the dates rewritten, the total rows left out and the month
+    the file stops in the middle of left out of the comparison. Limitations (kind "data") and cleaning fixes; the headline carries a word
+    only where a total row was left out WITHOUT proof."""
+    lim, fixes = [], []
+    for n in date_notes or []:
+        fixes.append({"rule": "dates_read", "column": n["column"], "count": n["rows"],
+                      "what": "Dates written %s in the column %s were read as dates (they were rewritten as year-month-day before the file was read)"
+                              % (n["format"], n["column"])})
+    for n in number_notes or []:
+        fixes.append({"rule": "numbers_read", "column": n["column"], "count": n["rows"],
+                      "what": "Numbers written with spaces between the thousands or a comma for the decimals in the column %s were read as "
+                              "numbers (708 219,6 is 708219.6)" % n["column"]})
+    unproven = []
+    for t in (tidy or {}).get("totals") or []:
+        who = "%r in the column %s" % (t["member"], t["column"])
+        if t.get("left_out") and t["status"] == "verified":
+            lim.append("%d rows named %s equal the sum of the other rows of the same date (checked cell by cell), so counting them would count every "
+                       "amount twice: they were left out of the figures." % (t["rows"], who))
+            fixes.append({"rule": "total_rows_left_out", "column": t["column"], "count": t["rows"],
+                          "what": "Rows named %r equal the sum of the other rows: left out of the figures, never counted twice" % t["member"]})
+        elif t.get("left_out"):
+            unproven.append(t)
+            lim.append("%d rows named %s could not be checked against the other rows (%s). They were left out of the figures, as a total is; "
+                       "if %r is a branch of its own, the figures are short by its amounts." % (t["rows"], who, t["why"], t["member"]))
+            fixes.append({"rule": "total_rows_left_out", "column": t["column"], "count": t["rows"],
+                          "what": "Rows named %r could not be checked against the other rows; left out as a total is" % t["member"]})
+        elif t.get("nomination") == "exact":
+            lim.append("%d rows named %s are not the sum of the other rows (%s), so they were counted as a member of their own."
+                       % (t["rows"], who, t["why"]))
+    part = (tidy or {}).get("partial")
+    if part:
+        months = ", ".join(_mon(m) for m in part["months"])
+        n = sum(part["rows_by_month"].values())
+        which = "ends on %s" % part["last_date"] if part["months"][0] == part["months"][-1] and part["months"][0] > part["first_date"][:7] \
+            else "starts on %s and ends on %s" % (part["first_date"], part["last_date"])
+        lim.append("The file %s, in the middle of %s (%d %s rows). The months are compared whole, so %s %s left out of the comparison."
+                   % (which, months, n, part["cadence"], months, "is" if len(part["months"]) == 1 else "are"))
+        fixes.append({"rule": "partial_month_left_out", "column": (tidy or {}).get("date_column") or "date", "count": n,
+                      "what": "%d rows of %s, a month the file stops in the middle of, were left out of the comparison" % (n, months)})
+    for text in reversed(lim):
+        rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": text})
+    if fixes:
+        rep.setdefault("cleaning", {}).setdefault("fixes", [])[0:0] = fixes
+    if unproven:
+        st = rep.get("story") or {}
+        if st.get("headline"):
+            st["headline"] = "%s (rows named %s were left out of these figures: they could not be checked against the other rows)" % (
+                st["headline"].rstrip("."), " and ".join(repr(t["member"]) for t in unproven[:2]))
+
+
 # ----------------------------------------------------------------------------- the structure of a statistical table
 # WAVE 4, track A1 (plan/WAVE4-A-DESIGN.md sections 1, 2 and 4; engine/nl_structure.py). An official table holds totals
 # beside their parts, an adjusted copy beside the unadjusted one and components beside their parents: the engine added
@@ -9313,11 +9369,18 @@ VERDICT_GUARD_REASON = ("This file looks like a table of series with totals, and
                         "its rows would count totals and parts together, so no figure is shown.")
 
 
+def _refusable_verdict(S: Optional[Dict[str, Any]]) -> bool:
+    """The layer's answer is one a table of series is refused for: "not a cube", or (wave 5f, E) a cube in which it found no headline slice
+    (every series of the default slice is empty): it must not fall back to the row-average path either."""
+    return isinstance(S, dict) and (S.get("kind") == "not_cube" or (S.get("kind") == "cube" and not S.get("usable")
+                                                                  and S.get("code") == "no_default_slice"))
+
+
 def _verdict_failure(data: bytes, S: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """The `structure` record of a refusal when the structure layer ran and answered "not a cube" for a file that looks like a table of series
     with totals (wave 5e, P7): one reference period (a census table), more dimensions, series or cells than the layer reads, a table too large
     or too slow to read, a layout it does not know. The layer's own plain reason is the refusal's. None for any other file (read as before)."""
-    if not isinstance(S, dict) or S.get("kind") != "not_cube":
+    if not _refusable_verdict(S):
         return None
     if S.get("code") == "second_measure" and not S.get("official"):
         return None          # a file with two number columns and no publisher's mark is a business export (read as before), whatever else it looks like
@@ -9451,11 +9514,10 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
             "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap)}
 
 
-def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep: Optional[Set[str]] = None) -> bool:
-    """Whether a long table the layout pass would turn into one column per series holds totals beside their parts (or
-    an adjusted copy): a quick reading of the file's text (dates as dates, numbers as numbers), only to decide not to
-    reshape it; the structure itself is read after landing, from the engine's reading, without a withheld column. A caller
-    that passes `fail` is handed the failure of the structure layer (it could not be asked), and the answer is False."""
+def _quick_structure(data: bytes, keep: Optional[Set[str]] = None, fail: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The structure layer's reading of a file from its text, BEFORE it is landed (dates as dates, numbers as numbers, a column that looks personal
+    left out as it will be after landing), or None. A caller that passes `fail` is handed the failure of the layer (it could not be asked); the
+    layer's verdict "not a cube" for a table of series is left in fail["verdict"] (wave 5e, P7)."""
     try:
         import numpy as np
         import pandas as pd
@@ -9470,7 +9532,7 @@ def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep
             df = df.drop(columns=aside)
         land = {h: _engine_slug(h) for h in df.columns}
         if len(set(land.values())) < len(land):
-            return False
+            return None
         texts = df.rename(columns=land)
         values = texts.copy().astype(object)
         for c in values.columns:
@@ -9485,19 +9547,30 @@ def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep
                 values[c] = pd.to_datetime(t.where(t != ""), errors="coerce")
         R = _Reading(values, texts, np.ones(len(df), bool), land, {})
         S = _ns().detect(R, ())
-        if S.get("kind") == "not_cube" and fail is not None:
+        if _refusable_verdict(S) and fail is not None:
             fail["verdict"] = S          # wave 5e (P7): the layer's answer "not a cube" for a table of series is a refusal, never a reshape
-        return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
-                                                           "rate_aggregate", "parts")
-                                             or (d["role"] == "single" and _ns().reads_one_member(S))
-                                             for d in S.get("dims") or [])
+        return S
     except Exception as exc:  # noqa: BLE001 - the layout pass then reads it as before
         if fail is not None:
             fail.update(_failure("detect", exc))
-            return False
+            return None
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
+        return None
+
+
+def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep: Optional[Set[str]] = None) -> bool:
+    """Whether a long table the layout pass would turn into one column per series holds totals beside their parts (or
+    an adjusted copy): a quick reading of the file's text (dates as dates, numbers as numbers), only to decide not to
+    reshape it; the structure itself is read after landing, from the engine's reading, without a withheld column. A caller
+    that passes `fail` is handed the failure of the structure layer (it could not be asked), and the answer is False."""
+    S = _quick_structure(data, keep, fail)
+    if S is None:
         return False
+    return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
+                                                       "rate_aggregate", "parts")
+                                         or (d["role"] == "single" and _ns().reads_one_member(S))
+                                         for d in S.get("dims") or [])
 
 
 def _private_of(got: Dict[str, Any]) -> Any:
@@ -9901,6 +9974,445 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
             est_rec["inference"] = json.loads(json.dumps(f["inference"]))
 
 
+# ----------------------------------------------------------------------------- wave 5f: dates, totals and partial months of a plain file
+# Three things the adapter does to a plain (business) file BEFORE it is landed, none of them to a publisher's table (whose structure the
+# layer reads, nl_structure) and none to a file the layer reads:
+#   1. DATES WRITTEN IN A FORMAT THE CORE DOES NOT READ (31.12.2019, 12/31/2019, "Jan 2019", "2019 Jan", 2019M01, 20190131) are rewritten
+#      as ISO dates (H). A day/month pair that could be read either way round (03/04/2019) is settled by the column's other rows (a first
+#      or a second field above 12) or the file is refused with a plain reason: a guess would move every month.
+#   2. TOTAL ROWS (T): a member NOMINATED by a total word in a category column (Total, All, Grand total, overall ...) is a total only if the
+#      cells say so: its rows equal the sum of the other members' over the same other-dimension cells (exact, or within the file's own
+#      rounding: nl_structure._sum_check, a check that could have failed). A verified total is left out of the figures (the file adds up
+#      to the same figures without it); a name nobody can check is left out too when it is a bare total phrase, and said so; a name that
+#      merely holds a total word (All Saints Church, Total Wine) is a member until the cells say otherwise.
+#   3. A PARTIAL MONTH (D): a file with several dates a month ends in the middle of a month, and "12 months" would compare 26 days of the
+#      last month with a whole month a year before: the rows of the last (or, when it enters the comparison, the first) month are left
+#      out, and said so.
+TIDY_ON = True
+TIDY_MIN_ROWS = 8
+TIDY_MAX_MEMBERS = 400            # a category column with more members is an id column, not a dimension a total can be a member of
+TIDY_KEY_MAX = 60                 # the other-dimension cells of a check: columns with more members than this are not part of the cell's key
+_DATE_HEADER = re.compile(r"(?i)(?:date|day|period|time|month|week|year|datum|fecha|jour|periode|periodo|mes|monat|dt)")
+_MONTH_NAMES = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+_ISO_LIKE = re.compile(r"^\s*\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?(?:[ T].*)?$|^\s*\d{4}-?[Qq][1-4]\s*$|^\s*\d{4}\s*$")
+_DATE_FORMATS = (
+    # (label, regex that the text must match, strptime format, resolution: day / month, day-first-or-month-first group)
+    ("day.month.year", r"^\d{1,2}\.\d{1,2}\.\d{4}$", "%d.%m.%Y", "day"),
+    ("day.month.yy", r"^\d{1,2}\.\d{1,2}\.\d{2}$", "%d.%m.%y", "day"),
+    ("day-month-year", r"^\d{1,2}-\d{1,2}-\d{4}$", "%d-%m-%Y", "day"),
+    ("month-first slash", r"^\d{1,2}/\d{1,2}/\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$", "%m/%d/%Y", "slash"),
+    ("month-first slash yy", r"^\d{1,2}/\d{1,2}/\d{2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$", "%m/%d/%y", "slash"),
+    ("month day, year", r"^%s\.?\s+\d{1,2},?\s+\d{4}$" % _MONTH_NAMES, "%b %d %Y", "day"),
+    ("day month year", r"^\d{1,2}\s+%s\.?,?\s+\d{4}$" % _MONTH_NAMES, "%d %b %Y", "day"),
+    ("month year", r"^%s\.?[ -]\d{4}$" % _MONTH_NAMES, "%b %Y", "month"),
+    ("year month", r"^\d{4}[ -]%s\.?$" % _MONTH_NAMES, "%Y %b", "month"),
+    ("year M month", r"^\d{4}\s?M\d{2}$", "%YM%m", "month"),
+    ("year month digits", r"^\d{4}(?:0[1-9]|1[0-2])$", "%Y%m", "month_digits"),
+    ("year month day digits", r"^\d{4}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])$", "%Y%m%d", "day_digits"),
+)
+
+
+def _month_fix(t: str) -> str:
+    """'Sept 2019' -> 'Sep 2019'; a full month name -> its three letters (strptime reads %b)."""
+    t = re.sub(r"(?i)\b(sep)t(?:ember)?\b", r"\1", t)
+    m = re.match(r"(?i)^(.*?)\b(%s)\b(.*)$" % _MONTH_NAMES, t)
+    if m:
+        t = m.group(1) + m.group(2)[:3].capitalize() + m.group(3)
+    return t.replace(".", "") if re.search(r"[A-Za-z]\.", t) else t
+
+
+def _read_plain(data: bytes) -> Optional[Any]:
+    import pandas as pd
+    try:
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    except Exception:  # noqa: BLE001 - a file pandas cannot read is left to the engine's own reader
+        return None
+    if df.columns.has_duplicates or len(df.columns) < 2:
+        return None
+    return df
+
+
+def _to_csv_bytes(df: Any) -> bytes:
+    return df.to_csv(index=False, lineterminator="\n").encode("utf-8")
+
+
+def _dates_in_place(df: Any) -> List[Dict[str, Any]]:
+    """Rewrite, in the frame, every column of dates written in a format the core does not read as ISO dates (H); [{column, format, rows}]. A column is
+    rewritten only when at least 95% of its filled cells fit ONE format (never a text column that merely holds a date now and then). 03/04/2019
+    could be 3 April or 4 March: the column's other rows settle it (a first field above 12 is a day, a second above 12 is a day), else the file is
+    refused with a plain reason."""
+    import pandas as pd
+    notes: List[Dict[str, Any]] = []
+    for c in list(df.columns):
+        s = df[c].astype(str).str.strip()
+        filled = s[s != ""]
+        if len(filled) < 3:
+            continue
+        sample = filled.drop_duplicates()
+        if len(sample) > 3000:
+            sample = sample.sample(3000, random_state=0)
+        if float(sample.map(lambda v: bool(_ISO_LIKE.match(v))).mean()) >= 0.95:
+            continue                                           # the core reads these
+        picks = []
+        for label, rx, fmt, res in _DATE_FORMATS:
+            if res in ("month_digits", "day_digits") and not _DATE_HEADER.search(str(c)):
+                continue                                       # six or eight digits are a date only under a heading that says so
+            if float(sample.map(lambda v, rx=rx: bool(re.match(rx, _month_fix(v), re.I) or re.match(rx, v, re.I))).mean()) >= 0.95:
+                picks.append((label, rx, fmt, res))
+        if not picks:
+            continue
+        label, rx, fmt, res = picks[0]
+        if res == "slash":
+            first = filled.str.extract(r"^(\d{1,2})/(\d{1,2})/")
+            f, g = pd.to_numeric(first[0], errors="coerce"), pd.to_numeric(first[1], errors="coerce")
+            if bool((f > 12).any()) and bool((g > 12).any()):
+                continue                                       # both fields exceed 12 somewhere: not a date column at all
+            if bool((f > 12).any()):
+                fmt, label = fmt.replace("%m/%d", "%d/%m"), "day/month/year"
+            elif bool((g > 12).any()):
+                label = "month/day/year"
+            else:
+                raise Refusal("The dates in the column %s are written like %s, which could be day/month/year or month/day/year, and no "
+                              "row settles it (no first or second number is above 12). Write them as 2019-04-03 (year-month-day), or "
+                              "tell me which it is, and try again. Nothing was read." % (c, str(filled.iloc[0])[:20]))
+        txt = filled.map(_month_fix) if res in ("month", "day") and "%b" in fmt else filled
+        if "," in fmt or label == "month day, year":
+            txt = txt.str.replace(",", "", regex=False)
+        if "%H" not in fmt and re.search(r"\d:\d{2}", str(filled.iloc[0])):
+            txt = txt.str.replace(r"\s+\d{1,2}:\d{2}(?::\d{2})?$", "", regex=True)
+        try:
+            parsed = pd.to_datetime(txt.str.replace(r"\s+", " ", regex=True), format=fmt, errors="coerce")
+        except Exception:  # noqa: BLE001 - a format pandas refuses is not this column's
+            continue
+        if float(parsed.notna().mean()) < 0.95:
+            continue
+        iso = parsed.dt.strftime("%Y-%m-%d").where(parsed.notna(), None)
+        out = df[c].copy()
+        out.loc[filled.index] = [v if v is not None else df.at[i, c] for i, v in zip(filled.index, iso)]
+        if not (out != df[c]).any():
+            continue
+        df[c] = out
+        notes.append({"column": str(c), "format": label, "rows": int(parsed.notna().sum())})
+    return notes
+
+
+# numbers written with a space (or a non-breaking space, a narrow one, an apostrophe) between the thousands, with a decimal comma or point
+# ("708 219,6", "1 234", "1'234.5"), or with a point between the thousands and a comma for the decimals ("1.234,5"): the core reads none of them
+# as numbers. A decimal comma alone ("123,4") is read by the core and is left to it; "1,234" and "1.234" alone are ambiguous and are left alone.
+_NUM_SPACED = re.compile(r"^[-+]?\d{1,3}(?:[ \u00a0\u202f\u2009']\d{3})+(?:[.,]\d+)?$")
+_NUM_DOTTED = re.compile(r"^[-+]?\d{1,3}(?:\.\d{3})+,\d+$")
+_NUM_PLAIN = re.compile(r"^[-+]?\d+(?:[.,]\d+)?$")
+
+
+def _numbers_in_place(df: Any) -> List[Dict[str, Any]]:
+    """Rewrite, in the frame, every column of numbers written with thousands separators the core does not read as plain numbers (see _NUM_SPACED):
+    at least 95% of the filled cells are numbers in one of these forms and at least 5% are written with a separator. [{column, rows}]."""
+    notes: List[Dict[str, Any]] = []
+    for c in list(df.columns):
+        s = df[c].astype(str).str.strip()
+        filled = s[s != ""]
+        if len(filled) < 6:
+            continue
+        sample = filled.drop_duplicates()
+        if len(sample) > 3000:
+            sample = sample.sample(3000, random_state=0)
+        spaced = sample.map(lambda v: bool(_NUM_SPACED.match(v)))
+        dotted = sample.map(lambda v: bool(_NUM_DOTTED.match(v)))
+        plain = sample.map(lambda v: bool(_NUM_PLAIN.match(v)))
+        if float((spaced | dotted | plain).mean()) < 0.95 or float((spaced | dotted).mean()) < 0.05:
+            continue
+        dot_dec = sample.map(lambda v: bool(_NUM_SPACED.match(v)) and bool(re.search(r"\.\d+$", v)))
+        com_dec = sample.map(lambda v: bool(re.search(r",\d+$", v)) and (bool(_NUM_SPACED.match(v)) or bool(_NUM_DOTTED.match(v))))
+        if bool(dot_dec.any()) and bool(com_dec.any()):
+            continue                                           # point and comma both as the decimal mark in one column: not read
+
+        def conv(v: str) -> str:
+            t = v.strip()
+            if _NUM_DOTTED.match(t):
+                return t.replace(".", "").replace(",", ".")
+            if _NUM_SPACED.match(t):
+                t = re.sub(r"[ \u00a0\u202f\u2009']", "", t)
+                return t.replace(",", ".")
+            if _NUM_PLAIN.match(t) and "," in t and "." not in t:
+                return t.replace(",", ".")                     # the rest of the column is in the same decimal-comma style
+            return v
+        out = df[c].map(lambda v: conv(str(v)) if str(v).strip() != "" else v)
+        if (out != df[c]).any():
+            df[c] = out
+            notes.append({"column": str(c), "rows": int(len(filled))})
+    return notes
+
+
+def normalize_file(data: bytes) -> Tuple[bytes, List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """(the file, date notes, number notes): dates and numbers written in a format the core does not read, rewritten as ISO dates and plain numbers
+    before anything reads the file (H, E). The same bytes when no column needs it (a head of the file is looked at first, so an ordinary file is
+    parsed once)."""
+    import pandas as pd
+    try:
+        head = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig", nrows=3000)
+    except Exception:  # noqa: BLE001 - a file pandas cannot read is left to the engine's own reader
+        return data, [], []
+    if head.columns.has_duplicates or len(head.columns) < 2 or len(head) < 3:
+        return data, [], []
+    try:
+        applies = bool(_dates_in_place(head.copy())) or bool(_numbers_in_place(head.copy()))
+    except Refusal:
+        applies = True                                         # the head is ambiguous: the whole column may settle it, or refuse
+    if not applies:
+        return data, [], []
+    df = _read_plain(data)
+    if df is None:
+        return data, [], []
+    dn = _dates_in_place(df)
+    nn = _numbers_in_place(df)
+    return (_to_csv_bytes(df), dn, nn) if (dn or nn) else (data, [], [])
+
+
+def normalize_dates(data: bytes) -> Tuple[bytes, List[Dict[str, Any]]]:
+    """The dates part of normalize_file (kept for callers and tests)."""
+    out, dn, _nn = normalize_file(data)
+    return out, dn
+
+
+_TOTAL_GENERIC = frozenset((
+    "branches", "branch", "stores", "store", "shops", "shop", "regions", "region", "locations", "location", "products", "product", "items",
+    "item", "categories", "category", "customers", "channels", "departments", "department", "sites", "site", "areas", "area", "provinces",
+    "states", "industries", "sectors", "groups", "segments", "offices", "countries", "cities", "brands", "services", "types", "ages",
+    "sources", "outlets", "markets", "territories", "clients", "accounts", "sales", "periods", "months", "years", "classes", "lines"))
+
+
+def _total_nomination(label: Any) -> Optional[str]:
+    """How a member's NAME nominates it as the total of the others: "exact" (a bare total phrase: Total, Grand total, All, All regions, Total, all
+    industries, Overall, Ensemble, Insgesamt ...) or "loose" (a total word inside a longer name: All Saints Church, Total Wine), else None. The
+    rest of something ("All other branches") and an alternative total ("Total excluding X") are never nominated: they are what they say."""
+    NS = _ns()
+    if NS._is_rest(label) or NS._is_alt(label) or not NS._says_total(label):
+        return None
+    t = NS._fold_name(NS._outside_brackets(label))
+    toks = [x for x in t.split() if x]
+    drop = {"the", "of", "de", "des", "du", "la", "le", "les", "und", "and", "all", "tous", "toutes", "alle", "todos", "todas"}
+    core = [x for x in toks if x not in drop]
+    head = {"total", "totals", "totale", "totaal", "grand", "overall", "aggregate", "combined", "sum", "ensemble", "insgesamt", "gesamt",
+            "gesamtsumme", "general", "generale", "subtotal", "everything"}
+    if toks and (set(core) <= head | _TOTAL_GENERIC and (not core or core[0] in head or toks[0] in ("all", "tous", "toutes", "alle", "todos", "todas"))):
+        return "exact"
+    return "loose"
+
+
+def _decimals_of(series: Any) -> int:
+    """The most decimals any filled cell of a text column of numbers writes (at most 4)."""
+    d = 0
+    for v in series.drop_duplicates().head(2000):
+        m = re.match(r"^[-+]?\d*\.(\d+)", str(v).strip().replace(",", ""))
+        if m:
+            d = max(d, len(m.group(1)))
+    return min(d, 4)
+
+
+def _number_columns(df: Any, exclude: Set[str]) -> Dict[str, Any]:
+    import pandas as pd
+    out = {}
+    for c in df.columns:
+        if c in exclude:
+            continue
+        t = df[c].astype(str).str.strip()
+        f = t[t != ""]
+        if len(f) < 4:
+            continue
+        num = pd.to_numeric(f.str.replace(",", "", regex=False), errors="coerce")
+        if float(num.notna().mean()) >= 0.95 and int(num.nunique()) >= 2:
+            out[c] = pd.to_numeric(t.str.replace(",", "", regex=False), errors="coerce")
+    return out
+
+
+def _date_values(df: Any, exclude: Set[str]) -> Tuple[Optional[str], Optional[Any]]:
+    """(the date column, its dates as datetimes): the column whose cells are ISO dates with the most different dates."""
+    import pandas as pd
+    best, best_n, best_s = None, 0, None
+    for c in df.columns:
+        if c in exclude:
+            continue
+        t = df[c].astype(str).str.strip()
+        f = t[t != ""]
+        if len(f) < 4 or float(f.map(lambda v: bool(re.match(r"^\d{4}-\d{2}(?:-\d{2})?(?:[ T].*)?$", v))).mean()) < 0.95:
+            continue
+        d = pd.to_datetime(t.str[:10].where(t.str.len() >= 10, t.str[:7] + "-01"), format="%Y-%m-%d", errors="coerce")
+        n = int(d.dropna().nunique())
+        if n > best_n:
+            best, best_n, best_s = c, n, d
+    return best, best_s
+
+
+def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = None) -> Optional[Dict[str, Any]]:
+    """What to do to a plain file before it is landed (T and D, above), or None when there is nothing to do. {drops: the rows to leave out (their
+    index in the file), totals: [{column, member, rows, status, why}], partial: {...} | None}. Never raises on a file it cannot read."""
+    if not TIDY_ON:
+        return None
+    import numpy as np
+    import pandas as pd
+    NS = _ns()
+    df = _read_plain(data)
+    if df is None or len(df) < TIDY_MIN_ROWS:
+        return None
+    if _publisher_header(df.columns) is not None or len([c for c in df.columns if _pnorm(c) in _PANEL_META]) >= 3:
+        return None                                            # a publisher's table: its structure is read by nl_structure
+    kept = set(keep or ())
+    aside = {c for c in _raw_personal_columns(df, list(df.columns)) if c not in kept and _engine_slug(c) not in kept}
+    date_col, dts = _date_values(df, aside)
+    if date_col is None:
+        return None
+    nums = _number_columns(df, aside | {date_col})
+    if not nums:
+        return None
+    # the category columns: text, at most TIDY_MAX_MEMBERS different members, not personal, not a number
+    cats: Dict[str, Any] = {}
+    for c in df.columns:
+        if c in aside or c == date_col or c in nums:
+            continue
+        t = df[c].astype(str).str.strip()
+        nun = int(t[t != ""].nunique())
+        if 2 <= nun <= TIDY_MAX_MEMBERS:
+            cats[c] = t
+    drops: Set[int] = set()
+    totals: List[Dict[str, Any]] = []
+    valid_date = dts.notna().to_numpy()
+    date_key = dts.dt.strftime("%Y-%m-%d").fillna("")
+    for c, col in cats.items():
+        members = [m for m in pd.unique(col[col != ""])]
+        nominated = {m: _total_nomination(m) for m in members}
+        nominated = {m: k for m, k in nominated.items() if k}
+        if not nominated or len(members) - len(nominated) < 1:
+            continue
+        others_cols = [o for o in cats if o != c and int(cats[o][cats[o] != ""].nunique()) <= TIDY_KEY_MAX]
+        ctx = pd.Series("", index=df.index)
+        for o in others_cols:
+            ctx = ctx + "\x1f" + cats[o]
+        base = [m for m in members if m not in nominated]
+        for m, kind in nominated.items():
+            status, why = _check_total(NS, df, col, m, base, nums, ctx, date_key, valid_date)
+            rows = np.flatnonzero((col == m).to_numpy())
+            rec = {"column": str(c), "member": str(m), "rows": int(len(rows)), "nomination": kind, "status": status, "why": why}
+            # a verified total is left out; a bare total phrase that no cell could verify, or that stands above the sum of the others (a total whose
+            # parts are not all listed), is left out too and said so; a name that merely holds a total word is a member until the cells say otherwise
+            if status == "verified" or (status in ("unresolved", "contradicted_bounding") and kind == "exact"):
+                drops.update(int(i) for i in rows)
+                rec["left_out"] = True
+            else:
+                rec["left_out"] = False
+            totals.append(rec)
+    partial = _partial_months(df, dts, drops)
+    if not drops and not partial and not [t for t in totals if t["nomination"] == "exact"]:
+        return None
+    if partial:
+        drops.update(partial["rows"])
+    return {"drops": sorted(drops), "totals": totals, "partial": partial, "date_column": date_col}
+
+
+def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict[str, Any], ctx: Any, date_key: Any,
+                 valid_date: Any) -> Tuple[str, str]:
+    """Whether member m of a category column is the total of the `base` members over the same cells (the same date and the same members of every
+    other dimension), for every number column: "verified" (a sum-check that could have FAILED passed for at least one number column and failed
+    for none: nl_structure._sum_check, the layer's own), "contradicted_bounding" (it is above their sum in the cells: a total whose parts are not
+    all listed), "contradicted" (it is not their sum and is not above it: an ordinary member) or "unresolved" (no check could have failed)."""
+    import numpy as np
+    import pandas as pd
+    mem_list = base + [m]
+    use = valid_date & col.isin(mem_list).to_numpy()
+    if int(use.sum()) < TIDY_MIN_ROWS:
+        return "unresolved", "too few rows"
+    ci, cvals = pd.factorize(ctx[use])
+    ti, tvals = pd.factorize(date_key[use])
+    mi = np.array([mem_list.index(x) for x in col[use].to_numpy()])
+    nm, nc, nt = len(mem_list), len(cvals), len(tvals)
+    if nm * nc * nt > 4_000_000:
+        return "unresolved", "too many cells"
+    X = np.zeros((nm, nc, nt), dtype=bool)
+    X[mi, ci, ti] = True
+    results = []
+    for name, series in nums.items():
+        v = series[use].to_numpy(dtype=float)
+        ok = ~np.isnan(v)
+        g = pd.DataFrame({"m": mi[ok], "c": ci[ok], "t": ti[ok], "v": v[ok]}).groupby(["m", "c", "t"], sort=False)["v"].sum()
+        A = np.full((nm, nc, nt), np.nan)
+        idx = g.index.to_frame(index=False).to_numpy()
+        A[idx[:, 0], idx[:, 1], idx[:, 2]] = g.to_numpy()
+        tol = 0.5 * 10.0 ** (-_decimals_of(df[name]))
+        nonneg = bool(np.nanmin(A) >= 0) if np.isfinite(A).any() else True
+        results.append((NS._sum_check(A, X, nm - 1, list(range(nm - 1)), tol, nonneg), A))
+    if any(c["status"] == "fail" for c, _a in results):
+        bound = True
+        for c, A in results:
+            if c["status"] != "fail":
+                continue
+            rest, tot = A[:-1], A[-1]
+            both = ~np.isnan(tot) & (~np.isnan(rest)).all(axis=0)
+            bound = bound and bool(both.sum() >= 3 and float((tot[both] >= np.nansum(rest, axis=0)[both] - 1e-9).mean()) >= 0.95)
+        return ("contradicted_bounding" if bound else "contradicted"), "it is not the sum of the other members"
+    if any(c["status"] == "pass" for c, _a in results):
+        return "verified", "it equals the sum of the other members in every cell that can be checked"
+    return "unresolved", "no check on these figures could have failed"
+
+
+def _partial_months(df: Any, dts: Any, already: Set[int]) -> Optional[Dict[str, Any]]:
+    """The rows of a last month the file stops in the middle of (and of a first month, when it enters the comparison), for a file with several
+    dates a month at a regular rhythm (weekly, daily, or weekdays only). None for a monthly file, an irregular one, or a file that ends on the
+    last expected date of its month."""
+    import numpy as np
+    import pandas as pd
+    ok = dts.notna().to_numpy()
+    keep_rows = np.array([i not in already for i in range(len(df))]) & ok
+    d = dts[keep_rows]
+    if len(d) < 8:
+        return None
+    ds = sorted({x.strftime("%Y-%m-%d") for x in d})
+    cad = _ns()._cadence(ds)
+    if cad is None:
+        return None
+    months = sorted({x[:7] for x in ds})
+    if len(months) < 3:
+        return None
+    days = [pd.Timestamp(x) for x in ds]
+    wd_share = np.bincount([x.weekday() for x in days], minlength=7) / float(len(days))
+    present = {w for w in range(7) if wd_share[w] >= 0.05}
+
+    def expected_after(ts: Any) -> bool:
+        """Whether a date the file's own rhythm would hold falls after `ts` in its month."""
+        end = ts + pd.offsets.MonthEnd(0)
+        cur = ts + pd.Timedelta(days=1)
+        while cur <= end:
+            if cur.weekday() in present and (cad["cadence"] != "week" or cur.weekday() == ts.weekday()):
+                return True
+            cur += pd.Timedelta(days=1)
+        return False
+
+    def expected_before(ts: Any) -> bool:
+        start = ts.replace(day=1)
+        cur = ts - pd.Timedelta(days=1)
+        while cur >= start:
+            if cur.weekday() in present and (cad["cadence"] != "week" or cur.weekday() == ts.weekday()):
+                return True
+            cur -= pd.Timedelta(days=1)
+        return False
+    last_ts = max(days)
+    first_ts = min(days)
+    out_months: List[str] = []
+    if expected_after(last_ts):
+        out_months.append(last_ts.strftime("%Y-%m"))
+    left = [m for m in months if m not in out_months]
+    # the first month, when the comparison (the latest 24 whole months) reaches it
+    if expected_before(first_ts) and len(left) <= 24:
+        out_months.append(first_ts.strftime("%Y-%m"))
+    if not out_months:
+        return None
+    month_of = dts.dt.strftime("%Y-%m").fillna("")
+    rows = [int(i) for i in np.flatnonzero(month_of.isin(out_months).to_numpy()) if i not in already]
+    if not rows:
+        return None
+    counts = {m: int(((month_of == m) & pd.Series(keep_rows, index=df.index)).sum()) for m in out_months}
+    return {"months": out_months, "rows": rows, "rows_by_month": counts, "last_date": last_ts.strftime("%Y-%m-%d"),
+            "first_date": first_ts.strftime("%Y-%m-%d"), "cadence": cad["cadence"]}
+
+
 def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict[str, Any]] = None,
         as_of: Optional[str] = None) -> Dict[str, Any]:
     """The engine's end-to-end path on one file, as THE REPORT CONTRACT. Never raises.
@@ -9945,6 +10457,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "one or two cells and the rows below it have many. Delete the rows above "
                           "the column names (and any blank row under them), save as CSV and try "
                           "again. Nothing was read.")
+        # wave 5f (H): dates written in a format the core does not read are rewritten as ISO dates before anything reads the file
+        data, date_notes, number_notes = normalize_file(data)
+        tidy_info: Optional[Dict[str, Any]] = None
 
         layout = None
         ai_plan = None
@@ -10008,7 +10523,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     struct_error = got.get(_PROFILE_CACHE_ERROR)
                 else:
                     struct_error = got.get(_PROFILE_CACHE_ERROR)        # the pass itself failed (wave 5e, P7): a table of series is refused
-            if S_pre is not None and struct_error is None and S_pre.get("kind") == "not_cube":
+            if S_pre is not None and struct_error is None and _refusable_verdict(S_pre):
                 struct_error = _verdict_failure(sent, S_pre)
             if S_pre is not None and S_pre.get("kind") == "cube_incomplete":
                 cube_refusal = S_pre.get("reason") or "the table's rows cannot be told apart"
@@ -10018,6 +10533,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                    objective=objective, as_of=as_of, ai_plan=None, raw_context=None,
                                    outer=_outer_of(outer, rep, data), timings={})
                 if inner is not None:
+                    if date_notes or number_notes:
+                        _tidy_notes(inner, None, date_notes, number_notes)
                     return inner
                 struct_error = _slice_failure(data)                 # a table of series whose slice could not be run (else: read as before)
         if struct_error is not None:
@@ -10058,6 +10575,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     if inner is not None:
                         if plan_review:
                             inner.setdefault("ai_plan", {})["review"] = plan_review
+                        if date_notes or number_notes:
+                            _tidy_notes(inner, None, date_notes, number_notes)
                         return inner
                     struct_error = _slice_failure(data)              # a table of series whose slice could not be run (else: read as before)
                     if struct_error is not None:
@@ -10085,6 +10604,36 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     goal_from_plan = True
             except Exception as exc:  # noqa: BLE001 - a plan that cannot run leaves the rule-based path
                 ai_plan = {"refused": ["the plan could not run (%s); the rule-based reading was used" % type(exc).__name__]}
+        # wave 5f (T, D): a plain file the structure layer does not read: the total rows it holds are left out of its figures when the cells say
+        # they are totals (a bare total phrase nobody can check too, said so), and a month the file stops in the middle of is not compared
+        if layout is None and structure_inner is None and STRUCTURE_ON and struct_error is None and not cube_refusal:
+            try:
+                kept_t = _kept_by_visitor(decisions)
+                t_ = ledger_tidy(data, kept_t)
+                if t_ is not None:
+                    fail_t: Dict[str, Any] = {}
+                    S_t = _quick_structure(data, kept_t, fail_t)
+                    if S_t is not None and S_t.get("usable"):
+                        t_ = None                 # the layer reads this file (a total row beside its parts): its estimand is the answer
+                if t_ is not None:
+                    df_t = _read_plain(data)
+                    drop_t = set(t_["drops"])
+                    pos_kept = [i for i in range(len(df_t)) if i not in drop_t]
+                    if drop_t:
+                        data = _to_csv_bytes(df_t.iloc[pos_kept])
+                        if sent_rows is None:
+                            sent_rows = (pos_kept, len(df_t))
+                        elif sent_rows[0] is not None and len(sent_rows[0]) == len(df_t):
+                            sent_rows = ([sent_rows[0][i] for i in pos_kept], sent_rows[1])
+                        else:
+                            sent_rows = (None, sent_rows[1])
+                    tidy_info = dict(t_, rows_in=int(len(df_t)), rows_out=int(len(pos_kept)))
+            except Refusal:
+                raise
+            except Exception:  # noqa: BLE001 - the tidy is an aid; the file is read as it stands
+                if os.environ.get("NL_BROWSER_STRICT"):
+                    raise
+                tidy_info = None
         reshaped_after = False                    # the rules read the planned file as a long table
         if layout is None and structure_inner is None:
             try:
@@ -10216,7 +10765,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     if struct_error is not None:
                         cube_refusal = _reason_in_sentence(struct_error)
                         rep["structure"] = struct_error
-                elif S_hook is not None and S_hook.get("kind") == "not_cube":
+                elif S_hook is not None and _refusable_verdict(S_hook):
                     # wave 5e (P7): the layer ran and answered "not a cube": a table of series is refused with the layer's own reason
                     struct_error = _verdict_failure(sent, S_hook)
                     if struct_error is not None:
@@ -10234,6 +10783,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                            objective=objective, as_of=as_of, ai_plan=None, raw_context=None,
                                            outer=outer_info, timings=tm_outer)
                         if inner is not None:
+                            if date_notes or number_notes:
+                                _tidy_notes(inner, None, date_notes, number_notes)
                             return inner
                         struct_error = _slice_failure(sent)         # a table of series whose slice could not be run (else: read as before)
                         if struct_error is not None:
@@ -10512,6 +11063,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
         if layout and structure_inner is None:
             _layout_notes(rep, layout)
+        if tidy_info is not None or date_notes or number_notes:
+            _tidy_notes(rep, tidy_info, date_notes, number_notes)
         # T4: an official aggregate is described, not tested (the header as the visitor sent it)
         try:
             import pandas as _pd_h

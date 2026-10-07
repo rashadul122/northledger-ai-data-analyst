@@ -81,11 +81,119 @@ def judge(i: int, rec: dict, ref: dict) -> str:
     if sp["total"] is not None:
         return "a file with total rows (%s, %s) was read with its rows added: no estimand, figure %r" % (sp["total"], sp["total_name"], rec.get("pct"))
     old = ref.get(str(i))
+    if sp["freq"] != "month":
+        # wave 5f (D): a weekly or daily file the engine reads itself compares WHOLE months; main's figure compared the partial last month
+        # ("12 months" over 26 days of the last one), so it is no reference: the truth is the plain sum over whole months
+        wsp = dict(spec_dates(i), truth={"Amount": dict(MB.make(i)[2]["truth"]["detail_by_date"])})
+        t = window_truth(wsp, "Amount")
+        if t is None or rec.get("pct") is None:
+            return ""
+        flow_pct = 100.0 * (t[1] / t[0] - 1.0) if t[0] else None
+        if flow_pct is None or not close(rec["pct"], flow_pct, 1e-6):
+            return "a weekly or daily file read by the engine's own analysis: its change %r is not the plain sum over whole months %r" % (rec["pct"], flow_pct)
+        return ""
     if old is None or old.get("pct") is None:
         return "" if rec.get("pct") is None or True else ""
     if rec.get("pct") is None or not close(rec["pct"], old["pct"], 1e-9):
         return "a file the old engine read gives another figure now: old %r, now %r" % (old["pct"], rec.get("pct"))
     return ""
+
+
+def spec_dates(i: int) -> dict:
+    """{freq, dates} of corpus file i (the corpus' own dates, from its spec)."""
+    import datetime as dt
+    sp = MB.spec_of(i)
+    start = {"month": dt.date(2021, 1, 1), "week": dt.date(2021, 1, 4), "day": dt.date(2021, 1, 1)}[sp["freq"]]
+    return {"freq": sp["freq"], "dates": [d.isoformat() for d in MB._dates(sp["freq"], sp["periods"], start)]}
+
+
+def whole_months(sp: dict):
+    """The calendar months whose every expected date the file holds (a monthly file: all of them; a weekly file: every date of its weekday in the
+    month; a daily file: every day), from the spec alone: what the comparison may use."""
+    import datetime as dt
+    dates = [dt.date.fromisoformat(d) for d in sp["dates"]]
+    have = set(dates)
+    wd = dates[0].weekday()
+    out = []
+    for ym in sorted({(d.year, d.month) for d in dates}):
+        first = dt.date(ym[0], ym[1], 1)
+        last = (dt.date(ym[0] + (ym[1] == 12), ym[1] % 12 + 1, 1) - dt.timedelta(days=1))
+        days = [first + dt.timedelta(days=k) for k in range((last - first).days + 1)]
+        exp = days if sp["freq"] == "day" else [first] if sp["freq"] == "month" else [d for d in days if d.weekday() == wd]
+        if all(e in have for e in exp):
+            out.append(ym)
+    return out
+
+
+def window_truth(sp: dict, measure: str, flow: bool = True):
+    """(prior, latest) of a measure's detail rows over the last 12 whole months and the 12 before, or None when the file holds fewer than 24 whole
+    months in a row at its end (the engine may then state no comparison)."""
+    wm = whole_months(sp)
+    if len(wm) < 24:
+        return None
+    by = {}
+    for d, v in sp["truth"][measure].items():
+        by[(int(d[:4]), int(d[5:7]))] = by.get((int(d[:4]), int(d[5:7])), 0.0) + v
+    lat, pri = wm[-12:], wm[-24:-12]
+    return sum(by[m] for m in pri), sum(by[m] for m in lat)
+
+
+def judge_pivot(i: int, rec: dict) -> str:
+    """"" when the engine did right by pivot file i: its figures are the plain sums of the DETAIL rows (the margins, the cross cell and the
+    people's names never counted), over whole months (the file's partial month, if it ends or starts in one, left out) or over the windows
+    the layer states; and the real branch whose name holds a total word (All Saints Church, Total Wine, Head Office) is counted."""
+    _f, _d, sp = MB.make_pivot(i)
+    if rec.get("crash") or not rec.get("ok"):
+        return "crash or not ok: %s" % rec.get("error")
+    if rec.get("refused"):
+        return "refused: %s" % rec.get("headline")[:160]
+    if rec.get("source") == "estimand":
+        cmp_ = rec.get("comparison") or {}
+        if not cmp_.get("latest"):
+            return "an estimand with no windows"
+        monthly = len(cmp_["latest"][0]) == 7
+        keyed = {}
+        for d, v in sp["truth"]["Amount"].items():
+            keyed[d[:7] if monthly else d] = keyed.get(d[:7] if monthly else d, 0.0) + v
+        lat = sum(v for k, v in keyed.items() if cmp_["latest"][0] <= k <= cmp_["latest"][1])
+        pri = sum(v for k, v in keyed.items() if cmp_["prior"][0] <= k <= cmp_["prior"][1])
+        got = rec["measures"][""]
+        if not (close(got[0], pri) and close(got[1], lat)):
+            return "the figures are not the plain sum of the detail rows: engine %r, plain %r over %s" % (got, (pri, lat), cmp_)
+        return ""
+    for m in sp["measure_names"]:
+        t = window_truth(sp, m)
+        if t is None:
+            continue
+        got = (rec.get("measures") or {}).get(m.lower())
+        if got is None:
+            return "no total of %s in the ledger (%s)" % (m, sorted((rec.get("measures") or {})))
+        if not (close(got[0], t[0]) and close(got[1], t[1])):
+            return "the %s totals are not the plain sum of the detail rows: engine prior/latest %r, plain %r%s" % (
+                m, got, t, " (a margin row counted with the rows it totals)" if sp["has_total"] else "")
+    return ""
+
+
+def main_pivots() -> int:
+    only = os.environ.get("NL_PIVOT_ONLY")
+    lo, hi = (MB.PIVOT_START, MB.PIVOT_START + MB.PIVOT_COUNT)
+    if only:
+        lo, hi = [int(x) for x in only.split(":")]
+    t0 = time.perf_counter()
+    res = CB.run_corpus(lo, hi - lo, detail=False, pivot=True)
+    bad = []
+    for rec in res:
+        why = judge_pivot(rec["i"], rec)
+        if why:
+            bad.append((rec["i"], why))
+    for i, why in bad:
+        sp = MB.pivot_spec(i)
+        print("  FAIL  pivot %d (%s, margin=%s, %d measures, real-like=%s, dates=%s): %s" % (
+            i, sp["freq"], sp["margin"], sp["measures"], sp["real_like"], sp["date_fmt"], why[:420]))
+    est = sum(1 for r in res if r.get("source") == "estimand")
+    print("\n%d/%d pivot files right (%d read by their structure, %d by the engine's own analysis after its margins were left out); %.0f s" % (
+        len(res) - len(bad), len(res), est, len(res) - est, time.perf_counter() - t0))
+    return 1 if bad else 0
 
 
 def main() -> int:
@@ -111,8 +219,12 @@ def main() -> int:
     print("\n%d/%d files right (%d read by their structure, %d by the engine's own analysis); %.0f s" % (
         counts["ok"], len(res), est, len(res) - est, time.perf_counter() - t0))
     print("ALL FILES RIGHT" if not bad else "SOME FILES WRONG")
-    return 1 if bad else 0
+    rc = 1 if bad else 0
+    if not only and not os.environ.get("NL_NO_PIVOTS"):
+        rc = max(rc, main_pivots())
+        print("ALL PIVOTS RIGHT" if not rc else "SOME FILES WRONG")
+    return rc
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main_pivots() if os.environ.get("NL_PIVOT_ONLY") else main())

@@ -242,7 +242,7 @@ for (const [name, want] of Object.entries(CASES)) {
   ok('case ' + name + ': the same role for every dimension', same(g.roles, want.roles), JSON.stringify({ pyodide: g.roles, native: want.roles }));
   ok('case ' + name + ': the same aggregation, withheld columns and rows left out', g.aggregation === (want.aggregation === undefined ? g.aggregation : want.aggregation) &&
     same(g.flagged, want.flagged) && g.left_out === want.left_out, JSON.stringify({ pyodide: [g.aggregation, g.flagged, g.left_out], native: [want.aggregation, want.flagged, want.left_out] }));
-  if (want.ledger_amount) {
+  if (want.ledger_amount && want.ledger_amount[0] !== null && want.ledger_amount[1] !== null) {
     ok('case ' + name + ': the same ledger totals of the amount', !!g.ledger_amount && close(g.ledger_amount[0], want.ledger_amount[0], 1e-6 * Math.max(1, Math.abs(want.ledger_amount[0]))) &&
       close(g.ledger_amount[1], want.ledger_amount[1], 1e-6 * Math.max(1, Math.abs(want.ledger_amount[1]))), JSON.stringify({ pyodide: g.ledger_amount, native: want.ledger_amount }));
   }

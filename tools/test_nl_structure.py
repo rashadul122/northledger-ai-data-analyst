@@ -2525,14 +2525,14 @@ def test_w5d_a_personal_column_beside_the_regions_never_names_a_series_and_never
     data = MC.long_panel_with_owner()
     rep = _run(data, "fx.csv")
     lay = rep["input"]["layout"]
-    assert lay["layout"] == "long statistical table" and "Account owner" in lay["personal_set_aside"] and lay["personal_kept"] == {}, lay
+    assert lay["layout"] == "long statistical table" and "Account owner" in lay["personal_set_aside"] and "personal_kept" not in lay, lay
     assert [f["column"] for f in rep["privacy"]["flagged"]] == ["account_owner"] and rep["privacy"]["flagged"][0]["decision"] == "withhold"
     assert rep["roles"]["measures"] == ["u_s_dollar", "euro", "japanese_yen", "pound_sterling", "swiss_franc"], rep["roles"]["measures"]
     ai = json.dumps(NB.results_for_ai(rep), default=str)
     assert not [n for n in MC.OWNERS if n in json.dumps(rep, default=str) or n in ai or n.split()[1].lower() in ai.lower()]
     # kept by the visitor: it names the series (their choice), and the report says it was flagged and kept
     rep_k = _run(data, "fx.csv", {"account_owner": "keep"})
-    assert rep_k["input"]["layout"]["personal_set_aside"] == {} and "Account owner" in rep_k["input"]["layout"]["personal_kept"]
+    assert "personal_set_aside" not in rep_k["input"]["layout"] and "Account owner" in rep_k["input"]["layout"]["personal_kept"]
     assert rep_k["privacy"]["flagged"] == [{"column": "account_owner", "kind": rep_k["privacy"]["flagged"][0]["kind"], "decision": "keep"}]
     assert "u_s_dollar_michael_penhallow" in rep_k["roles"]["measures"], rep_k["roles"]["measures"]
     # negative: a category beside the currency ("Group A" ...) is no personal column: nothing flagged, nothing set aside

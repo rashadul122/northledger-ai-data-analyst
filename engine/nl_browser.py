@@ -4332,9 +4332,9 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     if not date or not value or (len(meta) < 3 and not planned) or len(df) < 50:
         return data, None
     dims = [c for c in df.columns if c not in meta and c not in (date, value)]
-    kept = set(keep or ())
+    keep_set = set(keep or ())
     found = _raw_personal_columns(df, dims)
-    personal = {c: k for c, k in found.items() if c not in kept and _engine_slug(c) not in kept}
+    personal = {c: k for c, k in found.items() if c not in keep_set and _engine_slug(c) not in keep_set}
     personal_kept = {c: k for c, k in found.items() if c not in personal}
     dims = [c for c in dims if c not in personal]
     varying = [c for c in dims if df[c].nunique() > 1]
@@ -4400,7 +4400,7 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
             units = {str(k): str(u) for k, u in df.groupby(key)[c].agg(lambda x: x.mode().iat[0] if len(x.mode()) else "").items()}
             break
     out = wide.to_csv(index=False).encode("utf-8")
-    return out, {
+    lay = {
         "layout": "long statistical table", "rows_in": int(len(df)), "rows_out": int(len(wide)),
         "series_column": " | ".join(varying) if varying else None, "series": n_series, "kept": len(kept),
         "set_aside": {k: v for k, v in dropped.items() if v}, "start": start.strftime("%Y-%m-%d"),
@@ -4408,9 +4408,12 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
         "value_column": str(value), "date_column": str(date), "metadata_set_aside": [str(c) for c in meta],
         "constant_set_aside": [str(c) for c in constant], "zeros_as_empty": zeroed,
         "units": sorted(set(u for u in units.values() if u)),
-        "personal_set_aside": {str(c): k for c, k in personal.items()},
-        "personal_kept": {str(c): k for c, k in personal_kept.items()},
     }
+    if personal:                                  # wave 5d: only where there is one, so every other table's layout record is what it was
+        lay["personal_set_aside"] = {str(c): k for c, k in personal.items()}
+    if personal_kept:
+        lay["personal_kept"] = {str(c): k for c, k in personal_kept.items()}
+    return out, lay
 
 
 def _slug(name: Any) -> str:

@@ -1688,6 +1688,67 @@ it accepts "12 months". Wave 5c: `results_for_ai`'s `structure.dims[]` now carri
 listed `column`, `role`, `members`, `total`, `parts`, `nsa`, `sa` and `depths` only, so the keys this paragraph names never reached the
 worker (the page's `rep["structure"]` had them). The worker keeps them (`validStructureSummary`: short lower-case words and booleans only).
 
+**10. What a fuzz tester found (wave 5d, 6 October 2026; `plan/WAVE4-A-DESIGN.md` "Wave 5d").** A seeded generator of random official-style
+tables with a known truth (`fuzz/`, outside the repo) ran 300 tables through the engine of 529bf3f: 23 got a confident wrong number (21 on
+main at f334008). Each cause was verified in the code, and fixed by a general rule (no seed, column name or table name is in any of them);
+each fix has a regression test in `tools/test_nl_structure.py` (`test_w5d_*`, built from small synthetic cubes in
+`tools/fixtures/structure/make_cubes.py`), red on the engine of main and green here, and a negative case the fix must not change.
+
+- *A, a measure dimension whose members have different SCALAR_FACTORs.* Two causes. (1) The sum-checks' rounding tolerance was one number for the
+  table, half a unit of the last published digit at the table's scale, and a table whose SCALAR_FACTOR varies by series has no one scale (the factor
+  was None, read as 1): dollars in millions to one decimal were checked to within $0.05, no total was verified, and the regions (and an industry total
+  with its own children) were added up. Each series now has its own half unit (its SCALAR_FACTOR and its DECIMALS, per row); a dimension's
+  check takes the largest half unit of the series it reads; one scale and one DECIMALS give the table's, as before (`_tol_unit(S, j)`). The estimand
+  names the slice's own scale (`estimand.measure.scale`, `scale_applied`: "millions", 1,000,000 for the dollars, "units", 1 for the counts beside them;
+  `structure.measure.factor` stays null for such a table). (2) The engine's scan flags a column when some of its values look like a national ID
+  number (nine digits and a check digit), so the VALUE column of a table of nine-digit counts was withheld by default, and the structure layer read the next number column
+  (UOM_ID, COORDINATE) as the measure: a constant figure with no change, printed as a published total. An official table whose value column
+  (VALUE, OBS_VALUE) is withheld is not read (section 5.10, the refusal); kept, it reads. Before and after, a 72-row cube of 2 regions, a total, dollars in
+  millions beside units sold, 12 quarters (fuzz seed 39): before, latest 4.4e6 and prior 4.4e6, 0.0%; after, by default "The business analysis did not run:
+  the column that holds the table's figures (VALUE) is withheld as possibly personal ..."; with `decisions {"value": "keep"}`, latest $8,177,800,000, prior
+  $8,019,600,000, +1.972667% (the published cells' figures). With a tolerance that was the only cause (seed 16, the full table: an industry total "Full range" with no cue in its name): before,
+  every member of the industry dimension added, $5.71B vs $5.39B (+5.93%); after, the published $1.99B vs $1.87B (+6.06%).
+  Not done: releasing a value column that the publisher's layout documents as the value (the engine's scan flags it, the visitor can keep it).
+- *B, a combined member beside regions read as the total.* (1) A code-free hierarchy search found a root = the sum of two regions and kept a third region
+  as "a component of the root" (the root bounds it), so the headline was the group alone, 44% short, with no flag (seed 251: before $20.3M vs $19.9M, +2.24%; after, the sum of the three regions, $36.1M vs $34.7M, +4.00%, the published figures). A member left over is a component
+  of the root only when the root says it is a total; in a geographic dimension no member is a component by bounding (a region smaller than another is a region, not a part of it);
+  an unnamed root must explain every member (under it, an alternative, a component of a member below it, or an exact copy, which does not count against the
+  limit of components found only by bounding); otherwise the dimension is read by its parts (`_parts_only`, the combined member left out). (2) A rate or an index: a row
+  that is the weighted average of 3 of 6 provinces lay inside the others' range, had full coverage and was reproduced by the others to the digit, and was read
+  as the national figure (seeds 264, 269). An aggregate is the weighted average of ALL its members: in a table of at most 12 members each weight is at least 1%
+  (`AGG_MIN_WEIGHT`), in a larger one the members carrying 95% of the weight are at least half of them (`AGG_SUPPORT_SHARE`), a small member then being no different from a zero.
+  Measured: 8 unnamed true aggregates of 4 to 40 members have smallest weights 4.6% to 11.6% (the 40-member panel passes by the second rule), combined members 0%.
+  Negatives: a named total row (a partition, unchanged), an unnamed true aggregate (still found: `aggregate_by` "range and fit"), a component inside one of the parts under an unnamed root of a
+  dimension that is not a place (still found).
+- *C, a table with a named total read by one of its members.* Main had fixed two of three. The third (seed 132): "Total excl. Seasonal shops" was a second member that says total
+  (`excl.` was not in the vocabulary, and `ex\.` could never match before a space), the first of two named totals was taken, and it was the alternative: its figure was the headline.
+  The vocabulary of an alternative is now excluding, excl., except, ex., ex-, less, without, w/o, other than, not including, net of, minus (never inside a word: Exclusive,
+  Wireless; never inside brackets); two members that both say total are no pick by name. An alternative is never picked by its first word either (`_says_total`; CHECK 1: "Total except
+  Footwear and Grocery" was `single_by: "name"` of a rate's sector dimension) and never a part of an aggregate's fit; a range code that holds the codes of two or more other members
+  ("Full range [11-41]") names a total (`aggregate_by: "name"`). Before and after (seed 132 repro, a vacancy rate, 360 rows): before, 5.2 vs 5.15 (+0.97%); after, Canada, "Total, all
+  industries", 6.1667 vs 6.1917 (-0.40%), the published figures.
+- *D, a total not recognised under heavy suppression, counted as one of its own parts.* A sum-check wants 6 complete cells; the table (seed 157) had 5, in all of which
+  the total matched its parts to the digit, and in 25 partial cells the total was never below the parts' reported sum. A match is enough in 3 cells when the total is at least 100
+  rounding tolerances (`STRONG_INFO`: a coincidence is out of the question; a small count keeps 6). A total is never added to its parts besides: a whole country's name in a
+  geographic dimension is tried as the total and, when no check verifies it, shown alone; a member that equals the sum of ALL the others in every cell that can be checked, and is never below
+  it in the cells that cannot, is their total whatever its name, never one of their parts (`_parts_only`). Before and after (seed 157 repro, 180 rows, 38 blank cells): before, "the sum of 6
+  regions" $659.7M vs $655.9M (+0.58%), flagged incomplete; after, Canada's own $358.5M vs $348.9M (+2.74%).
+- *E, no total row and an adjustment dimension.* Not suppression: the adjusted pair was looked for in MONTHLY tables only, and both tables were quarterly, so the two copies were members of a
+  no-total dimension and ADDED, every dollar twice, under a flag that said incomplete. A quarterly table is searched (four seasons a year, at least 4 years, `ADJ_MIN_PERIODS`; a complete
+  year is 4 quarters), and two members whose calendar-year totals agree within 3% in every year they can be compared (at least two comparisons, a dimension of at most 4 members) are one
+  quantity twice, never added, even in a table too short to say which is the adjusted one (one is then shown and said not to be a total). Seed 84 (a 144-row quarterly table, 2 regions, 12 quarters): before, the adjusted and the unadjusted copies added, $363,080 vs $329,100
+  (+10.33%), flagged incomplete although larger than the complete truth; after, the adjusted copy shown, "one member shown, not the table's total", $234,277 vs $211,268. The limit, on purpose: two regions of
+  no-total table whose annual totals are alike within 3% in every year are not added either (one is shown, flagged): a refusal, never a wrong figure.
+- *A combined member stands in for blank parts* (the extra ranges; seeds 7155 and 7260). In a table with no total row whose regions are split into sub-regions or grouped (Centre block = Charlie + Delta, all
+  members), a month in which one of the finest parts is suppressed was summed from the reported parts and flagged incomplete although the group's published value holds the family that month.
+  The group's value now stands in for its family in that month (`_parts_cells`), the part is not counted as suppressed, and the unallocated part says what the blank cell held; with no group
+  to stand in, the sum is incomplete as before.
+- *The privacy gap* (section 5.5, "A column that would name a series").
+
+*Measured* (the fuzz generator 1.0, `plan/WAVE4-A-DESIGN.md` "Wave 5d" has every run): the 300 development tables went from 163 PASS, 109 refusals (17 not allowed by the cells), 21 confident wrong, to 179 PASS, 114
+refusals (15 not allowed: 8 of them the withheld value column above), 0 confident wrong; the personal columns of 33 tables are all flagged and none of their values reaches the report writer. A refusal here
+is a plain one: "one member shown, not a national figure", "built from parts, incomplete", the withheld column's reason.
+
 ## 6. What this contract does not carry yet (R1)
 
 Tipping points (S1/M10), drivers and reversals (S2), per-claim power, posterior probabilities (C8), the real-data placebo and the cross-environment receipt, Little's MCAR test, restatement lists and the structural-break screen are `null`/`[]` with their reason. The page must show them as "not measured", never as zero.

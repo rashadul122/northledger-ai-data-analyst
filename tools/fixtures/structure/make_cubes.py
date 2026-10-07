@@ -919,3 +919,37 @@ def sa_copy(gap: float = 0.05, seed: int = 211, years: int = 4) -> bytes:
         rec.append((mo, "Canada", ("Unadjusted",), nsa[i], ""))
         rec.append((mo, "Canada", ("Seasonally adjusted",), sa[i], ""))
     return _official(["Adjustments"], rec)
+
+
+def five_regions(copy: bool = False, seed: int = 301, years: int = 4) -> bytes:
+    """Wave 5e (suspected item: the twin guard allowed at most 4 members). Five regions of a retail-like flow, no total row, 48 months. With
+    `copy`, the fifth is the first one again at 1.3 times its level and with its noise (a price basis, an adjusted copy): one quantity twice,
+    which no total's name or sum shows, so it is never added to its original. Without, five regions with their own noise."""
+    rng = np.random.RandomState(seed)
+    n = 12 * years
+    t = np.arange(n)
+    months = ["%d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(n)]
+    regs = {}
+    for k, name in enumerate(("Alder", "Birch", "Cedar", "Dune")):
+        regs[name] = np.round((3000.0 + 600 * k) * (1.0 + 0.003 + 0.0004 * k) ** t * SEASON[t % 12] * (1.0 + 0.02 * rng.standard_normal(n)))
+    regs["Elm"] = np.round(regs["Alder"] * 1.3 * (1.0 + 0.001 * rng.standard_normal(n))) if copy else \
+        np.round(2200.0 * (1.0 + 0.004) ** t * SEASON[t % 12] * (1.0 + 0.02 * rng.standard_normal(n)))
+    rec = [(mo, r, ("Retail sales",), regs[r][i], "A") for i, mo in enumerate(months) for r in regs]
+    return _official(["Characteristics"], rec)
+
+
+def tree_25(seed: int = 311, years: int = 3) -> bytes:
+    """Wave 5e (suspected item: a 25-sector uncoded tree beyond the 22-candidate cap lost its breakdown). A total over 25 sectors, no codes,
+    36 months, one region; the total is the sum of the sectors."""
+    rng = np.random.RandomState(seed)
+    n = 12 * years
+    t = np.arange(n)
+    months = ["%d-%02d" % (2020 + i // 12, i % 12 + 1) for i in range(n)]
+    sect = {"Sector %s" % chr(65 + k): np.round((800.0 + 90 * k) * 1.003 ** t * SEASON[t % 12] * (1.0 + 0.02 * rng.standard_normal(n))) for k in range(25)}
+    tot = sum(sect.values())
+    rec = []
+    for i, mo in enumerate(months):
+        rec.append((mo, "Canada", ("All sectors",), tot[i], "A"))
+        for k, v in sect.items():
+            rec.append((mo, "Canada", (k,), v[i], "A"))
+    return _official(["Sector"], rec)

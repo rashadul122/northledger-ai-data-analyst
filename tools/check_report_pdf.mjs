@@ -987,6 +987,15 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
         expect('retail failed back-test', pb.indexOf('back-test: not trusted') >= 0 && pb.indexOf('held 9 of 23 at 1 month') >= 0 && pb.indexOf('(the back-test failed; not trusted)') >= 0 &&
           pb.indexOf('the engine\'s grade of the forecast stands, but it is not trusted: the back-test of its range failed') >= 0 && fb.indexOf('not trusted: back-test failed') >= 0,
         'a failed back-test is not marked "not trusted" beside the grade: ' + pb.slice(-500) + ' | ' + fb.slice(-200));
+        // wave 5e (P10): the table's own value column, read as its measure (a count of nine or more digits is not an ID number): the consent
+        // step's line is carried into the method and data quality, under a heading that does not say "categories" alone
+        const mr = copy(RTR);
+        const MEAS = 'Read as the table\'s measure, not personal data: VALUE';
+        mr.privacy.released = [{ column: 'value', header: 'VALUE', kind: 'measure', distinct: 640, rows: 6400, min_repeat: 1, text: MEAS, why: 'the table\'s own value column' }].concat(RTR.privacy.released);
+        const rm = check4('retail: the value column read as the measure', rtInp(mr), 'letter', { name: 'retail_sales_provinces', refs: false });
+        const am = sp(between(rm, 'APPENDIX A', 'APPENDIX B'));
+        expect('retail value column released', am.indexOf('columns read as categories or as the table\'s measure, not personal data') >= 0 && am.indexOf(sp(MEAS)) >= 0 &&
+          am.indexOf(sp(RTR.privacy.released[0].text)) >= 0, 'the value column\'s release is not in the method and data quality in its own words, under its own heading: ' + am.slice(0, 600));
         // a back-test that neither passed nor failed says so
         const unc = copy(RTR); unc.forecast.audit.status = 'unclear'; unc.forecast.audit.trusted = false;
         const ru = check4('retail: an unclear back-test', rtInp(unc), 'letter', { name: 'retail_sales_provinces', refs: false });

@@ -8949,7 +8949,7 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
 # estimand. A table whose readable columns cannot tell its rows apart (a dimension withheld) is refused with a plain
 # reason; a business file whose members simply add up (N/S/E/W) and a panel with no relation are read as before.
 STRUCTURE_ON = True                        # the tests switch it off to prove a business file is read as before
-STRUCTURE_BUDGET_S = 1.0
+STRUCTURE_BUDGET_S = 1.0                   # (no longer read: wave 5e, P3 -- no wall-clock decision; nl_structure.WALL_GUARD_S only refuses a table that cannot be read at all)
 STRUCTURE_LAYOUT = "structured cube slice"
 _PROFILE_CACHE_STRUCTURE = "structure"
 _PROFILE_CACHE_ERROR = "structure_error"      # the refusal made when the structure layer could not run on a table of series
@@ -9250,7 +9250,7 @@ def _structure_detect(reading: Any, hidden: Any, wide: Optional[Dict[str, Any]] 
     """The structure of the table, or None. A caller that passes `fail` is handed the failure (the file is refused when it looks
     like a table of series: _guard_failure); without it the structure is an aid and the file is read as before."""
     try:
-        S = _ns().detect(reading, set(hidden or ()), budget_s=STRUCTURE_BUDGET_S)
+        S = _ns().detect(reading, set(hidden or ()))
         if wide and S is not None:
             S["wide"] = dict(wide)                 # the file was a wide table of periods, reshaped to long before it was read
         return S

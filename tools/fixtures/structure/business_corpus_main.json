@@ -1,0 +1,410 @@
+{
+"0": {
+"latest": 28.0,
+"pct": -17.647058823529417,
+"prior": 34.0,
+"source": "finding"
+},
+"105": {
+"latest": 9973.0,
+"pct": 9.750192582810602,
+"prior": 9087.0,
+"source": "finding"
+},
+"107": {
+"latest": 74.0,
+"pct": -1.3333333333333308,
+"prior": 75.0,
+"source": "finding"
+},
+"112": {
+"latest": 8863.0,
+"pct": 8.28344532681735,
+"prior": 8185.0,
+"source": "finding"
+},
+"114": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"117": {
+"latest": 1.375,
+"pct": 37.5,
+"prior": 1.0,
+"source": "finding"
+},
+"119": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"121": {
+"latest": 7164.0,
+"pct": 7.680745528333088,
+"prior": 6653.0,
+"source": "finding"
+},
+"122": {
+"latest": 0.9333333333333332,
+"pct": -3.4482758620689724,
+"prior": 0.9666666666666667,
+"source": "finding"
+},
+"123": {
+"latest": 136.0,
+"pct": 9.677419354838701,
+"prior": 124.0,
+"source": "finding"
+},
+"127": {
+"latest": 11564.0,
+"pct": 7.632166790766948,
+"prior": 10744.0,
+"source": "finding"
+},
+"13": {
+"latest": 206.0,
+"pct": -4.1860465116279055,
+"prior": 215.0,
+"source": "finding"
+},
+"131": {
+"latest": 190.68055555555554,
+"pct": 4.705613178767543,
+"prior": 182.11111111111111,
+"source": "finding"
+},
+"132": {
+"latest": 540965.49,
+"pct": 5.831025704611581,
+"prior": 511159.64,
+"source": "finding"
+},
+"133": {
+"latest": 305.0,
+"pct": 1.3289036544850585,
+"prior": 301.0,
+"source": "finding"
+},
+"135": {
+"latest": 101522.08,
+"pct": 2.997153737248004,
+"prior": 98567.85,
+"source": "finding"
+},
+"138": {
+"latest": 40248.0,
+"pct": 6.3327256875644,
+"prior": 37851.0,
+"source": "finding"
+},
+"145": {
+"latest": 7455.0,
+"pct": 3.4410989315942775,
+"prior": 7207.0,
+"source": "finding"
+},
+"152": {
+"latest": 5459.0,
+"pct": 3.0583349065508747,
+"prior": 5297.0,
+"source": "finding"
+},
+"158": {
+"latest": 31687.0,
+"pct": 6.396481095964002,
+"prior": 29782.0,
+"source": "finding"
+},
+"160": {
+"latest": 279388.78,
+"pct": 6.71376469578977,
+"prior": 261811.38,
+"source": "finding"
+},
+"161": {
+"latest": 109.0,
+"pct": -1.8018018018018056,
+"prior": 111.0,
+"source": "finding"
+},
+"163": {
+"latest": 9844.0,
+"pct": 2.938408449231411,
+"prior": 9563.0,
+"source": "finding"
+},
+"164": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"166": {
+"latest": 48451.06,
+"pct": 6.746001408707936,
+"prior": 45389.11,
+"source": "finding"
+},
+"170": {
+"latest": 87335.03,
+"pct": 8.253812742969835,
+"prior": 80676.17,
+"source": "finding"
+},
+"185": {
+"latest": 0.8916666666666666,
+"pct": 5.940594059405924,
+"prior": 0.8416666666666667,
+"source": "finding"
+},
+"187": {
+"latest": 133.0,
+"pct": 0.0,
+"prior": 133.0,
+"source": "finding"
+},
+"193": {
+"latest": 712.0,
+"pct": 4.705882352941182,
+"prior": 680.0,
+"source": "finding"
+},
+"194": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"197": {
+"latest": 0.8541666666666666,
+"pct": 32.258064516129025,
+"prior": 0.6458333333333334,
+"source": "finding"
+},
+"22": {
+"latest": 78.0,
+"pct": 36.8421052631579,
+"prior": 57.0,
+"source": "finding"
+},
+"28": {
+"latest": 1353693.28,
+"pct": 2.4462130872436427,
+"prior": 1321369.76,
+"source": "finding"
+},
+"31": {
+"latest": 0.8333333333333334,
+"pct": -4.761904761904756,
+"prior": 0.875,
+"source": "finding"
+},
+"32": {
+"latest": 19.0,
+"pct": 111.11111111111111,
+"prior": 9.0,
+"source": "finding"
+},
+"36": {
+"latest": 2793.0,
+"pct": 7.175748273215654,
+"prior": 2606.0,
+"source": "finding"
+},
+"38": {
+"latest": 944232.29,
+"pct": 3.4446583430270517,
+"prior": 912789.8,
+"source": "finding"
+},
+"39": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"40": {
+"latest": 10763.0,
+"pct": 5.623159960745827,
+"prior": 10190.0,
+"source": "finding"
+},
+"42": {
+"latest": 830422.77,
+"pct": 6.765721814651227,
+"prior": 777799.05,
+"source": "finding"
+},
+"43": {
+"latest": 27800.0,
+"pct": 2.2961436561672155,
+"prior": 27176.0,
+"source": "finding"
+},
+"52": {
+"latest": 11554.0,
+"pct": 8.539220291216543,
+"prior": 10645.0,
+"source": "finding"
+},
+"54": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"56": {
+"latest": 244644.63,
+"pct": 2.521531880056105,
+"prior": 238627.56,
+"source": "finding"
+},
+"58": {
+"latest": 167.0,
+"pct": 1.21212121212122,
+"prior": 165.0,
+"source": "finding"
+},
+"59": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"61": {
+"latest": 31.0,
+"pct": 55.00000000000001,
+"prior": 20.0,
+"source": "finding"
+},
+"64": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"66": {
+"latest": 22472.0,
+"pct": 4.75968486317655,
+"prior": 21451.0,
+"source": "finding"
+},
+"67": {
+"latest": 55386.86,
+"pct": 8.863342520119932,
+"prior": 50877.42,
+"source": "finding"
+},
+"69": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"70": {
+"latest": 2735.0,
+"pct": 7.804493496255427,
+"prior": 2537.0,
+"source": "finding"
+},
+"71": {
+"latest": 235278.6,
+"pct": 5.1899109899745,
+"prior": 223670.31,
+"source": "finding"
+},
+"73": {
+"latest": 835052.84,
+"pct": 3.623595806088553,
+"prior": 805852.02,
+"source": "finding"
+},
+"79": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"81": {
+"latest": 182.20000000000002,
+"pct": 5.2874891649812295,
+"prior": 173.04999999999998,
+"source": "finding"
+},
+"84": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"86": {
+"latest": 0.5833333333333334,
+"pct": 7.692307692307709,
+"prior": 0.5416666666666666,
+"source": "finding"
+},
+"87": {
+"latest": 647168.42,
+"pct": 4.974048393094455,
+"prior": 616503.25,
+"source": "finding"
+},
+"88": {
+"latest": 3773537.01,
+"pct": 5.246083569049986,
+"prior": 3585441.74,
+"source": "finding"
+},
+"89": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"9": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"92": {
+"latest": 5718.0,
+"pct": 5.284477996685699,
+"prior": 5431.0,
+"source": "finding"
+},
+"94": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+},
+"96": {
+"latest": 6003.0,
+"pct": 9.9047967777371,
+"prior": 5462.0,
+"source": "finding"
+},
+"97": {
+"latest": 194822.37,
+"pct": 4.807373202078069,
+"prior": 185886.13,
+"source": "finding"
+},
+"98": {
+"latest": 109.0,
+"pct": -6.8376068376068355,
+"prior": 117.0,
+"source": "finding"
+},
+"99": {
+"latest": null,
+"pct": null,
+"prior": null,
+"source": null
+}
+}

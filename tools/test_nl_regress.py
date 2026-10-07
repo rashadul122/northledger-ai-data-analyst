@@ -531,6 +531,84 @@ def test_r22_seed_3160_an_industry_total_that_adds_up_to_its_leaves_is_never_sum
         f is not None and abs(f[2] - truth["acceptable"]["latent"]["change_pct"]) < 0.6), (f, headline(rep))
 
 
+# ----------------------------------------------------------------------------- the reviewer's suspected items, settled by a test each
+def test_s01_sensitive_headers_are_never_released_as_categories_whatever_the_language():
+    """Suspected: SENSITIVE_HEADER lacked visible minority, Indigenous, cause of death, ICD, HIV, marital, and their French, German and
+    Spanish cognates. A category with such a header is sensitive even when it is categorical: never released, so withheld by default."""
+    sensitive = ["Visible minority status", "Indigenous identity", "Aboriginal identity", "Cause of death", "ICD-10 code", "HIV status",
+                 "Marital status", "Minorit\u00e9 visible", "Identit\u00e9 autochtone", "\u00c9tat matrimonial", "Cause de d\u00e9c\u00e8s",
+                 "Familienstand", "Estado civil", "Causa de muerte", "Discapacidad", "Behinderung", "Religi\u00f3n", "First Nations", "Inuit"]
+    for h in sensitive:
+        assert NB.SENSITIVE_HEADER.search(h), "%r is not a sensitive header" % h
+    for h in ["Industry", "Region", "Product category", "Genre", "Brand", "Colour", "Store", "Sector", "Age group", "Education", "Language"]:
+        assert not NB.SENSITIVE_HEADER.search(h), "%r is read as sensitive" % h
+
+
+def test_s02_the_long_id_rule_flags_an_id_repeated_and_a_repeated_large_measure_and_never_a_measure_that_varies():
+    """Suspected: ids of 9 or more digits repeated 3.3 times or more, and a repeated large measure, are flagged by the long-ID rule. Settled:
+    both are flagged (a category called by 9 digits is an ID; a measure that repeats on 70% of its rows reads as one: the visitor can Keep it and
+    the default is the private one); a column of measures is never one (a different value on most rows), and a publisher's documented value
+    column is released instead (P10)."""
+    import numpy as np
+    rng = np.random.RandomState(5)
+    n = 400
+    ids = pd.Series(["%09d" % (100000000 + 7919 * (i % 100)) for i in range(n)])                  # 100 ids, each on 4 rows (25% distinct)
+    assert NB._personal_kind("Customer", ids) == "id_number"
+    ids33 = pd.Series(["%09d" % (100000000 + 7919 * (i % 120)) for i in range(n)])                # 120 ids, each on 3.3 rows (30% distinct)
+    assert NB._personal_kind("Ref", ids33) == "id_number"
+    ids29 = pd.Series(["%09d" % (100000000 + 7919 * (i % 140)) for i in range(n)])                # 140 ids (35% distinct): not an ID by this rule
+    assert NB._personal_kind("Ref", ids29) is None
+    repeated_measure = pd.Series(["%d" % (500000000 + 1000000 * (i % 50)) for i in range(n)])     # a balance that repeats
+    assert NB._personal_kind("Balance", repeated_measure) == "id_number"
+    varying = pd.Series(["%d" % (500000000 + int(x)) for x in rng.randint(0, 10 ** 8, n)])        # a different value on most rows
+    assert NB._personal_kind("Balance", varying) is None
+
+
+def test_s03_a_copy_in_a_five_member_dimension_is_never_added_to_its_original():
+    """Suspected: the twin guard looked at dimensions of at most 4 members, so a copy among five regions went through. Now the pairs are
+    compared by shape whatever the number of members (the 40 largest)."""
+    import make_cubes as MC
+    rep = run_bytes(MC.five_regions(copy=True))
+    g = dim(rep, "GEO")
+    assert g["role"] != "parts", g
+    assert one_member_shown(rep) or refused(rep), est(rep).get("text")
+    # negative: five regions with their own noise are five parts, added
+    rep2 = run_bytes(MC.five_regions(copy=False))
+    g2 = dim(rep2, "GEO")
+    assert g2["role"] == "parts" and g2["parts"] == 5, g2
+
+
+def test_s04_a_25_sector_tree_with_no_codes_keeps_its_hierarchy_beyond_the_old_22_candidate_cap():
+    """Suspected: a 25-sector uncoded tree beyond the 22-candidate cap lost its breakdown. The subset search reads 32 candidates (2^16
+    subsets a half); the total is found and the 25 sectors are its breakdown."""
+    import make_cubes as MC
+    S = NS.detect(_reading(MC.tree_25()), ())
+    g = next(d for d in S["dims"] if d["column"] == "Sector")
+    assert g["role"] in ("partition", "hierarchy") and g["total"] == "All sectors" and len(g["parts"]) == 25, g
+    assert S["breakdowns"] and len(S["breakdowns"][0]["parts"]) == 25
+
+
+def test_s05_the_unnamed_aggregate_decision_does_not_sit_on_a_borderline():
+    """Suspected: borderline fits in `_unnamed_aggregate` may depend on BLAS (Pyodide's differs from the Mac's). The accepted and the refused
+    panel are both far from the thresholds (a true aggregate fits to 1e-9 of a unit, a non-aggregate to many units), and a perturbation of
+    1e-9 relative on every value changes nothing: the decision is not a coin the BLAS tosses. (The packed engine in Pyodide agrees with
+    native on both panels: tools/check_pyodide_cube.mjs.)"""
+    import make_cubes as MC
+    for agg in (True, False):
+        data = MC.rate_panel(39, 79, aggregate=agg)
+        S0 = NS.detect(_reading(data), ())
+        g0 = next(d for d in S0["dims"] if d["column"] == "GEO")
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+        v = pd.to_numeric(df["VALUE"], errors="coerce")
+        rng = np.random.RandomState(9)
+        df["VALUE"] = [("%.12g" % (x * (1.0 + 1e-9 * rng.randn()))) if x == x else "" for x in v]
+        S1 = NS.detect(_reading(df.to_csv(index=False).encode()), ())
+        g1 = next(d for d in S1["dims"] if d["column"] == "GEO")
+        assert (g0["role"], g0.get("total")) == (g1["role"], g1.get("total")), (agg, g0["role"], g1["role"])
+        if agg:
+            assert g0["role"] == "rate_aggregate" and g0["sum_check"]["fit_rms"] < 0.2 * g0["sum_check"]["typical_member_fit_rms"], g0["sum_check"]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

@@ -1162,6 +1162,8 @@
       '</tbody></table></div>';
   }
   function plural(n, one, many) { return num(n, 0) + ' ' + (n === 1 ? one : many); }
+  // the table's own value column read as the measure (privacy.released, kind "measure"); the other released columns are categories (wave 5e)
+  function isMeasureRelease(x) { return !!x && (x.kind === 'measure' || String(x.text || '').indexOf('Read as the table\'s measure') === 0); }
   function stem(name) { return String(name || 'file').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'file'; }
 
   /* ------------------------------------------------------------ what the AI planner is sent */
@@ -1820,9 +1822,11 @@
       ['withhold', 'Withhold', 'treat it as personal after all: never sent to an AI or put in a share link, its values never shown, downloaded or used in the analysis']];
     function releasedHtml(rel) {
       if (!rel.length) return '';
-      return '<p class="note pd-rel-note">The engine reads ' + (rel.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (rel.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape and no sensitive name. You can still withhold ' + (rel.length === 1 ? 'it' : 'any of them') + '.</p>' +
+      var cats = rel.filter(function (x) { return !isMeasureRelease(x); }), meas = rel.filter(isMeasureRelease);
+      return (cats.length ? '<p class="note pd-rel-note">The engine reads ' + (cats.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (cats.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape and no sensitive name. You can still withhold ' + (cats.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
+        (meas.length ? '<p class="note pd-rel-note">The table\'s own value column (' + meas.map(function (x) { return esc(String(x.header || x.column)); }).join(', ') + ') holds the figures it publishes: every cell is a number, and a count of nine or more digits has the shape of an ID number without being one here. The engine reads it as the measure, not as personal data. You can still withhold it; the table then cannot be read.</p>' : '') +
         rel.map(function (x, i) {
-          var words = 'Read as a category, not personal data: ' + String(x.header || x.column) + ' (' + Number(x.distinct || 0).toLocaleString('en-US') + ' labels)';
+          var words = isMeasureRelease(x) ? String(x.text) : 'Read as a category, not personal data: ' + String(x.header || x.column) + ' (' + Number(x.distinct || 0).toLocaleString('en-US') + ' labels)';
           return '<fieldset class="pd-col pd-rel"><legend><code>' + esc(x.header || x.column) + '</code> <span class="pd-kind">' + esc(words) + '</span></legend><div class="pd-opts">' +
             RELEASED_CHOICES.map(function (c) {
               return '<label class="pd-opt"><input type="radio" name="pd-rel-' + i + '" value="' + c[0] + '"' + (c[0] === 'use' ? ' checked' : '') + ' data-col="' + esc(x.column) + '" data-rel="1"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
@@ -3128,8 +3132,9 @@
         // the categories the engine read as categories (privacy.released), as the consent step said them: part of the
         // report's method and data-quality account (wave 4, track B)
         ((r.privacy.released || []).filter(function (x) { return x && x.text; }).length
-          ? '<h4 class="tr-rel-h">Read as categories, not personal data</h4><ul class="tr-rel-list" data-released="1">' + r.privacy.released.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
-            '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape and no sensitive name, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>'
+          ? '<h4 class="tr-rel-h">' + (r.privacy.released.some(isMeasureRelease) ? 'Read as categories or as the table\'s measure, not personal data' : 'Read as categories, not personal data') + '</h4><ul class="tr-rel-list" data-released="1">' + r.privacy.released.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
+            (r.privacy.released.some(function (x) { return x && x.text && !isMeasureRelease(x); }) ? '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape and no sensitive name, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>' : '') +
+            (r.privacy.released.some(isMeasureRelease) ? '<p class="note">The table\'s own value column holds the figures it publishes (every cell a number); a count of nine or more digits has the shape of an ID number without being one, so the engine read it as the measure.</p>' : '')
           : '') +
         '<p class="note">The scan reads column names and the shape of values, so names under a neutral heading can be missed: look over the story and the downloads before you share them.</p></article>';
       if (gated) h += priv;

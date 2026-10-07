@@ -2142,7 +2142,8 @@
       // a column the scan flagged as free text and the engine read as a category (privacy.released): said here as the reader
       // was told on the consent step; the report's figures may show its labels
       var rel = R.privacy && Array.isArray(R.privacy.released) ? R.privacy.released.filter(function (x) { return x && x.text; }) : [];
-      if (rel.length) pa.push({ type: 'h2', num: '', text: 'Columns read as categories, not personal data', id: 'm-released' }, { type: 'bullets', items: rel.map(function (x) { return String(x.text); }) });
+      var relMeasure = rel.some(function (x) { return String(x.text).indexOf('Read as the table\'s measure') === 0; });
+      if (rel.length) pa.push({ type: 'h2', num: '', text: relMeasure ? 'Columns read as categories or as the table\'s measure, not personal data' : 'Columns read as categories, not personal data', id: 'm-released' }, { type: 'bullets', items: rel.map(function (x) { return String(x.text); }) });
       if (EV) {
         var chk = (R.estimand.sum_checks || []).filter(function (c) { return c && c.dim; });
         pa.push({ type: 'h2', num: '', text: 'The table\'s structure and what was checked', id: 'm-structure' });

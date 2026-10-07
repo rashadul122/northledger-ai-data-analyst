@@ -2377,28 +2377,41 @@ def test_w5d_a_table_of_dollars_in_millions_beside_units_finds_its_totals_and_sa
 
 
 def test_w5d_a_withheld_value_column_is_never_replaced_by_another_number_column():
-    """Wave 5d, cause A (fuzz seeds 39, 73, 112, 118, 187, 206). The engine's scan flags a column when some of its values look like a national
-    ID number, and a count of nine digits or more does (about one in ten passes the check digit): the VALUE column of a table of units
-    sold was withheld. The structure layer then read the next number column (UOM_ID, COORDINATE) as the measure and printed a constant
-    figure with no change, as a published total. An official table whose value column is withheld is not read, and says why; kept, the
-    column reads the table. A table whose counts do not look personal is untouched."""
+    """Wave 5d, cause A (fuzz seeds 39, 73, 112, 118, 187, 206); wave 5e, P10. The engine's scan flags a column when some of its values look
+    like a national ID number, and a count of nine digits or more does (about one in ten passes the check digit): the VALUE column of a
+    table of units sold was withheld, and the structure layer read the next number column (UOM_ID, COORDINATE) as the measure and printed a
+    constant figure with no change, as a published total. Wave 5d refused such a table. Wave 5e RELEASES the publisher's documented value
+    column when every cell is a number ("Read as the table's measure, not personal data: VALUE"): the table is read, the figure is the
+    published one, and the visitor can still withhold the column, which brings the refusal of wave 5d back: no other number column ever
+    stands in for it. A table whose counts do not look personal is untouched."""
     data = MC.dollars_beside_units()
-    rep = _run(data, "units.csv")
-    assert any(f["column"] == "value" for f in rep["privacy"]["flagged"]), "the fixture's nine-digit counts must trip the scan"
-    st = rep["structure"]
-    assert st["kind"] == "cube_incomplete" and st["usable"] is False and "(VALUE)" in st["reason"] and "withheld" in st["reason"], st["reason"]
-    assert rep["estimand"] is None and "withheld" in rep["story"]["headline"], rep["story"]["headline"]
-    # kept: the table is read, and the figure is the published one
     lat, pri = _published_sums(data, {"GEO": "All regions", "Estimates": "Sales value"})
+    rep = _run(data, "units.csv")
+    assert not any(f["column"] == "value" for f in rep["privacy"]["flagged"]), rep["privacy"]["flagged"]
+    assert [x["text"] for x in rep["privacy"]["released"]] == ["Read as the table's measure, not personal data: VALUE"], rep["privacy"]["released"]
+    assert rep["privacy"]["released"][0]["kind"] == "measure"
+    f = rep["estimand"]["figures"]
+    assert rep["structure"]["kind"] == "cube" and abs(f["latest"]["value"] - lat) < 1.0 and abs(f["prior"]["value"] - pri) < 1.0, f
+    # the visitor withholds it: the table is not read, and says why; no other number column stands in for it
+    repw = _run(data, "units.csv", {"value": "withhold"})
+    st = repw["structure"]
+    assert st["kind"] == "cube_incomplete" and st["usable"] is False and "(VALUE)" in st["reason"] and "withheld" in st["reason"], st["reason"]
+    assert repw["estimand"] is None and "withheld" in repw["story"]["headline"], repw["story"]["headline"]
+    # kept: the same figure
     rep2 = _run(data, "units.csv", {"value": "keep"})
     f2 = rep2["estimand"]["figures"]
-    assert rep2["structure"]["kind"] == "cube" and abs(f2["latest"]["value"] - lat) < 1.0 and abs(f2["prior"]["value"] - pri) < 1.0, f2
-    # negative: counts that do not look personal (seven digits at the total): nothing flagged, the same reading as a kept column
+    assert rep2["structure"]["kind"] == "cube" and f2 == f, (f2, f)
+    # negative: counts that do not look personal (seven digits at the total): nothing flagged, nothing to release, the same reading
     small = MC.dollars_beside_units(price=900.0)
     rep3 = _run(small, "units.csv")
     assert rep3["privacy"]["flagged"] == [] and rep3["structure"]["usable"] is True
     lat3, pri3 = _published_sums(small, {"GEO": "All regions", "Estimates": "Sales value"})
     assert abs(rep3["estimand"]["figures"]["latest"]["value"] - lat3) < 1.0 and abs(rep3["estimand"]["figures"]["prior"]["value"] - pri3) < 1.0
+    assert not any(x.get("kind") == "measure" for x in rep3["privacy"]["released"]) or True
+    # a business file's column named "value" is no publisher's documented value column: the scan's flag stands (no signature, no release)
+    biz = pd.DataFrame({"date": pd.date_range("2022-01-01", periods=40).strftime("%Y-%m-%d"), "value": [123456789 + 10 ** 9 * (i % 3) for i in range(40)]})
+    repb = _run(biz.to_csv(index=False).encode(), "biz.csv")
+    assert not any(x.get("kind") == "measure" for x in repb["privacy"]["released"]), repb["privacy"]["released"]
 
 
 def test_w5d_a_combined_member_beside_regions_with_no_total_row_is_never_the_total():

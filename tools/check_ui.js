@@ -2698,6 +2698,40 @@ for (const pick of ['withhold', 'use']) {
   });
 }
 
+// wave 5e (P10): the table's own value column, read as its measure and not as a national ID number (a count of nine or more digits): the
+// consent step says so in its own words, Use is the default, Withhold is still on offer (and the table then cannot be read), and the report's
+// method and data-quality section carries the same line under a heading that names the measure
+function releasedMeasureReport() {
+  const rep = stubReport();
+  rep.privacy = { flagged: [], released: [{ column: 'value', header: 'VALUE', kind: 'measure', distinct: 640, rows: 6400, min_repeat: 1,
+    text: 'Read as the table\'s measure, not personal data: VALUE' }] };
+  rep.__echoDecisions = true;
+  return rep;
+}
+for (const pick of ['withhold', 'use']) {
+  check('try-released-value-column-is-shown-as-the-measure-and-' + (pick === 'withhold' ? 'can-be-withheld' : 'use-sends-no-choice'), DESK, async (ctx) => {
+    const p = await openTry(ctx, { stubReport: releasedMeasureReport(), proxy: 'unset' });
+    await p.click('#try-sample');
+    await tryUntil(p, '#try-pd:not([hidden])');
+    const t = squash(await p.textContent('#try-pd'));
+    ok(/Read as the table's measure, not personal data: VALUE/.test(t), 'the value column is not shown in the measure words: ' + t.slice(0, 300));
+    ok(!/Read as a category, not personal data: VALUE/.test(t) && !/short list of labels/.test(t), 'the value column is called a category: ' + t.slice(0, 300));
+    ok(/holds the figures it publishes/.test(t) && /You can still withhold it/.test(t), 'the step does not say what the column is and that it can be withheld: ' + t.slice(0, 400));
+    ok(await p.isChecked('#try-pd input[data-col="value"][value="use"]'), 'Use is not the default for the value column');
+    ok(await p.isVisible('#try-pd input[data-col="value"][value="withhold"]'), 'Withhold is not on offer for the value column');
+    if (pick === 'withhold') await p.check('#try-pd input[data-col="value"][value="withhold"]');
+    await p.click('#try-pd-go');
+    await tryUntil(p, '#try-report:not([hidden])');
+    const shown = await p.evaluate(() => document.getElementById('try-report').innerText);
+    const want = pick === 'withhold' ? 'decisions {"value":"withhold"}' : 'decisions {}';
+    ok(shown.indexOf(want) >= 0, 'the run did not receive the visitor\'s choice (' + pick + '): ' + shown.slice(0, 200));
+    const d = await p.evaluate(() => { const l = document.querySelector('#try-report [data-released="1"]'); const h = l && l.previousElementSibling;
+      return { txt: l ? l.textContent.replace(/\s+/g, ' ').trim() : '', head: h ? h.textContent : '' }; });
+    ok(d.txt.indexOf('Read as the table\'s measure, not personal data: VALUE') >= 0 && /measure/.test(d.head), 'the report\'s data section does not carry the measure line under a heading that names it: ' + JSON.stringify(d));
+    ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  });
+}
+
 check('try-save-as-pdf-prints-every-finding-and-the-email', DESK, async (ctx) => {
   const rep = stubReport();
   for (let i = 0; i < 10; i++) rep.findings.push({ id: 'dq.extra' + i, claim: 'Extra check ' + (i + 1) + ' of 10.', verdict: 'INSUFFICIENT', why: 'Made up for the check.', kind: 'data_quality', value: i });

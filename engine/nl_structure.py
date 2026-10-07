@@ -803,7 +803,11 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     for d in list(dims):
         if R.kind(d) != "number" or len(dims) < 2:
             continue
-        rest = [x for x in dims if x != d]
+        # wave 5g: a column of ids (a vector, a coordinate: v41000000, 1.1) tells every series apart by itself, so beside one every other column "is
+        # already told apart" and a coded dimension (Basis 1 and 2) was dropped as a second measure; the ids are not counted (fuzz v2 seed 752)
+        rest = [x for x in dims if x != d and not _id_like(cat[x][1])]
+        if not rest:
+            continue
         rc, _ri = _series_index([cat[x][0] for x in rest])
         tc0, _tl0 = _factorize(dts[dated].dt.strftime("%Y-%m-%d").to_numpy())
         pairs = rc.astype(np.int64) * (len(_tl0) + 1) + tc0
@@ -1643,6 +1647,9 @@ def _member_types(S: Dict[str, Any], j: int) -> List[Dict[str, Any]]:
     return out
 
 
+_UNWORDED_TYPES = ("count", "unknown")      # a type nothing in the member's own words settled (no flow word, no stock word, no unit)
+
+
 def _is_measure_dim(S: Dict[str, Any], j: int) -> Optional[List[Dict[str, Any]]]:
     """The members' types when dimension j names what is measured (its members' units differ, or their types differ and
     most labels say so, or a member is the precision of another), else None (wave 5, gap 2)."""
@@ -1652,7 +1659,12 @@ def _is_measure_dim(S: Dict[str, Any], j: int) -> Optional[List[Dict[str, Any]]]
     types = _member_types(S, j)
     if d.get("mixed_units"):
         return types
-    kinds = {c["type"] for c in types}
+    # wave 5g (C): members are DIFFERENT MEASURES only on positive evidence: a unit that varies (above), a precision member, or members whose
+    # own words type them as different kinds of quantity (a flow beside a stock, a level beside a rate). A member whose label says nothing
+    # (Other, Not stated, Unknown: a count with no word that says what it is) is typed "count" or "unknown" by the ABSENCE of a word, and that
+    # absence is no evidence that it is a different measure: Employed, Unemployed, Not in labour force, Other and Not stated are the parts of a
+    # population, not five measures (fuzz v2 seed 631: Employed was shown alone as "one measure shown" and the others never added).
+    kinds = {c["type"] for c in types if c["type"] not in _UNWORDED_TYPES}
     prec = any(c["type"] == "precision" for c in types)
     cued = sum(1 for lb in d["labels"] if _MEMBER_CUE.search(lb))
     if (len(kinds) >= 2 or prec) and cued >= 0.5 * len(d["labels"]) and any(c["type"] != "precision" for c in types):

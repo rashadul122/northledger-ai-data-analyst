@@ -1313,10 +1313,13 @@ def build_structure(rep: Dict[str, Any], inner: Dict[str, Any], plan: Optional[D
             it["grade_words"] = "%s; part of a change graded %s, not graded itself" % (STRUCTURE_GRADE_WORDS, grade) \
                 if grade else STRUCTURE_GRADE_WORDS
         return it
+    # wave 5g (E): a measure averaged because nothing says it accumulates is an AVERAGE month, and the label says so (never a window's total)
+    avg_word = (", average %s" % P["noun"]) if (str(meas.get("type_basis") or "").startswith("ambiguous")
+                                               and not NST.sums_over_time(meas)) else ""
     for key, label, kind, unit, win_k, op in (
-            ("prior", "%s, %s (%s to %s)" % (what, pri_w, NST.pkey(Sp, win["prior"][0]), NST.pkey(Sp, win["prior"][1])), "amount", "",
+            ("prior", "%s, %s%s (%s to %s)" % (what, pri_w, avg_word, NST.pkey(Sp, win["prior"][0]), NST.pkey(Sp, win["prior"][1])), "amount", "",
              "prior", ("sum of the slice's %s" if NST.sums_over_time(meas) else "mean of the slice's %s") % P["nouns"]),
-            ("latest", "%s, %s (%s to %s)" % (what, lat_w, NST.pkey(Sp, win["latest"][0]), NST.pkey(Sp, win["latest"][1])), "amount", "",
+            ("latest", "%s, %s%s (%s to %s)" % (what, lat_w, avg_word, NST.pkey(Sp, win["latest"][0]), NST.pkey(Sp, win["latest"][1])), "amount", "",
              "latest", ("sum of the slice's %s" if NST.sums_over_time(meas) else "mean of the slice's %s") % P["nouns"]),
             ("change", "Change in %s, %s" % (what, ext), "change", "", "both", "latest less prior"),
             ("change_pct", "Change in %s in percent, %s" % (what, ext), "change", "%", "both", "latest / prior - 1")):

@@ -1733,6 +1733,8 @@ RELEASE_MAX_DISTINCT = 300
 RELEASE_MAX_DISTINCT_CODED = 3000       # wave 5f (G): a column whose labels CARRY CODES ([4411], 4411 Used car dealers: NAICS at 6 digits, HS) has 400 to 2,500 labels
 _CODED_LABEL = re.compile(r"\[[0-9A-Za-z][0-9A-Za-z.\-]*\]\s*$|^\s*[0-9][0-9A-Za-z.\-]*\s+\S")
 RELEASE_MAX_SHARE = 0.05
+RELEASE_MAX_SHARE_CODED = 0.20          # wave 5g (F): a coded column (NAICS, HS) of a table with a few periods: a label is on one row a period, so 935 labels
+                                        # over 8 quarters are 12% of the rows; every label repeating RELEASE_MIN_REPEAT times already limits the share to 20%
 RELEASE_MIN_REPEAT = 5
 SENSITIVE_HEADER = re.compile(
     r"(?i)diagnos|condition|disease|illness|medic|health|symptom|treatment|drug|religio|faith|ethnic|race|"
@@ -1784,7 +1786,9 @@ def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: 
     of wave 5d then stands). The long-ID rule and the scan stay for every other column."""
     import sqlite3
     colmap = dict(getattr(res, "column_map", {}) or {})
-    if _publisher_header(colmap.keys()) is None:
+    # wave 5g (F): a publisher's signature, or three of the columns only a statistical publisher uses (the vocabulary the series guard reads, in
+    # English, French, Spanish and German: a German table has MASSEINHEIT, SKALENFAKTOR and DEZIMALSTELLEN, and no signature of its own)
+    if _publisher_header(colmap.keys()) is None and sum(1 for h in colmap.keys() if _pnorm(h) in _GUARD_META_SPECIFIC) < 3:
         return
     head = {str(v): str(k) for k, v in colmap.items()}
     chosen: Dict[str, str] = {}
@@ -1885,7 +1889,8 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
             counts[t] = counts.get(t, 0) + int(n)
         filled = sum(counts.values())
         coded = bool(counts) and sum(1 for x in counts if _CODED_LABEL.search(x)) >= 0.8 * len(counts)
-        if not counts or len(counts) > (RELEASE_MAX_DISTINCT_CODED if coded else RELEASE_MAX_DISTINCT) or len(counts) > RELEASE_MAX_SHARE * filled:
+        if not counts or len(counts) > (RELEASE_MAX_DISTINCT_CODED if coded else RELEASE_MAX_DISTINCT) or \
+                len(counts) > (RELEASE_MAX_SHARE_CODED if coded else RELEASE_MAX_SHARE) * filled:
             continue
         least = min(counts.values())
         if least < RELEASE_MIN_REPEAT:
@@ -2542,6 +2547,11 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
         return None
     win = _estimand_window_text(est)
     lead = subject + (", " + win if win else "") + ": "
+    # wave 5g (E): a measure AVERAGED because nothing says it accumulates (a currency with no flow word, a count with no word) is stated as an
+    # average level, never as a total: "+2.6% (average level $3.0K)", not "($3.0K) in the published totals". A rate or an index is a level by
+    # its nature and keeps the words it has always had.
+    avg = str(meas.get("type_basis") or "").startswith("ambiguous") and str(meas.get("aggregation") or "").startswith("mean")
+    lvl_in = ("average level %s" if avg else "%s")
     inf = est.get("inference") if isinstance(est.get("inference"), dict) else {}
     sid = (rep.get("scenarios") or {}).get("basis") or {}
     fid = sid.get("finding_id") if isinstance(sid, dict) else None
@@ -2551,10 +2561,11 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
     grade = str((f or {}).get("grade") or "")
     if inf.get("mode") == "official_aggregate":
         # wave 5e (P8): "in the published totals" only where every total behind the figure was verified; else the words of what it is
-        tail = str((est.get("evidence") or {}).get("tail")) if isinstance(est.get("evidence"), dict) else " in the published totals"
-        return lead + chg_t + (" (%s)" % lvl_t if lvl_t and lvl_t != "n/a" else "") + tail
+        tail = str((est.get("evidence") or {}).get("tail")) if isinstance(est.get("evidence"), dict) else \
+            ("" if avg else " in the published totals")
+        return lead + chg_t + (" (%s)" % (lvl_in % lvl_t) if lvl_t and lvl_t != "n/a" else "") + tail
     if grade == "CONFIRMED":
-        return lead + chg_t + (" to %s" % lvl_t if lvl_t and lvl_t != "n/a" and not level else "") + " (CONFIRMED)"
+        return lead + chg_t + ((" to an average of %s" if avg else " to %s") % lvl_t if lvl_t and lvl_t != "n/a" and not level else "") + " (CONFIRMED)"
     if grade == "WATCH":
         return "%s: no settled change%s (%s, WATCH)" % (subject, " in the " + win if win and not win.startswith("the ")
                                                        else (" in " + win if win else ""), chg_t)
@@ -2563,7 +2574,7 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
     if not grade and est.get("complete") is False and (est.get("months_used") or est.get("periods_used")):
         # a short table: no test of the change was run (the engine's own sentence says so), but the matched periods are compared and the
         # estimand prints that change: the headline says both, never one report that says "no change is tested" and a percent
-        return lead + chg_t + (" (%s)" % lvl_t if lvl_t and lvl_t != "n/a" else "") + \
+        return lead + chg_t + (" (%s)" % (lvl_in % lvl_t) if lvl_t and lvl_t != "n/a" else "") + \
             " (the table is too short to test the change; only the matched periods are compared)"
     return None
 
@@ -10409,6 +10420,11 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
     totals: List[Dict[str, Any]] = []
     valid_date = dts.notna().to_numpy()
     date_key = dts.dt.strftime("%Y-%m-%d").fillna("")
+    # wave 5g (D): every nominated total is checked on every number column FIRST, and a column that adds up for NO nominated total of the file
+    # (a case number, an invoice number, a price: a column the cells show is not an amount that adds up) never vetoes a total that adds up on
+    # the columns that do. Fuzz v2 seed 832: a 12-digit case number repeated down every member vetoed a Revenue total that matched to the unit,
+    # and the Total rows stayed in the sums (the level twice too big).
+    checks: List[Tuple[Any, ...]] = []
     for c, col in cats.items():
         members = [m for m in pd.unique(col[col != ""])]
         nominated = {m: _total_nomination(m) for m in members}
@@ -10421,22 +10437,25 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
             ctx = ctx + "\x1f" + cats[o]
         base = [m for m in members if m not in nominated]
         for m, kind in nominated.items():
-            status, why = _check_total(NS, df, col, m, base, nums, ctx, date_key, valid_date)
-            rows = np.flatnonzero((col == m).to_numpy())
-            rec = {"column": str(c), "member": str(m), "rows": int(len(rows)), "nomination": kind, "status": status, "why": why}
-            # a verified total is left out; a bare total phrase that no cell could verify, or that stands above the sum of the others (a total whose
-            # parts are not all listed), is left out too and said so; a name that merely holds a total word is a member until the cells say otherwise
-            if status == "verified" or (status in ("unresolved", "contradicted_bounding") and kind == "exact"):
-                drops.update(int(i) for i in rows)
-                why_row = ("left out of the figures: a row named %r that equals the sum of the other rows (a total)" % str(m)) \
-                    if status == "verified" else \
-                    ("left out of the figures: a row named %r that could not be checked against the other rows (treated as a total)" % str(m))
-                for i in rows:
-                    reasons[int(i)] = why_row
-                rec["left_out"] = True
-            else:
-                rec["left_out"] = False
-            totals.append(rec)
+            checks.append((c, col, m, kind, _total_columns(NS, df, col, m, base, nums, ctx, date_key, valid_date)))
+    additive = {n for *_h, res in checks if isinstance(res, dict) for n, (chk, _a) in res.items() if chk["status"] == "pass"}
+    for c, col, m, kind, res in checks:
+        status, why = _total_verdict(res, additive)
+        rows = np.flatnonzero((col == m).to_numpy())
+        rec = {"column": str(c), "member": str(m), "rows": int(len(rows)), "nomination": kind, "status": status, "why": why}
+        # a verified total is left out; a bare total phrase that no cell could verify, or that stands above the sum of the others (a total whose
+        # parts are not all listed), is left out too and said so; a name that merely holds a total word is a member until the cells say otherwise
+        if status == "verified" or (status in ("unresolved", "contradicted_bounding") and kind == "exact"):
+            drops.update(int(i) for i in rows)
+            why_row = ("left out of the figures: a row named %r that equals the sum of the other rows (a total)" % str(m)) \
+                if status == "verified" else \
+                ("left out of the figures: a row named %r that could not be checked against the other rows (treated as a total)" % str(m))
+            for i in rows:
+                reasons[int(i)] = why_row
+            rec["left_out"] = True
+        else:
+            rec["left_out"] = False
+        totals.append(rec)
     partial = _partial_months(df, dts, drops)
     if not drops and not partial and not [t for t in totals if t["nomination"] == "exact"]:
         return None
@@ -10449,12 +10468,11 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
     return {"drops": sorted(drops), "totals": totals, "partial": partial, "date_column": date_col, "reasons": reasons}
 
 
-def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict[str, Any], ctx: Any, date_key: Any,
-                 valid_date: Any) -> Tuple[str, str]:
-    """Whether member m of a category column is the total of the `base` members over the same cells (the same date and the same members of every
-    other dimension), for every number column: "verified" (a sum-check that could have FAILED passed for at least one number column and failed
-    for none: nl_structure._sum_check, the layer's own), "contradicted_bounding" (it is above their sum in the cells: a total whose parts are not
-    all listed), "contradicted" (it is not their sum and is not above it: an ordinary member) or "unresolved" (no check could have failed)."""
+def _total_columns(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict[str, Any], ctx: Any, date_key: Any,
+                   valid_date: Any) -> Any:
+    """The sum-check of member m of a category column against the `base` members over the same cells (the same date and the same members of
+    every other dimension), for EVERY number column: {column: (nl_structure._sum_check's result, the cells)}, or (status, why) when no check can
+    be made (too few rows, too many cells)."""
     import numpy as np
     import pandas as pd
     mem_list = base + [m]
@@ -10469,7 +10487,7 @@ def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict
         return "unresolved", "too many cells"
     X = np.zeros((nm, nc, nt), dtype=bool)
     X[mi, ci, ti] = True
-    results = []
+    results: Dict[str, Any] = {}
     for name, series in nums.items():
         v = series[use].to_numpy(dtype=float)
         ok = ~np.isnan(v)
@@ -10477,9 +10495,24 @@ def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict
         A = np.full((nm, nc, nt), np.nan)
         idx = g.index.to_frame(index=False).to_numpy()
         A[idx[:, 0], idx[:, 1], idx[:, 2]] = g.to_numpy()
-        tol = 0.5 * 10.0 ** (-_decimals_of(df[name]))
+        # half a unit of the last digit written, or of the zeros the figures end in (4731000: rounded to the thousand; wave 5g)
+        tol = max(0.5 * 10.0 ** (-_decimals_of(df[name])), 0.5 * NS._round_unit(v[ok]) if _decimals_of(df[name]) == 0 else 0.0)
         nonneg = bool(np.nanmin(A) >= 0) if np.isfinite(A).any() else True
-        results.append((NS._sum_check(A, X, nm - 1, list(range(nm - 1)), tol, nonneg), A))
+        results[name] = (NS._sum_check(A, X, nm - 1, list(range(nm - 1)), tol, nonneg), A)
+    return results
+
+
+def _total_verdict(res: Any, additive: Optional[Set[str]] = None) -> Tuple[str, str]:
+    """(status, why) from a member's per-column sum-checks: "verified" (a check that could have FAILED passed for at least one number column and
+    failed for none of the columns that count), "contradicted_bounding" (it is above their sum in the cells: a total whose parts are not all
+    listed), "contradicted" (it is not their sum and is not above it: an ordinary member) or "unresolved" (no check could have failed). The
+    columns that count are those that add up for SOME nominated total of the file (`additive`) when there are any; a column that adds up for
+    none is not an amount and says nothing about a total (wave 5g, D). With `additive` None every column counts."""
+    import numpy as np
+    if not isinstance(res, dict):
+        return res
+    counted = {n: v for n, v in res.items() if not additive or n in additive}
+    results = list(counted.values())
     if any(c["status"] == "fail" for c, _a in results):
         bound = True
         for c, A in results:
@@ -10492,6 +10525,13 @@ def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict
     if any(c["status"] == "pass" for c, _a in results):
         return "verified", "it equals the sum of the other members in every cell that can be checked"
     return "unresolved", "no check on these figures could have failed"
+
+
+def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict[str, Any], ctx: Any, date_key: Any,
+                 valid_date: Any) -> Tuple[str, str]:
+    """Whether member m of a category column is the total of the `base` members over the same cells, for every number column (see
+    `_total_columns` and `_total_verdict`): "verified", "contradicted_bounding", "contradicted" or "unresolved"."""
+    return _total_verdict(_total_columns(NS, df, col, m, base, nums, ctx, date_key, valid_date))
 
 
 def _partial_months(df: Any, dts: Any, already: Set[int]) -> Optional[Dict[str, Any]]:

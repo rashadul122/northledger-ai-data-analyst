@@ -1092,7 +1092,8 @@ _REASON_LABEL = {"name": "named like personal data", "free_text": "free text",
 _KIND_LABEL = {"email": "email", "credit_card": "card number", "phone_na": "phone number",
                "phone_intl": "phone number", "sin_ssn": "SIN or SSN", "postal_ca": "postal code",
                "ip": "IP address", "person_name": "person's name", "street_address": "street address",
-               "account_number": "account or card number", "id_number": "long ID number"}
+               "account_number": "account or card number", "id_number": "long ID number",
+               "sensitive_category": "sensitive category (named by its header)"}
 
 
 def _kind_of(col: str, kinds: str, res: Any) -> str:
@@ -1425,9 +1426,82 @@ def _street_value(v: str) -> bool:
     return False
 
 
+# wave 5f (C): a column whose HEADER names a sensitive category (marital status, Indigenous identity, HIV status, ICD code, cause of death,
+# religion, ethnicity, visible minority ...) is FLAGGED and WITHHELD BY DEFAULT in any table layout, with a one-click Keep on the consent
+# card: the scan flags what looks like free text, a long ID or a person, so a five-member category column sat as an ordinary DIMENSION of
+# an official cube and one of its members was printed in the estimand ("Canada · All industries · Non-Indigenous identity"). Wave 5e's
+# SENSITIVE_HEADER only stopped a flagged column from being RELEASED. This vocabulary is the FLAGGING one, so it is strict: whole words
+# or phrases of the header (accents folded, case ignored, a word boundary on both sides: never "sex" in Essex, "race" in Terrace,
+# "union" in Reunion, "aids" in "Aids and appliances"), English with the French, Spanish and German names. A header is a hint, never
+# evidence about values: a numeric column with many different values is a MEASURE under such a header (a "Disability benefit" amount) and
+# is not flagged. Money words (income, salary, debt) are not in it: they name measures far more often than categories.
+_SENSITIVE_PHRASES = (
+    # race, ethnicity, Indigenous identity, visible minority
+    r"ethnic(?:ity|ities)?(?: origin| group| background)?", r"racial|race|races", r"visible minorit(?:y|ies)", r"minorit[ey]s? visibles?",
+    r"indigenous|aboriginal|first nations?|inuit|metis|autochtones?|indigenas?|indigene", r"ancestry",
+    r"origine ethnique|ethnie|etnia|raza|rasse|herkunft",
+    # religion and belief, politics, trade union
+    r"religion|religious|religieuse?s?|faith|denomination|beliefs?|confession|konfession|creencias?",
+    r"political (?:party|affiliation|view|views|opinion|opinions|belief|beliefs|leaning)|party affiliation|voting (?:intention|preference)",
+    r"opinions? politiques?|partido politico|politische (?:partei|meinung|einstellung)|parti politique",
+    r"trade unions?|union (?:membership|member|status)|syndicat|sindicato|gewerkschaft\w*",
+    # sex, gender, orientation, marital and family status
+    r"sex|gender(?: identity)?|sexe|sexo|geschlecht|sexual (?:orientation|preference|identity)|orientation sexuelle|orientacion sexual|"
+    r"sexuelle orientierung|transgender",
+    r"marital(?: status)?|marriage status|civil status|relationship status|etat (?:matrimonial|civil)|situation matrimoniale|"
+    r"estado civil|familienstand|pregnan(?:t|cy)",
+    # health, disability, cause of death
+    r"diagnos(?:is|es|tic|tics)|diagnostic|diagnostico|diagnose|disease|diseases|illness|illnesses|maladie|enfermedad|krankheit|"
+    r"disabilit(?:y|ies)|disabled|handicap|discapacidad|behinderung|incapacite|"
+    r"(?:health|medical|mental health|medical history|health) (?:status|condition|conditions|history|record|records)|"
+    r"etat de sante|estado de salud|gesundheitszustand|symptoms?|"
+    r"icd(?:[- ]?\d{1,2})?|cause of death|cause de deces|causa de muerte|todesursache|mortality cause|"
+    r"hiv|vih|sida|hiv status|aids (?:status|test|diagnosis|infection|case|cases)",
+    # criminal record, immigration
+    r"criminal (?:record|history|offence|offense|conviction)|convictions?|arrests?|casier judiciaire|antecedentes penales|vorstrafen?|"
+    r"immigration status|statut d immigration|estatus migratorio|aufenthaltsstatus|asylum|refugee|"
+    r"nationality|nationalite|nacionalidad|staatsangehorigkeit|citizenship|citoyennete|ciudadania",
+    # genetic and biometric
+    r"genetic|genetique|genetico|biometric\w*",
+)
+_SENSITIVE_RX = re.compile(r"(?<![a-z0-9])(?:%s)(?![a-z0-9])" % "|".join(_SENSITIVE_PHRASES))
+_AIDS_UPPER = re.compile(r"(?<![A-Za-z0-9])AIDS(?![A-Za-z0-9])")
+
+
+def _sensitive_header(header: Any) -> Optional[str]:
+    """The sensitive-category phrase a column's HEADER holds (whole words, accents folded, case ignored), or None. `aids` counts only in capitals
+    or beside a word that makes it a diagnosis ("AIDS status"), never as the word of "Aids and appliances"."""
+    import unicodedata
+    h = str(header or "")
+    folded = "".join(ch for ch in unicodedata.normalize("NFKD", h.lower()) if not unicodedata.combining(ch))
+    folded = re.sub(r"[^a-z0-9]+", " ", folded.replace("'", " ")).strip()
+    m = _SENSITIVE_RX.search(folded)
+    if m:
+        return m.group(0).strip()
+    if _AIDS_UPPER.search(h):
+        return "aids"
+    return None
+
+
+def _measure_like(values: Any) -> bool:
+    """Whether a column's cells are a MEASURE and not a category: numbers, with more than a handful of different values. A category column
+    coded 1, 2, 3 is not a measure; a column of amounts is."""
+    import pandas as pd
+    t = values.astype(object).where(values.notna(), "").astype(str).str.strip()
+    t = t[t != ""]
+    if len(t) < 2:
+        return False
+    num = pd.to_numeric(t.str.replace(",", "", regex=False), errors="coerce")
+    return bool(float(num.notna().mean()) >= 0.95 and int(t.nunique()) > SENSITIVE_MEASURE_DISTINCT)
+
+
+SENSITIVE_MEASURE_DISTINCT = 25          # wave 5f: a number column with more than this many different values is a measure under any header
+
+
 def _personal_kind(header: Any, values: Any) -> Optional[str]:
     """The kind of personal data a column holds by this check (see above), or None: `email`, `phone_na`, `account_number`,
-    `street_address` or `person_name`. `header` is the column's name as the file writes it, `values` its cells (any type)."""
+    `street_address`, `person_name` or (wave 5f) `sensitive_category`. `header` is the column's name as the file writes it, `values` its
+    cells (any type)."""
     import numpy as np
     import pandas as pd
     nulls = _null_tokens()
@@ -1435,6 +1509,8 @@ def _personal_kind(header: Any, values: Any) -> Optional[str]:
     t = t[~t.str.lower().isin(nulls)]
     if not len(t):
         return None
+    if _sensitive_header(header) and not _measure_like(values):
+        return "sensitive_category"
     vc = t.value_counts()
     vals = pd.Series([str(x) for x in vc.index], dtype=object)
     w = vc.to_numpy(dtype=float)

@@ -953,3 +953,23 @@ def tree_25(seed: int = 311, years: int = 3) -> bytes:
         for k, v in sect.items():
             rec.append((mo, "Canada", (k,), v[i], "A"))
     return _official(["Sector"], rec)
+
+
+# ----------------------------------------------------------------------------------------------------------------- wave 5f
+def sensitive_dimension(column: str = "Marital status", labels=("Single", "Married", "Widowed", "Divorced"),
+                        total: str = "Total, all marital statuses", seed: int = 401, months: int = 48, with_total: bool = True) -> bytes:
+    """Wave 5f (C; fuzz seeds 18, 23, 135, 218 ...). An official cube whose ONE dimension besides the place is a sensitive CATEGORY (marital
+    status, Indigenous identity, HIV status ...): `labels` and their total (the exact sum), Canada only, persons receiving a benefit in
+    dollars. The scan flags no such column (it is five words, not free text, not an ID), so one of its members was printed in the estimand
+    of the old engine ("Canada · Non-Indigenous identity"); now the HEADER flags it and it is withheld by default."""
+    rng = np.random.RandomState(seed)
+    mo = ["%04d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(months)]
+    vals = {lb: _series(rng, 900.0 + 350.0 * k, n=months) for k, lb in enumerate(labels)}
+    tot = sum(vals.values())
+    rec = []
+    for i, m in enumerate(mo):
+        if with_total:
+            rec.append((m, "Canada", (total,), tot[i], "A"))
+        for lb in labels:
+            rec.append((m, "Canada", (lb,), vals[lb][i], "A"))
+    return _official([column], rec)

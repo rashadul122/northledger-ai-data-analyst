@@ -35,6 +35,7 @@ import pandas as pd  # noqa: E402
 
 import nl_browser as NB  # noqa: E402
 import nl_structure as NS  # noqa: E402
+import make_cubes as MC  # noqa: E402
 
 AS_OF = "2026-09-30"
 REGRESS = os.path.join(HERE, "fixtures", "structure", "regress")
@@ -922,6 +923,121 @@ def test_the_cases_pyodide_runs_say_what_the_native_engine_says():
     assert set(now) == set(old), (sorted(now), sorted(old))
     for n in now:
         assert json.loads(json.dumps(now[n])) == old[n], (n, now[n], old[n])
+
+
+# ----------------------------------------------------------------------------- wave 5f
+# The third pass (branch w5f-harden). Fixtures: tools/fixtures/structure/regress/f*.csv (minimal tables, many from fuzz v2's shrink2) and
+# make_cubes.py. Same rule as above: an EXPLICIT assertion of the right outcome, red on 09d3edc, and a negative that must not change.
+def everything(rep, data=None):
+    """All the text the engine hands anywhere: the saved report and what the report writer is given (and the planner's profile)."""
+    out = json.dumps(rep, default=str) + json.dumps(NB.results_for_ai(rep), default=str)
+    if data is not None:
+        out += NB.profile_json(data, "t.csv")
+    return out
+
+
+def test_f01_a_sensitive_category_dimension_is_flagged_and_withheld_by_default_and_none_of_its_members_is_ever_printed():
+    """Wave 5f, C (fuzz v2 seeds 18 23 30 45 118 120 135 147 148 198 218 237 262). A five-word category column under a header that names a
+    sensitive category (Marital status, Indigenous identity, HIV status, ICD code, Cause of death, Visible minority ...) was no personal
+    column to the scan, so it sat as an ordinary dimension of an official cube and one member was printed in the estimand
+    ("Canada · All industries · Non-Indigenous identity"), with no consent line. Now the HEADER flags it, in any layout, withheld by
+    default with a one-click Keep. An official cube that needs it is refused naming the column (never a value) and "choose Keep"; kept,
+    its members may appear (the visitor decided)."""
+    labels = ("Single", "Married", "Widowed", "Divorced", "Total, all marital statuses")
+    data = MC.sensitive_dimension()
+    rep = run_bytes(data)
+    fl = {f["column"]: f for f in rep["privacy"]["flagged"]}
+    assert set(fl) == {"marital_status"} and fl["marital_status"]["decision"] == "withhold" and "sensitive" in fl["marital_status"]["kind"], fl
+    assert st(rep).get("kind") == "cube_incomplete" and refused(rep), (st(rep).get("kind"), headline(rep))
+    assert "Marital status" in st(rep)["reason"] and "Keep" in st(rep)["reason"], st(rep)["reason"]
+    blob = everything(rep, data)
+    assert not [v for v in labels if v in blob], [v for v in labels if v in blob]
+    # kept by the visitor: read, and the report says the column was flagged and kept
+    rep_k = run_bytes(data, {"marital_status": "keep"})
+    assert rep_k["privacy"]["flagged"][0]["decision"] == "keep" and est(rep_k) and "Total, all marital statuses" in est(rep_k)["text"], est(rep_k)
+    # negative: the same labels under a neutral header are an ordinary dimension: nothing flagged, the cube is read
+    rep_n = run_bytes(MC.sensitive_dimension(column="Group"))
+    assert rep_n["privacy"]["flagged"] == [] and est(rep_n), rep_n["privacy"]
+
+
+def _ledger(extra_column: str, labels, seed: int = 7, months: int = 30):
+    """A plain business ledger: Date, Region, <extra_column>, Amount (a row per month, region and label)."""
+    rng = np.random.RandomState(seed)
+    rows = []
+    for i in range(months):
+        for r, lv in (("North", 900.0), ("South", 700.0), ("East", 500.0)):
+            for k, lb in enumerate(labels):
+                rows.append(["%04d-%02d-01" % (2021 + i // 12, i % 12 + 1), r, lb, "%d" % round(lv * (1 + 0.1 * k) * (1.0 + 0.01 * i) * (1 + 0.03 * rng.randn()))])
+    return ("Date,Region,%s,Amount\n" % extra_column + "\n".join(",".join(x) for x in rows) + "\n").encode()
+
+
+def test_f02_a_sensitive_column_of_a_plain_ledger_is_withheld_and_the_ledger_is_still_analysed_without_it():
+    """Wave 5f, C (seeds 147 and 262: Date, Region, ICD code, Amount). The business layout has no cube to refuse: the column is flagged
+    from its header, withheld (landed as opaque codes, scrubbed), and the analysis runs without it. No ICD code is in the report, in what
+    the report writer is given or in the planner's profile."""
+    codes = ["C34.9", "X44.9", "K74.6"]
+    for header in ("ICD code", "Visible minority", "Cause of death", "HIV status", "Religion", "Etat matrimonial"):
+        labels = codes if header == "ICD code" else ["Chinese", "Black", "South Asian"] if header == "Visible minority" else \
+            ["Chronic liver disease", "Accidental poisoning", "Heart disease"] if header == "Cause of death" else \
+            ["HIV negative", "HIV positive", "Unknown"] if header == "HIV status" else ["Sikh", "Buddhist", "No religious affiliation"]
+        data = _ledger(header, labels)
+        rep = run_bytes(data)
+        fl = {f["column"]: f for f in rep["privacy"]["flagged"]}
+        # (the engine's own scan already names some headers, religion among them: "named like personal data"; the others are named here)
+        assert len(fl) == 1 and list(fl.values())[0]["decision"] == "withhold" and \
+            ("sensitive" in list(fl.values())[0]["kind"] or "personal data" in list(fl.values())[0]["kind"]), (header, fl)
+        assert rep["ok"] and "Total amount" in headline(rep), (header, headline(rep))
+        blob = everything(rep, data)
+        assert not [v for v in labels if v in blob], (header, [v for v in labels if v in blob])
+    # negative: a column of the same shape under an ordinary header is not flagged
+    rep_n = run_bytes(_ledger("Channel", ["Online", "Store", "Phone"]))
+    assert rep_n["privacy"]["flagged"] == [], rep_n["privacy"]["flagged"]
+
+
+def test_f03_the_sensitive_vocabulary_covers_four_languages_with_word_boundaries_and_never_a_measure():
+    """Wave 5f, C. The flagging vocabulary is strict: whole words or phrases (accents folded, case ignored), English with French, Spanish and
+    German names; never "sex" in Essex, "race" in Terrace, "aids" in "Aids and appliances", "union" in Reunion; and a number column with
+    many different values under such a header is a measure, not a category."""
+    hits = ["Marital status", "Marital", "Indigenous identity", "HIV status", "ICD code", "ICD-10", "Cause of death", "Religion", "Ethnicity",
+            "Ethnic origin", "Visible minority", "Race", "Sex", "Gender", "Sexual orientation", "Disability", "Diagnosis", "Health status",
+            "Political party", "Trade union", "AIDS", "Criminal record", "Nationality", "Genetic", "Aboriginal", "First Nations", "Inuit",
+            "\u00c9tat matrimonial", "Minorit\u00e9 visible", "Identit\u00e9 autochtone", "Cause de d\u00e9c\u00e8s", "Orientation sexuelle", "Sexe",
+            "Estado civil", "Raza", "Religi\u00f3n", "Discapacidad", "Causa de muerte", "Familienstand", "Geschlecht", "Behinderung", "Todesursache",
+            "Konfession", "Staatsangeh\u00f6rigkeit", "VIH", "sida"]
+    misses = ["Aids and appliances", "Essex", "Terrace", "Grace period", "Sextant", "Unisex", "Reunion", "Racetrack", "Party size", "Union Station",
+              "Condition", "Health insurance", "Genre", "Region", "Branch", "Product", "Income", "Salary", "Amount", "Embrace", "Trace",
+              "Medical supplies", "Drug", "Credit", "Hivemind", "Facility", "Placebo", "Tracer", "Sixty", "Visa"]
+    assert [h for h in hits if not NB._sensitive_header(h)] == [], [h for h in hits if not NB._sensitive_header(h)]
+    assert [h for h in misses if NB._sensitive_header(h)] == [], [(h, NB._sensitive_header(h)) for h in misses if NB._sensitive_header(h)]
+    cats = pd.Series(["Single", "Married", "Widowed"] * 40)
+    amounts = pd.Series(["%d" % (1000 + 7 * i) for i in range(120)])
+    assert NB._personal_kind("Marital status", cats) == "sensitive_category"
+    assert NB._personal_kind("Disability benefit", amounts) is None            # a measure under a sensitive header
+    assert NB._personal_kind("Marital status", pd.Series(["1", "2", "3", "9"] * 30)) == "sensitive_category"   # a coded category is not a measure
+
+
+def test_f04_a_sensitive_column_never_names_a_series_nor_leaks_through_a_constant_label_or_the_layout_notes():
+    """Wave 5f, C: every path a column's values can take to an output. (a) The long-table layout names each series from its text columns:
+    a sensitive column one to one with the series never does (it is set aside, withheld); (b) a CONSTANT sensitive column is the sort of
+    column `label_hint` reads and the metadata block echoes: neither prints its value; (c) the refusal names the column, never a value."""
+    # (a) the long panel: the series' "Religion" is a name per series
+    data = MC.long_panel_with_owner(column="Religion")
+    rep = run_bytes(data)
+    lay = rep["input"]["layout"]
+    assert lay and "Religion" in lay.get("personal_set_aside", {}), lay
+    blob = everything(rep, data)
+    assert not [n for n in MC.OWNERS if n in blob or n.split()[1].lower() in blob.lower()], "an owner's name is in an output"
+    # (b) a constant sensitive column of an official cube: its single value is never echoed
+    rows = MC.partition().decode().splitlines()
+    head = rows[0].split(",")
+    j = head.index('"Sales"')
+    head[j] = '"Marital status"'
+    rows = [",".join(head)] + [",".join(r.split(",")[:j] + ['"Widowed"'] + r.split(",")[j + 1:]) for r in rows[1:]]
+    data2 = ("\n".join(rows) + "\n").encode()
+    rep2 = run_bytes(data2)
+    assert [f["column"] for f in rep2["privacy"]["flagged"]] == ["marital_status"], rep2["privacy"]["flagged"]
+    assert "Widowed" not in everything(rep2, data2), "the constant value of a withheld column is in an output"
+    assert est(rep2), "the cube is still read without a constant column"
 
 
 # ----------------------------------------------------------------------------- runner

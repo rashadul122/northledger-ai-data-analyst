@@ -819,8 +819,12 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     if not dims:
         dup = 1.0 - len(pd.unique(tcode)) / max(1, n_rows)
         kind = "panel_no_relations" if dup <= DUP_MAX else ("cube_incomplete" if official else "not_cube")
+        hidden_names = [R.header(h) for h in sorted(hidden) if R.header(h)]
+        tail = (" (%s %s withheld, and may be the column that tells them apart: choose Keep for %s on the consent card to read the "
+                "table)" % (", ".join(hidden_names[:3]), "is" if len(hidden_names) == 1 else "are",
+                            "it" if len(hidden_names) == 1 else "them")) if hidden_names and dup > DUP_MAX else ""
         return _empty(kind, "one series" if kind == "panel_no_relations" else
-                      "the dates repeat and no column the engine may read tells the repeats apart", **base)
+                      "the dates repeat and no column the engine may read tells the repeats apart" + tail, **base)
     s_codes, s_index = _series_index([cat[d][0] for d in dims])
     pair = s_codes.astype(np.int64) * (len(tlabels) + 1) + tcode
     n_pairs = len(pd.unique(pair))
@@ -829,11 +833,20 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         rep_txt = _repeat_phrase(pair, [(head[d], cat[d][0], cat[d][1]) for d in dims],
                                  {head[k]: v for k, v in base_names.items() if k in head})
         series_code = [h for h in sorted(hidden) if _norm(h) in ("coordinate", "vector", "dguid")]
+        # wave 5f (C): any column the visitor has not kept (a series code, a personal column, a sensitive category) may be the one that
+        # tells the rows apart; it is named by its header (never by a value) so that the visitor can choose Keep for it
+        others_hidden = [R.header(h) for h in sorted(hidden) if h not in series_code and R.header(h)]
+        tail = ""
+        if rep_txt and series_code:
+            tail = ("; %s is withheld: a series code may tell them apart (keep it on the consent card to read the table)"
+                    % series_code[0])
+        elif others_hidden:
+            tail = ("; %s %s withheld, and may be the column that tells them apart (choose Keep for %s on the consent card to read "
+                    "the table)" % (", ".join(others_hidden[:3]), "is" if len(others_hidden) == 1 else "are",
+                                    "it" if len(others_hidden) == 1 else "them"))
         why = ("the date and the columns the engine may read (%s) do not tell the rows apart: %s%s of %s rows repeat "
                "a date and a series, so a column that names the series is withheld or set aside%s"
-               % (", ".join(head[d] for d in dims), rep_txt, _fmt_count(n_rows - n_pairs), _fmt_count(n_rows),
-                  ("; %s is withheld: a series code may tell them apart (keep it on the consent card to read the table)"
-                   % series_code[0]) if rep_txt and series_code else ""))
+               % (", ".join(head[d] for d in dims), rep_txt, _fmt_count(n_rows - n_pairs), _fmt_count(n_rows), tail))
         return _empty("cube_incomplete" if official else "not_cube", why, **base)
     n_series = int(s_index.shape[0])
     if n_series > MAX_SERIES:

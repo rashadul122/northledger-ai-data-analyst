@@ -672,6 +672,18 @@ def test_s05_the_unnamed_aggregate_decision_does_not_sit_on_a_borderline():
             assert g0["role"] == "rate_aggregate" and g0["sum_check"]["fit_rms"] < 0.2 * g0["sum_check"]["typical_member_fit_rms"], g0["sum_check"]
 
 
+def test_the_cases_pyodide_runs_say_what_the_native_engine_says():
+    """tools/check_pyodide_cube.mjs runs five of these files in Pyodide (Python 3.12) and compares them with tools/fixtures/structure/
+    pyodide_cases.json: the expected values are written there, and this test keeps them equal to what the native engine says now (run
+    `python tools/make_pyodide_cases.py --write` after an engine change that moves one, and read the diff)."""
+    import make_pyodide_cases as MP
+    now = MP.build()
+    old = json.load(open(MP.OUT))
+    assert set(now) == set(old), (sorted(now), sorted(old))
+    for n in now:
+        assert json.loads(json.dumps(now[n])) == old[n], (n, now[n], old[n])
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

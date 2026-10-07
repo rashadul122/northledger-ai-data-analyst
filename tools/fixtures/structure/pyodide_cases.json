@@ -1,0 +1,77 @@
+{
+ "r02_combined_member_disjoint_parts": {
+  "estimand": true,
+  "file": "r02_combined_disjoint_periods.csv",
+  "kind": "cube",
+  "latest": 193280000.0,
+  "ok": true,
+  "pct": 5.411847,
+  "prior": 183357000.0,
+  "refused": false,
+  "roles": {
+   "GEO": "parts"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "r06_french_statcan": {
+  "estimand": true,
+  "file": "r06_french_statcan.csv",
+  "kind": "cube",
+  "latest": 230190000.0,
+  "ok": true,
+  "pct": 4.298537,
+  "prior": 220703000.0,
+  "refused": false,
+  "roles": {
+   "G\u00c9O": "partition"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "r07_weekly_official": {
+  "estimand": true,
+  "file": "r07_weekly_official.csv",
+  "kind": "cube",
+  "latest": 52058.0,
+  "ok": true,
+  "pct": 0.07882,
+  "prior": 52017.0,
+  "refused": false,
+  "roles": {
+   "GEO": "partition"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "rate_panel_with_its_aggregate": {
+  "estimand": true,
+  "file": "pyodide_rate_with_aggregate.csv.gz",
+  "kind": "cube",
+  "latest": 6.233333,
+  "ok": true,
+  "pct": -12.412178,
+  "prior": 7.116667,
+  "refused": false,
+  "roles": {
+   "GEO": "rate_aggregate"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "rate_panel_without_one": {
+  "estimand": true,
+  "file": "pyodide_rate_without_aggregate.csv.gz",
+  "kind": "cube",
+  "latest": 11.375,
+  "ok": true,
+  "pct": -1.727862,
+  "prior": 11.575,
+  "refused": false,
+  "roles": {
+   "GEO": "single"
+  },
+  "source": "estimand",
+  "usable": true
+ }
+}

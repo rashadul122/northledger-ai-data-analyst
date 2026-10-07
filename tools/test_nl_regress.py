@@ -509,6 +509,32 @@ def test_r15_a_total_that_no_cell_could_check_is_never_said_to_add_up():
             assert phrase not in said, "%s: %r printed with 0 complete cells" % (name, phrase)
 
 
+def test_r15b_a_member_that_says_total_and_is_decidedly_not_the_sum_of_the_others_says_so():
+    """Finding 15, the neighbour. A member called Total that is half of the sum of the three provinces beside it: one member is shown (the sums
+    contradict it as the total of the others, so nothing is added and nothing is called published), and the words say it was CHECKED and does
+    not add up, never "not checked against the other members"."""
+    import make_cubes as MC
+    rng = np.random.RandomState(3)
+    t = np.arange(48)
+    seas = np.array([0.9, 0.85, 1.0, 1.0, 1.05, 1.05, 1.0, 1.0, 1.0, 1.05, 1.1, 1.25])
+    ser = {g: np.round(lv * 1.003 ** t * seas[t % 12] * (1 + 0.02 * rng.randn(48))) for g, lv in (("Ontario", 8000), ("Quebec", 5000), ("Alberta", 3000))}
+    tot = np.round(sum(ser.values()) * 0.5)
+    months = ["%d-%02d" % (2020 + i // 12, i % 12 + 1) for i in range(48)]
+    rec = []
+    for i, m in enumerate(months):
+        rec.append((m, "Total", ("Retail sales",), tot[i], "A"))
+        rec.extend((m, g, ("Retail sales",), v[i], "A") for g, v in ser.items())
+    rep = run_bytes(MC._official(["Sales"], rec))
+    assert not refused(rep) and figs(rep) is not None, headline(rep)[:200]
+    f = figs(rep)
+    assert close(f[0], tot[-24:-12].sum() * 1000, 1e-6) and close(f[1], tot[-12:].sum() * 1000, 1e-6), (f, tot[-24:-12].sum(), tot[-12:].sum())
+    t_ = headline(rep) + " " + est(rep).get("text", "")
+    assert "do not add up to it" in t_, t_
+    assert "not checked against the other members" not in t_ and "published totals" not in t_, t_
+    d = dim(rep, "GEO")
+    assert d["role"] == "single" and d["single_by"] == "name" and d.get("named_contradicted") is True, d
+
+
 def test_r16_a_levels_window_is_matched_too_two_months_never_stand_for_twelve():
     """Finding 16. A rate whose headline series starts in Nov 2021: the prior "12-month average" was two months and the estimand
     said complete: true, +0.683 points. A level needs half a window in both windows, on the months both have, else no figure."""

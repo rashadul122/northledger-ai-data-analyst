@@ -1836,6 +1836,7 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     # 1. FLAT: the top 3 by dominance and any name-hinted member, against every other member. Two readings of the members whose names
     # nominate them as alternatives: left out of the parts, or parts; the sums decide which (or neither)
     undecided: List[int] = []
+    contradicted: List[int] = []
     for t in list(dict.fromkeys([int(x) for x in order[:3]] + hint + whole)):
         variants = [[m for m in range(M) if m != t and m not in nominated]]
         if nominated - {t}:
@@ -1852,6 +1853,8 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
         if not done:
             continue
         P0, chk0 = done[0]
+        if chk0["status"] == "fail" and t in hint:
+            contradicted.append(t)                  # a member that says total and is DECIDEDLY not the sum of the others (P8: said so)
         if chk0["status"] == "unresolved":
             if t in hint:
                 # named as the total, nothing contradicts it, nothing could check it (no complete cell, or magnitudes as small as the
@@ -1860,6 +1863,7 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
                 return
             undecided.append(t)
     rec["undecided_totals"] = [labels[t] for t in undecided]
+    rec["contradicted_totals"] = [labels[t] for t in contradicted]
     if M > MAX_MEMBERS:
         # a series key with more members than the relation search reads (NAICS at 6 digits, HS codes): the flat check above (linear) is
         # all that is searched, and the reason says so (wave 5e, P11); one member is shown, or the table is refused by its caller
@@ -3020,6 +3024,8 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                    noun="national figure" if _is_geographic(rec["column"]) else "total",
                    why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
                                                        "added across a dimension it could not verify)")
+        if by == "name" and labels[m] in (rec.get("contradicted_totals") or []):
+            rec["named_contradicted"] = True        # it says total, and the other members do not add up to it
         if by == "dominance":
             # no member is named as a total or as the whole (one whole country's name, Canada, among provinces would be; two of them are
             # a table of countries): the one shown is the largest, not the table's figure
@@ -3943,7 +3949,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             built_txt = "%s: %s; " % (d["total"], _named_flow_words(d.get("sum_check") or {})) + built_txt
         elif d.get("role") == "single" and d.get("single_by") == "name" and where.get(d["column"]) == d.get("total"):
             built_txt = "one member shown: %s, named as the whole of %s; %s; " % (
-                d["total"], d["column"], "it could not be checked against the other members") + built_txt
+                d["total"], d["column"], "the other members do not add up to it" if d.get("named_contradicted") else
+                "it could not be checked against the other members") + built_txt
     def span(w: List[str]) -> str:
         a, b = (_mon(w[0]), _mon(w[1])) if P["step"] == 1 else (_plabel(S, w[0]), _plabel(S, w[1]))
         return a if a == b else "%s–%s" % (a, b)
@@ -4104,6 +4111,8 @@ def _evidence(S: Dict[str, Any], where: Dict[str, Any], built: Optional[Dict[str
     tails = {"built": " (the table has no total row)",
              "named": " (named as the total, not checked against its parts)" if any(
                  d.get("role") in ("partition", "hierarchy") and d.get("evidence") == "named" for d in S["dims"]) else
+             " (named as the total, but the other members do not add up to it)" if any(
+                 d.get("role") == "single" and d.get("named_contradicted") for d in S["dims"]) else
              " (named as the whole, not checked against the other members)",
              "single": ""}
     return {"level": level, "tail": tails[level], "dims": [d["column"] for d in S["dims"] if d.get("role") in
@@ -4143,7 +4152,7 @@ def public(S: Dict[str, Any]) -> Dict[str, Any]:
     dims = []
     for d in S.get("dims") or []:
         x: Dict[str, Any] = {"column": d["column"], "role": d["role"], "members": len(d["labels"])}
-        for k in ("total", "nsa", "sa", "by", "why", "single_by", "noun", "no_total_member", "aggregate_by"):
+        for k in ("total", "nsa", "sa", "by", "why", "single_by", "noun", "no_total_member", "aggregate_by", "named_contradicted"):
             if d.get(k) is not None:
                 x[k] = d[k]
         if d.get("parts") is not None and d["role"] in ("partition", "hierarchy", "rate_aggregate", "parts"):
@@ -4208,7 +4217,7 @@ def _hash_dim(d: Dict[str, Any]) -> Dict[str, Any]:
     """A dimension's record as the structure hash reads it: the wave 5e bookkeeping (the evidence level of a verified total, the check's
     power counters, the totals a check left undecided) is left out where it only restates what the roles already say, so a table read as it
     always was keeps its hash; a total the table names that no cell could check ("named") and every other new reading changes it."""
-    out = {k: v for k, v in d.items() if k not in ("labels", "undecided_totals", "twin_why")}
+    out = {k: v for k, v in d.items() if k not in ("labels", "undecided_totals", "twin_why", "contradicted_totals", "named_contradicted")}
     if out.get("evidence") in ("verified", "built", "single", "ledger") or out.get("role") in ("single", "rate_aggregate", "flat_additive", "parts"):
         out.pop("evidence", None)
     sc = out.get("sum_check")

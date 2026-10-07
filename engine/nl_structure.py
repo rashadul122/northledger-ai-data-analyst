@@ -264,9 +264,49 @@ def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tu
     return None if best is None else (best[0], best[1], best[2])
 
 
+WEEK_MIN = 8                    # wave 5e, P6: a weekly table is compared over at least 8 weeks a window (16 weeks in all) ...
+DAY_MIN = 28                    # ... a daily one over at least 28 days (56 days); the window is 52 weeks / 365 days, or the largest whole
+                                # number of periods that fits twice in the table
+
+
+def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
+    """The period of a table with several dates a month (wave 5e, P6): weekly (80% of the gaps between its dates are 7 days) or daily (60%
+    of them 1 day, none over 4: weekdays only is a daily table). The window is 52 weeks or 365 days, or, for a shorter table, the largest
+    whole number of periods that fits twice (at least WEEK_MIN weeks, DAY_MIN days); a table too short for that, or with any other rhythm,
+    is None and is not read as monthly. Keys are the dates themselves; `span_days` is the calendar span of one window."""
+    import datetime as _d
+    ds = sorted({t[:10] for t in times})
+    if len(ds) < 4:
+        return None
+    try:
+        days = [(_d.date(int(x[:4]), int(x[5:7]), int(x[8:10])) - _d.date(1970, 1, 1)).days for x in ds]
+    except ValueError:
+        return None
+    gaps = [b - a for a, b in zip(days[:-1], days[1:])]
+    n = len(gaps)
+    weekly = sum(1 for g in gaps if g == 7) >= 0.8 * n
+    daily = sum(1 for g in gaps if g == 1) >= 0.6 * n and max(gaps) <= 4
+    if not (weekly or daily):
+        return None
+    total = days[-1] - days[0] + 1
+    if weekly:
+        n_win = min(52, (total // 7) // 2)
+        if n_win < WEEK_MIN:
+            return None
+        return {"kind": "week", "noun": "week", "nouns": "weeks", "step": -7, "phase": 0, "per_year": 52, "window": n_win,
+                "adjective": "weekly", "cadence": "week", "span_days": 7 * n_win, "per_span": n_win}
+    n_win = min(365, total // 2)
+    if n_win < DAY_MIN:
+        return None
+    return {"kind": "day", "noun": "day", "nouns": "days", "step": -1, "phase": 0, "per_year": 365, "window": n_win,
+            "adjective": "daily", "cadence": "day", "span_days": n_win,
+            "per_span": max(1, int(round(len(ds) * n_win / float(total))))}       # the dates a window holds (weekdays only: fewer than its days)
+
+
 def _period_of(times: List[str], family: str = "") -> Dict[str, Any]:
     """The table's period from its dates: one value a period (not a daily or weekly table) and a steady gap of 3, 6 or 12
-    months between periods (80% of the gaps) is quarterly, half-yearly or annual; anything else is read by month, as before."""
+    months between periods (80% of the gaps) is quarterly, half-yearly or annual; several dates a month is a weekly or a daily table
+    (`_cadence`: wave 5e, never "12 months" ending in a partial month); anything else is read by month, as before."""
     import numpy as np
     months = sorted({t[:7] for t in times})
     step = 1
@@ -277,14 +317,33 @@ def _period_of(times: List[str], family: str = "") -> Dict[str, Any]:
         top = int(vals[counts.argmax()])
         if top in (3, 6, 12) and int(counts.max()) >= 0.8 * len(d):
             step = top
+    elif len(months) < len(times):
+        got = _cadence(times)
+        if got is not None:
+            return got
     noun, nouns, window = PERIOD_KINDS[step][0], PERIOD_KINDS[step][1], PERIOD_KINDS[step][2]
     phase = (int(months[0][5:7]) - 1) % step if months else 0
     return {"kind": noun, "noun": noun, "nouns": nouns, "step": step, "phase": phase, "per_year": 12 // step,
             "window": window, "adjective": {1: "monthly", 3: "quarterly", 6: "half-yearly", 12: "annual"}[step]}
 
 
+def _pk(S: Dict[str, Any], t: str) -> str:
+    """The key of the period a date belongs to: its month of a calendar table, the date itself of a weekly or a daily one."""
+    return t[:10] if _cad(S) else t[:7]
+
+
+def _cad(S: Dict[str, Any]) -> Optional[str]:
+    """"week" or "day" for a table whose periods are dates (wave 5e), else None: its keys are dates, not months."""
+    return (S.get("period") or {}).get("cadence")
+
+
 def _plabel(S: Dict[str, Any], key: str) -> str:
-    """A period key (the month it starts in) as the table's period: Jul 2026, Q3 2026, H2 2026, 2026."""
+    """A period key as the table's period: Jul 2026, Q3 2026, H2 2026, 2026; a weekly or a daily table's date, 20 Feb 2023."""
+    if _cad(S):
+        try:
+            return "%d %s %s" % (int(key[8:10]), _mon(key[:7]).split(" ")[0], key[:4])
+        except (ValueError, IndexError):
+            return str(key)
     st = (S.get("period") or {}).get("step", 1)
     try:
         y, m = int(key[:4]), int(key[5:7])
@@ -809,6 +868,11 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         F[s_codes[first], tix[first]] = fc[first]
     months = sorted({t[:7] for t in times})
     monthly = len(months) == len(times)
+    period = _period_of(times, date_family)
+    if not monthly and not period.get("cadence"):
+        # several dates a month that are neither a week nor a day apart (or too few to compare two windows): never read as monthly (P6)
+        return _empty("not_cube", "the table's dates are several a month and not evenly spaced by the week or the day (or too few of "
+                                  "them to compare two windows), so the engine does not read it as monthly", **base)
     dimrecs = []
     for j, d in enumerate(dims):
         codes, labels, _f = cat[d]
@@ -817,10 +881,11 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     S: Dict[str, Any] = {
         "kind": "cube", "usable": False, "reason": "", "version": VERSION, "publisher": publisher,
         "official": official, "date": {"column": head[date], "landed": date, "labels": date_family or None},
-        "period": _period_of(times, date_family),
+        "period": period,
         "measure": {"column": head[measure], "landed": measure, "embedded_flags": embedded,
                     "decimals": _decimals(R, measure, metadata), **scale_info, **unit_info["measure"]},
-        "metadata": metadata, "dims": dimrecs, "series": n_series, "times": len(times), "months": len(months),
+        "metadata": metadata, "dims": dimrecs, "series": n_series, "times": len(times),
+        "months": len(times) if period.get("cadence") else len(months),         # the periods the table holds (weeks, days, months)
         "monthly": monthly, "rows": int(R.n), "rows_read": n_rows, "duplicates": int(n_rows - n_pairs),
         "slices": [], "breakdowns": [], "default": None, "flags": None, "corrections": [], "keys": keys,
         "_V": V, "_E": E, "_F": F, "_flag_labels": fl_labels, "_flag_column": head[flag_col] if flag_col else
@@ -3223,7 +3288,7 @@ def _parts_mode(S: Dict[str, Any], where: Dict[str, Any]) -> None:
     for d in pd_:
         d["complete_only"] = False
     months, rep_vals = _monthly(S, where)                   # every part with a value, summed
-    win = windows(months, rep_vals)
+    win = windows(months, rep_vals, S)
     for d in pd_:
         d["complete_only"] = True
     ok = False
@@ -3231,11 +3296,9 @@ def _parts_mode(S: Dict[str, Any], where: Dict[str, Any]) -> None:
         cm, cv = _monthly(S, where)                         # complete months only
         have = [m for m, v in zip(cm, cv) if v == v]
         anchor = max(m for m, v in zip(months, rep_vals) if v == v)
-        if have and max(have) >= _mshift(anchor, -3):
-            lat, pri = _prange(S, win["latest"][0], win["latest"][1]), _prange(S, win["prior"][0], win["prior"][1])
-            hs = set(have)
-            pairs = [(a, b) for a, b in zip(pri, lat) if a in hs and b in hs]
-            ok = len(pairs) >= _min_matched(S)
+        if have and max(have) >= _shift_key(S, anchor, -3):
+            lat_m, _pri_m, _full = matched_months(S, cm, cv, win)
+            ok = len(lat_m) >= _min_matched(S)
     for d in pd_:
         d["complete_only"] = bool(ok)
     S["parts_mode"] = {"dims": [d["column"] for d in pd_], "complete_only": bool(ok)}
@@ -3402,13 +3465,21 @@ def plan_where(S: Dict[str, Any], positions: Sequence[int]) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------------------------- figures
-def windows(months: Sequence[str], values: Any) -> Optional[Dict[str, List[str]]]:
-    """The core's comparison windows: the latest 12 months ending at the last month with a value, and the 12 before."""
-    import numpy as np
+def windows(months: Sequence[str], values: Any, S: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, List[str]]]:
+    """The core's comparison windows: the latest 12 months ending at the last month with a value, and the 12 before. Wave 5e (P6): for a
+    weekly or a daily table (`S` says so), the trailing 52 weeks (365 days, or the largest whole number of periods that fits twice) ending
+    at the last date with a value and the same span before it: a window is a calendar span and its keys are dates."""
+    import datetime as _d
     have = [m for m, v in zip(months, values) if v == v]
     if not have:
         return None
     last = max(have)
+    if S is not None and _cad(S):
+        span = int(S["period"]["span_days"])
+        end = _d.date(int(last[:4]), int(last[5:7]), int(last[8:10]))
+        iso = lambda x: x.isoformat()                                                       # noqa: E731
+        return {"latest": [iso(end - _d.timedelta(days=span - 1)), last],
+                "prior": [iso(end - _d.timedelta(days=2 * span - 1)), iso(end - _d.timedelta(days=span))]}
     y, mo = int(last[:4]), int(last[5:7])
 
     def shift(k: int) -> str:
@@ -3421,6 +3492,8 @@ def _monthly(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any]:
     """The slice by month: a flow or a count added up over a month's dates, a level averaged."""
     import numpy as np
     times, val, _b = series(S, where)
+    if _cad(S):
+        return list(times), np.asarray(val, dtype=float)             # a weekly or a daily table: each date is a period, nothing is summed
     months = sorted({t[:7] for t in times})
     out = np.full(len(months), np.nan)
     pos = {m: i for i, m in enumerate(months)}
@@ -3440,7 +3513,7 @@ def support(S: Dict[str, Any], where: Dict[str, Any]) -> Tuple[List[str], Any]:
     from its 13 provinces), counting the parts that have a value that month. Zero for a figure no sum-check
     decomposes. A published figure rests on its table row alone; this is how many sum-checked parts stand behind it."""
     import numpy as np
-    months = sorted({t[:7] for t in S["_times"]})
+    months = sorted({_pk(S, t) for t in S["_times"]})
     best = np.zeros(len(months), dtype=int)
     for d in S["dims"]:
         if d["role"] not in ("partition", "hierarchy") or where.get(d["column"]) != d.get("total"):
@@ -3471,7 +3544,8 @@ MIN_MATCHED = 6                 # months with a value in both windows a flow's c
 
 def _wlen(S: Dict[str, Any]) -> int:
     """Periods in a window: 12 months, 4 quarters, 2 half-years or 1 year."""
-    return int((S.get("period") or {}).get("window") or 12)
+    p = S.get("period") or {}
+    return int(p.get("per_span") or p.get("window") or 12)
 
 
 def _min_matched(S: Dict[str, Any]) -> int:
@@ -3480,6 +3554,12 @@ def _min_matched(S: Dict[str, Any]) -> int:
 
 
 def _prange(S: Dict[str, Any], a: str, b: str) -> List[str]:
+    if _cad(S):
+        return [t for t in S["_times"] if a <= t <= b]               # the table's own dates in the window (a weekly or a daily table)
+    return _prange_cal(S, a, b)
+
+
+def _prange_cal(S: Dict[str, Any], a: str, b: str) -> List[str]:
     """The periods from a to b (month keys): every month of a monthly table, the quarters or years a 12-month span holds
     otherwise (a period is keyed by the month it starts in, at the table's phase)."""
     st = (S.get("period") or {}).get("step", 1)
@@ -3492,7 +3572,7 @@ def _prange(S: Dict[str, Any], a: str, b: str) -> List[str]:
 def _comparison(S: Dict[str, Any], win: Dict[str, List[str]]) -> Dict[str, List[str]]:
     """A window's endpoints: its two month keys for a monthly table, its first and last PERIOD for another (the quarters or
     the year a 12-month span holds), so a range of the endpoints holds exactly the periods compared."""
-    if (S.get("period") or {}).get("step", 1) == 1:
+    if (S.get("period") or {}).get("step", 1) == 1 or _cad(S):
         return {"latest": list(win["latest"]), "prior": list(win["prior"])}
     out = {}
     for k in ("latest", "prior"):
@@ -3503,7 +3583,7 @@ def _comparison(S: Dict[str, Any], win: Dict[str, List[str]]) -> Dict[str, List[
 
 def pkey(S: Dict[str, Any], key: str) -> str:
     """A period key in words: the month key itself for a monthly table (2022-11), Q4 2022 / 2022 otherwise."""
-    return key if (S.get("period") or {}).get("step", 1) == 1 else _plabel(S, key)
+    return key if (S.get("period") or {}).get("step", 1) == 1 and not _cad(S) else _plabel(S, key)
 
 
 def period_words(S: Dict[str, Any], used: Optional[int] = None) -> Dict[str, str]:
@@ -3521,6 +3601,15 @@ def period_words(S: Dict[str, Any], used: Optional[int] = None) -> Dict[str, str
     nn = nouns if used != 1 else noun
     return {"latest": "the %d matched latest %s" % (used, nn), "prior": "the %d matched %s before" % (used, nn),
             "against": "the %d %s with a value in both %s and %s" % (used, nn, latest, before), "noun": noun, "nouns": nouns}
+
+
+def _shift_key(S: Dict[str, Any], key: str, k: int) -> str:
+    """A period key k periods on (back when k < 0): k months of a calendar table, k weeks or days of a weekly or a daily one."""
+    if _cad(S):
+        import datetime as _d
+        gap = 7 if _cad(S) == "week" else 1
+        return (_d.date(int(key[:4]), int(key[5:7]), int(key[8:10])) + _d.timedelta(days=gap * k)).isoformat()
+    return _mshift(key, k)
 
 
 def _mshift(ym: str, k: int) -> str:
@@ -3547,6 +3636,20 @@ def matched_months(S: Dict[str, Any], months: Sequence[str], tot: Any, win: Dict
     comparison needs half a window of them."""
     lat = _prange(S, win["latest"][0], win["latest"][1])
     pri = _prange(S, win["prior"][0], win["prior"][1])
+    if _cad(S):
+        # a weekly or a daily table: a date of the latest window is compared with the date one window-span before it (the same weekday
+        # for weeks); the dates both have a value for are compared, and say so when they are not every date of both windows
+        import datetime as _d
+        span = int(S["period"]["span_days"])
+        have = {m for m, v in zip(months, tot) if v == v}
+        prior_set = set(pri)
+        pairs = []
+        for t in lat:
+            p = (_d.date(int(t[:4]), int(t[5:7]), int(t[8:10])) - _d.timedelta(days=span)).isoformat()
+            if t in have and p in have and p in prior_set:
+                pairs.append((p, t))
+        full = len(pairs) == len(lat) == len(pri) and len(pairs) > 0
+        return [b for _a, b in pairs], [a for a, _b in pairs], full
     if len(lat) != len(pri):
         return lat, pri, True
     have = {m for m, v in zip(months, tot) if v == v}
@@ -3744,7 +3847,7 @@ def parts_info(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str
     _V, H = _parts_cells(S, where, sel)                     # a combined member that stands in for a blank part counts the part as present
     at: Dict[str, List[int]] = {}
     for i, t in enumerate(times):
-        at.setdefault(t[:7], []).append(i)
+        at.setdefault(_pk(S, t), []).append(i)
     has = {m: H[:, idx].any(axis=1) for m, idx in at.items() if m >= win["prior"][0]}     # series with a value
     wmonths = set(_prange(S, win["latest"][0], win["latest"][1])) | set(_prange(S, win["prior"][0], win["prior"][1]))
     suppressed = sum(int((~h).sum()) for m, h in has.items() if m in wmonths and h.any())
@@ -3946,7 +4049,7 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                         "scale_applied": sc_factor, "type": m["type"], "type_basis": m.get("type_basis"),
                         "type_why": m.get("type_why"),
                         "aggregation": str(m["aggregation"]).replace("over months", "over %s" % P["nouns"])},
-            "comparison": cmp_, "period": {k: P[k] for k in ("kind", "noun", "nouns", "step", "window", "adjective")},
+            "comparison": cmp_, "period": {k: P[k] for k in ("kind", "noun", "nouns", "step", "window", "adjective", "cadence") if k in P},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
             "complete": bool(complete) and not (built or {}).get("incomplete"), "months_used": len(lat_m),
             "periods_used": len(lat_m),

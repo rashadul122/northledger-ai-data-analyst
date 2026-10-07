@@ -2031,7 +2031,7 @@ def _window_phrases(text: Any, per: Optional[Dict[str, Any]]) -> Any:
     and a monthly table's text is never touched. For the text the core wrote that the adapter copies into a record of its own
     (a claim, a chart's `supports` and `inputs.op`, an item's `assumes`, a label); `_period_text` is the broad pass over the
     report's own sentences."""
-    if not isinstance(text, str) or not per or int(per.get("step") or 1) == 1 or not _WINDOW_CUE.search(text):
+    if not isinstance(text, str) or not per or int(per.get("step") or 1) == 1 or per.get("cadence") or not _WINDOW_CUE.search(text):
         return text
     noun, nouns, w = str(per.get("noun")), str(per.get("nouns")), int(per.get("window") or 12)
     adj = str(per.get("adjective") or "monthly")
@@ -2061,8 +2061,8 @@ def _period_text(text: str, per: Dict[str, Any]) -> str:
     """The engine's own sentences count months ("the average month", "the latest 12 months against the 12 before", "48 months of
     history"); about a quarterly or an annual table they say quarters or years instead (wave 5, gap 4). The numbers are not
     changed: only the unit's name and the window's length."""
-    if not isinstance(text, str) or not _MONTH_WORDS.search(text) or int(per.get("step") or 1) == 1:
-        return text
+    if not isinstance(text, str) or not _MONTH_WORDS.search(text) or int(per.get("step") or 1) == 1 or per.get("cadence"):
+        return text                           # (a weekly or a daily table: the core's sentences count the months it aggregated, and say so)
     noun, nouns, w = str(per.get("noun")), str(per.get("nouns")), int(per.get("window") or 12)
     cap = lambda x: x[:1].upper() + x[1:]
     adj = str(per.get("adjective") or "monthly")
@@ -2329,6 +2329,13 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
     if not (isinstance(w, list) and len(w) == 2 and all(isinstance(x, str) and len(x) >= 7 for x in w)):
         return ""
     per = est.get("period") if isinstance(est.get("period"), dict) else None
+    if per and per.get("cadence"):
+        # a weekly or a daily table (wave 5e): "52 weeks to 20 Feb 2023", "the 40 matched weeks to 20 Feb 2023"
+        last = _ns()._plabel({"period": per}, w[1])
+        used = int(est.get("periods_used") or per.get("window") or 1)
+        if est.get("complete") is False and est.get("periods_used"):
+            return "the %d matched %s to %s" % (used, per["nouns"] if used != 1 else per["noun"], last)
+        return "%d %s to %s" % (int(per.get("window") or 1), per["nouns"], last)
     if per and int(per.get("step") or 1) != 1:
         # a quarterly or an annual table: "4 quarters to Q4 2023", "2023", "the 3 matched quarters to Q4 2023"
         Sp = {"period": per}
@@ -9637,11 +9644,13 @@ def _structure_inner_blocks(rep: Dict[str, Any], inner: Dict[str, Any]) -> None:
             if f is not None and f.get("kind") == "business" and not str(f.get("id") or "").startswith("measure.volume"):
                 chart = c
                 break
+    if NS._cad(S):
+        chart = None                          # a weekly or a daily table: the core's windows are calendar months; the estimand's are whole weeks or days
     if chart is not None and (chart.get("data") or {}).get("windows"):
         w = chart["data"]["windows"]
         win = {"prior": list(w["prior"]), "latest": list(w["latest"])}
     if win is None:
-        win = NS.windows(months, vals)
+        win = NS.windows(months, vals, S)
     why = (NS.slice_by_id(S, inner.get("slice_id") or "") or {}).get("why") or {}
     est = NS.estimand(S, where, win, inner.get("plan_source") or "engine_default", why)
     est["slice_id"] = inner.get("slice_id")

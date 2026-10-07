@@ -1365,7 +1365,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-07 18:20:12 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-07 20:46:56 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2078,7 +2078,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-07 18:20:12 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-07 20:46:56 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -10321,6 +10321,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   function asFacts(r) { var pm = r.primary_metric; return pm && pm.finding_id ? Object.assign({}, r, { primary: { id: pm.finding_id } }) : r; }
   function estimandOf(r) { var F = FA(); return F && r.estimand ? F.estimandView(asFacts(r)) : null; }
   function isOfficial(f) { return !!(f && f.inference && f.inference.mode === 'official_aggregate'); }
+  // wave 5g (E): a measure averaged because nothing says it accumulates (a currency with no flow word) is an average level, never a total
+  function averaged(r) { var m = r && r.estimand && r.estimand.measure; return !!m && /^ambiguous/.test(String(m.type_basis || '')) && /^mean/.test(String(m.aggregation || '')); }
   function cap1(x) { x = String(x || ''); return x.charAt(0).toUpperCase() + x.slice(1); }
   // the back-test of the range shown, beside the forecast finding it is about (the series the audit was run on)
   function auditFor(r, f) {
@@ -10642,7 +10644,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var V = isOfficial(f) ? estimandOf(r) : null, Fg = V && r.estimand.figures || {};
       if (V && Fg.change_pct && Fg.change_pct.text) {
         // the described change is the figure; the engine's grade is secondary and says what it is a grade of
-        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published totals (' +
+        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published ' + (averaged(r) ? 'figures (average level ' : 'totals (') +
           esc((Fg.prior && Fg.prior.text || '') + ' to ' + (Fg.latest && Fg.latest.text || '')) + ').' + ' <span class="nl2-proc">process grade: ' + esc(V.process ? V.process.note : 'the month-to-month noise of the monthly figures; not a test of the published total') + '.</span>' + held + '</li>';
       }
       // a stepped claim's as-filed interval spans the step, so it says nothing about the business: not printed
@@ -10657,7 +10659,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var word = f && f.kind === 'forecast' ? 'range' : 'interval';
       var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit || '') + ' (own units)' : '';
       var off = isOfficial(f), au = auditFor(r, f);
-      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published totals: ' + t.claim : t.claim) + '</p>' +
+      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published ' + (averaged(r) ? 'figures: ' : 'totals: ') + t.claim : t.claim) + '</p>' +
         '<p class="nl2-tile-num"><span class="nl2-tile-v">' + esc(v) + '</span>' + (unit ? ' <span class="nl2-tile-u">' + esc(unit) + '</span>' : '') + '</p>' +
         (ci ? '<p class="nl2-tile-ci">' + esc(off ? 'the monthly noise\'s own ' + lvl(t.ci_level) + ' interval, not a test of the published change: ' + ci : lvl(t.ci_level) + ' ' + word + ': ' + ci) + '</p>' : t.movement && t.movement.kind === 'stepped' ? '<p class="nl2-tile-note">on the year before, as filed; read it like for like</p>' : '') +
         '<p class="nl2-tile-g">' + grade(t.grade, f ? f.kind : t.kind, off) + (f && moveTag(f, true) ? ' ' + moveTag(f, true) : '') + (au && au.untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted</span>' : '') + '</p>' +

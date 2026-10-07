@@ -275,6 +275,22 @@ def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tu
     return None if best is None else (best[0], best[1], best[2])
 
 
+def _few_period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> int:
+    """The number of different periods in a column of period labels (2024, 2024-Q1, Q1 2024 ...) that holds fewer than six: so that the refusal of a
+    table of three annual periods says "the table holds 3 reference periods" and not "no column holds dates" (wave 5g, F). 0 when there is none."""
+    best = 0
+    for c in cols:
+        if R.kind(c) == "date":
+            continue
+        t = R.texts[c].astype(str).str.strip()
+        if int((t != "").sum()) < 2:
+            continue
+        out, _fam, share = _parse_periods(t, allow_year=_norm(head[c]) in _YEAR_NAMES)
+        if out is not None and share >= 0.95:
+            best = max(best, int(out.nunique()))
+    return best
+
+
 WEEK_MIN = 8                    # wave 5e, P6: a weekly table is compared over at least 8 weeks a window (16 weeks in all) ...
 DAY_MIN = 28                    # ... a daily one over at least 28 days (56 days); the window is 52 weeks / 365 days, or the largest whole
                                 # number of periods that fits twice in the table
@@ -684,6 +700,8 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         pl = _period_labels(R, cols, head)                  # 2012-Q1, Q1 2012, 2012: periods the engine does not read as dates
         if pl is None:
             few = max([int(R.dates(c).nunique()) for c in cols if R.kind(c) == "date"] or [0])
+            if not few:
+                few = _few_period_labels(R, cols, head)         # wave 5g: a column of 2 to 5 year or quarter labels is a column of periods, few of them
             return _empty("not_cube", ("the table holds %d reference period%s, and the engine reads a table of series over at least 6 "
                                        "(there is no change to compare)" % (few, "" if few == 1 else "s")) if few else
                           "no column holds dates", publisher=publisher, official=official)

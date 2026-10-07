@@ -85,6 +85,74 @@
   "source": "estimand",
   "usable": true
  },
+ "g01_german_panel_one_member": {
+  "aggregation": "mean over months",
+  "estimand": true,
+  "file": "g01_seed644_german_sa_nsa_panel.csv",
+  "flagged": [],
+  "kind": "cube",
+  "latest": 1330361.75,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
+  "ok": true,
+  "pct": 8.557123,
+  "prior": 1225494.666667,
+  "refused": false,
+  "roles": {
+   "Saisonbereinigung": "single"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "g02_price_bases_ledger": {
+  "aggregation": "sum over weeks",
+  "estimand": true,
+  "file": "g02_seed687_weekly_price_bases_ledger.csv",
+  "flagged": [],
+  "kind": "cube",
+  "latest": 6405794656.4,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
+  "ok": true,
+  "pct": 5.132331,
+  "prior": 6093077710.3,
+  "refused": false,
+  "roles": {
+   "Prices": "single",
+   "Store": "partition"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "g03_case_number_beside_a_total": {
+  "aggregation": null,
+  "estimand": false,
+  "file": "g03_seed832_case_number_beside_a_total.csv.gz",
+  "flagged": [
+   "ethnicity:withhold",
+   "rep:withhold"
+  ],
+  "kind": null,
+  "latest": 460419070.0,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 842,
+  "ok": true,
+  "pct": -7.9723605913714195,
+  "prior": 500305205.0,
+  "refused": false,
+  "roles": {},
+  "source": "finding",
+  "usable": null
+ },
  "r02_combined_member_disjoint_parts": {
   "aggregation": "sum over months",
   "estimand": true,

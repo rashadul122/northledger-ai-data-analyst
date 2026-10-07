@@ -1132,7 +1132,7 @@ def _row_decimals(cat: Dict[str, Any], head: Dict[str, str], rows: Any, base: in
     return np.full(len(rows), float(base))
 
 
-def _fold(v: Any) -> str:
+def _fold_text(v: Any) -> str:
     """A cell's words in lower case with accents folded and spaces kept (MILLIERS, millones, Tausend)."""
     t = unicodedata.normalize("NFKD", str(v or ""))
     return " ".join("".join(ch for ch in t if not unicodedata.combining(ch)).lower().split())
@@ -1164,14 +1164,14 @@ def _scale(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], rows: An
             return arr, {"scale": "varies by series", "factor": None, "scale_column": head.get(c, c), "scale_unknown": unknown}
     # by behaviour: a constant column (or a few short words) that holds scale words and nothing else
     for m in (metadata if official else []):
-        if m["class"] == "constant" and _fold(m.get("value")) in _SCALE_FACTOR and _fold(m.get("value")) not in ("unit", "units", "ones"):
-            f = _SCALE_FACTOR[_fold(m["value"])]
+        if m["class"] == "constant" and _fold_text(m.get("value")) in _SCALE_FACTOR and _fold_text(m.get("value")) not in ("unit", "units", "ones"):
+            f = _SCALE_FACTOR[_fold_text(m["value"])]
             return np.full(n, f), {"scale": str(m["value"]), "factor": f, "scale_column": m["column"]}
     return np.ones(n), {"scale": "units", "factor": 1.0, "scale_column": None, "scale_unknown": unknown}
 
 
 def _scale_word(v: Any, exponent: bool) -> Optional[float]:
-    s = _fold(v)
+    s = _fold_text(v)
     if s in _SCALE_FACTOR:
         return _SCALE_FACTOR[s]
     try:
@@ -2463,6 +2463,18 @@ def _named_unverified(d: Dict[str, Any]) -> bool:
     return d.get("role") == "rate_aggregate" and (d.get("sum_check") or {}).get("verified") is False
 
 
+def _why_unchecked(sc: Dict[str, Any]) -> str:
+    """Why a named total could not be checked against its parts, from its sum-check record."""
+    if not sc.get("complete"):
+        return "no month holds every part"
+    return "its figures are as small as their rounding, so no check could have failed"
+
+
+def _named_flow_words(sc: Dict[str, Any]) -> str:
+    """What the engine says of a member that is named as the total of a flow and that no cell could check (wave 5e, P8)."""
+    return "named as the total of its parts; it could not be checked against them (%s)" % _why_unchecked(sc)
+
+
 def named_total_words(mtype: str) -> str:
     """What the engine says of a member of a rate or an index that is the table's aggregate by its name alone (wave 5c)."""
     return "the named total; not verifiable by a sum-check (%s cannot be summed)" % ("an index" if mtype == "index" else "a rate")
@@ -2898,7 +2910,7 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
     j = S["dims"].index(rec)
     if S["official"] or S["measure"]["type"] in ("rate", "index"):
         coded = _coded_totals(labels)
-        hint = [m for m in range(len(labels)) if _says_total(labels[m]) or m in coded]
+        hint = [m for m in range(len(labels)) if _says_total(labels[m]) or m in coded or _agg_name_tier(labels[m]) == 2]
         by = "name"
         whole = [m for m in range(len(labels)) if _agg_name_tier(labels[m]) == 1 and _is_geographic(rec["column"])
                  and not _COUNTRY_COLUMN.search(rec["column"])]
@@ -2924,12 +2936,9 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                    noun="national figure" if _is_geographic(rec["column"]) else "total",
                    why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
                                                        "added across a dimension it could not verify)")
-        tiers = [_agg_name_tier(lb) for lb in labels]
-        if (not _is_geographic(rec["column"]) or _COUNTRY_COLUMN.search(rec["column"])):
-            tiers = [0 if t == 1 else t for t in tiers]       # a country's name is no whole in a table of countries
-        if by == "dominance" and not any(_says_total(lb) or t == 2 for lb, t in zip(labels, tiers)) and tiers.count(1) != 1:
-            # no member is named as a total (one whole country's name, Canada, among provinces would be; two of them are a table of
-            # countries): the one shown is not the table's figure
+        if by == "dominance":
+            # no member is named as a total or as the whole (one whole country's name, Canada, among provinces would be; two of them are
+            # a table of countries): the one shown is the largest, not the table's figure
             rec["no_total_member"] = True
     else:
         rec.update(role="flat_additive", total=None, total_index=None, components={}, alternatives={}, evidence="ledger",
@@ -3802,6 +3811,12 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         # first, so that a long text cut at its cap loses the windows' words and not this
         if _named_unverified(d) and where.get(d["column"]) == d.get("total"):
             built_txt = "%s: %s; " % (d["total"], named_total_words(m["type"])) + built_txt
+        # wave 5e (P8): a total the table names and no cell could check, or a member shown by its name alone, says so
+        elif d.get("role") in ("partition", "hierarchy") and d.get("evidence") == "named" and where.get(d["column"]) == d.get("total"):
+            built_txt = "%s: %s; " % (d["total"], _named_flow_words(d.get("sum_check") or {})) + built_txt
+        elif d.get("role") == "single" and d.get("single_by") == "name" and where.get(d["column"]) == d.get("total"):
+            built_txt = "one member shown: %s, named as the whole of %s; %s; " % (
+                d["total"], d["column"], "it could not be checked against the other members") + built_txt
     def span(w: List[str]) -> str:
         a, b = (_mon(w[0]), _mon(w[1])) if P["step"] == 1 else (_plabel(S, w[0]), _plabel(S, w[1]))
         return a if a == b else "%s–%s" % (a, b)
@@ -3857,7 +3872,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                        "unallocated_prior": {"value": _r(res["unallocated"]["prior"]) if res else None,
                                              "text": money(res["unallocated"]["prior"], S, ref=T1, exact_small=True)
                                              if res else "n/a"},
-                       "verdict": "adds_up"})
+                       # wave 5e (P8): "adds_up" only where a check that could have failed passed
+                       "verdict": "adds_up" if (d.get("evidence") or "verified") == "verified" else "named_not_checked"})
     excluded = []
     for d in S["dims"]:
         w = where.get(d["column"])
@@ -3895,8 +3911,12 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                                  "why": "an alternative total (it says it leaves something out): never added to the parts"})
         if d["role"] in ("partition", "hierarchy") and w == d.get("total"):
             n = len(d["labels"]) - 1
-            excluded.append({"what": "%d other members" % n, "dim": d["column"],
-                             "why": "parts of %s (sum-checked); shown as a breakdown, never added to it" % d["total"]})
+            if (d.get("evidence") or "verified") == "verified":
+                why_ = "parts of %s (sum-checked); shown as a breakdown, never added to it" % d["total"]
+            else:
+                why_ = "parts of %s as the table names it, which could not be checked (%s); shown as a breakdown, never added to it" % (
+                    d["total"], _why_unchecked(d.get("sum_check") or {}))
+            excluded.append({"what": "%d other members" % n, "dim": d["column"], "why": why_})
         if d["role"] == "rate_aggregate" and w == d.get("total"):
             excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                              "why": "each member's own %s; never added or averaged across members%s" % (
@@ -3925,7 +3945,42 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             "measure_choice": choice}
     if single_member is not None:
         out["single_member"] = single_member           # only when it applies, so every other estimand keeps its keys
+    ev = _evidence(S, where, built)
+    if ev is not None:
+        out["evidence"] = ev                           # likewise: only below "verified" (wave 5e, P8)
     return out
+
+
+_EVIDENCE_RANK = {"single": 0, "built": 1, "named": 2, "verified": 3}
+
+
+def _evidence(S: Dict[str, Any], where: Dict[str, Any], built: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The evidence level of what the headline is (wave 5e, P8), or None when every total behind it was verified by a sum-check that could
+    have failed (the words the engine always used then stand: "in the published totals"). Below that: "named" (the table names the member
+    as the total and no cell could check it), "built" (a sum the engine made from the table's parts: the table has no total row) and
+    "single" (one member shown by dominance). `tail` is the end of the headline sentence at that level."""
+    levels = []
+    for d in S["dims"]:
+        w = where.get(d["column"])
+        r = d.get("role")
+        if r in ("partition", "hierarchy") and w == d.get("total"):
+            levels.append("verified" if (d.get("evidence") or "verified") == "verified" else "named")
+        elif r == "parts" and w == PARTS_TOKEN:
+            levels.append("built")
+        elif r == "single" and w == d.get("total"):
+            levels.append("named" if d.get("single_by") == "name" else "single")
+    if not levels:
+        return None
+    level = min(levels, key=lambda x: _EVIDENCE_RANK[x])
+    if level == "verified":
+        return None
+    tails = {"built": " (the table has no total row)",
+             "named": " (named as the total, not checked against its parts)" if any(
+                 d.get("role") in ("partition", "hierarchy") and d.get("evidence") == "named" for d in S["dims"]) else
+             " (named as the whole, not checked against the other members)",
+             "single": ""}
+    return {"level": level, "tail": tails[level], "dims": [d["column"] for d in S["dims"] if d.get("role") in
+                                                           ("partition", "hierarchy", "parts", "single")]}
 
 
 def _measure_name(S: Dict[str, Any], where: Dict[str, Any]) -> str:
@@ -4022,6 +4077,26 @@ def _public_meta(m: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _hash_dim(d: Dict[str, Any]) -> Dict[str, Any]:
+    """A dimension's record as the structure hash reads it: the wave 5e bookkeeping (the evidence level of a verified total, the check's
+    power counters, the totals a check left undecided) is left out where it only restates what the roles already say, so a table read as it
+    always was keeps its hash; a total the table names that no cell could check ("named") and every other new reading changes it."""
+    out = {k: v for k, v in d.items() if k not in ("labels", "undecided_totals", "twin_why")}
+    if out.get("evidence") in ("verified", "built", "single", "ledger") or out.get("role") in ("single", "rate_aggregate", "flat_additive", "parts"):
+        out.pop("evidence", None)
+    sc = out.get("sum_check")
+    if isinstance(sc, dict):
+        sc = {k: v for k, v in sc.items() if k not in ("informative", "by")}
+        if sc.get("verified") is True:
+            sc.pop("verified")
+        out["sum_check"] = sc
+    fc = out.get("family_checks")
+    if isinstance(fc, dict):
+        out["family_checks"] = {k: ({a: b for a, b in v.items() if a not in ("informative", "by")} if isinstance(v, dict) else v)
+                                for k, v in fc.items()}
+    return out
+
+
 def structure_hash(S: Dict[str, Any]) -> str:
     """A hash of what was detected (roles, totals, trees, slices): equal across runs on the same table."""
     def walk(x: Any) -> Any:
@@ -4037,7 +4112,7 @@ def structure_hash(S: Dict[str, Any]) -> str:
         return x
     keep = {k: S.get(k) for k in ("kind", "publisher", "official", "date", "measure", "metadata", "series", "months",
                                   "slices", "breakdowns")}
-    keep["dims"] = [{k: v for k, v in d.items() if k not in ("labels",)} for d in S.get("dims") or []]
+    keep["dims"] = [_hash_dim(d) for d in S.get("dims") or []]
     return hashlib.sha256(json.dumps(walk(keep), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
 
 

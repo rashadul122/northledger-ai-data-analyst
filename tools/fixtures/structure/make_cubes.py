@@ -789,7 +789,7 @@ def heavy_suppression(small: bool = False, total_gap: float = 0.0, seed: int = 9
     return _official(["Characteristics"], rec, uom="Number" if small else "Dollars", scalar="units" if small else "thousands")
 
 
-def quarterly_adjusted(years: int = 9, basis: bool = True, neutral: bool = False, seed: int = 95, gap: float = 0.25) -> bytes:
+def quarterly_adjusted(years: int = 9, basis: bool = True, neutral: bool = False, seed: int = 95, gap: float = 0.25, regions: int = 3) -> bytes:
     """Wave 5d, cause E. A quarterly flow (dollars in thousands) for two regions and NO total row; with `basis`, every region as an
     unadjusted copy and a seasonally adjusted one (the same annual totals, a third of the seasonality; labelled "A" and "B" with
     `neutral`); the second region is `gap` larger than the first (0 makes two regions whose annual totals ARE alike). Without
@@ -799,7 +799,8 @@ def quarterly_adjusted(years: int = 9, basis: bool = True, neutral: bool = False
     q = np.arange(nq)
     season = np.array([0.88, 0.98, 1.04, 1.10])
     season = season / season.mean()
-    regs = (("Osswick", 1000.0), ("Ormvale", 1000.0 * (1.0 + gap)))
+    # wave 5e: three regions by default (a dimension of places is added only from 3 parts); `regions=2` keeps the old pair
+    regs = (("Osswick", 1000.0), ("Ormvale", 1000.0 * (1.0 + gap)), ("Pellmoor", 1000.0 * (1.0 + 2.0 * gap)))[:regions]
     label = lambda k: "Q%d %d" % (k % 4 + 1, 2014 + k // 4)       # noqa: E731
     rec = []
     nsa = {r: np.round(lv * 1.01 ** q * season[q % 4] * (1.0 + 0.01 * rng.standard_normal(nq))) for r, lv in regs}

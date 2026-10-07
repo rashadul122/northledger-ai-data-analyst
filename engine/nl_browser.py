@@ -72,6 +72,7 @@ import shutil
 import sys
 import tempfile
 import time
+import unicodedata
 import types
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
@@ -2315,7 +2316,9 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
                  and str(x.get("id") or "").endswith(".change")), None)
     grade = str((f or {}).get("grade") or "")
     if inf.get("mode") == "official_aggregate":
-        return lead + chg_t + (" (%s)" % lvl_t if lvl_t and lvl_t != "n/a" else "") + " in the published totals"
+        # wave 5e (P8): "in the published totals" only where every total behind the figure was verified; else the words of what it is
+        tail = str((est.get("evidence") or {}).get("tail")) if isinstance(est.get("evidence"), dict) else " in the published totals"
+        return lead + chg_t + (" (%s)" % lvl_t if lvl_t and lvl_t != "n/a" else "") + tail
     if grade == "CONFIRMED":
         return lead + chg_t + (" to %s" % lvl_t if lvl_t and lvl_t != "n/a" and not level else "") + " (CONFIRMED)"
     if grade == "WATCH":
@@ -4294,14 +4297,21 @@ _PANEL_META = frozenset((
     "dguid", "uom", "uomid", "scalarfactor", "scalarid", "vector", "coordinate", "status", "symbol",
     "terminated", "decimals", "obsstatus", "obsflag", "obsconf", "unitmult", "unitmultiplier",
     "confstatus", "unitmeasure", "unit", "units", "flag", "flags", "footnote", "footnotes",
-    "timeformat", "freq", "frequency", "lastupdate", "dataflow", "structure", "structureid", "action"))
-_PANEL_DATE = ("refdate", "timeperiod", "date", "period", "time", "referenceperiod")
-_PANEL_VALUE = ("value", "obsvalue")
+    "timeformat", "freq", "frequency", "lastupdate", "dataflow", "structure", "structureid", "action",
+    # wave 5e (P9): the same columns of a French, Spanish or German table (equal to nl_structure._META; a test keeps the two equal)
+    "vecteur", "coordonnee", "statut", "symbole", "termine", "decimales", "unitedemesure", "iddelunitedemesure",
+    "facteurscalaire", "iddufacteurscalaire", "indicateur", "unidaddemedida", "factorescalar", "estado", "decimales",
+    "einheit", "masseinheit", "maeinheit", "faktor", "skalierung", "dezimalstellen", "statusflag"))
+_PANEL_DATE = ("refdate", "timeperiod", "date", "period", "time", "referenceperiod", "periodedereference", "periodo", "zeitraum", "fecha",
+               "datum")
+_PANEL_VALUE = ("value", "obsvalue", "valeur", "valor", "wert")
 PANEL_MAX_SERIES = 60
 
 
 def _pnorm(c: Any) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(c).lower())
+    """A header in lower-case letters and digits only, accents folded (the same function as nl_structure._norm: GEO and GÉO are one)."""
+    t = unicodedata.normalize("NFKD", str(c))
+    return re.sub(r"[^a-z0-9]", "", "".join(ch for ch in t if not unicodedata.combining(ch)).lower())
 
 
 def _kept_by_visitor(decisions: Any) -> Set[str]:
@@ -8875,7 +8885,7 @@ _GUARD_SIGNATURES = {"statcan": ["REF_DATE", "DGUID", "VECTOR", "COORDINATE", "S
                      "eurostat": ["TIME_PERIOD", "OBS_VALUE", "OBS_FLAG"]}
 _GUARD_CODES = frozenset((":", "x", "..", "...", "F", "E", "A", "B", "C", "D", "r", "p", "c", "e", "b", "u", "z", "[x]", "[c]",
                           "[z]", "[u]", "n/a", "-", "*"))
-_GUARD_FLAG_NAMES = frozenset(("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", "obsconf", "symbol"))
+_GUARD_FLAG_NAMES = frozenset(("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", "obsconf", "symbol", "statut", "symbole", "estado"))
 _GUARD_DATE_NAMES = frozenset(_PANEL_DATE) | {"year", "yr", "fiscalyear", "fy", "calendaryear", "obstime", "refperiod"}
 _GUARD_ISO = re.compile(r"^\d{4}(?:[-/.]\d{1,2}){0,2}$")
 _GUARD_PERIOD = re.compile(r"^(?:\d{4}\s*[-_/ ]?\s*[QqHhSs][1-4]|[Qq][1-4]\s*[-_/ ]?\s*\d{4}|\d{4}\s*[-_ ]?[Mm]\d{1,2})$")
@@ -9308,24 +9318,49 @@ def _inner_plan(ai_plan: Dict[str, Any], S: Dict[str, Any], where: Dict[str, Any
     return out, refused
 
 
+def _checked_sentence(S: Dict[str, Any]) -> str:
+    """What was checked, at the evidence level the table reached (wave 5e, P8): "Each total was checked against its parts" only when every
+    total in the table was; a total the table names that no cell could check, a rate's named aggregate and a member shown by dominance
+    each say what they are. Nothing is said of a check that did not happen."""
+    NS = _ns()
+    out: List[str] = []
+    nu = next((d for d in S["dims"] if NS._named_unverified(d)), None)
+    if nu:
+        out.append("%s is the named total of %s; it could not be checked against its parts: %s cannot be summed." % (
+            nu["total"], nu["column"], "an index" if S["measure"].get("type") == "index" else "a rate"))
+    totals = [d for d in S["dims"] if d["role"] in ("partition", "hierarchy") or (d["role"] == "rate_aggregate" and not NS._named_unverified(d))]
+    named = [d for d in totals if d.get("evidence") == "named"]
+    for d in named[:2]:
+        out.append("%s is named as the total of %s; it could not be checked against its parts (%s)." % (
+            d["total"], d["column"], NS._why_unchecked(d.get("sum_check") or {})))
+    if totals and not named and not nu:
+        out.append("Each total was checked against its parts.")
+    elif len(totals) > len(named):
+        out.append("The other totals were checked against their parts.")
+    for d in [d for d in S["dims"] if d["role"] == "single"][:2]:
+        out.append("%s: one member (%s) is shown; none was verified as the total of the others, so they are never added." % (
+            d["column"], d["total"]))
+    return " ".join(out)
+
+
 def _structure_notes(rep: Dict[str, Any], S: Dict[str, Any], est: Dict[str, Any], info: Dict[str, Any]) -> None:
     """Say how the table was read: the limitations' first line and a cleaning step."""
     roles = "; ".join("%s: %s" % (d["column"], d["role"].replace("_", " ")) for d in S["dims"] if d["role"] != "constant")
     per = S.get("period") or {"nouns": "months", "adjective": "monthly"}
-    nu = next((d for d in S["dims"] if _ns()._named_unverified(d)), None)
-    checked = ("%s is the named total of %s; it could not be checked against its parts: %s cannot be summed." % (
-        nu["total"], nu["column"], "an index" if S["measure"].get("type") == "index" else "a rate")) if nu else \
-        "Each total was checked against its parts."
+    checked = _checked_sentence(S)
+    has_parts = any(d["role"] == "parts" for d in S["dims"])
+    verified = any(d["role"] in ("partition", "hierarchy") and (d.get("evidence") or "verified") == "verified" for d in S["dims"])
+    if has_parts:
+        tail = ("The table has no total row: the headline is the sum of its parts" +
+                (", month by month" if int(per.get("step") or 1) == 1 else "") +
+                ("; the other totals were checked against their parts." if verified else "."))
+    else:
+        tail = checked
     text = ("This file is a statistical table: %s rows, %s series over %s %s (%s). Adding its rows would count the "
             "same value more than once, so the report reads one series, the headline the structure chooses: %s. "
             "%s" % (
                 format(int(S.get("rows") or 0), ","), format(int(S.get("series") or 0), ","),
-                format(int(S.get("months") or 0), ","), per["nouns"], roles, est.get("text") or "",
-                ("The table has no total row: the headline is the sum of its parts, month by month; the other totals were "
-                 "checked against their parts." if any(d["role"] == "parts" for d in S["dims"]) else checked)
-                if int(per.get("step") or 1) == 1 else
-                ("The table has no total row: the headline is the sum of its parts; the other totals were checked "
-                 "against their parts." if any(d["role"] == "parts" for d in S["dims"]) else checked)))
+                format(int(S.get("months") or 0), ","), per["nouns"], roles, est.get("text") or "", tail)).rstrip()
     if S.get("wide"):
         w_ = S["wide"]
         text += (" The file was a wide table (%d columns of %s, %s to %s); it was reshaped to one row per series and %s, and a "
@@ -9501,9 +9536,12 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
         for d in st.get("dims") or []:
             if d.get("role") in ("partition", "hierarchy") and sl.get(str(d.get("column"))) != str(d.get("total")):
                 return
-        why_total = "the headline is the total of %s (sum-check)" % " and ".join(
-            str(d.get("column")) for d in st.get("dims") or [] if d.get("role") in ("partition", "hierarchy")) \
-            if any(d.get("role") in ("partition", "hierarchy") for d in st.get("dims") or []) else \
+        tot_dims = [d for d in st.get("dims") or [] if d.get("role") in ("partition", "hierarchy")]
+        unchecked = [d for d in tot_dims if (d.get("sum_check") or {}).get("verified") is False]
+        why_total = ("the headline is the total of %s (sum-check)" % " and ".join(str(d.get("column")) for d in tot_dims)) \
+            if tot_dims and not unchecked else \
+            ("the headline is %s, named as the total of %s; no cell could check it against its parts" % (
+                unchecked[0].get("total"), unchecked[0].get("column"))) if unchecked else \
             "the headline is one published series"
         for d in st.get("dims") or []:
             # wave 5c: the headline is a rate's or an index's aggregate by its name alone: no sum-check could verify it, and the

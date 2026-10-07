@@ -24,6 +24,7 @@ import json
 import math
 import os
 import re
+import unicodedata
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -676,7 +677,9 @@ _SE_WORDS = re.compile(r"standard error|coefficient of variation|confidence inte
 
 
 def _norm_col(c: Any) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(c).lower())
+    """A header in lower-case letters and digits only, accents folded (wave 5e: the same function as nl_structure._norm)."""
+    t = unicodedata.normalize("NFKD", str(c))
+    return re.sub(r"[^a-z0-9]", "", "".join(ch for ch in t if not unicodedata.combining(ch)).lower())
 
 
 def _publishers() -> Dict[str, Dict[str, Any]]:

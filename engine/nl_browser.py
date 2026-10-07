@@ -1219,7 +1219,7 @@ _PERSON_WORDS = frozenset((
     "advisor", "adviser", "coach", "trainer", "caller", "reviewer", "inspector", "clerk", "homeowner",
     # wave 5f (C): the people who work a case or a sale, named by their job (a header "Analyst" over a column of names)
     "analyst", "officer", "specialist", "associate", "assistant", "executive", "director", "coordinator", "engineer",
-    "planner", "underwriter", "adjuster", "auditor", "broker", "operator", "teller", "stylist", "dentist", "surgeon",
+    "planner", "underwriter", "adjuster", "auditor", "broker", "operator", "teller", "dentist", "surgeon",
     "clinician", "pharmacist", "lawyer", "attorney", "accountant", "controller", "foreman", "seller", "mentor",
     "tutor", "trainee", "intern", "handler", "caseworker", "colleague", "instructor", "bartender", "barista",
     # Spanish, Portuguese, Italian, French

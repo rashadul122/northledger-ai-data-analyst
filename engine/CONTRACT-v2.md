@@ -495,7 +495,9 @@ withheld column is refused with its name and "choose Keep" (never a value); a pl
 a column's values is covered: the profile, the plan, `results_for_ai`, the estimand, `structure.dims` and `structure.metadata` (a constant sensitive column's value is not
 echoed), the scenario items, the series names of a long layout, the refusal text and the PDF text; one test per path (`tools/test_nl_regress.py` f01-f04). A free-text-flagged
 category column whose labels CARRY CODES (`[4411]`, `4411 Used car dealers`: at least 80% of its labels) is released up to `RELEASE_MAX_DISTINCT_CODED` = 3,000 labels (the
-general cap `RELEASE_MAX_DISTINCT` = 300 stays for any other column).
+general cap `RELEASE_MAX_DISTINCT` = 300 stays for any other column). Names of people are also found by their VALUES under any header (wave 5f, `_given_name_value`: values of 2 to 4 capitalised
+words that open with a given name from a list of about three hundred that are nothing else, at least 3 different values and 60% of the cells, never under a header that names a place), and the job
+titles (analyst, officer, specialist, associate, assistant, executive, director, coordinator, engineer, broker, operator, lawyer, accountant, mentor, intern ...) are person words in a header.
 
 ### 5.6 A withheld column drives no cleaning rule
 

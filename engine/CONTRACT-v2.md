@@ -1864,7 +1864,8 @@ publisher or generator feature is in any rule.
   (`_settle_measure`): a named aggregate (a total's name, a whole country's name) that is NOT the sum and lies inside the others' range in 99% of the cells (`BOUND_SHARE`),
   or the exact weighted average of the others, makes it a level (`measure.type "unknown"`, `type_basis "ambiguous: averaged"`, `aggregation "mean over months"`,
   `level_unworded: true`; estimand text "average level over the window (12-month averages)"): averaged over the window, never added across members, its published aggregate the headline
-  (role `rate_aggregate`). `UNWORDED_CURRENCY_IS_LEVEL` (True, the literal rule; False would keep an unworded dollar a flow when the cells show no aggregate that is not a sum) is in the design doc's ledger.
+  (role `rate_aggregate`). A named total that is at least as large as every other member (unchecked, or not their sum) is no average: a weighted average is never above its largest term, so it is the
+  evidence that the measure accumulates and the table is a flow (`rec.bounding_total`, internal). `UNWORDED_CURRENCY_IS_LEVEL` (True, the literal rule; False would keep an unworded dollar a flow when the cells show no aggregate that is not a sum) is in the design doc's ledger.
 - *B, a Total row is a row.* In a plain file the structure layer does not read (two or more number columns), a category member NOMINATED by a total word (`_total_nomination`: a bare total
   phrase or a name ending in a total word is "exact"; a longer name holding one, "loose"; rest-of and alternatives never) is a total only if the cells say so: `ledger_tidy` runs the layer's own
   sum-check (`nl_structure._sum_check`) on (members x other-dimension cells x dates). Verified: its rows are LEFT OUT (with the Total x Total cross cell of a pivot) and said so; contradicted
@@ -1884,10 +1885,11 @@ publisher or generator feature is in any rule.
   not a national figure", and the headline "(one member shown, not a national figure)".
 - *G, fewer needless refusals.* Coded labels (section 5.5), code dimensions (E), and the refusal for rows that cannot be told apart names the withheld columns ("X is withheld, and may be the
   column that tells them apart: choose Keep").
-- *H, dates.* A column of dates in a format the core does not read (31.12.2019, 12/31/2019, 12/31/19, Jan 2019, 2019 Jan, Jan 31, 2019, 2019M01, 20190131, with or without a time) is rewritten as
+- *H, dates.* A column of dates in a format the core does not read, or reads in a shape the adapter's own checks do not (31.12.2019, 12/31/2019, 12/31/19, 31-Dec-2019, 03/2019, Jan 2019, 2019 Jan, Jan 31, 2019, 2019M01, 20190131, with or without a time) is rewritten as
   ISO year-month-day by the adapter before the file is read (`_dates_in_place`; `cleaning.fixes[]` rule `dates_read`), when at least 95% of a sample fit one format; a day/month pair that can be read
   either way round (03/04/2019) is settled by another row of the column (a first or second field above 12), else the file is refused with a plain reason. Not done: the top-3 contributors that list a
-  combined member, an alternative total or a sub-region beside its parts (no headline is wrong).
+  combined member, an alternative total or a sub-region beside its parts (no headline is wrong); two valuations of one quantity (real and nominal, at basic and at market prices) in a weekly or daily
+  business LEDGER are added (a ledger is added as it always was; fuzz v2 seeds 47 and 74).
 
 Retail (StatCan 20-10-0008), the FX file and the Amazon reviews file are unchanged in every figure and scenario id; the only blocks that differ are listed in the design doc's "Measured (wave 5f)".
 

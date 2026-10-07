@@ -1826,6 +1826,16 @@ LEDGER, with what happens when it is wrong and which way it errs (a refusal is t
   the table's measure, not personal data" when one is a measure. The long-ID rule stays for every other column.
 - *P11, more than 400 members.* A column of up to 50,000 members is a series key; only the relation search is bounded: for more than 400 members the flat check (linear) is
   run and the rest is `unresolved`, the reason saying so. `_alternatives` is a sorted lookup bounded by 60 leftover members.
+- *Second review (7 October 2026).* A scale is read under ANY header when a constant column's only value is an unambiguous scale word (thousands, millions,
+  billions, milliers, millones, miles, tausend ...), and from the unit of measure's own words ("USD millions", "Millions of dollars", "Dollars (millions)": applied once and
+  dropped from the printed unit); the first scale column of the table wins when it says units. The slice's measure column the structure layer writes is never withheld by
+  the engine's own ID scan. A currency measure whose labels say a balance (deposits, loans, liabilities, reserves, equity, net worth, money supply, savings, capitalization)
+  is a stock; with a flow word beside it, ambiguous and averaged; a unit that says per something (dollars per unit of foreign currency) is a level. A not_cube for a second
+  measure column refuses only a publisher's table; a learned flag code is never a word of three letters or more. A built sum with suppressed parts says so in the headline;
+  "matched months of 12" only for a subset. A whole country's name that the other members do not add up to is `named_contradicted` too, and a bounding total (role components)
+  is `named`, not verified. A short table whose estimand compares the matched periods says in the headline that it is too short to test the change. A daily table of a publisher
+  may have 5% of its gaps longer than 4 days (a business file may not: it is read as before). Not done: dates the core does not read (`%m/%d/%Y %H:%M`, `%b %d, %Y`, `%d.%m.%Y`,
+  `%Y%m%d`, `Jan 2019`) give no analysis, never a wrong number (the core is not edited here).
 - *P12.* The label of the measure is the constant column whose header or words say what is measured (never a basis such as "Seasonally adjusted" or a column that says neither); a
   constant column's value is echoed in `structure.metadata` only for the metadata the layer reads (`value_not_shown` otherwise). Not done: the top-3 contributors still
   list the coarsest valid family, which can hold a combined member beside its parts (no headline is wrong).

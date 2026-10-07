@@ -4,7 +4,7 @@ Each file here is a small table from one of the 21 defects an independent review
 fuzz seed 3160 (a regression found on a fresh range). `tools/test_nl_regress.py` has one test per case with an EXPLICIT assertion: the
 true figure computed here with pandas from the file, or a plain "one member shown" or refusal, and never a confident wrong number.
 Every test fails on bfcdc66 and passes now. Run all of them with `python tools/test_nl_regress.py` (about 1 minute, no network), or some
-with `python tools/test_nl_regress.py r07 s03`.
+with `python tools/test_nl_regress.py r07 s03` (39 tests, about 50 seconds).
 
 | case | files | what the old engine printed | what is right now (and the negative that stays true) |
 |---|---|---|---|
@@ -30,6 +30,16 @@ with `python tools/test_nl_regress.py r07 s03`.
 | r20 | `r20_*.csv` | inventory, subscriptions and a grade book taken for series tables; French headers unknown | business files are never refused; the French table is read |
 | r21 | `r21_built_from_parts.csv` | "the sum of 4 regions ... in the published totals" | "built from the table's 4 regions" |
 | r22 | `r22_seed3160_*` | a 3-level industry tree with no codes summed with its own total: +6.9%, truth +4.3% | the total that adds up to its leaves is the headline |
+
+Added by this wave beyond the reviewer's list (each is red on the commit before its fix, and r07b, r10b, r15b are red on bfcdc66 too):
+
+| case | what it pins |
+|---|---|
+| r07b | a daily table with no weekend rows is compared over whole weeks, a date against the same weekday (+22% before for a shop open Monday to Friday); a holiday's 5-day gap keeps a publisher's table daily |
+| r10b | a MemoryError and the wall guard refuse a table of series and leave a business file alone |
+| r15b | a member that says total and is decidedly not the sum of the others says so ("do not add up to it") |
+| r23 | a dimension of measures (a rate and its standard error) is never an adjusted pair (`r23_measure_dimension_rate_and_standard_error.csv.gz`, fuzz seed 6) |
+| r24-r30 | the second independent review: a plain ledger with a Void status or p/c/r codes and a second number is never refused (R01, R02); a scale word under any header is applied (R08); a scale in the unit's words is applied once (R03); a balance in a currency is a level (R05); an incomplete sum says so (R07); a contradicted named whole says so (R04); a short table's headline agrees with its estimand (R09) |
 
 The suspected items the task named are `s01` (sensitive headers), `s02` (the long-ID rule), `s03` (a copy in a five-member dimension), `s04` (a
 25-sector uncoded tree beyond the old 22-candidate cap) and `s05` (the unnamed-aggregate decision does not sit on a borderline). The two rate

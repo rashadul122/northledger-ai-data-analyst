@@ -273,7 +273,7 @@ DAY_MIN = 28                    # ... a daily one over at least 28 days (56 days
 
 def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
     """The period of a table with several dates a month (wave 5e, P6): weekly (80% of the gaps between its dates are 7 days) or daily (60%
-    of them 1 day, none over 4: weekdays only is a daily table). The window is 52 weeks or 365 days, or, for a shorter table, the largest
+    of them 1 day and 95% of them at most 4: weekdays only is a daily table, a holiday's longer gap a hole). The window is 52 weeks or 365 days, or, for a shorter table, the largest
     whole number of periods that fits twice (at least WEEK_MIN weeks, DAY_MIN days); a table too short for that, or with any other rhythm,
     is None and is not read as monthly. Keys are the dates themselves; `span_days` is the calendar span of one window."""
     import datetime as _d
@@ -287,7 +287,9 @@ def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
     gaps = [b - a for a, b in zip(days[:-1], days[1:])]
     n = len(gaps)
     weekly = sum(1 for g in gaps if g == 7) >= 0.8 * n
-    daily = sum(1 for g in gaps if g == 1) >= 0.6 * n and max(gaps) <= 4
+    # a daily table: most gaps are one day and nearly all are at most 4 (a weekend is 3, a Monday holiday 4); a few longer gaps (Good Friday
+    # with Easter Monday and a weekend is 5, a year's end more) are holes in the data, not another rhythm: they cost matched days, said as such
+    daily = sum(1 for g in gaps if g == 1) >= 0.6 * n and sum(1 for g in gaps if g <= 4) >= 0.95 * n
     if not (weekly or daily):
         return None
     total = days[-1] - days[0] + 1
@@ -297,7 +299,16 @@ def _cadence(times: List[str]) -> Optional[Dict[str, Any]]:
             return None
         return {"kind": "week", "noun": "week", "nouns": "weeks", "step": -7, "phase": 0, "per_year": 52, "window": n_win,
                 "adjective": "weekly", "cadence": "week", "span_days": 7 * n_win, "per_span": n_win}
-    n_win = min(365, total // 2)
+    # a table with a weekday missing (no weekend rows: a shop that is closed, a market) is compared over WHOLE WEEKS: a date is set against
+    # the date one span before it, and a span of 365 days would pair a Tuesday with a Monday and drop every Monday (the latest window's
+    # Tuesday to Friday against the prior window's Monday to Thursday: a Friday set against a Thursday). A table of every day keeps 365.
+    per_wd = [0] * 7
+    for d in days:
+        per_wd[(d + 3) % 7] += 1                          # 1970-01-01 was a Thursday: 0 is a Monday
+    if min(per_wd) < 0.05 * len(days):
+        n_win = 7 * min(52, (total // 7) // 2)
+    else:
+        n_win = min(365, total // 2)
     if n_win < DAY_MIN:
         return None
     return {"kind": "day", "noun": "day", "nouns": "days", "step": -1, "phase": 0, "per_year": 365, "window": n_win,

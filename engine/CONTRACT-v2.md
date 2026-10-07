@@ -461,7 +461,10 @@ words of letters with none of a category's glue words, whatever list of given na
 Tanaka" under "Stylist" stays flagged); its name does not say it holds people (`_person_hint`); and its name is not
 sensitive (AM1, `SENSITIVE_HEADER`: diagnos, condition, disease, illness, medic, health, symptom, treatment, drug,
 religio, faith, ethnic, race, nationality, citizenship, gender, sex, sexual, orientation, disab, pregnan, criminal,
-offence/offense, convict, union, political, party, vote, salary, wage, income, debt, credit, immigra, visa: health,
+offence/offense, convict, union, political, party, vote, salary, wage, income, debt, credit, immigra, visa; wave 5e adds
+visible minority, Indigenous, Aboriginal, First Nations, Inuit, Metis, cause of death, ICD, HIV, AIDS, marital status, civil
+status, ethni*, and the French, German and Spanish words for them (minorite visible, autochtone, etat matrimonial, cause de deces,
+Familienstand, Behinderung, Geschlecht, estado civil, discapacidad, causa de muerte, religion, genero): health,
 religion, ethnicity and the like are sensitive even when categorical). A release deletes the column's row from the
 engagement's column register (runtime state, never engine code) and is recorded as `privacy.released[{column (landed),
 header, distinct, rows, min_repeat, text, why}]`, `text` "Read as a category, not personal data: <header> (<n> labels)".
@@ -470,6 +473,15 @@ and that decision. The page's consent step shows every released column in those 
 (src/js/50-try.js `releasedHtml`; `tools/check_ui.js` try-released-category-*); a withhold reaches the run and changes the
 plan key (`T.planKeyText`, which counts a released column's withhold as a choice), and the worker re-runs (engine/worker.js
 `onRun`) and re-profiles (`onProfile`) for it; Use sends no choice. `privacy.released` is `[]` when nothing was released.
+
+**The documented value column (wave 5e, P10).** The scan's national-ID rule (nine digits and a check digit) flags a count of nine or more digits
+one time in ten, so the VALUE column of an official table of units sold was withheld by default and the table refused. `_release_value_column`
+lifts that flag, in `_decide_and_guard`, only when the table has a publisher's signature (`_publisher_header`) and the column is named as a
+publisher names its value (VALUE, OBS_VALUE, VALEUR, VALOR, WERT: `_PANEL_VALUE`) and every filled cell parses as a number. It is recorded as
+`privacy.released[{column, header, kind: "measure", distinct, rows, min_repeat: 1, text: "Read as the table's measure, not personal data: VALUE", why}]`,
+and the visitor can still withhold it (the wave 5d refusal then stands: "the column that holds the table's figures (VALUE) is withheld"). A business
+column called "value" is never released this way, and the long-ID rule for every other column is unchanged (a column of 9 to 19 digit numbers that names
+at most 400 things on at least 3.3 rows each is `long ID number`; a repeated large measure is flagged by it too and Keep releases it).
 
 ### 5.6 A withheld column drives no cleaning rule
 
@@ -1051,16 +1063,17 @@ industries), the calendar (n 13); the GEO heatmap shows 24 "<5" cells (a territo
 An official table (StatCan 20-10-0056-01: 465 series × 79 months, one row each) holds totals beside their parts, an
 adjusted copy beside the unadjusted one and components beside their parents; adding its rows counts the same dollar three
 times. `nl_structure.detect(reading, hidden)` reads what the table is from the engine's own reading after the visitor's
-decisions (a withheld or coded column is never read: `hidden`), by behaviour (names are hints), within a 1-second timer
-(`BUDGET_S`; 0.14 s native on the retail file, 0.04 s on a synthetic 40,320-row cube).
+decisions (a withheld or coded column is never read: `hidden`), by behaviour (names are hints). Wave 5e: every search is bounded by a
+COUNT, never a timer (the answer is the same on a slow and a fast machine; section 5.12 item 11, P3); `WALL_GUARD_S` = 40 s only refuses the whole table
+(0.13 s native on the retail file, 0.075 s on a synthetic 40,320-row cube).
 
 *Roles of columns.* The date: the column with the most dates the engine reads. The measure: the number that moves, VALUE/
 OBS_VALUE a hint; a cell the engine could not read is parsed for an embedded publisher flag ("123.4 p", ":", "[x]").
 Metadata by behaviour: `constant` (UOM, SCALAR_FACTOR, DECIMALS), `empty` (SYMBOL, TERMINATED), `series_id` (1:1 with the
 dimensions' key, or a metadata-named column: VECTOR), `alias` (1:1 with one dimension: DGUID with GEO), `flag` (at most 20
 short codes, with blanks, or a code whose rows have a blank measure: STATUS), `unit`, `other`. A series id or an alias is
-never a dimension: a withheld NAICS is never rebuilt from VECTOR. Dimensions: the text columns left with 2 to 400 members
-(at most 8). The date and the dimensions must tell the rows apart (at most 1% repeat), else `kind: "cube_incomplete"` for an
+never a dimension: a withheld NAICS is never rebuilt from VECTOR. Dimensions: the text columns left with 2 or more members (wave 5e:
+up to 50,000 are a series key; only the search for relations is bounded, at 400; at most 8 dimensions). The date and the dimensions must tell the rows apart (at most 1% repeat), else `kind: "cube_incomplete"` for an
 official table (a publisher's signature from `engine/flag_vocab.json`, or 3 or more metadata-named columns) and
 `"not_cube"` for a business file; a business file with a second measure column is `"not_cube"` (read as before).
 
@@ -1089,8 +1102,9 @@ never summed or averaged across members (AM4): its published aggregate (`rate_ag
 99% of its cells that is named as a total or as a whole country, or is shown to be the others' weighted average (wave 5b, section
 5.12 item 9: its place in the file is no evidence); with none, the table has no aggregate and rule 7 reads one member; (7) nothing verified: an official table reads one
 member (`single`: the total-named one, else the most covered and dominant), a business export adds its members up
-(`flat_additive`, read as before). An adjusted pair is found first, by behaviour: two members (of a dimension of 2 to 4)
-whose calendar-year totals agree within 3% and one three times as seasonal (the variance of its month means, detrended
+(`flat_additive`, read as before). An adjusted pair is found first, by behaviour: two members (wave 5e, P5: found by SHAPE, the changes of their smoothed logs
+correlating at least 0.95 under a steady ratio, whatever the gap between their levels; the wave 5d test, calendar-year totals within 3%, is kept as one more
+detector) of which one is three times as seasonal (the variance of its month means, detrended
 by a centred 2×12 average, of the logs) is the unadjusted copy (`adjustment`, `nsa`, `sa`; wave 5d: in a QUARTERLY table too, four seasons a year, at least 4 years, a complete year being 4 quarters);
 whether the adjusted parts
 of each partition add up to the adjusted total is recorded (`sa_adds_up`: retail's do). A dimension whose unit of measure

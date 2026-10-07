@@ -19,8 +19,14 @@
 // It must FAIL when the structure import breaks: with one regex flag moved into the middle of a pattern the engine refuses
 // the cube (structure.kind "error", no estimand) and this prints the exception. Needs Node and Playwright
 // (PLAYWRIGHT_MODULE=/path/to/node_modules/playwright), Chrome (CHROME) and cdn.jsdelivr.net (Pyodide, numpy, pandas).
-// Nothing is written, no port is opened. About 25 s. Exit 0 pass, 1 fail, 2 skipped (printed with the reason).
+// Wave 5e adds the cases of tools/fixtures/structure/pyodide_cases.json, run in the SAME Pyodide session: each is a file of the
+// regression pack read through the adapter, and the packed engine must say what the NATIVE engine says (tools/make_pyodide_cases.py
+// writes the json; tools/test_nl_regress.py checks it against the native engine): parts reporting in disjoint periods (the sorted-lookup
+// subset search), a weekly table (the cadence), a French table (the accent fold, unicodedata), and the unnamed-aggregate fit on a rate
+// panel with and without its aggregate (the one decision a BLAS could tip). The extra cases take about 10 s.
+// Nothing is written, no port is opened. About 40 s. Exit 0 pass, 1 fail, 2 skipped (printed with the reason).
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
@@ -30,6 +36,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SITE = resolve(HERE, '..');
 const ENGINE = join(SITE, 'engine');
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
+const CASES = JSON.parse(readFileSync(join(SITE, 'tools', 'fixtures', 'structure', 'pyodide_cases.json'), 'utf8'));
+const CASE_BYTES = Object.fromEntries(Object.entries(CASES).map(([name, c]) => {
+  const raw = readFileSync(join(SITE, 'tools', 'fixtures', 'structure', 'regress', c.file));
+  return [name, c.file.endsWith('.gz') ? gunzipSync(raw) : raw];
+}));
 
 // ---------------------------------------------------------------------------------------- the synthetic cube
 // 5 regions and a Canada total, 3 industries and a Total, 36 months (2020-01 to 2022-12), values in thousands of dollars,
@@ -119,10 +130,11 @@ try {
     if (p === '/') return route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>engine check</body></html>' });
     if (p === '/engine.zip') return route.fulfill({ status: 200, contentType: 'application/zip', body: zip });
     if (p === '/cube.csv') return route.fulfill({ status: 200, contentType: 'text/csv', body: cube });
+    if (p.startsWith('/case/') && CASE_BYTES[p.slice(6)]) return route.fulfill({ status: 200, contentType: 'text/csv', body: CASE_BYTES[p.slice(6)] });
     return route.fulfill({ status: 404, body: '' });
   });
   await page.goto('http://nl-site.test/');
-  got = await page.evaluate(async (url) => {
+  got = await page.evaluate(async ({ url, names }) => {
     const t0 = performance.now();
     await new Promise((res, rej) => { const s = document.createElement('script'); s.src = url + 'pyodide.js'; s.onload = res; s.onerror = () => rej(new Error('pyodide.js did not load')); document.head.appendChild(s); });
     const py = await loadPyodide({ indexURL: url });
@@ -143,15 +155,30 @@ try {
     const rep = JSON.parse(String(nl.run_json(buf, 'cube.csv', '', '{}', '2026-09-30')));
     const t3 = performance.now();
     const est = rep.estimand || null, st = rep.structure || null;
+    // wave 5e: the extra cases, in this same session
+    const cases = {};
+    for (const n of names) {
+      const c0 = performance.now();
+      try {
+        const b = new Uint8Array(await (await fetch('/case/' + n)).arrayBuffer());
+        const r = JSON.parse(String(nl.run_json(b, 'table.csv', '', '{}', '2026-09-30')));
+        const e2 = r.estimand || null, f2 = (e2 && e2.figures) || {}, s2 = r.structure || {};
+        cases[n] = { ok: !!r.ok, estimand: !!e2, refused: !e2 && /business analysis did not run/.test((r.story && r.story.headline) || ''),
+          kind: s2.kind || null, usable: s2.usable === undefined ? null : s2.usable,
+          roles: Object.fromEntries((s2.dims || []).map((d) => [d.column, d.role])),
+          source: e2 ? 'estimand' : null, prior: f2.prior ? f2.prior.value : null, latest: f2.latest ? f2.latest.value : null,
+          pct: f2.change_pct ? f2.change_pct.value : null, seconds: (performance.now() - c0) / 1000 };
+      } catch (err) { cases[n] = { error: String(err).slice(0, 400), seconds: (performance.now() - c0) / 1000 }; }
+    }
     return {
-      env, load_s: (t1 - t0) / 1000, run_s: (t3 - t2) / 1000,
+      cases, env, load_s: (t1 - t0) / 1000, run_s: (t3 - t2) / 1000,
       ok: rep.ok, error: rep.error || null, rows: rep.input && rep.input.rows,
       layout: rep.input && rep.input.layout, headline: rep.story && rep.story.headline,
       structure: st && { kind: st.kind, usable: st.usable, error: st.error || null, reason: st.reason || null, dims: (st.dims || []).map((d) => ({ column: d.column, role: d.role, total: d.total })) },
       estimand: est && { text: est.text, slice: est.slice, plan_source: est.plan_source, reconciles: est.reconciles, comparison: est.comparison, figures: est.figures, period: est.period && est.period.noun },
       did_not_run: !!(rep.story && /did not run/.test(rep.story.headline || '')), n_business: (rep.findings || []).filter((f) => f.kind === 'business').length,
     };
-  }, PYODIDE_URL);
+  }, { url: PYODIDE_URL, names: Object.keys(CASES) });
 } finally { await browser.close(); }
 
 // ---------------------------------------------------------------------------------------- the assertions
@@ -195,5 +222,24 @@ ok('the headline equals the pandas reference: the change in percent', !!F && clo
   F && F.change_pct.value + ' vs ' + REFERENCE.change_pct);
 ok('the story\'s headline states that change', !!F && String(got.headline).includes(F.change_pct.text) && /published totals/.test(got.headline),
   String(got.headline));
+// wave 5e: the packed engine says in Pyodide what the native engine says (the json), case by case
+let caseSeconds = 0;
+for (const [name, want] of Object.entries(CASES)) {
+  const g = got.cases[name] || { error: 'not run' };
+  caseSeconds += g.seconds || 0;
+  if (g.error) { ok('case ' + name + ': the run finished', false, g.error); continue; }
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  ok('case ' + name + ': read as the native engine reads it (ok, kind, usable, estimand, refused)',
+    g.ok === want.ok && g.kind === want.kind && g.usable === want.usable && g.estimand === want.estimand && g.refused === want.refused,
+    JSON.stringify({ pyodide: [g.ok, g.kind, g.usable, g.estimand, g.refused], native: [want.ok, want.kind, want.usable, want.estimand, want.refused] }));
+  ok('case ' + name + ': the same role for every dimension', same(g.roles, want.roles), JSON.stringify({ pyodide: g.roles, native: want.roles }));
+  if (want.source === 'estimand') {
+    ok('case ' + name + ': the same figures (prior, latest, change)', close(g.prior, want.prior, 1e-6 * Math.max(1, Math.abs(want.prior))) &&
+      close(g.latest, want.latest, 1e-6 * Math.max(1, Math.abs(want.latest))) && close(g.pct, want.pct, 1e-6),
+      JSON.stringify({ pyodide: [g.prior, g.latest, g.pct], native: [want.prior, want.latest, want.pct] }));
+  }
+}
+console.log('PYODIDE the ' + Object.keys(CASES).length + ' wave 5e cases took ' + caseSeconds.toFixed(1) + ' s');
+ok('the extra cases stay within their budget (60 s in all)', caseSeconds < 60, caseSeconds.toFixed(1) + ' s');
 console.log('PYODIDE ' + (failed ? failed + ' check(s) FAILED' : 'ALL PASS') + ' (' + ((Date.now() - t00) / 1000).toFixed(1) + ' s)');
 process.exit(failed ? 1 : 0);

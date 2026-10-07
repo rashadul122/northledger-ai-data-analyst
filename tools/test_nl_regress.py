@@ -298,6 +298,42 @@ def test_r07_a_weekly_table_is_compared_over_whole_weeks_never_over_months_endin
     assert "12 months" not in headline(rep) and "12-month" not in est(rep).get("text", ""), (headline(rep), est(rep).get("text"))
 
 
+def test_r07b_a_daily_table_without_weekend_rows_is_compared_over_whole_weeks_the_same_weekday_against_the_same_weekday():
+    """Finding 7, the neighbour the reviewer did not try. A daily table with no weekend rows (a shop that is closed, a market) was paired with the
+    date 365 days earlier: that is the day before in the week, so a Tuesday met a Monday and every Monday was dropped, the latest window's Tuesday
+    to Friday against the prior window's Monday to Thursday. With Monday at 0.6 and Friday at 1.4 of a normal day, a business that grew 5% a year
+    read +22%. Now the span is whole weeks (364 days) and a date is set against the same weekday. A holiday's longer gap does not stop the table from
+    being daily (Good Friday with Easter Monday and a weekend is a gap of 5)."""
+    import datetime as dt
+    rng = np.random.RandomState(11)
+    days = [d for d in (dt.date(2021, 1, 4) + dt.timedelta(days=i) for i in range(800)) if d.weekday() < 5]
+    wd = {0: 0.6, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.4}
+    rows, truth = ["Date,Branch,Sales"], {}
+    for d in days:
+        tot = 0
+        for b, base in (("North", 200.0), ("South", 120.0)):
+            v = round(base * wd[d.weekday()] * 1.05 ** ((d - days[0]).days / 365.0) * (1 + 0.03 * rng.randn()), 2)
+            rows.append("%s,%s,%.2f" % (d.isoformat(), b, v))
+            tot += v
+        rows.append("%s,Total,%.2f" % (d.isoformat(), tot))
+        truth[d.isoformat()] = tot
+    rep = run_bytes(("\n".join(rows) + "\n").encode())
+    e = est(rep)
+    assert e and not refused(rep), headline(rep)[:200]
+    c = e["comparison"]
+    assert (c["latest"][1], len(c["latest"][0])) == (days[-1].isoformat(), 10), c
+    lat_days = (dt.date.fromisoformat(c["latest"][1]) - dt.date.fromisoformat(c["latest"][0])).days + 1
+    assert lat_days % 7 == 0, ("a window of %d days is not whole weeks" % lat_days, c)
+    sums = [sum(v for k, v in truth.items() if c[w][0] <= k <= c[w][1]) for w in ("prior", "latest")]
+    f = figs(rep)
+    assert f is not None and close(f[0], sums[0], 1e-6) and close(f[1], sums[1], 1e-6), (f, sums)
+    pct = 100.0 * (sums[1] / sums[0] - 1.0)
+    assert 3.0 < pct < 8.0, "a business that grew 5% a year reads %.1f%%" % pct
+    # holiday gaps: a gap of 5 days now and then is a hole, not another rhythm
+    ts = [d.isoformat() for d in days if d not in (dt.date(2021, 4, 5), dt.date(2022, 4, 18), dt.date(2022, 4, 15))]
+    assert (NS._cadence(ts) or {}).get("cadence") == "day"
+
+
 def test_r08_a_whole_country_row_is_the_headline_and_an_average_in_dollars_is_a_level():
     """Finding 8. Average weekly earnings (dollars) with Canada beside Ontario and Quebec: rule 6 took Ontario, the most
     dominant, and typed the measure a flow ("12-month totals" of a weekly average). Canada's own series is the headline and an
@@ -347,6 +383,26 @@ def test_r10_a_not_cube_verdict_on_a_table_of_series_refuses_and_never_averages_
             assert refused(rep), "%s lowered: %s" % (attr, headline(rep)[:200])
     finally:
         NS.MAX_SERIES, NS.MAX_CELLS, NS.MAX_DIMS = keep
+
+
+def test_r10b_a_memory_error_and_a_wall_guard_trip_refuse_a_table_of_series_and_leave_a_business_file_alone():
+    """Finding 10, the other verdicts: a MemoryError and the wall guard both make `detect` say not_cube. On a table that looks like a table of
+    series that is a plain refusal; on an ordinary business file (no publisher, no flag column) the file is read as it always was."""
+    official = fixture("r10_partition_for_caps.csv")
+    business = fixture("r01_business_small_counts.csv")
+    real = NS._detect
+    try:
+        for exc in (MemoryError(), NS._WallGuard()):
+            def boom(*a, **k):
+                raise exc
+            NS._detect = boom
+            rep = run_bytes(official)
+            assert refused(rep), "%s: %s" % (type(exc).__name__, headline(rep)[:200])
+            assert st(rep).get("kind") == "error", st(rep)
+            rep2 = run_bytes(business)
+            assert not refused(rep2) and rep2.get("ok"), "%s: a business file was refused: %s" % (type(exc).__name__, headline(rep2)[:200])
+    finally:
+        NS._detect = real
 
 
 def test_r11_an_exception_in_the_profile_pass_never_lets_a_plan_run_read_a_table_of_series_the_old_way():
@@ -546,7 +602,8 @@ def test_s01_sensitive_headers_are_never_released_as_categories_whatever_the_lan
                  "Familienstand", "Estado civil", "Causa de muerte", "Discapacidad", "Behinderung", "Religi\u00f3n", "First Nations", "Inuit"]
     for h in sensitive:
         assert NB.SENSITIVE_HEADER.search(h), "%r is not a sensitive header" % h
-    for h in ["Industry", "Region", "Product category", "Genre", "Brand", "Colour", "Store", "Sector", "Age group", "Education", "Language"]:
+    for h in ["Industry", "Region", "Product category", "Genre", "Brand", "Colour", "Store", "Sector", "Age group", "Education", "Language",
+              "Braids", "Maids", "Raids"]:
         assert not NB.SENSITIVE_HEADER.search(h), "%r is read as sensitive" % h
 
 

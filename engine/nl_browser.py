@@ -1617,7 +1617,7 @@ SENSITIVE_HEADER = re.compile(
     # wave 5e: what the independent reviewer named (visible minority, Indigenous identity, cause of death, ICD codes, HIV, marital status)
     # and the words other languages use for them (minorit[eé] visible, autochtone, [eé]tat matrimonial, Familienstand, Behinderung ...)
     r"visible minorit|minorit[e\u00e9]s? visible|indigenous|aboriginal|first nations|inuit|m[e\u00e9]tis|autochton|ind[i\u00ed]gen|"
-    r"cause of death|cause de d[e\u00e9]c[e\u00e8]s|causa de muerte|todesursache|\bicd\b|\bhiv\b|\baids\b|sida\b|marital|marriage|"
+    r"cause of death|cause de d[e\u00e9]c[e\u00e8]s|causa de muerte|todesursache|\bicd\b|\bhiv\b|\baids\b|\bsida\b|marital|marriage|"
     r"civil status|[e\u00e9]tat (?:matrimonial|civil)|estado civil|familienstand|behinderung|discapacidad|handicap|"
     r"ethni|etnia|religi[o\u00f3]n|konfession|orientaci[o\u00f3]n sexual|geschlecht|g[e\u00e9]nero")
 RELEASED_WORDS = "Read as a category, not personal data: %s (%s labels)"

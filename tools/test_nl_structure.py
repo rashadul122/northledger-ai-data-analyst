@@ -1687,9 +1687,13 @@ def test_w5b_the_series_table_guard_decides_from_the_files_own_columns_and_not_f
             got = NB.looks_like_series_table(data)
             assert got and got["by"] == "publisher" and got["publisher"] == k, (k, got)
         # 3 metadata-like columns and no signature (REF_DATE/DGUID/VECTOR/COORDINATE/STATUS: fewer than 3 of them)
-        df = _business_shape(extra={"unit": "Dollars", "scalar_factor": "units", "decimals": "0"})
+        df = _business_shape(extra={"uom": "Dollars", "scalar_factor": "units", "decimals": "0"})
         got = NB.looks_like_series_table(_csv_of(df))
-        assert got and got["by"] == "metadata" and got["columns"] == ["unit", "scalar_factor", "decimals"], got
+        assert got and got["by"] == "metadata" and got["columns"] == ["uom", "scalar_factor", "decimals"], got
+        # wave 5e (P7): the generic words any business file has (Unit, Status, Action, Frequency) are not publisher columns
+        for extra in ({"unit": "box", "status": "open", "action": "ship"}, {"status": "active", "units": "3", "frequency": "monthly"},
+                      {"unit": "Dollars", "scalar_factor": "units", "footnote": "none"}):
+            assert NB.looks_like_series_table(_csv_of(_business_shape(extra=extra))) is None, extra
         # a date, a measure, 2 dimensions and a flag column: x on a blank measure (learned from the file), or a STATUS with a publisher's code
         df = _business_shape(extra={"flag": ""})
         idx = df.sample(frac=0.1, random_state=3).index
@@ -1698,7 +1702,7 @@ def test_w5b_the_series_table_guard_decides_from_the_files_own_columns_and_not_f
         df.loc[idx, "flag"] = "x"
         got = NB.looks_like_series_table(_csv_of(df))
         assert got == {"by": "long format", "dimensions": 2, "flags": 1}, got
-        df2 = _business_shape(extra={"status": lambda d: np.where(np.arange(len(d)) % 7 == 0, "E", "")})
+        df2 = _business_shape(extra={"status": lambda d: np.where(np.arange(len(d)) % 7 == 0, "p", "")})   # wave 5e: a letter A to F is a grade too
         got = NB.looks_like_series_table(_csv_of(df2))
         assert got == {"by": "long format", "dimensions": 2, "flags": 1}, got
         # NEGATIVE: the same shape with no metadata and no flag; a "returned" of Y/blank; a "status" of open/done; a grade of A to D

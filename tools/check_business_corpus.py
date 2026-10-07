@@ -66,6 +66,9 @@ def summarise(rep: dict) -> dict:
         for k in ("prior12", "prior12_mean"):
             if base and (base + "." + k) in led:
                 out["prior"] = led[base + "." + k]
+        # the change finding of a LEVEL (an average per row) is an absolute change; the percent is the windows' own
+        if out.get("prior") and out.get("latest") is not None:
+            out["pct"] = 100.0 * (out["latest"] / out["prior"] - 1.0)
     return out
 
 

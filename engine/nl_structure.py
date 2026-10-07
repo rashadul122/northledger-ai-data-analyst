@@ -75,7 +75,8 @@ EXACT_MIN = 16                  # ... or the residual is EXACTLY nothing on 16 c
 EXACT_REL = 1e-9                # exact: within float noise of the larger of the total and the parts' sum
 FAIL_MIN = 3                    # a check is contradicted (not just unresolved) when 3 complete cells are off by more than the tolerance and under 95% hold
 BOUND_SHARE = 0.99              # a member bounds another in 99% of the cells
-CANDIDATES_MAX = 22             # the subset-sum search: at most 22 candidates (2^11 subsets a half)
+CANDIDATES_MAX = 32             # the subset-sum search: at most 32 candidates (2^16 subsets a half, a sorted lookup; wave 5e: was 22, which cut
+                                # off the smallest member of a 23-member tree (fuzz seed 3160): the root's partition then could not be found)
 PARENTS_MAX = 30
 GEO_MIN_PARTS = 3               # wave 5e, P1: a geographic dimension with no total row is added only with at least 3 parts (two are a pair)
 FLAG_MAX_CODES = 20
@@ -598,7 +599,10 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     if date is None or n_d < 6:
         pl = _period_labels(R, cols, head)                  # 2012-Q1, Q1 2012, 2012: periods the engine does not read as dates
         if pl is None:
-            return _empty("not_cube", "no column holds dates", publisher=publisher, official=official)
+            few = max([int(R.dates(c).nunique()) for c in cols if R.kind(c) == "date"] or [0])
+            return _empty("not_cube", ("the table holds %d reference period%s, and the engine reads a table of series over at least 6 "
+                                       "(there is no change to compare)" % (few, "" if few == 1 else "s")) if few else
+                          "no column holds dates", publisher=publisher, official=official)
         date, dts, date_family = pl
     if dts is None:
         dts = R.dates(date)
@@ -3537,10 +3541,13 @@ def matched_months(S: Dict[str, Any], months: Sequence[str], tot: Any, win: Dict
     """(the latest window's months, the months a year before, whether both are the whole 12): a flow's or a count's
     window figure adds up its months, so a month the headline lacks in either window would make the change compare 11
     months with 12; the comparison then uses the months with a value in both windows (the same calendar month in each:
-    like for like). A level's window figure is the mean of the months it has, so its windows stay whole."""
+    like for like). Wave 5e (P6): a LEVEL's window is matched too: its figure is the mean of the months it has, and a mean of 2 months
+    set against a mean of 12, or of 11 different months against 11 others, is no like-for-like change (a stock with a blank month
+    flipped the sign of a +0.2% change in a fuzz table). The months with a value in both windows are compared, said so, and a
+    comparison needs half a window of them."""
     lat = _prange(S, win["latest"][0], win["latest"][1])
     pri = _prange(S, win["prior"][0], win["prior"][1])
-    if not sums_over_time(S["measure"]) or len(lat) != len(pri):
+    if len(lat) != len(pri):
         return lat, pri, True
     have = {m for m, v in zip(months, tot) if v == v}
     pairs = [(a, b) for a, b in zip(pri, lat) if a in have and b in have]
@@ -3761,20 +3768,22 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     T1, n1 = sum_at(S, months, vals, lat_m)
     m = S["measure"]
     flow = sums_over_time(m)
-    if flow and len(lat_m) < _min_matched(S):
-        T0 = T1 = None                                   # too few months in both windows to compare like for like
+    if len(lat_m) < _min_matched(S):
+        T0 = T1 = None                                   # too few months in both windows to compare like for like (a flow's or a level's)
     left_out = sorted(set(_prange(S, win["latest"][0], win["latest"][1])) - set(lat_m))
     P = S.get("period") or {"step": 1, "noun": "month", "nouns": "months", "window": 12, "adjective": "monthly", "kind": "month"}
     cmp_ = _comparison(S, win)
     ambiguous = str(m.get("type_basis") or "").startswith("ambiguous")
     w_ = int(P["window"])
     unit_w = "%d-%s" % (w_, P["noun"]) if w_ > 1 else "annual"
-    agg = ("%s totals" % unit_w if complete else "totals of the %d %s with a value in both windows (%s left out)" % (
+    left_txt = "%d %s with a value in both windows (%s left out)" % (
         len(lat_m), P["nouns"] if len(lat_m) != 1 else P["noun"],
-        ", ".join(_mon(x) if P["step"] == 1 else _plabel(S, x) for x in left_out[:3]) + (", ..." if len(left_out) > 3 else ""))) \
+        ", ".join(_mon(x) if P["step"] == 1 else _plabel(S, x) for x in left_out[:3]) + (", ..." if len(left_out) > 3 else ""))
+    agg = ("%s totals" % unit_w if complete else "totals of the " + left_txt) \
         if flow else \
-        (("average level over the window (%s averages)" % unit_w if w_ > 1 else "average level over the window (annual values)")
-         if ambiguous else ("%s averages" % unit_w if w_ > 1 else "annual values"))
+        ((("average level over the window (%s averages)" % unit_w if w_ > 1 else "average level over the window (annual values)")
+          if ambiguous else ("%s averages" % unit_w if w_ > 1 else "annual values")) if complete else
+         ("average level over the " if ambiguous else "averages of the ") + left_txt)
     scale_txt = ""
     sc_word, sc_factor = slice_scale(S, where)
     if sc_factor and sc_factor != 1:
@@ -3939,8 +3948,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
                         "aggregation": str(m["aggregation"]).replace("over months", "over %s" % P["nouns"])},
             "comparison": cmp_, "period": {k: P[k] for k in ("kind", "noun", "nouns", "step", "window", "adjective")},
             "figures": figures, "sum_checks": checks, "excluded": excluded, "plan_source": plan_source,
-            "complete": bool(complete) and not (built or {}).get("incomplete"), "months_used": len(lat_m) if flow else n1,
-            "periods_used": len(lat_m) if flow else n1,
+            "complete": bool(complete) and not (built or {}).get("incomplete"), "months_used": len(lat_m),
+            "periods_used": len(lat_m),
             "months_left_out": [] if complete else left_out, "inference": None, "built_from": built,
             "measure_choice": choice}
     if single_member is not None:

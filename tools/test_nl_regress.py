@@ -28,6 +28,7 @@ ENGINE_ROOT = os.path.abspath(os.environ.get("NL_ENGINE_ROOT") or os.path.join(S
 sys.path.insert(0, ENGINE_ROOT)
 sys.path.insert(0, ADAPTER_DIR)
 sys.path.insert(0, os.path.join(HERE, "fixtures", "structure"))
+sys.path.insert(0, HERE)
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -163,7 +164,11 @@ def test_r01_a_sum_check_that_cannot_fail_never_declares_a_branch_the_total_of_t
     rep = run_file("r01_business_small_counts.csv")
     pri, lat = window_sums(df, df["Branch"] != "")
     assert (pri, lat) == (8.0, 9.0), (pri, lat)
-    check_truth(rep, pri, lat, "business export")
+    # a business export no relation is found in is read by the engine's own analysis, which adds its rows: the change is the sum's
+    import check_business_corpus as CB
+    said = CB.summarise(rep)
+    assert not said["refused"] and said["pct"] is not None, said
+    assert abs(said["pct"] - 100.0 * (lat / pri - 1.0)) < 1e-6, (said["pct"], 100.0 * (lat / pri - 1.0))
     assert "sum-checked" not in json.dumps(rep.get("estimand"))
     dfo = frame("r01_official_small_counts.csv")
     repo = run_file("r01_official_small_counts.csv")
@@ -267,8 +272,9 @@ def test_r06_a_french_statcan_table_is_read_like_its_english_twin():
     assert figs(en) is not None and close(figs(en)[1], 230.2e6, 1e-3)
     assert figs(fr) is not None, headline(fr)
     assert close(figs(fr)[0], figs(en)[0]) and close(figs(fr)[1], figs(en)[1]), (figs(fr), figs(en))
-    d = dim(fr, "GEO")
+    d = dim(fr, "G\u00c9O")
     assert d is not None and d["role"] == "partition" and d["total"] == "Canada", st(fr).get("dims")
+    assert est(fr)["measure"]["uom"] == "Dollars" and est(fr)["measure"]["scale"] == "milliers", est(fr)["measure"]
     assert not any("v100000" in str(x.get("member")) for x in est(fr).get("slice") or [])
 
 

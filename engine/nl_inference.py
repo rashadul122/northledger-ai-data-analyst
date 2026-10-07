@@ -670,6 +670,7 @@ PUBLISHERS = {
     # ships beside this module)
     "statcan": {"name": "Statistics Canada", "signature": ["REF_DATE", "DGUID", "VECTOR", "COORDINATE", "STATUS"]},
     "eurostat": {"name": "Eurostat", "signature": ["TIME_PERIOD", "OBS_VALUE", "OBS_FLAG"]},
+    "statcan_fr": {"name": "Statistics Canada", "signature": ["PÉRIODE DE RÉFÉRENCE", "DGUID", "VECTEUR", "COORDONNÉE", "STATUT"]},
 }
 SIGNATURE_MIN = 3               # columns of a publisher's signature a file must hold
 _SE_WORDS = re.compile(r"standard error|coefficient of variation|confidence interval|margin of error|"

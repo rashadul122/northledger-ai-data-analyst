@@ -1613,8 +1613,15 @@ RELEASE_MIN_REPEAT = 5
 SENSITIVE_HEADER = re.compile(
     r"(?i)diagnos|condition|disease|illness|medic|health|symptom|treatment|drug|religio|faith|ethnic|race|"
     r"nationality|citizenship|gender|sex\b|sexual|orientation|disab|pregnan|criminal|offen[cs]e|convict|union|"
-    r"political|party|vote|salary|wage|income|debt|credit|immigra|visa")
+    r"political|party|vote|salary|wage|income|debt|credit|immigra|visa|"
+    # wave 5e: what the independent reviewer named (visible minority, Indigenous identity, cause of death, ICD codes, HIV, marital status)
+    # and the words other languages use for them (minorit[eé] visible, autochtone, [eé]tat matrimonial, Familienstand, Behinderung ...)
+    r"visible minorit|minorit[e\u00e9]s? visible|indigenous|aboriginal|first nations|inuit|m[e\u00e9]tis|autochton|ind[i\u00ed]gen|"
+    r"cause of death|cause de d[e\u00e9]c[e\u00e8]s|causa de muerte|todesursache|\bicd\b|\bhiv\b|\baids\b|sida\b|marital|marriage|"
+    r"civil status|[e\u00e9]tat (?:matrimonial|civil)|estado civil|familienstand|behinderung|discapacidad|handicap|"
+    r"ethni|etnia|religi[o\u00f3]n|konfession|orientaci[o\u00f3]n sexual|geschlecht|g[e\u00e9]nero")
 RELEASED_WORDS = "Read as a category, not personal data: %s (%s labels)"
+RELEASED_MEASURE_WORDS = "Read as the table's measure, not personal data: %s"
 RELEASE_NAME_SHARE = 0.30
 _LABEL_GLUE = frozenset(("and", "of", "the", "for", "or", "with", "in", "on", "to", "at", "by", "from", "other", "all",
                          "total", "except", "excluding", "not", "nec", "n.e.c", "&"))
@@ -1631,6 +1638,79 @@ def _name_shaped(v: str) -> bool:
         return False
     caps = [w[:1].isupper() for w in words if w[:1].isalpha()]
     return bool(caps) and (all(caps) or not any(caps) or all(w.isupper() for w in words))
+
+
+def _publisher_header(headers: Iterable[str]) -> Optional[str]:
+    """The publisher whose signature columns the file's header holds (3 of them, or all of a shorter signature), from engine/flag_vocab.json
+    and in any language it lists; None for any other file."""
+    sigs, _codes = _guard_vocab()
+    have = {_pnorm(h) for h in headers}
+    for name, sig in sigs.items():
+        s = [_pnorm(x) for x in sig]
+        if sum(1 for x in s if x in have) >= min(3, len(s)):
+            return name
+    return None
+
+
+def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: List[Dict[str, Any]]) -> None:
+    """Wave 5e (P10). The documented value column of an official table (VALUE, OBS_VALUE, VALEUR; the file carries a publisher's
+    signature) that parses as numbers is a MEASURE, not a national ID number: real tables hold nine-digit values (dollars in thousands,
+    a population in persons) and the engine's scan reads one in ten of them as a SIN. It is released with the consent line "Read as
+    the table's measure, not personal data: VALUE" (privacy.released, kind "measure"); the visitor can still withhold it (the refusal
+    of wave 5d then stands). The long-ID rule and the scan stay for every other column."""
+    import sqlite3
+    colmap = dict(getattr(res, "column_map", {}) or {})
+    if _publisher_header(colmap.keys()) is None:
+        return
+    head = {str(v): str(k) for k, v in colmap.items()}
+    chosen: Dict[str, str] = {}
+    for k, v in dict(decisions or {}).items():
+        if not str(k).startswith("__"):
+            chosen[str(k)] = str(v or "").strip().lower()
+            if str(k) in colmap:
+                chosen[colmap[str(k)]] = str(v or "").strip().lower()
+    con = sqlite3.connect(eng.db_path)
+    try:
+        rows = con.execute("SELECT column_name FROM %s WHERE table_name = ?" % E.COLUMNS_TABLE, (res.table,)).fetchall()
+        flagged = {str(r[0]) for r in rows}
+    finally:
+        con.close()
+    for col in sorted(flagged):
+        header = head.get(col, col)
+        if _pnorm(header) not in _PANEL_VALUE or chosen.get(col) in ("withhold", "code") or chosen.get(header) in ("withhold", "code"):
+            continue
+        con = sqlite3.connect(eng.db_path)
+        try:
+            vals = [str(r[0]) for r in con.execute('SELECT "%s" FROM "%s" WHERE "%s" IS NOT NULL' % (
+                col.replace('"', '""'), str(res.table).replace('"', '""'), col.replace('"', '""')))]
+        finally:
+            con.close()
+        vals = [v.strip() for v in vals if v.strip() != ""]
+        if len(vals) < 6:
+            continue
+        ok = 0
+        seen = set()
+        for v in vals:
+            t = v.replace(",", "")
+            try:
+                float(t)
+                ok += 1
+                seen.add(t)
+            except ValueError:
+                pass
+        # all the cells are numbers (the publisher's flags and blanks are other columns' business), and they vary
+        if ok < 0.95 * len(vals) or len(seen) < 2:
+            continue
+        con = sqlite3.connect(eng.db_path)
+        try:
+            con.execute("DELETE FROM %s WHERE table_name = ? AND column_name = ?" % E.COLUMNS_TABLE, (res.table, col))
+            con.commit()
+        finally:
+            con.close()
+        released.append({"column": col, "header": header, "kind": "measure", "distinct": len(seen), "rows": ok, "min_repeat": 1,
+                         "text": RELEASED_MEASURE_WORDS % header,
+                         "why": "the table's own value column (a publisher's layout names it), every cell a number: a count of nine or more "
+                                "digits has the shape of an ID number and is not one here"})
 
 
 def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict[str, Any]]:
@@ -1729,6 +1809,7 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     columns, the scrubber, privacy.released)."""
     import sqlite3
     released = _release_categories(E, eng, res, decisions)
+    _release_value_column(E, eng, res, decisions, released)
     colmap = dict(getattr(res, "column_map", {}) or {})
     con = sqlite3.connect(eng.db_path)
     try:
@@ -4642,6 +4723,10 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
                 rec = _guard_failure(data, fail)
                 if rec is not None:
                     out[_PROFILE_CACHE_ERROR] = rec
+            elif S is not None and S.get("kind") == "not_cube":
+                rec = _verdict_failure(data, S)           # the layer answered "not a cube" for a table of series: refused, never averaged
+                if rec is not None:
+                    out[_PROFILE_CACHE_ERROR] = rec
             if S is not None:
                 withheld = {str(f["column"]) for f in flagged if f.get("decision") == "withhold"}
                 cleaning = {"rows_in": int(cr.total_in), "rows_clean": int(cr.rows_clean),
@@ -4651,9 +4736,16 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         return out
     except Exception as exc:  # noqa: BLE001 - the profile is an aid; the page runs without it
         intake_error = getattr(sys.modules.get("northledger.intake"), "IntakeError", Refusal)
-        if os.environ.get("NL_BROWSER_STRICT") and not isinstance(exc, (Refusal, intake_error)):
-            raise
-        return {"ok": False, "error": "unreadable: %s" % type(exc).__name__}
+        if isinstance(exc, (Refusal, intake_error)):
+            return {"ok": False, "error": "unreadable: %s" % type(exc).__name__}
+        # wave 5e (P7): any other failure of the pass is a failure of the layer's reading (stage "profile"): a table of series is refused,
+        # and a plan's run reads that record (never "the profile pass failed, so the rows are averaged"); a strict run raises for any
+        # other file, as for every other stage
+        rec = _guard_failure(data, _failure("profile", exc))
+        out = {"ok": False, "error": "unreadable: %s" % type(exc).__name__}
+        if rec is not None:
+            out[_PROFILE_CACHE_ERROR] = rec
+        return out
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -8886,6 +8978,18 @@ _GUARD_SIGNATURES = {"statcan": ["REF_DATE", "DGUID", "VECTOR", "COORDINATE", "S
 _GUARD_CODES = frozenset((":", "x", "..", "...", "F", "E", "A", "B", "C", "D", "r", "p", "c", "e", "b", "u", "z", "[x]", "[c]",
                           "[z]", "[u]", "n/a", "-", "*"))
 _GUARD_FLAG_NAMES = frozenset(("status", "flag", "flags", "obsstatus", "obsflag", "confstatus", "obsconf", "symbol", "statut", "symbole", "estado"))
+# wave 5e (P7): the names that count towards "3 or more metadata-like columns" are the ones only a statistical publisher uses; generic words (unit,
+# units, status, flag, action, frequency, symbol, structure, footnote) are columns of any business file (an inventory has Unit, Status and Action)
+_GUARD_META_SPECIFIC = frozenset((
+    "dguid", "uom", "uomid", "scalarfactor", "scalarid", "vector", "coordinate", "terminated", "decimals", "obsstatus", "obsflag", "obsconf",
+    "unitmult", "unitmultiplier", "confstatus", "timeformat", "lastupdate", "dataflow", "structureid", "vecteur", "coordonnee", "termine",
+    "decimales", "unitedemesure", "iddelunitedemesure", "facteurscalaire", "iddufacteurscalaire", "unidaddemedida", "factorescalar",
+    "dezimalstellen", "skalierung", "maeinheit", "masseinheit"))
+_GUARD_GRADE_LETTERS = frozenset("ABCDEF")      # a quality letter of a publisher is also the grade of a student: never a flag on its own
+_GUARD_ID = re.compile(r"^[A-Za-z]{0,4}[\s_-]?\d[\d.\-_]*$")
+_GUARD_UNIT_WORD = re.compile(r"(?i)\b(?:dollars?|euros?|pounds?|persons?|people|number|percent(?:age)?|index|units?|tonnes?|hours?|"
+                              r"personnes?|pourcent(?:age)?|nombre|indice|unidades?|personas?|porcentaje|personen|prozent|anzahl|"
+                              r"millions?|thousands?)\b|%")
 _GUARD_DATE_NAMES = frozenset(_PANEL_DATE) | {"year", "yr", "fiscalyear", "fy", "calendaryear", "obstime", "refperiod"}
 _GUARD_ISO = re.compile(r"^\d{4}(?:[-/.]\d{1,2}){0,2}$")
 _GUARD_PERIOD = re.compile(r"^(?:\d{4}\s*[-_/ ]?\s*[QqHhSs][1-4]|[Qq][1-4]\s*[-_/ ]?\s*\d{4}|\d{4}\s*[-_ ]?[Mm]\d{1,2})$")
@@ -8964,22 +9068,61 @@ def _guard_long_shape(df: Any) -> Optional[Dict[str, Any]]:
             # of Y/blank or a grade of A to D is a business file's own column, not a flag
             predicts = any(int((text[c] == m).sum()) >= 3 and float(blank_measure[text[c] == m].mean()) >= _GUARD_BLANK_MEASURE
                            for m in members)
-            if predicts or (_pnorm(c) in _GUARD_FLAG_NAMES and any(m in codes for m in members)):
+            # a column the publishers name a flag holds one of their codes: never counting the letters A to F, which are a student's grade
+            # as much as a publisher's quality letter (wave 5e, P7)
+            named_flag = _pnorm(c) in _GUARD_FLAG_NAMES and any(m in codes and m not in _GUARD_GRADE_LETTERS for m in members)
+            if predicts or named_flag:
                 flags.append(c)
                 continue
         if len(members) >= 2 and _pnorm(c) not in _PANEL_META:
             dims.append(c)
-    if len(dims) < 2 or not flags:
+    if len(dims) < 2:
         return None
+    if not flags:
+        # no flag column (a table without suppressed cells, or in a language whose flag names are not known): a series id (one value for
+        # each series, a vector or a coordinate) and a constant column that holds a unit of measure say the same (wave 5e, P7)
+        sid = _guard_series_id(df, dims, text)
+        unit = next((c for c in texts if c not in dims and c != date and int(text[c][text[c] != ""].nunique()) == 1
+                     and _GUARD_UNIT_WORD.search(str(text[c][text[c] != ""].iloc[0]))), None) if sid else None
+        if not (sid and unit):
+            return None
+        return {"date": str(date), "measure": str(measure), "dimensions": [str(d) for d in dims[:8]], "flags": [], "series_id": str(sid)}
     return {"date": str(date), "measure": str(measure), "dimensions": [str(d) for d in dims[:8]], "flags": [str(x) for x in flags]}
+
+
+def _guard_series_id(df: Any, dims: List[str], text: Dict[str, Any]) -> Optional[str]:
+    """A column that names the series (VECTOR, VECTEUR, a coordinate): its labels are ids (letters and digits only) and each is one-to-one with
+    the combination of the dimension columns, whatever the column is called."""
+    import pandas as pd
+    if not dims:
+        return None
+    key = text[dims[0]]
+    for d in dims[1:]:
+        key = key + "\x1f" + text[d]
+    n_key = int(key[key != ""].nunique())
+    for c in df.columns:
+        if c in dims:
+            continue
+        f = text[c][text[c] != ""]
+        members = f.unique()
+        if len(members) != n_key or len(members) < 2 or len(members) > 20000:
+            continue
+        if not all(_GUARD_ID.match(str(m)) for m in members[:400]):
+            continue
+        pair = pd.Series(list(zip(key, text[c]))).nunique()
+        if pair == n_key:
+            return str(c)
+    return None
 
 
 def looks_like_series_table(data: bytes) -> Optional[Dict[str, Any]]:
     """None, or why the file looks like a table of series with totals (an official table whose rows hold totals beside their
     parts), from the file's own columns, with no help from nl_structure. It does, when ANY of these holds:
       publisher   the header holds a publisher's signature columns (engine/flag_vocab.json: 3 of them, or all of a shorter one);
-      metadata    the header holds 3 or more metadata-like columns (_PANEL_META: UOM, VECTOR, DGUID, SCALAR_FACTOR, STATUS ...);
-      long format a date column, a measure column, 2 or more dimension columns and a flag column.
+      metadata    the header holds 3 or more columns only a statistical publisher uses (_GUARD_META_SPECIFIC: UOM, VECTOR, DGUID,
+                  SCALAR_FACTOR, VECTEUR, FACTEUR SCALAIRE ...; never Unit, Status or Action, which any business file has);
+      long format a date column, a measure column, 2 or more dimension columns and a flag column (a code that stands for a blank measure,
+                  or a publisher's code in a column they name a flag; never a grade A to F), or a series id and a constant unit.
     {"by": "publisher" | "metadata", "publisher"?, "columns": [the signature or metadata names]} or {"by": "long format",
     "dimensions": n, "flags": n}."""
     try:
@@ -9001,7 +9144,7 @@ def looks_like_series_table(data: bytes) -> Optional[Dict[str, Any]]:
             best = (name, hit)
     if best is not None:
         return {"by": "publisher", "publisher": best[0], "columns": best[1][:8]}
-    meta = [h for h, n in zip(header, norm) if n in _PANEL_META]
+    meta = [h for h, n in zip(header, norm) if n in _GUARD_META_SPECIFIC]
     if len(meta) >= 3:
         return {"by": "metadata", "columns": meta[:8]}
     shape = _guard_long_shape(df)
@@ -9053,6 +9196,24 @@ def _slice_failure(data: bytes) -> Optional[Dict[str, Any]]:
             "error": {"stage": "slice", "type": "SliceNotRun",
                       "message": "the headline slice could not be run (fewer than 2 values, or the engine's run on it stopped)"},
             "looks_like": why}
+
+
+VERDICT_GUARD_REASON = ("This file looks like a table of series with totals, and the engine could not read it as one (%s). An average over "
+                        "its rows would count totals and parts together, so no figure is shown.")
+
+
+def _verdict_failure(data: bytes, S: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The `structure` record of a refusal when the structure layer ran and answered "not a cube" for a file that looks like a table of series
+    with totals (wave 5e, P7): one reference period (a census table), more dimensions, series or cells than the layer reads, a table too large
+    or too slow to read, a layout it does not know. The layer's own plain reason is the refusal's. None for any other file (read as before)."""
+    if not isinstance(S, dict) or S.get("kind") != "not_cube":
+        return None
+    why = looks_like_series_table(data)
+    if why is None:
+        return None
+    reason = " ".join(str(S.get("reason") or "it is not a table the engine reads").split())
+    return {"kind": "error", "usable": False, "reason": VERDICT_GUARD_REASON % reason[:160],
+            "error": {"stage": "verdict", "type": "not_cube", "message": reason[:200]}, "looks_like": why}
 
 
 def _reason_in_sentence(rec: Dict[str, Any]) -> str:
@@ -9210,7 +9371,9 @@ def _long_has_structure(data: bytes, fail: Optional[Dict[str, Any]] = None, keep
             elif f.str.match(r"^\d{4}-\d{2}(?:-\d{2})?$").mean() >= 0.95:
                 values[c] = pd.to_datetime(t.where(t != ""), errors="coerce")
         R = _Reading(values, texts, np.ones(len(df), bool), land, {})
-        S = _ns().detect(R, (), budget_s=0.3)
+        S = _ns().detect(R, ())
+        if S.get("kind") == "not_cube" and fail is not None:
+            fail["verdict"] = S          # wave 5e (P7): the layer's answer "not a cube" for a table of series is a refusal, never a reshape
         return bool(S.get("usable")) and any(d["role"] in ("partition", "hierarchy", "adjustment", "components",
                                                            "rate_aggregate", "parts")
                                              or (d["role"] == "single" and _ns().reads_one_member(S))
@@ -9728,6 +9891,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     _PROFILE_CACHE.update(sha=sha_sent, value=got)
                     S_pre = got.get(_PROFILE_CACHE_STRUCTURE)
                     struct_error = got.get(_PROFILE_CACHE_ERROR)
+                else:
+                    struct_error = got.get(_PROFILE_CACHE_ERROR)        # the pass itself failed (wave 5e, P7): a table of series is refused
+            if S_pre is not None and struct_error is None and S_pre.get("kind") == "not_cube":
+                struct_error = _verdict_failure(sent, S_pre)
             if S_pre is not None and S_pre.get("kind") == "cube_incomplete":
                 cube_refusal = S_pre.get("reason") or "the table's rows cannot be told apart"
             if S_pre is not None and S_pre.get("usable") and not has_plan:
@@ -9813,7 +9980,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     if _long_has_structure(data, fail=f_long, keep=kept_cols):
                         layout = None             # totals beside parts: the structure reads it (the hook below)
                     elif f_long and struct_error is None:
-                        struct_error = _guard_failure(sent, f_long)      # the structure layer could not be asked: refused
+                        # the structure layer could not be asked (a failure), or answered "not a cube" for a table of series: refused
+                        struct_error = _verdict_failure(sent, f_long["verdict"]) if f_long.get("verdict") is not None else \
+                            _guard_failure(sent, f_long)
                         if struct_error is not None:
                             cube_refusal = _reason_in_sentence(struct_error)
                             rep["structure"] = struct_error
@@ -9928,6 +10097,12 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 if S_hook is None and f_hook:
                     # the structure layer could not run: a table of series is refused here, any other file is read as before
                     struct_error = _guard_failure(sent, f_hook)
+                    if struct_error is not None:
+                        cube_refusal = _reason_in_sentence(struct_error)
+                        rep["structure"] = struct_error
+                elif S_hook is not None and S_hook.get("kind") == "not_cube":
+                    # wave 5e (P7): the layer ran and answered "not a cube": a table of series is refused with the layer's own reason
+                    struct_error = _verdict_failure(sent, S_hook)
                     if struct_error is not None:
                         cube_refusal = _reason_in_sentence(struct_error)
                         rep["structure"] = struct_error

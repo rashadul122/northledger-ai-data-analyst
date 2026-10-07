@@ -1,0 +1,302 @@
+{
+ "acceptable": {
+  "exact_figure_reachable": false,
+  "latent": {
+   "change": 46311.869885647204,
+   "change_pct": 3.0627062538985466,
+   "latest": 1558434.3539370121,
+   "prior": 1512122.484051365
+  },
+  "may_flag_result_incomplete": true,
+  "may_print_no_figure": false,
+  "may_refuse_with_a_plain_reason": true,
+  "may_show_one_member_flagged_not_national": true,
+  "note": "a CONFIDENT WRONG NUMBER is never acceptable; these are the only other answers the cells allow",
+  "observed_complete_months": {
+   "change": 35072.0,
+   "change_pct": 3.126498752859331,
+   "full_window": false,
+   "latest": 1156838.0,
+   "periods_used": 9,
+   "prior": 1121766.0,
+   "windows": "the table's own windows"
+  },
+  "observed_complete_months_other_windows": [],
+  "why": [
+   "cells of the headline are blank in a window: the exact figure is not reachable from the cells"
+  ]
+ },
+ "contributions": {
+  "geo": {
+   "checkable": false,
+   "why": "a part has a blank cell in a window"
+  }
+ },
+ "csv": {
+  "columns": [
+   "REF_DATE",
+   "GEO",
+   "DGUID",
+   "Statistics",
+   "North American Industry Classification System (NAICS)",
+   "UOM",
+   "UOM_ID",
+   "SCALAR_FACTOR",
+   "SCALAR_ID",
+   "VECTOR",
+   "COORDINATE",
+   "VALUE",
+   "STATUS",
+   "SYMBOL",
+   "TERMINATED",
+   "DECIMALS"
+  ],
+  "periods": 30,
+  "rows": 1440,
+  "series": 48
+ },
+ "features": {
+  "adjustment_dim": "no",
+  "combined_member": "no",
+  "component_member": "no",
+  "decimals": "0",
+  "duplicate_key": "n/a",
+  "duplicate_names": "no",
+  "exact_headline": "no",
+  "excluding_total": "no",
+  "freq": "month",
+  "headline_cell_blank": "no",
+  "industry_codes": "none",
+  "industry_dim": "depth3",
+  "measure_dim": "no",
+  "measure_type": "flow_count",
+  "nested_geo": "no",
+  "periods": "24-35",
+  "personal_column": "no",
+  "regions": "3-5",
+  "scale": "units",
+  "suppression": "<=5%",
+  "total_name": "none",
+  "total_row": "no"
+ },
+ "flags": {
+  "blank_cells": 26,
+  "by_kind": {
+   "not_available": 3,
+   "suppressed": 21,
+   "too_unreliable": 2
+  },
+  "codes": {
+   "..": 3,
+   "F": 2,
+   "x": 21
+  },
+  "suppression_share_target": 0.015
+ },
+ "gen_version": "1.0",
+ "headline": {
+  "aggregate_available": true,
+  "aggregation": "sum",
+  "allows": {
+   "incomplete_flag": true,
+   "no_figure": false,
+   "refusal": true,
+   "single_member_flag": true
+  },
+  "allows_why": [
+   "cells of the headline are blank in a window: the exact figure is not reachable from the cells"
+  ],
+  "candidates": [
+   {
+    "adjust_member": "-",
+    "aggregation": "sum",
+    "alt_aggregations": {},
+    "blank_cells_latest": 1,
+    "blank_cells_prior": 2,
+    "exact": false,
+    "id": "M1|-",
+    "label": "Building permits issued",
+    "latent": {
+     "change": 46311.869885647204,
+     "change_pct": 3.0627062538985466,
+     "latest": 1558434.3539370121,
+     "prior": 1512122.484051365
+    },
+    "latent_type": "flow",
+    "measure_id": "M1",
+    "measure_member": "Building permits issued",
+    "naive": {
+     "change": 134461.0,
+     "change_pct": 9.764771412656927,
+     "latest": 1511462.0,
+     "prior": 1377001.0
+    },
+    "observed": {
+     "change": 35072.0,
+     "change_pct": 3.126498752859331,
+     "full_window": false,
+     "latest": 1156838.0,
+     "periods_used": 9,
+     "prior": 1121766.0,
+     "windows": "the table's own windows"
+    },
+    "observed_alt": [],
+    "parts": 2,
+    "primary": true,
+    "published": {
+     "change": 183633.0,
+     "change_pct": 14.72953776332539,
+     "latest": 1430332.0,
+     "prior": 1246699.0
+    },
+    "sign": 1,
+    "slice": {
+     "GEO": "(sum of the 2 regions)",
+     "industry": "Full range"
+    },
+    "source": "sum_of_parts",
+    "tol_latest": 12.001558434353937,
+    "tol_prior": 12.001512122484051,
+    "type": "flow"
+   }
+  ],
+  "default_measure": "Building permits issued",
+  "direction": "up",
+  "figure_required": false,
+  "measure_type": "flow",
+  "table_has_total_row": false,
+  "traps": [
+   {
+    "change_pct": 0.9359136748141267,
+    "kind": "single_member:Jarlgate",
+    "latest": 520364.0,
+    "note": "the figure of Jarlgate alone, read as the table's headline",
+    "prior": 515539.0
+   },
+   {
+    "change_pct": 15.048371257234795,
+    "kind": "single_member:Ormdale",
+    "latest": 991098.0,
+    "note": "the figure of Ormdale alone, read as the table's headline",
+    "prior": 861462.0
+   },
+   {
+    "change_pct": 4.81554186094728,
+    "kind": "sum_all_rows",
+    "latest": 5940185.0,
+    "note": "every row of the measure added together: totals, parts, copies",
+    "prior": 5667275.0
+   },
+   {
+    "change_pct": 4.81554186094728,
+    "kind": "all_industry_members_summed",
+    "latest": 5940185.0,
+    "note": "every member of the industry dimension (the total, its groups and their leaves) added together",
+    "prior": 5667275.0
+   },
+   {
+    "change_pct": 9.764771412656927,
+    "kind": "all_geo_members_summed",
+    "latest": 1511462.0,
+    "note": "every member of the region dimension (total, regions, sub-regions, combined) added together",
+    "prior": 1377001.0
+   },
+   {
+    "change_pct": 4.81554186094728,
+    "kind": "all_members_both_summed",
+    "latest": 5940185.0,
+    "note": "every region member times every industry member added together",
+    "prior": 5667275.0
+   }
+  ]
+ },
+ "kind": "cube",
+ "partition": {
+  "dimension": "GEO",
+  "exists": true,
+  "has_total_row": false,
+  "headline_is": "the sum of the parts",
+  "parts": [
+   "Jarlgate",
+   "Ormdale"
+  ],
+  "total": null
+ },
+ "period": {
+  "freq": "month",
+  "labels": {
+   "latest": [
+    "2025-05",
+    "2026-04"
+   ],
+   "prior": [
+    "2024-05",
+    "2025-04"
+   ]
+  },
+  "latest_window": [
+   "2025-05",
+   "2026-04"
+  ],
+  "n_periods": 30,
+  "noun": "month",
+  "prior_window": [
+   "2024-05",
+   "2025-04"
+  ],
+  "window": 12
+ },
+ "privacy": {
+  "personal_columns": [],
+  "values": []
+ },
+ "seed": 3160,
+ "shrunk_from": {
+  "original_outcome": "WRONG_CONFIDENT",
+  "original_sub": "overcount_under_an_incomplete_flag",
+  "seed": 3160
+ },
+ "spec_hash": "fce6ac2a",
+ "structure": {
+  "adjust": null,
+  "ambiguous_rows": false,
+  "default_measure": "Building permits issued",
+  "geo": {
+   "column": "GEO",
+   "combined": {},
+   "duplicate_names": [],
+   "nested": {},
+   "no_total_row": true,
+   "regions": [
+    "Jarlgate",
+    "Ormdale"
+   ],
+   "total": null
+  },
+  "industry": {
+   "alternatives": [],
+   "children": [
+    "Home goods",
+    "Clothing and shoes",
+    "Health and beauty",
+    "Lighting"
+   ],
+   "code_style": "none",
+   "column": "North American Industry Classification System (NAICS)",
+   "components": [],
+   "duplicate_names": [],
+   "root": "Full range",
+   "single_child_copies": []
+  },
+  "measures": [
+   {
+    "id": "M1",
+    "name": "Building permits issued",
+    "precision": false,
+    "type": "flow",
+    "uom": "Number"
+   }
+  ]
+ },
+ "table_of_series": true
+}

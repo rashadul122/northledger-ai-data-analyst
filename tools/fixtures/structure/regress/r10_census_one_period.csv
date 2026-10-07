@@ -1,0 +1,6 @@
+"REF_DATE","GEO","Age group","UOM","UOM_ID","SCALAR_FACTOR","SCALAR_ID","VECTOR","COORDINATE","VALUE","STATUS","SYMBOL","TERMINATED","DECIMALS"
+"2001-01","Canada","Total, all ages","Number","81","units","3","v100000","1.1","32100","","","","0"
+"2001-01","Ontario","Total, all ages","Number","81","units","3","v100001","2.2","14000","","","","0"
+"2001-01","Quebec","Total, all ages","Number","81","units","3","v100002","3.3","8500","","","","0"
+"2001-01","Alberta","Total, all ages","Number","81","units","3","v100003","4.4","4500","","","","0"
+"2001-01","British Columbia","Total, all ages","Number","81","units","3","v100004","5.5","5100","","","","0"

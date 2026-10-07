@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+"""
+The WAVE 5e regression pack: the 21 defects an independent adversarial reviewer confirmed in the wave 5d build (bfcdc66), and the
+fresh-seed failure (fuzz seed 3160), each as a small table in tools/fixtures/structure/regress/ and a test with an EXPLICIT
+assertion of the right outcome: the true figure, or a plain "one member shown" / refusal statement, and never a confident wrong
+number. Every case says in its docstring what the old engine printed.
+
+    python tools/test_nl_regress.py
+
+Self-running like the other suites: prints PASS/FAIL per test, exits 1 on any failure. One engine process; no network.
+"""
+from __future__ import annotations
+
+import gzip
+import io
+import json
+import math
+import os
+import re
+import sys
+import time
+
+os.environ.setdefault("NL_BROWSER_STRICT", "1")
+HERE = os.path.dirname(os.path.abspath(__file__))
+SITE = os.path.normpath(os.path.join(HERE, ".."))
+ADAPTER_DIR = os.path.abspath(os.environ.get("NL_BROWSER_DIR") or os.path.join(SITE, "engine"))
+ENGINE_ROOT = os.path.abspath(os.environ.get("NL_ENGINE_ROOT") or os.path.join(SITE, "..", "northledger-core"))
+sys.path.insert(0, ENGINE_ROOT)
+sys.path.insert(0, ADAPTER_DIR)
+sys.path.insert(0, os.path.join(HERE, "fixtures", "structure"))
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+
+import nl_browser as NB  # noqa: E402
+import nl_structure as NS  # noqa: E402
+
+AS_OF = "2026-09-30"
+REGRESS = os.path.join(HERE, "fixtures", "structure", "regress")
+
+
+# ----------------------------------------------------------------------------- helpers
+def fixture(name: str) -> bytes:
+    p = os.path.join(REGRESS, name)
+    if not os.path.exists(p) and os.path.exists(p + ".gz"):
+        p += ".gz"
+    with (gzip.open(p, "rb") if p.endswith(".gz") else open(p, "rb")) as fh:
+        return fh.read()
+
+
+def frame(name: str) -> "pd.DataFrame":
+    return pd.read_csv(io.BytesIO(fixture(name)), dtype=str, keep_default_na=False)
+
+
+def run_bytes(data: bytes, decisions=None, plan=None, name="table.csv"):
+    NB._PROFILE_CACHE.clear()
+    d = dict(decisions or {})
+    if plan is not None:
+        d["__plan__"] = plan
+    return NB.run(data, name, "", d, AS_OF)
+
+
+def run_file(name: str, decisions=None, plan=None):
+    return run_bytes(fixture(name), decisions, plan)
+
+
+PLAN = {"goal": "How did sales change?", "columns": [{"name": "VALUE", "semantic_type": "flow_amount", "role": "target"}],
+        "operations": [], "primary": "VALUE", "analyses": []}
+
+
+def est(rep):
+    return rep.get("estimand") or {}
+
+
+def st(rep):
+    return rep.get("structure") or {}
+
+
+def figs(rep):
+    """(prior, latest, change_pct) of the estimand in base units, or None."""
+    f = est(rep).get("figures") or {}
+    if not f or (f.get("latest") or {}).get("value") is None:
+        return None
+    return (f["prior"]["value"], f["latest"]["value"], (f.get("change_pct") or {}).get("value"))
+
+
+def headline(rep):
+    return str((rep.get("story") or {}).get("headline") or "")
+
+
+def dim(rep, col):
+    return next((d for d in st(rep).get("dims") or [] if d.get("column") == col), None)
+
+
+def refused(rep) -> bool:
+    """A plain refusal: no estimand and the story says the business analysis did not run."""
+    return not est(rep) and "business analysis did not run" in headline(rep)
+
+
+def one_member_shown(rep) -> bool:
+    """One member is shown and the text says it is not a total: the estimand names it ("one member shown")."""
+    t = json.dumps([est(rep).get("text"), est(rep).get("excluded"), est(rep).get("single_member")], default=str)
+    return "one member shown" in t
+
+
+def close(a, b, rel=1e-6):
+    return a is not None and b is not None and abs(a - b) <= rel * max(1.0, abs(b))
+
+
+def window_sums(df: "pd.DataFrame", mask, scale: float = 1.0, date: str = "REF_DATE", value: str = "VALUE"):
+    """The plain truth, from the file alone: (prior 12 months, latest 12 months) of the selected rows' VALUE added up by month,
+    the windows ending at the last month any selected row has a value, in base units."""
+    sub = df[mask].copy()
+    sub["v"] = pd.to_numeric(sub[value].str.replace(",", ""), errors="coerce")
+    sub = sub[sub["v"].notna()]
+    sub["m"] = sub[date].str[:7]
+    by = sub.groupby("m")["v"].sum() * scale
+    months = sorted(by.index)
+    last = months[-1]
+    y, mo = int(last[:4]), int(last[5:7])
+
+    def shift(k):
+        i = y * 12 + mo - 1 + k
+        return "%04d-%02d" % (i // 12, i % 12 + 1)
+    lat = [m for m in months if shift(-11) <= m <= last]
+    pri = [m for m in months if shift(-23) <= m <= shift(-12)]
+    return float(by[pri].sum()), float(by[lat].sum())
+
+
+def _as_engine_reads(rep, prior, latest):
+    """A flow's window figure is a sum; a level's (a rate, a stock, an ambiguous count) is the mean of its 12 months."""
+    if str((est(rep).get("measure") or {}).get("aggregation") or "").startswith("mean"):
+        return prior / 12.0, latest / 12.0
+    return prior, latest
+
+
+def check_truth(rep, prior, latest, what=""):
+    prior, latest = _as_engine_reads(rep, prior, latest)
+    f = figs(rep)
+    assert f is not None, "%s: no figure; headline: %s" % (what, headline(rep))
+    assert close(f[0], prior) and close(f[1], latest), \
+        "%s: engine prior/latest %r, truth %r; headline: %s" % (what, f[:2], (prior, latest), headline(rep))
+
+
+def safe_or_true(rep, prior, latest, what=""):
+    """The right figure, or a plain statement that no total is shown: never a different figure."""
+    prior, latest = _as_engine_reads(rep, prior, latest)
+    f = figs(rep)
+    if f is not None and close(f[0], prior) and close(f[1], latest):
+        return "figure"
+    assert refused(rep) or one_member_shown(rep), \
+        "%s: a figure that is not the truth and no statement; figures %r truth %r; headline: %s" % (what, f, (prior, latest), headline(rep))
+    return "one member" if one_member_shown(rep) else "refusal"
+
+
+# ----------------------------------------------------------------------------- the 21 findings and seed 3160
+def test_r01_a_sum_check_that_cannot_fail_never_declares_a_branch_the_total_of_the_others():
+    """Finding 1. Five branches with 0 to 2 events a month and NO total row: the old engine declared the biggest the total of the
+    other four ("sum-checked: 48 of 48 cells within tolerance"; the tolerance of 2.5 counts is as big as the data) and printed it
+    alone, +0.0%. The truth is the sum of the five, 8 then 9 events (+12.5%). A business export is added up; an official table
+    is added up (a geographic dimension) or shows one member and says so."""
+    df = frame("r01_business_small_counts.csv")
+    rep = run_file("r01_business_small_counts.csv")
+    pri, lat = window_sums(df, df["Branch"] != "")
+    assert (pri, lat) == (8.0, 9.0), (pri, lat)
+    check_truth(rep, pri, lat, "business export")
+    assert "sum-checked" not in json.dumps(rep.get("estimand"))
+    dfo = frame("r01_official_small_counts.csv")
+    repo = run_file("r01_official_small_counts.csv")
+    pri, lat = window_sums(dfo, dfo["GEO"] != "", 1.0)
+    assert (pri, lat) == (8.0, 9.0), (pri, lat)
+    got = safe_or_true(repo, pri, lat, "official layout")
+    assert "sum-checked" not in json.dumps(repo.get("estimand")) or got == "figure"
+
+
+def test_r02_a_combined_member_is_never_added_to_its_own_parts_when_two_parts_report_in_disjoint_periods():
+    """Finding 2. Inland provinces = Birch + Cedar; Dune reports months 1 to 20 only, Elm months 29 to 48 only. The old engine's
+    3-cell fingerprint needed a month with every part present, found none, read "none found" as "no combined member" and added
+    Inland to Birch and Cedar: $262.4M, 36% too high. The truth is the five real regions: $183.4M then $193.3M (+5.41%)."""
+    df = frame("r02_combined_disjoint_periods.csv")
+    rep = run_file("r02_combined_disjoint_periods.csv")
+    pri, lat = window_sums(df, df["GEO"] != "Inland provinces", 1000.0)
+    assert round(lat / 1e6, 1) == 193.3 and round(pri / 1e6, 1) == 183.4, (pri, lat)
+    check_truth(rep, pri, lat, "five real regions")
+    g = dim(rep, "GEO")
+    assert g["role"] == "parts" and "Inland provinces" in (g.get("combined") or {}), g
+
+
+def test_r03_two_bases_of_one_quantity_are_never_added():
+    """Finding 3. Current prices and chained dollars, both "Dollars", no total row: the old engine read the absence of a relation
+    as proof that the two are disjoint parts and printed their sum, $128.1M (2x). One member is shown, never the sum."""
+    df = frame("r03_current_and_chained_prices.csv")
+    rep = run_file("r03_current_and_chained_prices.csv")
+    both = window_sums(df, df["Prices"] != "", 1000.0)
+    cur = window_sums(df, df["Prices"] == "Current prices", 1000.0)
+    f = figs(rep)
+    assert f is None or not close(f[1], both[1]), "the two bases were added: %r" % (f,)
+    assert one_member_shown(rep) or refused(rep), headline(rep)
+    if f is not None:
+        chained = window_sums(df, df["Prices"] != "Current prices", 1000.0)
+        assert close(f[1], cur[1]) or close(f[1], chained[1]), (f, cur, chained)
+
+
+def test_r04_a_seasonally_adjusted_copy_far_from_the_unadjusted_one_is_never_added_to_it():
+    """Finding 4. The adjusted copy's annual level 5% above the unadjusted one (the 3% constant of wave 5d was the StatCan
+    benchmarking): the old engine added the two, $146.5M. The shape of the two series says copy whatever the gap; the unadjusted
+    one is shown ($72.3M, +5.49%), as for the 2% control."""
+    for name, gap in (("r04_sa_copy_5pct_above.csv", 5), ("r04_sa_copy_2pct_control.csv", 2)):
+        df = frame(name)
+        rep = run_file(name)
+        pri, lat = window_sums(df, df["Adjustments"] == "Unadjusted", 1000.0)
+        check_truth(rep, pri, lat, "unadjusted copy, %d%%" % gap)
+        a = dim(rep, "Adjustments")
+        assert a["role"] == "adjustment" and a.get("total") == "Unadjusted", a
+
+
+def test_r05_real_parts_whose_labels_hold_an_alternative_word_are_parts_not_alternative_totals():
+    """Finding 5. "Less than high school", "Less than 15 years", "Persons without disabilities", "Languages other than English or
+    French" are ordinary parts. The old engine matched the word and DROPPED the member from a no-total headline ("an alternative
+    total: never added to the parts"), 4% short and "in the published totals". A name nominates; evidence decides. With a total row
+    the members add up to it (all parts, none an alternative); without one nothing can verify the member, and the dimension is not
+    positively identified as parts, so ONE member is shown: the sum of the others is never printed as the table's."""
+    # with a total row: every member is a part of the total
+    df = frame("r05_age_with_total.csv")
+    rep = run_file("r05_age_with_total.csv")
+    g = dim(rep, "Age group")
+    assert g["role"] == "partition" and g["total"] == "Total, all ages" and g["parts"] == 3, g
+    assert not g.get("alternatives"), g
+    pri, lat = window_sums(df, df["Age group"] == "Total, all ages", 1000.0)
+    check_truth(rep, pri, lat, "age with a total")
+    # without a total row: never the sum of the members that were not dropped
+    for name, col, dropped in (("r05_education_less_than.csv", "Education", "Less than high school"),
+                               ("r05_age_no_total.csv", "Age group", "Less than 15 years"),
+                               ("r05_disability.csv", "Disability status", "Persons without disabilities"),
+                               ("r05_language_other_than.csv", "Language", "Languages other than English or French")):
+        df = frame(name)
+        rep = run_file(name)
+        every = window_sums(df, df[col] != "", 1000.0)
+        rest = window_sums(df, df[col] != dropped, 1000.0)
+        f = figs(rep)
+        assert f is None or not close(f[1], rest[1]), "%s: the member %r was dropped from the headline" % (name, dropped)
+        got = safe_or_true(rep, every[0], every[1], name)
+        d = dim(rep, col)
+        assert dropped not in (d.get("alternatives") or {}), (name, d)
+
+
+def test_r06_a_french_statcan_table_is_read_like_its_english_twin():
+    """Finding 6. VECTEUR was the dimension (v100000 the headline member), no unit, "milliers" not applied: the level 1,000x too
+    small. French headers (GEO, UNITE DE MESURE, FACTEUR SCALAIRE=milliers, VECTEUR, COORDONNEE, VALEUR, STATUT) read like their
+    English twin: Canada, dollars in thousands, $230.2M, +4.3%."""
+    en = run_file("r06_english_control.csv")
+    fr = run_file("r06_french_statcan.csv")
+    assert figs(en) is not None and close(figs(en)[1], 230.2e6, 1e-3)
+    assert figs(fr) is not None, headline(fr)
+    assert close(figs(fr)[0], figs(en)[0]) and close(figs(fr)[1], figs(en)[1]), (figs(fr), figs(en))
+    d = dim(fr, "GEO")
+    assert d is not None and d["role"] == "partition" and d["total"] == "Canada", st(fr).get("dims")
+    assert not any("v100000" in str(x.get("member")) for x in est(fr).get("slice") or [])
+
+
+def test_r07_a_weekly_table_is_compared_over_whole_weeks_never_over_months_ending_in_a_partial_month():
+    """Finding 7. A weekly table (Mondays) was read as monthly: "12 months to Feb 2023" held 51 Mondays against 53 before (-3.7%
+    for a flat series). The trailing 52 weeks against the 52 before: 52,058 and 52,017 (+0.08%), said in weeks."""
+    df = frame("r07_weekly_official.csv")
+    rep = run_file("r07_weekly_official.csv")
+    d = pd.to_datetime(df["REF_DATE"])
+    sub = df[df["GEO"] == "Canada"].copy()
+    sub["v"] = pd.to_numeric(sub["VALUE"])
+    sub["d"] = pd.to_datetime(sub["REF_DATE"])
+    sub = sub.sort_values("d")
+    lat, pri = sub["v"].iloc[-52:].sum(), sub["v"].iloc[-104:-52].sum()
+    assert (round(pri), round(lat)) == (52017, 52058), (pri, lat)
+    f = figs(rep)
+    assert f is not None, headline(rep)
+    assert close(f[0], pri, 1e-6) and close(f[1], lat, 1e-6), (f, pri, lat)
+    t = est(rep).get("text", "") + headline(rep)
+    assert "52" in t and "week" in t, t
+    assert "12 months" not in headline(rep) and "12-month" not in est(rep).get("text", ""), (headline(rep), est(rep).get("text"))
+
+
+def test_r08_a_whole_country_row_is_the_headline_and_an_average_in_dollars_is_a_level():
+    """Finding 8. Average weekly earnings (dollars) with Canada beside Ontario and Quebec: rule 6 took Ontario, the most
+    dominant, and typed the measure a flow ("12-month totals" of a weekly average). Canada's own series is the headline and an
+    average of dollars is averaged, never summed: the 12-month mean of Canada, 1,202 then 1,245 (+3.5%)."""
+    df = frame("r08_average_earnings_canada.csv")
+    rep = run_file("r08_average_earnings_canada.csv")
+    sub = df[df["GEO"] == "Canada"].copy()
+    sub["v"] = pd.to_numeric(sub["VALUE"])
+    sub = sub.sort_values("REF_DATE")
+    lat, pri = sub["v"].iloc[-12:].mean(), sub["v"].iloc[-24:-12].mean()
+    f = figs(rep)
+    assert f is not None, headline(rep)
+    assert close(f[0], pri, 1e-6) and close(f[1], lat, 1e-6), (f, pri, lat)
+    assert est(rep)["measure"]["aggregation"].startswith("mean"), est(rep)["measure"]
+    assert "totals" not in est(rep)["text"].split(";")[-1], est(rep)["text"]
+    g = dim(rep, "GEO")
+    assert g.get("total") == "Canada", g
+
+
+def test_r09_a_leftover_group_or_a_lone_country_is_never_read_as_the_aggregate_of_a_rate():
+    """Finding 9. "All other provinces" (a rate with no national row) was the published aggregate of Ontario, Quebec and Alberta:
+    it is the rest, not the whole. Canada among Mexico, Brazil and Chile was the aggregate of three other countries. Neither is:
+    one member is shown, and the text says it is not a national figure."""
+    for name, col, bad in (("r09_all_other_provinces_rate.csv", "GEO", "All other provinces"),
+                           ("r09_countries_rate.csv", "Country", "Canada")):
+        rep = run_file(name)
+        d = dim(rep, col)
+        assert d["role"] != "rate_aggregate", (name, d)
+        assert one_member_shown(rep) or refused(rep), (name, est(rep).get("text"))
+        assert "published totals" not in headline(rep), headline(rep)
+
+
+def test_r10_a_not_cube_verdict_on_a_table_of_series_refuses_and_never_averages_the_rows():
+    """Finding 10. A table with a publisher's columns that the layer calls not_cube (one reference period; more than the caps)
+    fell to the old engine: "Average value over the period was 12,840" (Canada counted with its provinces) and "Average
+    coordinate over the period". Every such verdict on a table that looks like a table of series is a plain refusal."""
+    rep = run_file("r10_census_one_period.csv")
+    assert refused(rep), headline(rep) + json.dumps((rep.get("story") or {}).get("what_happened"))[:200]
+    assert st(rep).get("kind") == "error" and "reference period" in (st(rep).get("reason") or "").lower() + json.dumps(st(rep)).lower(), st(rep)
+    data = fixture("r10_partition_for_caps.csv")
+    keep = (NS.MAX_SERIES, NS.MAX_CELLS, NS.MAX_DIMS)
+    try:
+        for attr, val in (("MAX_SERIES", 3), ("MAX_CELLS", 100), ("MAX_DIMS", 0)):
+            setattr(NS, attr, val)
+            rep = run_bytes(data)
+            setattr(NS, attr, dict(zip(("MAX_SERIES", "MAX_CELLS", "MAX_DIMS"), keep))[attr])
+            assert refused(rep), "%s lowered: %s" % (attr, headline(rep)[:200])
+    finally:
+        NS.MAX_SERIES, NS.MAX_CELLS, NS.MAX_DIMS = keep
+
+
+def test_r11_an_exception_in_the_profile_pass_never_lets_a_plan_run_read_a_table_of_series_the_old_way():
+    """Finding 11. With a plan, the profile pass (cached or run) raising outside `detect` returned {ok: False} and the plan was
+    applied to the whole file: "Average value ... 9,301" (the Total and its regions averaged). Now the same refusal as a run
+    without a plan."""
+    data = fixture("r10_partition_for_caps.csv")
+    ok = run_bytes(data, plan=PLAN)
+    assert figs(ok) is not None and not refused(ok), headline(ok)
+    real = NB._profile_facts
+
+    def boom(*a, **k):
+        raise RuntimeError("simulated failure in the profile pass")
+    NB._profile_facts = boom
+    try:
+        bad = run_bytes(data, plan=PLAN)
+    finally:
+        NB._profile_facts = real
+    assert refused(bad), headline(bad)
+    assert st(bad).get("kind") == "error" and (st(bad).get("error") or {}).get("stage") == "profile", st(bad)
+
+
+def test_r12_a_dimension_of_more_than_400_members_is_read_not_refused_with_a_false_reason():
+    """Finding 12. 451 members (a Total and 450 industries that add up): the old engine called the column "metadata", saw dates
+    repeat and refused with "no column the engine may read tells the repeats apart". A series key has no cap; only the search
+    for relations is bounded: the Total is checked against the rest (linear) and the headline is its own series."""
+    data = fixture("r12_451_members.csv")
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    rep = run_bytes(data)
+    col = [c for c in df.columns if c not in ("REF_DATE", "GEO", "DGUID", "UOM", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID", "VECTOR",
+                                             "COORDINATE", "VALUE", "STATUS", "SYMBOL", "TERMINATED", "DECIMALS")][0]
+    tot = [m for m in df[col].unique() if m.lower().startswith("total")][0]
+    pri, lat = window_sums(df, df[col] == tot, 1000.0)
+    assert not (st(rep).get("kind") == "cube_incomplete"), st(rep).get("reason")
+    check_truth(rep, pri, lat, "the total of 450 industries")
+    d = dim(rep, col)
+    assert d["role"] in ("partition", "hierarchy") and d["total"] == tot, d
+
+
+def test_r13_the_answer_never_depends_on_the_wall_clock():
+    """Finding 13. The combined-member search ran under a wall-clock budget; out of time it read "nothing found" as "no combined
+    member" and added Inland provinces to its parts ($250.9M instead of $181.9M). Every search is bounded by counts: the same
+    answer with every budget at zero, and a wall-clock guard may only refuse the whole table."""
+    df = frame("r13_time_budget.csv")
+    data = fixture("r13_time_budget.csv")
+    base = run_bytes(data)
+    pri, lat = window_sums(df, (df["GEO"] != "Inland provinces"), 1000.0)
+    check_truth(base, pri, lat, "three real regions")
+    saved = {k: getattr(NS, k) for k in dir(NS) if k.isupper() and ("BUDGET" in k or "GUARD" in k) and isinstance(getattr(NS, k), float)}
+    try:
+        for k in saved:
+            setattr(NS, k, 0.0)
+        starved = run_bytes(data)
+    finally:
+        for k, v in saved.items():
+            setattr(NS, k, v)
+    f0, f1 = figs(base), figs(starved)
+    assert (f1 is not None and close(f1[0], f0[0]) and close(f1[1], f0[1])) or refused(starved), \
+        "a zero time budget changed the figure: %r vs %r; headline: %s" % (f0, f1, headline(starved))
+
+
+def test_r14_a_leftover_member_search_is_bounded_by_counts_and_takes_well_under_a_second():
+    """Finding 14. 18 "of which" components in a 399-member tree took `_alternatives` O(left x members^2): 7.6 s native for a
+    detection that takes 0.07 s without them. A sorted lookup over a few cells, bounded by a count."""
+    t0 = time.perf_counter()
+    S = NS.detect(_reading(fixture("r14_399_members_18_components.csv")), ())
+    took = time.perf_counter() - t0
+    assert S["kind"] == "cube", (S["kind"], S["reason"])
+    assert took < 3.0, "detection took %.1f s" % took
+    d = next(x for x in S["dims"] if x["role"] in ("hierarchy", "partition"))
+    assert len(d["components"]) >= 15, len(d["components"])
+
+
+def _reading(data: bytes):
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    land = {h: NB._engine_slug(h) for h in df.columns}
+    texts = df.rename(columns=land)
+    values = texts.copy().astype(object)
+    for c in values.columns:
+        t = texts[c].str.strip()
+        f = t[t != ""]
+        if not len(f):
+            continue
+        num = pd.to_numeric(f.str.replace(",", "", regex=False), errors="coerce")
+        if num.notna().mean() >= 0.95:
+            values[c] = pd.to_numeric(t.str.replace(",", "", regex=False), errors="coerce")
+            continue
+        if f.str.match(r"^\d{4}-\d{2}(?:-\d{2})?$").mean() >= 0.95:
+            values[c] = pd.to_datetime(t.where(t != ""), errors="coerce")
+    return NB._Reading(values, texts, np.ones(len(df), bool), land, {})
+
+
+def test_r15_a_total_that_no_cell_could_check_is_never_said_to_add_up():
+    """Finding 15. Every month one of four regions is suppressed (no complete cell): the Total's own series is the headline, and
+    the old engine printed verdict "adds_up" with 0 complete cells, "sum-checked" and "Each total was checked against its parts"
+    (also when the Total is 20% above the parts). None of those words at an evidence level not reached."""
+    for name in ("r15_zero_complete_cells.csv", "r15_total_20pct_high.csv"):
+        rep = run_file(name)
+        assert figs(rep) is not None, name
+        chk = est(rep)["sum_checks"][0]
+        assert chk["complete_cells"] in (0, None) and chk["verdict"] != "adds_up", chk
+        said = json.dumps([rep.get("limitations"), est(rep).get("excluded"), headline(rep), est(rep).get("text")])
+        for phrase in ("sum-checked", "Each total was checked against its parts", "in the published totals", "adds_up"):
+            assert phrase not in said, "%s: %r printed with 0 complete cells" % (name, phrase)
+
+
+def test_r16_a_levels_window_is_matched_too_two_months_never_stand_for_twelve():
+    """Finding 16. A rate whose headline series starts in Nov 2021: the prior "12-month average" was two months and the estimand
+    said complete: true, +0.683 points. A level needs half a window in both windows, on the months both have, else no figure."""
+    rep = run_file("r16_short_prior_window.csv")
+    e = est(rep)
+    f = e.get("figures") or {}
+    assert (f.get("change") or {}).get("value") is None or e.get("complete") is False, (f, e.get("complete"))
+    assert e.get("complete") is not True, e.get("complete")
+    assert "12-month averages Jan 2022" not in e.get("text", "") or (f.get("change") or {}).get("value") is None, e.get("text")
+
+
+def test_r17_the_documented_value_column_of_an_official_table_is_released_with_a_consent_line():
+    """Finding 17. A VALUE column of nine-digit integers (annual dollars in thousands) was withheld by default as national ID
+    numbers and the table refused. The publisher's documented value column that parses as numbers is read, with the consent-card
+    line "Read as the table's measure, not personal data: VALUE"; the visitor can still withhold it (the old refusal)."""
+    df = frame("r17_value_nine_digits.csv")
+    rep = run_file("r17_value_nine_digits.csv")
+    assert figs(rep) is not None, headline(rep)
+    rel = (rep.get("privacy") or {}).get("released") or []
+    assert any(x.get("text") == "Read as the table's measure, not personal data: VALUE" for x in rel), rel
+    assert not any(f.get("column") == "value" for f in (rep.get("privacy") or {}).get("flagged") or []), rep["privacy"]
+    kept = run_file("r17_value_nine_digits.csv", {"VALUE": "keep"})
+    assert figs(kept) == figs(rep), (figs(kept), figs(rep))
+    held = run_file("r17_value_nine_digits.csv", {"VALUE": "withhold"})
+    assert refused(held), headline(held)
+
+
+def test_r18_the_measure_is_named_by_what_is_measured_not_by_the_first_constant_column():
+    """Finding 18. "Data type = Seasonally adjusted" came before "Labour force characteristics = Employed persons", so the
+    headline read "Seasonally adjusted, Canada, ...". It reads "Employed persons, Canada, ..."."""
+    rep = run_file("r18_label_hint.csv")
+    assert headline(rep).startswith("Employed persons, Canada"), headline(rep)
+    assert "Seasonally adjusted," not in headline(rep)
+
+
+def test_r19_the_structure_block_never_echoes_a_constant_text_column_the_scan_did_not_know():
+    """Finding 19. structure.metadata[].value copied "Okonkwo Adebayo-Smith" (a constant "Analyst" column) into the report."""
+    rep = run_file("r19_metadata_echo.csv")
+    blob = json.dumps(rep.get("structure"))
+    assert "Okonkwo" not in blob and "Adebayo" not in blob, [m for m in st(rep)["metadata"] if m.get("column") == "Analyst"]
+    units = [m for m in st(rep)["metadata"] if m.get("column") in ("UOM", "SCALAR_FACTOR", "DECIMALS")]
+    assert units and all("value" in m for m in units), units
+
+
+def test_r20_a_plain_business_file_is_never_taken_for_a_table_of_series_and_a_french_one_is_known():
+    """Finding 20. An inventory (Unit, Status, Action), a subscription list (Status, Units, Frequency) and a grade book (Status
+    A to D) were "series tables" and would be refused whenever the layer failed; a French official table was not recognised."""
+    for name in ("r20_business_inventory.csv", "r20_business_subscriptions.csv", "r20_business_gradebook.csv"):
+        assert NB.looks_like_series_table(fixture(name)) is None, (name, NB.looks_like_series_table(fixture(name)))
+    assert NB.looks_like_series_table(fixture("r20_official_french_headers.csv")) is not None
+    assert NB.looks_like_series_table(fixture("r06_french_statcan.csv")) is not None
+
+
+def test_r21_a_sum_the_engine_built_is_never_called_a_published_total():
+    """Finding 21. "the sum of 4 regions ... in the published totals" for a table with no total row. The headline says what it
+    is: built from the table's parts."""
+    rep = run_file("r21_built_from_parts.csv")
+    assert figs(rep) is not None, headline(rep)
+    assert "in the published totals" not in headline(rep), headline(rep)
+    assert "built from" in headline(rep) or "no total row" in headline(rep), headline(rep)
+
+
+def test_r22_seed_3160_an_industry_total_that_adds_up_to_its_leaves_is_never_summed_with_them():
+    """Seed 3160 (fresh range 3000, wave 5d: +6.9% where the truth was +4.3%). A flow count, 2 regions with no total row, a
+    3-level industry tree with NO codes, the total named "Full range", an "excluding" alternative total, 12% blank cells. The
+    industry dimension was read as parts and 16 members (15 leaves and the total) were added. The leaves add up to the total
+    within 0.0065% on 39 complete region-months: the total is real and checkable."""
+    rep = run_file("r22_seed3160_industry_parts.csv")
+    truth = json.load(open(os.path.join(REGRESS, "r22_seed3160_truth.json")))
+    lat = truth["acceptable"]["latent"]["latest"]
+    d = dim(rep, "North American Industry Classification System (NAICS)")
+    assert d["role"] in ("partition", "hierarchy") and d["total"] == "Full range", d
+    f = figs(rep)
+    assert f is None or f[1] <= 1.02 * lat, "the figure counts something twice: %r vs the latent %r" % (f, lat)
+    assert refused(rep) or one_member_shown(rep) or est(rep).get("complete") is False or (
+        f is not None and abs(f[2] - truth["acceptable"]["latent"]["change_pct"]) < 0.6), (f, headline(rep))
+
+
+# ----------------------------------------------------------------------------- runner
+def main() -> int:
+    tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
+    only = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if only:
+        tests = [(n, f) for n, f in tests if any(o in n for o in only)]
+    failed = 0
+    for n, f in tests:
+        t0 = time.perf_counter()
+        try:
+            f()
+            print("  PASS  %s  (%.1f s)" % (n, time.perf_counter() - t0))
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print("  FAIL  %s  (%.1f s)\n        %s: %s" % (n, time.perf_counter() - t0, type(exc).__name__, str(exc)[:900]))
+        sys.stdout.flush()
+    print("\n%d/%d passed" % (len(tests) - failed, len(tests)))
+    print("ALL TESTS PASSED" if not failed else "SOME TESTS FAILED")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

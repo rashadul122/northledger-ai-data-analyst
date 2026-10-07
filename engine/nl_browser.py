@@ -1734,7 +1734,7 @@ RELEASE_MAX_DISTINCT_CODED = 3000       # wave 5f (G): a column whose labels CAR
 _CODED_LABEL = re.compile(r"\[[0-9A-Za-z][0-9A-Za-z.\-]*\]\s*$|^\s*[0-9][0-9A-Za-z.\-]*\s+\S")
 RELEASE_MAX_SHARE = 0.05
 RELEASE_MAX_SHARE_CODED = 0.20          # wave 5g (F): a column of DESCRIBED CODES (NAICS, HS: a code of 4 or more characters and a description of 2 or more words,
-                                        # `_described_code`) in an OFFICIAL-looking table (a publisher's signature, or three of the columns only a publisher uses)
+                                        # `_described_code`) in a table that carries a PUBLISHER'S SIGNATURE (`_publisher_header`; not merely three columns only a publisher uses)
                                         # with a few periods: a label is on one row a period, so 935 labels over 8 quarters are 12% of the rows. Only there: the 5%
                                         # cap is the only thing that tells free text (an address, a name with an id, a postcode, a phone number with words) from
                                         # a category in a business file, and no pattern of the label itself can be trusted to tell them apart (the review found
@@ -1888,7 +1888,10 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
         con.close()
     out: List[Dict[str, Any]] = []
     nulls = _null_tokens()
-    official_table = _publisher_header(colmap.keys()) is not None or sum(1 for h in colmap.keys() if _pnorm(h) in _GUARD_META_SPECIFIC) >= 3
+    # the larger share is for a table that carries a publisher's SIGNATURE (REF_DATE + DGUID + VECTOR ...); three columns only a publisher uses (UOM,
+    # DECIMALS, TERMINATED) are in any ERP, HR or GIS export, and a plain file with them released addresses, names behind an id and phone numbers (a third
+    # reviewer's finding). Those three names release a table's VALUE column (numbers only), see `_release_value_column`, never free text
+    official_table = _publisher_header(colmap.keys()) is not None
     for col, kinds in rows:
         col = str(col)
         header = head.get(col, col)

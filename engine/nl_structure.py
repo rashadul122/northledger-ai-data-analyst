@@ -3476,23 +3476,30 @@ _UNADJUSTED = re.compile(r"(?i)\b(?:unadjusted|not seasonally adjusted|non[- ]?s
 # MEMBER words are the names of the bases themselves; HEADER words name a dimension of them. "Pricing plan", "Price band", "Real estate" and a bare
 # "current" are not among them (a second reviewer showed that ordinary ledgers of plans and price bands were read as bases).
 _BASIS_MEMBER = re.compile(r"\b(?:(?:current|constant|chained|fixed)\s+(?:prices?|dollars?|euros?|pounds?|\d{4})|nominal|real|chained|deflated|"
+                           r"(?:19|20)\d\d\s+(?:prices?|dollars?|euros?|pounds?)|original|as\s+reported|restated|"
                            r"volume measures?|(?:seasonally\s+)?(?:un)?adjusted|at\s+(?:basic|market|producers?|factor)\s+(?:prices?|cost)|"
                            r"prix\s+(?:courants?|constants?|chain\w*|enchain\w*)|valeurs?\s+(?:courantes?|constantes?)|laufende\s+preise|"
                            r"konstante\s+preise|verkettet\w*|precios\s+(?:corrientes|constantes)|encadenad\w+|saisonbereinigt\w*|"
                            r"desestacionalizad\w*|d\w*saisonnalis\w*|valeurs?\s+brutes)\b")
-_BASIS_HEADER = re.compile(r"\b(?:prices|basis|bases|valuation|prix|preise|precios|price\s+(?:basis|type|measure)|type\s+of\s+prices?)\b")
+# a header names bases only when the WHOLE header does ("Prices", "Type of prices", "Valuation", "Seasonally adjusted"): a header that merely holds one of
+# the words ("Valuation class": Raw materials, Packaging, Finished goods; "Real estate") is a classification of things (a third reviewer's finding)
+_BASIS_HEADER = re.compile(r"^(?:the\s+)?(?:(?:type|kind|basis)\s+of\s+)?(?:prices|basis|bases|valuation|prix|preise|precios|"
+                           r"price\s+(?:basis|type|measure)|valuation\s+(?:basis|method|type))$")
 BASIS_MAX_MEMBERS = 6           # wave 5g (B): a dimension of bases has a few members; one of more is a list of things that happen to share a word
 
 
 def _basis_token(label: Any) -> Optional[Tuple[str, bool]]:
-    """(the basis a member's name names, whether it negates it) for "Current prices", "Constant prices", "Nominal", "Real", "Seasonally adjusted", "Not
-    seasonally adjusted", "Unadjusted" ...; None when the name names none. Two members are two bases only when their tokens differ."""
+    """(the basis a member's name names, whether it negates it) for "Current prices", "Constant prices", "2015 prices", "Nominal", "Real", "Seasonally
+    adjusted", "Not seasonally adjusted", "Unadjusted", "Original", "As reported", "Restated" ...; None when the name names none. Two members are two
+    bases only when their tokens differ ("Original" is the unadjusted basis: it differs from "Seasonally adjusted", and is the same as "Unadjusted")."""
     t = _fold_name(label)
     m = _BASIS_MEMBER.search(t)
     if not m:
         return None
-    neg = bool(re.search(r"\b(?:not|non|sans|nicht|sin)\b", t)) or m.group(0).startswith("unadjusted")
+    neg = bool(re.search(r"\b(?:not|non|sans|nicht|sin)\b", t)) or m.group(0).startswith("unadjusted") or m.group(0) == "original"
     word = re.sub(r"^(?:seasonally\s+)", "", re.sub(r"^un(?=adjusted)", "", m.group(0)))
+    if word == "original":
+        word = "adjusted"
     return word, neg
 
 
@@ -3507,7 +3514,7 @@ def _basis_level(rec: Dict[str, Any]) -> int:
     if len(toks) >= 2:
         return 2
     head = _fold_name(rec["column"])
-    return 1 if (_BASIS_HEADER.search(head) or _BASIS_MEMBER.search(head)) else 0
+    return 1 if (_BASIS_HEADER.match(head) or _BASIS_MEMBER.fullmatch(head)) else 0
 
 
 def _basis_nominated(rec: Dict[str, Any]) -> bool:

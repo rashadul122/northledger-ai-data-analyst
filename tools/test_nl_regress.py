@@ -1700,6 +1700,14 @@ def test_g06_a_german_value_column_is_released_by_the_metadata_around_it_and_a_c
     plain = ["Date,Product category,Amount"] + ["2023-%02d-%02d,%d Refined goods %d,%d" % (m + 1, 1 + k % 28, 917000 + k, k % 7, 100 + k) for k in range(120) for m in range(12)]
     rep_p = run_bytes(("\n".join(plain) + "\n").encode())
     assert not any(x["header"] == "Product category" for x in rep_p["privacy"]["released"]), rep_p["privacy"]["released"]
+    # NEGATIVE (a third reviewer's finding): three columns only a publisher uses (UOM, DECIMALS, TERMINATED) are in any ERP, HR or GIS export, and are NOT a
+    # publisher's signature: described labels at 12% of the rows (employee id + name + role; phone number + words) are not released from such a plain file,
+    # though the same table's documented value column still is (numbers only)
+    emp = ["%d %s %s %s" % (1000 + i, ("Maria", "Daniel", "Priya", "Chen", "Laura")[i % 5], ("Quillon", "Telford", "Askerby", "Okafor", "Dray", "Hollin", "Brandmoor", "Ferreira")[i % 8], "department manager") for i in range(120)]
+    lite = ["Date,Desk,Cost,UOM,DECIMALS,TERMINATED"] + ["2023-%02d-%02d,%s,%d,Dollars,0," % (m + 1, 1 + k % 28, emp[k], 100 + k) for k in range(120) for m in range(12)]
+    rep_l = run_bytes(("\n".join(lite) + "\n").encode())
+    assert not any(x["header"] == "Desk" for x in rep_l["privacy"]["released"]), rep_l["privacy"]["released"]
+    assert "Quillon" not in json.dumps(rep_l, default=str)
     # NEGATIVE: free text (every value different) is still withheld; a column of 40 labels on 400 rows each repeated 10 times stays a category
     ft = ["REF_DATE,GEO,Notes,VALUE"] + ["2023-%02d,Nevton,%s,%d" % (i % 12 + 1, "free note number %d about the order" % i, 100 + i) for i in range(300)]
     rep_f = run_bytes(("\n".join(ft) + "\n").encode())
@@ -1891,6 +1899,74 @@ def test_g11_a_dimension_is_nominated_as_bases_by_its_header_or_by_two_members_t
                             ("X", ["Current prices", "Constant prices"], 2), ("X", ["Nominal", "Real"], 2), ("Account", ["Current assets", "Real estate", "Cash"], 0),
                             ("X", ["Chained (2017) dollars", "Current prices"], 2), ("Prix", ["A", "B"], 1), ("Segment", ["Real estate", "Real assets", "Infrastructure"], 0),
                             ("Contract", ["Fixed price", "Fixed price milestone", "Time and materials"], 0), ("X", ["Seasonally adjusted", "Not seasonally adjusted"], 2)):
+        assert NS._basis_level({"column": c, "labels": labels}) == want, (c, labels, NS._basis_level({"column": c, "labels": labels}), want)
+
+
+def _basis_ledger(col, members, months=36, independent=False, seed=3):
+    """A ledger Date, Store (North, South), <col>, Amount over `months` months: every member is the same quantity on another basis (a shared trend and season,
+    a steady ratio, 2% noise of its own), or with `independent` a series with a trend of its own (parts of a whole)."""
+    rng = np.random.RandomState(seed)
+    base = 0.2 * np.sin(2 * np.pi * np.arange(months) / 40.0) + 0.004 * np.arange(months) + np.cumsum(0.003 * rng.randn(months))
+    rows = []
+    for i in range(months):
+        d = "%04d-%02d-01" % (2021 + i // 12, i % 12 + 1)
+        season = 1 + 0.12 * np.sin(2 * np.pi * i / 12.0)
+        for st_ in ("North", "South"):
+            for k, m in enumerate(members):
+                lvl = (base[i] if not independent else (-1) ** k * 0.02 * i + 0.1 * k * rng.randn())
+                v = 1000 * (1.6 if st_ == "South" else 1.0) * (1 + 0.35 * k) * season * np.exp(lvl) * (1 + 0.02 * rng.randn())
+                rows.append([d, st_, m, int(v)])
+    by = {}
+    for d, st_, m, v in rows:                                   # the Total store row that makes the structure layer read a ledger at all
+        by[(d, m)] = by.get((d, m), 0) + v
+    rows += [[d, "Total", m, v] for (d, m), v in by.items()]
+    return _ledger_csv(["Date", "Store", col, "Amount"], rows)
+
+
+def test_g13_a_dimension_that_names_bases_by_original_reference_year_prices_or_reported_and_restated_is_never_added_and_a_valuation_class_is():
+    """Wave 5g, a third reviewer's finding (the vocabulary of rule B was too narrow, and its header test too wide). (1) A dimension whose members are
+    "Original" and "Seasonally adjusted", "Current prices" and "2015 prices", or "As reported" and "Restated" is one quantity on two bases; the first
+    version of the vocabulary named none of these (an unadjusted/original basis, a price basis given by its reference year, a restatement), and a
+    ledger of them was added up (11,969,081 for a quantity of 6,315,977). (2) A header nominates only when the WHOLE header names bases ("Prices",
+    "Type of prices", "Valuation"): "Valuation class" (Raw materials, Packaging, Finished goods) is a classification of parts, and a header test that
+    matched the word anywhere stopped a ledger of parts from being added up (one member shown instead of the sum). The cells still decide: the same
+    words over members that do not move together are added."""
+    for col, members in (("Data type", ["Original", "Seasonally adjusted"]), ("Reference", ["Current prices", "2015 prices"]),
+                         ("Version", ["As reported", "Restated"])):
+        data = _basis_ledger(col, members)
+        rep = run_bytes(data)
+        d = dim(rep, col)
+        assert d is not None and d["role"] == "single" and one_member_shown(rep), (col, d, headline(rep))
+        assert "one quantity on two bases" in json.dumps(est(rep)), (col, est(rep).get("text"))
+        df = pd.read_csv(io.BytesIO(data), dtype=str)
+        one = [trailing_sums(df, (df[col] == m) & (df["Store"] == "Total"), "Date", "Amount", 12) for m in members]
+        both = trailing_sums(df, df["Store"] == "Total", "Date", "Amount", 12)
+        f = figs(rep)
+        assert f is not None and any(close(f[1], o[1]) for o in one) and not close(f[1], both[1]), (col, f, one, both)
+    # NEGATIVE (2): a header that merely holds a basis word is a classification of parts: the three parts are added (36 months, independent trends)
+    parts = ["Raw materials", "Packaging", "Finished goods"]
+    for months in (20, 26, 36):
+        data = _basis_ledger("Valuation class", parts, months=months, independent=True)
+        rep = run_bytes(data)
+        d = dim(rep, "Valuation class")
+        assert d is not None and d["role"] == "flat_additive" and not one_member_shown(rep), (months, d)
+        if months < 24:
+            continue                                            # (a table of 20 months compares the 8 matched months: the role is what matters)
+        df = pd.read_csv(io.BytesIO(data), dtype=str)
+        tot = trailing_sums(df, df["Store"] == "Total", "Date", "Amount", 12)
+        f = figs(rep)
+        assert f is not None and close(f[1], tot[1]), (months, f, tot)
+    # NEGATIVE (1): the same words over members that are not copies of one another (independent trends) are added, as before: the cells decide
+    data = _basis_ledger("Data type", ["Original", "Seasonally adjusted"], independent=True)
+    rep = run_bytes(data)
+    assert dim(rep, "Data type")["role"] == "flat_additive", dim(rep, "Data type")
+    # the pieces
+    assert NS._basis_token("Original") == NS._basis_token("Unadjusted") != NS._basis_token("Seasonally adjusted")
+    assert NS._basis_token("2015 prices") != NS._basis_token("Current prices") and NS._basis_token("As reported") != NS._basis_token("Restated")
+    assert NS._basis_token("Original equipment") == NS._basis_token("Original budget")        # one word: one token, so no pair of these alone nominates
+    for c, labels, want in (("Valuation class", ["Raw materials", "Packaging"], 0), ("Valuation", ["Book", "Market"], 1), ("Type of prices", ["A", "B"], 1),
+                            ("Real estate", ["Housing", "Offices"], 0), ("Seasonally adjusted", ["Yes", "No"], 1), ("Price basis", ["A", "B"], 1),
+                            ("Pricing basis class", ["A", "B"], 0), ("Valuation method", ["A", "B"], 1)):
         assert NS._basis_level({"column": c, "labels": labels}) == want, (c, labels, NS._basis_level({"column": c, "labels": labels}), want)
 
 

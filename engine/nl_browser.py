@@ -2531,7 +2531,8 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
     sm = est.get("single_member") if isinstance(est.get("single_member"), dict) else None
     if sm:
         # one member of a table with no total member: never a national figure, said in the headline too
-        subject += " (one member shown, not %s)" % ("a national figure" if sm.get("noun") == "national figure" else "the table's total")
+        subject += " (one member shown, not %s)" % ("a national figure" if sm.get("noun") == "national figure" else
+                                                    "the sum of the bases" if sm.get("copies") else "the table's total")
     level = meas.get("type") in ("rate", "index")
     chg = (fig.get("change") if level else fig.get("change_pct")) or {}
     lvl = fig.get("latest") or {}
@@ -9491,6 +9492,26 @@ def _verdict_failure(data: bytes, S: Optional[Dict[str, Any]]) -> Optional[Dict[
             "error": {"stage": "verdict", "type": "not_cube", "message": reason[:200]}, "looks_like": why}
 
 
+PANEL_GUARD_REASON = ("This file looks like a table of series with totals, and its %d series stand in no relation to one another and could not "
+                      "be set side by side. An average over its rows would mix them, so no figure is shown.")
+
+
+def _panel_failure(data: bytes, S: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The `structure` record of a refusal when the structure layer found a table of series with no relation between its members (kind
+    "panel_no_relations": read side by side by the long-table layout), the layout did not apply, and the layer could not read it one member at a time
+    either (wave 5g, A): the OLD path would average the rows of every series together. None for any other file (a table of one series, a file
+    that does not look like a table of series: read as before)."""
+    if not (isinstance(S, dict) and S.get("kind") == "panel_no_relations" and S.get("dims")):
+        return None
+    why = looks_like_series_table(data)
+    if why is None:
+        return None
+    reason = PANEL_GUARD_REASON % int(S.get("series") or 0)
+    return {"kind": "error", "usable": False, "reason": reason,
+            "error": {"stage": "panel", "type": "panel_no_relations", "message": " ".join(str(S.get("reason") or "").split())[:200]},
+            "looks_like": why}
+
+
 def _reason_in_sentence(rec: Dict[str, Any]) -> str:
     """The refusal's reason as the story's headline carries it ("The business analysis did not run: <this>.")."""
     r = str(rec.get("reason") or SERIES_GUARD_REASON)
@@ -10723,6 +10744,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         cube_refusal = _reason_in_sentence(struct_error)
                         rep["structure"] = struct_error
                 data, applied, layout = _apply_plan(data, ai_plan)
+                if layout is None and S_use is None and S_pre is not None and S_pre.get("kind") == "panel_no_relations":
+                    # wave 5g (A): the profile left this table of unrelated series to the layout and the plan did not make one: the old path would
+                    # average its members together, so it is refused (without a plan the same table is read one member at a time)
+                    struct_error = _panel_failure(sent, S_pre)
+                    if struct_error is not None:
+                        cube_refusal = _reason_in_sentence(struct_error)
+                        rep["structure"] = struct_error
                 sent_rows = (applied.get("positions"), applied.get("rows_in"))
                 ai_plan["applied"] = applied["applied"]
                 plan_drops = list(applied.get("drops") or [])
@@ -10913,6 +10941,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 f_hook: Dict[str, Any] = dict(f_read)
                 if early_reading is not None:
                     S_hook = _structure_detect(early_reading, hidden_early, wide_info, fail=f_hook)
+                if S_hook is not None and S_hook.get("kind") == "panel_no_relations":
+                    # wave 5g (A): the layer left an official table of unrelated members to the long-table layout, and the layout did not
+                    # apply (layout is None here): it is read one member at a time, never averaged across its members by the old path; a
+                    # table that looks like a table of series and cannot be read so is refused
+                    if not _ns().read_one_member_panel(S_hook):
+                        struct_error = _panel_failure(sent, S_hook)
+                        if struct_error is not None:
+                            cube_refusal = _reason_in_sentence(struct_error)
+                            rep["structure"] = struct_error
                 if S_hook is None and f_hook:
                     # the structure layer could not run: a table of series is refused here, any other file is read as before
                     struct_error = _guard_failure(sent, f_hook)

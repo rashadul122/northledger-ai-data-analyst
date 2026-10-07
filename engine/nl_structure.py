@@ -94,6 +94,8 @@ ADJ_MAX_MEMBERS = 4
 ADJ_MIN_PERIODS = {1: 24, 3: 16}      # wave 5d: periods an adjusted pair is looked for in, by the table's step (months: 2 years, quarters: 4)
 UNWORDED_CURRENCY_IS_LEVEL = True   # wave 5f (A): a currency with no flow word and no total that adds up is a level (averaged), never added; False: a flow
                                     # unless the table shows its aggregate is not a sum (a named total inside the others' range, or their weighted average)
+ROUND_MIN_VALUES = 12           # wave 5g: non-zero whole values a series needs before the zeros its figures end in say how they were rounded ...
+ROUND_MAX_EXP = 9               # ... to a power of ten up to 10^9 (twelve figures that all end in a zero by chance: one in 10^12)
 PROFILE_CAP = 6000              # the profile's structure block, bytes
 PROFILE_VALUE_MAX = 60          # a member string as the profile lists it (nl_browser._profile_facts cuts at 60)
 SLICES_MAX = 12
@@ -916,6 +918,17 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     half_unit = np.zeros(n_series)
     np.maximum.at(half_unit, s_codes, 0.5 * 10.0 ** (-_row_decimals(cat, head, rows, _decimals(R, measure, metadata)))
                   * np.abs(scale_row))
+    # wave 5g: the unit a series' figures were rounded to, read from their trailing zeros (4731000, 5435000 ...), when the file writes no decimals
+    rd_row = _row_decimals(cat, head, rows, _decimals(R, measure, metadata))
+    order_s = np.argsort(s_codes, kind="stable")
+    bounds_s = np.searchsorted(s_codes[order_s], np.arange(n_series + 1))
+    raw_pub = vals[rows]
+    for si in range(n_series):
+        ix = order_s[bounds_s[si]:bounds_s[si + 1]]
+        if len(ix) >= ROUND_MIN_VALUES and float(rd_row[ix].max()) == 0.0:
+            ru = _round_unit(raw_pub[ix])
+            if ru > 1.0:
+                half_unit[si] = max(half_unit[si], 0.5 * ru * float(np.max(np.abs(scale_row[ix]))))
     scale_series = np.zeros(n_series)
     np.maximum.at(scale_series, s_codes, np.abs(scale_row))
     V = np.full((n_series, len(times)), np.nan)
@@ -1391,6 +1404,26 @@ def _scale_word(v: Any, exponent: bool) -> Optional[float]:
     return None
 
 
+def _round_unit(values: Any) -> float:
+    """Wave 5g. The unit a column was PUBLISHED in, read from the figures themselves: 10^k, the largest power of ten that divides every non-zero
+    figure, when there are at least ROUND_MIN_VALUES whole figures (a spreadsheet's amounts rounded to the thousand and written in full,
+    4731000, 5435000 ...). The decimals a file writes say nothing then: a total rounded to the thousand differs from the sum of its rounded
+    parts by up to half a thousand each, and a rounding tolerance of half a unit declared every total of such a file "not the sum". 1.0 for a
+    column that does not end in zeros (or has fewer figures, or any fraction): the half unit of its last decimal stands. It only ever WIDENS
+    a tolerance, by what the figures themselves show was thrown away."""
+    import numpy as np
+    v = np.asarray(values, dtype=float).ravel()
+    v = np.abs(v[np.isfinite(v)])
+    v = v[v != 0]
+    if len(v) < ROUND_MIN_VALUES or float(v.max()) >= 9e15 or not bool(np.all(v == np.round(v))):
+        return 1.0
+    a = v.astype(np.int64)
+    k = 0
+    while k < ROUND_MAX_EXP and bool(np.all(a % (10 ** (k + 1)) == 0)):
+        k += 1
+    return float(10 ** k)
+
+
 def _units(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], alias_of: Dict[str, str], dims: List[str],
            rows: Any, head: Dict[str, str], s_index: Any, s_codes: Any) -> Dict[str, Any]:
     """The unit of measure: a constant (Dollars), or one that changes with one dimension (a measure dimension: dollars
@@ -1723,13 +1756,31 @@ def reads_one_member(S: Dict[str, Any]) -> bool:
             d.get("single_by") == "dominance" and sums_over_time(S["measure"]))) for d in S.get("dims") or [])
 
 
+def read_one_member_panel(S: Dict[str, Any]) -> bool:
+    """Wave 5g (A). The layer calls an official table whose members stand in no relation a "panel read side by side by the long-table layout"
+    (kind "panel_no_relations", at most 60 series). That layout is the adapter's (nl_browser._reshape_long_panel) and it reads headers and spans
+    the layer does not: a German, Spanish or French header, a weekly or daily table of under three years, a duplicated date. When it does not
+    apply, nothing is left to read the table side by side and the OLD path would average the rows of every member together (an unadjusted and an
+    adjusted copy, a nominal and a real series, in one figure). The caller that finds no layout asks for the other reading, the one a table of
+    more than 60 series always had: ONE MEMBER AT A TIME, said so ("one member shown, not the table's total"). The slices were cut before
+    `_usable` answered, so nothing is detected again. True when the table was converted; a table that is not official, or has no dimension or
+    slice, is left as it is (the caller refuses it when it looks like a table of series)."""
+    if S.get("kind") != "panel_no_relations" or not S.get("official") or not S.get("dims") or not S.get("slices"):
+        return False
+    S["kind"], S["usable"], S["reason"], S["one_member_panel"] = "cube", True, "", True
+    S["hash"] = structure_hash(S)
+    return True
+
+
 def _usable(S: Dict[str, Any]) -> bool:
     """Slice the table when adding its rows would be wrong: a relation between members (a verified total, an adjusted
     copy, components, a rate's published aggregate). A panel with no relation (currencies in two units, an official
     table whose members only differ) is read side by side by the long-table layout, as before, when it has at most 60
-    series (kind "panel_no_relations"); past that, the layout cannot, and the table is read one member at a time."""
+    series (kind "panel_no_relations"); past that, the layout cannot, and the table is read one member at a time. Where the layout
+    does not apply either, the caller asks `read_one_member_panel` (wave 5g, A)."""
     rel = [d for d in S["dims"] if d["role"] in ("partition", "hierarchy", "adjustment", "components", "rate_aggregate", "parts")
-           or (d["role"] == "measure" and not d.get("mixed_units"))]
+           or (d["role"] == "measure" and not d.get("mixed_units"))
+           or (d["role"] == "single" and d.get("copies_why"))]       # wave 5g (B): a ledger's dimension of bases is never added: the table is sliced
     if rel:
         return True
     if any(d["role"] in ("single", "measure") for d in S["dims"]):
@@ -3298,6 +3349,30 @@ def _shape_copy(la: Any, lb: Any, need: int) -> Optional[bool]:
     return bool(corr >= COPY_CORR and sd <= COPY_RATIO_SD)
 
 
+def _copy_seasons(S: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    """(periods in a season, smoothed points a copy-by-shape test needs) for the table's period, or None when the period has no season to smooth
+    over. A monthly table: 12 (a quarterly one 4, a half-yearly 2, an annual 1); wave 5g: a WEEKLY or DAILY table too, the season being the dates a
+    year holds (about 52, 364, or 260 for weekdays only), so that a seasonal pattern the two members share is smoothed away as it is in a monthly
+    one and the test reads their trend (a price basis in a weekly ledger). The same COPY_MIN_POINTS smoothed points are needed, so a weekly table
+    is tested from about 64 weeks and a daily one from about a year and two weeks; a shorter one cannot say."""
+    P = S.get("period") or {}
+    if P.get("cadence"):
+        ts = S.get("_times") or []
+        if len(ts) < 2:
+            return None
+        import datetime as _d
+        try:
+            span = (_d.date(int(ts[-1][:4]), int(ts[-1][5:7]), int(ts[-1][8:10])) - _d.date(int(ts[0][:4]), int(ts[0][5:7]), int(ts[0][8:10]))).days + 1
+        except ValueError:
+            return None
+        return max(2, int(round(len(ts) * 364.0 / max(1, span)))), COPY_MIN_POINTS
+    step = int(P.get("step") or 1)
+    if step not in (1, 3, 6, 12):
+        return None
+    per = 12 // step
+    return per, (COPY_MIN_ANNUAL if per == 1 else COPY_MIN_POINTS)
+
+
 def _pair_is_copy(a: Any, b: Any, step: int) -> bool:
     """Whether members a and b (arrays [context, time]) are one quantity twice by shape in most of the contexts that can say."""
     per = 12 // max(1, step)
@@ -3320,10 +3395,10 @@ def _copies_by_shape(S: Dict[str, Any], A: Any, members: Sequence[int]) -> Optio
     COPY_PAIR_MEMBERS largest members are compared (a count)."""
     import numpy as np
     step = int((S.get("period") or {}).get("step") or 1)
-    if step not in (1, 3, 6, 12):
+    got_seasons = _copy_seasons(S)
+    if got_seasons is None:
         return (None, None)
-    per = 12 // step
-    need = COPY_MIN_ANNUAL if per == 1 else COPY_MIN_POINTS
+    per, need = got_seasons
     size = {m: (float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0) for m in members}
     mem = sorted(members, key=lambda m: (-size[m], m))[:COPY_PAIR_MEMBERS]
     C = min(A.shape[1], 60)
@@ -3352,6 +3427,50 @@ _UNADJUSTED = re.compile(r"(?i)\b(?:unadjusted|not seasonally adjusted|non[- ]?s
                          r"non d[\u00e9e]saisonnalis[\u00e9e]e?s?|nicht saisonbereinigt|sin desestacionalizar)\b")
 
 
+# wave 5g (B): the words that NOMINATE a dimension as one of bases (the same quantity measured on two or more bases: current and constant prices,
+# nominal and real, adjusted and unadjusted). A name only nominates; the cells decide (`_copies_by_shape`). Folded to lower case without accents.
+_BASIS_NAME = re.compile(r"\b(?:prices?|pricing|basis|bases|valuation|nominal|real|current|constant|chained|deflated|volume measures?|seasonally|"
+                         r"unadjusted|adjusted|prix|courants?|constants?|chainee?s?|reel(?:le)?s?|preis(?:e|en)?|laufend\w*|konstant\w*|verkettet\w*|"
+                         r"precios?|corrientes?|constantes?|encadenad\w+|saisonbereinigt\w*|desestacionalizad\w*|desaisonnalis\w*)\b")
+BASIS_MAX_MEMBERS = 6           # wave 5g (B): a dimension of bases has a few members; one of more is a list of things that happen to share a word
+
+
+def _basis_nominated(rec: Dict[str, Any]) -> bool:
+    """Whether a dimension's header, or at least two of its members' names, are the words of bases (prices, nominal, real, constant ...)."""
+    labels = [lb for lb in rec["labels"] if lb != ""]
+    if not 2 <= len(labels) <= BASIS_MAX_MEMBERS:
+        return False
+    if _BASIS_NAME.search(_fold_name(rec["column"])):
+        return True
+    return sum(1 for lb in labels if _BASIS_NAME.search(_fold_name(lb))) >= 2
+
+
+def _basis_copies(S: Dict[str, Any], j: int, rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Wave 5g (B). A LEDGER (a business export: no publisher's marks) is read by adding its members up, which is right for products and
+    branches and wrong for a dimension of BASES: current and constant prices are one quantity twice, and adding them doubles the level (fuzz v2
+    seeds 601 and 687; the figure was 1.77 times the truth). A name nominates the dimension (`_basis_nominated`), the cells decide: two members
+    that move together under a steady ratio (`_copies_by_shape`, for a monthly, quarterly, weekly or daily table) are copies. None when the
+    dimension is not nominated, or its members were compared and none is a copy (they are added, as before). A dict when its members must not
+    be added: {"pair": (a, b) | None, "why"}; pair None when the table is too short or too blank to tell a copy from a part: a dimension that names
+    bases and cannot be shown NOT to be copies is not added (the safe side: one member is shown)."""
+    if not _basis_nominated(rec):
+        return None
+    labels = rec["labels"]
+    try:
+        A, _X, _c = _dim_tensor(S, j)
+    except _TooLarge:
+        return {"pair": None, "why": "%s names bases and was too large to compare, so its members are never added" % rec["column"]}
+    got = _copies_by_shape(S, A, list(range(len(labels))))
+    if got is None:
+        return None
+    a, b = got
+    if a is None:
+        return {"pair": None, "why": "%s names bases and the table is too short or too blank to show that its members are not one quantity "
+                                     "twice, so they are never added" % rec["column"]}
+    return {"pair": (labels[a], labels[b]),
+            "why": "%s and %s move together under a steady ratio: one quantity on two bases, so they are never added" % (labels[a], labels[b])}
+
+
 def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
     """No relation verified: an official table is read one member at a time (the member that says total, else a whole country's name
     in a dimension of places, else the one with the most cells that dominates, and then the table says it is not a total); a business
@@ -3360,7 +3479,8 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
     import numpy as np
     labels = rec["labels"]
     j = S["dims"].index(rec)
-    if S["official"] or _no_sum(S):
+    copies = None if (S["official"] or _no_sum(S)) else _basis_copies(S, j, rec)
+    if S["official"] or _no_sum(S) or copies is not None:
         coded = _coded_totals(labels)
         hint = [m for m in range(len(labels)) if _says_total(labels[m]) or m in coded or _agg_name_tier(labels[m]) == 2]
         by = "name"
@@ -3387,8 +3507,12 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
         rec.update(role="single", total=labels[m], total_index=m, components={}, alternatives={}, single_by=by,
                    evidence="named" if by == "name" else "single",
                    noun="national figure" if _is_geographic(rec["column"]) else "total",
-                   why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
-                                                       "added across a dimension it could not verify)")
+                   why=(prior + "; " if prior else "") + ("read one member at a time (an official table is never "
+                                                          "added across a dimension it could not verify)" if copies is None else
+                                                          "read one member at a time (%s)" % copies["why"]))
+        if copies is not None:
+            rec["copies"] = list(copies["pair"]) if copies["pair"] else []
+            rec["copies_why"] = copies["why"]
         if by == "name" and labels[m] in (rec.get("contradicted_totals") or []):
             rec["named_contradicted"] = True        # it says total, and the other members do not add up to it
         if by == "dominance":
@@ -4304,6 +4428,10 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             what = "a national figure" if d.get("noun") == "national figure" else "the table's total"
             single_member = {"dim": d["column"], "member": d["total"], "noun": d.get("noun") or "total",
                              "statement": "one member shown: %s; this table has no total member, so this is not %s" % (d["total"], what)}
+            if d.get("copies_why"):
+                # wave 5g (B): a dimension of bases (or one that names bases and cannot be shown to be anything else): said as such
+                single_member["statement"] = "one member shown: %s; %s" % (d["total"], d["copies_why"])
+                single_member["copies"] = True
             built_txt += single_member["statement"] + "; "
     for d in S["dims"]:
         # wave 5c: a rate's or an index's aggregate that is one by its name alone (no sum-check can verify it): the estimand says so,

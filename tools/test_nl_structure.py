@@ -2598,6 +2598,31 @@ def test_w5d_a_combined_member_stands_in_for_the_parts_it_sums_when_one_of_them_
     assert est2["built_from"]["months_dropped"] == [MC.MONTHS[last]] and est2["figures"]["latest"]["value"] != full, est2["built_from"]
 
 
+def test_w5d_an_alternative_whose_first_word_is_total_is_never_picked_by_that_word_and_never_a_part():
+    """Wave 5d (CHECK 1 of the fuzz: seeds 1078 and 1119). "Total except Footwear and Grocery" says "Total" first, so a dimension with no
+    verified relation read it as the total by its name (`single_by: "name"`) and printed its figure as the table's headline, though it
+    leaves two sectors out; the real total beside it, "Full range [11-41]", carries no word that says total, only a range code that holds
+    the four sectors' codes, and the alternative among its "parts" spoilt the fit that would have verified it. A name that says it
+    leaves something out is never read as the total and never a part of one; a range code that holds the codes of two or more other members
+    names a total; and with no total at all the dimension shows one member and says it is not the total."""
+    S = detect(MC.rate_sector_alt())
+    sec = dim(S, "Sector")
+    assert sec["role"] == "rate_aggregate" and sec["total"] == "Full range [11-41]", sec
+    assert S["default"]["Sector"] == "Full range [11-41]" and dim(S, "GEO")["total"] == "Total", S["default"]
+    # and when no fit can verify the total (it is not an exact weighted average), its range code is the evidence
+    sec_n = dim(detect(MC.rate_sector_alt(noisy_total=True)), "Sector")
+    assert sec_n["role"] == "rate_aggregate" and sec_n["total"] == "Full range [11-41]" and sec_n["aggregate_by"] == "name", sec_n
+    # negative: with only the alternative, nothing is the sector total: one member shown, not by the alternative's first word
+    S2 = detect(MC.rate_sector_alt(with_total=False))
+    sec2 = dim(S2, "Sector")
+    assert sec2["role"] == "single" and sec2.get("single_by") == "dominance" and sec2.get("no_total_member") is True, sec2
+    # the words
+    assert NS._says_total("Total, all industries") and NS._says_total("All items") and not NS._says_total("Total except Footwear and Grocery")
+    assert not NS._says_total("Total excl. Seasonal shops") and not NS._says_total("Retail trade") and NS._is_alt("Total less food")
+    assert NS._coded_totals(["Full range [11-41]", "Tools [11]", "Footwear [21]", "Grocery [31]"]) == {0}
+    assert NS._coded_totals(["Retail [44-45]", "Food [445]"]) == set()                 # a range holding one other member's code is no evidence
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

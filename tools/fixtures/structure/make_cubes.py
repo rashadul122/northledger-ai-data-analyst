@@ -854,6 +854,40 @@ def regions_with_personal(column: str = "Account owner", phones: bool = False, s
     return _official_v(["Statistics", column], rec, lambda key: ("Persons", "thousands", 0))
 
 
+def rate_sector_alt(seed: int = 96, with_total: bool = True, geo_total: bool = True, noisy_total: bool = False) -> bytes:
+    """Wave 5d (CHECK 1 finding). A rate (Percent): a "Sector" dimension of four coded sectors, "Full range [11-41]" (their weighted average; a
+    range code holds the four codes, no word says total) and "Total except Footwear and Grocery" (the weighted average of the other two:
+    an alternative whose first word is "Total"), and a GEO of two regions and "Total". With `with_total` False the table has only the
+    alternative (the negative case): nothing is the sector total. With `geo_total` False the GEO has no total row. With `noisy_total` the
+    range-coded total is NOT an exact weighted average of the sectors (a quarter point of noise: no fit can verify it)."""
+    rng = np.random.RandomState(seed)
+    n = len(MONTHS)
+    t = np.arange(n)
+    secs = {"Tools [11]": 5.2 + 0.4 * np.sin(t / 6.0), "Footwear [21]": 7.4 + 0.5 * np.cos(t / 5.0), "Grocery [31]": 6.1 + 0.3 * np.sin(t / 9.0),
+            "Cosmetics [41]": 8.3 + 0.4 * np.cos(t / 8.0)}
+    w = {"Tools [11]": 0.20, "Footwear [21]": 0.30, "Grocery [31]": 0.25, "Cosmetics [41]": 0.25}
+    geo = {"Dunmoor": 0.0, "Cormmoor": 0.9}
+    gw = {"Dunmoor": 0.6, "Cormmoor": 0.4}
+    noise = {(g, k): 0.12 * rng.standard_normal(n) for g in geo for k in secs}
+    rec = []
+    for i, mo in enumerate(MONTHS):
+        cells = {}
+        for g in geo:
+            for k in secs:
+                cells[(g, k)] = round(float(secs[k][i] + geo[g] + noise[(g, k)][i]), 1)
+            cells[(g, "Full range [11-41]")] = round(sum(w[k] * cells[(g, k)] for k in secs)
+                                                     + (0.25 * float(rng.standard_normal()) if noisy_total else 0.0), 1)
+            rest = ("Tools [11]", "Cosmetics [41]")
+            cells[(g, "Total except Footwear and Grocery")] = round(sum(w[k] * cells[(g, k)] for k in rest) / sum(w[k] for k in rest), 1)
+        names = list(secs) + (["Full range [11-41]"] if with_total else []) + ["Total except Footwear and Grocery"]
+        for k in names:
+            if geo_total:
+                rec.append((mo, "Total", ("Unemployment rate", k), round(sum(gw[g] * cells[(g, k)] for g in geo), 1), ""))
+            for g in geo:
+                rec.append((mo, g, ("Unemployment rate", k), cells[(g, k)], ""))
+    return _official(["Statistics", "Sector"], rec, uom="Percent", scalar="units", decimals="1")
+
+
 ALL = {"partition": partition, "partition_suppressed": lambda: partition(0.10), "hierarchy": hierarchy, "adjusted_additive": adjusted_additive,
        "hierarchy_nocodes": lambda: hierarchy(codes=False, shuffle=True), "adjusted": adjusted, "rate": rate,
        "index_two_bases": index_two_bases, "mixed_units": mixed_units, "business_export": business_export,

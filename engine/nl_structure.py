@@ -1557,8 +1557,8 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     # "excluding" outside brackets names an alternative total ("Retail trade excluding gasoline"); inside them it defines
     # a member ("Supermarkets and other grocery retailers (except convenience retailers) [44511]")
     alts_label = {m for m in range(M) if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", labels[m]))}
-    hint = [m for m in range(M) if _TOTAL_HINT.search(labels[m]) or (_label_code(labels[m]) or "").count("-") == 1
-            and _RANGE.match(_label_code(labels[m]) or "")]
+    hint = [m for m in range(M) if (_says_total(labels[m]) or (_label_code(labels[m]) or "").count("-") == 1
+                                    and _RANGE.match(_label_code(labels[m]) or "")) and m not in alts_label]
     order = list(np.argsort(-dom, kind="stable"))
     # wave 5d: a whole country's name in a geographic dimension (Canada beside its provinces) is a total's name too: tried as the
     # total, and never added to the parts when no check could verify it
@@ -2055,6 +2055,29 @@ def _agg_name_tier(label: str) -> int:
     return 1 if _AGG_WHOLE.match(label) else 0
 
 
+def _is_alt(label: str) -> bool:
+    """Whether a member's name says it leaves something out ("Total excl. Seasonal shops", "Retail trade excluding gasoline"): an
+    alternative total, never the total, never a part (words inside brackets define a member and say nothing)."""
+    return bool(_ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", str(label))))
+
+
+def _says_total(label: str) -> bool:
+    """A total's words ("Total", "All", "Overall" ...) in a name that does not say it leaves something out (wave 5d: "Total except
+    Footwear and Grocery" is an alternative, and was read as the table's total by its first word)."""
+    return bool(_TOTAL_HINT.search(label)) and not _is_alt(label)
+
+
+def _coded_totals(labels: Sequence[str]) -> Set[int]:
+    """The members whose code is a RANGE that holds the codes of at least two other members ("Full range [11-41]" beside [11], [21], [31]
+    and [41]): the way a publisher marks a total whatever the member is called."""
+    codes = [_label_code(lb) for lb in labels]
+    out: Set[int] = set()
+    for m, c in enumerate(codes):
+        if c and _RANGE.match(c) and sum(1 for x, cx in enumerate(codes) if x != m and cx and _contains(c, cx)) >= 2:
+            out.add(m)
+    return out
+
+
 _REST_NAME = re.compile(r"(?i)\b(?:other|others|rest of|remaining|remainder)\b")
 
 
@@ -2152,20 +2175,21 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
     if t_end is None:
         t_end = time.perf_counter() + AGG_BUDGET_S
     cands = []
+    alt = {x for x in range(M) if _is_alt(labels[x])}      # wave 5d: an alternative total is never one of the aggregate's parts
     for m in range(M):
         share_strict, n = stats.get(m, (0.0, 0))
         if n < MIN_COMPLETE or share_strict < BOUND_SHARE or cover[m] < 0.99 or cover[m] < float(np.delete(cover, m).max()):
             continue
-        if _ALT_HINT.search(re.sub(r"\([^()]*\)|\[[^\[\]]*\]", " ", labels[m])):
+        if m in alt:
             continue                                  # a member that says it leaves something out is an alternative, never the aggregate
-        rest = [x for x in range(M) if x != m]
+        rest = [x for x in range(M) if x != m and x not in alt]
         d = B[m] - B[rest].mean(axis=0)
         cands.append((float(d.std()), m))             # the stability of its relation to the others' mean over the cells
     found = []
     for _sd, m in sorted(cands)[:AGG_TRIES]:
         if time.perf_counter() > t_end:
             return None                               # out of time: no evidence
-        rest = [x for x in range(M) if x != m]
+        rest = [x for x in range(M) if x != m and x not in alt]
         rm, wts = _convex_fit(B[m], B[rest].T)
         if rm > AGG_FIT_UNITS * unit:
             continue
@@ -2207,12 +2231,13 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
     stats: Dict[int, Tuple[float, int]] = {}
     named: List[Tuple[int, int, float, int]] = []          # a name AND inside the others' range in 99% of its cells (the range verifies it)
     named_any: List[Tuple[int, int, float, int]] = []      # a name, whatever the range says (wave 5c: the name is the evidence)
+    coded_tot = _coded_totals(labels)
     with np.errstate(all="ignore"):
         for m in range(M):
             rest = [x for x in range(M) if x != m]
             if not rest:
                 continue
-            tier = _agg_name_tier(labels[m])
+            tier = 2 if (m in coded_tot and not _is_alt(labels[m])) else _agg_name_tier(labels[m])
             lo = np.nanmin(np.where(np.isnan(A[rest]), np.inf, A[rest]), axis=0)
             hi = np.nanmax(np.where(np.isnan(A[rest]), -np.inf, A[rest]), axis=0)
             have = ~np.isnan(A[m]) & np.isfinite(lo) & np.isfinite(hi)
@@ -2406,7 +2431,8 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
     labels = rec["labels"]
     j = S["dims"].index(rec)
     if S["official"] or S["measure"]["type"] in ("rate", "index"):
-        hint = [m for m in range(len(labels)) if _TOTAL_HINT.search(labels[m])]
+        coded = _coded_totals(labels)
+        hint = [m for m in range(len(labels)) if _says_total(labels[m]) or m in coded]
         by = "name"
         if hint:
             m = hint[0]
@@ -2426,7 +2452,7 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                    why=(prior + "; " if prior else "") + "read one member at a time (an official table is never "
                                                        "added across a dimension it could not verify)")
         tiers = [_agg_name_tier(lb) for lb in labels]
-        if by == "dominance" and not any(_TOTAL_HINT.search(lb) or t == 2 for lb, t in zip(labels, tiers)) and tiers.count(1) != 1:
+        if by == "dominance" and not any(_says_total(lb) or t == 2 for lb, t in zip(labels, tiers)) and tiers.count(1) != 1:
             # no member is named as a total (one whole country's name, Canada, among provinces would be; two of them are a table of
             # countries): the one shown is not the table's figure
             rec["no_total_member"] = True

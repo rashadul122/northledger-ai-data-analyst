@@ -142,6 +142,10 @@ _ALT_STRONG_RE = re.compile(r"(?i)(?<![A-Za-z])(?:%s)(?![A-Za-z])|(?<![A-Za-z])e
 # the rest of something ("All other provinces", "Rest of Canada", "Autres provinces"): never a whole, in any branch
 _REST_NAME = re.compile(r"(?i)\b(?:other|others|rest of|remaining|remainder|autres?|reste|sonstige[nr]?|\u00fcbrige[nr]?|restliche[nr]?|otros|otras|resto)\b")
 _STOCK_WORDS = re.compile(r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|debts?|stocks?)\b")
+# wave 5e (P8): the balance-sheet words of a currency that is a LEVEL at a date, not an amount that accumulates over a period (deposits, loans,
+# liabilities, reserves, net worth, money supply): a name only nominates, so one that comes with a flow word is ambiguous (averaged), never summed
+_STOCK_BALANCE_WORDS = re.compile(r"(?i)\b(?:deposits?|loans?|liabilit(?:y|ies)|reserves?|equity|equities|net worth|wealth|savings?|money supply|"
+                                  r"m[123]|capitali[sz]ation|market cap|mortgages?|borrowings?|credit balances?|net (?:assets|debt|position))\b")
 _POP_WORDS = re.compile(r"(?i)\b(?:employment|employed|population|labour force|labor force|persons employed)\b")
 _CURRENCY = re.compile(r"(?i)\b(?:dollars?|euros?|pounds?|yen|yuan|francs?|krona|kronor|krone|rupees?|pesos?|reais|"
                        r"real|rand|won|currency|canadian dollars|us dollars)\b|[$€£¥]|(?<![A-Za-z])(?:CAD|USD|EUR|GBP|"
@@ -180,7 +184,7 @@ _SCALE_FACTOR = {"units": 1.0, "unit": 1.0, "ones": 1.0, "tens": 10.0, "hundreds
                  # those are left out on purpose, and an unknown word in a scale column refuses the table
                  "unites": 1.0, "unite": 1.0, "unidades": 1.0, "unidad": 1.0, "einheiten": 1.0, "einheit": 1.0,
                  "dizaines": 10.0, "centaines": 100.0, "milliers": 1e3, "millier": 1e3, "mille": 1e3, "miles": 1e3, "tausend": 1e3,
-                 "tausende": 1e3, "mil": 1e3, "millones": 1e6, "millon": 1e6, "mio": 1e6, "mill": 1e6,
+                 "tausende": 1e3, "mil": 1e3, "millones": 1e6, "millon": 1e6, "millionen": 1e6, "mio": 1e6, "mill": 1e6,
                  "milliards": 1e9, "milliard": 1e9, "milliarden": 1e9, "milliarde": 1e9, "mrd": 1e9, "mil millones": 1e9}
 _BRACKET_CODE = re.compile(r"\[([0-9A-Za-z][0-9A-Za-z.\-]*)\]\s*$")
 _LEAD_CODE = re.compile(r"^\s*([0-9][0-9A-Za-z]*(?:\.[0-9A-Za-z]+)*)\s+\S")
@@ -808,7 +812,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         if c != measure and c not in alias_of and R.kind(c) == "number" and c not in [m["landed"] for m in metadata]:
             others_varying.append(head[c])
     if others_varying and not official:
-        return _empty("not_cube", "more than one measure column (%s)" % ", ".join(sorted(set(others_varying))[:3]), **base)
+        return _empty("not_cube", "more than one measure column (%s)" % ", ".join(sorted(set(others_varying))[:3]), code="second_measure", **base)
     # -- the cube: date x dimensions tell the rows apart
     tcode, tlabels = _factorize(dts[dated].dt.strftime("%Y-%m-%d").to_numpy())
     if not dims:
@@ -893,6 +897,13 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
         codes, labels, _f = cat[d]
         dimrecs.append({"column": head[d], "landed": d, "labels": labels, "role": None, "members": len(labels)})
     unit_info = _units(R, cat, metadata, alias_of, dims, rows, head, s_index, s_codes)
+    if scale_info.get("scale_from_unit"):
+        # the scale the unit of measure carried is applied to the figures (_scale): the unit is printed without it, never twice
+        um = unit_info["measure"]
+        if um.get("uom") and not str(um["uom"]).startswith("varies"):
+            um["uom"] = _strip_unit_scale(um["uom"]) or "units"
+        unit_info["member_unit"] = {j: {mi: (_strip_unit_scale(u) or "units") for mi, u in per.items()}
+                                    for j, per in (unit_info.get("member_unit") or {}).items()}
     S: Dict[str, Any] = {
         "kind": "cube", "usable": False, "reason": "", "version": VERSION, "publisher": publisher,
         "official": official, "date": {"column": head[date], "landed": date, "labels": date_family or None},
@@ -1222,20 +1233,53 @@ def _fold_text(v: Any) -> str:
     return " ".join("".join(ch for ch in t if not unicodedata.combining(ch)).lower().split())
 
 
+# wave 5e (P9): the scale words nobody uses for anything else. A column (or a unit of measure) that says one of these is a statement of
+# the scale whatever its header; the short or foreign-looking ones (mil, mill, mio, mrd, mille) are read only in a table that comes from a
+# publisher, where a column of them can only be a scale
+_SCALE_CLEAR = frozenset(("thousand", "thousands", "million", "millions", "billion", "billions", "trillion", "trillions",
+                          "milliers", "millier", "millones", "millon", "miles", "tausend", "tausende", "millionen",
+                          "milliards", "milliard", "milliarden", "milliarde"))
+_UNIT_SCALE_RX = re.compile("(?<![a-z])(" + "|".join(sorted(_SCALE_CLEAR, key=len, reverse=True)) + ")(?![a-z])")
+
+
+def _unit_scale(text: Any) -> Optional[Tuple[str, float]]:
+    """(the scale word, its factor) when a unit of measure's own words carry one ("USD millions", "Millions of dollars", "Dollars
+    (millions)", "$ billions", "Millions de dollars", "Thousands of persons"), else None."""
+    m = _UNIT_SCALE_RX.search(_fold_text(text))
+    return (m.group(1), _SCALE_FACTOR[m.group(1)]) if m else None
+
+
+def _strip_unit_scale(text: Any) -> str:
+    """The unit of measure without its scale word, once the scale is applied to the figures ("Millions of dollars" -> "dollars"): the
+    printed figure is then in base units and its unit must not say the scale a second time."""
+    t = re.sub("(?i)(?<![A-Za-z])(?:" + "|".join(sorted(_SCALE_CLEAR, key=len, reverse=True)) + ")(?![A-Za-z])", " ", str(text or ""))
+    t = re.sub(r"\(\s*\)", " ", t)
+    t = re.sub(r"(?i)^\s*(?:of|de|von|en|d')\s+", "", t.strip())
+    t = re.sub(r"(?i)\s+(?:of|de|von|en)\s*$", "", t)
+    return " ".join(t.split()).strip(" ,;:-")
+
+
 def _scale(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], rows: Any, head: Dict[str, str], official: bool = False
            ) -> Tuple[Any, Dict[str, Any]]:
     """Each row's scale factor (SCALAR_FACTOR "thousands", SCALAR_ID 3, UNIT_MULT 6, FACTEUR SCALAIRE "milliers"), and what was read. A column
-    that is a scale by its name, or by its words (every value a scale word, one of them not "units"), that holds a word the engine does
-    not read is reported as `unknown`: the table is then refused, never read at a scale of 1 (wave 5e, P9)."""
+    that is a scale by its name, or by its words (a column whose only value is a scale word, under any header), that holds a word the engine
+    does not read is reported as `unknown`: the table is then refused, never read at a scale of 1 (wave 5e, P9). A scale the unit of
+    measure itself carries ("USD millions") is applied when no scale column says otherwise."""
     import numpy as np
     n = len(rows)
     unknown: List[str] = []
+    held = None
     for m in metadata:
         nm = _norm(m["column"])
         if m["class"] == "constant" and (nm in _SCALE_WORDS or nm in _SCALE_IDS):
             f = _scale_word(m["value"], nm in _SCALE_IDS or nm in ("unitmult", "unitmultiplier"))
-            if f:
+            if f and f != 1.0:
                 return np.full(n, f), {"scale": str(m["value"]), "factor": f, "scale_column": m["column"]}
+            if f:
+                # "units": the first scale column of the table has spoken (a second one that disagrees, SCALAR_ID beside SCALAR_FACTOR, is
+                # not read); the unit of measure's own words may still say more (UOM "Millions of dollars")
+                held = (np.full(n, f), {"scale": str(m["value"]), "factor": f, "scale_column": m["column"]})
+                break
             unknown.append("%s = %s" % (m["column"], str(m["value"])[:30]))
     for c, (codes, labels, _f) in cat.items():
         nm = _norm(head.get(c, c))
@@ -1246,11 +1290,28 @@ def _scale(R: Any, cat: Dict[str, Any], metadata: List[Dict[str, Any]], rows: An
                     unknown.append("%s = %s" % (head.get(c, c), lb[:30]))
             arr = np.array([f or 1.0 for f in fs])[codes]
             return arr, {"scale": "varies by series", "factor": None, "scale_column": head.get(c, c), "scale_unknown": unknown}
-    # by behaviour: a constant column (or a few short words) that holds scale words and nothing else
-    for m in (metadata if official else []):
-        if m["class"] == "constant" and _fold_text(m.get("value")) in _SCALE_FACTOR and _fold_text(m.get("value")) not in ("unit", "units", "ones"):
-            f = _SCALE_FACTOR[_fold_text(m["value"])]
+    # by behaviour: a constant column that holds a scale word and nothing else, under whatever header (Scale, Factor, Facteur, Magnitude);
+    # in a table from a publisher the short and foreign words (mil, mio, mrd ...) count too
+    for m in metadata:
+        w = _fold_text(m.get("value"))
+        if m["class"] == "constant" and (w in _SCALE_CLEAR or (official and w in _SCALE_FACTOR)) and w not in ("unit", "units", "ones"):
+            f = _SCALE_FACTOR[w]
             return np.full(n, f), {"scale": str(m["value"]), "factor": f, "scale_column": m["column"]}
+    # a scale in the unit of measure's own words ("USD millions", "Millions of dollars"): the table's, or each series' where the unit varies
+    for m in metadata:
+        if m["class"] == "constant" and _norm(m["column"]) in _UNIT_META:
+            got = _unit_scale(m.get("value"))
+            if got:
+                return np.full(n, got[1]), {"scale": got[0], "factor": got[1], "scale_column": m["column"], "scale_from_unit": True}
+    for c, (codes, labels, _f) in cat.items():
+        if _norm(head.get(c, c)) in _UNIT_META:
+            got = [_unit_scale(lb) for lb in labels]
+            if any(got):
+                arr = np.array([g[1] if g else 1.0 for g in got])[codes]
+                return arr, {"scale": "varies by series", "factor": None, "scale_column": head.get(c, c), "scale_from_unit": True,
+                             "scale_unknown": unknown}
+    if held is not None:
+        return held[0], (dict(held[1], scale_unknown=unknown) if unknown else held[1])
     return np.ones(n), {"scale": "units", "factor": 1.0, "scale_column": None, "scale_unknown": unknown}
 
 
@@ -1387,7 +1448,17 @@ def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "")
         stock = _STOCK_WORDS.search(bag)
         if stock:
             return done("stock", "positively a stock", "currency, but the labels say %s" % stock.group(0).lower(), False)
+        bal = _STOCK_BALANCE_WORDS.search(own + " " + bag)
+        if bal:
+            fw = _FLOW_WORDS.search(own + " " + bag)
+            if fw:
+                return done("unknown", "ambiguous: averaged", "the labels hold a flow word (%s) and a balance word (%s)" % (
+                    fw.group(0).lower(), bal.group(0).lower()), False)
+            return done("stock", "positively a stock", "currency, but the labels say %s, a balance at a date" % bal.group(0).lower(), False)
         lvl = own or says
+        if _LEVEL_PRICE.search(u):
+            # the unit itself says it is a price or per something (dollars per unit of foreign currency, dollars per hour): a level
+            return done("unknown", "ambiguous: averaged", "the unit (%s) is a price or per something, a level" % u[:50], False)
         if lvl and _LEVEL_PRICE.search(lvl):
             # wave 5e: an average, a median, a price or a rate in a currency is a level, whether a measure dimension's member says so
             # or the measure's own name and the table's constant labels do ("Average weekly earnings"): never summed over months
@@ -1853,8 +1924,8 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
         if not done:
             continue
         P0, chk0 = done[0]
-        if chk0["status"] == "fail" and t in hint:
-            contradicted.append(t)                  # a member that says total and is DECIDEDLY not the sum of the others (P8: said so)
+        if chk0["status"] == "fail" and (t in hint or t in whole):
+            contradicted.append(t)                  # a member that says total (or a whole country's name) and is DECIDEDLY not the sum of the others (P8)
         if chk0["status"] == "unresolved":
             if t in hint:
                 # named as the total, nothing contradicts it, nothing could check it (no complete cell, or magnitudes as small as the
@@ -4102,6 +4173,8 @@ def _evidence(S: Dict[str, Any], where: Dict[str, Any], built: Optional[Dict[str
         r = d.get("role")
         if r in ("partition", "hierarchy") and w == d.get("total"):
             levels.append("verified" if (d.get("evidence") or "verified") == "verified" else "named")
+        elif r == "components" and w == d.get("total"):
+            levels.append("named")                  # a member that says total and bounds the others: its own series, the others are no parts of it
         elif r == "parts" and w == PARTS_TOKEN:
             levels.append("built")
         elif r == "single" and w == d.get("total"):
@@ -4111,11 +4184,15 @@ def _evidence(S: Dict[str, Any], where: Dict[str, Any], built: Optional[Dict[str
     level = min(levels, key=lambda x: _EVIDENCE_RANK[x])
     if level == "verified":
         return None
-    tails = {"built": " (the table has no total row)",
+    tails = {"built": (" (the table has no total row; %s %s suppressed in the windows, so this sum of the reported parts is incomplete)" % (
+                _fmt_count(built["suppressed_part_months"]), "region-months" if built.get("noun") == "regions" else "member-months")
+                if built and built.get("incomplete") else " (the table has no total row)"),
              "named": " (named as the total, not checked against its parts)" if any(
                  d.get("role") in ("partition", "hierarchy") and d.get("evidence") == "named" for d in S["dims"]) else
              " (named as the total, but the other members do not add up to it)" if any(
                  d.get("role") == "single" and d.get("named_contradicted") for d in S["dims"]) else
+             " (named as the total; the other members bound it and do not add up to it)" if any(
+                 d.get("role") == "components" for d in S["dims"]) else
              " (named as the whole, not checked against the other members)",
              "single": ""}
     return {"level": level, "tail": tails[level], "dims": [d["column"] for d in S["dims"] if d.get("role") in

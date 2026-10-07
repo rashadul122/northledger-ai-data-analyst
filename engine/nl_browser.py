@@ -1798,8 +1798,25 @@ def _raw_column_values(raw: Any, headers: Iterable[str]) -> Dict[str, List[str]]
     return out
 
 
+def _release_slice_measure(E: Any, eng: Any, res: Any, header: str) -> None:
+    """The measure column of a slice the structure layer wrote itself (the date and one number a month, in base units) is never a
+    national ID number, whatever its digits: a figure of eleven digits (dollars in millions, a population) passes the scan's check digit
+    now and then, and the slice then had no measure and the run no facts (wave 5e: found when "USD millions" was applied to the figures).
+    The visitor decided on the file's own columns (privacy.flagged is theirs); this column is the engine's own."""
+    import sqlite3
+    landed = dict(getattr(res, "column_map", {}) or {}).get(header)
+    if not landed:
+        return
+    con = sqlite3.connect(eng.db_path)
+    try:
+        con.execute("DELETE FROM %s WHERE table_name = ? AND column_name = ?" % E.COLUMNS_TABLE, (res.table, landed))
+        con.commit()
+    finally:
+        con.close()
+
+
 def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optional[Dict[str, str]] = None, sent_bytes: Any = None,
-                      kept: Optional[Dict[str, str]] = None
+                      kept: Optional[Dict[str, str]] = None, slice_measure: Optional[str] = None
                       ) -> Tuple[List[Dict[str, str]], List[str], "Scrubber", List[Dict[str, Any]]]:
     """The decide stage, the same for a run and for the planner's profile: a free-text flag on a plain category is
     lifted (_release_categories, unless the visitor withheld or coded it), the adapter's personal-column check adds
@@ -1808,6 +1825,8 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     are read for the scrubber and then landed as codes no cleaning rule reads. Returns (privacy.flagged, the withheld
     columns, the scrubber, privacy.released)."""
     import sqlite3
+    if slice_measure:
+        _release_slice_measure(E, eng, res, slice_measure)
     released = _release_categories(E, eng, res, decisions)
     _release_value_column(E, eng, res, decisions, released)
     colmap = dict(getattr(res, "column_map", {}) or {})
@@ -2333,7 +2352,7 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
         # a weekly or a daily table (wave 5e): "52 weeks to 20 Feb 2023", "the 40 matched weeks to 20 Feb 2023"
         last = _ns()._plabel({"period": per}, w[1])
         used = int(est.get("periods_used") or per.get("window") or 1)
-        if est.get("complete") is False and est.get("periods_used"):
+        if est.get("complete") is False and est.get("periods_used") and used < int(per.get("window") or 1):
             return "the %d matched %s of %d to %s" % (used, per["nouns"] if used != 1 else per["noun"], int(per.get("window") or 1), last)
         return "%d %s to %s" % (int(per.get("window") or 1), per["nouns"], last)
     if per and int(per.get("step") or 1) != 1:
@@ -2341,7 +2360,7 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
         Sp = {"period": per}
         last = _ns()._plabel(Sp, w[1])
         used = int(est.get("periods_used") or per.get("window") or 1)
-        if est.get("complete") is False and est.get("periods_used"):
+        if est.get("complete") is False and est.get("periods_used") and used < int(per.get("window") or 1):
             # wave 5e (P6): a headline on a subset of the periods says how many of the whole window it rests on
             return "the %d matched %s of %d to %s" % (used, per["nouns"] if used != 1 else per["noun"], int(per.get("window") or 1), last)
         n = int(per.get("window") or 1)
@@ -2354,7 +2373,7 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
     if n < 1 or not 1 <= m2 <= 12:
         return ""
     end = "%s %d" % (_MON[m2 - 1], y2)
-    if est.get("complete") is False and est.get("months_used"):
+    if est.get("complete") is False and est.get("months_used") and int(est["months_used"]) < 12:
         return "the %d matched months of 12 to %s" % (int(est["months_used"]), end)
     return end if n == 1 else "%d months to %s" % (n, end)
 
@@ -2415,6 +2434,11 @@ def _estimand_headline(rep: Dict[str, Any]) -> Optional[str]:
                                                        else (" in " + win if win else ""), chg_t)
     if grade in ("NOT_ENOUGH_DATA", "INSUFFICIENT"):
         return subject + ": no settled change; the data cannot say yet (INSUFFICIENT)"
+    if not grade and est.get("complete") is False and (est.get("months_used") or est.get("periods_used")):
+        # a short table: no test of the change was run (the engine's own sentence says so), but the matched periods are compared and the
+        # estimand prints that change: the headline says both, never one report that says "no change is tested" and a percent
+        return lead + chg_t + (" (%s)" % lvl_t if lvl_t and lvl_t != "n/a" else "") + \
+            " (the table is too short to test the change; only the matched periods are compared)"
     return None
 
 
@@ -9074,7 +9098,10 @@ def _guard_long_shape(df: Any) -> Optional[Dict[str, Any]]:
             # a flag marks a missing value: a code whose rows have a blank measure (learned from the file), or a column the
             # publishers name as a flag (STATUS, OBS_FLAG ...) that holds one of their codes; a "status" of open/done, a "returned"
             # of Y/blank or a grade of A to D is a business file's own column, not a flag
+            # a code, not a word: a status such as "Void" or "Hold" whose rows have no value is a business file's own column; a publisher's code
+            # is a symbol or a letter or two (x, F, .., p, [x])
             predicts = any(int((text[c] == m).sum()) >= 3 and float(blank_measure[text[c] == m].mean()) >= _GUARD_BLANK_MEASURE
+                           and not (len(m) >= 3 and m.isalpha())
                            for m in members)
             # a column the publishers name a flag holds one of their codes: never counting the letters A to F, which are a student's grade
             # as much as a publisher's quality letter (wave 5e, P7)
@@ -9216,6 +9243,8 @@ def _verdict_failure(data: bytes, S: Optional[Dict[str, Any]]) -> Optional[Dict[
     or too slow to read, a layout it does not know. The layer's own plain reason is the refusal's. None for any other file (read as before)."""
     if not isinstance(S, dict) or S.get("kind") != "not_cube":
         return None
+    if S.get("code") == "second_measure" and not S.get("official"):
+        return None          # a file with two number columns and no publisher's mark is a business export (read as before), whatever else it looks like
     why = looks_like_series_table(data)
     if why is None:
         return None
@@ -10069,7 +10098,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         t0 = time.perf_counter()
         flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions,
                                                                aside=(layout or {}).get("personal_set_aside"), sent_bytes=sent,
-                                                               kept=(layout or {}).get("personal_kept"))
+                                                               kept=(layout or {}).get("personal_kept"),
+                                                               slice_measure=(structure_inner or {}).get("column"))
         rep["privacy"]["flagged"] = flagged
         rep["privacy"]["released"] = released
         timings["decide"] = time.perf_counter() - t0

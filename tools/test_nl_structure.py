@@ -2224,7 +2224,9 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
         g = dim(NS.detect(reading(data), ()), "GEO")
         assert g["role"] == "single" and g["total"] == "Canada" and g.get("single_by") == "name", (k, g)
         assert rep["story"]["headline"].startswith("%s, Canada, 12 months to Dec 2022: +" % ("VALUE" if k == "hierarchy" else member)), rep["story"]["headline"]
-        assert "in the published totals" not in rep["story"]["headline"] and "named as the whole" in rep["story"]["headline"], rep["story"]["headline"]
+        # wave 5e, second review (P8): the check RAN and failed (the provinces listed are no sum of Canada), and the words say so
+        assert "in the published totals" not in rep["story"]["headline"] and \
+            rep["story"]["headline"].endswith("(named as the total, but the other members do not add up to it)"), rep["story"]["headline"]
         assert any(x["what"] in ("1 other members", "%d other members" % (len(g["labels"]) - 1)) or "Ontario" in x["what"] or "other" in x["what"]
                    for x in e["excluded"]) or True
 

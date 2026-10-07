@@ -639,6 +639,200 @@ def test_r23_a_dimension_of_measures_is_never_an_adjusted_pair_a_rate_and_its_st
     assert "Employment" in headline(rep) and "published totals" in headline(rep), headline(rep)
 
 
+# ----------------------------------------------------------------------------- the second independent review (wave 5e): R01 to R09
+def _csv_rows(head, rows):
+    import csv as _csv
+    b = io.StringIO()
+    w = _csv.writer(b, lineterminator="\n")
+    w.writerow(head)
+    w.writerows(rows)
+    return b.getvalue().encode()
+
+
+def test_r24_an_ordinary_ledger_with_a_status_column_and_a_second_number_is_read_never_refused_as_a_table_of_series():
+    """Review R01 and R02. An orders ledger (Date, Region, Product, Status Paid/Open/Void/Hold with no Value on a Void order, Value, Qty) and a
+    help-desk export (Status p/c/r, Hours, Cost) were refused as "a table of series with totals": a short code whose rows have no value, or a
+    status named like a publisher's flag, passed the long-format test, and the second number column made the layer say not_cube. A file with
+    two number columns and no publisher's mark is a business export, read as before. The negative: the same shape WITH a publisher's columns
+    (a Statistics Canada table that also carries a second varying number) is still refused."""
+    import datetime as dt
+    rng = np.random.RandomState(1)
+    rows = []
+    for i in range(36):
+        d = dt.date(2021 + i // 12, i % 12 + 1, 1)
+        for r in ("North", "South", "East"):
+            for p in ("Gadgets", "Widgets"):
+                st_ = ("Paid", "Open", "Void", "Hold")[int(rng.randint(4))]
+                rows.append([d.isoformat(), r, p, st_, "" if st_ == "Void" else "%.2f" % rng.uniform(10, 90), int(rng.randint(1, 20))])
+    ledger = _csv_rows(["Date", "Region", "Product", "Status", "Value", "Qty"], rows)
+    rep = run_bytes(ledger)
+    assert rep.get("ok") and not refused(rep) and st(rep).get("kind") != "error", headline(rep)[:300]
+    rows = []
+    for i in range(36):
+        d = dt.date(2021 + i // 12, i % 12 + 1, 1)
+        for team in ("Tier1", "Tier2", "Tier3"):
+            for cat in ("Billing", "Login", "Bug"):
+                hrs = round(float(rng.uniform(1, 9)), 1)
+                rows.append([d.isoformat(), team, cat, ("p", "c", "r")[int(rng.randint(3))], hrs, round(hrs * 40, 2)])
+    rep2 = run_bytes(_csv_rows(["Date", "Team", "Category", "Status", "Hours", "Cost"], rows))
+    assert rep2.get("ok") and not refused(rep2) and st(rep2).get("kind") != "error", headline(rep2)[:300]
+    # negative: a publisher's table with a second varying number column is still refused, never read the old way
+    df = frame("r10_partition_for_caps.csv")
+    df["EXTRA"] = (pd.to_numeric(df["VALUE"], errors="coerce").fillna(0) * 0.37 + np.arange(len(df)) % 7).round(2).astype(str)
+    rep3 = run_bytes(df.to_csv(index=False).encode())
+    assert refused(rep3), headline(rep3)[:300]
+
+
+def test_r25_a_scale_word_in_a_column_of_any_header_is_applied_and_an_ambiguous_word_is_not():
+    """Review R08. A constant column whose only value is a scale word (Thousands, Millions, Milliers, Miles, Tausend) is the table's scale
+    whatever its header (Scale, Factor, Facteur, Magnitude): the figure printed $148.9K where the file said thousands of dollars ($148.9M).
+    The negative: a constant column that holds a short or ambiguous word ("Mill", "Mil") in a table with no publisher's mark is left alone."""
+    import make_cubes as MC
+    rng = np.random.RandomState(12)
+    regs = ["Bayern", "Hessen", "Sachsen", "Saarland"]
+    v = {r: np.round(MC._series(rng, lv)) for r, lv in zip(regs, (5000, 3000, 2000, 800))}
+    tot = sum(v.values())
+
+    def table(header, word):
+        rows = []
+        for i, mo in enumerate(MC.MONTHS):
+            rows.append([mo, "Total", "Sales", "Dollars", word, "%d" % tot[i]])
+            rows.extend([mo, r, "Sales", "Dollars", word, "%d" % v[r][i]] for r in regs)
+        return MC._csv(["Date", "Region", "Measure", "Unit", header, "Value"], rows)
+    for header, word, k in (("Scale", "Thousands", 1e3), ("Factor", "Thousands", 1e3), ("Magnitude", "Millions", 1e6), ("Facteur", "Milliers", 1e3),
+                            ("Factor", "Miles", 1e3), ("Faktor", "Tausend", 1e3), ("Unit multiplier", "Thousands", 1e3)):
+        rep = run_bytes(table(header, word))
+        f = figs(rep)
+        assert f is not None and close(f[1], tot[-12:].sum() * k, 1e-6), (header, word, f, tot[-12:].sum() * k)
+    rep = run_bytes(table("Size", "Mill"))
+    f = figs(rep)
+    assert f is None or close(f[1], tot[-12:].sum(), 1e-6), ("an ambiguous word was applied", f)
+
+
+def test_r26_a_scale_the_unit_of_measure_carries_is_applied_once_and_the_slice_measure_is_never_an_id():
+    """Review R03. A table with no scale column whose UNIT says the scale ("USD millions", "Millions of dollars", "Dollars (millions)", "$ billions",
+    "CAD thousands", "Millions de dollars", "Thousands of persons") printed the raw numbers ("$308.2K" for $308.2B). The scale is applied to the
+    figures and dropped from the printed unit (never said twice), also where a SCALAR_FACTOR column says "units". And the figure, now eleven digits,
+    is not taken for a national ID number and withheld by the engine's scan (the slice the structure layer writes is its own column): the
+    report still has its facts. The negative: SCALAR_FACTOR "millions" with UOM "Dollars" is applied once."""
+    import make_cubes as MC
+    rng = np.random.RandomState(17)
+    regions = ["England", "Wales", "Scotland"]
+    vals = {r: MC._series(rng, lv, growth=0.02) for r, lv in zip(regions, (9000, 900, 1100))}
+    tot = np.array([sum(vals[r][i] for r in regions) for i in range(len(MC.MONTHS))])
+
+    def table(unit):
+        rows = []
+        for i, mo in enumerate(MC.MONTHS):
+            rows.append([mo, "Great Britain", "%d" % tot[i], unit])
+            rows.extend([mo, r, "%d" % vals[r][i], unit] for r in regions)
+        return MC._csv(["date", "region", "value", "unit"], rows)
+    for unit, k in (("USD millions", 1e6), ("Millions of dollars", 1e6), ("Dollars (millions)", 1e6), ("$ billions", 1e9),
+                    ("CAD thousands", 1e3), ("Millions de dollars", 1e6)):
+        rep = run_bytes(table(unit))
+        f = figs(rep)
+        assert f is not None and close(f[1], tot[-12:].sum() * k, 1e-6), (unit, f, tot[-12:].sum() * k)
+        assert len(rep.get("findings") or []) > 0 and "no gated facts" not in headline(rep), (unit, headline(rep)[:200])
+        assert not re.search(r"(?i)million|billion|thousand", str((st(rep).get("measure") or {}).get("uom") or "")), st(rep).get("measure")
+    # a StatCan-shaped table: UOM says the scale, SCALAR_FACTOR says units
+    rec = []
+    for i, mo in enumerate(MC.MONTHS):
+        rec.append((mo, "Total", ("Sales",), tot[i] / 10.0, "A"))
+        for r in regions:
+            rec.append((mo, r, ("Sales",), vals[r][i] / 10.0, "A"))
+    for unit, k in (("Millions of dollars", 1e6), ("Thousands of persons", 1e3)):
+        rep = run_bytes(MC._official(["Sales"], rec, uom=unit, scalar="units"))
+        f = figs(rep)
+        want = (tot[-12:] / 10.0).sum() * k
+        assert f is not None and close(f[1], want, 1e-4), (unit, f, want)
+    rep = run_bytes(MC._official(["Sales"], rec, uom="Dollars", scalar="millions"))
+    f = figs(rep)
+    want = (tot[-12:] / 10.0).sum() * 1e6
+    assert f is not None and close(f[1], want, 1e-4), ("SCALAR_FACTOR millions with UOM Dollars is applied once", f, want)
+
+
+def test_r27_a_balance_in_a_currency_is_a_level_not_a_flow_and_a_price_per_unit_is_never_summed():
+    """Review R05. A measure in a currency was a flow unless the labels held one of seven words (inventory, outstanding, balance, holding, asset,
+    debt, stock): total deposits, loans, liabilities, net worth, money supply M2, savings, market capitalization, reserves, equity were printed as
+    12-month totals (12 times the level), and an exchange rate "Dollars per unit of foreign currency" as a sum. A balance word makes the
+    measure a stock (a mean of the months); with a flow word beside it ("new loans issued") it is ambiguous (averaged), never summed; the unit
+    that says per something is a level. The negative: retail sales in dollars is still a flow."""
+    for label in ("Total deposits", "Loans", "Liabilities", "Net worth", "Money supply M2", "Savings", "Market capitalization", "Reserves", "Equity"):
+        c = NS._classify("Dollars", label + " VALUE", "VALUE", says=label)
+        assert c["type"] == "stock" and c["aggregation"] == "mean over months", (label, c)
+    c = NS._classify("Dollars", "Net sales of loans VALUE", "VALUE", says="Net sales of loans")
+    assert c["aggregation"] == "mean over months" and c["type"] != "flow", c
+    c = NS._classify("Dollars per unit of foreign currency", "VALUE", "VALUE")
+    assert c["aggregation"] == "mean over months", c
+    for label in ("Retail sales", "Total revenue", "Wages and salaries"):
+        assert NS._classify("Dollars", label + " VALUE", "VALUE", says=label)["type"] == "flow", label
+
+
+def test_r28_a_sum_of_reported_parts_with_suppressed_cells_says_it_is_incomplete_in_the_headline():
+    """Review R07. Five regions, no total row, 7 of 60 region-months suppressed all in the earlier window: the headline read "the sum of 5
+    regions, the 12 matched months of 12 to Dec 2021: +16.5%" (the true change is +3.8%) and only the estimand's text, further down, said the sum
+    of the reported parts is incomplete. The headline now says it, and does not call twelve months of twelve "matched"."""
+    import make_cubes as MC
+    n = 36
+    t = np.arange(n)
+    rng = np.random.RandomState(2)
+    regs = {"Alder": 5000, "Birch": 7000, "Cedar": 3000, "Dune": 6000, "Elm": 4000}
+    vals = {r: np.round(lv * 1.0032 ** t * MC.SEASON[t % 12] * (1 + 0.01 * rng.standard_normal(n))) for r, lv in regs.items()}
+    hide = {("Alder", i) for i in range(12, 19)}
+    rec = [(mo, r, ("Retail sales",), None if (r, i) in hide else vals[r][i], "x" if (r, i) in hide else "A")
+           for i, mo in enumerate(MC.MONTHS[:n]) for r in regs]
+    rep = run_bytes(MC._official(["Sales"], rec))
+    h = headline(rep)
+    assert "incomplete" in h and "suppressed" in h, h
+    assert "matched months of 12" not in h, h
+    # the negative: no suppression, no such words
+    rec = [(mo, r, ("Retail sales",), vals[r][i], "A") for i, mo in enumerate(MC.MONTHS[:n]) for r in regs]
+    h2 = headline(run_bytes(MC._official(["Sales"], rec)))
+    assert "incomplete" not in h2 and "matched" not in h2, h2
+
+
+def test_r29_a_named_whole_and_a_named_total_the_others_do_not_add_up_to_say_so():
+    """Review R04. "Canada" beside four provinces that add up to 85% of it was described as "could not be checked against the other members"
+    (the check ran and failed), while the same table with the member named "Total" read "in the published totals". Both now say what the
+    check found: named as the total, and the other members do not add up to it (for a total that bounds them: they bound it and do not add up)."""
+    import make_cubes as MC
+    rng = np.random.RandomState(1)
+    prov = {"Ontario": 9000, "Quebec": 6000, "Alberta": 4000, "British Columbia": 5000}
+    vals = {r: MC._series(rng, lv) for r, lv in prov.items()}
+    whole = np.round(sum(vals.values()) / 0.85)
+    for name in ("Canada", "Total"):
+        rec = []
+        for i, mo in enumerate(MC.MONTHS):
+            rec.append((mo, name, ("Retail sales",), whole[i], "A"))
+            rec.extend((mo, r, ("Retail sales",), vals[r][i], "A") for r in prov)
+        h = headline(run_bytes(MC._official(["Sales"], rec)))
+        assert "do not add up to it" in h, (name, h)
+        assert "not checked" not in h and "could not be checked" not in h and "in the published totals" not in h, (name, h)
+
+
+def test_r30_a_short_table_does_not_say_no_change_is_tested_beside_a_percent_change():
+    """Review R09. A monthly table of 18 months: the story headline said "too short to compare the latest 12 months with the 12 before, so no
+    change is tested" while the estimand of the same report printed +3.3% on the 6 months both windows hold. The headline now says both: the
+    change on the matched periods, and that the table is too short to test it."""
+    import make_cubes as MC
+    n = 18
+    t = np.arange(n)
+    months = ["%04d-%02d" % (2021 + i // 12, i % 12 + 1) for i in range(n)]
+    rng = np.random.RandomState(8)
+    regs = {"Alder": 5000, "Birch": 7000, "Cedar": 3000}
+    v = {r: np.round(lv * 1.003 ** t * MC.SEASON[t % 12] * (1 + 0.02 * rng.standard_normal(n))) for r, lv in regs.items()}
+    tot = sum(v.values())
+    rec = []
+    for i, mo in enumerate(months):
+        rec.append((mo, "Total", ("Retail sales",), tot[i], "A"))
+        rec.extend((mo, r, ("Retail sales",), v[r][i], "A") for r in regs)
+    rep = run_bytes(MC._official(["Sales"], rec))
+    h = headline(rep)
+    assert "no change is tested" not in h, h
+    assert "too short" in h and "+3.3%" in h.replace("\u2212", "-"), h
+    assert abs(est(rep)["figures"]["change_pct"]["value"] - 100 * (tot[12:18].sum() / tot[0:6].sum() - 1)) < 0.05
+
+
 def test_s01_sensitive_headers_are_never_released_as_categories_whatever_the_language():
     """Suspected: SENSITIVE_HEADER lacked visible minority, Indigenous, cause of death, ICD, HIV, marital, and their French, German and
     Spanish cognates. A category with such a header is sensitive even when it is categorical: never released, so withheld by default."""

@@ -1799,10 +1799,12 @@ LEDGER, with what happens when it is wrong and which way it errs (a refusal is t
 - *P5, copies by shape.* Two members that are one quantity twice (a seasonally adjusted copy, current and chained dollars) are found by SHAPE: the changes of their
   12-period moving-average logs correlate at least 0.95 and the log of their ratio wanders at most 0.15 (at least 12 smoothed points; 8 for an annual table),
   whatever the gap between their levels; the wave 5d test (calendar-year totals within 3%) is kept as one more way to see a copy. A copy is never added to
-  its original, whatever the number of members (the 40 largest are compared). A dimension of places is never an adjustment.
-- *P6, the period is detected.* Several dates a month are a weekly table (80% of the gaps 7 days) or a daily one (60% 1 day, none over 4); the windows are the
+  its original, whatever the number of members (the 40 largest are compared). A dimension of places is never an adjustment, and neither is a dimension that names what is measured (a rate and
+  its standard error move together under a steady ratio and are two measures, not one quantity twice: the fuzz found the structure layer crashing on it).
+- *P6, the period is detected.* Several dates a month are a weekly table (80% of the gaps 7 days) or a daily one (60% 1 day and 95% at most 4: a longer gap over a holiday is a hole, not another rhythm); the windows are the
   trailing 52 weeks or 365 days (or the largest whole number of periods that fits twice, at least 8 weeks, 28 days) ending at the last date with a value, and the same
-  span before it; a date is compared with the date one span before it (`period.cadence`, `span_days`; `step` -7 and -1 mark them as no calendar step). Any other
+  span before it; a date is compared with the date one span before it (`period.cadence`, `span_days`; `step` -7 and -1 mark them as no calendar step). A daily table with a weekday missing (no weekend rows) is compared over whole weeks (a multiple of 7 days, 364 at most), so a date is set against the same weekday; a table
+  of every day keeps 365 days. Any other
   rhythm is `not_cube`: never read as monthly. A LEVEL's window is matched too (`matched_months`): the periods with a value in both windows, at least half a
   window, else no figure. A headline on a subset says "the 8 matched months of 12" in its words.
 - *P7, fail closed.* Every verdict that is not a cube (`not_cube`: one reference period, more than 8 dimensions, 20,000 series or 2,000,000 cells, a `MemoryError`,
@@ -1813,7 +1815,7 @@ LEDGER, with what happens when it is wrong and which way it errs (a refusal is t
 - *P8, honest wording.* "adds_up", "sum-checked", "Each total was checked against its parts", "in the published totals" and "the named total" are printed only at the evidence level
   reached. `estimand.evidence {level: "named" | "built" | "single", tail, dims}` exists when it is below "verified"; `sum_checks[].verdict` is `named_not_checked`;
   the headline ends "(named as the total, not checked against its parts)", "(the table has no total row)" for a sum the engine built from parts, "(named as the whole, not
-  checked against the other members)", or says "one member shown". A measure whose labels say average, median, price or rate is a level, never "12-month totals".
+  checked against the other members)", or says "one member shown". A measure whose labels say average, median, price or rate is a level, never "12-month totals". A member that says total and is decidedly NOT the sum of the other members (the check could have failed and did) is shown alone as `named_contradicted`: "(named as the total, but the other members do not add up to it)", never "not checked".
 - *P9, language-independent metadata.* Headers are compared with accents folded (GÉO is geo). The id columns (VECTOR, VECTEUR, COORDINATE) are found by behaviour: an
   id-like column is never the dimension of two that are one to one. French, Spanish and German names of the metadata columns, of the unit and of the scale
   ("milliers", "millones", "Tausend") are read; a scale column that holds a word the engine does not read refuses the table (`cube_incomplete`) instead of printing

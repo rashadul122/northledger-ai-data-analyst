@@ -91,6 +91,8 @@ COPY_MIN_ANNUAL = 8
 ADJ_SEASONAL_RATIO = 3.0        # an adjusted pair is a copy where one is three times more seasonal than the other
 ADJ_MAX_MEMBERS = 4
 ADJ_MIN_PERIODS = {1: 24, 3: 16}      # wave 5d: periods an adjusted pair is looked for in, by the table's step (months: 2 years, quarters: 4)
+UNWORDED_CURRENCY_IS_LEVEL = False  # wave 5f (A): a currency with no flow word and no total that adds up is a level (averaged); False: a flow unless the
+                                    # table shows its aggregate is not a sum (a named total inside the others' range, or their weighted average)
 PROFILE_CAP = 6000              # the profile's structure block, bytes
 PROFILE_VALUE_MAX = 60          # a member string as the profile lists it (nl_browser._profile_facts cuts at 60)
 SLICES_MAX = 12
@@ -957,13 +959,17 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
             _mixed_measure(S, j)                       # a unit that varies with this dimension but is not a measure: typed anyway
             continue
         try:
-            if S["measure"]["type"] in ("rate", "index"):
+            if _no_sum(S):
                 _rate_aggregate(S, j, tm)
             else:
                 _relations(S, j, tm)
         except _TooLarge:
             rec["role"] = "unresolved"
             rec["why"] = "too many members and dates to check within the memory budget"
+    try:
+        _settle_measure(S, tm)
+    except _TooLarge:
+        pass
     for rec in S["dims"]:
         if rec["role"] in (None, "unresolved"):
             _rule6(S, rec)
@@ -1393,7 +1399,13 @@ def _measure_type(S: Dict[str, Any]) -> None:
     labels = " ".join([m["column"]] + consts + [lb for d in S["dims"] for lb in d["labels"][:60]])
     if S.get("_member_unit"):
         uom = " ".join(sorted(set(v for per in S["_member_unit"].values() for v in per.values())))
-    m.update(_classify(uom, labels, m["column"], says=" ".join([m["column"]] + consts)))
+    # wave 5f (A): the words that DESCRIBE the measure are the measure column's header, the constant labels and the members of a dimension whose
+    # header names what is measured (Statistics, Estimates, Indicator, Characteristics ...): a dimension of two average wages (with and without
+    # overtime) is not a measure dimension (one kind), and its words are the measure's. An industry's or a region's labels are not.
+    said = [lb for d in S["dims"] if _MEASURE_DIM_HEADER.search(str(d.get("column") or "")) for lb in d["labels"][:60]]
+    for k in ("pending_flow", "level", "flow_weak"):
+        m.pop(k, None)
+    m.update(_classify(uom, labels, m["column"], says=" ".join([m["column"]] + consts + said), strict=True))
     hint = _label_hint(S)
     if hint:
         m["label_hint"] = hint[:60]
@@ -1411,6 +1423,9 @@ _MEASURE_HEADER = re.compile(r"(?i)\b(?:characteristics?|statistics?|indicators?
                              r"products?|commodit(?:y|ies)|industr(?:y|ies)|trade|sector|activity|caract[\u00e9e]ristiques?|indicateurs?|"
                              r"mesures?|variables?|concepts?|[\u00e9e]l[\u00e9e]ments?|merkmale?|indikatoren?|kennzahlen?|kriterien|"
                              r"indicadores?|medidas?|variables?|conceptos?)\b")
+_MEASURE_DIM_HEADER = re.compile(r"(?i)\b(?:statistics?|estimates?|indicators?|measures?|variables?|characteristics?|series|concepts?|"
+                                 r"statistiques?|indicateurs?|mesures?|caract[\u00e9e]ristiques?|estad[\u00ed]sticas?|indicadores?|"
+                                 r"kennzahlen?|merkmale?)\b")
 _BASIS_WORDS = re.compile(r"(?i)\b(?:seasonally|unadjusted|adjusted|current (?:prices|dollars)|constant (?:prices|dollars)|chained|nominal|real|"
                           r"annual rate|calendar|trend|data type|basis|valeurs? (?:brutes|ajust[\u00e9e]es)|d[\u00e9e]saisonnalis[\u00e9e]|"
                           r"saisonbereinigt|desestacionalizad)")
@@ -1437,7 +1452,7 @@ def _label_hint(S: Dict[str, Any]) -> str:
     return best[0]
 
 
-def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "") -> Dict[str, Any]:
+def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "", strict: bool = False) -> Dict[str, Any]:
     """One measure's type and the decision behind it: {type, type_basis, type_why, aggregation}. `bag` is the text whose
     words may say what is counted (the measure's column and the table's member labels); `member` a measure dimension's
     member label, whose own words decide first. A currency is a flow (a stock under inventories, balances, assets, debt),
@@ -1447,6 +1462,10 @@ def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "")
     u = str(uom or "")
     own = str(member or "")
     out: Dict[str, Any] = {"type": "unknown", "type_basis": "ambiguous: averaged", "type_why": "", "aggregation": "mean over months"}
+    # wave 5f (A): `strict` is the table's own measure (not one member of a measure dimension): a currency is a flow only with POSITIVE evidence, a
+    # flow word in the labels that describe the measure or, below, a total that adds up across members (nl_structure._settle_measure); a
+    # currency with neither word is ambiguous and averaged, like a count (an average rent, a median income and a price per unit are in dollars
+    # and the file need not say so: the dollar unit says nothing about the other)
 
     def done(t: str, basis: str, why: str, sums: bool) -> Dict[str, Any]:
         out.update(type=t, type_basis=basis, type_why=why, aggregation="sum over months" if sums else "mean over months")
@@ -1472,11 +1491,17 @@ def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "")
         lvl = own or says
         if _LEVEL_PRICE.search(u):
             # the unit itself says it is a price or per something (dollars per unit of foreign currency, dollars per hour): a level
+            out["level"] = True
             return done("unknown", "ambiguous: averaged", "the unit (%s) is a price or per something, a level" % u[:50], False)
         if lvl and _LEVEL_PRICE.search(lvl):
             # wave 5e: an average, a median, a price or a rate in a currency is a level, whether a measure dimension's member says so
             # or the measure's own name and the table's constant labels do ("Average weekly earnings"): never summed over months
+            out["level"] = True
             return done("unknown", "ambiguous: averaged", "%s is a price or an average in a currency, a level" % lvl[:60], False)
+        if strict and not (_FLOW_WORDS.search(own) or _FLOW_WORDS.search(says) or _FLOW_WORDS.search(u)):
+            out["pending_flow"] = True
+            return done("unknown", "ambiguous: averaged",
+                        "a currency (%s) with no word in the labels that says it accumulates over a period" % u[:30], False)
         return done("flow", "positively a flow", "a currency (%s)" % u[:30], True)
     # an index or a rate named in the labels (not in a unit): never summed, whatever else the labels say
     if _INDEX_WORDS.search(bag):
@@ -1493,6 +1518,7 @@ def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "")
         except ImportError:
             ak = ""
         if ak == "money":
+            out["flow_weak"] = True        # wave 5f: a guess from the column's name; a total that is the average of the others overrides it
             return done("flow", "positively a flow", "the measure's name says an amount of money (%s)" % column[:30], True)
         count_unit = ak == "units"
         if not count_unit and not (own or flow_w or stock_w):
@@ -1835,6 +1861,23 @@ def _sum_check(A: Any, X: Any, t: int, parts: Sequence[int], tol_unit: float, no
     return out
 
 
+def _inside_range(A: Any, t: int) -> bool:
+    """Member t lies between the smallest and the largest of the others in 99% of the cells where it and at least two others have a value (6 or
+    more such cells): the way an average of them does, and a sum of them (or a total with parts missing) never does."""
+    import numpy as np
+    rest = [m for m in range(A.shape[0]) if m != t]
+    if len(rest) < 2:
+        return False
+    with np.errstate(all="ignore"):
+        lo = np.nanmin(np.where(np.isnan(A[rest]), np.inf, A[rest]), axis=0)
+        hi = np.nanmax(np.where(np.isnan(A[rest]), -np.inf, A[rest]), axis=0)
+        have = ~np.isnan(A[t]) & np.isfinite(lo) & np.isfinite(hi) & ((~np.isnan(A[rest])).sum(axis=0) >= 2)
+        n = int(have.sum())
+        if n < MIN_COMPLETE:
+            return False
+        return float(((A[t][have] >= lo[have] - 1e-12) & (A[t][have] <= hi[have] + 1e-12)).mean()) >= BOUND_SHARE
+
+
 def _bounds(A: Any, x: int, y: int, tol: float) -> bool:
     """Member x bounds member y (y <= x + tol) in 99% of the cells where both have a value, and there are such cells."""
     import numpy as np
@@ -1917,7 +1960,7 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
     # wave 5d: a whole country's name in a geographic dimension (Canada beside its provinces) is a total's name too: tried as the
     # total, and never added to the parts when no check could verify it (wave 5e: not when the column holds countries)
     whole = [m for m in range(M) if m not in hint and m not in nominated and _agg_name_tier(labels[m]) == 1
-             and _is_geographic(rec["column"]) and not _COUNTRY_COLUMN.search(rec["column"])]
+             and _is_geographic(rec["column"]) and not _COUNTRY_COLUMN.search(rec["column"]) and not _countries_table(labels)]
     # 1. FLAT: the top 3 by dominance and any name-hinted member, against every other member. Two readings of the members whose names
     # nominate them as alternatives: left out of the parts, or parts; the sums decide which (or neither)
     undecided: List[int] = []
@@ -1949,6 +1992,27 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
             undecided.append(t)
     rec["undecided_totals"] = [labels[t] for t in undecided]
     rec["contradicted_totals"] = [labels[t] for t in contradicted]
+    # wave 5f (F): a NAME nominates, the cells decide. A whole country's name (Canada, United States ...) beside members the cells show it is
+    # not the sum of, and that is SMALLER than one of them in some cell, is not their total: a total of non-negative parts is never below a
+    # part. It is one more member (a table of countries is not a table of provinces); it is never the headline, and it is added with the rest
+    # where the rest are disjoint parts. A total with parts missing (Canada beside provinces and no territories) bounds them all and stays
+    # "named as the total, but the other members do not add up to it" (wave 5e).
+    demoted: List[int] = []
+    if nonneg:
+        for t in contradicted:
+            if t in whole and t not in hint and not all(_bounds(A, t, m2, tol_u) for m2 in range(M) if m2 != t):
+                demoted.append(t)
+    for t in contradicted:
+        # a named total the cells show is NOT a sum and that lies inside the range of the others (between the smallest and the largest, never
+        # above the largest) is an AVERAGE of them: the evidence that the measure is a level (`_settle_measure`)
+        if nonneg and not all(_bounds(A, t, m2, tol_u) for m2 in range(M) if m2 != t) and _inside_range(A, t):
+            rec["intensive_total"] = labels[t]
+            break
+    if demoted:
+        rec["not_a_total"] = [labels[t] for t in demoted]
+        whole = [t for t in whole if t not in demoted]
+        contradicted = [t for t in contradicted if t not in demoted]
+        rec["contradicted_totals"] = [labels[t] for t in contradicted]
     if M > MAX_MEMBERS:
         # a series key with more members than the relation search reads (NAICS at 6 digits, HS codes): the flat check above (linear) is
         # all that is searched, and the reason says so (wave 5e, P11); one member is shown, or the table is refused by its caller
@@ -2579,6 +2643,47 @@ _BRACKETS = re.compile(r"\([^()]*\)|\[[^\[\]]*\]")
 _COUNTRY_COLUMN = re.compile(r"(?i)\b(?:country|countries|nation|nations|pays|land|l\u00e4nder|pa[i\u00ed]s|pa[i\u00ed]ses)\b")
 
 
+# wave 5f (F): the sovereign countries a table of countries lists. A whole country's name (Canada, the United States ...) among the provinces or
+# states of that country is its total; among OTHER COUNTRIES it is one more member. Two or more country names in one dimension make it a table
+# of countries, whatever its header says ("GEO"). Supranational names (Euro area, OECD, World) are aggregates of countries and are not here.
+_COUNTRY_ONE_WORD = (
+    "afghanistan albania algeria andorra angola argentina armenia australia austria azerbaijan bahamas bahrain bangladesh barbados belarus belgium "
+    "belize benin bhutan bolivia bosnia botswana brazil brunei bulgaria burundi cambodia cameroon canada chad chile china colombia comoros congo "
+    "croatia cuba cyprus czechia denmark djibouti dominica ecuador egypt eritrea estonia eswatini ethiopia fiji finland france gabon gambia georgia "
+    "germany ghana greece grenada guatemala guinea guyana haiti honduras hungary iceland india indonesia iran iraq ireland israel italy jamaica "
+    "japan jordan kazakhstan kenya kiribati kosovo kuwait kyrgyzstan laos latvia lebanon lesotho liberia libya liechtenstein lithuania luxembourg "
+    "madagascar malawi malaysia maldives mali malta mauritania mauritius mexico moldova monaco mongolia montenegro morocco mozambique myanmar namibia "
+    "nauru nepal netherlands nicaragua niger nigeria norway oman pakistan palau panama paraguay peru philippines poland portugal qatar romania russia "
+    "rwanda samoa senegal serbia seychelles singapore slovakia slovenia somalia spain sudan suriname sweden switzerland syria taiwan tajikistan "
+    "tanzania thailand togo tonga tunisia turkey turkmenistan tuvalu uganda ukraine uruguay uzbekistan vanuatu venezuela vietnam yemen zambia "
+    "zimbabwe usa uk uae korea "
+    # the larger countries' names in French, Spanish and German (accents folded)
+    "allemagne espagne italie belgique suisse autriche suede norvege danemark finlande irlande bresil mexique chine inde japon australie "
+    "alemania italia belgica suiza brasil japon deutschland spanien italien niederlande belgien schweiz osterreich schweden norwegen finnland "
+    "irland brasilien mexiko indien neuseeland")
+_COUNTRY_PHRASES = (
+    "united states", "united states of america", "united kingdom", "great britain", "new zealand", "south africa", "south korea", "north korea",
+    "saudi arabia", "united arab emirates", "sri lanka", "costa rica", "el salvador", "dominican republic", "puerto rico", "hong kong",
+    "czech republic", "north macedonia", "papua new guinea", "ivory coast", "cote d ivoire", "sierra leone", "burkina faso", "cabo verde",
+    "cape verde", "south sudan", "east timor", "trinidad and tobago", "etats unis", "royaume uni", "pays bas", "coree du sud",
+    "nouvelle zelande", "afrique du sud", "estados unidos", "reino unido", "paises bajos", "corea del sur", "nueva zelanda", "sudafrica",
+    "vereinigte staaten", "vereinigtes konigreich", "sudkorea", "sudafrika")
+_COUNTRY_NAMES = frozenset(_COUNTRY_ONE_WORD.split()) | frozenset(_COUNTRY_PHRASES)
+_SUPRA = re.compile(r"(?i)^\s*(?:euro(?:pean)? (?:area|union|zone)|eu\s?-?\s?\d{2}(?:_\d{4})?|oecd|world)")
+
+
+def _fold_name(label: Any) -> str:
+    t = unicodedata.normalize("NFKD", str(label).lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", _BRACKETS.sub(" ", t)).split())
+
+
+def _countries_table(labels: Sequence[str]) -> bool:
+    """Whether a dimension lists two or more sovereign countries: a table of countries. A country's name there is one more member, never
+    the aggregate of the others; the names are no evidence of a total (wave 5f, F)."""
+    return sum(1 for lb in labels if _fold_name(lb) in _COUNTRY_NAMES) >= 2
+
+
 def _outside_brackets(label: Any) -> str:
     """A label without its bracketed words: they define a member ("... (except convenience retailers) [44511]") and say nothing."""
     return _BRACKETS.sub(" ", str(label))
@@ -2650,7 +2755,8 @@ def _named_flow_words(sc: Dict[str, Any]) -> str:
 
 def named_total_words(mtype: str) -> str:
     """What the engine says of a member of a rate or an index that is the table's aggregate by its name alone (wave 5c)."""
-    return "the named total; not verifiable by a sum-check (%s cannot be summed)" % ("an index" if mtype == "index" else "a rate")
+    return "the named total; not verifiable by a sum-check (%s cannot be summed)" % (
+        "an index" if mtype == "index" else "a rate" if mtype == "rate" else "a level")
 
 
 def _nnls(X: Any, y: Any) -> Any:
@@ -2774,12 +2880,23 @@ def _unnamed_aggregate(S: Dict[str, Any], A: Any, stats: Dict[int, Tuple[float, 
                "coverage": round(float(cover[m]), 4)}
 
 
-def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> None:
-    """A rate or an index is never summed or averaged across members (AM4). Its published aggregate is a member that lies inside
-    the range of the others in 99% of its cells AND (a) carries a total's name, or a whole country's (Canada), or (b) is shown to
-    be the others' weighted average (`_unnamed_aggregate`). First in the file is no evidence (it read one province as the
-    national figure when it lay in the others' range). With none, the table has no aggregate: rule 6 reads one member, by
-    dominance, and the estimand says it is not a national figure."""
+def _no_sum(S: Dict[str, Any]) -> bool:
+    """Whether the measure is never added across members: a rate, an index, or (wave 5f, A) a LEVEL in a currency (an average, a median, a price:
+    its words say so, or the table's own total is not the sum of its parts and is their weighted average)."""
+    m = S["measure"]
+    return m["type"] in ("rate", "index") or bool(m.get("level"))
+
+
+def _kind_noun(S: Dict[str, Any]) -> str:
+    t = S["measure"]["type"]
+    return t if t in ("rate", "index") else "level"
+
+
+def _aggregate_scan(S: Dict[str, Any], j: int) -> Tuple[Any, Dict[int, Tuple[float, int]], List[Tuple[int, int, float, int]],
+                                                       List[Tuple[int, int, float, int]]]:
+    """(the dimension's tensor, stats, named, named_any) for `_rate_aggregate`: for every member, whether it lies inside the others' min-max, and
+    which members carry a total's name (or a whole country's) and lie inside the range in 99% of their cells (`named`) or whatever the range
+    says (`named_any`)."""
     import numpy as np
     rec = S["dims"][j]
     labels = rec["labels"]
@@ -2795,8 +2912,8 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
             if not rest:
                 continue
             tier = 2 if (m in coded_tot and not _is_alt(labels[m])) else _agg_name_tier(labels[m])
-            if tier == 1 and (not _is_geographic(rec["column"]) or _COUNTRY_COLUMN.search(rec["column"])):
-                tier = 0            # a whole country is the aggregate of its provinces, never of other countries (wave 5e)
+            if tier == 1 and (not _is_geographic(rec["column"]) or _COUNTRY_COLUMN.search(rec["column"]) or _countries_table(labels)):
+                tier = 0            # a whole country is the aggregate of its provinces, never of other countries (wave 5e; 5f: two country names make a countries table)
             lo = np.nanmin(np.where(np.isnan(A[rest]), np.inf, A[rest]), axis=0)
             hi = np.nanmax(np.where(np.isnan(A[rest]), -np.inf, A[rest]), axis=0)
             have = ~np.isnan(A[m]) & np.isfinite(lo) & np.isfinite(hi)
@@ -2811,6 +2928,21 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
                 named_any.append((tier, m, inside, n))
                 if inside >= BOUND_SHARE:
                     named.append((tier, m, inside, n))
+    return A, stats, named, named_any
+
+
+def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> None:
+    """A rate or an index is never summed or averaged across members (AM4); wave 5f (A): nor is a level in a currency (an average, a median, a
+    price). Its published aggregate is a member that lies inside
+    the range of the others in 99% of its cells AND (a) carries a total's name, or a whole country's (Canada), or (b) is shown to
+    be the others' weighted average (`_unnamed_aggregate`). First in the file is no evidence (it read one province as the
+    national figure when it lay in the others' range). With none, the table has no aggregate: rule 6 reads one member, by
+    dominance, and the estimand says it is not a national figure."""
+    import numpy as np
+    rec = S["dims"][j]
+    labels = rec["labels"]
+    M = len(labels)
+    A, stats, named, named_any = _aggregate_scan(S, j)
     pick, by, evidence = None, "", {}
     if named:
         top = max(t for t, _m, _i, _n in named)
@@ -2823,7 +2955,10 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
         # sum-check, two bases or one other member leave no range to lie in, and a weighted-average fit has too little to fit. The
         # name is then the only evidence, and the table says so (sum_check.verified false). Exactly one such name, and never a
         # member that says it is the rest ("All other provinces").
-        cands = [x for x in named_any if (x[0] == 2 or _is_geographic(rec["column"])) and not _is_rest(labels[x[1]])]
+        # wave 5f: a currency read as a level only because no word says it accumulates (`level_unworded`) takes a whole country's name as its
+        # aggregate only when the range verifies it (the `named` list above): the name alone is no evidence of an average
+        cands = [x for x in named_any if (x[0] == 2 or (_is_geographic(rec["column"]) and not S["measure"].get("level_unworded")))
+                 and not _is_rest(labels[x[1]])]
         if cands:
             top = max(t for t, _m, _i, _n in cands)
             pool = [x for x in cands if x[0] == top]
@@ -2848,13 +2983,104 @@ def _rate_aggregate(S: Dict[str, Any], j: int, tm: Optional[_Timer] = None) -> N
                components={}, alternatives={},
                sum_check=dict({"inside_range_share": round(inside, 4), "cells": n}, **evidence),
                why=("%s %s is never added or averaged across members: %s is %s" % (
-                        "an" if S["measure"]["type"] == "index" else "a", S["measure"]["type"], labels[m],
+                        "an" if _kind_noun(S) == "index" else "a", _kind_noun(S), labels[m],
                         named_total_words(S["measure"]["type"]))) if unverified else
                ("a %s is never added or averaged across members: %s lies inside the others' range in %s%% of %s "
                 "cells and is read as the published aggregate%s" % (
-                    S["measure"]["type"], labels[m], round(100 * inside, 1), _fmt_count(n),
+                    _kind_noun(S), labels[m], round(100 * inside, 1), _fmt_count(n),
                     "" if by == "name" else " (no member is named as a total: it has full coverage and the others' "
                                             "weighted average reproduces it to the last published digit)")))
+
+
+def _verified_additive(S: Dict[str, Any]) -> bool:
+    """Whether some dimension of the table has a total that a sum-check with the power to fail VERIFIED: positive evidence that the measure adds up
+    across members (a flow or a stock, never an average)."""
+    return any(d.get("role") in ("partition", "hierarchy") and (d.get("evidence") or "verified") == "verified" for d in S["dims"])
+
+
+_DIM_KEEP = ("column", "landed", "labels", "members", "mixed_units", "unit_of")
+
+
+def _reset_dim(rec: Dict[str, Any]) -> None:
+    """A dimension as the detector made it, before any relation was read."""
+    base = {k: rec[k] for k in _DIM_KEEP if k in rec}
+    rec.clear()
+    rec.update(base)
+    rec["role"] = None
+
+
+def _intensive_evidence(S: Dict[str, Any]) -> bool:
+    """Whether a dimension that no sum-check explained holds an AGGREGATE that is the exact weighted average of its other members (to the digit
+    published, weights fixed over the cells, every member carrying weight: `_unnamed_aggregate`). A total of non-negative parts is never smaller
+    than its largest part, and a sum is not a convex combination: a member that IS one is an average of the others, so the measure is a level."""
+    import numpy as np
+    for j, rec in enumerate(S["dims"]):
+        if rec.get("role") not in (None, "unresolved") or rec.get("measure_dim") or rec.get("mixed_units"):
+            continue
+        if not AGG_MIN_MEMBERS <= len(rec["labels"]) <= AGG_MAX_MEMBERS:
+            continue
+        try:
+            A, stats, _n, _na = _aggregate_scan(S, j)
+            if _unnamed_aggregate(S, A, stats, rec["labels"], unit=2.0 * _tol_unit(S, j)) is not None:
+                return True
+        except (np.linalg.LinAlgError, ValueError, FloatingPointError):
+            continue
+    return False
+
+
+def _promote_flow(S: Dict[str, Any], tm: Optional[_Timer]) -> None:
+    """A currency with positive evidence of accumulating is a flow (the words it always had); the dimensions that were left unresolved while it was
+    ambiguous are read again, now as the dimensions of a flow (a dimension of places with no total may be parts)."""
+    m = S["measure"]
+    uom = str(m.get("uom") or "")
+    m.update(type="flow", type_basis="positively a flow", type_why="a currency (%s)" % uom[:30], aggregation="sum over months")
+    m.pop("pending_flow", None)
+    for j, rec in enumerate(S["dims"]):
+        if rec.get("role") == "unresolved":
+            _reset_dim(rec)
+            _relations(S, j, tm or _Timer(WALL_GUARD_S))
+
+
+def _settle_measure(S: Dict[str, Any], tm: Optional[_Timer] = None) -> None:
+    """Wave 5f (A). A currency with no word in the measure's labels that says it accumulates over a period (a dollar unit is no such word: an average
+    rent, a median income and a price per unit are in dollars) was read as a FLOW, summed over twelve months and over regions. It is a flow only
+    with POSITIVE evidence: a flow word (`_classify`), or here, a total that adds up across members (some dimension's total was verified by a
+    sum-check that could have failed). With neither it is a LEVEL: averaged over the window ("average level over the window"), never added
+    across members, its published aggregate (a total's name, a whole country's name, or the exact weighted average of the others) read as the
+    headline (`_rate_aggregate`). The same holds for an amount of money known only by its column's name ("Amount") when a dimension holds an
+    aggregate that is the exact weighted average of the others: a sum is not a convex combination, so the figures are averages."""
+    m = S["measure"]
+    pending, weak = bool(m.get("pending_flow")), bool(m.get("flow_weak"))
+    if not (pending or weak):
+        return
+    if _verified_additive(S):
+        if pending:
+            _promote_flow(S, tm)
+        else:
+            m.pop("flow_weak", None)
+        return
+    if weak and not _intensive_evidence(S):
+        m.pop("flow_weak", None)
+        return
+    if pending and not UNWORDED_CURRENCY_IS_LEVEL and not (any(d.get("intensive_total") for d in S["dims"]) or _intensive_evidence(S)):
+        _promote_flow(S, tm)
+        return
+    why = ("a currency (%s) with no word in the labels that says it accumulates over a period, and no total that adds up across the members: "
+           "averaged over the window, never added across members" % str(m.get("uom") or "")[:30]) if pending else \
+        "the table's aggregate is the exact weighted average of the other members, so the figures are averages, never added across members"
+    m.update(type="unknown", type_basis="ambiguous: averaged", type_why=why, aggregation="mean over months", level=True)
+    if pending:
+        m["level_unworded"] = True
+    m.pop("pending_flow", None)
+    m.pop("flow_weak", None)
+    for j, rec in enumerate(S["dims"]):
+        if rec.get("role") in (None, "unresolved") or (rec.get("role") in ("partition", "hierarchy") and rec.get("evidence") != "verified"):
+            _reset_dim(rec)
+            try:
+                _rate_aggregate(S, j, tm)
+            except _TooLarge:
+                rec["role"] = "unresolved"
+                rec["why"] = "too many members and dates to check within the memory budget"
 
 
 def _adjustment(S: Dict[str, Any], j: int) -> None:
@@ -3084,15 +3310,16 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
     import numpy as np
     labels = rec["labels"]
     j = S["dims"].index(rec)
-    if S["official"] or S["measure"]["type"] in ("rate", "index"):
+    if S["official"] or _no_sum(S):
         coded = _coded_totals(labels)
         hint = [m for m in range(len(labels)) if _says_total(labels[m]) or m in coded or _agg_name_tier(labels[m]) == 2]
         by = "name"
         whole = [m for m in range(len(labels)) if _agg_name_tier(labels[m]) == 1 and _is_geographic(rec["column"])
-                 and not _COUNTRY_COLUMN.search(rec["column"])]
+                 and not _COUNTRY_COLUMN.search(rec["column"]) and labels[m] not in (rec.get("not_a_total") or [])
+                 and not _countries_table(labels)]
         if hint:
             m = hint[0]
-        elif len(whole) == 1:
+        elif len(whole) == 1 and not S["measure"].get("level_unworded"):
             # a whole country's name among its provinces (wave 5e: tried before dominance; "one member shown" says it is unverified)
             m = whole[0]
         else:
@@ -3187,7 +3414,7 @@ def _slices(S: Dict[str, Any]) -> None:
                 "the total measure; the others are components or other measures",
                 "components": "it bounds the other members, which are its components",
                 "rate_aggregate": named_total_words(S["measure"]["type"]) if _named_unverified(d) else
-                "the published aggregate (a %s is never added across members)" % S["measure"]["type"],
+                "the published aggregate (a %s is never added across members)" % _kind_noun(S),
                 "single": "read one member at a time (no relation verified)",
             }.get(r, "the default member")
     slices = []
@@ -3236,7 +3463,7 @@ def _slices(S: Dict[str, Any]) -> None:
     S["slices"] = slices
     S["default"] = slices[0]["where"]
     bds = []
-    if S["measure"]["type"] not in ("rate", "index"):
+    if not _no_sum(S):
         for d in S["dims"]:
             if d["role"] == "parts" and where.get(d["column"]) == PARTS_TOKEN:
                 bd = {"id": "B%d" % (len(bds) + 1), "dim": d["column"], "parent": None, "no_total": True,
@@ -3529,7 +3756,7 @@ def check_rows(S: Dict[str, Any], positions: Optional[Sequence[int]]) -> List[Di
             units = {(d.get("unit_of") or {}).get(n) for n in names}
             if len(units) > 1:
                 out.append({"dim": d["column"], "kind": "mixed_units", "members": names[:12]})
-        if role in ("rate_aggregate",) or (S["measure"]["type"] in ("rate", "index") and role != "constant"):
+        if role in ("rate_aggregate",) or (_no_sum(S) and role != "constant"):
             out.append({"dim": d["column"], "kind": "rate_members", "members": names[:12]})
         if role == "single":
             out.append({"dim": d["column"], "kind": "unverified_members", "members": names[:12]})
@@ -4142,15 +4369,15 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
         if d["role"] == "rate_aggregate" and w == d.get("total"):
             excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                              "why": "each member's own %s; never added or averaged across members%s" % (
-                                 S["measure"]["type"], ("; %s is %s" % (d["total"], named_total_words(m["type"])))
+                                 _kind_noun(S), ("; %s is %s" % (d["total"], named_total_words(m["type"])))
                                  if _named_unverified(d) else "")})
         if d["role"] == "single":
             if d.get("single_by") == "dominance":
                 excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                                  "why": "one member shown, not a %s: this table has no total %s, and a %s is never added "
                                         "or averaged across members" % (d.get("noun") or "total",
-                                                                        "member" if d.get("no_total_member") else "row", m["type"]
-                                                                        if m["type"] != "count" else "count")})
+                                                                        "member" if d.get("no_total_member") else "row",
+                                                                        m["type"] if m["type"] in ("rate", "index", "count") else "level")})
             else:
                 excluded.append({"what": "%d other members" % (len(d["labels"]) - 1), "dim": d["column"],
                                  "why": "no total was verified, so members are never added across this dimension"})

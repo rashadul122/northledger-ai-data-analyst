@@ -808,11 +808,12 @@ def quarterly_adjusted(years: int = 9, basis: bool = True, neutral: bool = False
     for k in range(nq):
         for r, _l in regs:
             if basis:
-                rec.append((label(k), r, ("B" if neutral else "Seasonally adjusted",), sa[r][k], "A"))
-                rec.append((label(k), r, ("A" if neutral else "Unadjusted",), nsa[r][k], "A"))
+                # wave 5f: a measure column that says what is measured ("Orders" accumulates over a period); a dollar unit alone no longer does
+                rec.append((label(k), r, ("Orders", "B" if neutral else "Seasonally adjusted",), sa[r][k], "A"))
+                rec.append((label(k), r, ("Orders", "A" if neutral else "Unadjusted",), nsa[r][k], "A"))
             else:
                 rec.append((label(k), r, ("Orders",), nsa[r][k], "A"))
-    return _official(["Basis" if basis else "Estimates"], rec)
+    return _official(["Estimates", "Basis"] if basis else ["Estimates"], rec)
 
 
 
@@ -973,3 +974,49 @@ def sensitive_dimension(column: str = "Marital status", labels=("Single", "Marri
         for lb in labels:
             rec.append((m, "Canada", (lb,), vals[lb][i], "A"))
     return _official([column], rec)
+
+
+def average_dollars(whole: str = "Canada", words=None, seed: int = 411, months: int = 48, estimates_header: str = "Estimates",
+                    sum_total: bool = False) -> bytes:
+    """Wave 5f (A; fuzz v2 F10, seeds 1 2 40 46 75 81 ...). Average rent / average weekly earnings / median income: dollars (decimals 0), five
+    provinces and a whole-country row (`whole`) that is their WEIGHTED AVERAGE (fixed weights), so it lies between the smallest and the largest
+    province and is NOT their sum. The file has no word for what is measured unless `words` is given: a tuple of member labels of a dimension
+    called `estimates_header` ("Average weekly earnings"; two labels make a dimension whose members are both levels). With `sum_total` the
+    whole row is the SUM instead (a flow, the negative case)."""
+    rng = np.random.RandomState(seed)
+    provs = (("Ontario", 1320.0, 0.38), ("Quebec", 1120.0, 0.22), ("Alberta", 1480.0, 0.11), ("Manitoba", 990.0, 0.04), ("Nova Scotia", 1050.0, 0.025))
+    mo = ["%04d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(months)]
+    t = np.arange(months)
+    vals = {p: np.round(lv * (1.0 + 0.002) ** t * (1.0 + 0.012 * rng.standard_normal(months))) for p, lv, _w in provs}
+    w = np.array([x[2] for x in provs])
+    w = w / w.sum()
+    if sum_total:
+        tot = sum(vals.values())
+    else:
+        tot = np.round(sum(wk * vals[p] for wk, (p, _l, _w) in zip(w, provs)))
+    labs = tuple(words) if words else ()
+    rec = []
+    for i, m in enumerate(mo):
+        for lb in (labs or (None,)):
+            d = (lb,) if lb else ()
+            rec.append((m, whole, d, tot[i], "A"))
+            for p, _l, _w in provs:
+                rec.append((m, p, d, vals[p][i], "A"))
+    return _official([estimates_header] if labs else [], rec)
+
+
+def countries_table(words: str = "", seed: int = 421, months: int = 48, leftover: bool = False) -> bytes:
+    """Wave 5f (F; fuzz v2 seeds 10 142 275 135). A flow (dollars in thousands) for COUNTRIES (Canada, Mexico, Brazil, Chile, one made-up
+    country, optionally "Rest of world") under the header GEO and NO total row: Canada is one member among the others, never the whole. With
+    `words` a constant column "Estimates" says what is measured ("Value of shipments")."""
+    rng = np.random.RandomState(seed)
+    geos = [("Mexico", 2400.0), ("Canada", 1700.0), ("Brazil", 3100.0), ("Chile", 900.0), ("Falbury", 1300.0)]
+    if leftover:
+        geos.append(("Rest of world", 4200.0))
+    mo = ["%04d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(months)]
+    rec = []
+    series = {g: _series(rng, lv, n=months) for g, lv in geos}
+    for i, m in enumerate(mo):
+        for g, _lv in geos:
+            rec.append((m, g, (words,) if words else (), series[g][i], "A"))
+    return _official(["Estimates"] if words else [], rec)

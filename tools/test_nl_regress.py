@@ -254,7 +254,13 @@ def test_r05_real_parts_whose_labels_hold_an_alternative_word_are_parts_not_alte
                                ("r05_disability.csv", "Disability status", "Persons without disabilities"),
                                ("r05_language_other_than.csv", "Language", "Languages other than English or French")):
         df = frame(name)
-        rep = run_file(name)
+        # wave 5f (C): "Disability status" names a sensitive category, so it is withheld by default (a plain refusal naming the column); the
+        # visitor's Keep reads it, and the case is the same as in wave 5e
+        keep = {"disability_status": "keep"} if col == "Disability status" else None
+        if keep:
+            r0 = run_file(name)
+            assert refused(r0) and "Disability status" in st(r0)["reason"], (headline(r0), st(r0).get("reason"))
+        rep = run_file(name, keep)
         every = window_sums(df, df[col] != "", 1000.0)
         rest = window_sums(df, df[col] != dropped, 1000.0)
         f = figs(rep)
@@ -1038,6 +1044,100 @@ def test_f04_a_sensitive_column_never_names_a_series_nor_leaks_through_a_constan
     assert [f["column"] for f in rep2["privacy"]["flagged"]] == ["marital_status"], rep2["privacy"]["flagged"]
     assert "Widowed" not in everything(rep2, data2), "the constant value of a withheld column is in an output"
     assert est(rep2), "the cube is still read without a constant column"
+
+
+def mean_windows(df: "pd.DataFrame", mask, scale: float = 1.0, date: str = "REF_DATE", value: str = "VALUE"):
+    """(prior, latest) 12-month MEANS of the selected rows' VALUE (rows added up by month first), in base units: what a level is."""
+    pri, lat = window_sums(df, mask, scale, date, value)
+    return pri / 12.0, lat / 12.0
+
+
+def test_f05_a_dollar_average_beside_a_whole_country_row_is_a_level_never_a_12_month_total():
+    """Wave 5f, A (fuzz v2 F10: seeds 1 2 40 46 75 81 86 106 117 130 144 152 175 243 245 253 290, and 125). Average rent, average weekly
+    earnings, median income, price per unit: dollars, provinces and a whole-country row. The file has NO word for what is measured (the
+    measure's name is in the table's title, not in the CSV), so the dollar unit read as a flow: the engine printed the whole-country row's
+    12-month TOTAL (seed 1: 18,853 where the level is 1,571; the % change was right). The evidence is in the cells: the whole row is not the
+    sum of the provinces and lies BETWEEN the smallest and the largest, which a total of non-negative parts never does. The measure is a
+    level: averaged over the window, never added over months or across members, the whole row read as its aggregate."""
+    for fname in ("f05_seed1_average_dollars.csv", "f05_seed125_average_dollars_cents.csv"):
+        df = frame(fname)
+        whole = "Total" if "f05_seed1_" in fname else "United States"
+        rep = run_file(fname)
+        e = est(rep)
+        assert e and "average level over the window" in e["text"] and "12-month totals" not in e["text"], (fname, e.get("text"))
+        assert e["measure"]["aggregation"].startswith("mean") and not e["measure"]["type_basis"].startswith("positively"), e["measure"]
+        pri, lat = mean_windows(df, df["GEO"] == whole)
+        f = figs(rep)
+        assert f is not None and close(f[0], pri) and close(f[1], lat), (fname, f, (pri, lat), headline(rep))
+        g = dim(rep, "GEO")
+        assert g["role"] == "rate_aggregate" and g["total"] == whole, g
+    # synthetic: every spelling of the whole's name, with and without a word for the measure
+    for kw in ({}, {"whole": "National"}, {"whole": "Total"}, {"words": ("Average weekly earnings",)}):
+        data = MC.average_dollars(**kw)
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+        whole = kw.get("whole", "Canada")
+        rep = run_bytes(data)
+        assert "12-month totals" not in est(rep)["text"] and est(rep)["measure"]["aggregation"].startswith("mean"), (kw, est(rep)["text"])
+        pri, lat = mean_windows(df, df["GEO"] == whole, 1000.0)
+        f = figs(rep)
+        assert f is not None and close(f[0], pri) and close(f[1], lat), (kw, f, (pri, lat))
+    # negative: the whole row IS the sum of the provinces (a flow, verified): 12-month totals, as before
+    data = MC.average_dollars(sum_total=True)
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    rep = run_bytes(data)
+    assert "12-month totals" in est(rep)["text"] and dim(rep, "GEO")["role"] == "partition", est(rep)["text"]
+    pri, lat = window_sums(df, df["GEO"] == "Canada", 1000.0)
+    check_truth(rep, pri, lat, "a verified sum is still a flow")
+
+
+def test_f06_the_words_of_a_dimension_that_names_what_is_measured_say_it_is_a_level():
+    """Wave 5f, A. The words that describe the measure are the measure column's header, the constant labels AND the members of a dimension
+    whose header names what is measured (Estimates, Statistics, Indicator ...): two average wages (with and without overtime) are one kind
+    of measure, so the dimension is not split into measures, and its members' words say the dollars are a level. An industry's or a
+    region's label does not (negative: a region called "Average Joe's" does not make a table of sales a level)."""
+    data = MC.average_dollars(sum_total=True, words=("Average hourly wage, with overtime", "Average hourly wage, without overtime"))
+    rep = run_bytes(data)
+    m = est(rep)["measure"]
+    assert m["aggregation"].startswith("mean") and m["type_basis"].startswith("ambiguous"), m
+    # negative: the same sums under an ordinary measure name, and a region whose name holds "average"
+    rows = MC.partition().decode().replace("North", "Average Joe's North").encode()
+    rep_n = run_bytes(rows)
+    assert est(rep_n)["measure"]["aggregation"].startswith("sum") and "12-month totals" in est(rep_n)["text"], est(rep_n)["text"]
+
+
+def test_f07_a_whole_countrys_name_among_other_countries_is_one_more_member_never_the_whole():
+    """Wave 5f, F (fuzz v2 seeds 10 142 275, and 135). A table of COUNTRIES under the header GEO (Canada, Mexico, Brazil, Chile ...) and NO total
+    row: Canada was taken for the whole of GEO ("one member shown: Canada, named as the whole of GEO; the other members do not add up to
+    it") and printed alone, 15% of the real total (seed 275: $805.9M where the sum of the six is $5.5B). A name nominates; the cells decide:
+    two or more country names make a table of countries, and a whole country's name that the others do not add up to and that is smaller than
+    one of them is not their total. A flow's countries are added as the parts of a set of places; with no evidence of a flow, one member is
+    shown and said not to be a national figure; and never the headline as 'the whole'."""
+    for fname, col in (("f07_seed10_countries.csv", "GEO"), ("f07_seed142_countries_rest_of_world.csv", "GEO")):
+        df = frame(fname)
+        rep = run_file(fname)
+        g = dim(rep, col)
+        # never "named as the whole": the member shown (if one is) is the largest, and the text says it is not a national figure
+        assert g.get("single_by") != "name" and not g.get("named_contradicted"), (fname, g.get("role"), g.get("total"), g.get("single_by"))
+        assert g["role"] == "parts" or "this table has no total member, so this is not a national figure" in est(rep)["text"], est(rep)["text"]
+        assert "named as the whole" not in est(rep)["text"] and "do not add up to it" not in est(rep)["text"], est(rep)["text"]
+        pri, lat = window_sums(df, df[col] != "", 1.0)
+        assert safe_or_true(rep, pri, lat, fname) in ("figure", "one member", "refusal")
+    data = MC.countries_table(words="Value of shipments", leftover=True)
+    df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    rep = run_bytes(data)
+    assert dim(rep, "GEO")["role"] == "parts" and dim(rep, "GEO")["parts"] == 6, dim(rep, "GEO")
+    pri, lat = window_sums(df, df["GEO"] != "", 1000.0)
+    check_truth(rep, pri, lat, "six countries, a flow word")
+    # negative: Canada beside its provinces, whose sum it is, is still their total (a table of one country's provinces)
+    rep_p = run_bytes(MC.partition().decode().replace("Total", "Canada").encode())
+    assert dim(rep_p, "GEO")["role"] == "partition" and dim(rep_p, "GEO")["total"] == "Canada", dim(rep_p, "GEO")
+    # negative: a total with provinces missing (Canada bounds every province and is above their sum) is NOT demoted to a member
+    data_m = MC.partition().decode().replace("Total", "Canada").encode()
+    d2 = pd.read_csv(io.BytesIO(data_m), dtype=str, keep_default_na=False)
+    keep = ~((d2["GEO"] == "West") | (d2["GEO"] == "Centre"))
+    rep_m = run_bytes(d2[keep].to_csv(index=False).encode())
+    g_m = dim(rep_m, "GEO")
+    assert g_m["total"] == "Canada" and g_m.get("named_contradicted"), g_m
 
 
 # ----------------------------------------------------------------------------- runner

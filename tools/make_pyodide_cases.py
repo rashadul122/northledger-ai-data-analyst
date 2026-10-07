@@ -45,6 +45,7 @@ CASES = [
     ("f12_marginalised_business_file", "f12_seed4_weekly_total_rows_two_measures.csv"),
     ("f05_average_dollars_whole_row", "pyodide_average_dollars.csv.gz"),
     ("f01_sensitive_category_dimension", "pyodide_sensitive_dimension.csv.gz"),
+    ("f12_unworded_dollars_no_total", "pyodide_dollars_no_total.csv.gz"),
 ]
 
 
@@ -66,7 +67,8 @@ def ensure_rate_panels() -> None:
 
 def ensure_wave_5f_files() -> None:
     import make_cubes as MC
-    for name, data in (("pyodide_average_dollars.csv.gz", MC.average_dollars()), ("pyodide_sensitive_dimension.csv.gz", MC.sensitive_dimension())):
+    for name, data in (("pyodide_average_dollars.csv.gz", MC.average_dollars()), ("pyodide_sensitive_dimension.csv.gz", MC.sensitive_dimension()),
+                       ("pyodide_dollars_no_total.csv.gz", MC.average_dollars(whole=None))):
         p = os.path.join(REGRESS, name)
         if not os.path.exists(p):
             with gzip.GzipFile(p, "wb", mtime=0) as fh:

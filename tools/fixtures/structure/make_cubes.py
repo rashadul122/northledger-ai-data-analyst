@@ -982,7 +982,7 @@ def average_dollars(whole: str = "Canada", words=None, seed: int = 411, months: 
     provinces and a whole-country row (`whole`) that is their WEIGHTED AVERAGE (fixed weights), so it lies between the smallest and the largest
     province and is NOT their sum. The file has no word for what is measured unless `words` is given: a tuple of member labels of a dimension
     called `estimates_header` ("Average weekly earnings"; two labels make a dimension whose members are both levels). With `sum_total` the
-    whole row is the SUM instead (a flow, the negative case)."""
+    whole row is the SUM instead (a flow, the negative case); with `whole=None` there is NO whole row at all (the five provinces only)."""
     rng = np.random.RandomState(seed)
     provs = (("Ontario", 1320.0, 0.38), ("Quebec", 1120.0, 0.22), ("Alberta", 1480.0, 0.11), ("Manitoba", 990.0, 0.04), ("Nova Scotia", 1050.0, 0.025))
     mo = ["%04d-%02d" % (2019 + i // 12, i % 12 + 1) for i in range(months)]
@@ -999,7 +999,8 @@ def average_dollars(whole: str = "Canada", words=None, seed: int = 411, months: 
     for i, m in enumerate(mo):
         for lb in (labs or (None,)):
             d = (lb,) if lb else ()
-            rec.append((m, whole, d, tot[i], "A"))
+            if whole:
+                rec.append((m, whole, d, tot[i], "A"))
             for p, _l, _w in provs:
                 rec.append((m, p, d, vals[p][i], "A"))
     return _official([estimates_header] if labs else [], rec)

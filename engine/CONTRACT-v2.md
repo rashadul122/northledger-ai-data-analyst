@@ -1864,7 +1864,7 @@ publisher or generator feature is in any rule.
   (`_settle_measure`): a named aggregate (a total's name, a whole country's name) that is NOT the sum and lies inside the others' range in 99% of the cells (`BOUND_SHARE`),
   or the exact weighted average of the others, makes it a level (`measure.type "unknown"`, `type_basis "ambiguous: averaged"`, `aggregation "mean over months"`,
   `level_unworded: true`; estimand text "average level over the window (12-month averages)"): averaged over the window, never added across members, its published aggregate the headline
-  (role `rate_aggregate`). `UNWORDED_CURRENCY_IS_LEVEL` (False) keeps an unworded dollar a flow when the cells show no aggregate that is not a sum (see the ledger).
+  (role `rate_aggregate`). `UNWORDED_CURRENCY_IS_LEVEL` (True, the literal rule; False would keep an unworded dollar a flow when the cells show no aggregate that is not a sum) is in the design doc's ledger.
 - *B, a Total row is a row.* In a plain file the structure layer does not read (two or more number columns), a category member NOMINATED by a total word (`_total_nomination`: a bare total
   phrase or a name ending in a total word is "exact"; a longer name holding one, "loose"; rest-of and alternatives never) is a total only if the cells say so: `ledger_tidy` runs the layer's own
   sum-check (`nl_structure._sum_check`) on (members x other-dimension cells x dates). Verified: its rows are LEFT OUT (with the Total x Total cross cell of a pivot) and said so; contradicted

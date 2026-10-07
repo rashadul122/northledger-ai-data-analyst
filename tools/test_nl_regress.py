@@ -1338,6 +1338,27 @@ def test_f11_total_rows_in_a_plain_file_are_left_out_when_the_cells_say_they_are
     assert "could not be checked" not in headline(rep4) and any(x.get("rule") == "total_rows_left_out" for x in rep4["cleaning"]["fixes"]), headline(rep4)
 
 
+def test_f12_a_dollar_table_with_no_word_and_no_total_is_a_level_never_a_twelve_month_sum_and_a_flow_word_makes_it_a_flow():
+    """Wave 5f, A, the case the cells cannot settle (`UNWORDED_CURRENCY_IS_LEVEL`). Five provinces in dollars and NO whole-country row: nothing in
+    the file says whether the figure accumulates (sales) or is an average (rent, wages). Adding twelve months of averages, and five provinces
+    of them, is the confident wrong figure; the table is AMBIGUOUS and is averaged, never added across members or over the window. A word that
+    says it accumulates (Retail sales, in the labels of a dimension that names what is measured) makes it a flow, added as parts of places. The
+    percent change is the same either way."""
+    data = MC.average_dollars(whole=None)
+    rep = run_bytes(data)
+    e = est(rep)
+    text = (e or {}).get("text") or ""
+    assert "12-month totals" not in text and "the sum of" not in text and "built from" not in text, (text, headline(rep))
+    assert not e or e["measure"]["aggregation"].startswith("mean"), e and e["measure"]
+    # a word that says the figure accumulates: the five provinces are the parts of a set of places, added
+    flow = run_bytes(MC.average_dollars(whole=None, words=("Retail sales",)))
+    fe = est(flow)
+    assert fe and fe["measure"]["aggregation"].startswith("sum") and "12-month totals" in fe["text"], (fe or {}).get("text")
+    # and a verified total of the same unworded dollars is positive evidence of a flow: summed, as before
+    rep_t = run_bytes(MC.average_dollars(sum_total=True))
+    assert "12-month totals" in est(rep_t)["text"], est(rep_t)["text"]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

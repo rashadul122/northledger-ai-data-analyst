@@ -92,8 +92,8 @@ COPY_MIN_ANNUAL = 8
 ADJ_SEASONAL_RATIO = 3.0        # an adjusted pair is a copy where one is three times more seasonal than the other
 ADJ_MAX_MEMBERS = 4
 ADJ_MIN_PERIODS = {1: 24, 3: 16}      # wave 5d: periods an adjusted pair is looked for in, by the table's step (months: 2 years, quarters: 4)
-UNWORDED_CURRENCY_IS_LEVEL = False  # wave 5f (A): a currency with no flow word and no total that adds up is a level (averaged); False: a flow unless the
-                                    # table shows its aggregate is not a sum (a named total inside the others' range, or their weighted average)
+UNWORDED_CURRENCY_IS_LEVEL = True   # wave 5f (A): a currency with no flow word and no total that adds up is a level (averaged), never added; False: a flow
+                                    # unless the table shows its aggregate is not a sum (a named total inside the others' range, or their weighted average)
 PROFILE_CAP = 6000              # the profile's structure block, bytes
 PROFILE_VALUE_MAX = 60          # a member string as the profile lists it (nl_browser._profile_facts cuts at 60)
 SLICES_MAX = 12

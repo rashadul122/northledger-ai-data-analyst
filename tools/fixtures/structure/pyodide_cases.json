@@ -63,6 +63,28 @@
   "source": "finding",
   "usable": null
  },
+ "f12_unworded_dollars_no_total": {
+  "aggregation": "mean over months",
+  "estimand": true,
+  "file": "pyodide_dollars_no_total.csv.gz",
+  "flagged": [],
+  "kind": "cube",
+  "latest": 1608916.666667,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
+  "ok": true,
+  "pct": 2.077826,
+  "prior": 1576166.666667,
+  "refused": false,
+  "roles": {
+   "GEO": "single"
+  },
+  "source": "estimand",
+  "usable": true
+ },
  "r02_combined_member_disjoint_parts": {
   "aggregation": "sum over months",
   "estimand": true,

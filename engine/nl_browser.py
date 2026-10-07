@@ -1717,7 +1717,7 @@ def _raw_column_values(raw: Any, headers: Iterable[str]) -> Dict[str, List[str]]
     return out
 
 
-def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optional[Dict[str, str]] = None, raw: Any = None,
+def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optional[Dict[str, str]] = None, sent_bytes: Any = None,
                       kept: Optional[Dict[str, str]] = None
                       ) -> Tuple[List[Dict[str, str]], List[str], "Scrubber", List[Dict[str, Any]]]:
     """The decide stage, the same for a run and for the planner's profile: a free-text flag on a plain category is
@@ -1771,7 +1771,7 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     # wave 5d: the columns that looked personal before the table was reshaped (and so never named a series) are listed with the flagged
     # ones, withheld; their values go to the scrubber and the token filter like any withheld column's (they are not in the landed table)
     if aside:
-        aside_values = _raw_column_values(raw, aside)
+        aside_values = _raw_column_values(sent_bytes, aside)
         for header, label in sorted(aside.items()):
             flagged.append({"column": _engine_slug(header), "kind": str(label), "decision": "withhold"})
             values = values + aside_values.get(header, [])
@@ -9851,7 +9851,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # visitor's choice or withhold; a withheld column is then landed as codes no cleaning rule reads
         t0 = time.perf_counter()
         flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions,
-                                                               aside=(layout or {}).get("personal_set_aside"), raw=sent,
+                                                               aside=(layout or {}).get("personal_set_aside"), sent_bytes=sent,
                                                                kept=(layout or {}).get("personal_kept"))
         rep["privacy"]["flagged"] = flagged
         rep["privacy"]["released"] = released

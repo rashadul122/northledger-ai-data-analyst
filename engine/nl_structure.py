@@ -1486,7 +1486,7 @@ def _sum_check(A: Any, X: Any, t: int, parts: Sequence[int], tol_unit: float, no
            "complete": nc, "within": int(ok.sum()), "months": months_c, "incomplete": int(incomplete.sum()),
            "share": round(share, 4), "negative_unallocated": neg,
            "max_rel_residual": float(rel.max()) if len(rel) else None,
-           "max_residual": float(np.abs(r[complete]).max()) if nc else None}
+           "max_residual": float(np.abs(r[complete]).max()) if nc else None, "info": round(info, 1)}
     if nc == 0 and int(incomplete.sum()) > 0 and not neg:
         out["bound_only"] = True
     return out
@@ -1632,7 +1632,8 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
     # one of its own parts. The dimension is then read one member at a time (the total is shown, and says it was not verified)
     for t in sorted(cand, key=lambda m: (-float(dom[m]), m))[:3]:
         chk = _sum_check(A, X, t, [m for m in cand if m != t], tol_u, nonneg)
-        if chk["complete"] >= 1 and chk["within"] == chk["complete"] and not chk["negative_unallocated"] and chk["months"] >= 1:
+        if (chk["complete"] >= 1 and chk["within"] == chk["complete"] and not chk["negative_unallocated"] and chk["months"] >= 1
+                and (chk["info"] >= STRONG_INFO or chk["complete"] >= MIN_COMPLETE)):
             rec["twin_why"] = ("%s equals the sum of the other members in every cell where that can be checked (%d), so it is their "
                                "total, never one of their parts" % (labels[t], chk["complete"]))
             return False
@@ -2663,7 +2664,10 @@ def _parts_cells(S: Dict[str, Any], where: Dict[str, Any], sel: Any) -> Tuple[An
     labels = d["labels"]
     SM = S["_SM"]
     others = [k for k in range(SM.shape[1]) if k != j]
-    row_of = {(tuple(int(x) for x in SM[r, others]), int(SM[r, j])): r for r in range(SM.shape[0])}
+    cache = S.setdefault("_row_of", {})
+    if j not in cache:
+        cache[j] = {(tuple(int(x) for x in SM[r, others]), int(SM[r, j])): r for r in range(SM.shape[0])}
+    row_of = cache[j]
     pos_of = {int(r): i for i, r in enumerate(sel)}
     W, H = V.copy(), have.copy()
     kept = set(int(x) for x in d.get("part_index") or [])

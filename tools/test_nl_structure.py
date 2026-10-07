@@ -2530,6 +2530,19 @@ def test_w5d_a_personal_column_beside_the_regions_never_names_a_series_and_never
     assert rep["roles"]["measures"] == ["u_s_dollar", "euro", "japanese_yen", "pound_sterling", "swiss_franc"], rep["roles"]["measures"]
     ai = json.dumps(NB.results_for_ai(rep), default=str)
     assert not [n for n in MC.OWNERS if n in json.dumps(rep, default=str) or n in ai or n.split()[1].lower() in ai.lower()]
+    # the set-aside column's values reach the scrubber and the token filter like a withheld column's (they are not in the landed table,
+    # so the decide stage reads them from the file the visitor sent)
+    seen = {}
+    real = NB.Scrubber
+
+    def spy(values, free_values=()):
+        sc_ = real(values, free_values)
+        seen["values"], seen["sc"] = list(values), sc_
+        return sc_
+    with _patched(NB, "Scrubber", spy):
+        _run(data, "fx.csv")
+    toks = set(seen["sc"].flag_tokens)
+    assert set(MC.OWNERS) <= set(seen["values"]) and {"penhallow", "telford", "brandmoor"} <= toks, (seen["values"][:6], sorted(toks)[:8])
     # kept by the visitor: it names the series (their choice), and the report says it was flagged and kept
     rep_k = _run(data, "fx.csv", {"account_owner": "keep"})
     assert "personal_set_aside" not in rep_k["input"]["layout"] and "Account owner" in rep_k["input"]["layout"]["personal_kept"]

@@ -765,7 +765,7 @@ def test_estimand_headline_formats_follow_the_writers_fallback_title():
     est["figures"]["change_pct"] = {"value": -3.5, "text": "-3.5%"}
     assert "\u22123.5% ($864.0B)" in NB._estimand_headline(rep)
     est["complete"], est["months_used"] = False, 11
-    assert "the 11 matched months to Jul 2026" in NB._estimand_headline(rep)
+    assert "the 11 matched months of 12 to Jul 2026" in NB._estimand_headline(rep)
     est["figures"]["change_pct"] = {"value": None, "text": "n/a"}
     assert NB._estimand_headline(rep) is None, "no figure is printed: no headline made of one"
     assert NB._estimand_headline({"estimand": None}) is None

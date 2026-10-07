@@ -120,6 +120,8 @@ _META = frozenset((
     "vecteur", "coordonnee", "statut", "symbole", "termine", "decimales", "unitedemesure", "iddelunitedemesure",
     "facteurscalaire", "iddufacteurscalaire", "indicateur", "unidaddemedida", "factorescalar", "estado", "decimales",
     "einheit", "masseinheit", "maeinheit", "faktor", "skalierung", "dezimalstellen", "statusflag"))
+_META_GENERIC = frozenset(("unit", "units", "flag", "flags", "footnote", "footnotes", "freq", "frequency", "status", "symbol", "action",
+                           "structure", "estado", "symbole", "statut", "einheit", "indicateur", "lastupdate", "dataflow"))
 _UNIT_META = ("uom", "unit", "units", "unitmeasure", "unitedemesure", "unite", "unidaddemedida", "einheit", "masseinheit", "maeinheit")
 _SCALE_WORDS = ("scalarfactor", "unitmult", "unitmultiplier", "multiplier", "facteurscalaire", "factorescalar", "skalierung", "faktor")
 _SCALE_IDS = ("scalarid", "iddufacteurscalaire")
@@ -634,7 +636,9 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     cols = [c for c in order if c not in hidden]
     head = {c: R.header(c) for c in cols}
     publisher = _publisher([head[c] for c in cols] + [c for c in hidden])
-    meta_named = [c for c in cols if _norm(head[c]) in _META]
+    # wave 5e (P7): an official table is one whose header holds a publisher's signature or three columns only a publisher uses; the words any
+    # business file has (Unit, Status, Action, Frequency ...) are metadata where they stand but no evidence that the table is official
+    meta_named = [c for c in cols if _norm(head[c]) in _META and _norm(head[c]) not in _META_GENERIC]
     official = bool(publisher) or len(meta_named) >= 3
     # wave 5d: the column that holds the table's figures (VALUE, OBS_VALUE) is withheld (the scan flagged some of its values as
     # personal: a count of nine or more digits has the shape of a national ID number). No other number column may stand in for

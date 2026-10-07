@@ -1749,6 +1749,72 @@ each fix has a regression test in `tools/test_nl_structure.py` (`test_w5d_*`, bu
 refusals (15 not allowed: 8 of them the withheld value column above), 0 confident wrong; the personal columns of 33 tables are all flagged and none of their values reaches the report writer. A refusal here
 is a plain one: "one member shown, not a national figure", "built from parts, incomplete", the withheld column's reason.
 
+**11. Hardening: positive evidence for every aggregation (wave 5e, 6 October 2026; `plan/WAVE4-A-DESIGN.md` "Wave 5e"; an independent reviewer
+broke the wave 5d build with 21 defects and a fresh fuzz range found one more).** The wave 5d fixes repaired one repro at a time and every round found
+new ones. Wave 5e fixes the PRINCIPLES, each tested on the reviewer's repro and on its negative case (`tools/test_nl_regress.py`, 27 tests; the
+cubes are in `tools/fixtures/structure/regress/`). No threshold is tuned to a generator: each has a one-line rationale in the design doc's THRESHOLD
+LEDGER, with what happens when it is wrong and which way it errs (a refusal is the safe way).
+
+- *P1, positive evidence.* Members of a dimension are ADDED only with positive evidence that they are disjoint parts; "no relation was found" is never
+  that evidence. A total is VERIFIED by a sum-check that could have failed (`_sum_check`): a cell supports the relation only when the larger of the
+  total and its parts' sum is at least `POWER_K` = 10 rounding tolerances (a 10% error is then more than a tolerance), 6 such cells in 3 months
+  (3 when the total is at least 100 tolerances) within tolerance and 95% of those plus the cells off by more than it; or the residual is exactly nothing
+  on 16 cells where something is counted and the total takes 3 different values (a count of 0 to 3 has no rounding worth the name). A check has
+  three results: `pass`, `fail` (3 or more cells off by more than the tolerance and under 95% hold, or a non-negative flow's parts exceeding an
+  incomplete cell's total) and `unresolved` (too few informative cells: the tolerance of 2.5 counts for four parts is as big as a table of 0 to 2
+  events a month, which no residual can contradict; before, 48 of 48 cells "passed" and one branch was the total of the other four). Unresolved is
+  not a pass and not a fail. A member that says total, bounds its parts and was left unresolved is the NAMED total (`evidence: "named"`, `sum_check.verified:
+  false`): its own series is the headline, and every sentence says it could not be checked. The members of a dimension with no total row are added
+  (`role: "parts"`) only when the measure is a flow, the dimension is geographic (its header names places), it has at least 3 members that are parts,
+  each of its three most dominant members is DECIDEDLY not the sum of the others, the search for combined members finished (P2), no two members are one
+  quantity twice (P5) and none says it leaves something out without being a verified combined member; else the dimension is read one member at a time
+  (rule 6: the member that says total, else a whole country's name in a dimension of places, else the largest; `no_total_member`), and the estimand says
+  "one member shown ... not the table's total". A business export (no publisher, fewer than three publisher columns) is a ledger and is added as it always was,
+  but a member that says total is never added to the rows it totals.
+- *P2, unresolved is unresolved.* A search that could not run, had too few cells, or was cut off returns `unresolved`, never "none found". The subset-sum
+  search for a combined member reads its fingerprint on groups of 3 cells where the PARENT has a value and the candidates present in all three (at most 4
+  groups, each candidate covered by one; parts that report in disjoint periods are searched), and a match that no check could verify is unresolved.
+- *P3, no wall-clock decision.* Every search is bounded by a COUNT (`PAIRS_MAX`, `MATCHES_MAX`, `VERIFY_MAX`, `FP_GROUPS_MAX`, `LEFT_MAX`, `PARENTS_MAX`,
+  `CANDIDATES_MAX` = 32, the aggregate fit's 5 tries and 8 peers); the answer is the same on a slow and a fast machine. One clock is left, `WALL_GUARD_S` =
+  40: when it trips, `detect` stops and the whole table is `not_cube` ("took too long"); it never changes a figure. `BUDGET_S` is its old name.
+- *P4, names nominate, evidence decides.* A word (total, all, excluding, less, without, other than ... and their French, German and Spanish cognates) only
+  NOMINATES a member as a total, an alternative or the rest. "Less than high school", "Persons without disabilities", "Languages other than English" are parts when
+  the sums say so: the flat check is tried with the nominated members left out of the parts and then as parts, and a member is an alternative only when the
+  total adds up without it. "All other provinces" is the rest in every branch (`_is_rest`), never a whole. A whole country's name is the aggregate of its
+  provinces, never of other countries (a column that holds countries).
+- *P5, copies by shape.* Two members that are one quantity twice (a seasonally adjusted copy, current and chained dollars) are found by SHAPE: the changes of their
+  12-period moving-average logs correlate at least 0.95 and the log of their ratio wanders at most 0.15 (at least 12 smoothed points; 8 for an annual table),
+  whatever the gap between their levels; the wave 5d test (calendar-year totals within 3%) is kept as one more way to see a copy. A copy is never added to
+  its original, whatever the number of members (the 40 largest are compared). A dimension of places is never an adjustment.
+- *P6, the period is detected.* Several dates a month are a weekly table (80% of the gaps 7 days) or a daily one (60% 1 day, none over 4); the windows are the
+  trailing 52 weeks or 365 days (or the largest whole number of periods that fits twice, at least 8 weeks, 28 days) ending at the last date with a value, and the same
+  span before it; a date is compared with the date one span before it (`period.cadence`, `span_days`; `step` -7 and -1 mark them as no calendar step). Any other
+  rhythm is `not_cube`: never read as monthly. A LEVEL's window is matched too (`matched_months`): the periods with a value in both windows, at least half a
+  window, else no figure. A headline on a subset says "the 8 matched months of 12" in its words.
+- *P7, fail closed.* Every verdict that is not a cube (`not_cube`: one reference period, more than 8 dimensions, 20,000 series or 2,000,000 cells, a `MemoryError`,
+  too slow, a rhythm it does not read) on a file that `looks_like_series_table` is a refusal with the layer's own reason (`structure.error.stage "verdict"`); so is any
+  exception of the profile pass (`stage "profile"`), whether a plan runs or not. `looks_like_series_table` is behaviour-based: a publisher's signature in any language
+  (`flag_vocab.json` lists the French StatCan one), 3 columns only a publisher uses (never Unit, Status, Action, Frequency), or a date, a number, 2 dimensions and a flag column
+  (a code that stands for a blank measure; a letter A to F is a grade and never a flag) or a series id one to one with the dimensions and a constant unit.
+- *P8, honest wording.* "adds_up", "sum-checked", "Each total was checked against its parts", "in the published totals" and "the named total" are printed only at the evidence level
+  reached. `estimand.evidence {level: "named" | "built" | "single", tail, dims}` exists when it is below "verified"; `sum_checks[].verdict` is `named_not_checked`;
+  the headline ends "(named as the total, not checked against its parts)", "(the table has no total row)" for a sum the engine built from parts, "(named as the whole, not
+  checked against the other members)", or says "one member shown". A measure whose labels say average, median, price or rate is a level, never "12-month totals".
+- *P9, language-independent metadata.* Headers are compared with accents folded (GÉO is geo). The id columns (VECTOR, VECTEUR, COORDINATE) are found by behaviour: an
+  id-like column is never the dimension of two that are one to one. French, Spanish and German names of the metadata columns, of the unit and of the scale
+  ("milliers", "millones", "Tausend") are read; a scale column that holds a word the engine does not read refuses the table (`cube_incomplete`) instead of printing
+  figures at a scale of 1. An official table is one with a publisher's signature or three columns only a publisher uses.
+- *P10, the documented value column.* A table with a publisher's signature whose VALUE, OBS_VALUE, VALEUR (...) column is all numbers is not subject to the national-ID rule
+  (`privacy.released[{kind: "measure", text: "Read as the table's measure, not personal data: VALUE"}]`); the visitor can still withhold it (the refusal of wave 5d
+  stands for that choice). The consent card and the report's method and data quality carry the line; the PDF writer's heading reads "Columns read as categories or as
+  the table's measure, not personal data" when one is a measure. The long-ID rule stays for every other column.
+- *P11, more than 400 members.* A column of up to 50,000 members is a series key; only the relation search is bounded: for more than 400 members the flat check (linear) is
+  run and the rest is `unresolved`, the reason saying so. `_alternatives` is a sorted lookup bounded by 60 leftover members.
+- *P12.* The label of the measure is the constant column whose header or words say what is measured (never a basis such as "Seasonally adjusted" or a column that says neither); a
+  constant column's value is echoed in `structure.metadata` only for the metadata the layer reads (`value_not_shown` otherwise). Not done: the top-3 contributors still
+  list the coarsest valid family, which can hold a combined member beside its parts (no headline is wrong).
+
+
 ## 6. What this contract does not carry yet (R1)
 
 Tipping points (S1/M10), drivers and reversals (S2), per-claim power, posterior probabilities (C8), the real-data placebo and the cross-environment receipt, Little's MCAR test, restatement lists and the structural-break screen are `null`/`[]` with their reason. The page must show them as "not measured", never as zero.

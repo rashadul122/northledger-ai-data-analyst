@@ -502,6 +502,12 @@ def test_r20_a_plain_business_file_is_never_taken_for_a_table_of_series_and_a_fr
     A to D) were "series tables" and would be refused whenever the layer failed; a French official table was not recognised."""
     for name in ("r20_business_inventory.csv", "r20_business_subscriptions.csv", "r20_business_gradebook.csv"):
         assert NB.looks_like_series_table(fixture(name)) is None, (name, NB.looks_like_series_table(fixture(name)))
+    # nor is the structure layer's own reading of them "official": three columns that any business file has (Unit, Status, Action) are no
+    # publisher's; the file was read one SKU at a time ("one member shown") before, and is read as it always was now
+    for name in ("r20_business_inventory.csv", "r20_business_subscriptions.csv", "r20_business_gradebook.csv"):
+        rep = run_file(name)
+        assert not est(rep) and not st(rep).get("official") and (rep.get("estimand") is None), (name, st(rep).get("kind"), headline(rep)[:100])
+        assert not refused(rep), name
     assert NB.looks_like_series_table(fixture("r20_official_french_headers.csv")) is not None
     assert NB.looks_like_series_table(fixture("r06_french_statcan.csv")) is not None
 

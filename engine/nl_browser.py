@@ -2323,7 +2323,7 @@ def _estimand_units(rep: Dict[str, Any], S: Dict[str, Any], column: str) -> None
 
 
 def _estimand_window_text(est: Dict[str, Any]) -> str:
-    """"12 months to Jul 2026" (the estimand's latest window); "the 11 matched months to Jul 2026" when a month the
+    """"12 months to Jul 2026" (the estimand's latest window); "the 11 matched months of 12 to Jul 2026" when a month the
     headline lacks in one window is left out of both; "Jul 2026" for one month."""
     w = (est.get("comparison") or {}).get("latest") or []
     if not (isinstance(w, list) and len(w) == 2 and all(isinstance(x, str) and len(x) >= 7 for x in w)):
@@ -2334,7 +2334,7 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
         last = _ns()._plabel({"period": per}, w[1])
         used = int(est.get("periods_used") or per.get("window") or 1)
         if est.get("complete") is False and est.get("periods_used"):
-            return "the %d matched %s to %s" % (used, per["nouns"] if used != 1 else per["noun"], last)
+            return "the %d matched %s of %d to %s" % (used, per["nouns"] if used != 1 else per["noun"], int(per.get("window") or 1), last)
         return "%d %s to %s" % (int(per.get("window") or 1), per["nouns"], last)
     if per and int(per.get("step") or 1) != 1:
         # a quarterly or an annual table: "4 quarters to Q4 2023", "2023", "the 3 matched quarters to Q4 2023"
@@ -2342,7 +2342,8 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
         last = _ns()._plabel(Sp, w[1])
         used = int(est.get("periods_used") or per.get("window") or 1)
         if est.get("complete") is False and est.get("periods_used"):
-            return "the %d matched %s to %s" % (used, per["nouns"] if used != 1 else per["noun"], last)
+            # wave 5e (P6): a headline on a subset of the periods says how many of the whole window it rests on
+            return "the %d matched %s of %d to %s" % (used, per["nouns"] if used != 1 else per["noun"], int(per.get("window") or 1), last)
         n = int(per.get("window") or 1)
         return last if n == 1 else "%d %s to %s" % (n, per["nouns"], last)
     try:
@@ -2354,7 +2355,7 @@ def _estimand_window_text(est: Dict[str, Any]) -> str:
         return ""
     end = "%s %d" % (_MON[m2 - 1], y2)
     if est.get("complete") is False and est.get("months_used"):
-        return "the %d matched months to %s" % (int(est["months_used"]), end)
+        return "the %d matched months of 12 to %s" % (int(est["months_used"]), end)
     return end if n == 1 else "%d months to %s" % (n, end)
 
 

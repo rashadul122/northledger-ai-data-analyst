@@ -1182,7 +1182,7 @@ def test_f08_dates_in_formats_the_core_cannot_read_are_rewritten_before_the_file
     assert base and "Total amount" in base, base
     fmts = {"d.m.Y": lambda d: d.strftime("%d.%m.%Y"), "m/d/Y": lambda d: d.strftime("%m/%d/%Y"), "d/m/Y": lambda d: d.strftime("%d/%m/%Y"),
             "b d, Y": lambda d: d.strftime("%b %d, %Y"), "d b Y": lambda d: d.strftime("%d %b %Y"), "Ymd": lambda d: d.strftime("%Y%m%d"),
-            "m/d/Y H:M": lambda d: d.strftime("%m/%d/%Y 00:00")}
+            "m/d/Y H:M": lambda d: d.strftime("%m/%d/%Y 00:00"), "d-b-Y": lambda d: d.strftime("%d-%b-%Y"), "d-b-y": lambda d: d.strftime("%d-%b-%y")}
     for name, f in fmts.items():
         rep = run_bytes(_daily_ledger(f))
         assert rep["ok"] and headline(rep) == base, (name, headline(rep)[:200], base[:200])
@@ -1191,7 +1191,7 @@ def test_f08_dates_in_formats_the_core_cannot_read_are_rewritten_before_the_file
                                                               for i in range(36) for k, r in enumerate(("East", "West")))).encode() + b"\n"
     base_m = headline(run_bytes(monthly(lambda d: d.isoformat())))
     for name, fn in {"b Y": lambda d: d.strftime("%b %Y"), "Y b": lambda d: d.strftime("%Y %b"), "YMmm": lambda d: d.strftime("%YM%m"),
-                     "B Y": lambda d: d.strftime("%B %Y")}.items():
+                     "B Y": lambda d: d.strftime("%B %Y"), "m/Y": lambda d: d.strftime("%m/%Y")}.items():
         rep = run_bytes(monthly(fn))
         assert rep["ok"] and headline(rep) == base_m, (name, headline(rep)[:200], base_m[:200])
     # ambiguous: every day is 12 or below
@@ -1318,10 +1318,11 @@ def test_f11_total_rows_in_a_plain_file_are_left_out_when_the_cells_say_they_are
     assert t is None or not [x for x in t["totals"] if x["left_out"]], t
     # a bare Total that is NOT the sum and is not above it is a member of its own (counted, said so); one above the sum is left out, unverified
     # (two number columns, so the structure layer does not read the file and the adapter decides)
-    def ledger2(total_of):
+    def ledger2(total_of, fmt=None):
+        import datetime as _dt
         rows = ["Date,Store,Qty,Amount"]
         for i in range(36):
-            d = "%04d-%02d-01" % (2019 + i // 12, i % 12 + 1)
+            d = "%04d-%02d-01" % (2019 + i // 12, i % 12 + 1) if not fmt else _dt.date(2019 + i // 12, i % 12 + 1, 1).strftime(fmt)
             a, b = 100 + i, 150 + 2 * i
             rows += ["%s,North,%d,%d" % (d, i % 4, a), "%s,South,%d,%d" % (d, (i + 1) % 4, b), "%s,Total,%d,%d" % (d, i % 4 + (i + 1) % 4, total_of(a, b, i))]
         return ("\n".join(rows) + "\n").encode()
@@ -1336,6 +1337,12 @@ def test_f11_total_rows_in_a_plain_file_are_left_out_when_the_cells_say_they_are
     # the same file with the Total equal to the sum: verified, left out, no word in the headline
     rep4 = run_bytes(ledger2(lambda a, b, i: a + b))
     assert "could not be checked" not in headline(rep4) and any(x.get("rule") == "total_rows_left_out" for x in rep4["cleaning"]["fixes"]), headline(rep4)
+    # the same Total rows when the dates are written 01-Jan-2019 (fuzz seed 36: the core reads that format, so the adapter's own check must see it too)
+    rep5 = run_bytes(ledger2(lambda a, b, i: a + b, fmt="%d-%b-%Y"))
+    assert any(x.get("rule") == "total_rows_left_out" for x in rep5["cleaning"]["fixes"]), rep5["cleaning"]["fixes"][:3]
+    led = {x["id"]: x["value"] for x in json.loads(rep5["downloads"]["ledger_json"])["analysis_ledger"]}
+    led4 = {x["id"]: x["value"] for x in json.loads(rep4["downloads"]["ledger_json"])["analysis_ledger"]}
+    assert close(led["measure.amount.total.last12"], led4["measure.amount.total.last12"]), (led["measure.amount.total.last12"], led4["measure.amount.total.last12"])
 
 
 def test_f12_a_dollar_table_with_no_word_and_no_total_is_a_level_never_a_twelve_month_sum_and_a_flow_word_makes_it_a_flow():
@@ -1357,6 +1364,16 @@ def test_f12_a_dollar_table_with_no_word_and_no_total_is_a_level_never_a_twelve_
     # and a verified total of the same unworded dollars is positive evidence of a flow: summed, as before
     rep_t = run_bytes(MC.average_dollars(sum_total=True))
     assert "12-month totals" in est(rep_t)["text"], est(rep_t)["text"]
+    # a named total that is at least as large as every other member is no average (a weighted average is never above its largest term): the
+    # evidence of a quantity that accumulates, whether the others do not add up to it (parts missing) or nothing could check it (fuzz seed 148:
+    # 859 coded members, pesos, no word for what is measured)
+    data_m = MC.partition().decode().replace("Total", "Canada").encode()
+    d2 = pd.read_csv(io.BytesIO(data_m), dtype=str, keep_default_na=False)
+    rep_m = run_bytes(d2[~d2["GEO"].isin(["West", "Centre"])].to_csv(index=False).encode())
+    assert "12-month totals" in est(rep_m)["text"] and dim(rep_m, "GEO").get("named_contradicted"), est(rep_m)["text"]
+    raw = open(os.path.join(REGRESS, "r15_total_20pct_high.csv"), encoding="utf-8").read().replace("Dollars of sales", "Dollars")
+    rep_r = run_bytes(raw.encode())
+    assert "12-month totals" in est(rep_r)["text"] and "average level" not in est(rep_r)["text"], est(rep_r)["text"]
 
 
 # ----------------------------------------------------------------------------- runner

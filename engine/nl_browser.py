@@ -10053,6 +10053,9 @@ _DATE_FORMATS = (
     ("day.month.year", r"^\d{1,2}\.\d{1,2}\.\d{4}$", "%d.%m.%Y", "day"),
     ("day.month.yy", r"^\d{1,2}\.\d{1,2}\.\d{2}$", "%d.%m.%y", "day"),
     ("day-month-year", r"^\d{1,2}-\d{1,2}-\d{4}$", "%d-%m-%Y", "day"),
+    ("day-Mon-year", r"^\d{1,2}-%s\.?-\d{4}$" % _MONTH_NAMES, "%d-%b-%Y", "day"),
+    ("day-Mon-yy", r"^\d{1,2}-%s\.?-\d{2}$" % _MONTH_NAMES, "%d-%b-%y", "day"),
+    ("month/year", r"^\d{1,2}/\d{4}$", "%m/%Y", "month"),
     ("month-first slash", r"^\d{1,2}/\d{1,2}/\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$", "%m/%d/%Y", "slash"),
     ("month-first slash yy", r"^\d{1,2}/\d{1,2}/\d{2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$", "%m/%d/%y", "slash"),
     ("month day, year", r"^%s\.?\s+\d{1,2},?\s+\d{4}$" % _MONTH_NAMES, "%b %d %Y", "day"),
@@ -10292,9 +10295,12 @@ def _date_values(df: Any, exclude: Set[str]) -> Tuple[Optional[str], Optional[An
             continue
         t = df[c].astype(str).str.strip()
         f = t[t != ""]
-        if len(f) < 4 or float(f.map(lambda v: bool(re.match(r"^\d{4}-\d{2}(?:-\d{2})?(?:[ T].*)?$", v))).mean()) < 0.95:
+        if len(f) < 4 or float(f.map(lambda v: bool(re.match(r"^\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?(?:[ T].*)?$", v))).mean()) < 0.95:
             continue
-        d = pd.to_datetime(t.str[:10].where(t.str.len() >= 10, t.str[:7] + "-01"), format="%Y-%m-%d", errors="coerce")
+        # 2022-03-05, 2022-3-5, 2022/03/05 and 2022-03 (the first of the month): the core reads them all
+        dd = t.str.extract(r"^\s*(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?")
+        d = pd.to_datetime(pd.DataFrame({"year": pd.to_numeric(dd[0], errors="coerce"), "month": pd.to_numeric(dd[1], errors="coerce"),
+                                         "day": pd.to_numeric(dd[2], errors="coerce").fillna(1)}), errors="coerce")
         n = int(d.dropna().nunique())
         if n > best_n:
             best, best_n, best_s = c, n, d

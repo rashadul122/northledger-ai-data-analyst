@@ -2051,6 +2051,11 @@ def _relations(S: Dict[str, Any], j: int, tm: _Timer) -> None:
         if nonneg and not all(_bounds(A, t, m2, tol_u) for m2 in range(M) if m2 != t) and _inside_range(A, t):
             rec["intensive_total"] = labels[t]
             break
+        # ... and one that is NOT their sum but is at least as large as every one of them (a total whose parts are not all listed, or a tree
+        # whose parents sit beside their leaves) is no average either: a weighted average is never above its largest term. That is the evidence
+        # that the measure accumulates (a flow or a stock), never a level
+        if nonneg and M > 2 and all(_bounds(A, t, m2, tol_u) for m2 in range(M) if m2 != t):
+            rec["bounding_total"] = labels[t]
     if demoted:
         rec["not_a_total"] = [labels[t] for t in demoted]
         whole = [t for t in whole if t not in demoted]
@@ -2109,6 +2114,8 @@ def _set_partition(S: Dict[str, Any], j: int, rec: Dict[str, Any], A: Any, tol_u
                components={}, alternatives={})
     _alternatives(S, rec, A, tol_u, nominated)
     _sa_record(S, j, rec, tol_u, nonneg)
+    if evidence == "named" and nonneg and len(P) >= 2 and all(_bounds(A, t, m2, tol_u) for m2 in P):
+        rec["bounding_total"] = labels[t]           # named, unchecked, and at least as large as every other member: no average (see `_relations`)
 
 
 def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: float, nonneg: bool, nominated: Set[int],
@@ -3096,7 +3103,7 @@ def _settle_measure(S: Dict[str, Any], tm: Optional[_Timer] = None) -> None:
     pending, weak = bool(m.get("pending_flow")), bool(m.get("flow_weak"))
     if not (pending or weak):
         return
-    if _verified_additive(S):
+    if _verified_additive(S) or (pending and any(d.get("bounding_total") for d in S["dims"])):
         if pending:
             _promote_flow(S, tm)
         else:

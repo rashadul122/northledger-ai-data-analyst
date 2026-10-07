@@ -425,7 +425,7 @@ person's name when it is 1 to 4 words of letters in any script or case, with ini
 ("de la", "van") and the comma form ("Fairweather, Marisol"), and no word that says firm, role, tier, software or
 a way to pay ("Acme Corp", "Gold Member", "Sales Manager", "Google Chrome", "Card"). There is no minimum number of distinct values: a
 column of one person's name is flagged. Its `kind` is `person's name`, `email`, `phone number`, `account or card
-number` or `street address`. It is registered as the engine registers a flagged column (a pending row in its
+number`, `street address` or (wave 5f) `sensitive category (named by its header)`. It is registered as the engine registers a flagged column (a pending row in its
 column register), so the engine's own decide, code and withhold apply to it. A column of names under a heading
 the check does not know ("Stylist") can still be missed, and the page says so before anything is sent.
 
@@ -482,6 +482,20 @@ publisher names its value (VALUE, OBS_VALUE, VALEUR, VALOR, WERT: `_PANEL_VALUE`
 and the visitor can still withhold it (the wave 5d refusal then stands: "the column that holds the table's figures (VALUE) is withheld"). A business
 column called "value" is never released this way, and the long-ID rule for every other column is unchanged (a column of 9 to 19 digit numbers that names
 at most 400 things on at least 3.3 rows each is `long ID number`; a repeated large measure is flagged by it too and Keep releases it).
+
+**A sensitive category is flagged by its header, in any layout (wave 5f, C).** The scan reads the SHAPE of values (national-ID digits, emails, phones, names);
+a category column called "Marital status", "Indigenous identity", "HIV status", "ICD code" or "Cause of death" has no such shape and was an ordinary dimension
+(one of its members was printed in an estimand). `_personal_kind` now returns `sensitive_category` for any column whose HEADER names a sensitive category
+(`_sensitive_header`: race, ethnicity, visible minority, Indigenous, religion, political opinion, union membership, sex and gender, sexual orientation, marital
+status, health and disability, diagnosis, ICD, cause of death, HIV, criminal record, immigration status, nationality and citizenship, genetic, biometric; English,
+French, Spanish and German; whole words or phrases, accents folded; `aids` only as capital AIDS or beside status, test, diagnosis, infection or case) unless the
+column is a measure (numbers with more than `SENSITIVE_MEASURE_DISTINCT` = 25 different values). It is flagged and WITHHELD BY DEFAULT in every layout (`privacy.flagged[{kind:
+"sensitive category (named by its header)", decision: "withhold"}]`; the consent card renders any kind generically and offers Keep). An official cube that needs the
+withheld column is refused with its name and "choose Keep" (never a value); a plain business file does not use it. Kept, its members may appear. Every path that carries
+a column's values is covered: the profile, the plan, `results_for_ai`, the estimand, `structure.dims` and `structure.metadata` (a constant sensitive column's value is not
+echoed), the scenario items, the series names of a long layout, the refusal text and the PDF text; one test per path (`tools/test_nl_regress.py` f01-f04). A free-text-flagged
+category column whose labels CARRY CODES (`[4411]`, `4411 Used car dealers`: at least 80% of its labels) is released up to `RELEASE_MAX_DISTINCT_CODED` = 3,000 labels (the
+general cap `RELEASE_MAX_DISTINCT` = 300 stays for any other column).
 
 ### 5.6 A withheld column drives no cleaning rule
 
@@ -1834,11 +1848,48 @@ LEDGER, with what happens when it is wrong and which way it errs (a refusal is t
   measure column refuses only a publisher's table; a learned flag code is never a word of three letters or more. A built sum with suppressed parts says so in the headline;
   "matched months of 12" only for a subset. A whole country's name that the other members do not add up to is `named_contradicted` too, and a bounding total (role components)
   is `named`, not verified. A short table whose estimand compares the matched periods says in the headline that it is too short to test the change. A daily table of a publisher
-  may have 5% of its gaps longer than 4 days (a business file may not: it is read as before). Not done: dates the core does not read (`%m/%d/%Y %H:%M`, `%b %d, %Y`, `%d.%m.%Y`,
-  `%Y%m%d`, `Jan 2019`) give no analysis, never a wrong number (the core is not edited here).
+  may have 5% of its gaps longer than 4 days (a business file may not: it is read as before). Dates the core does not read (`%m/%d/%Y %H:%M`, `%b %d, %Y`, `%d.%m.%Y`,
+  `%Y%m%d`, `Jan 2019`) gave no analysis, never a wrong number; wave 5f reads them (item 12, H).
 - *P12.* The label of the measure is the constant column whose header or words say what is measured (never a basis such as "Seasonally adjusted" or a column that says neither); a
   constant column's value is echoed in `structure.metadata` only for the metadata the layer reads (`value_not_shown` otherwise). Not done: the top-3 contributors still
   list the coarsest valid family, which can hold a combined member beside its parts (no headline is wrong).
+
+**12. Hardening on the second fuzz (wave 5f, 7 October 2026; `plan/WAVE4-A-DESIGN.md` "Wave 5f"; fuzz v2, an independent generator, found 72 confident wrong figures in
+300 tables on the wave 5e build).** Seven clusters, each a ROOT principle (`tools/test_nl_regress.py` f01-f11; THRESHOLD LEDGER (wave 5f) in the design doc). No seed, column name,
+publisher or generator feature is in any rule.
+
+- *A, a dollar unit is not a flow word.* A currency measure is a FLOW only with positive evidence: a flow word anywhere among its labels (the measure's header, the constant
+  labels, the members of a dimension whose header names what is measured, the unit text), or a total that adds up across members (a sum-check that could have failed verified
+  it). Words average, median, mean, price, per, index, rate say LEVEL. A currency with no flow word (`pending_flow`) is settled from the cells after the relations are read
+  (`_settle_measure`): a named aggregate (a total's name, a whole country's name) that is NOT the sum and lies inside the others' range in 99% of the cells (`BOUND_SHARE`),
+  or the exact weighted average of the others, makes it a level (`measure.type "unknown"`, `type_basis "ambiguous: averaged"`, `aggregation "mean over months"`,
+  `level_unworded: true`; estimand text "average level over the window (12-month averages)"): averaged over the window, never added across members, its published aggregate the headline
+  (role `rate_aggregate`). `UNWORDED_CURRENCY_IS_LEVEL` (False) keeps an unworded dollar a flow when the cells show no aggregate that is not a sum (see the ledger).
+- *B, a Total row is a row.* In a plain file the structure layer does not read (two or more number columns), a category member NOMINATED by a total word (`_total_nomination`: a bare total
+  phrase or a name ending in a total word is "exact"; a longer name holding one, "loose"; rest-of and alternatives never) is a total only if the cells say so: `ledger_tidy` runs the layer's own
+  sum-check (`nl_structure._sum_check`) on (members x other-dimension cells x dates). Verified: its rows are LEFT OUT (with the Total x Total cross cell of a pivot) and said so; contradicted
+  (not the sum, not above it): a member, counted; above the sum, or unresolved, with an "exact" name: left out and flagged "could not be checked" (limitation kind `data`, and a plain clause in the
+  headline); unresolved with a "loose" name: a member, counted. The left-out rows are rows SET ASIDE: counted in `input.rows`, `cleaning.rows_in` and `cleaning.rows_quarantined`, listed in
+  `cleaning.quarantine_reasons` and in the quarantine download, never lost. `cleaning.fixes[]` rule `total_rows_left_out` (`column`, `count`).
+- *C, sensitive categories* (section 5.5): flagged by header in any layout, withheld by default, Keep on the card, refusal names the column.
+- *D, the window is whole.* In a complete, regular, sub-monthly table of at least 24 months (`_partial_months`) the rows of a last month the file stops in the middle of (and of a first month that
+  enters the comparison) are left out and said so (`cleaning.fixes[]` rule `partial_month_left_out`, a limitation of kind `data`): the months compared are whole; a file that is then too
+  short to compare says so. The structure layer's own path (a publisher's table) keeps the trailing 52 weeks / 365 days or whole 364-day weeks of wave 5e.
+- *E, a table of series is read or refused.* Numbers written with spaces, apostrophes or non-breaking spaces between the thousands and a decimal comma ("708 219,6", "1.234,5") are rewritten as plain
+  numbers before the file is read (`cleaning.fixes[]` rule `numbers_read`); a column one to one with the combination of two or more other dimensions is a series id by behaviour in any language
+  (`structure.metadata[].class "series_id"`); a numeric column that the date and the other dimensions already tell apart is a second measure; a column of whole numbers that repeat (`CODE_MIN_REPEAT` = 3
+  rows each, 95% whole numbers) is a code dimension; a table of series with no default slice is refused with the layer's reason (`_refusable_verdict`), never read by the old path.
+- *F, a country is a member.* Two or more sovereign-country names among a dimension's labels (`_countries_table`) make it a table of countries: a whole country's name is a member, never "the
+  whole"; a contradicted whole-country candidate that does not bound every other member is demoted (`not_a_total`). With no total member the estimand says "this table has no total member, so this is
+  not a national figure", and the headline "(one member shown, not a national figure)".
+- *G, fewer needless refusals.* Coded labels (section 5.5), code dimensions (E), and the refusal for rows that cannot be told apart names the withheld columns ("X is withheld, and may be the
+  column that tells them apart: choose Keep").
+- *H, dates.* A column of dates in a format the core does not read (31.12.2019, 12/31/2019, 12/31/19, Jan 2019, 2019 Jan, Jan 31, 2019, 2019M01, 20190131, with or without a time) is rewritten as
+  ISO year-month-day by the adapter before the file is read (`_dates_in_place`; `cleaning.fixes[]` rule `dates_read`), when at least 95% of a sample fit one format; a day/month pair that can be read
+  either way round (03/04/2019) is settled by another row of the column (a first or second field above 12), else the file is refused with a plain reason. Not done: the top-3 contributors that list a
+  combined member, an alternative total or a sub-region beside its parts (no headline is wrong).
+
+Retail (StatCan 20-10-0008), the FX file and the Amazon reviews file are unchanged in every figure and scenario id; the only blocks that differ are listed in the design doc's "Measured (wave 5f)".
 
 
 ## 6. What this contract does not carry yet (R1)

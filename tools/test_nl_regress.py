@@ -1304,6 +1304,13 @@ def test_f11_total_rows_in_a_plain_file_are_left_out_when_the_cells_say_they_are
     months = sorted(by.index)
     assert close(led["measure.amount.total.last12"], by[months[-12:]].sum()) or close(led["measure.amount.total.last12"], by[months[-13:-1]].sum()), \
         (led["measure.amount.total.last12"], by[months[-12:]].sum())
+    # how a name nominates (the cells still decide): a bare total phrase, or a name that ENDS in a total word, is "exact"; a name that merely
+    # holds or starts with a total word, or holds "all", is "loose" (a real branch until the cells say otherwise); a part of something is never
+    for name, want in (("Total", "exact"), ("All", "exact"), ("All branches", "exact"), ("Grand total", "exact"), ("Company total", "exact"),
+                       ("Branch total", "exact"), ("Total for all products", "exact"), ("All Saints Church", "loose"), ("Total Wine", "loose"),
+                       ("Total Fitness", "loose"), ("Head Office", None), ("Totalmente", None), ("All other branches", None),
+                       ("Total excl. Seasonal shops", None)):
+        assert NB._total_nomination(name) == want, (name, NB._total_nomination(name), want)
     # negatives: a REAL branch with a total word is counted (its rows are in the sums), and says nothing
     big = ["Date,Store,Amount"] + ["%04d-%02d-01,%s,%d" % (2019 + i // 12, i % 12 + 1, s, 100 * (k + 1) + i) for i in range(36)
                                   for k, s in enumerate(("All Saints Church", "North", "South"))]

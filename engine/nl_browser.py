@@ -10243,11 +10243,16 @@ def _total_nomination(label: Any) -> Optional[str]:
         return None
     t = NS._fold_name(NS._outside_brackets(label))
     toks = [x for x in t.split() if x]
-    drop = {"the", "of", "de", "des", "du", "la", "le", "les", "und", "and", "all", "tous", "toutes", "alle", "todos", "todas"}
+    drop = {"the", "of", "de", "des", "du", "la", "le", "les", "und", "and", "all", "tous", "toutes", "alle", "todos", "todas",
+            "for", "across", "over", "pour", "para", "fur", "in"}
     core = [x for x in toks if x not in drop]
     head = {"total", "totals", "totale", "totaal", "grand", "overall", "aggregate", "combined", "sum", "ensemble", "insgesamt", "gesamt",
             "gesamtsumme", "general", "generale", "subtotal", "everything"}
     if toks and (set(core) <= head | _TOTAL_GENERIC and (not core or core[0] in head or toks[0] in ("all", "tous", "toutes", "alle", "todos", "todas"))):
+        return "exact"
+    # "Company total", "Branch total", "Chain total": a name that ENDS in a total word is a total (nobody calls a branch that); a name that
+    # merely starts with one (Total Wine, Total Fitness) or holds "all" (All Saints Church) stays loose
+    if 2 <= len(toks) <= 4 and toks[-1] in ("total", "totals", "totale", "totaal", "gesamt", "insgesamt", "overall", "combined"):
         return "exact"
     return "loose"
 

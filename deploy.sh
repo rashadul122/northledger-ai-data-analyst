@@ -73,7 +73,8 @@ else
 fi
 
 step "7. wrangler"
-$WRANGLER whoami 2>&1 | grep -q 'You are logged in' || refuse "wrangler is not logged in (the owner runs: npx wrangler login). An agent never does."
+WHO="$($WRANGLER whoami 2>&1 || true)"      # captured first: under pipefail, `| grep -q` can fail on SIGPIPE even when it matches
+case "$WHO" in *"You are logged in"*) ;; *) refuse "wrangler is not logged in (the owner runs: npx wrangler login). An agent never does." ;; esac
 $WRANGLER deploy --dry-run >/dev/null || refuse "wrangler deploy --dry-run rejected wrangler.jsonc"
 echo "wrangler accepts the config"
 

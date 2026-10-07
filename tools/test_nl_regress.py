@@ -1047,6 +1047,16 @@ def test_f04_a_sensitive_column_never_names_a_series_nor_leaks_through_a_constan
     assert [f["column"] for f in rep2["privacy"]["flagged"]] == ["marital_status"], rep2["privacy"]["flagged"]
     assert "Widowed" not in everything(rep2, data2), "the constant value of a withheld column is in an output"
     assert est(rep2), "the cube is still read without a constant column"
+    # (d) a WIDE table of periods (Eurostat's shape) with a sensitive id column among the series' identifiers: reshaped to long before the scan,
+    # flagged after landing, never read
+    wide = MC.wide_period()[0]
+    dfw = pd.read_csv(io.BytesIO(wide), dtype=str, keep_default_na=False)
+    vals = ["Widowed", "Single", "Married"]
+    dfw.insert(1, "Marital status", [vals[i % 3] for i in range(len(dfw))])
+    data3 = dfw.to_csv(index=False).encode()
+    rep3 = run_bytes(data3)
+    assert [f["column"] for f in rep3["privacy"]["flagged"]] == ["marital_status"], rep3["privacy"]["flagged"]
+    assert not [v for v in vals if v in everything(rep3, data3)], "a value of a withheld id column of a wide table is in an output"
 
 
 def mean_windows(df: "pd.DataFrame", mask, scale: float = 1.0, date: str = "REF_DATE", value: str = "VALUE"):

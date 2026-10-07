@@ -1,9 +1,80 @@
 {
+ "f01_sensitive_category_dimension": {
+  "aggregation": null,
+  "estimand": false,
+  "file": "pyodide_sensitive_dimension.csv.gz",
+  "flagged": [
+   "marital_status:withhold"
+  ],
+  "kind": "cube_incomplete",
+  "latest": null,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
+  "ok": true,
+  "pct": null,
+  "prior": null,
+  "refused": true,
+  "roles": {},
+  "source": null,
+  "usable": false
+ },
+ "f05_average_dollars_whole_row": {
+  "aggregation": "mean over months",
+  "estimand": true,
+  "file": "pyodide_average_dollars.csv.gz",
+  "flagged": [],
+  "kind": "cube",
+  "latest": 1364750.0,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
+  "ok": true,
+  "pct": 1.86602,
+  "prior": 1339750.0,
+  "refused": false,
+  "roles": {
+   "GEO": "rate_aggregate"
+  },
+  "source": "estimand",
+  "usable": true
+ },
+ "f12_marginalised_business_file": {
+  "aggregation": null,
+  "estimand": false,
+  "file": "f12_seed4_weekly_total_rows_two_measures.csv",
+  "flagged": [],
+  "kind": null,
+  "latest": 236.0,
+  "ledger_amount": [
+   27223377.0,
+   27515163.0
+  ],
+  "left_out": 108,
+  "ok": true,
+  "pct": 0.0,
+  "prior": 236.0,
+  "refused": false,
+  "roles": {},
+  "source": "finding",
+  "usable": null
+ },
  "r02_combined_member_disjoint_parts": {
+  "aggregation": "sum over months",
   "estimand": true,
   "file": "r02_combined_disjoint_periods.csv",
+  "flagged": [],
   "kind": "cube",
   "latest": 193280000.0,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
   "ok": true,
   "pct": 5.411847,
   "prior": 183357000.0,
@@ -15,10 +86,17 @@
   "usable": true
  },
  "r06_french_statcan": {
+  "aggregation": "sum over months",
   "estimand": true,
   "file": "r06_french_statcan.csv",
+  "flagged": [],
   "kind": "cube",
   "latest": 230190000.0,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
   "ok": true,
   "pct": 4.298537,
   "prior": 220703000.0,
@@ -30,10 +108,17 @@
   "usable": true
  },
  "r07_weekly_official": {
+  "aggregation": "sum over weeks",
   "estimand": true,
   "file": "r07_weekly_official.csv",
+  "flagged": [],
   "kind": "cube",
   "latest": 52058.0,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
   "ok": true,
   "pct": 0.07882,
   "prior": 52017.0,
@@ -45,10 +130,17 @@
   "usable": true
  },
  "rate_panel_with_its_aggregate": {
+  "aggregation": "mean over months",
   "estimand": true,
   "file": "pyodide_rate_with_aggregate.csv.gz",
+  "flagged": [],
   "kind": "cube",
   "latest": 6.233333,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
   "ok": true,
   "pct": -12.412178,
   "prior": 7.116667,
@@ -60,10 +152,17 @@
   "usable": true
  },
  "rate_panel_without_one": {
+  "aggregation": "mean over months",
   "estimand": true,
   "file": "pyodide_rate_without_aggregate.csv.gz",
+  "flagged": [],
   "kind": "cube",
   "latest": 11.375,
+  "ledger_amount": [
+   null,
+   null
+  ],
+  "left_out": 0,
   "ok": true,
   "pct": -1.727862,
   "prior": 11.575,

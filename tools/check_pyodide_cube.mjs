@@ -167,7 +167,14 @@ try {
           kind: s2.kind || null, usable: s2.usable === undefined ? null : s2.usable,
           roles: Object.fromEntries((s2.dims || []).map((d) => [d.column, d.role])),
           source: e2 ? 'estimand' : null, prior: f2.prior ? f2.prior.value : null, latest: f2.latest ? f2.latest.value : null,
-          pct: f2.change_pct ? f2.change_pct.value : null, seconds: (performance.now() - c0) / 1000 };
+          pct: f2.change_pct ? f2.change_pct.value : null, seconds: (performance.now() - c0) / 1000,
+          // wave 5f: the aggregation, the withheld columns, the rows the adapter left out, and the analysis ledger's amount totals
+          aggregation: e2 && e2.measure ? e2.measure.aggregation : null,
+          flagged: ((r.privacy && r.privacy.flagged) || []).map((f) => f.column + ':' + f.decision).sort(),
+          left_out: ((r.cleaning && r.cleaning.fixes) || []).filter((f) => f.rule === 'total_rows_left_out' || f.rule === 'partial_month_left_out')
+            .reduce((a, f) => a + (f.count || 0), 0),
+          ledger_amount: (() => { try { const L = {}; for (const x of (JSON.parse(r.downloads.ledger_json).analysis_ledger || [])) L[x.id] = x.value;
+            return [L['measure.amount.total.prior12'] === undefined ? null : L['measure.amount.total.prior12'], L['measure.amount.total.last12'] === undefined ? null : L['measure.amount.total.last12']]; } catch (x) { return null; } })() };
       } catch (err) { cases[n] = { error: String(err).slice(0, 400), seconds: (performance.now() - c0) / 1000 }; }
     }
     return {
@@ -233,6 +240,12 @@ for (const [name, want] of Object.entries(CASES)) {
     g.ok === want.ok && g.kind === want.kind && g.usable === want.usable && g.estimand === want.estimand && g.refused === want.refused,
     JSON.stringify({ pyodide: [g.ok, g.kind, g.usable, g.estimand, g.refused], native: [want.ok, want.kind, want.usable, want.estimand, want.refused] }));
   ok('case ' + name + ': the same role for every dimension', same(g.roles, want.roles), JSON.stringify({ pyodide: g.roles, native: want.roles }));
+  ok('case ' + name + ': the same aggregation, withheld columns and rows left out', g.aggregation === (want.aggregation === undefined ? g.aggregation : want.aggregation) &&
+    same(g.flagged, want.flagged) && g.left_out === want.left_out, JSON.stringify({ pyodide: [g.aggregation, g.flagged, g.left_out], native: [want.aggregation, want.flagged, want.left_out] }));
+  if (want.ledger_amount) {
+    ok('case ' + name + ': the same ledger totals of the amount', !!g.ledger_amount && close(g.ledger_amount[0], want.ledger_amount[0], 1e-6 * Math.max(1, Math.abs(want.ledger_amount[0]))) &&
+      close(g.ledger_amount[1], want.ledger_amount[1], 1e-6 * Math.max(1, Math.abs(want.ledger_amount[1]))), JSON.stringify({ pyodide: g.ledger_amount, native: want.ledger_amount }));
+  }
   if (want.source === 'estimand') {
     ok('case ' + name + ': the same figures (prior, latest, change)', close(g.prior, want.prior, 1e-6 * Math.max(1, Math.abs(want.prior))) &&
       close(g.latest, want.latest, 1e-6 * Math.max(1, Math.abs(want.latest))) && close(g.pct, want.pct, 1e-6),

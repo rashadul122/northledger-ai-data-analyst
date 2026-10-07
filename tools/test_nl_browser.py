@@ -3717,11 +3717,13 @@ def test_final_review_withheld_codes_keep_the_files_duplicates():
     C = _review3_module("codes_probe")
     got = C.probe(NB)
     off, held, kept = got["codes off"], got["withheld"], got["kept"]
-    assert off[:2] == (100, 150) and kept[:2] == (100, 150), (off, kept)
-    assert held[:2] == (100, 100), held
+    # wave 5f: the file is a regular daily log that stops on 14 April 2025: its 14 rows of April are left out of the comparison (the month is not
+    # whole) and counted among the rows set aside, so every figure below is the old one plus those 14 rows
+    assert off[:2] == (100, 150 + 14) and kept[:2] == (100, 150 + 14), (off, kept)
+    assert held[:2] == (100, 100 + 14), held
     assert held[0] == off[0]
     # its empty cells are still counted; its values are not read (no mixed-content or spelling line)
-    assert held[2] == ["notes: 19.9% null-like (269 of 1,350 values)."], held[2]
+    assert held[2] == ["notes: 20.1% null-like (268 of 1,336 values)."], held[2]
 
 
 def test_final_review_no_ai_payload_holds_the_files_name():

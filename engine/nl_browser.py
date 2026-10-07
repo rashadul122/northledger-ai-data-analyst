@@ -1683,7 +1683,9 @@ def _neutralize_withheld(db_path: str, table: str, columns: List[str]) -> List[s
 # engine code), so the engine reads it like any column, and is recorded in privacy.released. The page's consent step
 # shows every released column ("Read as a category, not personal data: <column> (<n> labels)") and the visitor can still
 # withhold it: a withhold or code decision for it keeps the flag.
-RELEASE_MAX_DISTINCT = 3000            # wave 5f (G): was 300; a code-bearing dimension of a real table (NAICS at 6 digits, HS codes) has 400 to 2,500 labels
+RELEASE_MAX_DISTINCT = 300
+RELEASE_MAX_DISTINCT_CODED = 3000       # wave 5f (G): a column whose labels CARRY CODES ([4411], 4411 Used car dealers: NAICS at 6 digits, HS) has 400 to 2,500 labels
+_CODED_LABEL = re.compile(r"\[[0-9A-Za-z][0-9A-Za-z.\-]*\]\s*$|^\s*[0-9][0-9A-Za-z.\-]*\s+\S")
 RELEASE_MAX_SHARE = 0.05
 RELEASE_MIN_REPEAT = 5
 SENSITIVE_HEADER = re.compile(
@@ -1836,7 +1838,8 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
                 continue
             counts[t] = counts.get(t, 0) + int(n)
         filled = sum(counts.values())
-        if not counts or len(counts) > RELEASE_MAX_DISTINCT or len(counts) > RELEASE_MAX_SHARE * filled:
+        coded = bool(counts) and sum(1 for x in counts if _CODED_LABEL.search(x)) >= 0.8 * len(counts)
+        if not counts or len(counts) > (RELEASE_MAX_DISTINCT_CODED if coded else RELEASE_MAX_DISTINCT) or len(counts) > RELEASE_MAX_SHARE * filled:
             continue
         least = min(counts.values())
         if least < RELEASE_MIN_REPEAT:
@@ -9039,6 +9042,56 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
     rep.setdefault("input", {})["layout"] = lay
 
 
+def _tidy_left_out_rows(rep: Dict[str, Any], tidy: Optional[Dict[str, Any]]) -> None:
+    """The rows the adapter left out before the file was read (total rows, a month the file stops in the middle of) are rows SET ASIDE, not rows
+    that were never there: they are counted in the input and the cleaning, listed with their reason among the quarantined rows and in the
+    quarantine download (with their line in the visitor's file), and never lost."""
+    lo = (tidy or {}).get("left_out_rows")
+    if not lo:
+        return
+    import csv as _csv
+    frame = lo["frame"]
+    n = int(len(frame))
+    rep["input"]["rows"] = int(rep["input"].get("rows") or 0) + n
+    cl = rep.setdefault("cleaning", {})
+    cl["rows_in"] = int(cl.get("rows_in") or 0) + n
+    cl["rows_quarantined"] = int(cl.get("rows_quarantined") or 0) + n
+    by: Dict[str, int] = {}
+    for r in lo["reasons"]:
+        by[r] = by.get(r, 0) + 1
+    qr = cl.setdefault("quarantine_reasons", [])
+    for r, c in by.items():
+        qr.append({"reason": r, "count": c})
+    qr.sort(key=lambda x: (-x["count"], x["reason"]))
+    dl = rep.get("downloads") or {}
+    from northledger.clean import QUARANTINE_COL
+    text = str(dl.get("quarantine_csv") or "")
+    if text.strip():
+        header = next(_csv.reader(io.StringIO(text)))
+    else:
+        clean_head = next(_csv.reader(io.StringIO(str(dl.get("clean_csv") or ""))), [])
+        header = [h for h in clean_head if h] + ([QUARANTINE_COL] if clean_head else [])
+    if not header:
+        return
+    slug = {_engine_slug(c): c for c in frame.columns}
+    buf = io.StringIO()
+    w = _csv.writer(buf, lineterminator="\n")
+    if not text.strip():
+        w.writerow(header)
+    for k in range(n):
+        row = []
+        for h in header:
+            if h == "source_line":
+                row.append("" if lo["lines"][k] is None else lo["lines"][k])
+            elif h == QUARANTINE_COL:
+                row.append(lo["reasons"][k])
+            else:
+                src = slug.get(h)
+                row.append(str(frame.iloc[k][src]) if src is not None else "")
+        w.writerow(row)
+    dl["quarantine_csv"] = (text if text.endswith("\n") or not text else text + "\n") + buf.getvalue()
+
+
 def _tidy_notes(rep: Dict[str, Any], tidy: Optional[Dict[str, Any]], date_notes: List[Dict[str, Any]],
                 number_notes: Optional[List[Dict[str, Any]]] = None) -> None:
     """Say in the report what was done to a plain file before it was read (wave 5f): the dates rewritten, the total rows left out and the month
@@ -10274,6 +10327,7 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
         if 2 <= nun <= TIDY_MAX_MEMBERS:
             cats[c] = t
     drops: Set[int] = set()
+    reasons: Dict[int, str] = {}
     totals: List[Dict[str, Any]] = []
     valid_date = dts.notna().to_numpy()
     date_key = dts.dt.strftime("%Y-%m-%d").fillna("")
@@ -10296,6 +10350,11 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
             # parts are not all listed), is left out too and said so; a name that merely holds a total word is a member until the cells say otherwise
             if status == "verified" or (status in ("unresolved", "contradicted_bounding") and kind == "exact"):
                 drops.update(int(i) for i in rows)
+                why_row = ("left out of the figures: a row named %r that equals the sum of the other rows (a total)" % str(m)) \
+                    if status == "verified" else \
+                    ("left out of the figures: a row named %r that could not be checked against the other rows (treated as a total)" % str(m))
+                for i in rows:
+                    reasons[int(i)] = why_row
                 rec["left_out"] = True
             else:
                 rec["left_out"] = False
@@ -10305,7 +10364,11 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
         return None
     if partial:
         drops.update(partial["rows"])
-    return {"drops": sorted(drops), "totals": totals, "partial": partial, "date_column": date_col}
+        month_of = dts.dt.strftime("%Y-%m")
+        for i in partial["rows"]:
+            reasons.setdefault(int(i), "left out of the comparison: the file stops in the middle of %s (or starts in it), so the months compared are whole"
+                               % _mon(str(month_of.iloc[i])))
+    return {"drops": sorted(drops), "totals": totals, "partial": partial, "date_column": date_col, "reasons": reasons}
 
 
 def _check_total(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Dict[str, Any], ctx: Any, date_key: Any,
@@ -10368,12 +10431,23 @@ def _partial_months(df: Any, dts: Any, already: Set[int]) -> Optional[Dict[str, 
     cad = _ns()._cadence(ds)
     if cad is None:
         return None
-    months = sorted({x[:7] for x in ds})
-    if len(months) < 3:
+    # a REGULAR table: the same number of rows on most dates (one row a day for each series). A log of transactions on random dates has a date
+    # with no row now and then, and a last date one day before a month end proves nothing about the month: the core's own rule (a last month under
+    # half a typical one is left out) is all that is said of it
+    per_date = d.dt.strftime("%Y-%m-%d").value_counts()
+    if float((per_date == per_date.mode().iloc[0]).mean()) < 0.6:
         return None
+    months = sorted({x[:7] for x in ds})
+    if len(months) < 24:
+        return None                       # two 12-month windows need 24 months: a shorter file is not compared, whole months or not
     days = [pd.Timestamp(x) for x in ds]
     wd_share = np.bincount([x.weekday() for x in days], minlength=7) / float(len(days))
     present = {w for w in range(7) if wd_share[w] >= 0.05}
+    # ... and a COMPLETE one: it holds (nearly) every date its rhythm expects between its first and its last
+    span = [days[0] + pd.Timedelta(days=k) for k in range((days[-1] - days[0]).days + 1)]
+    expected_n = sum(1 for x in span if x.weekday() in present and (cad["cadence"] != "week" or x.weekday() == days[0].weekday()))
+    if expected_n == 0 or len(days) < 0.95 * expected_n:
+        return None
 
     def expected_after(ts: Any) -> bool:
         """Whether a date the file's own rhythm would hold falls after `ts` in its month."""
@@ -10395,13 +10469,22 @@ def _partial_months(df: Any, dts: Any, already: Set[int]) -> Optional[Dict[str, 
         return False
     last_ts = max(days)
     first_ts = min(days)
+    # a file whose months never reach a later (or an earlier) day of the month than this one has its own month end (a log that stops on the 28th
+    # in every month): the last date is then the month's last, and the first its first
+    max_day: Dict[str, int] = {}
+    min_day: Dict[str, int] = {}
+    for x in days:
+        k = x.strftime("%Y-%m")
+        max_day[k] = max(max_day.get(k, 0), x.day)
+        min_day[k] = min(min_day.get(k, 99), x.day)
+    last_m, first_m = last_ts.strftime("%Y-%m"), first_ts.strftime("%Y-%m")
     out_months: List[str] = []
-    if expected_after(last_ts):
-        out_months.append(last_ts.strftime("%Y-%m"))
+    if expected_after(last_ts) and any(v > last_ts.day for k, v in max_day.items() if k != last_m):
+        out_months.append(last_m)
     left = [m for m in months if m not in out_months]
     # the first month, when the comparison (the latest 24 whole months) reaches it
-    if expected_before(first_ts) and len(left) <= 24:
-        out_months.append(first_ts.strftime("%Y-%m"))
+    if expected_before(first_ts) and len(left) <= 24 and any(v < first_ts.day for k, v in min_day.items() if k != first_m):
+        out_months.append(first_m)
     if not out_months:
         return None
     month_of = dts.dt.strftime("%Y-%m").fillna("")
@@ -10617,9 +10700,12 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         t_ = None                 # the layer reads this file (a total row beside its parts): its estimand is the answer
                 if t_ is not None:
                     df_t = _read_plain(data)
+                    sent_rows_before = sent_rows
                     drop_t = set(t_["drops"])
                     pos_kept = [i for i in range(len(df_t)) if i not in drop_t]
                     if drop_t:
+                        if cdf is not None and len(cdf) == len(df_t):
+                            cdf = cdf.iloc[pos_kept].reset_index(drop=True)      # the table the data tests read follows the rows the engine reads
                         data = _to_csv_bytes(df_t.iloc[pos_kept])
                         if sent_rows is None:
                             sent_rows = (pos_kept, len(df_t))
@@ -10628,6 +10714,17 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         else:
                             sent_rows = (None, sent_rows[1])
                     tidy_info = dict(t_, rows_in=int(len(df_t)), rows_out=int(len(pos_kept)))
+                    if drop_t:
+                        lines_t = _record_lines(sent)
+                        if sent_rows_before is None:
+                            map_t = list(range(len(df_t)))
+                        else:
+                            map_t = sent_rows_before[0] if (sent_rows_before[0] is not None and len(sent_rows_before[0]) == len(df_t)) else None
+                        order_t = sorted(drop_t)
+                        tidy_info["left_out_rows"] = {
+                            "frame": df_t.iloc[order_t],
+                            "lines": [lines_t[map_t[i]] if map_t is not None and 0 <= map_t[i] < len(lines_t) else None for i in order_t],
+                            "reasons": [t_["reasons"].get(i, "left out of the figures") for i in order_t]}
             except Refusal:
                 raise
             except Exception:  # noqa: BLE001 - the tidy is an aid; the file is read as it stands
@@ -11064,6 +11161,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if layout and structure_inner is None:
             _layout_notes(rep, layout)
         if tidy_info is not None or date_notes or number_notes:
+            _tidy_left_out_rows(rep, tidy_info)
             _tidy_notes(rep, tidy_info, date_notes, number_notes)
         # T4: an official aggregate is described, not tested (the header as the visitor sent it)
         try:

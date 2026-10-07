@@ -10348,6 +10348,33 @@ def _decimals_of(series: Any) -> int:
     return min(d, 4)
 
 
+ID_MIN_DIGITS = 9               # wave 5g (D): a column of whole numbers all of ONE width of at least 9 digits is a column of identifiers, not amounts
+
+
+def _identifier_column(name: Any, values: Any, all_names: Iterable[Any]) -> bool:
+    """Whether a number column is an identifier (a case number, an invoice number, an account), not an amount that adds up: by SHAPE, whole numbers
+    that all have the same width of nine or more digits (no amount is written so evenly: sizes spread over several widths), or by the core's own
+    reading of a column that is not a measure (a name ending in id, key, number, code ... with whole numbers, a map coordinate, a year; or whole
+    numbers that are nearly all different), so that the checks of a total read the columns the core will sum and no others. Wave 5g, D (fuzz v2
+    seed 832: a 12-digit case number vetoed a Revenue total that matched to the unit)."""
+    import pandas as pd
+    v = pd.to_numeric(values, errors="coerce").dropna()
+    if len(v) < 4 or not bool((v == v.round()).all()):
+        return False
+    digits = v.abs().astype("int64").astype(str).str.len() if float(v.abs().max()) < 9e18 else None
+    if digits is not None and int(digits.min()) >= ID_MIN_DIGITS and int(digits.nunique()) == 1:
+        return True
+    try:
+        from northledger import measure as _m
+        s = v.astype("int64") if float(v.abs().max()) < 9e18 else v
+        if _m._label_number(str(name), s, [str(x) for x in all_names]) or _m._id_like(str(name), s, {}):
+            return True
+    except Exception:  # noqa: BLE001 - the shape rule above still stands without the core
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+    return False
+
+
 def _number_columns(df: Any, exclude: Set[str]) -> Dict[str, Any]:
     import pandas as pd
     out = {}
@@ -10404,6 +10431,7 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
     if date_col is None:
         return None
     nums = _number_columns(df, aside | {date_col})
+    nums = {c: v for c, v in nums.items() if not _identifier_column(c, v, df.columns)}       # wave 5g (D): amounts only
     if not nums:
         return None
     # the category columns: text, at most TIDY_MAX_MEMBERS different members, not personal, not a number
@@ -10420,10 +10448,6 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
     totals: List[Dict[str, Any]] = []
     valid_date = dts.notna().to_numpy()
     date_key = dts.dt.strftime("%Y-%m-%d").fillna("")
-    # wave 5g (D): every nominated total is checked on every number column FIRST, and a column that adds up for NO nominated total of the file
-    # (a case number, an invoice number, a price: a column the cells show is not an amount that adds up) never vetoes a total that adds up on
-    # the columns that do. Fuzz v2 seed 832: a 12-digit case number repeated down every member vetoed a Revenue total that matched to the unit,
-    # and the Total rows stayed in the sums (the level twice too big).
     checks: List[Tuple[Any, ...]] = []
     for c, col in cats.items():
         members = [m for m in pd.unique(col[col != ""])]
@@ -10438,9 +10462,8 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
         base = [m for m in members if m not in nominated]
         for m, kind in nominated.items():
             checks.append((c, col, m, kind, _total_columns(NS, df, col, m, base, nums, ctx, date_key, valid_date)))
-    additive = {n for *_h, res in checks if isinstance(res, dict) for n, (chk, _a) in res.items() if chk["status"] == "pass"}
     for c, col, m, kind, res in checks:
-        status, why = _total_verdict(res, additive)
+        status, why = _total_verdict(res)
         rows = np.flatnonzero((col == m).to_numpy())
         rec = {"column": str(c), "member": str(m), "rows": int(len(rows)), "nomination": kind, "status": status, "why": why}
         # a verified total is left out; a bare total phrase that no cell could verify, or that stands above the sum of the others (a total whose
@@ -10502,17 +10525,14 @@ def _total_columns(NS: Any, df: Any, col: Any, m: str, base: List[str], nums: Di
     return results
 
 
-def _total_verdict(res: Any, additive: Optional[Set[str]] = None) -> Tuple[str, str]:
+def _total_verdict(res: Any) -> Tuple[str, str]:
     """(status, why) from a member's per-column sum-checks: "verified" (a check that could have FAILED passed for at least one number column and
-    failed for none of the columns that count), "contradicted_bounding" (it is above their sum in the cells: a total whose parts are not all
-    listed), "contradicted" (it is not their sum and is not above it: an ordinary member) or "unresolved" (no check could have failed). The
-    columns that count are those that add up for SOME nominated total of the file (`additive`) when there are any; a column that adds up for
-    none is not an amount and says nothing about a total (wave 5g, D). With `additive` None every column counts."""
+    failed for none), "contradicted_bounding" (it is above their sum in the cells: a total whose parts are not all listed), "contradicted" (it
+    is not their sum and is not above it: an ordinary member) or "unresolved" (no check could have failed)."""
     import numpy as np
     if not isinstance(res, dict):
         return res
-    counted = {n: v for n, v in res.items() if not additive or n in additive}
-    results = list(counted.values())
+    results = list(res.values())
     if any(c["status"] == "fail" for c, _a in results):
         bound = True
         for c, A in results:

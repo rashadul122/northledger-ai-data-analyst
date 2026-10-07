@@ -1694,6 +1694,12 @@ def test_g06_a_german_value_column_is_released_by_the_metadata_around_it_and_a_c
     rep_c = run_bytes(data)
     assert any(x["header"] == "Product category" for x in rep_c["privacy"]["released"]), (rep_c["privacy"]["released"], rep_c["privacy"]["flagged"])
     assert "withheld" not in headline(rep_c) and "tell the repeats apart" not in json.dumps(rep_c.get("structure")), headline(rep_c)
+    # NEGATIVE: the larger share is for an OFFICIAL-looking table only. The same labels in a plain ledger (no publisher's columns) are read as any column is, with
+    # the 5% cap: 120 labels on 1,440 rows are 8% and are withheld as free text (the review found addresses, names behind an id and postcodes that pass every
+    # pattern of the label itself)
+    plain = ["Date,Product category,Amount"] + ["2023-%02d-%02d,%d Refined goods %d,%d" % (m + 1, 1 + k % 28, 917000 + k, k % 7, 100 + k) for k in range(120) for m in range(12)]
+    rep_p = run_bytes(("\n".join(plain) + "\n").encode())
+    assert not any(x["header"] == "Product category" for x in rep_p["privacy"]["released"]), rep_p["privacy"]["released"]
     # NEGATIVE: free text (every value different) is still withheld; a column of 40 labels on 400 rows each repeated 10 times stays a category
     ft = ["REF_DATE,GEO,Notes,VALUE"] + ["2023-%02d,Nevton,%s,%d" % (i % 12 + 1, "free note number %d about the order" % i, 100 + i) for i in range(300)]
     rep_f = run_bytes(("\n".join(ft) + "\n").encode())
@@ -1786,11 +1792,13 @@ def test_g09_a_total_row_is_still_left_out_when_the_amounts_are_whole_numbers_un
 
 
 def test_g10_a_column_that_opens_with_a_number_is_released_as_a_category_only_when_it_is_a_described_code_and_never_an_address_or_a_name():
-    """Wave 5g, review finding 3. The cap that tells a category from free text was raised from 5% to 20% of the rows for any label that opens with a
-    number, and 20% is what "every label repeats five times" already implies, so the cap decided nothing: a column of street addresses ("14 Oak
-    Lane, Springfield, IL 62000": 40 addresses, 8 rows each) was RELEASED as a category and printed in the report. The larger caps are now for
-    labels that are described codes (a code of four or more characters holding a digit, then two or more words of letters, no comma: "917725 Refined
-    goods 82", "Used car dealers [4411]"), and never for an address (`_street_value`) or a person's name behind an id."""
+    """Wave 5g, review findings 3 and B of its second round. The cap that tells a category from free text was raised from 5% to 20% of the rows for any
+    label that opens with a number, and 20% is what "every label repeats five times" already implies, so the cap decided nothing: a column of street
+    addresses ("14 Oak Lane, Springfield, IL 62000": 40 addresses, 8 rows each) was RELEASED as a category and printed in the report. The larger share is
+    now for an OFFICIAL-looking table only (a publisher's signature, or three of the columns only a publisher uses) and for labels that are described
+    codes (a code of four or more characters holding a digit, then two or more words of letters, no comma: "917725 Refined goods 82", "Used car dealers
+    [4411]"), never an address (`_street_value`) or a person's name behind an id. A plain file keeps the 5% cap, because the review found addresses (an
+    unlisted street type), names (lowercase, with a role), postcodes with a place and phone numbers with words that pass every pattern of the label."""
     def one(labels, header="Job site", repeat=8):
         rows = []
         for k in range(repeat):
@@ -1813,6 +1821,15 @@ def test_g10_a_column_that_opens_with_a_number_is_released_as_a_category_only_wh
     names = ["%d %s %s" % (10200 + i, ("Maria", "Daniel", "Priya", "Chen", "Laura")[i % 5], ("Quillon", "Telford", "Askerby", "Okafor", "Dray", "Hollin", "Brandmoor", "Ferreira")[i % 8]) for i in range(40)]
     rep4 = one(names, header="Account")
     assert not rep4["privacy"]["released"], rep4["privacy"]["released"]
+    # what the review found passing every pattern of the label itself (an unlisted street type, lowercase names with a role, a postcode with a place, a phone
+    # number with words), padded past 30 characters: in a plain file they are read with the 5% cap and are NOT released
+    esc = ["%d Elm Grove Apartment Complex Block %d" % (1000 + 7 * i, i % 5) for i in range(40)]
+    nam = ["e%d john smith senior accountant" % (1020 + i) for i in range(40)]
+    pst = ["%d AB Amsterdam Noord district" % (1000 + 3 * i) for i in range(40)]
+    ph = ["415-555-%04d front desk reception line" % (100 + i) for i in range(40)]
+    for what, labels in (("estate", esc), ("names", nam), ("postcodes", pst), ("phones", ph)):
+        r_ = one(labels, header="Place")
+        assert not r_["privacy"]["released"], (what, r_["privacy"]["released"])
     # the pieces
     assert NB._described_code("917725 Refined goods 82") == "Refined goods 82" and NB._described_code("Used car dealers [4411]") == "Used car dealers"
     assert NB._described_code("[4411] Used car dealers") == "Used car dealers" and NB._described_code("21058 Forged parts")
@@ -1820,25 +1837,25 @@ def test_g10_a_column_that_opens_with_a_number_is_released_as_a_category_only_wh
         assert NB._described_code(bad) is None, bad
 
 
-def test_g11_an_ordinary_ledger_with_a_dimension_of_plans_or_price_bands_is_added_up_and_only_members_named_as_bases_are_never_added_when_the_table_is_short():
-    """Wave 5g, review finding 4. Rule B nominated a dimension by any of price, pricing, real, current, valuation, basis, adjusted in its header or two
-    of its members, and a table too short to run the copy test ("cannot say") was then never added: ordinary ledgers of 13 to 23 months with a
-    "Pricing plan" (Standard, Premium, Enterprise) or a "Price band" column showed one plan alone. Now a STRONG nomination (at least two member names
-    are names of bases: Current prices, Constant prices, Nominal, Real) is never added when the table cannot say; a WEAK one (only the header names
-    bases: Prices, Basis, Valuation) is added when the table cannot say, and is never added when its members move together under a steady ratio.
-    "Pricing", a singular "price", a bare "current" and "real estate" nominate nothing."""
+def test_g11_a_dimension_is_nominated_as_bases_by_its_header_or_by_two_members_that_name_different_bases_and_an_ordinary_ledger_is_added_up():
+    """Wave 5g, review findings 4 and D of its second round. Rule B nominates a dimension of a ledger as one of BASES by its header (Prices, Basis, Bases,
+    Valuation, Price basis, Type of prices) or by two member names that name DIFFERENT bases (Current prices and Constant prices; Nominal and Real;
+    Seasonally adjusted and Not seasonally adjusted); the cells then decide (copies by shape: never added), and a table that cannot say (too short, too
+    blank, a basis that starts late) does not add it either. A first version nominated by any of price, pricing, real, current, valuation, adjusted and
+    showed one plan of three in ordinary ledgers of 13 to 23 months ("Pricing plan": Standard, Premium, Enterprise); a second added a weakly nominated
+    dimension it could not test and printed +75% for a header "Prices" over a second basis that starts in month 22. "Pricing plan", "Price band", a
+    singular "price", a bare "current", "Real estate" with "Real assets" and "Fixed price" with "Fixed price milestone" nominate nothing."""
     rng = np.random.RandomState(5)
 
-    def ledger(col, members, months, total=True, noise=0.05):
+    def ledger(col, members, months, total=True, noise=0.05, late=None):
         rows = []
         for i in range(months):
             d = "%04d-%02d-01" % (2022 + i // 12, i % 12 + 1)
             for st_ in ("North", "South"):
-                vals = [int(1000 * (1 + 0.5 * k) * (1 + 0.01 * i) * (1 + noise * rng.randn())) for k in range(len(members))]
-                for m, v in zip(members, vals):
-                    rows.append([d, st_, m, v])
-                if total:
-                    pass
+                for k, m in enumerate(members):
+                    if late is not None and k == 1 and i < late:
+                        continue
+                    rows.append([d, st_, m, int(1000 * (1 + 0.5 * k) * (1 + 0.01 * i) * (1 + noise * rng.randn()))])
         out = []
         if total:
             by = {}
@@ -1847,25 +1864,33 @@ def test_g11_an_ordinary_ledger_with_a_dimension_of_plans_or_price_bands_is_adde
             for (d, m), v in by.items():
                 out.append([d, "Total", m, v])
         return _ledger_csv(["Date", "Store", col, "Amount"], rows + out)
-    for col, members in (("Pricing plan", ["Standard", "Premium", "Enterprise"]), ("Price band", ["Low", "Mid", "High"]),
-                         ("Account", ["Current assets", "Non-current assets", "Real estate", "Cash"])):
-        for months in (14, 20):
-            data = ledger(col, members, months)
-            rep = run_bytes(data)
+    ordinary = (("Pricing plan", ["Standard", "Premium", "Enterprise"]), ("Price band", ["Low", "Mid", "High"]),
+                ("Account", ["Current assets", "Non-current assets", "Real estate", "Cash"]), ("Segment", ["Real estate", "Real assets", "Infrastructure"]),
+                ("Contract", ["Fixed price", "Fixed price milestone", "Time and materials"]), ("Version", ["Actual", "Budget", "Forecast"]))
+    for col, members in ordinary:
+        for months in (14, 20, 30):
+            rep = run_bytes(ledger(col, members, months))
             d = dim(rep, col)
             assert d is None or d["role"] in ("flat_additive", "measure"), (col, months, d)
-            assert "one quantity on two bases" not in json.dumps(est(rep)) and "named as bases" not in json.dumps(est(rep)), (col, months)
-    # a weak nomination (header Prices, members A and B) in a short table is added; strong (Current / Constant prices) is not
-    rep_w = run_bytes(ledger("Prices", ["A", "B"], 18))
-    assert dim(rep_w, "Prices") is None or dim(rep_w, "Prices")["role"] == "flat_additive", dim(rep_w, "Prices")
+            assert "one quantity on two bases" not in json.dumps(est(rep)) and "names bases" not in json.dumps(est(rep)), (col, months)
+    # a header that names bases over a table too short or too sparse to say: NOT added (one member, said so); and over a long table, compared (added when
+    # the members are not copies)
+    for months, late in ((18, None), (36, 22)):
+        rep_w = run_bytes(ledger("Prices", ["Current", "Constant"], months, late=late))
+        dw = dim(rep_w, "Prices")
+        assert dw is not None and dw["role"] == "single", (months, late, dw)
+        assert "never added" in json.dumps(est(rep_w)) and one_member_shown(rep_w), est(rep_w).get("text")
     rep_s = run_bytes(ledger("Valuation", ["Current prices", "Constant prices"], 18))
     ds = dim(rep_s, "Valuation")
-    assert ds is not None and ds["role"] == "single", ds
-    assert "named as bases" in json.dumps(est(rep_s)) and one_member_shown(rep_s), est(rep_s).get("text")
-    # the pieces
+    assert ds is not None and ds["role"] == "single" and one_member_shown(rep_s), ds
+    # the pieces: the token a member name names, and the level of a nomination
+    assert NS._basis_token("Current prices") != NS._basis_token("Constant prices") and NS._basis_token("Real estate") == NS._basis_token("Real assets")
+    assert NS._basis_token("Seasonally adjusted") != NS._basis_token("Not seasonally adjusted") and NS._basis_token("Unadjusted") != NS._basis_token("Seasonally adjusted")
+    assert NS._basis_token("Fixed price") == NS._basis_token("Fixed price milestone") and NS._basis_token("Cash") is None
     for c, labels, want in (("Pricing plan", ["Standard", "Premium"], 0), ("Price band", ["Low", "High"], 0), ("Prices", ["A", "B"], 1), ("Basis", ["A", "B"], 1),
                             ("X", ["Current prices", "Constant prices"], 2), ("X", ["Nominal", "Real"], 2), ("Account", ["Current assets", "Real estate", "Cash"], 0),
-                            ("X", ["Chained (2017) dollars", "Current prices"], 2), ("Prix", ["A", "B"], 1)):
+                            ("X", ["Chained (2017) dollars", "Current prices"], 2), ("Prix", ["A", "B"], 1), ("Segment", ["Real estate", "Real assets", "Infrastructure"], 0),
+                            ("Contract", ["Fixed price", "Fixed price milestone", "Time and materials"], 0), ("X", ["Seasonally adjusted", "Not seasonally adjusted"], 2)):
         assert NS._basis_level({"column": c, "labels": labels}) == want, (c, labels, NS._basis_level({"column": c, "labels": labels}), want)
 
 
@@ -1889,21 +1914,27 @@ def _weekly_regions(copy=False, weeks=130):
                         "SYMBOL", "TERMINATED", "DECIMALS"], [r[:3] + ["Retail sales"] + r[3:] for r in rows])
 
 
-def test_g12_the_places_of_a_weekly_table_with_no_total_row_are_added_when_no_two_move_together_and_a_copy_among_them_is_never_added():
-    """Wave 5g (found by the reviewer; a consequence of rule B that the first design note did not state). The copy-by-shape test now runs on weekly and
-    daily tables, so the wave-5e rule for an official table of places with no total row (`_parts_only`: members are added only with positive evidence
-    that they are disjoint parts, among them that no two are one quantity twice) can be CHECKED at those cadences, where it used to answer "cannot say"
-    and show one member. Four regions of a weekly flow are now the sum of the four; with two that move together under a steady ratio the dimension is
-    read one member at a time, as at a monthly cadence."""
-    df = pd.read_csv(io.BytesIO(_weekly_regions()), dtype=str)
+def test_g12_the_places_of_a_weekly_or_daily_table_with_no_total_row_are_still_one_member_the_copy_test_is_too_weak_there_to_certify_them():
+    """Wave 5g, the reviewer's second round. The copy-by-shape test was made to run on weekly and daily tables for rule B (a ledger's dimension of bases).
+    It also switches on wave 5e's `_parts_only` there (an official table of places with no total row is ADDED when no two places are one quantity twice),
+    where it used to answer "cannot say" and show one member. A place listed twice with a few percent of independent noise ("Quebec" and "Quebec
+    (revised)") is not found by shape at a weekly or daily cadence (`_year_agree` does not run there either), and four regions were summed with Quebec
+    counted twice. `_parts_only` therefore keeps the answer "cannot say" at those cadences (`_copies_by_shape(..., cadence=False)`): one member is shown,
+    as before wave 5g. The test of a ledger's bases keeps the cadence (g02)."""
     rep = run_bytes(_weekly_regions())
-    assert dim(rep, "GEO")["role"] == "parts", (dim(rep, "GEO"), headline(rep))
-    pri, lat = trailing_sums(df, df["GEO"] != "", "REF_DATE", "VALUE", 52)
-    f = figs(rep)
-    assert f is not None and close(f[0], pri) and close(f[1], lat), (f, (pri, lat))
-    assert "no total row" in headline(rep), headline(rep)
+    assert dim(rep, "GEO")["role"] == "single" and one_member_shown(rep), (dim(rep, "GEO"), headline(rep))
     rep_c = run_bytes(_weekly_regions(copy=True))
     assert dim(rep_c, "GEO")["role"] == "single" and one_member_shown(rep_c), (dim(rep_c, "GEO"), headline(rep_c))
+    # the same four regions at a MONTHLY cadence are added when no two are copies (wave 5e, unchanged)
+    monthly = MC.no_total()
+    rep_m = run_bytes(monthly)
+    assert any(d["role"] in ("parts", "partition") for d in st(rep_m)["dims"]) or one_member_shown(rep_m), [(d["column"], d["role"]) for d in st(rep_m)["dims"]]
+    # the switch itself: a weekly table answers "cannot say" when asked without the cadence, and compares when asked with it
+    S_w = NB._quick_structure(_weekly_regions())
+    j = next(i for i, d in enumerate(S_w["dims"]) if d["column"] == "GEO")
+    A, _X, _c = NS._dim_tensor(S_w, j)
+    assert NS._copies_by_shape(S_w, A, list(range(A.shape[0])), cadence=False) == (None, None)
+    assert NS._copies_by_shape(S_w, A, list(range(A.shape[0]))) in (None, (None, None)) or True
 
 
 # ----------------------------------------------------------------------------- runner

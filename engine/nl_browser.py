@@ -1734,9 +1734,12 @@ RELEASE_MAX_DISTINCT_CODED = 3000       # wave 5f (G): a column whose labels CAR
 _CODED_LABEL = re.compile(r"\[[0-9A-Za-z][0-9A-Za-z.\-]*\]\s*$|^\s*[0-9][0-9A-Za-z.\-]*\s+\S")
 RELEASE_MAX_SHARE = 0.05
 RELEASE_MAX_SHARE_CODED = 0.20          # wave 5g (F): a column of DESCRIBED CODES (NAICS, HS: a code of 4 or more characters and a description of 2 or more words,
-                                        # `_described_code`) in a table with a few periods: a label is on one row a period, so 935 labels over 8 quarters are
-                                        # 12% of the rows. Only for such labels: the 5% cap is the only thing that tells free text (an address, a name with an
-                                        # id, a postcode) from a category, and every label repeating RELEASE_MIN_REPEAT times limits the share to 20% by itself
+                                        # `_described_code`) in an OFFICIAL-looking table (a publisher's signature, or three of the columns only a publisher uses)
+                                        # with a few periods: a label is on one row a period, so 935 labels over 8 quarters are 12% of the rows. Only there: the 5%
+                                        # cap is the only thing that tells free text (an address, a name with an id, a postcode, a phone number with words) from
+                                        # a category in a business file, and no pattern of the label itself can be trusted to tell them apart (the review found
+                                        # addresses, names and postcodes that passed every pattern); every label repeating RELEASE_MIN_REPEAT times limits the
+                                        # share to 20% by itself
 RELEASE_MIN_REPEAT = 5
 SENSITIVE_HEADER = re.compile(
     r"(?i)diagnos|condition|disease|illness|medic|health|symptom|treatment|drug|religio|faith|ethnic|race|"
@@ -1885,6 +1888,7 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
         con.close()
     out: List[Dict[str, Any]] = []
     nulls = _null_tokens()
+    official_table = _publisher_header(colmap.keys()) is not None or sum(1 for h in colmap.keys() if _pnorm(h) in _GUARD_META_SPECIFIC) >= 3
     for col, kinds in rows:
         col = str(col)
         header = head.get(col, col)
@@ -1910,13 +1914,14 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
                 continue
             counts[t] = counts.get(t, 0) + int(n)
         filled = sum(counts.values())
-        # wave 5g: the larger caps are for labels that are DESCRIBED CODES (and are no street address and no person's name behind an id); a label that
-        # merely opens with a number ("14 Oak Lane", "1012 AB") is read as any column is
-        coded = bool(counts) and sum(1 for x in counts if _described_code(x)) >= 0.8 * len(counts) and \
+        # wave 5f (G): labels that CARRY CODES have up to RELEASE_MAX_DISTINCT_CODED different values (NAICS, HS). Wave 5g: in an OFFICIAL-looking table
+        # a column of DESCRIBED CODES (and no street address, no name behind an id) may also fill up to RELEASE_MAX_SHARE_CODED of the rows
+        coded = bool(counts) and sum(1 for x in counts if _CODED_LABEL.search(x)) >= 0.8 * len(counts)
+        described = official_table and bool(counts) and sum(1 for x in counts if _described_code(x)) >= 0.8 * len(counts) and \
             not any(_street_value(x) for x in counts) and \
             sum(1 for x in counts if _name_shaped(_described_code(x) or "")) < RELEASE_NAME_SHARE * len(counts)
         if not counts or len(counts) > (RELEASE_MAX_DISTINCT_CODED if coded else RELEASE_MAX_DISTINCT) or \
-                len(counts) > (RELEASE_MAX_SHARE_CODED if coded else RELEASE_MAX_SHARE) * filled:
+                len(counts) > (RELEASE_MAX_SHARE_CODED if described else RELEASE_MAX_SHARE) * filled:
             continue
         least = min(counts.values())
         if least < RELEASE_MIN_REPEAT:

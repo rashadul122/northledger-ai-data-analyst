@@ -2303,7 +2303,7 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
         rec["twin_why"] = ("%s says it leaves something out and is not a sum of the other members: it may contain them, so the "
                            "members are never added" % labels[leaving[0]])
         return False
-    copy = _copies_by_shape(S, A, keep)
+    copy = _copies_by_shape(S, A, keep, cadence=False)
     if copy is not None:
         a, b = copy
         rec["twin_why"] = ("%s and %s move together under a steady ratio: one quantity twice (an adjusted copy, another price basis), "
@@ -3427,16 +3427,19 @@ def _pair_is_copy(a: Any, b: Any, step: int) -> bool:
     return bool(tested and 2 * copies >= tested)
 
 
-def _copies_by_shape(S: Dict[str, Any], A: Any, members: Sequence[int]) -> Optional[Tuple[Optional[int], Optional[int]]]:
+def _copies_by_shape(S: Dict[str, Any], A: Any, members: Sequence[int], cadence: bool = True
+                     ) -> Optional[Tuple[Optional[int], Optional[int]]]:
     """Two of `members` that are one quantity twice by SHAPE (an adjusted copy, another price basis: the same movement under a steady
     ratio, whatever the gap between their levels): (a, b). (None, None) when no pair could be compared (the table is too short or too
     blank to tell a copy from a part), which is no evidence either way; None when the pairs were compared and none is a copy. Parts of
     a total are almost never so alike for 24 periods, and when they are, one member shown is the right answer. At most the
-    COPY_PAIR_MEMBERS largest members are compared (a count)."""
+    COPY_PAIR_MEMBERS largest members are compared (a count). `cadence` False answers "cannot say" for a weekly or daily table (wave 5g: the
+    adding of places in `_parts_only` stays as it was at those cadences; a place listed twice with a few percent of independent noise is not
+    found by shape there, and `_year_agree` is not run)."""
     import numpy as np
     step = int((S.get("period") or {}).get("step") or 1)
     got_seasons = _copy_seasons(S)
-    if got_seasons is None:
+    if got_seasons is None or (not cadence and (S.get("period") or {}).get("cadence")):
         return (None, None)
     per, need = got_seasons
     size = {m: (float(np.nanmean(A[m])) if (~np.isnan(A[m])).any() else 0.0) for m in members}
@@ -3481,20 +3484,34 @@ _BASIS_HEADER = re.compile(r"\b(?:prices|basis|bases|valuation|prix|preise|preci
 BASIS_MAX_MEMBERS = 6           # wave 5g (B): a dimension of bases has a few members; one of more is a list of things that happen to share a word
 
 
+def _basis_token(label: Any) -> Optional[Tuple[str, bool]]:
+    """(the basis a member's name names, whether it negates it) for "Current prices", "Constant prices", "Nominal", "Real", "Seasonally adjusted", "Not
+    seasonally adjusted", "Unadjusted" ...; None when the name names none. Two members are two bases only when their tokens differ."""
+    t = _fold_name(label)
+    m = _BASIS_MEMBER.search(t)
+    if not m:
+        return None
+    neg = bool(re.search(r"\b(?:not|non|sans|nicht|sin)\b", t)) or m.group(0).startswith("unadjusted")
+    word = re.sub(r"^(?:seasonally\s+)", "", re.sub(r"^un(?=adjusted)", "", m.group(0)))
+    return word, neg
+
+
 def _basis_level(rec: Dict[str, Any]) -> int:
-    """2 when at least two of a dimension's member names are the names of bases (STRONG nomination: "Current prices", "Constant prices"; "Nominal",
-    "Real"), 1 when only its header is (WEAK: Prices, Basis, Valuation, Type of prices), else 0. A dimension of at most BASIS_MAX_MEMBERS members."""
+    """Whether a dimension of at most BASIS_MAX_MEMBERS members names bases: 2 when at least two member names name DIFFERENT bases (Current prices and
+    Constant prices; Nominal and Real; Seasonally adjusted and Not seasonally adjusted; never "Real estate" and "Real assets", never "Fixed price" and
+    "Fixed price milestone"), 1 when only its header does (Prices, Basis, Valuation, Type of prices), else 0."""
     labels = [lb for lb in rec["labels"] if lb != ""]
     if not 2 <= len(labels) <= BASIS_MAX_MEMBERS:
         return 0
-    if sum(1 for lb in labels if _BASIS_MEMBER.search(_fold_name(lb))) >= 2:
+    toks = {tk for tk in (_basis_token(lb) for lb in labels) if tk is not None}
+    if len(toks) >= 2:
         return 2
     head = _fold_name(rec["column"])
     return 1 if (_BASIS_HEADER.search(head) or _BASIS_MEMBER.search(head)) else 0
 
 
 def _basis_nominated(rec: Dict[str, Any]) -> bool:
-    """Whether a dimension's header, or at least two of its members' names, are the words of bases (see `_basis_level`)."""
+    """Whether a dimension's header names bases, or at least two of its members' names name different ones (see `_basis_level`)."""
     return _basis_level(rec) > 0
 
 
@@ -3504,26 +3521,24 @@ def _basis_copies(S: Dict[str, Any], j: int, rec: Dict[str, Any]) -> Optional[Di
     seeds 601 and 687; the figure was 1.77 times the truth). A name nominates the dimension (`_basis_nominated`), the cells decide: two members
     that move together under a steady ratio (`_copies_by_shape`, for a monthly, quarterly, weekly or daily table) are copies. None when the
     dimension is not nominated, or its members were compared and none is a copy (they are added, as before). A dict when its members must not
-    be added: {"pair": (a, b) | None, "why"}; pair None when the table is too short or too blank to tell a copy from a part AND the member names
-    themselves are the names of bases (a strong nomination): members named as bases that cannot be shown NOT to be copies are not added (the safe
-    side: one member is shown). A header-only nomination that the table cannot test is added, as before."""
-    level = _basis_level(rec)
-    if not level:
+    be added: {"pair": (a, b) | None, "why"}; pair None when the table is too short or too blank to tell a copy from a part: a dimension that names
+    bases and cannot be shown NOT to be copies is not added (the safe side: one member is shown)."""
+    if not _basis_level(rec):
         return None
     labels = rec["labels"]
     try:
         A, _X, _c = _dim_tensor(S, j)
     except _TooLarge:
-        return {"pair": None, "why": "%s names bases and was too large to compare, so its members are never added" % rec["column"]} if level >= 2 else None
+        return {"pair": None, "why": "%s names bases and was too large to compare, so its members are never added" % rec["column"]}
     got = _copies_by_shape(S, A, list(range(len(labels))))
     if got is None:
         return None
     a, b = got
     if a is None:
-        if level < 2:
-            return None             # only the header names bases and the table cannot say: the members are added, as they always were
-        return {"pair": None, "why": "the members of %s are named as bases and the table is too short or too blank to show that they are not one "
-                                     "quantity twice, so they are never added" % rec["column"]}
+        # a dimension that names bases and that the table cannot show NOT to be copies (too short, too blank, a basis that starts late) is not added: a
+        # first version added it when only the header named bases, and a header "Prices" over a sparse second basis printed +75%
+        return {"pair": None, "why": "%s names bases and the table is too short or too blank to show that its members are not one quantity twice, "
+                                     "so they are never added" % rec["column"]}
     return {"pair": (labels[a], labels[b]),
             "why": "%s and %s move together under a steady ratio: one quantity on two bases, so they are never added" % (labels[a], labels[b])}
 
@@ -4493,7 +4508,8 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
     if single_member is None and choice:
         # wave 5g (C): a dimension read as a set of measures on weak evidence only (`_is_measure_dim`): one member shown, and it is not the table's
         # total. Nothing in the table says whether its members are different measures or the parts of one whole, so none is added
-        wk = next((d for d in S["dims"] if d.get("measure_dim") and d.get("measure_weak") and isinstance(where.get(d["column"]), str)), None)
+        wk = next((d for d in S["dims"] if d.get("measure_dim") and d.get("measure_weak") and isinstance(where.get(d["column"]), str)
+                   and not _says_total(where[d["column"]])), None)         # a member that says total is shown as what it says
         if wk is not None:
             n_o = len(wk["labels"]) - 1
             single_member = {"dim": wk["column"], "member": where[wk["column"]], "noun": "measure",

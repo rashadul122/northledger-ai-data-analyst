@@ -1621,6 +1621,9 @@ def test_g04_the_parts_of_a_population_are_not_five_measures_and_a_dimension_of_
     S_parts = {"dims": [{"column": "Employment status", "labels": ["Employed", "Unemployed", "Not in labour force", "Other", "Not stated"], "role": None}],
                "measure": {"column": "Units", "uom": ""}, "metadata": []}
     assert NS._is_measure_dim(S_parts, 0) is None                      # one positive kind (a stock) and two members with no word
+    # ... but the same labels under a header that says what is measured are measures, as they were (a KPI table: Indicator / Value)
+    S_named = {"dims": [dict(S_parts["dims"][0], column="Indicator")], "measure": {"column": "Units", "uom": ""}, "metadata": []}
+    assert NS._is_measure_dim(S_named, 0) is not None
 
 
 def test_g05_a_measure_averaged_because_nothing_says_it_accumulates_is_worded_as_an_average_level():

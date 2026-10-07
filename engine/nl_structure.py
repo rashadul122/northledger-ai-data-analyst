@@ -821,9 +821,11 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     for d in list(dims):
         if R.kind(d) != "number" or len(dims) < 2:
             continue
-        # wave 5g: a column of ids (a vector, a coordinate: v41000000, 1.1) tells every series apart by itself, so beside one every other column "is
-        # already told apart" and a coded dimension (Basis 1 and 2) was dropped as a second measure; the ids are not counted (fuzz v2 seed 752)
-        rest = [x for x in dims if x != d and not _id_like(cat[x][1])]
+        # wave 5g: a column of SERIES IDS (a vector, a coordinate: v41000000, 1.1: ids, and one to one with the combination of the other columns) tells
+        # every series apart by itself, so beside one every other column "is already told apart" and a coded dimension (Basis 1 and 2) was dropped
+        # as a second measure; such an id is not counted (fuzz v2 seed 752). A coded dimension that is no series id (a product code) still counts.
+        rest = [x for x in dims if x != d and not (_id_like(cat[x][1]) and len(dims) >= 3 and
+                                                   _one_to_one(cat[x][0], _combine([cat[y][0] for y in dims if y != x])))]
         if not rest:
             continue
         rc, _ri = _series_index([cat[x][0] for x in rest])
@@ -1682,7 +1684,10 @@ def _is_measure_dim(S: Dict[str, Any], j: int) -> Optional[List[Dict[str, Any]]]
     # (Other, Not stated, Unknown: a count with no word that says what it is) is typed "count" or "unknown" by the ABSENCE of a word, and that
     # absence is no evidence that it is a different measure: Employed, Unemployed, Not in labour force, Other and Not stated are the parts of a
     # population, not five measures (fuzz v2 seed 631: Employed was shown alone as "one measure shown" and the others never added).
-    kinds = {c["type"] for c in types if c["type"] not in _UNWORDED_TYPES}
+    # ... unless the dimension's HEADER says it names what is measured (Statistics, Indicator, Measure, Characteristics ...): then a member that says
+    # nothing is one more measure, as it was
+    named = bool(_MEASURE_DIM_HEADER.search(str(d.get("column") or "")))
+    kinds = {c["type"] for c in types if named or c["type"] not in _UNWORDED_TYPES}
     prec = any(c["type"] == "precision" for c in types)
     cued = sum(1 for lb in d["labels"] if _MEMBER_CUE.search(lb))
     if (len(kinds) >= 2 or prec) and cued >= 0.5 * len(d["labels"]) and any(c["type"] != "precision" for c in types):

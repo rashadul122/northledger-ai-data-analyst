@@ -1003,6 +1003,30 @@ def test_f02_a_sensitive_column_of_a_plain_ledger_is_withheld_and_the_ledger_is_
     assert rep_n["privacy"]["flagged"] == [], rep_n["privacy"]["flagged"]
 
 
+def test_f13_a_column_of_people_is_flagged_under_any_header_and_a_column_of_places_or_products_is_not():
+    """Wave 5f, C (fuzz v2 seed 555, a fresh seed: a column "Analyst" over names reached results_for_ai). A header list is never complete
+    ("Analyst", "Stylist", "Hairdresser", "Pilot"): a column whose values open with a given name and carry a surname is a column of people's
+    names under ANY header, and a job title among the header words says so too. Places, products, departments and roles (every one of them two
+    capitalised words) are never taken for people."""
+    people = ["Tomas Oduya", "Maria Hollin", "Robert Nakamura", "Lucia Lindqvist", "Karen Ferreira", "Omar Brandmoor"]
+    for header in ("Analyst", "Hairdresser", "Pilot", "Region", "Specialist", "Officer"):
+        data = _ledger(header, people)
+        rep = run_bytes(data)
+        fl = {f["column"]: f for f in rep["privacy"]["flagged"]}
+        assert len(fl) == 1 and list(fl.values())[0]["decision"] == "withhold" and "name" in list(fl.values())[0]["kind"], (header, fl)
+        assert rep["ok"] and "Total amount" in headline(rep), (header, headline(rep))
+        blob = everything(rep, data)
+        assert not [v for v in people if v in blob], (header, [v for v in people if v in blob])
+    # negatives: two capitalised words that are places, products, departments, roles or tiers
+    for header, labels in (("Region", ["North West", "South East", "Penford North", "Lorne Bay", "Hong Kong"]),
+                           ("Product", ["Paper Towels", "Wine Glass", "Mark Down", "Rose Garden", "Garden Hose"]),
+                           ("Branch", ["Hamilton North", "Hamilton South", "Penford Heights", "Marlow Park", "Brookfield Mall"]),
+                           ("Department", ["Human Resources", "Customer Service", "Sales Team", "Field Technician", "Maria Store"]),
+                           ("Plan", ["Gold Member", "Senior Analyst", "Sales Manager", "Team Lead", "Premium Plan"])):
+        rep_n = run_bytes(_ledger(header, labels))
+        assert rep_n["privacy"]["flagged"] == [], (header, rep_n["privacy"]["flagged"])
+
+
 def test_f03_the_sensitive_vocabulary_covers_four_languages_with_word_boundaries_and_never_a_measure():
     """Wave 5f, C. The flagging vocabulary is strict: whole words or phrases (accents folded, case ignored), English with French, Spanish and
     German names; never "sex" in Essex, "race" in Terrace, "aids" in "Aids and appliances", "union" in Reunion; and a number column with

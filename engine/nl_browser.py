@@ -1217,6 +1217,11 @@ _PERSON_WORDS = frozenset((
     "participant", "applicant", "candidate", "author", "sender", "requester", "submitter", "assignee", "who",
     "resident", "occupant", "landlord", "subscriber", "donor", "borrower", "physician", "therapist", "consultant",
     "advisor", "adviser", "coach", "trainer", "caller", "reviewer", "inspector", "clerk", "homeowner",
+    # wave 5f (C): the people who work a case or a sale, named by their job (a header "Analyst" over a column of names)
+    "analyst", "officer", "specialist", "associate", "assistant", "executive", "director", "coordinator", "engineer",
+    "planner", "underwriter", "adjuster", "auditor", "broker", "operator", "teller", "stylist", "dentist", "surgeon",
+    "clinician", "pharmacist", "lawyer", "attorney", "accountant", "controller", "foreman", "seller", "mentor",
+    "tutor", "trainee", "intern", "handler", "caseworker", "colleague", "instructor", "bartender", "barista",
     # Spanish, Portuguese, Italian, French
     "cliente", "empleado", "miembro", "socio", "paciente", "usuario", "vendedor", "persona", "huesped",
     "funcionario", "utente", "dipendente", "membre", "employe", "utilisateur", "personne", "vendeur", "locataire",
@@ -1398,6 +1403,44 @@ def _person_value(v: str) -> bool:
     return 1 <= core <= 4 and full
 
 
+# wave 5f (C): about three hundred given names that are nothing else (no "Mark", "Grace", "Jordan", "Victoria", "Austin", "Kelly"): a column of
+# values that open with one and go on with a capitalised surname is a column of people's names under ANY header ("Analyst", "Stylist",
+# "Hairdresser", "Pilot"), because a header list is never complete. Accents are folded; the test is on the first word only.
+_GIVEN_NAMES = frozenset("""
+james john robert michael william david richard joseph thomas charles christopher daniel matthew anthony donald steven paul andrew joshua kenneth
+kevin brian george timothy ronald jason edward jeffrey ryan jacob gary nicholas eric jonathan stephen larry justin scott brandon benjamin samuel
+gregory alexander patrick frank raymond jack dennis jerry tyler aaron adam nathan henry zachary douglas peter kyle noah ethan jeremy walter
+christian keith roger terry sean gerald carl harold dylan arthur lawrence jesse bryan billy bruce gabriel joe logan albert willie alan juan wayne
+elijah randy roy vincent ralph eugene russell bobby mason philip louis
+mary patricia jennifer linda elizabeth barbara susan jessica sarah karen lisa nancy betty margaret sandra ashley kimberly emily donna michelle
+carol amanda dorothy melissa deborah stephanie rebecca sharon laura cynthia kathleen amy angela shirley anna brenda pamela emma nicole helen
+samantha katherine christine debra rachel carolyn janet catherine maria heather diane ruth julie olivia joyce virginia lauren christina joan
+evelyn judith megan andrea cheryl hannah jacqueline martha gloria teresa ann sara madison frances kathryn janice jean abigail alice judy sophia
+denise amber doris marilyn danielle beverly isabella theresa diana natalie brittany charlotte marie kayla alexis lori
+carlos jose luis miguel pedro jorge manuel francisco antonio javier fernando ricardo alejandro diego sergio pablo andres rafael eduardo alberto
+enrique mario oscar raul hector ignacio ana carmen isabel rosa lucia marta paula elena sofia cristina silvia pilar mercedes dolores beatriz
+lucas mateo tomas santiago
+hans klaus jurgen wolfgang dieter stefan andreas markus lars sven erik anders nils bjorn henrik johan karl ingrid astrid freya greta heidi anke
+petra sabine ursula brigitte monika gisela helga ewa katarzyna agnieszka piotr tomasz marek pawel jan jakub luca marco giuseppe giovanni
+francesco alessandro matteo lorenzo paolo stefano chiara giulia francesca valentina federica elisa pierre michel philippe alain jacques
+nicolas francois stephane laurent olivier sophie camille isabelle nathalie sylvie veronique
+mohamed mohammed ahmed ali omar hassan hussein ibrahim yusuf khalid samir tariq karim fatima aisha layla amina zainab priya rahul amit raj arjun
+vikram anil sanjay rohan neha pooja anita sunita kavita deepak wei ming jun hiroshi takashi kenji yuki akira sakura soo hyun
+""".split())
+
+
+def _given_name_value(v: str) -> bool:
+    """A value of two or three words that opens with a given name and could be a person's name (`_person_value`): "Maria Hollin", "Omar Nakamura"."""
+    import unicodedata
+    if not _person_value(v):
+        return False
+    words = [w for w in " ".join(str(v).replace(",", " ").split()).split(" ") if w]
+    if not 2 <= len(words) <= 4 or not all(w[:1].isupper() for w in words if w.casefold() not in _PARTICLES):
+        return False
+    first = "".join(ch for ch in unicodedata.normalize("NFKD", words[0].casefold()) if not unicodedata.combining(ch)).strip(".'’")
+    return first in _GIVEN_NAMES
+
+
 def _street_value(v: str) -> bool:
     """A street address: a house number, then the street's name (1 to 4 words, the last holding a letter and
     not a pack or size word), then a street type ("12 Queen St W", "4500 Maple Avenue, Unit 3", "100 5th Ave",
@@ -1536,6 +1579,9 @@ def _personal_kind(header: Any, values: Any) -> Optional[str]:
     if not set(toks) & _PLACE_WORDS and share([_street_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
         return "street_address"
     if _person_hint(toks, header)[0] and share([_person_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+        return "person_name"
+    # wave 5f (C): under any other header, values that open with a given name and carry a surname (at least 3 different ones, 60% of the cells)
+    if len(vals) >= 3 and not set(toks) & _PLACE_WORDS and share([_given_name_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
         return "person_name"
     return None
 

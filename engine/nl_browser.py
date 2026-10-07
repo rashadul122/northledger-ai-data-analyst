@@ -1441,7 +1441,7 @@ _SENSITIVE_PHRASES = (
     r"indigenous|aboriginal|first nations?|inuit|metis|autochtones?|indigenas?|indigene", r"ancestry",
     r"origine ethnique|ethnie|etnia|raza|rasse|herkunft",
     # religion and belief, politics, trade union
-    r"religion|religious|religieuse?s?|faith|denomination|beliefs?|confession|konfession|creencias?",
+    r"religion|religious|religieuse?s?|faith|religious denomination|beliefs?|confession|konfession|creencias?",
     r"political (?:party|affiliation|view|views|opinion|opinions|belief|beliefs|leaning)|party affiliation|voting (?:intention|preference)",
     r"opinions? politiques?|partido politico|politische (?:partei|meinung|einstellung)|parti politique",
     r"trade unions?|union (?:membership|member|status)|syndicat|sindicato|gewerkschaft\w*",

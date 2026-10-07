@@ -1012,10 +1012,10 @@ def test_f03_the_sensitive_vocabulary_covers_four_languages_with_word_boundaries
             "Political party", "Trade union", "AIDS", "Criminal record", "Nationality", "Genetic", "Aboriginal", "First Nations", "Inuit",
             "\u00c9tat matrimonial", "Minorit\u00e9 visible", "Identit\u00e9 autochtone", "Cause de d\u00e9c\u00e8s", "Orientation sexuelle", "Sexe",
             "Estado civil", "Raza", "Religi\u00f3n", "Discapacidad", "Causa de muerte", "Familienstand", "Geschlecht", "Behinderung", "Todesursache",
-            "Konfession", "Staatsangeh\u00f6rigkeit", "VIH", "sida"]
+            "Konfession", "Staatsangeh\u00f6rigkeit", "VIH", "sida", "Religious denomination"]
     misses = ["Aids and appliances", "Essex", "Terrace", "Grace period", "Sextant", "Unisex", "Reunion", "Racetrack", "Party size", "Union Station",
               "Condition", "Health insurance", "Genre", "Region", "Branch", "Product", "Income", "Salary", "Amount", "Embrace", "Trace",
-              "Medical supplies", "Drug", "Credit", "Hivemind", "Facility", "Placebo", "Tracer", "Sixty", "Visa"]
+              "Medical supplies", "Drug", "Credit", "Hivemind", "Facility", "Placebo", "Tracer", "Sixty", "Visa", "Denomination", "Note denomination"]
     assert [h for h in hits if not NB._sensitive_header(h)] == [], [h for h in hits if not NB._sensitive_header(h)]
     assert [h for h in misses if NB._sensitive_header(h)] == [], [(h, NB._sensitive_header(h)) for h in misses if NB._sensitive_header(h)]
     cats = pd.Series(["Single", "Married", "Widowed"] * 40)

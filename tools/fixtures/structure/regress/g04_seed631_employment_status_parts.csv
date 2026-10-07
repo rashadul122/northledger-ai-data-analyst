@@ -1,0 +1,433 @@
+Date,Store,Employment status,Units
+2022-05-16,Ardmont,Not stated,2
+2022-05-16,Ardmont,Employed,0
+2022-05-16,Kelside,Not stated,0
+2022-05-16,Kelside,Employed,0
+2022-05-23,Ardmont,Not stated,0
+2022-05-23,Ardmont,Employed,1
+2022-05-23,Kelside,Not stated,0
+2022-05-23,Kelside,Employed,0
+2022-05-30,Ardmont,Not stated,0
+2022-05-30,Ardmont,Employed,1
+2022-05-30,Kelside,Not stated,0
+2022-05-30,Kelside,Employed,1
+2022-06-06,Ardmont,Not stated,0
+2022-06-06,Ardmont,Employed,0
+2022-06-06,Kelside,Not stated,2
+2022-06-06,Kelside,Employed,1
+2022-06-13,Ardmont,Not stated,1
+2022-06-13,Ardmont,Employed,1
+2022-06-13,Kelside,Not stated,0
+2022-06-13,Kelside,Employed,1
+2022-06-20,Ardmont,Not stated,1
+2022-06-20,Ardmont,Employed,1
+2022-06-20,Kelside,Not stated,0
+2022-06-20,Kelside,Employed,0
+2022-06-27,Ardmont,Not stated,0
+2022-06-27,Ardmont,Employed,0
+2022-06-27,Kelside,Not stated,1
+2022-06-27,Kelside,Employed,0
+2022-07-04,Ardmont,Not stated,2
+2022-07-04,Ardmont,Employed,1
+2022-07-04,Kelside,Not stated,0
+2022-07-04,Kelside,Employed,0
+2022-07-11,Ardmont,Not stated,0
+2022-07-11,Ardmont,Employed,1
+2022-07-11,Kelside,Not stated,0
+2022-07-11,Kelside,Employed,1
+2022-07-18,Ardmont,Not stated,1
+2022-07-18,Ardmont,Employed,2
+2022-07-18,Kelside,Not stated,0
+2022-07-18,Kelside,Employed,0
+2022-07-25,Ardmont,Not stated,0
+2022-07-25,Ardmont,Employed,0
+2022-07-25,Kelside,Not stated,0
+2022-07-25,Kelside,Employed,0
+2022-08-01,Ardmont,Not stated,1
+2022-08-01,Ardmont,Employed,0
+2022-08-01,Kelside,Not stated,1
+2022-08-01,Kelside,Employed,1
+2022-08-08,Ardmont,Not stated,0
+2022-08-08,Ardmont,Employed,0
+2022-08-08,Kelside,Not stated,0
+2022-08-08,Kelside,Employed,0
+2022-08-15,Ardmont,Not stated,2
+2022-08-15,Ardmont,Employed,0
+2022-08-15,Kelside,Not stated,1
+2022-08-15,Kelside,Employed,1
+2022-08-22,Ardmont,Not stated,0
+2022-08-22,Ardmont,Employed,2
+2022-08-22,Kelside,Not stated,0
+2022-08-22,Kelside,Employed,1
+2022-08-29,Ardmont,Not stated,1
+2022-08-29,Ardmont,Employed,1
+2022-08-29,Kelside,Not stated,1
+2022-08-29,Kelside,Employed,1
+2022-09-05,Ardmont,Not stated,0
+2022-09-05,Ardmont,Employed,1
+2022-09-05,Kelside,Not stated,0
+2022-09-05,Kelside,Employed,0
+2022-09-12,Ardmont,Not stated,0
+2022-09-12,Ardmont,Employed,2
+2022-09-12,Kelside,Not stated,1
+2022-09-12,Kelside,Employed,1
+2022-09-19,Ardmont,Not stated,1
+2022-09-19,Ardmont,Employed,1
+2022-09-19,Kelside,Not stated,0
+2022-09-19,Kelside,Employed,1
+2022-09-26,Ardmont,Not stated,0
+2022-09-26,Ardmont,Employed,1
+2022-09-26,Kelside,Not stated,1
+2022-09-26,Kelside,Employed,0
+2022-10-03,Ardmont,Not stated,1
+2022-10-03,Ardmont,Employed,1
+2022-10-03,Kelside,Not stated,0
+2022-10-03,Kelside,Employed,0
+2022-10-10,Ardmont,Not stated,1
+2022-10-10,Ardmont,Employed,1
+2022-10-10,Kelside,Not stated,1
+2022-10-10,Kelside,Employed,0
+2022-10-17,Ardmont,Not stated,0
+2022-10-17,Ardmont,Employed,0
+2022-10-17,Kelside,Not stated,0
+2022-10-17,Kelside,Employed,1
+2022-10-24,Ardmont,Not stated,0
+2022-10-24,Ardmont,Employed,1
+2022-10-24,Kelside,Not stated,0
+2022-10-24,Kelside,Employed,0
+2022-10-31,Ardmont,Not stated,0
+2022-10-31,Ardmont,Employed,1
+2022-10-31,Kelside,Not stated,0
+2022-10-31,Kelside,Employed,0
+2022-11-07,Ardmont,Not stated,0
+2022-11-07,Ardmont,Employed,0
+2022-11-07,Kelside,Not stated,0
+2022-11-07,Kelside,Employed,1
+2022-11-14,Ardmont,Not stated,2
+2022-11-14,Ardmont,Employed,3
+2022-11-14,Kelside,Not stated,0
+2022-11-14,Kelside,Employed,0
+2022-11-21,Ardmont,Not stated,0
+2022-11-21,Ardmont,Employed,1
+2022-11-21,Kelside,Not stated,0
+2022-11-21,Kelside,Employed,1
+2022-11-28,Ardmont,Not stated,0
+2022-11-28,Ardmont,Employed,0
+2022-11-28,Kelside,Not stated,0
+2022-11-28,Kelside,Employed,1
+2022-12-05,Ardmont,Not stated,0
+2022-12-05,Ardmont,Employed,1
+2022-12-05,Kelside,Not stated,1
+2022-12-05,Kelside,Employed,1
+2022-12-12,Ardmont,Not stated,1
+2022-12-12,Ardmont,Employed,0
+2022-12-12,Kelside,Not stated,0
+2022-12-12,Kelside,Employed,1
+2022-12-19,Ardmont,Not stated,0
+2022-12-19,Ardmont,Employed,2
+2022-12-19,Kelside,Not stated,0
+2022-12-19,Kelside,Employed,1
+2022-12-26,Ardmont,Not stated,0
+2022-12-26,Ardmont,Employed,0
+2022-12-26,Kelside,Not stated,1
+2022-12-26,Kelside,Employed,1
+2023-01-02,Ardmont,Not stated,0
+2023-01-02,Ardmont,Employed,1
+2023-01-02,Kelside,Not stated,1
+2023-01-02,Kelside,Employed,0
+2023-01-09,Ardmont,Not stated,0
+2023-01-09,Ardmont,Employed,1
+2023-01-09,Kelside,Not stated,0
+2023-01-09,Kelside,Employed,0
+2023-01-16,Ardmont,Not stated,0
+2023-01-16,Ardmont,Employed,0
+2023-01-16,Kelside,Not stated,0
+2023-01-16,Kelside,Employed,0
+2023-01-23,Ardmont,Not stated,1
+2023-01-23,Ardmont,Employed,2
+2023-01-23,Kelside,Not stated,1
+2023-01-23,Kelside,Employed,0
+2023-01-30,Ardmont,Not stated,1
+2023-01-30,Ardmont,Employed,1
+2023-01-30,Kelside,Not stated,0
+2023-01-30,Kelside,Employed,0
+2023-02-06,Ardmont,Not stated,1
+2023-02-06,Ardmont,Employed,1
+2023-02-06,Kelside,Not stated,1
+2023-02-06,Kelside,Employed,0
+2023-02-13,Ardmont,Not stated,1
+2023-02-13,Ardmont,Employed,1
+2023-02-13,Kelside,Not stated,1
+2023-02-13,Kelside,Employed,1
+2023-02-20,Ardmont,Not stated,0
+2023-02-20,Ardmont,Employed,0
+2023-02-20,Kelside,Not stated,0
+2023-02-20,Kelside,Employed,1
+2023-02-27,Ardmont,Not stated,1
+2023-02-27,Ardmont,Employed,1
+2023-02-27,Kelside,Not stated,0
+2023-02-27,Kelside,Employed,3
+2023-03-06,Ardmont,Not stated,0
+2023-03-06,Ardmont,Employed,1
+2023-03-06,Kelside,Not stated,0
+2023-03-06,Kelside,Employed,1
+2023-03-13,Ardmont,Not stated,0
+2023-03-13,Ardmont,Employed,0
+2023-03-13,Kelside,Not stated,0
+2023-03-13,Kelside,Employed,1
+2023-03-20,Ardmont,Not stated,0
+2023-03-20,Ardmont,Employed,2
+2023-03-20,Kelside,Not stated,1
+2023-03-20,Kelside,Employed,0
+2023-03-27,Ardmont,Not stated,0
+2023-03-27,Ardmont,Employed,0
+2023-03-27,Kelside,Not stated,0
+2023-03-27,Kelside,Employed,1
+2023-04-03,Ardmont,Not stated,1
+2023-04-03,Ardmont,Employed,0
+2023-04-03,Kelside,Not stated,0
+2023-04-03,Kelside,Employed,0
+2023-04-10,Ardmont,Not stated,0
+2023-04-10,Ardmont,Employed,0
+2023-04-10,Kelside,Not stated,0
+2023-04-10,Kelside,Employed,1
+2023-04-17,Ardmont,Not stated,1
+2023-04-17,Ardmont,Employed,0
+2023-04-17,Kelside,Not stated,0
+2023-04-17,Kelside,Employed,1
+2023-04-24,Ardmont,Not stated,0
+2023-04-24,Ardmont,Employed,1
+2023-04-24,Kelside,Not stated,1
+2023-04-24,Kelside,Employed,0
+2023-05-01,Ardmont,Not stated,1
+2023-05-01,Ardmont,Employed,2
+2023-05-01,Kelside,Not stated,0
+2023-05-01,Kelside,Employed,1
+2023-05-08,Ardmont,Not stated,1
+2023-05-08,Ardmont,Employed,0
+2023-05-08,Kelside,Not stated,2
+2023-05-08,Kelside,Employed,1
+2023-05-15,Ardmont,Not stated,0
+2023-05-15,Ardmont,Employed,1
+2023-05-15,Kelside,Not stated,0
+2023-05-15,Kelside,Employed,0
+2023-05-22,Ardmont,Not stated,0
+2023-05-22,Ardmont,Employed,3
+2023-05-22,Kelside,Not stated,1
+2023-05-22,Kelside,Employed,0
+2023-05-29,Ardmont,Not stated,0
+2023-05-29,Ardmont,Employed,0
+2023-05-29,Kelside,Not stated,0
+2023-05-29,Kelside,Employed,1
+2023-06-05,Ardmont,Not stated,1
+2023-06-05,Ardmont,Employed,1
+2023-06-05,Kelside,Not stated,0
+2023-06-05,Kelside,Employed,1
+2023-06-12,Ardmont,Not stated,1
+2023-06-12,Ardmont,Employed,1
+2023-06-12,Kelside,Not stated,0
+2023-06-12,Kelside,Employed,2
+2023-06-19,Ardmont,Not stated,0
+2023-06-19,Ardmont,Employed,0
+2023-06-19,Kelside,Not stated,0
+2023-06-19,Kelside,Employed,0
+2023-06-26,Ardmont,Not stated,1
+2023-06-26,Ardmont,Employed,0
+2023-06-26,Kelside,Not stated,1
+2023-06-26,Kelside,Employed,0
+2023-07-03,Ardmont,Not stated,1
+2023-07-03,Ardmont,Employed,0
+2023-07-03,Kelside,Not stated,1
+2023-07-03,Kelside,Employed,0
+2023-07-10,Ardmont,Not stated,0
+2023-07-10,Ardmont,Employed,0
+2023-07-10,Kelside,Not stated,1
+2023-07-10,Kelside,Employed,0
+2023-07-17,Ardmont,Not stated,1
+2023-07-17,Ardmont,Employed,2
+2023-07-17,Kelside,Not stated,0
+2023-07-17,Kelside,Employed,0
+2023-07-24,Ardmont,Not stated,2
+2023-07-24,Ardmont,Employed,1
+2023-07-24,Kelside,Not stated,1
+2023-07-24,Kelside,Employed,0
+2023-07-31,Ardmont,Not stated,1
+2023-07-31,Ardmont,Employed,2
+2023-07-31,Kelside,Not stated,0
+2023-07-31,Kelside,Employed,2
+2023-08-07,Ardmont,Not stated,1
+2023-08-07,Ardmont,Employed,0
+2023-08-07,Kelside,Not stated,0
+2023-08-07,Kelside,Employed,1
+2023-08-14,Ardmont,Not stated,0
+2023-08-14,Ardmont,Employed,0
+2023-08-14,Kelside,Not stated,0
+2023-08-14,Kelside,Employed,0
+2023-08-21,Ardmont,Not stated,0
+2023-08-21,Ardmont,Employed,0
+2023-08-21,Kelside,Not stated,0
+2023-08-21,Kelside,Employed,1
+2023-08-28,Ardmont,Not stated,0
+2023-08-28,Ardmont,Employed,0
+2023-08-28,Kelside,Not stated,0
+2023-08-28,Kelside,Employed,0
+2023-09-04,Ardmont,Not stated,1
+2023-09-04,Ardmont,Employed,1
+2023-09-04,Kelside,Not stated,0
+2023-09-04,Kelside,Employed,0
+2023-09-11,Ardmont,Not stated,0
+2023-09-11,Ardmont,Employed,0
+2023-09-11,Kelside,Not stated,0
+2023-09-11,Kelside,Employed,0
+2023-09-18,Ardmont,Not stated,0
+2023-09-18,Ardmont,Employed,2
+2023-09-18,Kelside,Not stated,1
+2023-09-18,Kelside,Employed,0
+2023-09-25,Ardmont,Not stated,0
+2023-09-25,Ardmont,Employed,2
+2023-09-25,Kelside,Not stated,0
+2023-09-25,Kelside,Employed,0
+2023-10-02,Ardmont,Not stated,0
+2023-10-02,Ardmont,Employed,0
+2023-10-02,Kelside,Not stated,2
+2023-10-02,Kelside,Employed,0
+2023-10-09,Ardmont,Not stated,1
+2023-10-09,Ardmont,Employed,0
+2023-10-09,Kelside,Not stated,0
+2023-10-09,Kelside,Employed,0
+2023-10-16,Ardmont,Not stated,0
+2023-10-16,Ardmont,Employed,1
+2023-10-16,Kelside,Not stated,0
+2023-10-16,Kelside,Employed,1
+2023-10-23,Ardmont,Not stated,1
+2023-10-23,Ardmont,Employed,1
+2023-10-23,Kelside,Not stated,0
+2023-10-23,Kelside,Employed,1
+2023-10-30,Ardmont,Not stated,0
+2023-10-30,Ardmont,Employed,1
+2023-10-30,Kelside,Not stated,0
+2023-10-30,Kelside,Employed,0
+2023-11-06,Ardmont,Not stated,0
+2023-11-06,Ardmont,Employed,2
+2023-11-06,Kelside,Not stated,0
+2023-11-06,Kelside,Employed,0
+2023-11-13,Ardmont,Not stated,0
+2023-11-13,Ardmont,Employed,3
+2023-11-13,Kelside,Not stated,0
+2023-11-13,Kelside,Employed,0
+2023-11-20,Ardmont,Not stated,1
+2023-11-20,Ardmont,Employed,1
+2023-11-20,Kelside,Not stated,0
+2023-11-20,Kelside,Employed,1
+2023-11-27,Ardmont,Not stated,0
+2023-11-27,Ardmont,Employed,1
+2023-11-27,Kelside,Not stated,0
+2023-11-27,Kelside,Employed,0
+2023-12-04,Ardmont,Not stated,0
+2023-12-04,Ardmont,Employed,0
+2023-12-04,Kelside,Not stated,0
+2023-12-04,Kelside,Employed,0
+2023-12-11,Ardmont,Not stated,1
+2023-12-11,Ardmont,Employed,0
+2023-12-11,Kelside,Not stated,0
+2023-12-11,Kelside,Employed,1
+2023-12-18,Ardmont,Not stated,0
+2023-12-18,Ardmont,Employed,1
+2023-12-18,Kelside,Not stated,0
+2023-12-18,Kelside,Employed,0
+2023-12-25,Ardmont,Not stated,0
+2023-12-25,Ardmont,Employed,0
+2023-12-25,Kelside,Not stated,0
+2023-12-25,Kelside,Employed,0
+2024-01-01,Ardmont,Not stated,2
+2024-01-01,Ardmont,Employed,0
+2024-01-01,Kelside,Not stated,1
+2024-01-01,Kelside,Employed,1
+2024-01-08,Ardmont,Not stated,0
+2024-01-08,Ardmont,Employed,0
+2024-01-08,Kelside,Not stated,0
+2024-01-08,Kelside,Employed,0
+2024-01-15,Ardmont,Not stated,1
+2024-01-15,Ardmont,Employed,0
+2024-01-15,Kelside,Not stated,0
+2024-01-15,Kelside,Employed,0
+2024-01-22,Ardmont,Not stated,2
+2024-01-22,Ardmont,Employed,4
+2024-01-22,Kelside,Not stated,0
+2024-01-22,Kelside,Employed,0
+2024-01-29,Ardmont,Not stated,0
+2024-01-29,Ardmont,Employed,1
+2024-01-29,Kelside,Not stated,0
+2024-01-29,Kelside,Employed,1
+2024-02-05,Ardmont,Not stated,1
+2024-02-05,Ardmont,Employed,1
+2024-02-05,Kelside,Not stated,1
+2024-02-05,Kelside,Employed,1
+2024-02-12,Ardmont,Not stated,0
+2024-02-12,Ardmont,Employed,0
+2024-02-12,Kelside,Not stated,0
+2024-02-12,Kelside,Employed,0
+2024-02-19,Ardmont,Not stated,0
+2024-02-19,Ardmont,Employed,1
+2024-02-19,Kelside,Not stated,0
+2024-02-19,Kelside,Employed,1
+2024-02-26,Ardmont,Not stated,1
+2024-02-26,Ardmont,Employed,0
+2024-02-26,Kelside,Not stated,0
+2024-02-26,Kelside,Employed,0
+2024-03-04,Ardmont,Not stated,0
+2024-03-04,Ardmont,Employed,0
+2024-03-04,Kelside,Not stated,0
+2024-03-04,Kelside,Employed,0
+2024-03-11,Ardmont,Not stated,0
+2024-03-11,Ardmont,Employed,1
+2024-03-11,Kelside,Not stated,0
+2024-03-11,Kelside,Employed,0
+2024-03-18,Ardmont,Not stated,1
+2024-03-18,Ardmont,Employed,0
+2024-03-18,Kelside,Not stated,0
+2024-03-18,Kelside,Employed,3
+2024-03-25,Ardmont,Not stated,1
+2024-03-25,Ardmont,Employed,0
+2024-03-25,Kelside,Not stated,2
+2024-03-25,Kelside,Employed,0
+2024-04-01,Ardmont,Not stated,0
+2024-04-01,Ardmont,Employed,1
+2024-04-01,Kelside,Not stated,0
+2024-04-01,Kelside,Employed,1
+2024-04-08,Ardmont,Not stated,0
+2024-04-08,Ardmont,Employed,0
+2024-04-08,Kelside,Not stated,0
+2024-04-08,Kelside,Employed,0
+2024-04-15,Ardmont,Not stated,0
+2024-04-15,Ardmont,Employed,0
+2024-04-15,Kelside,Not stated,0
+2024-04-15,Kelside,Employed,0
+2024-04-22,Ardmont,Not stated,0
+2024-04-22,Ardmont,Employed,0
+2024-04-22,Kelside,Not stated,0
+2024-04-22,Kelside,Employed,1
+2024-04-29,Ardmont,Not stated,2
+2024-04-29,Ardmont,Employed,0
+2024-04-29,Kelside,Not stated,0
+2024-04-29,Kelside,Employed,0
+2024-05-06,Ardmont,Not stated,0
+2024-05-06,Ardmont,Employed,2
+2024-05-06,Kelside,Not stated,0
+2024-05-06,Kelside,Employed,1
+2024-05-13,Ardmont,Not stated,1
+2024-05-13,Ardmont,Employed,1
+2024-05-13,Kelside,Not stated,1
+2024-05-13,Kelside,Employed,0
+2024-05-20,Ardmont,Not stated,0
+2024-05-20,Ardmont,Employed,1
+2024-05-20,Kelside,Not stated,0
+2024-05-20,Kelside,Employed,0
+2024-05-27,Ardmont,Not stated,2
+2024-05-27,Ardmont,Employed,2
+2024-05-27,Kelside,Not stated,0
+2024-05-27,Kelside,Employed,0
+2024-06-03,Ardmont,Not stated,0
+2024-06-03,Ardmont,Employed,1
+2024-06-03,Kelside,Not stated,0
+2024-06-03,Kelside,Employed,1

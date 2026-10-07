@@ -1400,6 +1400,301 @@ def test_f12_a_dollar_table_with_no_word_and_no_total_is_a_level_never_a_twelve_
     assert "12-month totals" in est(rep_r)["text"] and "average level" not in est(rep_r)["text"], est(rep_r)["text"]
 
 
+# ----------------------------------------------------------------------------- wave 5g: the 13 failures of the lead's held-out range v2 601-900
+def trailing_sums(df, mask, date, value, n):
+    """The plain truth of a weekly or daily table: (the n periods before, the latest n periods) of the selected rows added by date."""
+    sub = df[mask].copy()
+    sub["v"] = pd.to_numeric(sub[value].str.replace(",", ""), errors="coerce")
+    by = sub.groupby(date)["v"].sum().sort_index()
+    return float(by.iloc[-2 * n:-n].sum()), float(by.iloc[-n:].sum())
+
+
+def test_g01_an_official_panel_the_layout_cannot_read_is_read_one_member_at_a_time_never_averaged_across_its_members():
+    """Wave 5g, A (fuzz v2 seeds 644 738 720 838 808; the lead's guess that these tables hold totals was wrong: none has a total row). An
+    OFFICIAL table whose members stand in no relation (a seasonally adjusted and an unadjusted series that move with 2% noise of their own; a
+    nominal and a real series; prices and versions) is left by the structure layer to the adapter's long-table LAYOUT ("read side by side"). The
+    layout reads the English headers of a table with three years of dates; a German or Spanish header, or a weekly or daily table of two years,
+    gave it nothing to read, and the OLD path averaged the rows of every member together ("average wert +11.6%": an adjusted series and an
+    unadjusted one in one number). Now the table is read ONE MEMBER AT A TIME and says so ("one member shown, not the table's total"), as an
+    official table of more than 60 series always was. Never the pooled average."""
+    cases = [("g01_seed644_german_sa_nsa_panel.csv", "Saisonbereinigung", 12), ("g01_seed738_spanish_two_dims_panel.csv", "Base de precios", 12),
+             ("g01_seed808_weekly_nominal_real_panel.csv", "Basis", 52), ("g01_seed720_french_daily_panel.csv.gz", "Prix", 365),
+             ("g01_seed838_english_daily_panel.csv.gz", "Basis", 365)]
+    for name, col, window in cases:
+        df = frame(name)
+        rep = run_file(name)
+        e = est(rep)
+        assert e and one_member_shown(rep), (name, headline(rep))
+        assert "one member shown, not the table's total" in headline(rep), (name, headline(rep))
+        s_ = st(rep)
+        assert s_.get("kind") == "cube" and s_.get("usable") and dim(rep, col)["role"] == "single", (name, s_.get("kind"), dim(rep, col))
+        for pooled in ("average koordin", "average coordonn", "average coordenada", "average vector", "volume"):
+            assert pooled not in headline(rep).lower(), (name, headline(rep))
+        # the figure is ONE member's own, from the file alone (never the two members together)
+        member = next(x["member"] for x in e["slice"] if x["dim"] == col)
+        sel = df[col] == member
+        other = df[col] != member
+        assert sel.any() and other.any(), name
+        f = figs(rep)
+        assert f is not None, (name, headline(rep))
+        if window == 12:
+            pri, lat = window_sums(df, sel, 1.0, date=df.columns[0], value=[c for c in df.columns if c.upper() in ("WERT", "VALOR", "VALUE")][0])
+            lat_all = window_sums(df, df[col] != "", 1.0, date=df.columns[0], value=[c for c in df.columns if c.upper() in ("WERT", "VALOR", "VALUE")][0])[1]
+            assert abs(f[2] - 100.0 * (lat / pri - 1.0)) < 0.05 or "matched" in e["text"] or "with a value in both" in e["text"], (name, f, pri, lat)
+            assert not close(f[1] * 12 / (e["measure"].get("scale_applied") or 1.0), lat_all), (name, "the members were pooled")
+    # a figure that is one member's, for the monthly German file (60 rows = the repro): the mean of the 12 months, in base units
+    df = frame("g01_seed644_full_60_months.csv")
+    rep = run_file("g01_seed644_full_60_months.csv")
+    member = next(x["member"] for x in est(rep)["slice"] if x["dim"] == "Saisonbereinigung")
+    pri, lat = window_sums(df, df["Saisonbereinigung"] == member, 1000.0, date="BEZUGSZEITRAUM", value="WERT")
+    check_truth(rep, pri, lat, "seed 644")
+    # the plan's run of the same table (the live product) never reads it the old way either: refused, since no layout exists to set it aside
+    rep_p = run_file("g01_seed644_german_sa_nsa_panel.csv", plan=PLAN)
+    assert refused(rep_p) or est(rep_p), headline(rep_p)
+    assert "average wert" not in headline(rep_p).lower(), headline(rep_p)
+    # NEGATIVES. (1) The same table with English headers and five years of dates is read by the LAYOUT, as it always was: side by side, no structure
+    # record, no member chosen for it
+    en = frame("g01_seed644_full_60_months.csv").rename(columns={
+        "BEZUGSZEITRAUM": "REF_DATE", "MASSEINHEIT": "UOM", "MASSEINHEIT-ID": "UOM_ID", "SKALENFAKTOR": "SCALAR_FACTOR", "SKALENFAKTOR-ID": "SCALAR_ID",
+        "VEKTOR": "VECTOR", "KOORDINATE": "COORDINATE", "WERT": "VALUE", "BEENDET": "TERMINATED", "DEZIMALSTELLEN": "DECIMALS"})
+    en["SCALAR_FACTOR"] = "thousands"
+    rep_e = run_bytes(en.to_csv(index=False).encode())
+    assert not est(rep_e) and (rep_e["input"].get("layout") or {}).get("layout") == "long statistical table", (rep_e["input"].get("layout"), headline(rep_e))
+    # (2) the conversion itself: only an official panel with slices; a cube, a ledger and a one-series table are left as they are
+    assert NS.read_one_member_panel({"kind": "cube", "official": True, "dims": [{}], "slices": [{}]}) is False
+    assert NS.read_one_member_panel({"kind": "panel_no_relations", "official": False, "dims": [{}], "slices": [{}]}) is False
+    assert NS.read_one_member_panel({"kind": "panel_no_relations", "official": True, "dims": [], "slices": []}) is False
+    # (3) a file that is not a table of series gets no refusal from the panel rule (nothing looks like a table of series in a business ledger)
+    S_fake = {"kind": "panel_no_relations", "dims": [{"column": "Branch"}], "series": 3, "reason": "x"}
+    assert NB._panel_failure(_daily_ledger(lambda d: d.isoformat()), S_fake) is None
+    assert NB._panel_failure(fixture("g01_seed644_german_sa_nsa_panel.csv"), {"kind": "cube", "dims": [{}]}) is None
+    refusal = NB._panel_failure(fixture("g01_seed644_german_sa_nsa_panel.csv"), S_fake)
+    assert refusal and refusal["kind"] == "error" and "stand in no relation" in refusal["reason"] and refusal["error"]["stage"] == "panel", refusal
+
+
+def test_g02_a_dimension_of_price_bases_in_a_ledger_is_never_added_a_name_nominates_and_the_cells_decide():
+    """Wave 5g, B (fuzz v2 seeds 687 and 601; both are LEDGERS, Date, Store, Prices, Amount, not official layouts as the brief said). A business
+    export is read by adding its members up, and a "Prices" dimension of current and constant prices is one quantity twice: the level came out 1.77
+    times the truth (seed 687: 2.126e10 against 1.2034e10). Weekly and daily tables had no copy test at all (it smoothed over twelve months), and
+    a ledger never asked it. Now a dimension whose HEADER or at least two members' names are the words of bases (prices, nominal, real, current,
+    constant, chained, adjusted ...) is tested: two members that move together under a steady ratio (any cadence) are copies, and a nominated
+    dimension that cannot be shown NOT to be copies (a table too short to say) is not added either. One member is shown and the estimand says
+    why. Seed 601 also needed the rounding of its figures to the thousand (written in full, 4731000) to verify its Total row."""
+    df = frame("g02_seed687_weekly_price_bases_ledger.csv")
+    rep = run_file("g02_seed687_weekly_price_bases_ledger.csv")
+    pri, lat = trailing_sums(df, (df["Store"] == "Total") & (df["Prices"] == "Current prices"), "Date", "Amount", 52)
+    f = figs(rep)
+    assert f is not None and close(f[0], pri) and close(f[1], lat), (f, (pri, lat), headline(rep))
+    both = trailing_sums(df, df["Store"] == "Total", "Date", "Amount", 52)
+    assert not close(f[1], both[1]), "the two bases were added"
+    p = dim(rep, "Prices")
+    assert p["role"] == "single" and "one quantity on two bases" in est(rep)["text"] and one_member_shown(rep), (p, est(rep)["text"])
+    assert "the sum of the bases" in headline(rep), headline(rep)
+    assert dim(rep, "Store")["role"] == "partition"
+    # seed 601: daily, 365-day windows, and the Total row (Canada in the original) verified although its parts are rounded to the thousand
+    df6 = frame("g02_seed601_daily_price_bases_rounded_to_thousands.csv.gz")
+    rep6 = run_file("g02_seed601_daily_price_bases_rounded_to_thousands.csv.gz")
+    pri6, lat6 = trailing_sums(df6, (df6["Store"] == "Total") & (df6["Prices"] == "Current prices"), "Date", "Amount", 365)
+    f6 = figs(rep6)
+    assert f6 is not None and close(f6[0], pri6) and close(f6[1], lat6), (f6, (pri6, lat6), headline(rep6))
+    assert dim(rep6, "Store")["role"] == "partition" and dim(rep6, "Store")["total"] == "Total", dim(rep6, "Store")
+    assert dim(rep6, "Prices")["role"] == "single"
+    # NEGATIVES. (1) the same ledger with the dimension renamed to something no one calls a basis: nominated by nothing, so its members are added
+    # (a ledger of channels is added up, as it always was)
+    chan = df.rename(columns={"Prices": "Channel"})
+    chan["Channel"] = chan["Channel"].map({"Current prices": "Online", "Constant prices": "In store"})
+    rep_c = run_bytes(chan.to_csv(index=False).encode())
+    assert dim(rep_c, "Channel")["role"] == "flat_additive", dim(rep_c, "Channel")
+    fc = figs(rep_c)
+    assert fc is not None and close(fc[1], both[1]), (fc, headline(rep_c))
+    # (2) a dimension that NAMES bases whose members are not copies (the second series is the first one's dates shuffled): compared, not copies,
+    # added as before
+    rng = np.random.RandomState(7)
+    sh = df.copy()
+    idx = np.flatnonzero((sh["Prices"] == "Constant prices").to_numpy())
+    for st_ in sh["Store"].unique():
+        rows = idx[(sh.iloc[idx]["Store"] == st_).to_numpy()]
+        sh.iloc[rows, sh.columns.get_loc("Amount")] = rng.permutation(sh.iloc[rows]["Amount"].to_numpy())
+    rep_s = run_bytes(sh.to_csv(index=False).encode())
+    assert dim(rep_s, "Prices")["role"] == "flat_additive", dim(rep_s, "Prices")
+    # (3) a nominated dimension in a table too short to tell (40 weeks): not added, and said so
+    short = df[df["Date"].isin(sorted(df["Date"].unique())[:40])]
+    rep_t = run_bytes(short.to_csv(index=False).encode())
+    d_t = dim(rep_t, "Prices")
+    assert d_t is None or d_t["role"] == "single" or refused(rep_t) or not est(rep_t), (d_t, headline(rep_t))
+    if d_t is not None:
+        assert d_t["role"] == "single", d_t
+    # the pieces: the nomination reads headers and member names only
+    assert NS._basis_nominated({"column": "Prices", "labels": ["A", "B"]}) and NS._basis_nominated({"column": "X", "labels": ["Nominal", "Real"]})
+    assert not NS._basis_nominated({"column": "Channel", "labels": ["Online", "In store"]})
+    assert not NS._basis_nominated({"column": "Prices", "labels": ["A", "B", "C", "D", "E", "F", "G"]})        # a list of things is not a basis
+    # the rounding unit is read from the figures themselves, only when there are enough of them and all end in zeros
+    assert NS._round_unit([4731000, 5435000, 5787000] * 6) == 1000.0
+    assert NS._round_unit([4731000, 5435000, 5787001] * 6) == 1.0
+    assert NS._round_unit([4731000, 5435000]) == 1.0                       # two figures say nothing
+    assert NS._round_unit([4731.5] * 20) == 1.0                            # a fraction: the decimals say what they say
+
+
+def test_g03_a_total_row_is_left_out_when_it_adds_up_on_the_amounts_whatever_identifier_column_the_file_also_holds():
+    """Wave 5g, D (fuzz v2 seed 832). A plain file with a Total row in its Location column and a 12-digit "Case number" beside Revenue and Units:
+    the Total equalled the sum of the others on Revenue to the unit, and the case number (which is no amount, and whose Total row is a number of
+    its own) vetoed it ("contradicted"), so the Total rows stayed in the sums and the level was twice the truth. The verified-total check now
+    reads the columns the core will sum: an identifier (whole numbers all of one width of nine or more digits; a name that ends in number, id,
+    key or code with whole numbers; whole numbers nearly all different) is not an amount."""
+    df = frame("g03_seed832_case_number_beside_a_total.csv.gz")
+    rep = run_file("g03_seed832_case_number_beside_a_total.csv.gz")
+    assert any(x.get("rule") == "total_rows_left_out" for x in rep["cleaning"]["fixes"]), rep["cleaning"]["fixes"]
+    t = NB.ledger_tidy(fixture("g03_seed832_case_number_beside_a_total.csv.gz"))
+    assert t and t["totals"][0]["member"] == "Total" and t["totals"][0]["status"] == "verified" and t["totals"][0]["left_out"], t and t["totals"]
+    led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
+    d2 = df[df["Location"] != "Total"].copy()
+    d2["v"] = pd.to_numeric(d2["Revenue"])
+    d2["m"] = d2["Order date"].str[:7]
+    by = d2.groupby("m")["v"].sum()
+    whole = [m for m in sorted(by.index) if m < "2025-12"]                    # the last month is partial and left out
+    lat, pri = float(by[whole[-12:]].sum()), float(by[whole[-24:-12]].sum())
+    assert close(led["measure.revenue.total.last12"], lat) and close(led["measure.revenue.total.prior12"], pri), \
+        (led.get("measure.revenue.total.last12"), lat, led.get("measure.revenue.total.prior12"), pri)
+    # NEGATIVES. (1) what is an identifier and what is an amount
+    ids = pd.Series([961650773713, 288432429639, 401290626335, 384438881672, 123456789012, 987654321098])
+    assert NB._identifier_column("Case number", ids, ["Case number", "Revenue"])
+    assert NB._identifier_column("Anything", ids, ["Anything"])                  # by shape: one width of 12 digits, under any name
+    amounts = pd.Series([285502, 240694, 130668, 115156, 98001, 1200345, 40])     # sizes spread over several widths
+    assert not NB._identifier_column("Revenue", amounts, ["Revenue"])
+    assert not NB._identifier_column("Revenue", pd.Series([100.5, 200.25, 300.0, 400.75]), ["Revenue"])
+    assert NB._identifier_column("Invoice no", pd.Series([10234, 10235, 10236, 10237, 10238]), ["Invoice no"])    # the core's own rule: a key by name
+    # (2) a Total that is NOT the sum on the amount stays contradicted whatever an id column says (the f11 case, now with an id column beside)
+    def ledger3(total_of):
+        rows = ["Date,Store,Case number,Amount"]
+        for i in range(36):
+            d = "%04d-%02d-01" % (2019 + i // 12, i % 12 + 1)
+            a, b = 100000 + 1000 * i, 150000 + 2000 * i
+            rows += ["%s,North,%d,%d" % (d, 100000000000 + 7919 * (3 * i), a), "%s,South,%d,%d" % (d, 100000000000 + 7919 * (3 * i + 1), b),
+                     "%s,Total,%d,%d" % (d, 100000000000 + 7919 * (3 * i + 2), total_of(a, b))]
+        return ("\n".join(rows) + "\n").encode()
+    t_ok = NB.ledger_tidy(ledger3(lambda a, b: a + b))
+    assert t_ok and t_ok["totals"][0]["status"] == "verified" and t_ok["totals"][0]["left_out"], t_ok
+    t_bad = NB.ledger_tidy(ledger3(lambda a, b: a + b - 40000))
+    assert t_bad and t_bad["totals"][0]["status"] in ("contradicted", "contradicted_bounding"), t_bad and t_bad["totals"]
+    assert t_bad["totals"][0]["status"] == "contradicted" and not t_bad["totals"][0]["left_out"], t_bad["totals"]
+
+
+def test_g04_the_parts_of_a_population_are_not_five_measures_and_a_dimension_of_measures_still_is():
+    """Wave 5g, C (fuzz v2 seed 631; seed 762 is not an engine failure, see test_g07). A plain file Date, Store, Employment status, Units read
+    "Employed" alone as "one measure shown, chosen by the engine's default order" while Unemployed, Not in labour force, Other and Not stated were
+    never added. The members were typed from their own label words: Employed, Unemployed and Not in labour force carry a stock word ("a stock"),
+    Other and Not stated carry none ("a count"), and two different types made the dimension "a set of different measures". A member with no word
+    is typed by the ABSENCE of one, and that is no evidence that it is another quantity: members are different measures only on positive evidence
+    (a unit that varies, a precision member, positively different kinds: a flow beside a stock, a level beside a rate). The parts of a population
+    are added, as the ledger they are in always did."""
+    df = frame("g04_seed631_employment_status_parts.csv")
+    rep = run_file("g04_seed631_employment_status_parts.csv")
+    assert "one measure shown" not in json.dumps(est(rep)) and "Employed:" not in headline(rep)[:12], headline(rep)
+    d = dim(rep, "Employment status")
+    assert d is None or d["role"] != "measure", d
+    led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
+    assert "measure.units.total.last12" in led, sorted(led)[:12]
+    d2 = df.copy()
+    d2["v"] = pd.to_numeric(d2["Units"])
+    d2["m"] = d2["Date"].str[:7]
+    by = d2.groupby("m")["v"].sum()
+    # the file stops in the middle of a month (left out) and the windows are whole months; the sum of ALL the statuses is the figure
+    months = sorted(by.index)
+    lat = None
+    for end in (0, 1):
+        sel = months[:len(months) - end]
+        if close(led["measure.units.total.last12"], float(by[sel[-12:]].sum())):
+            lat = float(by[sel[-12:]].sum())
+    assert lat is not None, (led["measure.units.total.last12"], [float(by[months[:len(months) - e][-12:]].sum()) for e in (0, 1, 2)])
+    # NEGATIVES. dollars beside units (the unit varies) and a rate beside its standard error stay a dimension of measures; so does a stock beside a rate
+    rep_u = run_bytes(MC.measures_units_dollars())
+    assert any(x.get("role") == "measure" for x in st(rep_u)["dims"]), [(x["column"], x["role"]) for x in st(rep_u)["dims"]]
+    rep_r = run_bytes(MC.measures_rate_se())
+    assert any(x.get("role") == "measure" for x in st(rep_r)["dims"]), [(x["column"], x["role"]) for x in st(rep_r)["dims"]]
+    S_stock_rate = {"dims": [{"column": "Indicator", "labels": ["Employment", "Unemployment rate", "Other"], "role": None}],
+                    "measure": {"column": "VALUE", "uom": ""}, "metadata": []}
+    assert NS._is_measure_dim(S_stock_rate, 0) is not None           # a stock beside a rate: different kinds, positively
+    S_parts = {"dims": [{"column": "Employment status", "labels": ["Employed", "Unemployed", "Not in labour force", "Other", "Not stated"], "role": None}],
+               "measure": {"column": "Units", "uom": ""}, "metadata": []}
+    assert NS._is_measure_dim(S_parts, 0) is None                      # one positive kind (a stock) and two members with no word
+
+
+def test_g05_a_measure_averaged_because_nothing_says_it_accumulates_is_worded_as_an_average_level():
+    """Wave 5g, E (fuzz v2 seed 669). "VALEUR, Non desaisonnalise, 12 months to Sep 2025: +2.6% ($3.0K) in the published totals": the level was an
+    AVERAGE month (a currency with no flow word is averaged, W5F), and "in the published totals" next to it read as a sum. The headline now says
+    "(average level $3.0K)" and no "published totals"; the scenario items name an average month; a flow, a rate and an index keep the words they
+    have always had."""
+    rep = run_file("g05_seed669_french_averaged_level.csv")
+    h = headline(rep)
+    assert h == "VALEUR, Non désaisonnalisé, 12 months to Sep 2025: +2.6% (average level $3.0K)", h
+    assert "published totals" not in h and "average level over the window" in est(rep)["text"], (h, est(rep)["text"])
+    items = {it["id"]: it for it in rep["scenarios"]["items"]}
+    assert "average month" in items["headline.latest"]["label"] and "average month" in items["headline.prior"]["label"], items["headline.latest"]["label"]
+    assert "average month" not in items["headline.change"]["label"]
+    assert rep["story"]["headline"] in rep["summary"]["lines"][0]["text"] or h in [l.get("text") for l in rep["summary"]["lines"]], rep["summary"]["lines"][:2]
+    # NEGATIVES: a flow (a partition of dollars with a flow word), a rate with its published aggregate, and an index keep their words
+    rep_f = run_bytes(MC.partition(0.10))
+    assert headline(rep_f).endswith("in the published totals") and "average level" not in headline(rep_f), headline(rep_f)
+    rep_a = run_bytes(MC.average_dollars(words=("Retail sales",)))
+    assert "average level" not in headline(rep_a), headline(rep_a)
+    rep_r = run_bytes(MC.rate_table(aggregate="named"))
+    assert "average level" not in headline(rep_r), headline(rep_r)
+
+
+def test_g06_a_german_value_column_is_released_by_the_metadata_around_it_and_a_coded_category_in_a_short_table_is_one():
+    """Wave 5g, F (fuzz v2 seeds 752 and 775, unneeded refusals). (1) A German table (WERT, MASSEINHEIT, SKALENFAKTOR, DEZIMALSTELLEN ...) has no
+    publisher signature the vocabulary lists, so its value column of ten-digit euros was withheld as a possible ID number and the table refused
+    ("no figure can be read"). The documented value column is released when the header holds a publisher's signature OR three of the columns only
+    a statistical publisher uses, in any of the four languages the guard reads. (2) A column of coded labels (917725 Refined goods 82) with 935
+    members and eight quarters has a label on 12% of its rows, and the 5% cap that tells a category from free text withheld it: for a coded
+    column the cap is 20% (every label must still repeat five times). (3) A coded dimension beside a column of series ids (Basis 1 and 2 beside
+    VEKTOR) is no longer dropped as a second measure because the id column already told every series apart."""
+    rep = run_file("g06_seed752_german_value_column.csv")
+    assert any(x["header"] == "WERT" and x["kind"] == "measure" for x in rep["privacy"]["released"]), rep["privacy"]["released"]
+    assert est(rep) and figs(rep) is not None, headline(rep)
+    assert dim(rep, "Basis") is not None and dim(rep, "VEKTOR") is None, [d["column"] for d in st(rep)["dims"]]
+    # (2) a coded category column of 120 labels over 10 months: 120 labels are 10% of the rows, beside the 5% cap and under the 20% one
+    import csv as _csv
+    buf = io.StringIO()
+    w = _csv.writer(buf, lineterminator="\n")
+    w.writerow(["REF_DATE", "GEO", "DGUID", "Product category", "UOM", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID", "VECTOR", "COORDINATE", "VALUE",
+                "STATUS", "SYMBOL", "TERMINATED", "DECIMALS"])
+    rng = np.random.RandomState(3)
+    for k in range(120):
+        for mth in range(12):
+            lab = "%d Refined goods %d" % (917000 + k, k % 7)
+            w.writerow(["2023-%02d" % (mth + 1) if mth < 12 else "", "Nevton", "2021A00000001", lab, "Dollars", "81", "units", "0", "v%d" % (41000000 + k),
+                        "1.%d" % (k + 1), int(1000 + 50 * k + 30 * mth + 40 * rng.randn()), "", "", "", "0"])
+    # no total row, so one member is shown: what matters here is that the column was READ (released), not refused as a withheld free-text column
+    data = buf.getvalue().encode()
+    rep_c = run_bytes(data)
+    assert any(x["header"] == "Product category" for x in rep_c["privacy"]["released"]), (rep_c["privacy"]["released"], rep_c["privacy"]["flagged"])
+    assert "withheld" not in headline(rep_c) and "tell the repeats apart" not in json.dumps(rep_c.get("structure")), headline(rep_c)
+    # NEGATIVE: free text (every value different) is still withheld; a column of 40 labels on 400 rows each repeated 10 times stays a category
+    ft = ["REF_DATE,GEO,Notes,VALUE"] + ["2023-%02d,Nevton,%s,%d" % (i % 12 + 1, "free note number %d about the order" % i, 100 + i) for i in range(300)]
+    rep_f = run_bytes(("\n".join(ft) + "\n").encode())
+    assert not any(x["header"] == "Notes" for x in rep_f["privacy"]["released"]), rep_f["privacy"]["released"]
+
+
+def test_g07_the_two_held_out_failures_that_are_not_the_engines_a_quarterly_file_and_a_table_with_one_region():
+    """Wave 5g, the lead's seeds 735 and 762, read by hand and found NOT to be engine failures (the checker, which this pass may not edit, judged
+    them wrong). Seed 735 is a QUARTERLY plain file: the engine's windows are 12 calendar months (4 quarters: units 36 then 44, +22.2%), which is
+    what the generator's own candidate says; the checker's 'plain sum' windows are the last 12 table periods, 12 QUARTERS (96 then 119, +23.96%).
+    These tests pin the engine's figures so that a later change cannot move them unseen."""
+    df = frame("g07_seed735_quarterly_two_measures.csv")
+    rep = run_file("g07_seed735_quarterly_two_measures.csv")
+    led = {x["id"]: x["value"] for x in json.loads(rep["downloads"]["ledger_json"])["analysis_ledger"]}
+    det = df[df["Region"] != "All"].copy()
+    det["d"] = pd.to_datetime(det["Period"])
+    det["Units"], det["Sales"] = pd.to_numeric(det["Units"]), pd.to_numeric(det["Sales"])
+    q = det.groupby("d")[["Units", "Sales"]].sum().sort_index()
+    assert (float(q["Units"].iloc[-8:-4].sum()), float(q["Units"].iloc[-4:].sum())) == (36.0, 44.0)
+    assert close(led["measure.units.total.prior12"], 36.0) and close(led["measure.units.total.last12"], 44.0), \
+        (led.get("measure.units.total.prior12"), led.get("measure.units.total.last12"))
+    assert close(led["measure.sales.total.last12"], float(q["Sales"].iloc[-4:].sum())) and close(led["measure.sales.total.prior12"], float(q["Sales"].iloc[-8:-4].sum()))
+    assert "+22.2%" in headline(rep), headline(rep)
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

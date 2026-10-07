@@ -1,0 +1,769 @@
+Period,Region,Product,Customer name,Units,Sales
+2018/04/01,Head Office,Florists,Linda Quillon,0,351398
+2018/04/01,Head Office,Furniture,Omar Quillon,1,775731
+2018/04/01,Head Office,Pharmacies,Priya Askerby,1,401386
+2018/04/01,Head Office,Office supplies,Omar Strand,0,526929
+2018/04/01,Falham,Florists,Tomas Venmark,0,119533
+2018/04/01,Falham,Furniture,Tomas Venmark,1,268492
+2018/04/01,Falham,Pharmacies,Priya Nakamura,0,131265
+2018/04/01,Falham,Office supplies,Priya Nakamura,0,179780
+2018/04/01,Garholm,Florists,Tomas Venmark,1,278723
+2018/04/01,Garholm,Furniture,Ingrid Askerby,0,605326
+2018/04/01,Garholm,Pharmacies,Chen Brandmoor,0,312051
+2018/04/01,Garholm,Office supplies,Omar Quillon,0,408811
+2018/04/01,All,Florists,Priya Askerby,4,1276455
+2018/04/01,All,Furniture,Priya Nakamura,3,2839263
+2018/04/01,All,Pharmacies,Daniel Okafor,2,1426422
+2018/04/01,All,Office supplies,Ingrid Askerby,0,1912081
+2018/04/01,Rest of country,Florists,Linda Quillon,3,420361
+2018/04/01,Rest of country,Furniture,Omar Quillon,1,964249
+2018/04/01,Rest of country,Pharmacies,Ingrid Askerby,1,462566
+2018/04/01,Rest of country,Office supplies,Linda Quillon,0,642352
+2018/04/01,Belmoor,Florists,Priya Nakamura,0,106440
+2018/04/01,Belmoor,Furniture,Linda Quillon,0,225465
+2018/04/01,Belmoor,Pharmacies,Ingrid Askerby,0,119154
+2018/04/01,Belmoor,Office supplies,Omar Strand,0,154208
+2018/07/01,Head Office,Florists,Omar Strand,0,344849
+2018/07/01,Head Office,Furniture,Linda Quillon,2,748996
+2018/07/01,Head Office,Pharmacies,Omar Quillon,0,375524
+2018/07/01,Head Office,Office supplies,Ingrid Askerby,1,483624
+2018/07/01,Falham,Florists,Chen Brandmoor,0,120392
+2018/07/01,Falham,Furniture,Omar Quillon,0,262822
+2018/07/01,Falham,Pharmacies,Priya Askerby,0,128126
+2018/07/01,Falham,Office supplies,Priya Askerby,1,176923
+2018/07/01,Garholm,Florists,Ingrid Askerby,0,280883
+2018/07/01,Garholm,Furniture,Ingrid Askerby,1,598835
+2018/07/01,Garholm,Pharmacies,Omar Quillon,0,316059
+2018/07/01,Garholm,Office supplies,Linda Quillon,0,400060
+2018/07/01,All,Florists,Priya Askerby,0,1256713
+2018/07/01,All,Furniture,Ingrid Askerby,4,2726399
+2018/07/01,All,Pharmacies,Chen Brandmoor,1,1372018
+2018/07/01,All,Office supplies,Omar Strand,2,1843641
+2018/07/01,Rest of country,Florists,Tomas Venmark,0,408643
+2018/07/01,Rest of country,Furniture,Omar Strand,1,892395
+2018/07/01,Rest of country,Pharmacies,Omar Quillon,1,439146
+2018/07/01,Rest of country,Office supplies,Chen Brandmoor,0,626082
+2018/07/01,Belmoor,Florists,Daniel Okafor,0,101946
+2018/07/01,Belmoor,Furniture,Omar Quillon,0,223351
+2018/07/01,Belmoor,Pharmacies,Daniel Okafor,0,113163
+2018/07/01,Belmoor,Office supplies,Daniel Okafor,0,156951
+2018/10/01,Head Office,Florists,Priya Nakamura,0,406214
+2018/10/01,Head Office,Furniture,Linda Quillon,1,855051
+2018/10/01,Head Office,Pharmacies,Ingrid Askerby,0,447524
+2018/10/01,Head Office,Office supplies,Priya Askerby,1,634434
+2018/10/01,Falham,Florists,Omar Quillon,0,138470
+2018/10/01,Falham,Furniture,Priya Askerby,0,285741
+2018/10/01,Falham,Pharmacies,Linda Quillon,0,167876
+2018/10/01,Falham,Office supplies,Priya Askerby,0,208379
+2018/10/01,Garholm,Florists,Tomas Venmark,0,352251
+2018/10/01,Garholm,Furniture,Tomas Venmark,0,752729
+2018/10/01,Garholm,Pharmacies,Linda Quillon,0,354086
+2018/10/01,Garholm,Office supplies,Omar Strand,1,511094
+2018/10/01,All,Florists,Tomas Venmark,0,1538596
+2018/10/01,All,Furniture,Ingrid Askerby,2,3247504
+2018/10/01,All,Pharmacies,Omar Quillon,1,1633690
+2018/10/01,All,Office supplies,Linda Quillon,3,2256961
+2018/10/01,Rest of country,Florists,Chen Brandmoor,0,517006
+2018/10/01,Rest of country,Furniture,Omar Quillon,1,1107610
+2018/10/01,Rest of country,Pharmacies,Omar Strand,0,523422
+2018/10/01,Rest of country,Office supplies,Linda Quillon,1,725881
+2018/10/01,Belmoor,Florists,Omar Quillon,0,124655
+2018/10/01,Belmoor,Furniture,Daniel Okafor,0,246374
+2018/10/01,Belmoor,Pharmacies,Daniel Okafor,1,140782
+2018/10/01,Belmoor,Office supplies,Ingrid Askerby,0,177172
+2019/01/01,Head Office,Florists,Ingrid Askerby,0,409183
+2019/01/01,Head Office,Furniture,Priya Nakamura,3,821658
+2019/01/01,Head Office,Pharmacies,Priya Nakamura,1,470408
+2019/01/01,Head Office,Office supplies,Priya Nakamura,0,608704
+2019/01/01,Falham,Florists,Omar Quillon,0,146247
+2019/01/01,Falham,Furniture,Tomas Venmark,0,306347
+2019/01/01,Falham,Pharmacies,Linda Quillon,0,159979
+2019/01/01,Falham,Office supplies,Ingrid Askerby,0,213955
+2019/01/01,Garholm,Florists,Tomas Venmark,0,365001
+2019/01/01,Garholm,Furniture,Chen Brandmoor,0,769783
+2019/01/01,Garholm,Pharmacies,Daniel Okafor,0,375225
+2019/01/01,Garholm,Office supplies,Daniel Okafor,0,540291
+2019/01/01,All,Florists,Omar Quillon,1,1573640
+2019/01/01,All,Furniture,Ingrid Askerby,3,3275047
+2019/01/01,All,Pharmacies,Tomas Venmark,2,1722076
+2019/01/01,All,Office supplies,Daniel Okafor,0,2280210
+2019/01/01,Rest of country,Florists,Linda Quillon,1,525481
+2019/01/01,Rest of country,Furniture,Tomas Venmark,0,1111108
+2019/01/01,Rest of country,Pharmacies,Priya Nakamura,1,576079
+2019/01/01,Rest of country,Office supplies,Daniel Okafor,0,742996
+2019/01/01,Belmoor,Florists,Omar Strand,0,127728
+2019/01/01,Belmoor,Furniture,Priya Askerby,0,266151
+2019/01/01,Belmoor,Pharmacies,Priya Nakamura,0,140385
+2019/01/01,Belmoor,Office supplies,Daniel Okafor,0,174264
+2019/04/01,Head Office,Florists,Daniel Okafor,0,363701
+2019/04/01,Head Office,Furniture,Omar Strand,1,801394
+2019/04/01,Head Office,Pharmacies,Omar Strand,0,400368
+2019/04/01,Head Office,Office supplies,Omar Strand,0,520084
+2019/04/01,Falham,Florists,Chen Brandmoor,0,122250
+2019/04/01,Falham,Furniture,Priya Askerby,0,273796
+2019/04/01,Falham,Pharmacies,Daniel Okafor,0,137661
+2019/04/01,Falham,Office supplies,Priya Askerby,0,178566
+2019/04/01,Garholm,Florists,Ingrid Askerby,0,295612
+2019/04/01,Garholm,Furniture,Omar Strand,0,663331
+2019/04/01,Garholm,Pharmacies,Chen Brandmoor,0,329722
+2019/04/01,Garholm,Office supplies,Daniel Okafor,1,439581
+2019/04/01,All,Florists,Ingrid Askerby,1,1342466
+2019/04/01,All,Furniture,Linda Quillon,1,2981653
+2019/04/01,All,Pharmacies,Daniel Okafor,1,1458304
+2019/04/01,All,Office supplies,Linda Quillon,1,1954522
+2019/04/01,Rest of country,Florists,Tomas Venmark,1,448016
+2019/04/01,Rest of country,Furniture,Chen Brandmoor,0,1004284
+2019/04/01,Rest of country,Pharmacies,Linda Quillon,1,470644
+2019/04/01,Rest of country,Office supplies,Chen Brandmoor,0,661081
+2019/04/01,Belmoor,Florists,Omar Strand,0,112888
+2019/04/01,Belmoor,Furniture,Priya Nakamura,0,238848
+2019/04/01,Belmoor,Pharmacies,Daniel Okafor,0,119910
+2019/04/01,Belmoor,Office supplies,Priya Nakamura,0,155210
+2019/07/01,Head Office,Florists,Omar Quillon,1,372898
+2019/07/01,Head Office,Furniture,Priya Askerby,2,748330
+2019/07/01,Head Office,Pharmacies,Linda Quillon,1,387338
+2019/07/01,Head Office,Office supplies,Ingrid Askerby,0,516367
+2019/07/01,Falham,Florists,Chen Brandmoor,0,118111
+2019/07/01,Falham,Furniture,Omar Quillon,0,266470
+2019/07/01,Falham,Pharmacies,Priya Nakamura,0,132413
+2019/07/01,Falham,Office supplies,Daniel Okafor,0,185494
+2019/07/01,Garholm,Florists,Chen Brandmoor,0,297185
+2019/07/01,Garholm,Furniture,Chen Brandmoor,0,598233
+2019/07/01,Garholm,Pharmacies,Priya Askerby,0,324910
+2019/07/01,Garholm,Office supplies,Chen Brandmoor,0,416811
+2019/07/01,All,Florists,Chen Brandmoor,2,1334192
+2019/07/01,All,Furniture,Omar Quillon,3,2762073
+2019/07/01,All,Pharmacies,Omar Strand,1,1431870
+2019/07/01,All,Office supplies,Ingrid Askerby,1,1925608
+2019/07/01,Rest of country,Florists,Omar Strand,1,437858
+2019/07/01,Rest of country,Furniture,Chen Brandmoor,1,921267
+2019/07/01,Rest of country,Pharmacies,Ingrid Askerby,0,475245
+2019/07/01,Rest of country,Office supplies,Chen Brandmoor,0,651850
+2019/07/01,Belmoor,Florists,Priya Nakamura,0,108141
+2019/07/01,Belmoor,Furniture,Omar Strand,0,227773
+2019/07/01,Belmoor,Pharmacies,Priya Nakamura,0,111964
+2019/07/01,Belmoor,Office supplies,Daniel Okafor,1,155085
+2019/10/01,Head Office,Florists,Chen Brandmoor,0,423018
+2019/10/01,Head Office,Furniture,Daniel Okafor,0,863008
+2019/10/01,Head Office,Pharmacies,Daniel Okafor,1,462317
+2019/10/01,Head Office,Office supplies,Chen Brandmoor,0,635489
+2019/10/01,Falham,Florists,Ingrid Askerby,0,150774
+2019/10/01,Falham,Furniture,Tomas Venmark,1,307257
+2019/10/01,Falham,Pharmacies,Chen Brandmoor,0,159804
+2019/10/01,Falham,Office supplies,Priya Askerby,0,226374
+2019/10/01,Garholm,Florists,Priya Nakamura,0,345706
+2019/10/01,Garholm,Furniture,Priya Askerby,2,758769
+2019/10/01,Garholm,Pharmacies,Chen Brandmoor,0,386748
+2019/10/01,Garholm,Office supplies,Priya Nakamura,0,520694
+2019/10/01,All,Florists,Omar Quillon,0,1592040
+2019/10/01,All,Furniture,Tomas Venmark,6,3366483
+2019/10/01,All,Pharmacies,Tomas Venmark,4,1743670
+2019/10/01,All,Office supplies,Chen Brandmoor,0,2364551
+2019/10/01,Rest of country,Florists,Ingrid Askerby,0,544037
+2019/10/01,Rest of country,Furniture,Daniel Okafor,3,1171757
+2019/10/01,Rest of country,Pharmacies,Omar Strand,2,595554
+2019/10/01,Rest of country,Office supplies,Chen Brandmoor,0,790632
+2019/10/01,Belmoor,Florists,Priya Nakamura,0,128505
+2019/10/01,Belmoor,Furniture,Priya Nakamura,0,265692
+2019/10/01,Belmoor,Pharmacies,Priya Askerby,1,139247
+2019/10/01,Belmoor,Office supplies,Daniel Okafor,0,191362
+2020/01/01,Head Office,Florists,Omar Strand,0,434564
+2020/01/01,Head Office,Furniture,Daniel Okafor,0,923886
+2020/01/01,Head Office,Pharmacies,Priya Nakamura,0,451697
+2020/01/01,Head Office,Office supplies,Priya Nakamura,0,636417
+2020/01/01,Falham,Florists,Daniel Okafor,0,148931
+2020/01/01,Falham,Furniture,Daniel Okafor,1,304736
+2020/01/01,Falham,Pharmacies,Omar Strand,1,168697
+2020/01/01,Falham,Office supplies,Tomas Venmark,0,209092
+2020/01/01,Garholm,Florists,Tomas Venmark,1,372496
+2020/01/01,Garholm,Furniture,Linda Quillon,0,786682
+2020/01/01,Garholm,Pharmacies,Linda Quillon,1,398650
+2020/01/01,Garholm,Office supplies,Daniel Okafor,2,545647
+2020/01/01,All,Florists,Omar Quillon,1,1608020
+2020/01/01,All,Furniture,Priya Askerby,1,3422528
+2020/01/01,All,Pharmacies,Omar Quillon,2,1727775
+2020/01/01,All,Office supplies,Priya Nakamura,2,2378826
+2020/01/01,Rest of country,Florists,Omar Quillon,0,524509
+2020/01/01,Rest of country,Furniture,Priya Askerby,0,1136067
+2020/01/01,Rest of country,Pharmacies,Linda Quillon,0,564232
+2020/01/01,Rest of country,Office supplies,Ingrid Askerby,0,799695
+2020/01/01,Belmoor,Florists,Priya Askerby,0,127519
+2020/01/01,Belmoor,Furniture,Tomas Venmark,0,271158
+2020/01/01,Belmoor,Pharmacies,Daniel Okafor,0,144500
+2020/01/01,Belmoor,Office supplies,Omar Quillon,0,187975
+2020/04/01,Head Office,Florists,Priya Nakamura,0,387697
+2020/04/01,Head Office,Furniture,Linda Quillon,0,791374
+2020/04/01,Head Office,Pharmacies,Tomas Venmark,0,401182
+2020/04/01,Head Office,Office supplies,Omar Strand,0,553291
+2020/04/01,Falham,Florists,Linda Quillon,0,128962
+2020/04/01,Falham,Furniture,Priya Nakamura,0,290583
+2020/04/01,Falham,Pharmacies,Priya Askerby,1,148313
+2020/04/01,Falham,Office supplies,Tomas Venmark,0,196613
+2020/04/01,Garholm,Florists,Tomas Venmark,0,302449
+2020/04/01,Garholm,Furniture,Daniel Okafor,1,688879
+2020/04/01,Garholm,Pharmacies,Chen Brandmoor,0,319395
+2020/04/01,Garholm,Office supplies,Chen Brandmoor,1,449124
+2020/04/01,All,Florists,Omar Strand,0,1391428
+2020/04/01,All,Furniture,Omar Strand,1,3041944
+2020/04/01,All,Pharmacies,Omar Quillon,1,1512657
+2020/04/01,All,Office supplies,Ingrid Askerby,3,2039946
+2020/04/01,Rest of country,Florists,Priya Askerby,0,455143
+2020/04/01,Rest of country,Furniture,Priya Askerby,0,1031471
+2020/04/01,Rest of country,Pharmacies,Priya Nakamura,0,512349
+2020/04/01,Rest of country,Office supplies,Omar Strand,0,671626
+2020/04/01,Belmoor,Florists,Ingrid Askerby,0,117177
+2020/04/01,Belmoor,Furniture,Priya Askerby,0,239637
+2020/04/01,Belmoor,Pharmacies,Linda Quillon,0,131417
+2020/04/01,Belmoor,Office supplies,Linda Quillon,2,169292
+2020/07/01,Head Office,Florists,Ingrid Askerby,0,366890
+2020/07/01,Head Office,Furniture,Tomas Venmark,1,785270
+2020/07/01,Head Office,Pharmacies,Omar Quillon,0,405177
+2020/07/01,Head Office,Office supplies,Ingrid Askerby,1,524793
+2020/07/01,Falham,Florists,Daniel Okafor,0,125761
+2020/07/01,Falham,Furniture,Priya Askerby,0,281975
+2020/07/01,Falham,Pharmacies,Linda Quillon,0,134363
+2020/07/01,Falham,Office supplies,Ingrid Askerby,1,188422
+2020/07/01,Garholm,Florists,Daniel Okafor,1,300722
+2020/07/01,Garholm,Furniture,Omar Quillon,0,667716
+2020/07/01,Garholm,Pharmacies,Omar Quillon,0,337996
+2020/07/01,Garholm,Office supplies,Daniel Okafor,0,444567
+2020/07/01,All,Florists,Ingrid Askerby,1,1340236
+2020/07/01,All,Furniture,Omar Quillon,2,2946548
+2020/07/01,All,Pharmacies,Linda Quillon,1,1467275
+2020/07/01,All,Office supplies,Chen Brandmoor,6,1975646
+2020/07/01,Rest of country,Florists,Daniel Okafor,0,435546
+2020/07/01,Rest of country,Furniture,Chen Brandmoor,1,976540
+2020/07/01,Rest of country,Pharmacies,Tomas Venmark,1,466862
+2020/07/01,Rest of country,Office supplies,Omar Quillon,2,652640
+2020/07/01,Belmoor,Florists,Omar Quillon,0,111316
+2020/07/01,Belmoor,Furniture,Omar Quillon,0,235047
+2020/07/01,Belmoor,Pharmacies,Ingrid Askerby,0,122878
+2020/07/01,Belmoor,Office supplies,Omar Quillon,2,165224
+2020/10/01,Head Office,Florists,Tomas Venmark,0,434538
+2020/10/01,Head Office,Furniture,Priya Askerby,0,958424
+2020/10/01,Head Office,Pharmacies,Chen Brandmoor,0,489195
+2020/10/01,Head Office,Office supplies,Priya Askerby,0,651901
+2020/10/01,Falham,Florists,Priya Nakamura,0,162275
+2020/10/01,Falham,Furniture,Priya Nakamura,1,322237
+2020/10/01,Falham,Pharmacies,Tomas Venmark,0,164322
+2020/10/01,Falham,Office supplies,Omar Quillon,1,232472
+2020/10/01,Garholm,Florists,Daniel Okafor,0,361404
+2020/10/01,Garholm,Furniture,Daniel Okafor,1,815548
+2020/10/01,Garholm,Pharmacies,Chen Brandmoor,0,396539
+2020/10/01,Garholm,Office supplies,Omar Strand,2,561746
+2020/10/01,All,Florists,Omar Quillon,0,1648865
+2020/10/01,All,Furniture,Ingrid Askerby,3,3578521
+2020/10/01,All,Pharmacies,Priya Askerby,0,1771078
+2020/10/01,All,Office supplies,Priya Askerby,3,2424949
+2020/10/01,Rest of country,Florists,Omar Strand,0,557407
+2020/10/01,Rest of country,Furniture,Priya Askerby,0,1202198
+2020/10/01,Rest of country,Pharmacies,Linda Quillon,0,578775
+2020/10/01,Rest of country,Office supplies,Ingrid Askerby,0,790472
+2020/10/01,Belmoor,Florists,Omar Quillon,0,133242
+2020/10/01,Belmoor,Furniture,Ingrid Askerby,1,280115
+2020/10/01,Belmoor,Pharmacies,Omar Quillon,0,142247
+2020/10/01,Belmoor,Office supplies,Chen Brandmoor,0,188357
+2021/01/01,Head Office,Florists,Daniel Okafor,0,451970
+2021/01/01,Head Office,Furniture,Priya Nakamura,0,908773
+2021/01/01,Head Office,Pharmacies,Linda Quillon,0,471371
+2021/01/01,Head Office,Office supplies,Tomas Venmark,0,653161
+2021/01/01,Falham,Florists,Omar Quillon,0,161219
+2021/01/01,Falham,Furniture,Tomas Venmark,1,312390
+2021/01/01,Falham,Pharmacies,Ingrid Askerby,0,172734
+2021/01/01,Falham,Office supplies,Ingrid Askerby,0,221268
+2021/01/01,Garholm,Florists,Chen Brandmoor,0,369304
+2021/01/01,Garholm,Furniture,Omar Quillon,3,824974
+2021/01/01,Garholm,Pharmacies,Linda Quillon,0,391905
+2021/01/01,Garholm,Office supplies,Daniel Okafor,2,568001
+2021/01/01,All,Florists,Priya Nakamura,0,1696243
+2021/01/01,All,Furniture,Omar Quillon,4,3509230
+2021/01/01,All,Pharmacies,Ingrid Askerby,0,1774035
+2021/01/01,All,Office supplies,Omar Quillon,3,2425871
+2021/01/01,Rest of country,Florists,Priya Askerby,0,576159
+2021/01/01,Rest of country,Furniture,Chen Brandmoor,0,1185315
+2021/01/01,Rest of country,Pharmacies,Priya Askerby,0,592974
+2021/01/01,Rest of country,Office supplies,Ingrid Askerby,0,793591
+2021/01/01,Belmoor,Florists,Tomas Venmark,0,137591
+2021/01/01,Belmoor,Furniture,Ingrid Askerby,0,277778
+2021/01/01,Belmoor,Pharmacies,Ingrid Askerby,0,145050
+2021/01/01,Belmoor,Office supplies,Linda Quillon,1,189851
+2021/04/01,Head Office,Florists,Linda Quillon,1,394328
+2021/04/01,Head Office,Furniture,Tomas Venmark,2,817260
+2021/04/01,Head Office,Pharmacies,Priya Nakamura,1,424514
+2021/04/01,Head Office,Office supplies,Linda Quillon,1,579741
+2021/04/01,Falham,Florists,Ingrid Askerby,0,128730
+2021/04/01,Falham,Furniture,Omar Strand,0,294916
+2021/04/01,Falham,Pharmacies,Omar Quillon,0,150487
+2021/04/01,Falham,Office supplies,Omar Strand,0,209147
+2021/04/01,Garholm,Florists,Chen Brandmoor,0,327462
+2021/04/01,Garholm,Furniture,Tomas Venmark,1,718334
+2021/04/01,Garholm,Pharmacies,Priya Nakamura,1,348433
+2021/04/01,Garholm,Office supplies,Linda Quillon,0,492958
+2021/04/01,All,Florists,Omar Strand,3,1453371
+2021/04/01,All,Furniture,Priya Nakamura,3,3106064
+2021/04/01,All,Pharmacies,Ingrid Askerby,2,1558931
+2021/04/01,All,Office supplies,Daniel Okafor,2,2149314
+2021/04/01,Rest of country,Florists,Ingrid Askerby,2,482024
+2021/04/01,Rest of country,Furniture,Chen Brandmoor,0,1034852
+2021/04/01,Rest of country,Pharmacies,Tomas Venmark,0,508097
+2021/04/01,Rest of country,Office supplies,Ingrid Askerby,1,699496
+2021/04/01,Belmoor,Florists,Linda Quillon,0,120827
+2021/04/01,Belmoor,Furniture,Daniel Okafor,0,240701
+2021/04/01,Belmoor,Pharmacies,Ingrid Askerby,0,127400
+2021/04/01,Belmoor,Office supplies,Priya Nakamura,0,167972
+2021/07/01,Head Office,Florists,Tomas Venmark,0,399446
+2021/07/01,Head Office,Furniture,Chen Brandmoor,2,885388
+2021/07/01,Head Office,Pharmacies,Omar Quillon,1,418918
+2021/07/01,Head Office,Office supplies,Ingrid Askerby,0,536456
+2021/07/01,Falham,Florists,Linda Quillon,0,128129
+2021/07/01,Falham,Furniture,Daniel Okafor,0,279962
+2021/07/01,Falham,Pharmacies,Daniel Okafor,0,147516
+2021/07/01,Falham,Office supplies,Chen Brandmoor,0,204411
+2021/07/01,Garholm,Florists,Daniel Okafor,0,310643
+2021/07/01,Garholm,Furniture,Omar Quillon,0,689043
+2021/07/01,Garholm,Pharmacies,Tomas Venmark,0,370500
+2021/07/01,Garholm,Office supplies,Linda Quillon,1,441787
+2021/07/01,All,Florists,Tomas Venmark,0,1413846
+2021/07/01,All,Furniture,Chen Brandmoor,3,3098050
+2021/07/01,All,Pharmacies,Linda Quillon,1,1576550
+2021/07/01,All,Office supplies,Priya Nakamura,2,2017699
+2021/07/01,Rest of country,Florists,Ingrid Askerby,0,464293
+2021/07/01,Rest of country,Furniture,Omar Strand,0,999198
+2021/07/01,Rest of country,Pharmacies,Tomas Venmark,0,512599
+2021/07/01,Rest of country,Office supplies,Omar Strand,1,659794
+2021/07/01,Belmoor,Florists,Linda Quillon,0,111337
+2021/07/01,Belmoor,Furniture,Tomas Venmark,1,244458
+2021/07/01,Belmoor,Pharmacies,Omar Quillon,0,127017
+2021/07/01,Belmoor,Office supplies,Priya Nakamura,0,175250
+2021/10/01,Head Office,Florists,Linda Quillon,0,441519
+2021/10/01,Head Office,Furniture,Priya Nakamura,1,921999
+2021/10/01,Head Office,Pharmacies,Daniel Okafor,0,491860
+2021/10/01,Head Office,Office supplies,Chen Brandmoor,2,660240
+2021/10/01,Falham,Florists,Daniel Okafor,0,160412
+2021/10/01,Falham,Furniture,Priya Nakamura,0,323184
+2021/10/01,Falham,Pharmacies,Omar Quillon,0,176024
+2021/10/01,Falham,Office supplies,Linda Quillon,0,235721
+2021/10/01,Garholm,Florists,Priya Nakamura,1,381165
+2021/10/01,Garholm,Furniture,Omar Strand,0,838894
+2021/10/01,Garholm,Pharmacies,Chen Brandmoor,1,400775
+2021/10/01,Garholm,Office supplies,Omar Quillon,0,567085
+2021/10/01,All,Florists,Omar Quillon,2,1682997
+2021/10/01,All,Furniture,Ingrid Askerby,2,3633699
+2021/10/01,All,Pharmacies,Daniel Okafor,1,1824885
+2021/10/01,All,Office supplies,Priya Askerby,2,2467914
+2021/10/01,Rest of country,Florists,Omar Quillon,0,567494
+2021/10/01,Rest of country,Furniture,Tomas Venmark,1,1265694
+2021/10/01,Rest of country,Pharmacies,Priya Askerby,0,599457
+2021/10/01,Rest of country,Office supplies,Daniel Okafor,0,806531
+2021/10/01,Belmoor,Florists,Ingrid Askerby,1,132407
+2021/10/01,Belmoor,Furniture,Priya Nakamura,0,283928
+2021/10/01,Belmoor,Pharmacies,Omar Quillon,0,156769
+2021/10/01,Belmoor,Office supplies,Omar Strand,0,198337
+2022/01/01,Head Office,Florists,Priya Nakamura,0,458568
+2022/01/01,Head Office,Furniture,Ingrid Askerby,0,945936
+2022/01/01,Head Office,Pharmacies,Chen Brandmoor,1,512166
+2022/01/01,Head Office,Office supplies,Chen Brandmoor,0,705758
+2022/01/01,Falham,Florists,Priya Askerby,0,168987
+2022/01/01,Falham,Furniture,Omar Quillon,0,325175
+2022/01/01,Falham,Pharmacies,Omar Strand,1,182320
+2022/01/01,Falham,Office supplies,Omar Strand,1,233003
+2022/01/01,Garholm,Florists,Priya Nakamura,0,388159
+2022/01/01,Garholm,Furniture,Omar Strand,0,854917
+2022/01/01,Garholm,Pharmacies,Linda Quillon,0,414349
+2022/01/01,Garholm,Office supplies,Tomas Venmark,1,566954
+2022/01/01,All,Florists,Priya Askerby,0,1728566
+2022/01/01,All,Furniture,Omar Strand,3,3661684
+2022/01/01,All,Pharmacies,Linda Quillon,2,1904888
+2022/01/01,All,Office supplies,Ingrid Askerby,2,2561979
+2022/01/01,Rest of country,Florists,Tomas Venmark,0,579467
+2022/01/01,Rest of country,Furniture,Omar Strand,2,1230188
+2022/01/01,Rest of country,Pharmacies,Ingrid Askerby,0,637278
+2022/01/01,Rest of country,Office supplies,Priya Nakamura,0,861631
+2022/01/01,Belmoor,Florists,Omar Strand,0,133386
+2022/01/01,Belmoor,Furniture,Priya Nakamura,1,305469
+2022/01/01,Belmoor,Pharmacies,Daniel Okafor,0,158775
+2022/01/01,Belmoor,Office supplies,Priya Askerby,0,194633
+2022/04/01,Head Office,Florists,Linda Quillon,1,421201
+2022/04/01,Head Office,Furniture,Ingrid Askerby,2,877413
+2022/04/01,Head Office,Pharmacies,Chen Brandmoor,1,449545
+2022/04/01,Head Office,Office supplies,Omar Strand,0,579875
+2022/04/01,Falham,Florists,Priya Askerby,0,136182
+2022/04/01,Falham,Furniture,Ingrid Askerby,0,307505
+2022/04/01,Falham,Pharmacies,Daniel Okafor,0,155480
+2022/04/01,Falham,Office supplies,Chen Brandmoor,0,218227
+2022/04/01,Garholm,Florists,Omar Quillon,0,320810
+2022/04/01,Garholm,Furniture,Chen Brandmoor,1,737917
+2022/04/01,Garholm,Pharmacies,Priya Nakamura,1,373540
+2022/04/01,Garholm,Office supplies,Priya Askerby,0,504763
+2022/04/01,All,Florists,Omar Strand,3,1487777
+2022/04/01,All,Furniture,Tomas Venmark,6,3264112
+2022/04/01,All,Pharmacies,Omar Quillon,3,1646455
+2022/04/01,All,Office supplies,Ingrid Askerby,0,2186998
+2022/04/01,Rest of country,Florists,Linda Quillon,2,492324
+2022/04/01,Rest of country,Furniture,Chen Brandmoor,3,1090478
+2022/04/01,Rest of country,Pharmacies,Tomas Venmark,1,531000
+2022/04/01,Rest of country,Office supplies,Priya Askerby,0,707560
+2022/04/01,Belmoor,Florists,Omar Strand,0,117260
+2022/04/01,Belmoor,Furniture,Omar Quillon,0,250798
+2022/04/01,Belmoor,Pharmacies,Tomas Venmark,0,136890
+2022/04/01,Belmoor,Office supplies,Priya Nakamura,0,176574
+2022/07/01,Head Office,Florists,Ingrid Askerby,0,414685
+2022/07/01,Head Office,Furniture,Priya Nakamura,0,844139
+2022/07/01,Head Office,Pharmacies,Daniel Okafor,0,429659
+2022/07/01,Head Office,Office supplies,Linda Quillon,1,570306
+2022/07/01,Falham,Florists,Tomas Venmark,0,135689
+2022/07/01,Falham,Furniture,Daniel Okafor,1,287154
+2022/07/01,Falham,Pharmacies,Daniel Okafor,0,151704
+2022/07/01,Falham,Office supplies,Linda Quillon,0,200922
+2022/07/01,Garholm,Florists,Priya Askerby,1,324272
+2022/07/01,Garholm,Furniture,Omar Quillon,1,692155
+2022/07/01,Garholm,Pharmacies,Priya Nakamura,0,356689
+2022/07/01,Garholm,Office supplies,Linda Quillon,0,470506
+2022/07/01,All,Florists,Tomas Venmark,1,1479907
+2022/07/01,All,Furniture,Omar Quillon,4,3121787
+2022/07/01,All,Pharmacies,Daniel Okafor,0,1582242
+2022/07/01,All,Office supplies,Daniel Okafor,1,2115935
+2022/07/01,Rest of country,Florists,Chen Brandmoor,0,480855
+2022/07/01,Rest of country,Furniture,Priya Askerby,2,1054844
+2022/07/01,Rest of country,Pharmacies,Omar Strand,0,515334
+2022/07/01,Rest of country,Office supplies,Daniel Okafor,0,706412
+2022/07/01,Belmoor,Florists,Daniel Okafor,0,124407
+2022/07/01,Belmoor,Furniture,Priya Nakamura,0,243495
+2022/07/01,Belmoor,Pharmacies,Chen Brandmoor,0,128857
+2022/07/01,Belmoor,Office supplies,Omar Strand,0,167789
+2022/10/01,Head Office,Florists,Tomas Venmark,1,474213
+2022/10/01,Head Office,Furniture,Linda Quillon,0,954290
+2022/10/01,Head Office,Pharmacies,Priya Nakamura,1,505299
+2022/10/01,Head Office,Office supplies,Omar Quillon,1,693122
+2022/10/01,Falham,Florists,Ingrid Askerby,1,161987
+2022/10/01,Falham,Furniture,Chen Brandmoor,1,340393
+2022/10/01,Falham,Pharmacies,Chen Brandmoor,0,182247
+2022/10/01,Falham,Office supplies,Omar Strand,0,248832
+2022/10/01,Garholm,Florists,Chen Brandmoor,0,384790
+2022/10/01,Garholm,Furniture,Daniel Okafor,1,850182
+2022/10/01,Garholm,Pharmacies,Daniel Okafor,0,426488
+2022/10/01,Garholm,Office supplies,Omar Strand,1,588964
+2022/10/01,All,Florists,Priya Nakamura,5,1762593
+2022/10/01,All,Furniture,Daniel Okafor,3,3688371
+2022/10/01,All,Pharmacies,Omar Quillon,1,1911414
+2022/10/01,All,Office supplies,Tomas Venmark,2,2587164
+2022/10/01,Rest of country,Florists,Omar Quillon,3,594491
+2022/10/01,Rest of country,Furniture,Omar Quillon,1,1236792
+2022/10/01,Rest of country,Pharmacies,Priya Nakamura,0,640793
+2022/10/01,Rest of country,Office supplies,Omar Strand,0,852492
+2022/10/01,Belmoor,Florists,Omar Quillon,0,147112
+2022/10/01,Belmoor,Furniture,Omar Quillon,0,306716
+2022/10/01,Belmoor,Pharmacies,Omar Quillon,0,156587
+2022/10/01,Belmoor,Office supplies,Tomas Venmark,0,203755
+2023/01/01,Head Office,Florists,Priya Askerby,0,459061
+2023/01/01,Head Office,Furniture,Priya Askerby,1,942030
+2023/01/01,Head Office,Pharmacies,Omar Quillon,0,535449
+2023/01/01,Head Office,Office supplies,Omar Quillon,0,692300
+2023/01/01,Falham,Florists,Chen Brandmoor,0,169903
+2023/01/01,Falham,Furniture,Ingrid Askerby,1,336275
+2023/01/01,Falham,Pharmacies,Omar Strand,0,191924
+2023/01/01,Falham,Office supplies,Ingrid Askerby,0,240234
+2023/01/01,Garholm,Florists,Omar Quillon,0,402239
+2023/01/01,Garholm,Furniture,Daniel Okafor,0,848248
+2023/01/01,Garholm,Pharmacies,Omar Strand,1,426855
+2023/01/01,Garholm,Office supplies,Priya Askerby,3,613263
+2023/01/01,All,Florists,Tomas Venmark,0,1772148
+2023/01/01,All,Furniture,Omar Strand,5,3751601
+2023/01/01,All,Pharmacies,Ingrid Askerby,1,1945716
+2023/01/01,All,Office supplies,Priya Askerby,3,2602759
+2023/01/01,Rest of country,Florists,Daniel Okafor,0,601888
+2023/01/01,Rest of country,Furniture,Daniel Okafor,2,1316731
+2023/01/01,Rest of country,Pharmacies,Tomas Venmark,0,633003
+2023/01/01,Rest of country,Office supplies,Daniel Okafor,0,853342
+2023/01/01,Belmoor,Florists,Linda Quillon,0,139056
+2023/01/01,Belmoor,Furniture,Priya Nakamura,1,308317
+2023/01/01,Belmoor,Pharmacies,Tomas Venmark,0,158484
+2023/01/01,Belmoor,Office supplies,Linda Quillon,0,203619
+2023/04/01,Head Office,Florists,Priya Nakamura,0,434526
+2023/04/01,Head Office,Furniture,Omar Quillon,0,920616
+2023/04/01,Head Office,Pharmacies,Omar Quillon,1,439275
+2023/04/01,Head Office,Office supplies,Priya Nakamura,0,617818
+2023/04/01,Falham,Florists,Linda Quillon,0,140017
+2023/04/01,Falham,Furniture,Daniel Okafor,0,310717
+2023/04/01,Falham,Pharmacies,Ingrid Askerby,0,161821
+2023/04/01,Falham,Office supplies,Priya Nakamura,1,219195
+2023/04/01,Garholm,Florists,Ingrid Askerby,0,337403
+2023/04/01,Garholm,Furniture,Omar Quillon,0,763523
+2023/04/01,Garholm,Pharmacies,Priya Askerby,0,378567
+2023/04/01,Garholm,Office supplies,Chen Brandmoor,0,505730
+2023/04/01,All,Florists,Chen Brandmoor,0,1551389
+2023/04/01,All,Furniture,Ingrid Askerby,0,3307426
+2023/04/01,All,Pharmacies,Ingrid Askerby,3,1691212
+2023/04/01,All,Office supplies,Ingrid Askerby,2,2273435
+2023/04/01,Rest of country,Florists,Tomas Venmark,0,509207
+2023/04/01,Rest of country,Furniture,Priya Askerby,0,1038867
+2023/04/01,Rest of country,Pharmacies,Chen Brandmoor,2,571699
+2023/04/01,Rest of country,Office supplies,Ingrid Askerby,1,754805
+2023/04/01,Belmoor,Florists,Chen Brandmoor,0,130236
+2023/04/01,Belmoor,Furniture,Chen Brandmoor,0,273703
+2023/04/01,Belmoor,Pharmacies,Omar Quillon,0,139849
+2023/04/01,Belmoor,Office supplies,Omar Strand,0,175887
+2023/07/01,Head Office,Florists,Priya Nakamura,1,408261
+2023/07/01,Head Office,Furniture,Ingrid Askerby,2,864634
+2023/07/01,Head Office,Pharmacies,Ingrid Askerby,1,438143
+2023/07/01,Head Office,Office supplies,Chen Brandmoor,1,618415
+2023/07/01,Falham,Florists,Priya Askerby,0,138548
+2023/07/01,Falham,Furniture,Ingrid Askerby,0,293976
+2023/07/01,Falham,Pharmacies,Priya Askerby,0,156068
+2023/07/01,Falham,Office supplies,Ingrid Askerby,0,208207
+2023/07/01,Garholm,Florists,Tomas Venmark,1,342731
+2023/07/01,Garholm,Furniture,Priya Nakamura,0,735039
+2023/07/01,Garholm,Pharmacies,Ingrid Askerby,1,364993
+2023/07/01,Garholm,Office supplies,Ingrid Askerby,0,497323
+2023/07/01,All,Florists,Daniel Okafor,3,1495326
+2023/07/01,All,Furniture,Daniel Okafor,5,3204945
+2023/07/01,All,Pharmacies,Priya Askerby,2,1623834
+2023/07/01,All,Office supplies,Tomas Venmark,4,2225138
+2023/07/01,Rest of country,Florists,Ingrid Askerby,0,481434
+2023/07/01,Rest of country,Furniture,Linda Quillon,3,1042307
+2023/07/01,Rest of country,Pharmacies,Priya Askerby,0,528008
+2023/07/01,Rest of country,Office supplies,Priya Askerby,3,730310
+2023/07/01,Belmoor,Florists,Tomas Venmark,1,124352
+2023/07/01,Belmoor,Furniture,Chen Brandmoor,0,268990
+2023/07/01,Belmoor,Pharmacies,Priya Askerby,0,136622
+2023/07/01,Belmoor,Office supplies,Ingrid Askerby,0,170882
+2023/10/01,Head Office,Florists,Ingrid Askerby,1,511552
+2023/10/01,Head Office,Furniture,Priya Askerby,0,1009576
+2023/10/01,Head Office,Pharmacies,Ingrid Askerby,1,541522
+2023/10/01,Head Office,Office supplies,Tomas Venmark,1,741317
+2023/10/01,Falham,Florists,Priya Askerby,0,171431
+2023/10/01,Falham,Furniture,Priya Nakamura,1,336167
+2023/10/01,Falham,Pharmacies,Ingrid Askerby,0,193650
+2023/10/01,Falham,Office supplies,Daniel Okafor,0,247265
+2023/10/01,Garholm,Florists,Chen Brandmoor,0,417106
+2023/10/01,Garholm,Furniture,Daniel Okafor,2,917026
+2023/10/01,Garholm,Pharmacies,Linda Quillon,1,425423
+2023/10/01,Garholm,Office supplies,Priya Askerby,0,637934
+2023/10/01,All,Florists,Ingrid Askerby,2,1866421
+2023/10/01,All,Furniture,Omar Strand,4,3815734
+2023/10/01,All,Pharmacies,Omar Strand,2,1983657
+2023/10/01,All,Office supplies,Priya Askerby,1,2715892
+2023/10/01,Rest of country,Florists,Chen Brandmoor,1,615660
+2023/10/01,Rest of country,Furniture,Omar Quillon,1,1241418
+2023/10/01,Rest of country,Pharmacies,Priya Askerby,0,652537
+2023/10/01,Rest of country,Office supplies,Chen Brandmoor,0,887524
+2023/10/01,Belmoor,Florists,Linda Quillon,0,150672
+2023/10/01,Belmoor,Furniture,Omar Quillon,0,311546
+2023/10/01,Belmoor,Pharmacies,Linda Quillon,0,170526
+2023/10/01,Belmoor,Office supplies,Priya Askerby,0,201853
+2024/01/01,Head Office,Florists,Ingrid Askerby,0,477726
+2024/01/01,Head Office,Furniture,Chen Brandmoor,3,1015154
+2024/01/01,Head Office,Pharmacies,Chen Brandmoor,0,531920
+2024/01/01,Head Office,Office supplies,Omar Quillon,0,734679
+2024/01/01,Falham,Florists,Omar Strand,1,168191
+2024/01/01,Falham,Furniture,Ingrid Askerby,3,345541
+2024/01/01,Falham,Pharmacies,Ingrid Askerby,0,192967
+2024/01/01,Falham,Office supplies,Daniel Okafor,0,242387
+2024/01/01,Garholm,Florists,Priya Nakamura,0,406554
+2024/01/01,Garholm,Furniture,Ingrid Askerby,0,924579
+2024/01/01,Garholm,Pharmacies,Priya Nakamura,0,430004
+2024/01/01,Garholm,Office supplies,Ingrid Askerby,1,640778
+2024/01/01,All,Florists,Priya Askerby,3,1795216
+2024/01/01,All,Furniture,Chen Brandmoor,7,3948041
+2024/01/01,All,Pharmacies,Omar Quillon,0,1993286
+2024/01/01,All,Office supplies,Omar Quillon,1,2747081
+2024/01/01,Rest of country,Florists,Chen Brandmoor,2,597399
+2024/01/01,Rest of country,Furniture,Priya Askerby,1,1334724
+2024/01/01,Rest of country,Pharmacies,Tomas Venmark,0,661055
+2024/01/01,Rest of country,Office supplies,Chen Brandmoor,0,923114
+2024/01/01,Belmoor,Florists,Omar Quillon,0,145346
+2024/01/01,Belmoor,Furniture,Daniel Okafor,0,328043
+2024/01/01,Belmoor,Pharmacies,Omar Quillon,0,177339
+2024/01/01,Belmoor,Office supplies,Daniel Okafor,0,206123
+2024/04/01,Head Office,Florists,Chen Brandmoor,1,420590
+2024/04/01,Head Office,Furniture,Priya Nakamura,0,935124
+2024/04/01,Head Office,Pharmacies,Linda Quillon,0,472978
+2024/04/01,Head Office,Office supplies,Ingrid Askerby,0,628531
+2024/04/01,Falham,Florists,Priya Askerby,1,146027
+2024/04/01,Falham,Furniture,Tomas Venmark,0,324361
+2024/04/01,Falham,Pharmacies,Daniel Okafor,1,167405
+2024/04/01,Falham,Office supplies,Tomas Venmark,0,223316
+2024/04/01,Garholm,Florists,Ingrid Askerby,0,362664
+2024/04/01,Garholm,Furniture,Priya Askerby,0,757251
+2024/04/01,Garholm,Pharmacies,Ingrid Askerby,1,383069
+2024/04/01,Garholm,Office supplies,Priya Nakamura,0,520880
+2024/04/01,All,Florists,Daniel Okafor,3,1600076
+2024/04/01,All,Furniture,Omar Quillon,2,3400712
+2024/04/01,All,Pharmacies,Ingrid Askerby,2,1748775
+2024/04/01,All,Office supplies,Daniel Okafor,1,2317214
+2024/04/01,Rest of country,Florists,Omar Strand,1,543462
+2024/04/01,Rest of country,Furniture,Tomas Venmark,2,1100156
+2024/04/01,Rest of country,Pharmacies,Linda Quillon,0,580202
+2024/04/01,Rest of country,Office supplies,Omar Strand,0,757996
+2024/04/01,Belmoor,Florists,Daniel Okafor,0,127334
+2024/04/01,Belmoor,Furniture,Tomas Venmark,0,283820
+2024/04/01,Belmoor,Pharmacies,Daniel Okafor,0,145120
+2024/04/01,Belmoor,Office supplies,Daniel Okafor,1,186492
+2024/07/01,Head Office,Florists,Ingrid Askerby,2,435806
+2024/07/01,Head Office,Furniture,Priya Nakamura,0,880583
+2024/07/01,Head Office,Pharmacies,Daniel Okafor,1,460413
+2024/07/01,Head Office,Office supplies,Omar Strand,1,611392
+2024/07/01,Falham,Florists,Daniel Okafor,0,143821
+2024/07/01,Falham,Furniture,Daniel Okafor,0,309112
+2024/07/01,Falham,Pharmacies,Ingrid Askerby,0,155314
+2024/07/01,Falham,Office supplies,Chen Brandmoor,0,210093
+2024/07/01,Garholm,Florists,Daniel Okafor,3,340161
+2024/07/01,Garholm,Furniture,Linda Quillon,0,729583
+2024/07/01,Garholm,Pharmacies,Ingrid Askerby,0,365296
+2024/07/01,Garholm,Office supplies,Tomas Venmark,0,528889
+2024/07/01,All,Florists,Priya Nakamura,6,1561952
+2024/07/01,All,Furniture,Priya Askerby,0,3283732
+2024/07/01,All,Pharmacies,Chen Brandmoor,2,1669472
+2024/07/01,All,Office supplies,Tomas Venmark,4,2277915
+2024/07/01,Rest of country,Florists,Chen Brandmoor,1,513023
+2024/07/01,Rest of country,Furniture,Ingrid Askerby,0,1096071
+2024/07/01,Rest of country,Pharmacies,Linda Quillon,0,548548
+2024/07/01,Rest of country,Office supplies,Omar Strand,3,747470
+2024/07/01,Belmoor,Florists,Linda Quillon,0,129143
+2024/07/01,Belmoor,Furniture,Linda Quillon,0,268382
+2024/07/01,Belmoor,Pharmacies,Daniel Okafor,1,139901
+2024/07/01,Belmoor,Office supplies,Chen Brandmoor,0,180072
+2024/10/01,Head Office,Florists,Ingrid Askerby,1,499577
+2024/10/01,Head Office,Furniture,Priya Askerby,0,977289
+2024/10/01,Head Office,Pharmacies,Omar Quillon,0,554757
+2024/10/01,Head Office,Office supplies,Priya Nakamura,1,746987
+2024/10/01,Falham,Florists,Linda Quillon,0,173494
+2024/10/01,Falham,Furniture,Omar Strand,0,352125
+2024/10/01,Falham,Pharmacies,Omar Quillon,0,196498
+2024/10/01,Falham,Office supplies,Priya Nakamura,1,265739
+2024/10/01,Garholm,Florists,Ingrid Askerby,0,413571
+2024/10/01,Garholm,Furniture,Priya Askerby,1,913613
+2024/10/01,Garholm,Pharmacies,Linda Quillon,1,440047
+2024/10/01,Garholm,Office supplies,Ingrid Askerby,1,642908
+2024/10/01,All,Florists,Linda Quillon,1,1864347
+2024/10/01,All,Furniture,Daniel Okafor,3,3956606
+2024/10/01,All,Pharmacies,Tomas Venmark,1,2054975
+2024/10/01,All,Office supplies,Chen Brandmoor,4,2799224
+2024/10/01,Rest of country,Florists,Linda Quillon,0,619850
+2024/10/01,Rest of country,Furniture,Ingrid Askerby,2,1380890
+2024/10/01,Rest of country,Pharmacies,Tomas Venmark,0,690789
+2024/10/01,Rest of country,Office supplies,Priya Askerby,1,930787
+2024/10/01,Belmoor,Florists,Priya Nakamura,0,157856
+2024/10/01,Belmoor,Furniture,Chen Brandmoor,0,332689
+2024/10/01,Belmoor,Pharmacies,Daniel Okafor,0,172885
+2024/10/01,Belmoor,Office supplies,Ingrid Askerby,0,212804
+2025/01/01,Head Office,Florists,Omar Strand,0,515941
+2025/01/01,Head Office,Furniture,Priya Nakamura,0,993954
+2025/01/01,Head Office,Pharmacies,Priya Askerby,0,548303
+2025/01/01,Head Office,Office supplies,Priya Askerby,2,773054
+2025/01/01,Falham,Florists,Linda Quillon,0,181335
+2025/01/01,Falham,Furniture,Ingrid Askerby,0,348287
+2025/01/01,Falham,Pharmacies,Chen Brandmoor,0,200595
+2025/01/01,Falham,Office supplies,Omar Strand,0,267589
+2025/01/01,Garholm,Florists,Linda Quillon,0,417703
+2025/01/01,Garholm,Furniture,Daniel Okafor,0,952319
+2025/01/01,Garholm,Pharmacies,Priya Nakamura,0,451685
+2025/01/01,Garholm,Office supplies,Tomas Venmark,0,670270
+2025/01/01,All,Florists,Daniel Okafor,1,1920719
+2025/01/01,All,Furniture,Priya Nakamura,3,3996224
+2025/01/01,All,Pharmacies,Chen Brandmoor,0,2060433
+2025/01/01,All,Office supplies,Omar Quillon,3,2885991
+2025/01/01,Rest of country,Florists,Priya Nakamura,1,654742
+2025/01/01,Rest of country,Furniture,Priya Nakamura,3,1383988
+2025/01/01,Rest of country,Pharmacies,Linda Quillon,0,690439
+2025/01/01,Rest of country,Office supplies,Daniel Okafor,1,958227
+2025/01/01,Belmoor,Florists,Omar Quillon,0,150998
+2025/01/01,Belmoor,Furniture,Ingrid Askerby,0,317674
+2025/01/01,Belmoor,Pharmacies,Omar Quillon,0,169411
+2025/01/01,Belmoor,Office supplies,Omar Strand,0,216851
+2025/04/01,Head Office,Florists,Chen Brandmoor,2,453289
+2025/04/01,Head Office,Furniture,Omar Quillon,1,958041
+2025/04/01,Head Office,Pharmacies,Priya Askerby,0,472561
+2025/04/01,Head Office,Office supplies,Ingrid Askerby,0,663220
+2025/04/01,Falham,Florists,Tomas Venmark,0,147230
+2025/04/01,Falham,Furniture,Ingrid Askerby,1,341923
+2025/04/01,Falham,Pharmacies,Omar Strand,0,173038
+2025/04/01,Falham,Office supplies,Daniel Okafor,1,239710
+2025/04/01,Garholm,Florists,Chen Brandmoor,0,368332
+2025/04/01,Garholm,Furniture,Omar Quillon,3,820214
+2025/04/01,Garholm,Pharmacies,Tomas Venmark,0,405558
+2025/04/01,Garholm,Office supplies,Linda Quillon,1,544714
+2025/04/01,All,Florists,Tomas Venmark,3,1663245
+2025/04/01,All,Furniture,Priya Askerby,9,3553879
+2025/04/01,All,Pharmacies,Linda Quillon,0,1771769
+2025/04/01,All,Office supplies,Linda Quillon,4,2460115
+2025/04/01,Rest of country,Florists,Tomas Venmark,1,557534
+2025/04/01,Rest of country,Furniture,Ingrid Askerby,3,1140558
+2025/04/01,Rest of country,Pharmacies,Omar Strand,0,568645
+2025/04/01,Rest of country,Office supplies,Omar Strand,1,821317
+2025/04/01,Belmoor,Florists,Omar Quillon,0,136859
+2025/04/01,Belmoor,Furniture,Linda Quillon,1,293143
+2025/04/01,Belmoor,Pharmacies,Daniel Okafor,0,151967
+2025/04/01,Belmoor,Office supplies,Priya Nakamura,1,191154
+2025/07/01,Head Office,Florists,Daniel Okafor,2,433300
+2025/07/01,Head Office,Furniture,Daniel Okafor,0,961808
+2025/07/01,Head Office,Pharmacies,Omar Quillon,1,502240
+2025/07/01,Head Office,Office supplies,Priya Askerby,0,645817
+2025/07/01,Falham,Florists,Ingrid Askerby,0,147491
+2025/07/01,Falham,Furniture,Priya Nakamura,0,318378
+2025/07/01,Falham,Pharmacies,Ingrid Askerby,1,168278
+2025/07/01,Falham,Office supplies,Omar Strand,0,223061
+2025/07/01,Garholm,Florists,Daniel Okafor,0,368782
+2025/07/01,Garholm,Furniture,Omar Strand,0,822033
+2025/07/01,Garholm,Pharmacies,Tomas Venmark,0,387813
+2025/07/01,Garholm,Office supplies,Tomas Venmark,0,533515
+2025/07/01,All,Florists,Priya Askerby,2,1634523
+2025/07/01,All,Furniture,Daniel Okafor,4,3517018
+2025/07/01,All,Pharmacies,Omar Strand,2,1739412
+2025/07/01,All,Office supplies,Priya Askerby,1,2356766
+2025/07/01,Rest of country,Florists,Ingrid Askerby,0,553184
+2025/07/01,Rest of country,Furniture,Priya Nakamura,3,1125960
+2025/07/01,Rest of country,Pharmacies,Chen Brandmoor,0,537905
+2025/07/01,Rest of country,Office supplies,Priya Askerby,1,774603
+2025/07/01,Belmoor,Florists,Omar Quillon,0,131767
+2025/07/01,Belmoor,Furniture,Tomas Venmark,1,288838
+2025/07/01,Belmoor,Pharmacies,Priya Askerby,0,143175
+2025/07/01,Belmoor,Office supplies,Priya Askerby,0,179770
+2025/10/01,Head Office,Florists,Chen Brandmoor,2,519134
+2025/10/01,Head Office,Furniture,Priya Askerby,1,1058216
+2025/10/01,Head Office,Pharmacies,Daniel Okafor,0,576896
+2025/10/01,Head Office,Office supplies,Priya Askerby,1,761397
+2025/10/01,Falham,Florists,Priya Nakamura,0,183337
+2025/10/01,Falham,Furniture,Priya Askerby,1,364297
+2025/10/01,Falham,Pharmacies,Chen Brandmoor,0,197547
+2025/10/01,Falham,Office supplies,Priya Nakamura,2,254112
+2025/10/01,Garholm,Florists,Omar Strand,0,434364
+2025/10/01,Garholm,Furniture,Chen Brandmoor,0,951595
+2025/10/01,Garholm,Pharmacies,Ingrid Askerby,1,452596
+2025/10/01,Garholm,Office supplies,Linda Quillon,0,643396
+2025/10/01,All,Florists,Daniel Okafor,2,1935126
+2025/10/01,All,Furniture,Omar Quillon,2,4062225
+2025/10/01,All,Pharmacies,Priya Askerby,1,2097926
+2025/10/01,All,Office supplies,Priya Nakamura,3,2821092
+2025/10/01,Rest of country,Florists,Priya Nakamura,0,642475
+2025/10/01,Rest of country,Furniture,Ingrid Askerby,0,1358135
+2025/10/01,Rest of country,Pharmacies,Priya Askerby,0,691676
+2025/10/01,Rest of country,Office supplies,Omar Strand,0,948824
+2025/10/01,Belmoor,Florists,Priya Nakamura,0,155816
+2025/10/01,Belmoor,Furniture,Daniel Okafor,0,329982
+2025/10/01,Belmoor,Pharmacies,Tomas Venmark,0,179211
+2025/10/01,Belmoor,Office supplies,Tomas Venmark,0,213362
+2026/01/01,Head Office,Florists,Omar Strand,0,530706
+2026/01/01,Head Office,Furniture,Omar Quillon,0,1071405
+2026/01/01,Head Office,Pharmacies,Linda Quillon,0,602762
+2026/01/01,Head Office,Office supplies,Daniel Okafor,0,807065
+2026/01/01,Falham,Florists,Priya Nakamura,0,187795
+2026/01/01,Falham,Furniture,Chen Brandmoor,0,366129
+2026/01/01,Falham,Pharmacies,Priya Askerby,0,209076
+2026/01/01,Falham,Office supplies,Daniel Okafor,0,266302
+2026/01/01,Garholm,Florists,Chen Brandmoor,1,441061
+2026/01/01,Garholm,Furniture,Omar Strand,0,979443
+2026/01/01,Garholm,Pharmacies,Chen Brandmoor,1,473993
+2026/01/01,Garholm,Office supplies,Omar Quillon,2,634740
+2026/01/01,All,Florists,Chen Brandmoor,2,2001658
+2026/01/01,All,Furniture,Omar Quillon,3,4146617
+2026/01/01,All,Pharmacies,Priya Nakamura,2,2180554
+2026/01/01,All,Office supplies,Chen Brandmoor,4,2883161
+2026/01/01,Rest of country,Florists,Priya Nakamura,1,680724
+2026/01/01,Rest of country,Furniture,Priya Nakamura,3,1401680
+2026/01/01,Rest of country,Pharmacies,Ingrid Askerby,1,718996
+2026/01/01,Rest of country,Office supplies,Omar Strand,2,953708
+2026/01/01,Belmoor,Florists,Priya Askerby,0,161372
+2026/01/01,Belmoor,Furniture,Chen Brandmoor,0,327961
+2026/01/01,Belmoor,Pharmacies,Tomas Venmark,0,175728
+2026/01/01,Belmoor,Office supplies,Tomas Venmark,0,221347

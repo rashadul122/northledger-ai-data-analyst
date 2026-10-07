@@ -1145,7 +1145,7 @@ is the mean of the months it has, so its windows stay whole.
 
 *Usable, and the slices.* A table with a relation (partition, hierarchy, adjustment, components, rate_aggregate) is read
 by its structure (`usable`); a panel with no relation and at most 60 series is `"panel_no_relations"` and read side by
-side by the long-table layout as before (the FX files); past 60 series it is read one member at a time. S1, the headline:
+side by the long-table layout as before (the FX files), and, where the layout does not apply, one member at a time (wave 5g, A: `read_one_member_panel`); past 60 series it is read one member at a time. S1, the headline:
 the root of each partition or hierarchy, the unadjusted copy, a measure dimension's total-named (else currency, else
 first) member, the components' parent, the rate's aggregate, rule 7's single member; a flat-additive dimension "*" (added
 up). S2 momentum: S1 with the adjusted copy. Then components, alternatives and other measures (S3...; at most 12).
@@ -1892,6 +1892,33 @@ publisher or generator feature is in any rule.
   either way round (03/04/2019) is settled by another row of the column (a first or second field above 12), else the file is refused with a plain reason. Not done: the top-3 contributors that list a
   combined member, an alternative total or a sub-region beside its parts (no headline is wrong); two valuations of one quantity (real and nominal, at basic and at market prices) in a weekly or daily
   business LEDGER are added (a ledger is added as it always was; fuzz v2 seeds 47 and 74).
+
+**13. Hardening on the lead's held-out range (wave 5g, 7 October 2026; `plan/WAVE4-A-DESIGN.md` "Wave 5g"; the W5F build printed 13 confident wrong figures in 300 unseen fuzz v2 tables).** Six ROOT principles
+(`tools/test_nl_regress.py` g01-g08, red on the W5F build; THRESHOLD LEDGER (wave 5g) in the design doc). No seed, column name, publisher or generator feature is in any rule. Where the brief's diagnosis was wrong, the design
+doc says so.
+
+- *A, the old path never averages the members of a table of series.* The layer's `panel_no_relations` (an official table whose members stand in no relation, at most 60 series) was left to the adapter's long-table
+  layout, which reads the date and value columns by NAME and only tables whose active series run three years. Where the layout does not apply (`layout` is None: a German or Spanish header, a weekly or daily table of two
+  years), the hook calls `nl_structure.read_one_member_panel(S)`: the panel becomes a usable cube read ONE MEMBER AT A TIME (`structure.kind "cube"`, dimension role `single`, estimand text "one member shown: X; this table has no
+  total member, so this is not the table's total", headline "(one member shown, not the table's total)"), exactly as a table of more than 60 series was. A table that looks like a table of series
+  (`looks_like_series_table`) and cannot be read so is refused: `structure {kind "error", reason "...stand in no relation to one another and could not be set side by side...", error.stage "panel"}` (`_panel_failure`).
+  With an AI plan whose own columns give no layout the same refusal applies. The English twin of a table the layout reads (three years of active series) is read by the layout as before.
+- *B, a dimension of bases is never added.* `_BASIS_NAME` (header, or two member names: prices, nominal, real, current, constant, chained, adjusted ... in four languages) NOMINATES a dimension of at most `BASIS_MAX_MEMBERS` = 6
+  members of a LEDGER; `_copies_by_shape` decides, for monthly, quarterly, weekly and daily tables (`_copy_seasons`: the dates a year holds). Copies by shape, or a nominated dimension a short table cannot show not to be copies,
+  are read one member at a time: dimension role `single` with `copies` / `copies_why`, estimand `single_member.statement` "one member shown: X; X and Y move together under a steady ratio: one quantity on two bases, so they are never
+  added", `single_member.copies true`, headline "(one member shown, not the sum of the bases)". The table is sliced (`_usable`). `_round_unit` widens a sum-check's tolerance to the unit a series' figures were rounded to
+  (the largest power of ten dividing at least 12 non-zero whole figures), so a total rounded to the thousand and written in full is verified.
+- *C, a set of measures needs positive evidence.* `_is_measure_dim` counts only the members whose own words or unit settle a kind (`_UNWORDED_TYPES` = count, unknown add nothing): the parts of a population (Employed,
+  Unemployed, Not in labour force, Other, Not stated) are not five measures.
+- *D, a total is verified on the amounts.* `ledger_tidy` checks a nominated total on the number columns the core will sum: `_identifier_column` leaves out whole numbers of one width of nine or more digits and what the core's
+  `measure._label_number` / `_id_like` read as a key; `_total_columns` / `_total_verdict` are the checks and the verdict (`_check_total` keeps its signature).
+- *E, an averaged level is worded as an average.* A measure with `type_basis` "ambiguous: averaged" and a mean aggregation: headline "<measure>, <member>, 12 months to Sep 2025: +2.6% (average level $3.0K)" with no "published
+  totals" (an evidence tail such as "(the table has no total row)" stays); `scenarios.items[headline.prior|latest].label` "..., the 12 months before, average month (2023-10 to 2024-09)"; the page's first-screen line and
+  tile say "published figures (average level A to B)". A flow, a rate and an index keep their words. The worker's fallback title (report.js engineTitle) mirrors the headline and must switch on
+  `estimand.measure.type_basis` / `aggregation`.
+- *F, fewer needless refusals, only where safe.* The documented value column is released when the header holds a publisher's signature OR three of the metadata columns only a statistical publisher uses
+  (`_release_value_column`); a coded category column is released up to 20% of its rows (`RELEASE_MAX_SHARE_CODED`); an id column (vector, coordinate) is not counted among the "other dimensions" that make a coded dimension
+  redundant. NOT changed: the real parts of a flow in a dimension that is not a set of places and has no total row are still not added (one member shown); the sensitive-category columns are still withheld by default.
 
 Retail (StatCan 20-10-0008), the FX file and the Amazon reviews file are unchanged in every figure and scenario id; the only blocks that differ are listed in the design doc's "Measured (wave 5f)".
 

@@ -10769,6 +10769,19 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 import pandas as _pd
                 cols = list(_pd.read_csv(io.BytesIO(data), dtype=str, nrows=0, encoding="utf-8-sig").columns)
                 S_use = S_pre if (S_pre is not None and S_pre.get("usable")) else None
+                if S_use is None and S_pre is not None and S_pre.get("kind") == "panel_no_relations" and S_pre.get("official"):
+                    # wave 5g (A): the layer left this official panel to the long-table layout. If the layout can be made from the date and measure
+                    # columns the LAYER found (so, in any language), the plan's own reshape may make it; if it cannot, the panel is read one member
+                    # at a time, as without a plan
+                    lay_p = None
+                    if any(isinstance(o, dict) and o.get("op") == "long_to_wide" for o in raw_plan.get("operations") or []):
+                        try:
+                            _nb_p, lay_p = _reshape_long_panel(data, planned=True, date_col=(S_pre.get("date") or {}).get("column"),
+                                                               value_col=(S_pre.get("measure") or {}).get("column"))
+                        except Exception:  # noqa: BLE001 - no layout then
+                            lay_p = None
+                    if lay_p is None and _ns().read_one_member_panel(S_pre):
+                        S_use = S_pre
                 ai_plan, plan_refused = _validate_plan(raw_plan, cols, S_use)
                 if S_use is not None:
                     # a table read by its structure: the plan's rows are checked against it (check_rows) and the slice

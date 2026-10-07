@@ -46,6 +46,11 @@ CASES = [
     ("f05_average_dollars_whole_row", "pyodide_average_dollars.csv.gz"),
     ("f01_sensitive_category_dimension", "pyodide_sensitive_dimension.csv.gz"),
     ("f12_unworded_dollars_no_total", "pyodide_dollars_no_total.csv.gz"),
+    # wave 5g: a German official panel with an adjusted and an unadjusted series (read one member at a time, in the page's Python 3.12 too), a ledger
+    # with a dimension of price bases (copies by shape, never added) and a plain file with a Total row, two measures and a 12-digit case number
+    ("g01_german_panel_one_member", "g01_seed644_german_sa_nsa_panel.csv"),
+    ("g02_price_bases_ledger", "g02_seed687_weekly_price_bases_ledger.csv"),
+    ("g03_case_number_beside_a_total", "g03_seed832_case_number_beside_a_total.csv.gz"),
 ]
 
 

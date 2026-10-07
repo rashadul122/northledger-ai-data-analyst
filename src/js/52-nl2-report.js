@@ -55,6 +55,8 @@
   function asFacts(r) { var pm = r.primary_metric; return pm && pm.finding_id ? Object.assign({}, r, { primary: { id: pm.finding_id } }) : r; }
   function estimandOf(r) { var F = FA(); return F && r.estimand ? F.estimandView(asFacts(r)) : null; }
   function isOfficial(f) { return !!(f && f.inference && f.inference.mode === 'official_aggregate'); }
+  // wave 5g (E): a measure averaged because nothing says it accumulates (a currency with no flow word) is an average level, never a total
+  function averaged(r) { var m = r && r.estimand && r.estimand.measure; return !!m && /^ambiguous/.test(String(m.type_basis || '')) && /^mean/.test(String(m.aggregation || '')); }
   function cap1(x) { x = String(x || ''); return x.charAt(0).toUpperCase() + x.slice(1); }
   // the back-test of the range shown, beside the forecast finding it is about (the series the audit was run on)
   function auditFor(r, f) {
@@ -376,7 +378,7 @@
       var V = isOfficial(f) ? estimandOf(r) : null, Fg = V && r.estimand.figures || {};
       if (V && Fg.change_pct && Fg.change_pct.text) {
         // the described change is the figure; the engine's grade is secondary and says what it is a grade of
-        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published totals (' +
+        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published ' + (averaged(r) ? 'figures (average level ' : 'totals (') +
           esc((Fg.prior && Fg.prior.text || '') + ' to ' + (Fg.latest && Fg.latest.text || '')) + ').' + ' <span class="nl2-proc">process grade: ' + esc(V.process ? V.process.note : 'the month-to-month noise of the monthly figures; not a test of the published total') + '.</span>' + held + '</li>';
       }
       // a stepped claim's as-filed interval spans the step, so it says nothing about the business: not printed
@@ -391,7 +393,7 @@
       var word = f && f.kind === 'forecast' ? 'range' : 'interval';
       var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit || '') + ' (own units)' : '';
       var off = isOfficial(f), au = auditFor(r, f);
-      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published totals: ' + t.claim : t.claim) + '</p>' +
+      return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published ' + (averaged(r) ? 'figures: ' : 'totals: ') + t.claim : t.claim) + '</p>' +
         '<p class="nl2-tile-num"><span class="nl2-tile-v">' + esc(v) + '</span>' + (unit ? ' <span class="nl2-tile-u">' + esc(unit) + '</span>' : '') + '</p>' +
         (ci ? '<p class="nl2-tile-ci">' + esc(off ? 'the monthly noise\'s own ' + lvl(t.ci_level) + ' interval, not a test of the published change: ' + ci : lvl(t.ci_level) + ' ' + word + ': ' + ci) + '</p>' : t.movement && t.movement.kind === 'stepped' ? '<p class="nl2-tile-note">on the year before, as filed; read it like for like</p>' : '') +
         '<p class="nl2-tile-g">' + grade(t.grade, f ? f.kind : t.kind, off) + (f && moveTag(f, true) ? ' ' + moveTag(f, true) : '') + (au && au.untrusted ? ' <span class="nl2-untrusted" data-untrusted="1">not trusted</span>' : '') + '</p>' +

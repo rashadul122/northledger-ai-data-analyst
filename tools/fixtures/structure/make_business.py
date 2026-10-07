@@ -145,7 +145,10 @@ def pivot_spec(i: int) -> Dict[str, Any]:
     date_fmt = "iso"
     if rng.rand() < 0.25 and freq != "month":
         date_fmt = ("dmy.", "mdy/")[int(rng.randint(0, 2))]
+    # wave 5g (D): one pivot file in seven carries an identifier column (a 12-digit case number, a different number on every row, the margins' rows
+    # included): no amount, it must never veto a total that adds up on the amounts. Decided by the file's index alone, so no other draw moves
     return {"i": i, "freq": freq, "periods": n, "margin": margin, "branches": branches, "products": products, "real_like": real_like,
+            "id_column": (i - PIVOT_START) % 7 == 3,
             "measures": int(rng.choice([1, 2, 2])), "people": bool(rng.rand() < 0.5), "date_fmt": date_fmt,
             "total_branch": names[int(rng.randint(0, len(names)))], "total_product": ("Total", "All", "All products")[int(rng.randint(0, 3))],
             "shuffled": bool(rng.rand() < 0.4), "start_offset": int(rng.randint(0, 40)) if freq != "month" else 0,
@@ -156,6 +159,7 @@ def make_pivot(i: int) -> Tuple[bytes, bytes, Dict[str, Any]]:
     """(the file with its margins, the file with only the detail rows, the spec incl. truth) of pivot file i."""
     sp = pivot_spec(i)
     rng = np.random.RandomState(sp["seed"])
+    idrng = np.random.RandomState(sp["seed"] + 9)
     base = {"month": dt.date(2021, 1, 1), "week": dt.date(2021, 1, 4), "day": dt.date(2021, 1, 1)}[sp["freq"]]
     start = base + dt.timedelta(days=sp["start_offset"] * (7 if sp["freq"] == "week" else 1)) if sp["freq"] != "month" else base
     dates = _dates(sp["freq"], sp["periods"], start)
@@ -192,6 +196,8 @@ def make_pivot(i: int) -> Tuple[bytes, bytes, Dict[str, Any]]:
                 r = [ds, branch] + ([prod] if sp["products"] else [])
                 if sp["people"]:
                     r += person()
+                if sp["id_column"]:
+                    r.append("%d" % idrng.randint(10 ** 11, 10 ** 12))
                 r += [fmt[m](vals[m]) for m in mnames]
                 out.append(r)
             for b in sp["branches"]:
@@ -205,7 +211,8 @@ def make_pivot(i: int) -> Tuple[bytes, bytes, Dict[str, Any]]:
                 if tp:
                     emit(sp["total_branch"], sp["total_product"], {m: round(sum(cells[kk][m][k] for kk in cells), 2) for m in mnames})
         return out
-    head = ["Date", sp["branch_name"]] + (["Product"] if sp["products"] else []) + (["Customer", "Technician"] if sp["people"] else []) + mnames
+    head = ["Date", sp["branch_name"]] + (["Product"] if sp["products"] else []) + (["Customer", "Technician"] if sp["people"] else []) + \
+        (["Case number"] if sp["id_column"] else []) + mnames
 
     def render(r: List[List[str]]) -> bytes:
         if sp["shuffled"]:

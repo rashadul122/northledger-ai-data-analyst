@@ -1448,10 +1448,14 @@ def test_g01_an_official_panel_the_layout_cannot_read_is_read_one_member_at_a_ti
     member = next(x["member"] for x in est(rep)["slice"] if x["dim"] == "Saisonbereinigung")
     pri, lat = window_sums(df, df["Saisonbereinigung"] == member, 1000.0, date="BEZUGSZEITRAUM", value="WERT")
     check_truth(rep, pri, lat, "seed 644")
-    # the plan's run of the same table (the live product) never reads it the old way either: refused, since no layout exists to set it aside
+    # the plan's run of the same table (the live product) reads it the same way when the plan makes no layout: one member, said so; and a plan that
+    # reshapes it (a long_to_wide on the layer's own date and value columns, in any language) gets the layout it asked for
     rep_p = run_file("g01_seed644_german_sa_nsa_panel.csv", plan=PLAN)
-    assert refused(rep_p) or est(rep_p), headline(rep_p)
-    assert "average wert" not in headline(rep_p).lower(), headline(rep_p)
+    assert est(rep_p) and one_member_shown(rep_p) and "average wert" not in headline(rep_p).lower(), headline(rep_p)
+    plan_l = dict(PLAN, columns=[{"name": "BEZUGSZEITRAUM", "semantic_type": "date", "role": "date"}, {"name": "WERT", "semantic_type": "flow_amount", "role": "target"}],
+                  operations=[{"op": "long_to_wide", "column": "BEZUGSZEITRAUM"}], primary="WERT")
+    rep_pl = run_file("g01_seed644_full_60_months.csv", plan=plan_l)
+    assert (rep_pl["input"].get("layout") or {}).get("layout") == "long statistical table" and not est(rep_pl), (rep_pl["input"].get("layout"), headline(rep_pl))
     # NEGATIVES. (1) The same table with English headers and five years of dates is read by the LAYOUT, as it always was: side by side, no structure
     # record, no member chosen for it
     en = frame("g01_seed644_full_60_months.csv").rename(columns={
@@ -1693,6 +1697,29 @@ def test_g07_the_two_held_out_failures_that_are_not_the_engines_a_quarterly_file
         (led.get("measure.units.total.prior12"), led.get("measure.units.total.last12"))
     assert close(led["measure.sales.total.last12"], float(q["Sales"].iloc[-4:].sum())) and close(led["measure.sales.total.prior12"], float(q["Sales"].iloc[-8:-4].sum()))
     assert "+22.2%" in headline(rep), headline(rep)
+
+
+def test_g08_the_pivot_corpus_with_an_identifier_column_is_still_right_the_margins_left_out_whatever_number_sits_beside_them():
+    """Wave 5g, D, on the corpus. One pivot file in seven (tools/fixtures/structure/make_business.py, `id_column`) carries a 12-digit case number, a
+    different number on every row (the margins' rows too), beside its amounts. The margins that add up on the amounts are left out and the figures
+    are the plain sums of the detail rows, exactly as for the same file without the column."""
+    import test_nl_business as TB
+    import check_business_corpus as CBC
+    import make_business as MB
+    ids = [i for i in range(MB.PIVOT_START, MB.PIVOT_START + MB.PIVOT_COUNT) if MB.pivot_spec(i)["id_column"]]
+    assert len(ids) == 14, ids
+    checked = 0
+    for i in ids:
+        full, _detail, sp = MB.make_pivot(i)
+        assert b"Case number" in full.split(b"\n", 1)[0], i
+        NB._PROFILE_CACHE.clear()
+        rep = NB.run(full, "table.csv", "", {}, AS_OF)
+        why = TB.judge_pivot(i, CBC.pivot_summary(rep))
+        assert not why, (i, sp["freq"], sp["margin"], sp["measure_names"], why)
+        if sp["margin"] is not None and sp["measures"] == 2:
+            assert any(x.get("rule") == "total_rows_left_out" for x in rep["cleaning"]["fixes"]), (i, rep["cleaning"]["fixes"][:3])
+            checked += 1
+    assert checked >= 5, checked
 
 
 # ----------------------------------------------------------------------------- runner

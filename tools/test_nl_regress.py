@@ -620,6 +620,25 @@ def test_r22_seed_3160_an_industry_total_that_adds_up_to_its_leaves_is_never_sum
 
 
 # ----------------------------------------------------------------------------- the reviewer's suspected items, settled by a test each
+def test_r23_a_dimension_of_measures_is_never_an_adjusted_pair_a_rate_and_its_standard_error_move_together():
+    """Found by the fuzz (seeds 6, 103, 115, 164, 195, 212 of the development range), not by the reviewer: wave 5e's shape test for copies read
+    "Unemployment rate" and "Standard error of the unemployment rate" (two quantities in two units that move together under a steady ratio)
+    as a seasonally adjusted pair, over-wrote the dimension's role (measure) and crashed the structure layer ("zero-size array"): the table was
+    refused, and it had been read before. A dimension that names what is measured is never an adjustment. The headline is Employment, Total."""
+    df = frame("r23_measure_dimension_rate_and_standard_error.csv.gz")
+    rep = run_file("r23_measure_dimension_rate_and_standard_error.csv.gz")
+    assert not refused(rep), headline(rep)[:300]
+    d = dim(rep, "Principal statistics")
+    assert d["role"] == "measure", d
+    sub = df[(df["GEO"] == "Total") & (df["Principal statistics"] == "Employment")].copy()
+    sub["v"] = pd.to_numeric(sub["VALUE"])
+    sub = sub.sort_values("REF_DATE")
+    lat, pri = sub["v"].iloc[-4:].mean(), sub["v"].iloc[-8:-4].mean()          # persons employed: a stock, its window figure is the mean of 4 quarters
+    f = figs(rep)
+    assert f is not None and close(f[0], pri, 1e-6) and close(f[1], lat, 1e-6), (f, pri, lat)
+    assert "Employment" in headline(rep) and "published totals" in headline(rep), headline(rep)
+
+
 def test_s01_sensitive_headers_are_never_released_as_categories_whatever_the_language():
     """Suspected: SENSITIVE_HEADER lacked visible minority, Indigenous, cause of death, ICD, HIV, marital, and their French, German and
     Spanish cognates. A category with such a header is sensitive even when it is categorical: never released, so withheld by default."""

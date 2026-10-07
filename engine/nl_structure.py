@@ -2786,6 +2786,9 @@ def _adjustment(S: Dict[str, Any], j: int) -> None:
         return
     if _is_geographic(rec["column"]):
         return                                  # a dimension of places is never an adjustment: two regions that move together are two regions
+    if rec.get("role") or rec.get("measure_dim") or rec.get("mixed_units"):
+        return                                  # a dimension that names what is measured holds different quantities (a rate and its standard
+                                                # error move together under a steady ratio and are no adjusted copy of one another)
     A, X, _c = _dim_tensor(S, j, restrict=False)
     months = S["_months"]
     best = None

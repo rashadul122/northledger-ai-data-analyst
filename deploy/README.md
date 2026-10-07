@@ -19,6 +19,8 @@ The launch is gated on the owner's in-the-moment "ship it"; the ordered steps ar
 | `tools/serve_dist.mjs` | a local stand-in for Static Assets that applies `dist/_headers` and `dist/_redirects` |
 | `tools/check_dist_csp.mjs` | the Playwright proof of the CSP on the real `dist/` (the whole demo, zero violations, zero outside requests) |
 | `tools/test_dist_tools.py` | mutation tests: the linter must fail on every deliberately broken `dist/` |
+| `tools/check_live_headers.py` | after a deploy: asks the REAL host (preview or domain) the same questions as `check_dist.py` and compares the answers, checks redirects, the 404 and that the page bytes arrive unchanged; prints the INFO lines that settle the plan's open items. Read-only |
+| `tools/dns_snapshot.sh` | read-only DNS answers for the halosyncs.com names that must not change; run before and after the domain is attached and diff |
 | `tools/measure_first_load.sh` | wire bytes and TTFB per host, for the before/after numbers |
 | `deploy.sh` | the only deploy path; refuses without `--i-have-the-owners-go` and every gate |
 

@@ -952,7 +952,9 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     raw_pub = vals[rows]
     for si in range(n_series):
         ix = order_s[bounds_s[si]:bounds_s[si + 1]]
-        if len(ix) >= ROUND_MIN_VALUES and float(rd_row[ix].max()) == 0.0:
+        # wave 5h: no gate on the decimals the file writes. A spreadsheet that writes whole dollars as 70709500000.0 has a cosmetic ".0"; the
+        # figures themselves (all whole, all multiples of 10^k) say the unit, and _round_unit only ever widens a tolerance by what they show
+        if len(ix) >= ROUND_MIN_VALUES:
             ru = _round_unit(raw_pub[ix])
             if ru > 1.0:
                 half_unit[si] = max(half_unit[si], 0.5 * ru * float(np.max(np.abs(scale_row[ix]))))

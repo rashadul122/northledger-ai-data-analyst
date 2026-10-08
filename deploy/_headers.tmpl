@@ -21,16 +21,16 @@
 # ---- With auto-trailing-slash, /index.html redirects to / and /name.html to /name, so these are the final paths.
 /
   {{CSP_HEADER}}: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'none'; connect-src {{PAGE_CONNECT}}; worker-src 'self'; manifest-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=300, must-revalidate, no-transform
 
 # ---- pages with no network access at all
 /case-study
   {{CSP_HEADER}}: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=300, must-revalidate, no-transform
 
 /agent-demo
   {{CSP_HEADER}}: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=300, must-revalidate, no-transform
 
 # A direct request for the 404 page. Unknown paths are answered with this file's body and a 404, but the
 # rule that matches THEM is /*, so the page carries no CSP there: it has no script and no network use.
@@ -43,14 +43,14 @@
 # ---- in deploy/cloudflare.config.json: it adds 'unsafe-eval' HERE ONLY.
 /engine/worker.js
   Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'{{WORKER_SCRIPT_EXTRA}}; connect-src 'self'{{WORKER_CONNECT_EXTRA}}; base-uri 'none'
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=300, must-revalidate, no-transform
 
 # ---- the self-hosted runtime: a content-named folder (version + hash of every file), so 'immutable' is safe
 {{RUNTIME_BLOCK}}
 # The engine zip keeps Cloudflare's default (max-age=0, must-revalidate, with an ETag): the worker already
 # fetches it with cache: 'no-cache', and a repacked engine must never be served stale.
 /engine/pack.json
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=300, must-revalidate, no-transform
 
 # sample-messy.csv: Cloudflare's compression list has no text/csv, so it would be sent uncompressed (268,634 B
 # instead of about 38,000). text/plain is on the list. (The docs say a _headers Content-Type overrides the
@@ -63,7 +63,7 @@
 
 # ---- other assets
 /data/*
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: public, max-age=300, must-revalidate, no-transform
 /downloads/*
   Cache-Control: public, max-age=3600
 /favicon.svg

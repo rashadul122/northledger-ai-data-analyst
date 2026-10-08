@@ -20,9 +20,9 @@
   "workers_dev": true,
   // no per-version preview URLs: one public address only (like the AI worker)
   "preview_urls": false,
-  "observability": { "enabled": false }
+  "observability": { "enabled": false },
 
-  // AT LAUNCH ONLY, after the preview passes (needs the zone halosyncs.com on this Cloudflare account; Cloudflare
-  // creates the DNS record itself and refuses if a CNAME already exists for the name):
-  // , "routes": [ { "pattern": "northledger.halosyncs.com", "custom_domain": true } ]
+  // Attached 8 Oct 2026 after the preview passed (the zone halosyncs.com is on this Cloudflare account; Cloudflare creates the DNS
+  // record itself and refuses if a CNAME already exists for the name). Roll back: remove this block and deploy again, or Domains & Routes.
+  "routes": [ { "pattern": "northledger.halosyncs.com", "custom_domain": true } ]
 }

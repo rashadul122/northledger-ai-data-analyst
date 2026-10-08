@@ -2016,6 +2016,32 @@ def test_g12_the_places_of_a_weekly_or_daily_table_with_no_total_row_are_still_o
     assert NS._copies_by_shape(S_w, A, list(range(A.shape[0]))) in (None, (None, None)) or True
 
 
+def test_s06_a_verified_total_row_of_a_withheld_column_is_left_out_and_never_named():
+    """Wave 5h, fuzz v2 seed 1958. "Place of birth" is set aside as possibly personal (the scan reads "birth"), and its "Total, place of
+    birth" rows equal the sum of its other rows. Withholding the column used to keep its Total rows in the figures, so every total counted
+    the parts twice. A total the CELLS prove is now left out of a withheld column too, and nothing of the column is named anywhere: no
+    record in tidy's totals, a reason with no label in it, no member label in the report."""
+    name = "s06_seed1958_withheld_total.csv"
+    data, df = fixture(name), frame(name)
+    t = NB.ledger_tidy(data)
+    assert t is not None
+    total_rows = {int(i) for i in np.flatnonzero((df["Place of birth"] == "Total, place of birth").to_numpy())}
+    assert total_rows and total_rows <= set(t["drops"]), (len(total_rows), len(set(t["drops"]) & total_rows))
+    assert not any(str(r.get("column")) == "Place of birth" for r in t["totals"]), t["totals"]
+    for i in total_rows:
+        r = t["reasons"][i]
+        assert "withheld column" in r and "place of birth" not in r.lower() and "total, " not in r.lower(), r
+    # the parts are never dropped for this reason (only their Total, and the whole months rule's own rows)
+    parts = {int(i) for i in np.flatnonzero((df["Place of birth"] != "Total, place of birth").to_numpy())}
+    assert not any("withheld column" in t["reasons"].get(i, "") for i in parts)
+    rep = run_bytes(data)
+    assert rep["ok"], rep.get("error")
+    blob = json.dumps(rep, default=str)
+    for label in ("Total, place of birth", "Born in the country", "Born outside the country", "Not stated"):
+        assert label not in blob, label
+    assert any(f["column"] in ("place_of_birth", "Place of birth") for f in rep["privacy"]["flagged"]), rep["privacy"]["flagged"]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

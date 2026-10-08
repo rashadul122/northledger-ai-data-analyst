@@ -10524,6 +10524,32 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
             else:
                 rec["left_out"] = False
             totals.append(rec)
+    # wave 5h: a WITHHELD category column (set aside as possibly personal, e.g. "Place of birth") can hold a total row too, and withholding it
+    # does not stop its Total rows being added to the rows they total (fuzz v2 seed 1958: every figure doubled). Its cells are read here, inside
+    # the engine, only to find a total the CELLS prove (verified; a name alone never drops a row of a column nobody may read), and nothing of
+    # the column reaches the report: no record in `totals`, and a reason that names neither the column's values nor its rows' labels
+    for c in sorted(aside):
+        if c == date_col or c in nums or c not in df.columns:
+            continue
+        col = df[c].astype(str).str.strip()
+        members = [m for m in pd.unique(col[col != ""])]
+        if not 2 <= len(members) <= TIDY_MAX_MEMBERS:
+            continue
+        nominated = [m for m in members if _total_nomination(m)]
+        if not nominated or len(members) - len(nominated) < 1:
+            continue
+        ctx = pd.Series("", index=df.index)
+        for o in [o for o in cats if int(cats[o][cats[o] != ""].nunique()) <= TIDY_KEY_MAX]:
+            ctx = ctx + "\x1f" + cats[o]
+        base = [m for m in members if m not in nominated]
+        for m in nominated:
+            status, _why = _check_total(NS, df, col, m, base, nums, ctx, date_key, valid_date)
+            if status != "verified":
+                continue
+            rows = np.flatnonzero((col == m).to_numpy())
+            drops.update(int(i) for i in rows)
+            for i in rows:
+                reasons[int(i)] = "left out of the figures: a total row of a withheld column (its cells equal the sum of the column's other rows)"
     partial = _partial_months(df, dts, drops)
     if not drops and not partial and not [t for t in totals if t["nomination"] == "exact"]:
         return None

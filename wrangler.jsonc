@@ -1,0 +1,28 @@
+// NorthLedger site on Cloudflare Workers Static Assets. PREPARED, NOT DEPLOYED.
+// dist/ is produced by tools/make_dist.py (never edit it by hand); deploy.sh is the only deploy path and refuses
+// without --i-have-the-owners-go. No `routes` yet on purpose: the custom domain (northledger.halosyncs.com) is
+// attached at launch, from the dashboard (Workers & Pages > northledger-site > Settings > Domains & Routes >
+// Add > Custom domain) or by adding the block below and deploying again. See plan/CLOUDFLARE-LAUNCH.md.
+//
+// No `main`: an assets-only Worker, nothing runs per request, so there is no CPU to meter and no worker code
+// to break. No D1, R2, KV, Durable Object, container or analytics here, by the owner's decision of 6 Oct 2026.
+{
+  "name": "northledger-site",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    // unknown paths get dist/404.html with a real 404 (without this, a static host answers 200 or a blank page)
+    "not_found_handling": "404-page",
+    // /index.html -> /, /name.html -> /name (the default, written out because _headers keys on these paths)
+    "html_handling": "auto-trailing-slash"
+  },
+  // the free hostname, used to test before the domain is attached; turn off after cutover if wanted
+  "workers_dev": true,
+  // no per-version preview URLs: one public address only (like the AI worker)
+  "preview_urls": false,
+  "observability": { "enabled": false }
+
+  // AT LAUNCH ONLY, after the preview passes (needs the zone halosyncs.com on this Cloudflare account; Cloudflare
+  // creates the DNS record itself and refuses if a CNAME already exists for the name):
+  // , "routes": [ { "pattern": "northledger.halosyncs.com", "custom_domain": true } ]
+}

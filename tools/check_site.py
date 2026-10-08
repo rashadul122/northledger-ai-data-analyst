@@ -97,7 +97,7 @@ CHECKS = ("banned", "figures", "shipped", "links", "contact", "collab", "pl300",
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
         "track", "wbr"}
 SKIP_TEXT = {"script", "style", "template"}
-SKIP_DIRS = {"qa", "tools", "tests", ".git", "node_modules", "__pycache__"}
+SKIP_DIRS = {"qa", "tools", "tests", "dist", ".git", "node_modules", "__pycache__"}
 TEXT_ATTRS = ("title", "alt", "aria-label", "placeholder", "aria-description")
 
 

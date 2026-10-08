@@ -2182,8 +2182,10 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
     # Wave 5e: those two hashes are no longer pinned. A byte-identical hash says nothing of WHAT the figure is: it was re-pinned in wave 5d
     # and moves again with the words ("(named as the whole, not checked against the other members)" replaces "in the published totals" for
     # a member shown on its name alone, P8). The reading is asserted by its figures instead, computed here from the cube's own cells.
-    before = {"partition_suppressed": ("c976440ea05601af", "0b557e428676763d"), "partition_clean": ("3606b4083ccc30c9", "b876124a77c18de0"),
-              "hierarchy": None, "rate_canada": ("878aa9e7716fa3c1", "280f1b84c2c3381d"),
+    # Wave 5h: partition_suppressed is no longer pinned by hash either (its pin did not reproduce even at the commit that wrote it,
+    # 2c6423f); its reading is asserted by its figures below, computed from the cube's own Total rows, as for the other unpinned cubes.
+    before = {"partition_suppressed": None, "partition_clean": None,
+              "hierarchy": None, "rate_canada": None,
               "mixed_units": None, "no_total": None}
     import hashlib
     keys = ("story", "summary", "findings", "scenarios", "charts", "viz", "forecast", "limitations", "methods", "cleaning", "estimand",
@@ -2197,6 +2199,32 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
         got = (hashlib.sha256(blob.encode()).hexdigest()[:16], hashlib.sha256(res.encode()).hexdigest()[:16])
         if before[k] is not None:
             assert got == before[k], (k, got, before[k])
+            continue
+        if k == "rate_canada":
+            # explicit (wave 5h): Canada's own monthly rate, AVERAGED over each window (a rate is never added), named as the whole
+            df = pd.read_csv(io.BytesIO(mk()), dtype=str, keep_default_na=False)
+            sub = df[df["GEO"] == "Canada"]
+            col = "Labour force characteristics"
+            if col in sub.columns and sub[col].nunique() > 1:
+                sub = sub[sub[col] == "Unemployment rate"]
+            ser = sub.set_index("REF_DATE")["VALUE"].astype(float)
+            e = rep["estimand"]
+            lat_w, pri_w = e["comparison"]["latest"], e["comparison"]["prior"]
+            lat = float(ser[(ser.index >= lat_w[0]) & (ser.index <= lat_w[1])].mean())
+            pri = float(ser[(ser.index >= pri_w[0]) & (ser.index <= pri_w[1])].mean())
+            assert abs(e["figures"]["latest"]["value"] - lat) < 1e-5 and abs(e["figures"]["prior"]["value"] - pri) < 1e-5, (e["figures"], pri, lat)
+            assert e["measure"]["aggregation"].startswith("mean") and rep["story"]["headline"].startswith("Unemployment rate, Canada,"), rep["story"]["headline"]
+            continue
+        if k in ("partition_suppressed", "partition_clean"):
+            # explicit (wave 5h): the Total's own published series (whole, never the sum of the suppressed regions), in base units
+            df = pd.read_csv(io.BytesIO(mk()), dtype=str, keep_default_na=False)
+            tot = df[df["GEO"] == "Total"].set_index("REF_DATE")["VALUE"].astype(float) * 1000.0
+            e = rep["estimand"]
+            lat_w, pri_w = e["comparison"]["latest"], e["comparison"]["prior"]
+            lat = float(tot[(tot.index >= lat_w[0]) & (tot.index <= lat_w[1])].sum())
+            pri = float(tot[(tot.index >= pri_w[0]) & (tot.index <= pri_w[1])].sum())
+            assert (e["figures"]["prior"]["value"], e["figures"]["latest"]["value"]) == (pri, lat), (e["figures"], pri, lat)
+            assert e["reconciles"] is True and "in the published totals" in rep["story"]["headline"], rep["story"]["headline"]
             continue
         if k == "no_total":
             # explicit (wave 5e, P8): the sum of the table's 5 regions, built by the engine, said so in the headline and NOT "in the published totals"
@@ -2222,11 +2250,20 @@ def test_w5c_the_window_scrub_is_narrow_and_a_monthly_slice_is_byte_identical():
         assert (e["figures"]["prior"]["value"], e["figures"]["latest"]["value"]) == (pri, lat), (k, e["figures"], pri, lat)
         assert abs(e["figures"]["change_pct"]["value"] - 100.0 * (lat / pri - 1.0)) < 1e-5, (k, e["figures"]["change_pct"])
         g = dim(NS.detect(reading(data), ()), "GEO")
-        assert g["role"] == "single" and g["total"] == "Canada" and g.get("single_by") == "name", (k, g)
-        assert rep["story"]["headline"].startswith("%s, Canada, 12 months to Dec 2022: +" % ("VALUE" if k == "hierarchy" else member)), rep["story"]["headline"]
-        # wave 5e, second review (P8): the check RAN and failed (the provinces listed are no sum of Canada), and the words say so
-        assert "in the published totals" not in rep["story"]["headline"] and \
-            rep["story"]["headline"].endswith("(named as the total, but the other members do not add up to it)"), rep["story"]["headline"]
+        assert g["role"] == "single" and g["total"] == "Canada", (k, g)
+        assert "in the published totals" not in rep["story"]["headline"], rep["story"]["headline"]
+        # wave 5f (F), asserted here since wave 5h: a NAME nominates, the CELLS decide. Canada is read by its name as the whole only when it
+        # bounds every other member in every cell; in these fixtures Ontario is above Canada in about half the cells (no factor is applied),
+        # so Canada is one member shown, chosen by dominance, and the headline says it is not a national figure.
+        piv = df.assign(v=pd.to_numeric(df["VALUE"], errors="coerce")).pivot_table(index=["REF_DATE", other], columns="GEO", values="v")
+        bounds = bool((piv["Canada"] >= piv.drop(columns=["Canada"]).max(axis=1)).all())
+        if bounds:
+            assert g.get("single_by") == "name", (k, g)
+            assert rep["story"]["headline"].endswith("(named as the total, but the other members do not add up to it)"), rep["story"]["headline"]
+        else:
+            assert g.get("single_by") == "dominance", (k, g)
+            assert rep["story"]["headline"].startswith("%s, Canada (one member shown, not a national figure)" % ("VALUE" if k == "hierarchy" else member)), \
+                rep["story"]["headline"]
         assert any(x["what"] in ("1 other members", "%d other members" % (len(g["labels"]) - 1)) or "Ontario" in x["what"] or "other" in x["what"]
                    for x in e["excluded"]) or True
 

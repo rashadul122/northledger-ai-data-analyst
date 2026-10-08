@@ -913,6 +913,20 @@ def canonical(lab):
     return {k: v for k, v in lab.items() if k not in VOLATILE}
 
 
+def same(a, b, rel=1e-9):
+    """Whether two lab values are the same: structure, strings, integers and booleans exactly; floats to a relative 1e-9. A least-squares
+    fit (the erratum block) differs in the last two bits between numpy builds, and a reproduction check must not depend on them."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(same(a[k], b[k], rel) for k in a)
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(same(x, y, rel) for x, y in zip(a, b))
+    if isinstance(a, float) or isinstance(b, float):
+        if isinstance(a, bool) or isinstance(b, bool) or not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            return False
+        return math.isclose(a, b, rel_tol=rel, abs_tol=1e-12)
+    return a == b
+
+
 def write_json(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".forecast_lab.")
@@ -943,8 +957,8 @@ def main(argv=None):
         with open(a.out) as f:
             old = json.load(f)
         new = json.loads(json.dumps(lab, allow_nan=False))
-        if canonical(old) != canonical(new):
-            diff = sorted(k for k in set(old) | set(new) if k not in VOLATILE and old.get(k) != new.get(k))
+        if not same(canonical(old), canonical(new)):
+            diff = sorted(k for k in set(old) | set(new) if k not in VOLATILE and not same(old.get(k), new.get(k)))
             print("FORECAST LAB CHECK: FAIL - %s differs from a fresh build in: %s" % (a.out, ", ".join(diff)))
             return 1
         print("FORECAST LAB CHECK: PASS - %s reproduces from %s" % (

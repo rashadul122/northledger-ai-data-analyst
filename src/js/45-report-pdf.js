@@ -2144,6 +2144,10 @@
       var rel = R.privacy && Array.isArray(R.privacy.released) ? R.privacy.released.filter(function (x) { return x && x.text; }) : [];
       var relMeasure = rel.some(function (x) { return String(x.text).indexOf('Read as the table\'s measure') === 0; });
       if (rel.length) pa.push({ type: 'h2', num: '', text: relMeasure ? 'Columns read as categories or as the table\'s measure, not personal data' : 'Columns read as categories, not personal data', id: 'm-released' }, { type: 'bullets', items: rel.map(function (x) { return String(x.text); }) });
+      // wave 5h: a column named like a sensitive category is read like any other and not withheld: the report says so, as the consent step did
+      var sen = R.privacy && Array.isArray(R.privacy.sensitive) ? R.privacy.sensitive.filter(function (x) { return x && x.text; }) : [];
+      if (sen.length) pa.push({ type: 'h2', num: '', text: 'Columns named like a sensitive category', id: 'm-sensitive' }, { type: 'bullets', items: sen.map(function (x) { return String(x.text); }) },
+        { type: 'p', text: 'These columns were read like any other and are not withheld: their values can appear in this report\'s figures and in the downloads.', size: 8.5 });
       if (EV) {
         var chk = (R.estimand.sum_checks || []).filter(function (c) { return c && c.dim; });
         pa.push({ type: 'h2', num: '', text: 'The table\'s structure and what was checked', id: 'm-structure' });

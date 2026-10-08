@@ -140,7 +140,10 @@ _TOTAL_HINT = re.compile(r"(?i)(?:^|\b)(?:total|all|overall|grand|aggregate|comb
 # wave 5d: "excl." / "excl" / "w/o" / "net of" / "not including" / "minus" say it too (a member named "Total excl. Seasonal shops" was read as a
 # total beside "Total, all industries": the abbreviation's full stop meant `ex\.` could never match before a letter)
 _ALT_STRONG = (r"excluding|excludes?|excluded|excl(?:uding)?\.?|except(?:ing)?|ex\.|not including|net of|minus|sauf|excluant|hors|"
-               r"[\u00e0a] l'exclusion|excepto|ohne|au(?:ss|\u00df)er|abz\u00fcglich")
+               r"[\u00e0a] l'exclusion|excepto|ohne|au(?:ss|\u00df)er|abz\u00fcglich|"
+               # wave 5h: the same word in the other languages a ledger comes in (903: "Gesamt ausgenommen Gartenbedarf" was the table's total)
+               r"ausgenommen|ausgeschlossen|exkl\.?|exklusive|exclusive of|exclu[st]?e?s?|except[e\u00e9]e?s?|[\u00e0a] l'exception de|"
+               r"exceptuando|excluyendo|excluido|salvo|escluso|esclus[aei]|eccetto|tranne|excluindo|exceto|exclusief|behalve|uitgezonderd")
 _ALT_WEAK = r"less|without|w/o|other than|sans|moins|sin|menos|autres que|andere als"
 _ALT_HINT = re.compile(r"(?i)(?<![A-Za-z])(?:%s|%s)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])" % (_ALT_STRONG, _ALT_WEAK))
 _ALT_STRONG_RE = re.compile(r"(?i)(?<![A-Za-z])(?:%s)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])" % _ALT_STRONG)
@@ -2866,6 +2869,13 @@ def _says_total(label: str) -> bool:
     return bool(_TOTAL_HINT.search(label)) and not _is_alt(label) and not _is_rest(label)
 
 
+def _bare_total(label: str) -> bool:
+    """A member that says total and nothing else ("Total", "Gesamt", "All industries" is not: it names what it covers)."""
+    rest = _TOTAL_HINT.sub(" ", _outside_brackets(label))
+    rest = re.sub(r"(?i)\b(?:the|der|die|das|le|la|el|la|los|las|of|de|du|des)\b", " ", rest)
+    return not re.search(r"[^\W\d_]", rest)
+
+
 def _coded_totals(labels: Sequence[str]) -> Set[int]:
     """The members whose code is a RANGE that holds the codes of at least two other members ("Full range [11-41]" beside [11], [21], [31]
     and [41]): the way a publisher marks a total whatever the member is called."""
@@ -3567,7 +3577,9 @@ def _rule6(S: Dict[str, Any], rec: Dict[str, Any]) -> None:
                  and not _COUNTRY_COLUMN.search(rec["column"]) and labels[m] not in (rec.get("not_a_total") or [])
                  and not _countries_table(labels)]
         if hint:
-            m = hint[0]
+            # wave 5h: several members say total ("Gesamt", "Gesamt <word> Gartenbedarf"): the bare one is the table's, whatever word
+            # the others carry (a language this list of exclusion words does not have still loses to the member that says only "total")
+            m = next((x for x in hint if _bare_total(labels[x])), hint[0])
         elif len(whole) == 1 and not S["measure"].get("level_unworded"):
             # a whole country's name among its provinces (wave 5e: tried before dominance; "one member shown" says it is unverified)
             m = whole[0]

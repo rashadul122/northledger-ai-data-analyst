@@ -1541,6 +1541,12 @@ def _measure_like(values: Any) -> bool:
 SENSITIVE_MEASURE_DISTINCT = 25          # wave 5f: a number column with more than this many different values is a measure under any header
 
 
+# wave 5h: header words that name a person's identifier (whole tokens of _header_tokens; an order or invoice number is a business key, not here)
+_ID_HEADER_WORDS = frozenset(("id", "identifier", "identification", "ident", "ssn", "sin", "nin", "nino", "passport", "licence", "license",
+                              "iban", "account", "acct", "customer", "client", "member", "employee", "patient", "taxpayer", "tin", "dni",
+                              "nie", "nif", "cpf", "aadhaar"))
+
+
 def _personal_kind(header: Any, values: Any) -> Optional[str]:
     """The kind of personal data a column holds by this check (see above), or None: `email`, `phone_na`, `account_number`,
     `street_address`, `person_name` or (wave 5f) `sensitive_category`. `header` is the column's name as the file writes it, `values` its
@@ -1570,6 +1576,11 @@ def _personal_kind(header: Any, values: Any) -> Optional[str]:
         return "phone_na"
     if share(grouped) >= PERSONAL_MIN_SHARE:
         return "account_number"
+    # wave 5h: a header that names a PERSON's identifier (a national identifier, a SIN, a customer, member, employee, patient or account ID,
+    # a passport or licence number) over numbers of nine to nineteen digits is an ID column however often each ID repeats: fuzz v2 seed
+    # 1554 held 200 national identifiers, each on 3 of 600 rows (33%, just over the share below), and the report averaged them
+    if set(toks) & _ID_HEADER_WORDS and share(vals.str.fullmatch(r"\d{9,19}")) >= PERSONAL_MIN_SHARE:
+        return "id_number"
     # wave 5d: a column that names things (few different values, each on many rows: at most 400 and at most 30% of its cells) whose
     # members are numbers of nine to nineteen digits is a column of ID numbers (a customer or account number, a phone number written
     # with no separator): no category is called by 9 digits. A column of measures is never one: it has a different value on most rows

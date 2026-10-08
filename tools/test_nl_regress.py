@@ -1455,8 +1455,11 @@ def test_g01_an_official_panel_the_layout_cannot_read_is_read_one_member_at_a_ti
     matched = [k for k in range(-11, 1) if mk(k) in by.index and mk(k - 12) in by.index]      # the months with a value in both windows
     assert len(matched) >= 6, matched
     f644 = figs(rep)
-    assert close(f644[1], float(np.mean([by[mk(k)] for k in matched]))) and close(f644[0], float(np.mean([by[mk(k - 12)] for k in matched]))), \
-        (f644, [by[mk(k)] for k in matched][:3], member)
+    # wave 5h: "Value of work done" (the file's Characteristics) is a flow word now, so the member's 12 months are ADDED; a measure the engine
+    # cannot type is averaged, as before. Either way the figure is the one member's own months, never the two members pooled
+    agg = np.sum if str(est(rep)["measure"].get("aggregation") or "").startswith("sum") else np.mean
+    assert close(f644[1], float(agg([by[mk(k)] for k in matched]))) and close(f644[0], float(agg([by[mk(k - 12)] for k in matched]))), \
+        (f644, [by[mk(k)] for k in matched][:3], member, est(rep)["measure"].get("aggregation"))
     # the plan's run of the same table (the live product) reads it the same way when the plan makes no layout: one member, said so; and a plan that
     # reshapes it (a long_to_wide on the layer's own date and value columns, in any language) gets the layout it asked for
     rep_p = run_file("g01_seed644_german_sa_nsa_panel.csv", plan=PLAN)

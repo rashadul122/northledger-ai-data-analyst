@@ -168,6 +168,9 @@ _FLOW_WORDS = re.compile(
     r"(?i)\b(?:sales?|receipts?|revenues?|turnover|income|permits?|births?|deaths?|visits?|visitors?|trips?|arrivals?|"
     r"departures?|nights?|starts?|completions?|shipments?|orders?|bookings?|transactions?|claims?|admissions?|discharges?|"
     r"exports?|imports?|production|output|spending|expenditures?|purchases?|payments?|deliver(?:y|ies|ed)|accidents?|"
+    # wave 5h: the national accounts' own flows, which a publisher's Statistics or Estimates column names (fuzz v2 seeds 1512, 1577). Not "work
+    # done": a construction panel's "Value of work done" would then be read as one member's flow and override a plan's own layout (g01)
+    r"gross domestic product|gdp|gnp|gross national (?:product|income)|value added|gva|gross fixed capital formation|"
     r"collisions?|crimes?|offen[cs]es?|bankruptcies|insolvenc(?:y|ies)|layoffs?|hires?|separations?|immigrants?|"
     r"emigrants?|passengers?|downloads?|tickets?|registrations?|openings|closures|launches|sold)\b")
 _STOCK_LEVEL_WORDS = re.compile(

@@ -26,3 +26,6 @@ node_modules/
 # Pyodide download cache. Neither is ever committed; deploy/pyodide-pins.json holds the sha256 values.
 dist/
 .cache/
+
+# wrangler local state (created by `wrangler deploy`)
+.wrangler/

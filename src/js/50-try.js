@@ -1697,9 +1697,7 @@
         // the categories the engine reads as categories, not personal data (privacy.released): shown on the step, each
         // with Withhold still on offer (the lead's amendment AM1)
         S.released = (r.released || []).filter(function (x) { return x && typeof x.column === 'string' && x.column; });
-        // the columns named like a sensitive category (privacy.sensitive, wave 5h): not withheld, but said before anything is read or sent
-        S.sensitive = (r.sensitive || []).filter(function (x) { return x && typeof x.column === 'string' && x.column && x.text; });
-        if (flagged.length || S.released.length || S.sensitive.length) askPersonal(flagged);
+        if (flagged.length || S.released.length) askPersonal(flagged);
         else if (!CFG.ai_proxy_url) { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
         else { setStage('decide', 'skip', null, 'no personal data flagged'); askAiChoice(); }
       } else if (m.type === 'profiled') {
@@ -1825,7 +1823,7 @@
     function releasedHtml(rel) {
       if (!rel.length) return '';
       var cats = rel.filter(function (x) { return !isMeasureRelease(x); }), meas = rel.filter(isMeasureRelease);
-      return (cats.length ? '<p class="note pd-rel-note">The engine reads ' + (cats.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (cats.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape. You can still withhold ' + (cats.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
+      return (cats.length ? '<p class="note pd-rel-note">The engine reads ' + (cats.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (cats.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape and no sensitive name. You can still withhold ' + (cats.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
         (meas.length ? '<p class="note pd-rel-note">The table\'s own value column (' + meas.map(function (x) { return esc(String(x.header || x.column)); }).join(', ') + ') holds the figures it publishes: every cell is a number, and a count of nine or more digits has the shape of an ID number without being one here. The engine reads it as the measure, not as personal data. You can still withhold it; the table then cannot be read.</p>' : '') +
         rel.map(function (x, i) {
           var words = isMeasureRelease(x) ? String(x.text) : 'Read as a category, not personal data: ' + String(x.header || x.column) + ' (' + Number(x.distinct || 0).toLocaleString('en-US') + ' labels)';
@@ -1834,16 +1832,6 @@
               return '<label class="pd-opt"><input type="radio" name="pd-rel-' + i + '" value="' + c[0] + '"' + (c[0] === 'use' ? ' checked' : '') + ' data-col="' + esc(x.column) + '" data-rel="1"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
             }).join('') + '</div></fieldset>';
         }).join('');
-    }
-    // wave 5h: a column whose header names a sensitive category (marital status, Indigenous identity, a diagnosis code ...) is read like any
-    // other column: it is the visitor's file, and a statistics table is made of such categories. Said, never hidden.
-    function sensitiveHtml(sen) {
-      if (!sen || !sen.length) return '';
-      return '<div class="pd-sens"><p class="note pd-sens-note"><b>Sensitive categories.</b> ' + (sen.length === 1 ? 'This column is' : 'These columns are') +
-        ' named like a sensitive category. ' + (sen.length === 1 ? 'It is' : 'They are') + ' read like any other column, not withheld: ' +
-        (sen.length === 1 ? 'its values' : 'their values') + ' can appear in the findings, the charts and the downloads' + (CFG.ai_proxy_url ? ', and in what the AI reads if you continue with it' : '') +
-        '. If you do not want that, remove ' + (sen.length === 1 ? 'the column' : 'the columns') + ' from the file and load it again.</p><ul class="pd-sens-list">' +
-        sen.map(function (x) { return '<li><code>' + esc(x.header || x.column) + '</code> <span class="pd-kind">' + esc(x.category || 'sensitive category') + '</span></li>'; }).join('') + '</ul></div>';
     }
     function askPersonal(flagged) {
       setStage('decide', 'wait');
@@ -1863,7 +1851,7 @@
               var off = coded && c[0] === 'keep';
               return '<label class="pd-opt"><input type="radio" name="pd-' + i + '" value="' + c[0] + '"' + (c[0] === 'withhold' ? ' checked' : '') + (off ? ' disabled' : '') + ' data-col="' + esc(f.column) + '"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
             }).join('') + '</div>' + (coded ? '<p class="pd-note">Already coded as it arrived: an email address or phone number cannot be kept as it is, so Keep is not offered.</p>' : '') + '</fieldset>';
-        }).join('') + releasedHtml(rel) + sensitiveHtml(S.sensitive) +
+        }).join('') + releasedHtml(rel) +
         (CFG.ai_proxy_url ? aiChoiceHtml(true) : '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>');
       el.pd.hidden = false;
       var pdDecisions = function () {
@@ -3145,13 +3133,8 @@
         // report's method and data-quality account (wave 4, track B)
         ((r.privacy.released || []).filter(function (x) { return x && x.text; }).length
           ? '<h4 class="tr-rel-h">' + (r.privacy.released.some(isMeasureRelease) ? 'Read as categories or as the table\'s measure, not personal data' : 'Read as categories, not personal data') + '</h4><ul class="tr-rel-list" data-released="1">' + r.privacy.released.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
-            (r.privacy.released.some(function (x) { return x && x.text && !isMeasureRelease(x); }) ? '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>' : '') +
+            (r.privacy.released.some(function (x) { return x && x.text && !isMeasureRelease(x); }) ? '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape and no sensitive name, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>' : '') +
             (r.privacy.released.some(isMeasureRelease) ? '<p class="note">The table\'s own value column holds the figures it publishes (every cell a number); a count of nine or more digits has the shape of an ID number without being one, so the engine read it as the measure.</p>' : '')
-          : '') +
-        // wave 5h: the columns named like a sensitive category are read, not withheld: the report says which, and what that means
-        ((r.privacy.sensitive || []).filter(function (x) { return x && x.text; }).length
-          ? '<h4 class="tr-rel-h">Columns named like a sensitive category</h4><ul class="tr-rel-list tr-sens-list" data-sensitive="1">' + r.privacy.sensitive.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
-            '<p class="note">These were read like any other column and are not withheld: their values can appear in the findings, the charts and the downloads. Look over them before you share anything.</p>'
           : '') +
         '<p class="note">The scan reads column names and the shape of values, so names under a neutral heading can be missed: look over the story and the downloads before you share them.</p></article>';
       if (gated) h += priv;

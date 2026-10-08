@@ -424,7 +424,7 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
                    "restated_since_previous": None, "benchmark": _blank_benchmark()},
         "input": {"name": name, "bytes": len(data), "rows": 0, "columns": 0, "sha256": sha},
         "timings": [],
-        "privacy": {"flagged": [], "released": [], "sensitive": []},
+        "privacy": {"flagged": [], "released": []},
         "health": {"score": None, "issues": [], "score_min": None, "score_mean": None, "weakest": None,
                    "csv_text_numbers": None, "explain": "",
                    "dimensions": [], "sample": {"method": "all", "n": 0, "seed": None}, "columns": [],
@@ -1541,55 +1541,6 @@ def _measure_like(values: Any) -> bool:
 SENSITIVE_MEASURE_DISTINCT = 25          # wave 5f: a number column with more than this many different values is a measure under any header
 
 
-_SENSITIVE_GROUPS = (
-    ("race, ethnicity or Indigenous identity", r"ethni|racial|race|visible|minorit|indigen|aborigin|first nation|inuit|metis|autochton|ancestry|etnia|raza|rasse|herkunft"),
-    ("religion or belief", r"relig|faith|belief|confession|konfession|creencia"),
-    ("political opinion or union membership", r"politi|party|voting|partido|parti |union|syndicat|sindicato|gewerkschaft"),
-    ("sex, gender or sexual orientation", r"sex|gender|geschlecht|orientation|orientacion|orientierung|transgender"),
-    ("marital or family status", r"marital|marriage|civil|relationship|matrimonial|estado civil|familienstand|pregnan"),
-    ("health, disability or cause of death", r"diagnos|disease|illness|maladie|enfermedad|krankheit|disab|handicap|discapacidad|behinderung|"
-                                              r"incapacite|health|medical|sante|salud|gesundheit|symptom|icd|death|deces|muerte|todes|hiv|vih|sida|aids"),
-    ("criminal record or immigration status", r"criminal|convict|arrest|casier|antecedentes|vorstraf|immigration|migrat|aufenthalt|asylum|refugee|"
-                                              r"nationalit|nacionalidad|staatsangeh|citizen|citoyen|ciudadan"),
-    ("genetic or biometric data", r"genetic|biometric"),
-)
-SENSITIVE_WORDS = ("A column named like a sensitive category (%s): %s. It is read like any other column; its values can appear in the "
-                   "findings, the charts and the downloads. Remove the column from the file first if you do not want that.")
-
-
-def _sensitive_group(phrase: str) -> str:
-    for label, rx in _SENSITIVE_GROUPS:
-        if re.search(rx, phrase):
-            return label
-    return "sensitive category"
-
-
-def _sensitive_columns(db_path: str, table: str, colmap: Dict[str, str], hidden: Set[str]) -> List[Dict[str, Any]]:
-    """privacy.sensitive: [{column, header, category, text}], the columns of the landed table whose HEADER names a sensitive category (marital
-    status, Indigenous identity, an ICD code ...) that the engine reads (a withheld or coded column is not among them). Wave 5h: they are
-    NOT withheld; the page says what they are. A number column with many different values is a measure under such a header (a "Disability
-    benefit" amount) and is not listed."""
-    import pandas as pd
-    from northledger import clean as _clean
-    from northledger._sqlite import connect_ro
-    con = connect_ro(db_path)
-    try:
-        df = pd.read_sql_query("SELECT * FROM %s" % _clean._quote_ident(table), con)
-    finally:
-        con.close()
-    head = {str(v): str(k) for k, v in (colmap or {}).items()}
-    out: List[Dict[str, Any]] = []
-    for col in df.columns:
-        if str(col) in hidden:
-            continue
-        header = head.get(str(col), str(col))
-        phrase = _sensitive_header(header)
-        if phrase and not _measure_like(df[col]):
-            cat = _sensitive_group(phrase)
-            out.append({"column": str(col), "header": header, "category": cat, "text": SENSITIVE_WORDS % (cat, header)})
-    return out
-
-
 def _personal_kind(header: Any, values: Any) -> Optional[str]:
     """The kind of personal data a column holds by this check (see above), or None: `email`, `phone_na`, `account_number`,
     `street_address`, `person_name` or (wave 5f) `sensitive_category`. `header` is the column's name as the file writes it, `values` its
@@ -1601,8 +1552,8 @@ def _personal_kind(header: Any, values: Any) -> Optional[str]:
     t = t[~t.str.lower().isin(nulls)]
     if not len(t):
         return None
-    # wave 5h: a column whose HEADER names a sensitive category is no longer flagged or withheld (the visitor's file is theirs, and a
-    # statistics table is made of such categories): it is read like any column and the page says so (`_sensitive_columns`, privacy.sensitive)
+    if _sensitive_header(header) and not _measure_like(values):
+        return "sensitive_category"
     vc = t.value_counts()
     vals = pd.Series([str(x) for x in vc.index], dtype=object)
     w = vc.to_numpy(dtype=float)
@@ -1773,8 +1724,8 @@ def _neutralize_withheld(db_path: str, table: str, columns: List[str]) -> List[s
 # when ALL of these hold: the scan's only reason is free text (no value looked like an email, a phone number or any other
 # personal shape); it has at most 300 different values, at most 5% of its filled cells; every label repeats at least 5
 # times; its values do not look like people's names (_looks_like_names) and its name does not say it holds people
-# (_person_hint). (Wave 5h: a sensitive-category name no longer stops a release: such a column is read and the page names it, privacy.sensitive;
-# SENSITIVE_HEADER below is kept for reference only.) A release deletes the column's row from the engagement's column register (runtime state, never
+# (_person_hint); and its name is not a sensitive category (AM1: health, religion, ethnicity and the like are sensitive
+# even when categorical). A release deletes the column's row from the engagement's column register (runtime state, never
 # engine code), so the engine reads it like any column, and is recorded in privacy.released. The page's consent step
 # shows every released column ("Read as a category, not personal data: <column> (<n> labels)") and the visitor can still
 # withhold it: a withhold or code decision for it keeps the flag.
@@ -1950,8 +1901,8 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
             continue
         if any(k.strip() and not k.strip().startswith("named_") for k in str(kinds or "").split(",")):
             continue                                  # a value shape the scan matched: never released
-        if str(kinds or "").strip() or _person_hint(_header_tokens(header), header)[0]:
-            continue                                  # its name was a hint (named_...) or says people (wave 5h: a sensitive name no longer stops it)
+        if str(kinds or "").strip() or SENSITIVE_HEADER.search(header) or _person_hint(_header_tokens(header), header)[0]:
+            continue                                  # its name was a hint (named_...), is sensitive (AM1) or says people
         con = sqlite3.connect(eng.db_path)
         try:
             qc = '"%s"' % col.replace('"', '""')
@@ -2029,15 +1980,14 @@ def _release_slice_measure(E: Any, eng: Any, res: Any, header: str) -> None:
 
 
 def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optional[Dict[str, str]] = None, sent_bytes: Any = None,
-                      kept: Optional[Dict[str, str]] = None, slice_measure: Optional[str] = None,
-                      sensitive: Optional[List[Dict[str, Any]]] = None
+                      kept: Optional[Dict[str, str]] = None, slice_measure: Optional[str] = None
                       ) -> Tuple[List[Dict[str, str]], List[str], "Scrubber", List[Dict[str, Any]]]:
     """The decide stage, the same for a run and for the planner's profile: a free-text flag on a plain category is
     lifted (_release_categories, unless the visitor withheld or coded it), the adapter's personal-column check adds
     what the engine's scan missed (a pending decision in the engine's own column register, as a column its scan
     flagged gets), every flagged column takes the visitor's decision or withhold, and each withheld column's values
     are read for the scrubber and then landed as codes no cleaning rule reads. Returns (privacy.flagged, the withheld
-    columns, the scrubber, privacy.released). Wave 5h: a caller that passes a list in `sensitive` gets privacy.sensitive appended to it."""
+    columns, the scrubber, privacy.released)."""
     import sqlite3
     if slice_measure:
         _release_slice_measure(E, eng, res, slice_measure)
@@ -2096,13 +2046,6 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     sc = Scrubber(values + codes, free_values)
     sc.flag_tokens_by = by
     sc.flag_tokens = frozenset().union(*by.values()) if by else frozenset()
-    if sensitive is not None:
-        try:
-            sensitive.extend(_sensitive_columns(eng.db_path, res.table, colmap,
-                                                {str(f["column"]) for f in flagged if f.get("decision") != "keep"}))
-        except Exception:  # noqa: BLE001 - the notice is informative; the reading does not depend on it
-            if os.environ.get("NL_BROWSER_STRICT"):
-                raise
     return flagged, withheld, sc, released
 
 
@@ -4956,8 +4899,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         eng = E.open_engagement(os.path.join(tmp, "engagement"), create=True)
         res = E.land(eng, src)
         colmap = dict(getattr(res, "column_map", {}) or {})
-        sensitive: List[Dict[str, Any]] = []
-        flagged, _withheld, _scrub, released = _decide_and_guard(E, eng, res, decisions, sensitive=sensitive)
+        flagged, _withheld, _scrub, released = _decide_and_guard(E, eng, res, decisions)
         hidden = [str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("decision") != "keep"]
         try:
             as_of = _dt.date.fromisoformat(str(as_of)[:10]).isoformat() if as_of else _dt.date.today().isoformat()
@@ -4974,7 +4916,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         facts = _profile_facts(R, headers, hidden)
         import nl_viz as _nv
         out = {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap, "released": released,
-               "sensitive": sensitive, "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
+               "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
         if structure and STRUCTURE_ON:
             fail: Dict[str, Any] = {}
             S = _structure_detect(R, hidden, wide, fail=fail)
@@ -9706,14 +9648,13 @@ def _outer_of(got: Dict[str, Any], rep: Dict[str, Any], data: Optional[bytes] = 
     inp["rows"] = int(got.get("rows") or 0)
     inp["columns"] = int(got.get("columns") or len(got.get("colmap") or {}) or 0)
     return {"input": inp, "flagged": [dict(f) for f in got.get("flagged") or []],
-            "released": [dict(x) for x in got.get("released") or []], "sensitive": [dict(x) for x in got.get("sensitive") or []],
-            "file_health": got.get("file_health"),
+            "released": [dict(x) for x in got.get("released") or []], "file_health": got.get("file_health"),
             "header": _sent_header(data), "hidden": _hidden_names(got.get("flagged") or [], got.get("colmap") or {})}
 
 
 def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], released: List[Dict[str, Any]],
                 colmap: Dict[str, str], S: Dict[str, Any], audit: Any, wh_list: List[str], rep: Dict[str, Any],
-                name: str, pub_lite: Any, sensitive: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                name: str, pub_lite: Any) -> Dict[str, Any]:
     """Cache the reading's profile facts with the structure (the planner's profile and a plan's run read them next) and
     return what the slice's report takes from the file."""
     import nl_viz as _nv
@@ -9723,7 +9664,7 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
     fh = _file_health(audit.health.score, audit.health.findings or [], S, set(wh_list), pub_lite, cleaning)
     value: Dict[str, Any] = {"ok": True, "rows": reading.n, "flagged": [dict(f) for f in flagged],
                              "released": [dict(x) for x in released], "colmap": dict(colmap or {}),
-                             "sensitive": [dict(x) for x in sensitive or []], _PROFILE_CACHE_STRUCTURE: S, "file_health": fh, "columns": int(rep["input"].get("columns") or 0)}
+                             _PROFILE_CACHE_STRUCTURE: S, "file_health": fh, "columns": int(rep["input"].get("columns") or 0)}
     try:
         pfacts = _profile_facts(reading, list(reading.land) or list(reading.values.columns), hidden)
         value.update(facts=pfacts, viz_stats=_nv.profile_stats(reading, pfacts))
@@ -9734,7 +9675,7 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
     _PROFILE_CACHE.clear()
     _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value=value)
     inp = dict(rep["input"])
-    return {"input": inp, "flagged": value["flagged"], "released": value["released"], "sensitive": value["sensitive"], "file_health": fh,
+    return {"input": inp, "flagged": value["flagged"], "released": value["released"], "file_health": fh,
             "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap)}
 
 
@@ -9974,8 +9915,7 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
     inp["layout"] = {"layout": STRUCTURE_LAYOUT, "slice": slice_id, "where": where, "column": info["column"],
                      "rows_in": outer["input"].get("rows"), "rows_out": info["rows"], "series": S.get("series")}
     rep["reproducibility"]["input_sha256"] = inp["sha256"]
-    rep["privacy"] = {"flagged": list(outer.get("flagged") or []), "released": list(outer.get("released") or []),
-                      "sensitive": list(outer.get("sensitive") or [])}
+    rep["privacy"] = {"flagged": list(outer.get("flagged") or []), "released": list(outer.get("released") or [])}
     st = rep.get("structure") or {}
     st["file_health"] = outer.get("file_health")
     rep["structure"] = st
@@ -11070,14 +11010,12 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # -- decide: every flagged column (the engine's scan, then the adapter's personal-column check), the
         # visitor's choice or withhold; a withheld column is then landed as codes no cleaning rule reads
         t0 = time.perf_counter()
-        sensitive: List[Dict[str, Any]] = []
-        flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions, sensitive=sensitive,
+        flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions,
                                                                aside=(layout or {}).get("personal_set_aside"), sent_bytes=sent,
                                                                kept=(layout or {}).get("personal_kept"),
                                                                slice_measure=(structure_inner or {}).get("column"))
         rep["privacy"]["flagged"] = flagged
         rep["privacy"]["released"] = released
-        rep["privacy"]["sensitive"] = sensitive
         timings["decide"] = time.perf_counter() - t0
 
         as_of_eff = as_of or _dt.date.today().isoformat()
@@ -11132,7 +11070,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         cube_refusal = _reason_in_sentence(struct_error)
                         rep["structure"] = struct_error
                 if S_hook is not None:
-                    outer_info = _hook_cache(sent, early_reading, flagged, released, colmap, S_hook, audit, wh_list=withheld, sensitive=sensitive,
+                    outer_info = _hook_cache(sent, early_reading, flagged, released, colmap, S_hook, audit, wh_list=withheld,
                                              rep=rep, name=name, pub_lite=lambda t: public_text(scrub.clean(t), table, name))
                     if S_hook.get("usable"):
                         timings["analyze"] = t_audit
@@ -11350,7 +11288,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 import nl_viz as _nv
                 pfacts = _profile_facts(reading, list(reading.land) or list(reading.values.columns), hidden_land)
                 _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value={
-                    "ok": True, "facts": pfacts, "released": [dict(x) for x in released], "sensitive": [dict(x) for x in sensitive],
+                    "ok": True, "facts": pfacts, "released": [dict(x) for x in released],
                     "rows": reading.n, "flagged": [dict(f) for f in flagged],
                     "colmap": dict(getattr(res, "column_map", {}) or {}),
                     "viz_stats": _nv.profile_stats(reading, pfacts)})

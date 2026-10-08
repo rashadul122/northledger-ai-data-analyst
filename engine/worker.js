@@ -177,11 +177,7 @@ async function onScan(m) {
   var released = ((report.privacy || {}).released || []).map(function (r) {
     return { column: r.column, header: r.header, distinct: r.distinct, text: r.text };
   });
-  // the columns named like a sensitive category (privacy.sensitive, wave 5h): read like any column, said on the consent step and in the report
-  var sensitive = ((report.privacy || {}).sensitive || []).map(function (r) {
-    return { column: r.column, header: r.header, category: r.category, text: r.text };
-  });
-  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, released: released, sensitive: sensitive,
+  post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, released: released,
     excel: (file && file.excel) ? { sheet: file.excel.sheet, sheets: file.excel.sheets } : null } });
 }
 

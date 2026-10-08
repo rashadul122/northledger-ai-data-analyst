@@ -1894,7 +1894,7 @@ publisher or generator feature is in any rule.
   business LEDGER are added (a ledger is added as it always was; fuzz v2 seeds 47 and 74).
 
 **13. Hardening on the lead's held-out range (wave 5g, 7 October 2026; `plan/WAVE4-A-DESIGN.md` "Wave 5g"; the W5F build printed 13 confident wrong figures in 300 unseen fuzz v2 tables).** Six ROOT principles
-(`tools/test_nl_regress.py` g01-g08, red on the W5F build; THRESHOLD LEDGER (wave 5g) in the design doc). No seed, column name, publisher or generator feature is in any rule. Where the brief's diagnosis was wrong, the design
+(`tools/test_nl_regress.py` g01-g13: g01-g06 and g08 red on the W5F build, g07 pins two checker false positives, g09-g13 pin defects found by the reviews of W5G builds; THRESHOLD LEDGER (wave 5g) below and in the design doc). No seed, column name, publisher or generator feature is in any rule. Where the brief's diagnosis was wrong, the design
 doc says so.
 
 - *A, the old path never averages the members of a table of series.* The layer's `panel_no_relations` (an official table whose members stand in no relation, at most 60 series) was left to the adapter's long-table
@@ -1923,6 +1923,26 @@ doc says so.
 - *F, fewer needless refusals, only where safe.* The documented value column is released when the header holds a publisher's signature OR three of the metadata columns only a statistical publisher uses
   (`_release_value_column`); a column of DESCRIBED CODES (`_described_code`: a code of 4 or more characters and two or more words, no comma, no street address, no name behind an id) is released up to 20% of its rows (`RELEASE_MAX_SHARE_CODED`) in a table that carries a PUBLISHER'S SIGNATURE (`_publisher_header`; three metadata names only a publisher uses, which any ERP or GIS export also has, release the
   VALUE column and nothing else), any other column, and every column of any other table, up to 5%; a series id (an id column one to one with the other dimensions: vector, coordinate) is not counted among the "other dimensions" that make a coded dimension redundant. NOT changed: the real parts of a flow in a dimension that is not a set of places and has no total row are still not added (one member shown); the sensitive-category columns are still withheld by default.
+
+THRESHOLD LEDGER (wave 5g): every constant that decides something, with the way it errs (reasons and "if wrong" in the design doc).
+
+| constant | value | errs toward |
+|---|---|---|
+| `read_one_member_panel` | an official `panel_no_relations` with a dimension and slices, where the layout gave nothing | one member shown, or a refusal |
+| `PANEL_GUARD_REASON` / `_panel_failure` | `panel_no_relations` + `looks_like_series_table` | refusal |
+| `BASIS_MAX_MEMBERS` | 6 | adding (as before) |
+| `_BASIS_MEMBER`, `_BASIS_HEADER`, `_basis_token` | member words (current / constant / chained / fixed prices, a year + prices, nominal, real, original, as reported, restated, (un)adjusted, FR / ES / DE); header = the WHOLE header names bases; nomination needs a DIFFERENT (family, negated) token in a second member | adding (as before); a false nomination is shown as one member |
+| nominated and "cannot say" | not added | one member shown |
+| `_copy_seasons` | periods a year holds: 12 / 4 / 2 / 1, weekly about 52, daily about 364 or 260; `COPY_MIN_POINTS` 12 | one member shown |
+| `_copies_by_shape(cadence=False)` in `_parts_only` | weekly and daily places: "cannot say" | one member shown |
+| `COPY_CORR` / `COPY_RATIO_SD` | 0.95 / 0.15 (unchanged from wave 5e) | one member shown |
+| `ROUND_MIN_VALUES` / `ROUND_MAX_EXP` | 12 non-zero whole figures per series / up to 10^9 | verifying a total to the unit the figures were rounded to |
+| `ID_MIN_DIGITS` | 9 digits, one width, whole numbers; the core's name rules asked with floats | an unverified Total is counted (the old reading) |
+| `_unworded` | a count or unknown whose `type_basis` is "ambiguous"; a weak measure dimension is kept and disclosed | one member shown |
+| `RELEASE_MAX_SHARE_CODED` / `_described_code` | 0.20 vs 0.05; a code of 4+ characters with a digit and 2+ words, no comma, no street address, fewer than 30% names behind an id; only in a table with a publisher's SIGNATURE | releasing a described-code column of a publisher's table |
+| value-column release gate | a publisher's signature, or 3 of `_GUARD_META_SPECIFIC` (releases the VALUE column only) | releasing a column named Value |
+| series id in the numeric-dimension test | id-like AND one to one with the other dimensions (three or more dimensions) | a numeric column kept as a dimension (the table may be refused) |
+| averaged-level wording | `type_basis` starts "ambiguous" and aggregation starts "mean" | none (wording only) |
 
 Retail (StatCan 20-10-0008), the FX file and the Amazon reviews file are unchanged in every figure and scenario id; the only blocks that differ are listed in the design doc's "Measured (wave 5f)".
 

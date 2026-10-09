@@ -317,6 +317,14 @@ def main(argv=None):
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     write_files(a.out)
+    # the engine on the path before the adapter, as engine/worker.js puts the packed engine first in the browser and the
+    # unit tests do (tools/test_nl_browser.py): the adapter reaches for `northledger` before its own _import_engine()
+    # (ledger_tidy's personal-column scan), so without this every fixture stopped on "No module named 'northledger'" and
+    # check_ui.js skipped its report checks. NL_ENGINE_ROOT: a frozen copy of northledger-core, as the tests read it
+    engine_root = os.path.abspath(os.environ.get("NL_ENGINE_ROOT") or os.path.join(SITE, "..", "northledger-core"))
+    if not os.path.isdir(os.path.join(engine_root, "northledger")):
+        sys.exit("the engine is not at %s (set NL_ENGINE_ROOT to northledger-core)" % engine_root)
+    sys.path.insert(0, engine_root)
     sys.path.insert(0, os.path.join(SITE, "engine"))
     os.environ["NL_BROWSER_STRICT"] = "1"      # a v2 defect stops here instead of hiding behind the v1 fallback
     import nl_browser

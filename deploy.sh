@@ -5,7 +5,8 @@
 #   1. the flag --i-have-the-owners-go is given (or --dry-run: every gate, then wrangler's own dry run, no deploy)
 #   2. git: a clean tree (untracked files count) on branch main, so what ships is what is committed
 #   3. PLAYWRIGHT_MODULE names an installed Playwright (the browser checks cannot be skipped)
-#   4. ./verify.sh passes with NL_REQUIRE_PYODIDE=1, and its summary shows ui PASS and pyodide PASS (not SKIP)
+#   4. ./verify.sh passes with NL_REQUIRE_PYODIDE=1, and its summary shows ui PASS and pyodide PASS (not SKIP),
+#      and no single tools/check_ui.js check printed "UI SKIP"
 #   5. dist/ is built fresh (tools/make_dist.py: Pyodide fetched and verified against the pins), then
 #      tools/check_dist.py --js-crosscheck and tools/test_dist_tools.py pass
 #   6. tools/check_dist_csp.mjs passes: the real _headers, in a real browser, the whole demo with zero violations
@@ -52,6 +53,7 @@ LOG="$(mktemp "${TMPDIR:-/tmp}/nl-deploy-verify.XXXXXX")"
 if ! NL_REQUIRE_PYODIDE=1 ./verify.sh 2>&1 | tee "$LOG"; then refuse "verify.sh failed (log: $LOG)"; fi
 grep -q '^VERIFY: ALL PASS' "$LOG" || refuse "verify.sh did not print VERIFY: ALL PASS (log: $LOG)"
 grep -Eq '^ +ui +PASS' "$LOG" || refuse "verify.sh: the ui step did not PASS (a SKIP is not a pass; log: $LOG)"
+if grep -q '^UI SKIP' "$LOG"; then refuse "verify.sh: $(grep -c '^UI SKIP' "$LOG") tools/check_ui.js check(s) skipped (a skipped check is not a pass; log: $LOG)"; fi
 grep -Eq '^ +pyodide +PASS' "$LOG" || refuse "verify.sh: the pyodide step did not PASS (a SKIP is not a pass; log: $LOG)"
 
 step "4. dist/"

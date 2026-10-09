@@ -909,6 +909,7 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
 .nl2-period table.dt { width: auto; min-width: 100%; }
 .nl2-period table.dt thead th:first-child, .nl2-period table.dt tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); }
 .nl2-period table.dt td.num, .nl2-period table.dt th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) { .nl2-period table.dt tbody th { max-width: 36vw; font-size: 12.5px; } .nl2-period table.dt td.num { font-size: 12.5px; } }
 .nl2-period .nl2-period-gaps { margin: 6px 0 0; }
 .nl2-period .nl2-period-gaps summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .nl2-est-title { margin: 0 0 4px; font-size: clamp(17px, 1.9vw, 21px); line-height: 1.3; letter-spacing: -0.01em; }
@@ -1392,7 +1393,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-09 10:48:54 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-09 11:38:40 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2105,7 +2106,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-09 10:48:54 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-09 11:38:40 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -5014,7 +5015,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       ok: function (d) {
         var x = d.x;
         return isObj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= 240 && fin(x.step) && x.step >= 1 && isStr(d.y_label) && Array.isArray(d.series) &&
-          d.series.length >= 1 && d.series.length <= 6 && d.series.every(function (s) {
+          d.series.length >= 1 && d.series.length <= 5 && d.series.every(function (s) {
             return isObj(s) && isStr(s.label) && isStr(s.first_text) && isStr(s.last_text) && isStr(s.change_text) && Array.isArray(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
               return isObj(r) && fin(r.at) && r.at >= 0 && Array.isArray(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
             });
@@ -5036,7 +5037,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       },
       draw: function (r, top, bottom) {
         var o = this.lay(r), d = r.data, S = d.series, n = d.x.n, self = this, L = this.L, R = L + this.CW, nt = o.nt, i, k, q;
-        var x0 = L + o.x0, x1 = R - o.RW, pt = top - 4, pb = bottom + 22, PW = x1 - x0;
+        var yl = isStr(d.y_label) && d.y_label ? fitB(enc(d.y_label), 7, 'B', this.CW) : '';
+        var x0 = L + o.x0, x1 = R - o.RW, pt = top - (yl ? 13 : 4), pb = bottom + 22, PW = x1 - x0;
+        if (yl) this.text(yl, L, top - 7.5, 7, 'B', VC.muted);
         var X = function (j) { return x0 + (n > 1 ? j / (n - 1) : 0) * PW; }, Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); };
         var cov = []; for (i = 0; i < n; i++) cov.push(0);
         S.forEach(function (s) { s.runs.forEach(function (rn) { for (q = 0; q < rn.values.length; q++) cov[rn.at + q] = 1; }); });
@@ -10867,7 +10870,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       }).join('') + '</tbody></table></div>' +
       '<p class="note nl2-period-note">' + esc(P.basis || '') + (P.unit ? ' Figures are in ' + esc(P.unit) + '.' : '') +
       ' Average a year is the change divided by the years between the two figures; the compound rate is the constant yearly rate that gives the same change.</p>' +
-      (runs ? '<details class="nl2-period-gaps"><summary>' + esc(cap1((sk.text || '').replace(/[.\s]+$/, ''))) + '</summary><p class="note">The months with no published figure, left as gaps and never filled in: ' + esc(runs) + '.</p></details>' : '') + '</article>';
+      (runs ? '<details class="nl2-period-gaps"><summary>' + esc(cap1((sk.text || '').replace(/[.\s]+$/, ''))) + '</summary><p class="note">The ' + esc(sk.unit || 'month') + 's with no published figure, left as gaps and never filled in: ' + esc(runs) + '.</p></details>' : '') + '</article>';
   }
   function manager(r, CH, parts) {
     var K = CH.kpi, B = CH.benchmark, drv = (r.charts_suppressed || []).filter(function (s) { return s.rule === '#2b'; })[0];
@@ -11263,7 +11266,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 6, slots: 240 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 5, slots: 240 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }
@@ -11827,9 +11830,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var d = rec.data, S = d.series, n = d.x.n, wide = W >= 480, lo = Infinity, hi = -Infinity, b = '';
     S.forEach(function (s) { s.runs.forEach(function (r) { r.values.forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }); }); });
     var sp = U.lineSpan ? U.lineSpan(lo, hi, 0.06) : [lo, hi];
-    var yt = yTicks(sp[0], sp[1], 4), yw = mx(yt.lab.map(function (t) { return tw(t, 12); })) + 10;
+    // the value axis prints whole figures, not 1.2M: the table's unit may itself be millions (the unit is named over the axis)
+    var yts = ticks(sp[0], sp[1], 4), ystep = yts.length > 1 ? Math.abs(yts[1] - yts[0]) : 1, ydp = !(ystep > 0) || ystep >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log(ystep) / Math.LN10 - 1e-9));
+    var yt = { ts: yts, lab: yts.map(function (t) { return (t < 0 ? '\u2212' : '') + Math.abs(t).toLocaleString(undefined, { minimumFractionDigits: ydp, maximumFractionDigits: ydp }); }) };
+    var yw = mx(yt.lab.map(function (t) { return tw(t, 12); })) + 10;
     var RW = wide ? Math.min(Math.round(W * 0.34), Math.max(110, mx(S.map(function (s) { return tw(s.last_text, 12, 700) + 8 + Math.min(tw(s.label, 12), 150); })) + 14)) : 10;
-    var L = yw, R = W - RW, PW = Math.max(60, R - L), T = 10, PH = wide ? 230 : 190, Bt = T + PH;
+    var L = yw, R = W - RW, PW = Math.max(60, R - L), T = d.y_label ? 28 : 10, PH = wide ? 230 : 190, Bt = T + PH;
     var X = function (i) { return L + (n > 1 ? i / (n - 1) : 0) * PW; };
     var Y = scale(sp[0], sp[1] === sp[0] ? sp[0] + 1 : sp[1], Bt, T);
     // no line has a figure for these periods: a shaded band from the last figure before to the first after
@@ -11843,6 +11849,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       b += '<rect class="nlv-gap" x="' + f1(X(a - 1)) + '" y="' + T + '" width="' + f1(Math.max(1, X(e) - X(a - 1))) + '" height="' + PH + '"/>';
       gaps++; a = e;
     }
+    if (d.y_label) b += txt(0, 13, d.y_label, { cls: 'lab nlv-axn', maxW: Math.max(40, W - 4) });
     yt.ts.forEach(function (t, k) {
       b += '<line class="gridl" x1="' + f1(L) + '" x2="' + f1(R) + '" y1="' + f1(Y(t)) + '" y2="' + f1(Y(t)) + '"/>' + txt(L - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' });
     });

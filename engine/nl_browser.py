@@ -1881,7 +1881,7 @@ def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: 
         finally:
             con.close()
         released.append({"column": col, "header": header, "kind": "measure", "distinct": len(seen), "rows": ok, "min_repeat": 1,
-                         "text": RELEASED_MEASURE_WORDS % header,
+                         "series": is_series, "text": RELEASED_MEASURE_WORDS % header,
                          "why": ("a series of the agency's table, every cell a number: a word in its name does not make it a person's data"
                                  if is_series else
                                  "the table's own value column (a publisher's layout names it), every cell a number: a count of nine or more "
@@ -8405,6 +8405,12 @@ def _a_share(df, date, ent, cols, plan, layout) -> Dict[str, Any]:
     import pandas as pd
     if len(cols) < 2:
         return {"refused": "share: needs two or more parts"}
+    if (layout or {}).get("layout") == "long statistical table":
+        # an agency's series are separate published series: the structure check found no total beside its parts, so nothing shows they
+        # add up to a whole (a visitor's StatCan debt table, 8 Oct 2026: federal debt, net debt, gross liabilities and the debts inside
+        # them were added into one "total" and given shares of it)
+        return {"refused": "share: the table's series are separately published, and no total in the table shows they are parts of one "
+                           "whole (some may hold others), so shares of their sum would mean nothing"}
     num = {c: _col_nums(df, c) for c in cols[:8]}
     f = pd.DataFrame(num)
     f["_d"] = pd.to_datetime(df[date], errors="coerce") if date else 0

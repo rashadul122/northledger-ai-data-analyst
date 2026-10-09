@@ -1822,9 +1822,13 @@
       ['withhold', 'Withhold', 'treat it as personal after all: never sent to an AI or put in a share link, its values never shown, downloaded or used in the analysis']];
     function releasedHtml(rel) {
       if (!rel.length) return '';
-      var cats = rel.filter(function (x) { return !isMeasureRelease(x); }), meas = rel.filter(isMeasureRelease);
+      var cats = rel.filter(function (x) { return !isMeasureRelease(x); }), meas = rel.filter(function (x) { return isMeasureRelease(x) && !x.series; }),
+        ser = rel.filter(function (x) { return isMeasureRelease(x) && x.series; });
       return (cats.length ? '<p class="note pd-rel-note">The engine reads ' + (cats.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (cats.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape and no sensitive name. You can still withhold ' + (cats.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
         (meas.length ? '<p class="note pd-rel-note">The table\'s own value column (' + meas.map(function (x) { return esc(String(x.header || x.column)); }).join(', ') + ') holds the figures it publishes: every cell is a number, and a count of nine or more digits has the shape of an ID number without being one here. The engine reads it as the measure, not as personal data. You can still withhold it; the table then cannot be read.</p>' : '') +
+        // a long statistical table's series (engine/nl_browser.py _release_value_column, series): a word in an agency's series name ("notes")
+        // flagged it, never its numbers
+        (ser.length ? '<p class="note pd-rel-note">' + (ser.length === 1 ? 'This series of the agency\'s table' : 'These series of the agency\'s table') + ' (' + ser.map(function (x) { return esc(String(x.header || x.column)); }).join(', ') + ') ' + (ser.length === 1 ? 'holds' : 'hold') + ' the figures it publishes: every cell is a number, and a word in a series\' name (such as "notes") does not make it a person\'s data. The engine reads ' + (ser.length === 1 ? 'it' : 'them') + ' as measures. You can still withhold ' + (ser.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
         rel.map(function (x, i) {
           var words = isMeasureRelease(x) ? String(x.text) : 'Read as a category, not personal data: ' + String(x.header || x.column) + ' (' + Number(x.distinct || 0).toLocaleString('en-US') + ' labels)';
           return '<fieldset class="pd-col pd-rel"><legend><code>' + esc(x.header || x.column) + '</code> <span class="pd-kind">' + esc(words) + '</span></legend><div class="pd-opts">' +
@@ -3134,7 +3138,8 @@
         ((r.privacy.released || []).filter(function (x) { return x && x.text; }).length
           ? '<h4 class="tr-rel-h">' + (r.privacy.released.some(isMeasureRelease) ? 'Read as categories or as the table\'s measure, not personal data' : 'Read as categories, not personal data') + '</h4><ul class="tr-rel-list" data-released="1">' + r.privacy.released.filter(function (x) { return x && x.text; }).map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul>' +
             (r.privacy.released.some(function (x) { return x && x.text && !isMeasureRelease(x); }) ? '<p class="note">A scan flags any column of many different wordy values; these hold a short list of labels, each repeated, with no personal shape and no sensitive name, so the engine read them like any other column. Their labels can appear in the findings, the charts and the downloads.</p>' : '') +
-            (r.privacy.released.some(isMeasureRelease) ? '<p class="note">The table\'s own value column holds the figures it publishes (every cell a number); a count of nine or more digits has the shape of an ID number without being one, so the engine read it as the measure.</p>' : '')
+            (r.privacy.released.some(function (x) { return isMeasureRelease(x) && !x.series; }) ? '<p class="note">The table\'s own value column holds the figures it publishes (every cell a number); a count of nine or more digits has the shape of an ID number without being one, so the engine read it as the measure.</p>' : '') +
+            (r.privacy.released.some(function (x) { return isMeasureRelease(x) && x.series; }) ? '<p class="note">The agency\'s series hold the figures the table publishes (every cell a number); a word in a series\' name does not make it a person\'s data, so the engine read them as measures.</p>' : '')
           : '') +
         '<p class="note">The scan reads column names and the shape of values, so names under a neutral heading can be missed: look over the story and the downloads before you share them.</p></article>';
       if (gated) h += priv;

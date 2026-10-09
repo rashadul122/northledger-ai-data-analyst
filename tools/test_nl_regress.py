@@ -2084,7 +2084,8 @@ def test_s07_a_statcan_table_keeps_its_history_skips_unpublished_months_and_name
                         {"name": "VALUE", "role": "target", "semantic_type": "level", "unit": "millions of dollars"}],
             "operations": [{"op": "exclude_blank", "column": "VALUE"},
                            {"op": "keep_columns", "columns": ["REF_DATE", "Central government debt", "VALUE"]}],
-            "primary": "VALUE", "analyses": []}
+            "primary": "VALUE", "analyses": [{"type": "share", "columns": ["Central government debt", "VALUE"]},
+                                             {"type": "trend", "columns": ["VALUE"]}]}
     ai = run_file("s07_statcan_debt_unpublished_months.csv", plan=plan)
     assert ai["ok"], ai.get("error")
     assert (ai["input"].get("layout") or {}).get("layout") == "long statistical table", ai["input"].get("layout")
@@ -2093,6 +2094,11 @@ def test_s07_a_statcan_table_keeps_its_history_skips_unpublished_months_and_name
     assert ai_lines and ai_lines[0].startswith("Average A. Federal debt"), ai_lines
     assert any("not needed: the file is a long statistical table" in x for x in ai["ai_plan"]["refused"]), ai["ai_plan"]["refused"]
     assert "did not run" not in ai["story"]["headline"], ai["story"]["headline"]
+    # shares of the series' sum: federal debt, net debt and the debts inside them are not parts of one whole (the live AI report
+    # printed "C. Liabilities, gross debt was the largest part (20.8% of the 8 parts' total)")
+    an = ai.get("ai_analyses") or {}
+    assert not any(x.get("type") == "share" for x in an.get("items") or []), [x.get("type") for x in an.get("items") or []]
+    assert any("separately published" in str(x) for x in an.get("refused") or []), an.get("refused")
 
 
 # ----------------------------------------------------------------------------- runner

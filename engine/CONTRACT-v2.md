@@ -833,12 +833,13 @@ section `headline` when its measure is the primary claim's, else `other`); `chan
 `correlation_heatmap` [measure, measure, measure, ...] (3 to 12, or [] for the engine's measures; `other`);
 `group_ranges` [measure, category] (the compare analysis's bootstrap ranges as a dot plot, kind `dot_range`;
 `other`); `pareto` [category, total?] (the top 20, the running share, k80; `other`); `slope` [category, total?]
-(each segment's prior and latest total; `scenarios`). Sections name the AI report's parts: `headline` the headline,
+(each segment's prior and latest total; `scenarios`); `series_lines` [] (a long statistical table's own series as lines over
+time, kind `timeseries`, `headline`; the engine adds it itself, impact6, 9 October 2026). Sections name the AI report's parts: `headline` the headline,
 `drove` what drove it, `other` other findings, `scenarios` scenarios. Each entry's data conditions, privacy rule,
 source and reconciliation are in the spec's `menu`.
 
 **The record** (`rep.viz.charts[]`, and whole in `results_for_ai.charts[]`): `{id ("viz.<n>.<chart>"), chart (the
-menu name), kind (the draw kind, at most 10 characters: waterfall | heatmap | dot_range | pareto | slope | table),
+menu name), kind (the draw kind, at most 10 characters: waterfall | heatmap | dot_range | pareto | slope | timeseries | table),
 title, subtitle, section, supports (the claim or analysis it illustrates), anchors[] ("finding:<id>",
 "scenario:<item id>", "analysis:<n>", "chart:<id>"), grade, parent_grade (a chart derived from a graded claim has
 grade null and the claim's grade here, as 5.8's items do), chosen_by ("ai" | "engine"; an engine pick's why starts
@@ -858,6 +859,8 @@ degraded? ({from, why}, set only by a producer or reader that degraded the recor
   n_entities}` or null, `total{value, text}`, `k80{k, of, text}` (k counts levels in order of their totals, every
   level included, to 80% of the whole, so it may lie beyond the bars);
 - `slope`: `rows[{label, a, b, a_text, b_text, change_text}]`, `a_label`, `b_label`;
+- `timeseries`: `x{first (YYYY-MM), n, step (months), label}`, `series[{label, runs[{at, values[]}], first_text, last_text, change_text}]` (at most 6, runs apart: a gap is
+  a break, never interpolated), `y_label`; at most `LINE_BYTES` (16,000) bytes;
 - `table`: `{}`: the record is its table.
 
 **Unknown kind → table, never dropped.** A reader that does not know a record's kind, or finds its data malformed,
@@ -1950,3 +1953,16 @@ Retail (StatCan 20-10-0008), the FX file and the Amazon reviews file are unchang
 ## 6. What this contract does not carry yet (R1)
 
 Tipping points (S1/M10), drivers and reversals (S2), per-claim power, posterior probabilities (C8), the real-data placebo and the cross-environment receipt, Little's MCAR test, restatement lists and the structural-break screen are `null`/`[]` with their reason. The page must show them as "not measured", never as zero.
+
+**Whole period, `rep.period` (a long statistical table; impact6, 9 October 2026).** The headline of such a table compares the latest 12
+months with the 12 before; `rep.period` states the long run, from the rows the visitor downloads (`nl_viz.period_block`): per series its
+first and latest published figure with their dates, the change, the percent change, the average yearly change and the compound yearly
+rate (each stated as that), and the periods the publisher skipped, named (`skipped.ranges`, `skipped.pattern`). The figures are the
+publisher's, not a sample: the arithmetic is exact and **never graded**. `lines` go into `story.what_happened` after its first line (the
+lead series' sentence into `summary.lines`, kind "period"), `table` goes to the report writer as the table "The whole period, series by
+series" (`results_for_ai.tables`, 12 rows), and the page shows a card with all of it. A report writer cites them as it cites any engine
+text: a figure it types is removed by the guard. A table in several units has no total of its series and a daily one is described by its
+first and latest dated figure.
+
+**Title block (impact6).** A few lines of one or two cells above the column names (the World Bank's download has four) are set aside, and
+the report says so (`limitations[0]`, `cleaning.fixes[0].rule` = `title_block_set_aside`); a file with no such line below is refused as before.

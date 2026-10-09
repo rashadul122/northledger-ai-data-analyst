@@ -41,6 +41,15 @@
     "z": "not_applicable"
    }
   },
+  "worldbank": {
+   "signature": [
+    "Country Name",
+    "Country Code",
+    "Indicator Name",
+    "Indicator Code"
+   ],
+   "codes": {}
+  },
   "ons": {
    "codes": {
     "c": "confidential",

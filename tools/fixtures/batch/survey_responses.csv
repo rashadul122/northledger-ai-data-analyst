@@ -1,0 +1,861 @@
+Respondent ID,Date Answered,Age Group,Gender,Region,Easy to use,Good value,Reliable,Support is helpful,Would renew,Likelihood to recommend (0-10),Comments
+R0001,2026-06-14,18-24,Female,Atlantic,Strongly agree,Agree,Agree,Neutral,Agree,8,The reports are hard to read on a phone
+R0002,2026-06-25,55-64,Female,Quebec,Strongly agree,Neutral,Neutral,Strongly agree,Agree,9,Easy to use and quick to set up
+R0003,2026-06-27,25-34,Non-binary,Alberta,Strongly agree,Agree,Neutral,Strongly agree,Agree,7,Would recommend to a friend
+R0004,2026-06-18,18-24,Female,Atlantic,Strongly agree,Strongly agree,Strongly agree,Neutral,Strongly agree,9,
+R0005,2026-05-19,25-34,Male,Ontario,Agree,Agree,Strongly agree,Neutral,Agree,7,Support took too long to reply
+R0006,2026-05-25,25-34,Prefer not to say,Alberta,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,Missing an export to Excel
+R0007,2026-06-04,55-64,Prefer not to say,Ontario,Strongly agree,Strongly disagree,Disagree,Neutral,Strongly agree,8,Would recommend to a friend
+R0008,2026-06-01,35-44,Prefer not to say,Prairies,Agree,Neutral,Strongly agree,Neutral,Strongly agree,5,Too many notifications
+R0009,2026-05-12,65+,Male,Alberta,Agree,Strongly agree,Strongly agree,Strongly agree,Neutral,10,Onboarding was smooth
+R0010,2026-05-30,35-44,Prefer not to say,Quebec,Neutral,Neutral,Agree,Neutral,Agree,7,Too many notifications
+R0011,2026-05-22,18-24,Male,Alberta,Neutral,Neutral,Agree,Agree,Strongly agree,6,Would recommend to a friend
+R0012,2026-06-30,65+,Prefer not to say,Alberta,Disagree,Disagree,Disagree,Strongly disagree,Disagree,5,Support took too long to reply
+R0013,2026-05-11,35-44,Female,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,8,
+R0014,2026-05-26,55-64,Non-binary,Alberta,Strongly agree,Strongly agree,Strongly agree,Agree,Agree,5,Too many notifications
+R0015,2026-06-20,35-44,Non-binary,Alberta,Agree,Neutral,Strongly agree,Neutral,Neutral,8,
+R0016,2026-05-23,65+,Female,Prairies,Neutral,Agree,Neutral,Agree,Neutral,10,The reports are hard to read on a phone
+R0017,2026-05-25,65+,Male,Atlantic,Agree,Strongly disagree,Neutral,Strongly disagree,Neutral,4,The reports are hard to read on a phone
+R0018,2026-06-19,18-24,Female,British Columbia,Agree,Disagree,Neutral,Strongly disagree,Disagree,6,Slow on large files
+R0019,2026-05-27,18-24,Male,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,Too many notifications
+R0020,2026-06-14,18-24,Female,Alberta,Neutral,Neutral,Strongly disagree,Disagree,Neutral,7,Would recommend to a friend
+R0021,2026-06-19,45-54,Prefer not to say,Alberta,Neutral,Disagree,Strongly agree,Strongly agree,Agree,9,Too many notifications
+R0022,2026-06-25,55-64,Prefer not to say,Prairies,Agree,Agree,Agree,Neutral,Agree,8,Slow on large files
+R0023,2026-07-02,25-34,Prefer not to say,Quebec,Agree,Disagree,Neutral,Neutral,Neutral,4,Love the weekly summary email
+R0024,2026-05-07,65+,Non-binary,Alberta,Strongly agree,Agree,Neutral,Neutral,Agree,5,
+R0025,2026-06-05,18-24,Prefer not to say,Quebec,Neutral,Neutral,Agree,Agree,Agree,8,Easy to use and quick to set up
+R0026,2026-06-08,45-54,Female,Atlantic,Strongly agree,Agree,Agree,Neutral,Neutral,6,Too many notifications
+R0027,2026-07-01,18-24,Prefer not to say,British Columbia,Disagree,Strongly disagree,Strongly disagree,Disagree,Strongly disagree,4,Too many notifications
+R0028,2026-06-06,35-44,Male,Alberta,Agree,Agree,Agree,Neutral,Agree,6,The reports are hard to read on a phone
+R0029,2026-05-23,18-24,Male,Prairies,Neutral,Disagree,Neutral,Neutral,Disagree,7,Support took too long to reply
+R0030,2026-06-15,25-34,Male,Prairies,Strongly agree,Neutral,Agree,Neutral,Agree,6,Missing an export to Excel
+R0031,2026-05-25,55-64,Prefer not to say,Alberta,Agree,Neutral,Agree,Agree,Strongly agree,9,The reports are hard to read on a phone
+R0032,2026-05-20,35-44,Female,Quebec,Agree,Neutral,Agree,Strongly disagree,Agree,8,Love the weekly summary email
+R0033,2026-06-05,55-64,Prefer not to say,Prairies,Neutral,Neutral,Neutral,Disagree,Neutral,7,Easy to use and quick to set up
+R0034,2026-05-09,55-64,Male,Ontario,Disagree,Neutral,Agree,Strongly agree,Neutral,4,Onboarding was smooth
+R0035,2026-05-12,18-24,Male,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Neutral,7,The reports are hard to read on a phone
+R0036,2026-05-15,35-44,Non-binary,Ontario,Agree,Neutral,Neutral,Agree,Neutral,5,The reports are hard to read on a phone
+R0037,2026-06-01,18-24,Prefer not to say,Prairies,Disagree,Neutral,Disagree,Neutral,Disagree,6,Missing an export to Excel
+R0038,2026-06-19,65+,Male,Alberta,Agree,Agree,Strongly disagree,Strongly disagree,Strongly disagree,5,Would recommend to a friend
+R0039,2026-05-14,18-24,Female,Prairies,Strongly agree,Disagree,Neutral,Neutral,Agree,5,Too many notifications
+R0040,2026-05-04,35-44,Non-binary,British Columbia,Strongly agree,Strongly agree,Agree,Agree,Strongly agree,9,Love the weekly summary email
+R0041,2026-05-25,45-54,Female,Alberta,Agree,Strongly agree,Agree,Strongly agree,Strongly agree,8,Pricing is fair for what we get
+R0042,2026-05-05,35-44,Non-binary,Prairies,Strongly agree,Agree,Strongly agree,Neutral,Agree,8,Would recommend to a friend
+R0043,2026-06-11,45-54,Non-binary,Prairies,Strongly agree,Agree,Strongly agree,Neutral,Strongly agree,6,
+R0044,2026-06-24,55-64,Male,Atlantic,Neutral,Agree,Neutral,Agree,Agree,5,Would recommend to a friend
+R0045,2026-06-16,65+,Male,Ontario,Neutral,Disagree,Disagree,Disagree,Neutral,3,Would recommend to a friend
+R0046,2026-05-19,45-54,Non-binary,Ontario,Neutral,Disagree,Neutral,Agree,Disagree,8,Support took too long to reply
+R0047,2026-06-20,45-54,Non-binary,Ontario,Agree,Neutral,Agree,Disagree,Neutral,6,Onboarding was smooth
+R0048,2026-05-22,18-24,Male,Ontario,Agree,Disagree,Neutral,Disagree,Disagree,10,
+R0049,2026-05-07,45-54,Non-binary,Prairies,Agree,Agree,Disagree,Neutral,Neutral,7,Support took too long to reply
+R0050,2026-05-23,18-24,Prefer not to say,Ontario,Strongly agree,Agree,Strongly agree,Strongly disagree,Agree,10,Love the weekly summary email
+R0051,2026-07-02,25-34,Female,Atlantic,Agree,Neutral,Disagree,Neutral,Strongly disagree,8,Love the weekly summary email
+R0052,2026-05-18,45-54,Prefer not to say,Alberta,Disagree,Neutral,Neutral,Disagree,Neutral,8,Love the weekly summary email
+R0053,2026-05-28,35-44,Female,British Columbia,Strongly agree,Neutral,Agree,Neutral,Strongly agree,5,Slow on large files
+R0054,2026-05-29,45-54,Female,British Columbia,Agree,Agree,Disagree,Neutral,Disagree,6,Easy to use and quick to set up
+R0055,2026-07-02,25-34,Male,British Columbia,Agree,Agree,Agree,Disagree,Agree,6,Would recommend to a friend
+R0056,2026-06-08,55-64,Male,Prairies,Strongly agree,Strongly agree,Strongly agree,Disagree,Agree,4,Pricing is fair for what we get
+R0057,2026-05-07,55-64,Male,Quebec,Neutral,Neutral,Neutral,Agree,Agree,5,Would recommend to a friend
+R0058,2026-06-15,45-54,Female,Quebec,Strongly agree,Neutral,Neutral,Strongly disagree,Agree,7,
+R0059,2026-06-21,45-54,Prefer not to say,Quebec,Agree,Agree,Strongly agree,Strongly agree,Agree,10,
+R0060,2026-06-28,45-54,Prefer not to say,Alberta,Strongly agree,Agree,Agree,Agree,Strongly agree,8,Too many notifications
+R0061,2026-05-12,65+,Male,Ontario,Agree,Agree,Neutral,Neutral,Strongly agree,10,Easy to use and quick to set up
+R0062,2026-06-21,45-54,Prefer not to say,Ontario,Agree,Strongly agree,Agree,Agree,Neutral,8,Too many notifications
+R0063,2026-05-10,25-34,Male,Quebec,Neutral,Agree,Strongly agree,Neutral,Neutral,8,Too many notifications
+R0064,2026-05-04,25-34,Male,Atlantic,Agree,Neutral,Disagree,Disagree,Neutral,8,Love the weekly summary email
+R0065,2026-06-21,18-24,Female,Ontario,Disagree,Strongly agree,Neutral,Neutral,Neutral,5,
+R0066,2026-05-24,65+,Male,Alberta,Strongly agree,Disagree,Neutral,Agree,Agree,6,Would recommend to a friend
+R0067,2026-06-04,65+,Prefer not to say,Ontario,Agree,Strongly agree,Agree,Neutral,Agree,7,Onboarding was smooth
+R0068,2026-05-04,35-44,Female,Quebec,Strongly agree,Neutral,Agree,Neutral,Neutral,6,Too many notifications
+R0069,2026-05-22,18-24,Prefer not to say,Atlantic,Agree,Agree,Neutral,Agree,Agree,10,Onboarding was smooth
+R0070,2026-06-11,25-34,Prefer not to say,Ontario,Agree,Neutral,Neutral,Disagree,Agree,7,Missing an export to Excel
+R0071,2026-07-02,25-34,Non-binary,Quebec,Strongly agree,Strongly agree,Neutral,Neutral,Neutral,0,Missing an export to Excel
+R0072,2026-05-10,18-24,Female,British Columbia,Neutral,Agree,Neutral,Neutral,Disagree,8,The reports are hard to read on a phone
+R0073,2026-05-23,45-54,Female,Ontario,Neutral,Disagree,Disagree,Disagree,Disagree,8,Too many notifications
+R0074,2026-06-24,65+,Prefer not to say,Ontario,Strongly agree,Agree,Strongly agree,Agree,Agree,10,The reports are hard to read on a phone
+R0075,2026-05-25,35-44,Non-binary,British Columbia,Strongly agree,Neutral,Agree,Strongly agree,Neutral,3,Easy to use and quick to set up
+R0076,2026-06-24,65+,Female,Ontario,Neutral,Agree,Agree,Agree,Neutral,7,Onboarding was smooth
+R0077,2026-06-25,45-54,Male,Alberta,Strongly agree,Strongly agree,Agree,Disagree,Agree,3,Missing an export to Excel
+R0078,2026-06-23,55-64,Female,Atlantic,Disagree,Neutral,Agree,Disagree,Neutral,7,Easy to use and quick to set up
+R0079,2026-05-14,45-54,Female,Ontario,Neutral,Neutral,Agree,Neutral,Disagree,6,The reports are hard to read on a phone
+R0080,2026-06-30,65+,Male,Prairies,Agree,Strongly disagree,Disagree,Disagree,Strongly disagree,7,Love the weekly summary email
+R0081,2026-05-27,35-44,Non-binary,Quebec,Neutral,Neutral,Neutral,Agree,Agree,9,Support took too long to reply
+R0082,2026-06-05,55-64,Male,Prairies,Strongly agree,Agree,Disagree,Neutral,Neutral,2,Too many notifications
+R0083,2026-06-01,35-44,Female,British Columbia,Agree,Agree,Neutral,Neutral,Agree,7,
+R0084,2026-05-20,65+,Female,Ontario,Agree,Neutral,Neutral,Neutral,Agree,9,Missing an export to Excel
+R0085,2026-05-20,18-24,Male,Ontario,Strongly agree,Neutral,Neutral,Agree,Agree,9,Too many notifications
+R0086,2026-05-10,45-54,Male,Prairies,Agree,Disagree,Agree,Neutral,Agree,6,Love the weekly summary email
+R0087,2026-05-07,35-44,Non-binary,Alberta,Disagree,Agree,Agree,Neutral,Agree,5,The reports are hard to read on a phone
+R0088,2026-05-14,45-54,Female,Ontario,Strongly agree,Neutral,Strongly agree,Agree,Strongly agree,10,Easy to use and quick to set up
+R0089,2026-06-24,45-54,Female,Atlantic,Agree,Neutral,Agree,Agree,Agree,8,Support took too long to reply
+R0090,2026-06-24,25-34,Non-binary,Quebec,Strongly agree,Agree,Agree,Strongly agree,Agree,10,
+R0091,2026-06-30,65+,Male,Prairies,Strongly agree,Neutral,Neutral,Strongly agree,Strongly agree,7,The reports are hard to read on a phone
+R0092,2026-05-14,45-54,Non-binary,Ontario,Agree,Agree,Strongly agree,Neutral,Neutral,10,
+R0093,2026-06-15,35-44,Female,Alberta,Agree,Neutral,Agree,Neutral,Neutral,5,Onboarding was smooth
+R0094,2026-06-05,45-54,Male,Ontario,Strongly agree,Strongly agree,Agree,Neutral,Agree,6,
+R0095,2026-05-15,45-54,Prefer not to say,Ontario,Strongly agree,Agree,Neutral,Strongly agree,Disagree,5,Easy to use and quick to set up
+R0096,2026-06-19,35-44,Female,Ontario,Agree,Neutral,Disagree,Disagree,Disagree,6,Easy to use and quick to set up
+R0097,2026-06-19,65+,Female,Quebec,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,4,Slow on large files
+R0098,2026-05-26,55-64,Non-binary,Quebec,Neutral,Disagree,Agree,Neutral,Disagree,6,Love the weekly summary email
+R0099,2026-05-17,55-64,Non-binary,Atlantic,Strongly disagree,Disagree,Disagree,Disagree,Neutral,4,Would recommend to a friend
+R0100,2026-06-23,35-44,Female,Atlantic,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,8,
+R0101,2026-05-10,35-44,Prefer not to say,Prairies,Neutral,Strongly disagree,Neutral,Disagree,Strongly disagree,3,Too many notifications
+R0102,2026-05-07,35-44,Non-binary,British Columbia,Strongly agree,Neutral,Neutral,Neutral,Agree,9,Missing an export to Excel
+R0103,2026-05-18,25-34,Non-binary,Atlantic,Neutral,Neutral,Neutral,Neutral,Disagree,4,Easy to use and quick to set up
+R0104,2026-05-26,35-44,Female,Atlantic,Agree,Neutral,Agree,Disagree,Neutral,7,The reports are hard to read on a phone
+R0105,2026-05-14,25-34,Female,Quebec,Neutral,Strongly disagree,Neutral,Disagree,Disagree,8,Love the weekly summary email
+R0106,2026-06-25,55-64,Non-binary,Atlantic,Neutral,Disagree,Disagree,Agree,Disagree,7,The reports are hard to read on a phone
+R0107,2026-05-07,55-64,Female,Alberta,Agree,Agree,Agree,Neutral,Neutral,7,The reports are hard to read on a phone
+R0108,2026-06-11,65+,Prefer not to say,Atlantic,Agree,Neutral,Agree,Disagree,Neutral,7,Slow on large files
+R0109,2026-05-04,45-54,Prefer not to say,Prairies,Strongly agree,Neutral,Agree,Neutral,Strongly agree,4,Would recommend to a friend
+R0110,2026-06-20,65+,Non-binary,Prairies,Agree,Strongly agree,Agree,Neutral,Disagree,9,
+R0111,2026-07-02,25-34,Female,Atlantic,Strongly agree,Agree,Agree,Strongly agree,Strongly agree,8,Missing an export to Excel
+R0112,2026-06-11,25-34,Prefer not to say,Prairies,Agree,Strongly agree,Disagree,Neutral,Disagree,7,Too many notifications
+R0113,2026-06-27,18-24,Prefer not to say,Prairies,Strongly agree,Strongly agree,Strongly agree,Neutral,Neutral,5,Pricing is fair for what we get
+R0114,2026-05-10,55-64,Male,British Columbia,Agree,Agree,Neutral,Neutral,Neutral,7,Would recommend to a friend
+R0115,2026-06-20,18-24,Female,Atlantic,Neutral,Disagree,Agree,Disagree,Disagree,4,Slow on large files
+R0116,2026-05-17,25-34,Female,Ontario,Disagree,Agree,Neutral,Disagree,Strongly disagree,6,Would recommend to a friend
+R0117,2026-05-12,18-24,Male,British Columbia,Neutral,Agree,Agree,Neutral,Neutral,4,Missing an export to Excel
+R0118,2026-06-11,55-64,Prefer not to say,British Columbia,Agree,Agree,Strongly agree,Agree,Strongly agree,10,Support took too long to reply
+R0119,2026-06-07,55-64,Male,Prairies,Agree,Disagree,Neutral,Disagree,Neutral,9,Easy to use and quick to set up
+R0120,2026-06-04,65+,Male,Alberta,Agree,Disagree,Disagree,Disagree,Neutral,9,Pricing is fair for what we get
+R0121,2026-06-17,25-34,Prefer not to say,Quebec,Strongly agree,Agree,Strongly agree,Agree,Neutral,8,Would recommend to a friend
+R0122,2026-07-02,45-54,Female,Alberta,Neutral,Disagree,Disagree,Disagree,Neutral,5,
+R0123,2026-06-29,65+,Male,Alberta,Agree,Neutral,Disagree,Strongly disagree,Agree,6,
+R0124,2026-06-15,55-64,Non-binary,Quebec,Strongly agree,Disagree,Agree,Neutral,Agree,9,Missing an export to Excel
+R0125,2026-05-19,55-64,Male,British Columbia,Disagree,Neutral,Disagree,Strongly disagree,Disagree,6,Missing an export to Excel
+R0126,2026-05-19,35-44,Male,British Columbia,Agree,Strongly agree,Agree,Strongly agree,Strongly agree,6,Support took too long to reply
+R0127,2026-05-13,35-44,Non-binary,Alberta,Agree,Agree,Agree,Neutral,Strongly agree,8,Easy to use and quick to set up
+R0128,2026-06-17,25-34,Non-binary,Alberta,Agree,Neutral,Neutral,Neutral,Neutral,3,The reports are hard to read on a phone
+R0129,2026-06-09,55-64,Prefer not to say,Quebec,Agree,Neutral,Strongly agree,Neutral,Agree,7,Pricing is fair for what we get
+R0130,2026-05-24,35-44,Female,Alberta,Neutral,Neutral,Agree,Neutral,Neutral,5,Onboarding was smooth
+R0131,2026-06-27,45-54,Male,Prairies,Agree,Neutral,Strongly agree,Strongly disagree,Agree,7,The reports are hard to read on a phone
+R0132,2026-07-03,25-34,Non-binary,Ontario,Strongly agree,Agree,Neutral,Agree,Strongly agree,9,Easy to use and quick to set up
+R0133,2026-06-06,35-44,Prefer not to say,Prairies,Agree,Disagree,Disagree,Strongly disagree,Neutral,3,
+R0134,2026-05-21,45-54,Prefer not to say,Ontario,Agree,Agree,Neutral,Disagree,Agree,6,Missing an export to Excel
+R0135,2026-05-23,65+,Prefer not to say,Atlantic,Strongly agree,Neutral,Agree,Neutral,Agree,6,Support took too long to reply
+R0136,2026-06-03,65+,Male,Quebec,Agree,Agree,Strongly agree,Strongly agree,Agree,10,Too many notifications
+R0137,2026-06-14,25-34,Prefer not to say,British Columbia,Strongly agree,Agree,Strongly agree,Neutral,Strongly agree,9,Too many notifications
+R0138,2026-05-21,35-44,Male,Prairies,Agree,Neutral,Strongly agree,Disagree,Agree,10,Would recommend to a friend
+R0139,2026-05-23,45-54,Female,Ontario,Strongly agree,Disagree,Agree,Neutral,Strongly agree,7,Easy to use and quick to set up
+R0140,2026-05-08,65+,Non-binary,British Columbia,Disagree,Strongly disagree,Disagree,Neutral,Disagree,5,Too many notifications
+R0141,2026-06-30,45-54,Male,Atlantic,Strongly agree,Disagree,Agree,Disagree,Strongly agree,8,Love the weekly summary email
+R0142,2026-06-06,18-24,Prefer not to say,Prairies,Agree,Neutral,Disagree,Disagree,Neutral,7,Pricing is fair for what we get
+R0143,2026-06-03,45-54,Male,Prairies,Disagree,Disagree,Strongly disagree,Disagree,Agree,6,Too many notifications
+R0144,2026-05-22,45-54,Non-binary,Alberta,Neutral,Strongly disagree,Strongly agree,Agree,Agree,6,Would recommend to a friend
+R0145,2026-05-06,65+,Non-binary,Ontario,Neutral,Neutral,Agree,Neutral,Neutral,7,Missing an export to Excel
+R0146,2026-05-25,45-54,Male,British Columbia,Agree,Strongly disagree,Neutral,Strongly disagree,Disagree,8,Love the weekly summary email
+R0147,2026-05-25,55-64,Non-binary,Atlantic,Neutral,Neutral,Neutral,Neutral,Agree,8,Pricing is fair for what we get
+R0148,2026-06-23,18-24,Prefer not to say,Prairies,Strongly agree,Agree,Strongly agree,Agree,Agree,6,Support took too long to reply
+R0149,2026-07-01,45-54,Female,Atlantic,Strongly agree,Neutral,Neutral,Neutral,Agree,8,Would recommend to a friend
+R0150,2026-06-13,45-54,Male,Ontario,Neutral,Strongly disagree,Strongly disagree,Disagree,Neutral,6,Would recommend to a friend
+R0151,2026-05-12,35-44,Non-binary,British Columbia,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Neutral,10,Too many notifications
+R0152,2026-05-11,45-54,Prefer not to say,Alberta,Neutral,Agree,Neutral,Strongly disagree,Strongly disagree,5,Would recommend to a friend
+R0153,2026-05-30,55-64,Female,Ontario,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,8,Support took too long to reply
+R0154,2026-05-17,18-24,Male,Alberta,Agree,Strongly agree,Agree,Neutral,Strongly agree,10,Pricing is fair for what we get
+R0155,2026-06-20,65+,Male,Prairies,Strongly agree,Neutral,Neutral,Agree,Neutral,7,Easy to use and quick to set up
+R0156,2026-05-04,65+,Female,Alberta,Disagree,Strongly disagree,Agree,Neutral,Agree,5,Too many notifications
+R0157,2026-07-03,55-64,Prefer not to say,Alberta,Neutral,Disagree,Neutral,Disagree,Disagree,5,Onboarding was smooth
+R0158,2026-06-01,35-44,Non-binary,British Columbia,Neutral,Disagree,Agree,Strongly disagree,Strongly disagree,2,
+R0159,2026-05-04,25-34,Non-binary,Atlantic,Disagree,Agree,Disagree,Agree,Disagree,9,Too many notifications
+R0160,2026-05-20,35-44,Prefer not to say,Quebec,Neutral,Strongly disagree,Disagree,Disagree,Disagree,6,Pricing is fair for what we get
+R0161,2026-06-09,25-34,Non-binary,Atlantic,Agree,Disagree,Agree,Agree,Neutral,4,The reports are hard to read on a phone
+R0162,2026-05-18,35-44,Female,Prairies,Disagree,Disagree,Agree,Agree,Neutral,7,Easy to use and quick to set up
+R0163,2026-05-09,55-64,Non-binary,Ontario,Agree,Strongly agree,Strongly agree,Disagree,Neutral,5,
+R0164,2026-05-09,25-34,Non-binary,British Columbia,Agree,Neutral,Neutral,Neutral,Disagree,7,The reports are hard to read on a phone
+R0165,2026-05-27,18-24,Non-binary,Prairies,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Support took too long to reply
+R0166,2026-06-28,55-64,Prefer not to say,Atlantic,Strongly agree,Agree,Agree,Agree,Agree,10,Too many notifications
+R0167,2026-05-12,35-44,Female,British Columbia,Agree,Agree,Agree,Agree,Disagree,4,Too many notifications
+R0168,2026-06-30,18-24,Prefer not to say,Ontario,Agree,Neutral,Neutral,Disagree,Agree,2,Support took too long to reply
+R0169,2026-05-29,25-34,Prefer not to say,Quebec,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,8,Easy to use and quick to set up
+R0170,2026-06-26,18-24,Non-binary,Atlantic,Disagree,Disagree,Disagree,Neutral,Neutral,10,Pricing is fair for what we get
+R0171,2026-05-16,65+,Non-binary,Atlantic,Neutral,Neutral,Agree,Agree,Agree,7,Too many notifications
+R0172,2026-06-24,25-34,Female,Alberta,Strongly agree,Agree,Agree,Strongly agree,Agree,6,The reports are hard to read on a phone
+R0173,2026-05-27,65+,Male,Alberta,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,10,Missing an export to Excel
+R0174,2026-06-13,35-44,Male,British Columbia,Agree,Agree,Strongly agree,Agree,Neutral,9,Pricing is fair for what we get
+R0175,2026-05-30,45-54,Male,Quebec,Strongly agree,Neutral,Neutral,Agree,Neutral,7,Too many notifications
+R0176,2026-06-05,18-24,Male,Atlantic,Agree,Neutral,Agree,Agree,Strongly agree,8,Missing an export to Excel
+R0177,2026-05-19,25-34,Female,Alberta,Neutral,Strongly agree,Agree,Neutral,Disagree,7,Easy to use and quick to set up
+R0178,2026-06-05,25-34,Prefer not to say,Ontario,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,8,Easy to use and quick to set up
+R0179,2026-06-09,25-34,Male,Quebec,Agree,Agree,Strongly agree,Strongly agree,Strongly agree,7,Slow on large files
+R0180,2026-05-17,25-34,Male,Atlantic,Neutral,Disagree,Disagree,Strongly disagree,Strongly disagree,3,Slow on large files
+R0181,2026-05-26,35-44,Non-binary,Prairies,Strongly agree,Neutral,Strongly agree,Agree,Neutral,7,Love the weekly summary email
+R0182,2026-05-27,18-24,Male,Prairies,Strongly agree,Neutral,Strongly agree,Strongly agree,Agree,7,Too many notifications
+R0183,2026-05-26,65+,Male,British Columbia,Strongly agree,Disagree,Disagree,Neutral,Agree,7,Slow on large files
+R0184,2026-06-06,55-64,Male,Ontario,Agree,Agree,Agree,Neutral,Agree,5,Love the weekly summary email
+R0185,2026-05-05,18-24,Female,Prairies,Agree,Neutral,Agree,Disagree,Neutral,10,Too many notifications
+R0186,2026-06-18,25-34,Female,British Columbia,Strongly agree,Agree,Strongly agree,Neutral,Agree,10,Support took too long to reply
+R0187,2026-06-07,55-64,Male,Quebec,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,10,Onboarding was smooth
+R0188,2026-06-11,55-64,Female,Alberta,Strongly disagree,Disagree,Disagree,Strongly disagree,Neutral,4,Missing an export to Excel
+R0189,2026-06-09,35-44,Prefer not to say,Atlantic,Strongly agree,Neutral,Strongly agree,Disagree,Neutral,3,Would recommend to a friend
+R0190,2026-05-15,18-24,Non-binary,Alberta,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,9,Onboarding was smooth
+R0191,2026-06-13,18-24,Female,Ontario,Strongly agree,Neutral,Strongly agree,Neutral,Neutral,3,Easy to use and quick to set up
+R0192,2026-06-06,18-24,Prefer not to say,Quebec,Disagree,Neutral,Disagree,Disagree,Agree,4,Support took too long to reply
+R0193,2026-07-01,55-64,Non-binary,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Onboarding was smooth
+R0194,2026-06-20,18-24,Non-binary,Alberta,Agree,Neutral,Neutral,Neutral,Agree,6,Slow on large files
+R0195,2026-05-23,55-64,Prefer not to say,Alberta,Neutral,Disagree,Disagree,Neutral,Strongly disagree,9,Onboarding was smooth
+R0196,2026-06-28,25-34,Non-binary,Atlantic,Neutral,Disagree,Agree,Neutral,Neutral,8,Easy to use and quick to set up
+R0197,2026-05-08,55-64,Non-binary,Alberta,Neutral,Neutral,Agree,Neutral,Agree,6,Would recommend to a friend
+R0198,2026-05-25,65+,Non-binary,Quebec,Neutral,Disagree,Disagree,Neutral,Strongly disagree,6,
+R0199,2026-07-02,45-54,Non-binary,Prairies,Strongly agree,Neutral,Strongly agree,Strongly agree,Strongly agree,10,
+R0200,2026-06-09,25-34,Prefer not to say,British Columbia,Strongly agree,Agree,Neutral,Neutral,Agree,9,Too many notifications
+R0201,2026-05-26,45-54,Prefer not to say,Prairies,Neutral,Strongly agree,Agree,Disagree,Neutral,9,Love the weekly summary email
+R0202,2026-05-28,55-64,Male,Ontario,Neutral,Agree,Neutral,Strongly agree,Agree,8,The reports are hard to read on a phone
+R0203,2026-05-31,18-24,Female,Ontario,Agree,Strongly agree,Agree,Strongly agree,Agree,7,Onboarding was smooth
+R0204,2026-06-16,45-54,Prefer not to say,Alberta,Strongly agree,Agree,Strongly agree,Neutral,Strongly agree,6,Would recommend to a friend
+R0205,2026-05-30,35-44,Prefer not to say,Prairies,Neutral,Neutral,Strongly agree,Disagree,Neutral,8,
+R0206,2026-06-17,55-64,Female,Quebec,Neutral,Neutral,Agree,Agree,Agree,9,Pricing is fair for what we get
+R0207,2026-06-17,35-44,Prefer not to say,Prairies,Strongly agree,Strongly agree,Agree,Agree,Strongly agree,10,Would recommend to a friend
+R0208,2026-06-09,65+,Female,Prairies,Agree,Neutral,Strongly agree,Neutral,Strongly agree,7,Easy to use and quick to set up
+R0209,2026-05-10,55-64,Female,Prairies,Strongly agree,Agree,Strongly agree,Neutral,Strongly agree,7,
+R0210,2026-05-30,55-64,Female,Quebec,Neutral,Neutral,Agree,Disagree,Neutral,8,Pricing is fair for what we get
+R0211,2026-06-02,55-64,Prefer not to say,Ontario,Agree,Neutral,Agree,Agree,Strongly agree,7,Easy to use and quick to set up
+R0212,2026-06-30,55-64,Female,British Columbia,Strongly agree,Agree,Strongly agree,Agree,Agree,8,Onboarding was smooth
+R0213,2026-06-01,18-24,Male,Quebec,Disagree,Disagree,Strongly disagree,Strongly disagree,Agree,2,Too many notifications
+R0214,2026-06-29,45-54,Female,Quebec,Strongly agree,Neutral,Neutral,Disagree,Neutral,6,Onboarding was smooth
+R0215,2026-06-23,25-34,Female,Quebec,Strongly agree,Strongly agree,Strongly agree,Agree,Agree,6,Missing an export to Excel
+R0216,2026-05-29,65+,Female,Ontario,Agree,Disagree,Strongly agree,Neutral,Agree,6,Too many notifications
+R0217,2026-05-06,35-44,Female,British Columbia,Agree,Neutral,Agree,Agree,Disagree,8,
+R0218,2026-06-24,25-34,Male,British Columbia,Agree,Disagree,Agree,Strongly disagree,Strongly agree,3,The reports are hard to read on a phone
+R0219,2026-05-17,25-34,Prefer not to say,Prairies,Strongly agree,Agree,Neutral,Strongly agree,Neutral,9,The reports are hard to read on a phone
+R0220,2026-05-12,18-24,Female,Atlantic,Agree,Agree,Disagree,Neutral,Neutral,4,Slow on large files
+R0221,2026-05-28,65+,Female,Prairies,Agree,Agree,Disagree,Agree,Agree,5,Missing an export to Excel
+R0222,2026-05-16,18-24,Non-binary,Ontario,Neutral,Agree,Strongly agree,Agree,Agree,9,Onboarding was smooth
+R0223,2026-06-13,65+,Male,British Columbia,Strongly agree,Strongly agree,Strongly agree,Disagree,Agree,6,Slow on large files
+R0224,2026-06-27,45-54,Non-binary,Prairies,Neutral,Agree,Agree,Neutral,Strongly agree,6,The reports are hard to read on a phone
+R0225,2026-05-06,55-64,Male,Alberta,Agree,Agree,Neutral,Neutral,Neutral,6,Pricing is fair for what we get
+R0226,2026-06-04,65+,Non-binary,Alberta,Strongly agree,Agree,Agree,Strongly agree,Agree,7,Would recommend to a friend
+R0227,2026-06-27,55-64,Female,Quebec,Agree,Neutral,Neutral,Strongly agree,Disagree,8,Onboarding was smooth
+R0228,2026-06-20,55-64,Male,British Columbia,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,8,Missing an export to Excel
+R0229,2026-06-26,65+,Prefer not to say,Atlantic,Strongly agree,Neutral,Disagree,Neutral,Agree,3,The reports are hard to read on a phone
+R0230,2026-06-24,55-64,Non-binary,Quebec,Agree,Strongly disagree,Neutral,Disagree,Neutral,10,The reports are hard to read on a phone
+R0231,2026-05-26,45-54,Female,Quebec,Agree,Agree,Agree,Neutral,Neutral,7,Easy to use and quick to set up
+R0232,2026-07-02,65+,Non-binary,Prairies,Agree,Neutral,Strongly agree,Agree,Strongly agree,5,Missing an export to Excel
+R0233,2026-05-31,25-34,Male,Atlantic,Strongly agree,Neutral,Neutral,Neutral,Neutral,6,Too many notifications
+R0234,2026-05-21,35-44,Male,Ontario,Agree,Neutral,Neutral,Agree,Agree,7,Too many notifications
+R0235,2026-06-08,18-24,Female,Ontario,Strongly disagree,Neutral,Disagree,Neutral,Disagree,5,Love the weekly summary email
+R0236,2026-05-31,45-54,Male,Atlantic,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,
+R0237,2026-05-20,65+,Male,Ontario,Strongly agree,Strongly agree,Strongly agree,Neutral,Strongly agree,7,Would recommend to a friend
+R0238,2026-06-16,25-34,Female,Prairies,Agree,Strongly agree,Neutral,Neutral,Strongly agree,3,Missing an export to Excel
+R0239,2026-06-08,35-44,Non-binary,Quebec,Agree,Neutral,Agree,Strongly disagree,Agree,8,Easy to use and quick to set up
+R0240,2026-06-04,65+,Male,British Columbia,Agree,Disagree,Neutral,Agree,Agree,9,Pricing is fair for what we get
+R0241,2026-05-09,18-24,Prefer not to say,Alberta,Neutral,Neutral,Neutral,Strongly disagree,Neutral,6,Onboarding was smooth
+R0242,2026-05-07,55-64,Prefer not to say,British Columbia,Neutral,Disagree,Neutral,Neutral,Disagree,6,Slow on large files
+R0243,2026-06-01,55-64,Non-binary,Atlantic,Agree,Agree,Agree,Agree,Strongly agree,9,Pricing is fair for what we get
+R0244,2026-06-12,18-24,Female,Prairies,Neutral,Neutral,Disagree,Neutral,Agree,10,Missing an export to Excel
+R0245,2026-05-23,35-44,Female,Quebec,Neutral,Agree,Disagree,Disagree,Strongly disagree,6,Onboarding was smooth
+R0246,2026-06-01,45-54,Non-binary,Ontario,Agree,Neutral,Strongly agree,Neutral,Strongly agree,5,The reports are hard to read on a phone
+R0247,2026-05-10,25-34,Non-binary,Prairies,Neutral,Agree,Agree,Strongly agree,Strongly agree,6,
+R0248,2026-06-16,18-24,Prefer not to say,Quebec,Agree,Strongly agree,Neutral,Neutral,Neutral,4,Support took too long to reply
+R0249,2026-06-05,18-24,Prefer not to say,Prairies,Disagree,Disagree,Neutral,Strongly disagree,Disagree,1,
+R0250,2026-05-27,18-24,Female,Prairies,Agree,Disagree,Neutral,Disagree,Strongly agree,8,Onboarding was smooth
+R0251,2026-06-28,25-34,Female,Prairies,Strongly agree,Neutral,Agree,Neutral,Agree,7,Love the weekly summary email
+R0252,2026-06-20,55-64,Non-binary,Prairies,Neutral,Strongly disagree,Neutral,Strongly disagree,Neutral,7,Missing an export to Excel
+R0253,2026-07-02,65+,Male,British Columbia,Neutral,Strongly agree,Strongly agree,Agree,Disagree,6,Too many notifications
+R0254,2026-05-15,25-34,Non-binary,Prairies,Strongly agree,Neutral,Neutral,Neutral,Agree,10,Slow on large files
+R0255,2026-06-01,18-24,Female,British Columbia,Strongly agree,Neutral,Agree,Neutral,Agree,5,
+R0256,2026-05-29,45-54,Male,Prairies,Disagree,Agree,Neutral,Agree,Disagree,8,Support took too long to reply
+R0257,2026-05-23,25-34,Female,Quebec,Agree,Agree,Disagree,Neutral,Disagree,8,Easy to use and quick to set up
+R0258,2026-05-18,18-24,Male,Alberta,Strongly agree,Strongly agree,Neutral,Neutral,Neutral,7,Pricing is fair for what we get
+R0259,2026-06-05,35-44,Non-binary,Atlantic,Neutral,Neutral,Strongly agree,Agree,Strongly agree,8,Support took too long to reply
+R0260,2026-06-13,55-64,Female,British Columbia,Disagree,Neutral,Strongly disagree,Disagree,Agree,8,Pricing is fair for what we get
+R0261,2026-06-21,35-44,Non-binary,Atlantic,Agree,Neutral,Agree,Disagree,Neutral,5,Would recommend to a friend
+R0262,2026-06-03,55-64,Non-binary,Quebec,Strongly agree,Strongly agree,Disagree,Strongly agree,Strongly agree,6,Would recommend to a friend
+R0263,2026-06-09,35-44,Male,Atlantic,Agree,Neutral,Disagree,Agree,Strongly disagree,6,Missing an export to Excel
+R0264,2026-07-02,18-24,Male,British Columbia,Agree,Strongly disagree,Disagree,Disagree,Agree,7,Onboarding was smooth
+R0265,2026-06-26,45-54,Non-binary,Quebec,Agree,Agree,Agree,Neutral,Neutral,2,The reports are hard to read on a phone
+R0266,2026-06-30,55-64,Non-binary,Atlantic,Strongly agree,Agree,Agree,Agree,Neutral,10,
+R0267,2026-06-25,55-64,Non-binary,Prairies,Strongly agree,Agree,Disagree,Neutral,Neutral,8,The reports are hard to read on a phone
+R0268,2026-05-05,65+,Prefer not to say,Alberta,Agree,Strongly disagree,Strongly disagree,Neutral,Agree,3,Easy to use and quick to set up
+R0269,2026-06-22,45-54,Prefer not to say,British Columbia,Strongly agree,Agree,Strongly agree,Agree,Agree,10,Onboarding was smooth
+R0270,2026-05-25,25-34,Female,Ontario,Disagree,Neutral,Agree,Neutral,Neutral,4,Missing an export to Excel
+R0271,2026-06-10,55-64,Male,Prairies,Agree,Disagree,Neutral,Agree,Neutral,7,Easy to use and quick to set up
+R0272,2026-06-22,55-64,Prefer not to say,Atlantic,Disagree,Disagree,Agree,Neutral,Neutral,6,Easy to use and quick to set up
+R0273,2026-06-24,35-44,Male,Prairies,Agree,Strongly agree,Agree,Neutral,Neutral,6,
+R0274,2026-05-20,55-64,Non-binary,Prairies,Strongly agree,Agree,Agree,Neutral,Disagree,8,Pricing is fair for what we get
+R0275,2026-06-18,25-34,Prefer not to say,Alberta,Agree,Strongly agree,Agree,Disagree,Neutral,6,Easy to use and quick to set up
+R0276,2026-05-08,65+,Prefer not to say,Prairies,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,10,Onboarding was smooth
+R0277,2026-05-18,18-24,Non-binary,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,8,Love the weekly summary email
+R0278,2026-06-09,25-34,Prefer not to say,British Columbia,Disagree,Neutral,Disagree,Disagree,Neutral,7,Easy to use and quick to set up
+R0279,2026-05-14,35-44,Prefer not to say,Quebec,Strongly disagree,Strongly disagree,Disagree,Neutral,Strongly disagree,5,Too many notifications
+R0280,2026-07-02,35-44,Female,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,
+R0281,2026-05-14,45-54,Prefer not to say,Ontario,Neutral,Agree,Neutral,Disagree,Neutral,6,
+R0282,2026-06-17,18-24,Female,Quebec,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,9,Easy to use and quick to set up
+R0283,2026-05-08,18-24,Female,Alberta,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Agree,10,
+R0284,2026-05-26,45-54,Female,British Columbia,Agree,Strongly agree,Neutral,Agree,Neutral,6,Support took too long to reply
+R0285,2026-05-20,35-44,Female,Ontario,Agree,Agree,Agree,Strongly disagree,Neutral,8,Easy to use and quick to set up
+R0286,2026-06-08,35-44,Prefer not to say,Prairies,Agree,Agree,Agree,Agree,Strongly agree,7,Pricing is fair for what we get
+R0287,2026-05-30,25-34,Female,Quebec,Disagree,Disagree,Neutral,Agree,Neutral,7,The reports are hard to read on a phone
+R0288,2026-06-12,18-24,Female,Alberta,Agree,Agree,Neutral,Neutral,Neutral,7,Missing an export to Excel
+R0289,2026-06-03,65+,Prefer not to say,Atlantic,Disagree,Neutral,Strongly disagree,Neutral,Neutral,6,Missing an export to Excel
+R0290,2026-06-06,35-44,Non-binary,Ontario,Disagree,Strongly disagree,Strongly disagree,Disagree,Neutral,4,Love the weekly summary email
+R0291,2026-06-27,65+,Non-binary,Atlantic,Neutral,Neutral,Agree,Neutral,Agree,10,The reports are hard to read on a phone
+R0292,2026-05-19,65+,Male,Quebec,Neutral,Neutral,Disagree,Strongly disagree,Disagree,2,Would recommend to a friend
+R0293,2026-05-28,35-44,Prefer not to say,Ontario,Neutral,Agree,Neutral,Agree,Neutral,7,Love the weekly summary email
+R0294,2026-05-29,35-44,Prefer not to say,Prairies,Neutral,Agree,Agree,Disagree,Disagree,5,
+R0295,2026-05-27,45-54,Male,Atlantic,Agree,Strongly agree,Agree,Agree,Strongly agree,10,Easy to use and quick to set up
+R0296,2026-06-07,35-44,Non-binary,British Columbia,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,7,Support took too long to reply
+R0297,2026-06-23,35-44,Non-binary,Ontario,Agree,Neutral,Strongly agree,Agree,Strongly agree,9,
+R0298,2026-05-28,55-64,Male,Atlantic,Neutral,Agree,Strongly agree,Neutral,Neutral,7,Would recommend to a friend
+R0299,2026-05-09,45-54,Prefer not to say,Alberta,Neutral,Agree,Strongly agree,Neutral,Strongly agree,10,Too many notifications
+R0300,2026-05-31,45-54,Prefer not to say,Quebec,Agree,Agree,Neutral,Disagree,Agree,10,Easy to use and quick to set up
+R0301,2026-05-29,55-64,Female,Prairies,Neutral,Agree,Disagree,Neutral,Agree,3,
+R0302,2026-05-09,25-34,Prefer not to say,Ontario,Agree,Strongly agree,Agree,Neutral,Strongly agree,9,
+R0303,2026-06-10,25-34,Prefer not to say,Ontario,Agree,Neutral,Neutral,Agree,Strongly agree,5,Love the weekly summary email
+R0304,2026-05-28,35-44,Non-binary,Atlantic,Agree,Disagree,Strongly agree,Neutral,Neutral,6,The reports are hard to read on a phone
+R0305,2026-06-27,55-64,Non-binary,British Columbia,Strongly agree,Strongly agree,Agree,Agree,Agree,6,
+R0306,2026-05-25,25-34,Prefer not to say,Prairies,Strongly agree,Neutral,Agree,Neutral,Strongly agree,10,Onboarding was smooth
+R0307,2026-05-06,35-44,Male,Alberta,Strongly agree,Strongly agree,Strongly agree,Neutral,Neutral,8,Too many notifications
+R0308,2026-05-15,45-54,Female,Ontario,Strongly agree,Strongly agree,Strongly agree,Agree,Neutral,8,Easy to use and quick to set up
+R0309,2026-06-24,25-34,Prefer not to say,Quebec,Agree,Neutral,Agree,Strongly agree,Strongly agree,7,Slow on large files
+R0310,2026-05-10,25-34,Female,Ontario,Agree,Disagree,Agree,Neutral,Strongly agree,7,Would recommend to a friend
+R0311,2026-07-02,65+,Male,Ontario,Neutral,Neutral,Disagree,Strongly disagree,Neutral,7,Slow on large files
+R0312,2026-05-24,55-64,Male,Quebec,Agree,Neutral,Disagree,Disagree,Strongly agree,8,Missing an export to Excel
+R0313,2026-05-18,65+,Female,Quebec,Disagree,Neutral,Disagree,Neutral,Agree,8,Support took too long to reply
+R0314,2026-06-14,55-64,Female,British Columbia,Agree,Agree,Strongly agree,Strongly agree,Neutral,8,Support took too long to reply
+R0315,2026-05-23,55-64,Female,Quebec,Strongly agree,Agree,Strongly agree,Disagree,Agree,9,Easy to use and quick to set up
+R0316,2026-05-04,35-44,Male,Quebec,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,The reports are hard to read on a phone
+R0317,2026-05-11,35-44,Female,Prairies,Neutral,Neutral,Disagree,Disagree,Disagree,8,Easy to use and quick to set up
+R0318,2026-05-30,65+,Male,Alberta,Agree,Disagree,Neutral,Disagree,Agree,9,Pricing is fair for what we get
+R0319,2026-05-09,35-44,Female,Prairies,Agree,Disagree,Neutral,Neutral,Neutral,8,Too many notifications
+R0320,2026-05-24,45-54,Male,Quebec,Strongly agree,Neutral,Neutral,Neutral,Strongly agree,6,Love the weekly summary email
+R0321,2026-05-12,25-34,Male,Ontario,Strongly agree,Neutral,Disagree,Neutral,Disagree,7,The reports are hard to read on a phone
+R0322,2026-06-26,35-44,Female,Alberta,Agree,Disagree,Agree,Disagree,Strongly agree,7,Support took too long to reply
+R0323,2026-05-19,55-64,Female,Quebec,Agree,Neutral,Agree,Neutral,Neutral,5,Love the weekly summary email
+R0324,2026-06-02,55-64,Male,Ontario,Strongly agree,Disagree,Strongly agree,Neutral,Neutral,4,The reports are hard to read on a phone
+R0325,2026-05-14,25-34,Non-binary,Quebec,Strongly agree,Strongly agree,Agree,Disagree,Agree,10,Too many notifications
+R0326,2026-05-25,18-24,Female,Quebec,Agree,Agree,Agree,Neutral,Agree,9,Would recommend to a friend
+R0327,2026-05-14,45-54,Prefer not to say,Quebec,Agree,Strongly agree,Neutral,Neutral,Disagree,5,Would recommend to a friend
+R0328,2026-06-25,65+,Non-binary,Prairies,Agree,Strongly agree,Agree,Agree,Agree,6,Love the weekly summary email
+R0329,2026-05-19,25-34,Prefer not to say,Atlantic,Agree,Agree,Strongly agree,Disagree,Neutral,3,Onboarding was smooth
+R0330,2026-07-03,35-44,Prefer not to say,Alberta,Disagree,Neutral,Neutral,Disagree,Strongly disagree,7,Would recommend to a friend
+R0331,2026-06-23,35-44,Female,British Columbia,Neutral,Disagree,Agree,Neutral,Strongly disagree,3,Too many notifications
+R0332,2026-05-09,35-44,Prefer not to say,Alberta,Strongly agree,Neutral,Agree,Agree,Strongly agree,9,Slow on large files
+R0333,2026-06-07,25-34,Female,Quebec,Strongly agree,Agree,Strongly agree,Neutral,Agree,7,Missing an export to Excel
+R0334,2026-06-25,55-64,Prefer not to say,British Columbia,Strongly agree,Neutral,Strongly agree,Neutral,Strongly agree,10,The reports are hard to read on a phone
+R0335,2026-05-29,55-64,Female,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Agree,5,Would recommend to a friend
+R0336,2026-06-28,55-64,Prefer not to say,Quebec,Agree,Agree,Disagree,Disagree,Disagree,8,
+R0337,2026-05-22,35-44,Non-binary,Prairies,Neutral,Disagree,Strongly agree,Disagree,Strongly agree,8,Too many notifications
+R0338,2026-05-07,65+,Female,Atlantic,Strongly agree,Neutral,Strongly agree,Neutral,Agree,4,
+R0339,2026-05-24,45-54,Male,Ontario,Strongly agree,Neutral,Agree,Agree,Neutral,6,Onboarding was smooth
+R0340,2026-05-21,65+,Male,British Columbia,Strongly agree,Neutral,Neutral,Disagree,Neutral,8,Support took too long to reply
+R0341,2026-05-28,45-54,Non-binary,Prairies,Strongly agree,Neutral,Strongly agree,Neutral,Strongly agree,5,Pricing is fair for what we get
+R0342,2026-05-07,25-34,Non-binary,Prairies,Strongly agree,Disagree,Agree,Agree,Neutral,9,Onboarding was smooth
+R0343,2026-06-17,25-34,Non-binary,British Columbia,Strongly agree,Neutral,Disagree,Disagree,Neutral,5,Missing an export to Excel
+R0344,2026-06-03,35-44,Female,Quebec,Strongly agree,Strongly agree,Agree,Neutral,Agree,6,Pricing is fair for what we get
+R0345,2026-05-13,35-44,Prefer not to say,Prairies,Neutral,Neutral,Agree,Neutral,Disagree,5,
+R0346,2026-05-11,35-44,Prefer not to say,Ontario,Agree,Strongly agree,Strongly agree,Agree,Strongly agree,10,Missing an export to Excel
+R0347,2026-05-08,55-64,Female,Atlantic,Agree,Neutral,Agree,Neutral,Neutral,8,Slow on large files
+R0348,2026-06-22,45-54,Prefer not to say,Prairies,Agree,Strongly agree,Agree,Neutral,Strongly agree,6,Pricing is fair for what we get
+R0349,2026-06-20,55-64,Prefer not to say,Prairies,Strongly agree,Neutral,Agree,Agree,Agree,6,Easy to use and quick to set up
+R0350,2026-06-09,45-54,Prefer not to say,Quebec,Neutral,Neutral,Neutral,Agree,Disagree,9,Pricing is fair for what we get
+R0351,2026-06-21,25-34,Female,British Columbia,Strongly agree,Neutral,Strongly agree,Neutral,Strongly agree,10,Slow on large files
+R0352,2026-06-30,35-44,Female,Atlantic,Neutral,Disagree,Neutral,Strongly disagree,Disagree,8,Love the weekly summary email
+R0353,2026-06-29,18-24,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,10,Pricing is fair for what we get
+R0354,2026-06-01,55-64,Female,Ontario,Agree,Disagree,Neutral,Disagree,Agree,5,Missing an export to Excel
+R0355,2026-05-18,25-34,Male,British Columbia,Strongly agree,Neutral,Agree,Agree,Strongly agree,8,
+R0356,2026-06-13,35-44,Female,Atlantic,Strongly agree,Agree,Agree,Agree,Neutral,7,Would recommend to a friend
+R0357,2026-06-24,35-44,Non-binary,Prairies,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Agree,5,Slow on large files
+R0358,2026-06-12,25-34,Female,Alberta,Agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,7,Easy to use and quick to set up
+R0359,2026-06-18,65+,Male,British Columbia,Agree,Agree,Agree,Disagree,Neutral,7,Slow on large files
+R0360,2026-05-08,35-44,Male,Alberta,Disagree,Strongly agree,Agree,Neutral,Disagree,6,Love the weekly summary email
+R0361,2026-06-09,65+,Non-binary,British Columbia,Neutral,Neutral,Neutral,Neutral,Agree,5,Too many notifications
+R0362,2026-06-27,25-34,Non-binary,Alberta,Disagree,Disagree,Neutral,Disagree,Neutral,6,Pricing is fair for what we get
+R0363,2026-05-20,55-64,Prefer not to say,Quebec,Agree,Strongly agree,Strongly agree,Agree,Agree,6,
+R0364,2026-05-28,25-34,Prefer not to say,Quebec,Strongly agree,Strongly agree,Strongly agree,Agree,Agree,6,Easy to use and quick to set up
+R0365,2026-06-23,18-24,Prefer not to say,Ontario,Strongly agree,Strongly agree,Strongly agree,Agree,Agree,9,Too many notifications
+R0366,2026-05-17,18-24,Male,Quebec,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,5,Pricing is fair for what we get
+R0367,2026-06-09,55-64,Prefer not to say,Ontario,Agree,Agree,Strongly agree,Agree,Neutral,7,The reports are hard to read on a phone
+R0368,2026-06-29,45-54,Male,Ontario,Disagree,Neutral,Disagree,Neutral,Neutral,5,The reports are hard to read on a phone
+R0369,2026-06-20,25-34,Female,Quebec,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,9,The reports are hard to read on a phone
+R0370,2026-06-08,65+,Prefer not to say,British Columbia,Agree,Strongly agree,Agree,Strongly disagree,Agree,7,Slow on large files
+R0371,2026-06-06,25-34,Non-binary,Ontario,Disagree,Agree,Neutral,Strongly agree,Agree,8,Would recommend to a friend
+R0372,2026-06-12,55-64,Female,Prairies,Neutral,Strongly agree,Agree,Neutral,Strongly agree,8,Easy to use and quick to set up
+R0373,2026-05-15,55-64,Prefer not to say,Quebec,Agree,Agree,Neutral,Agree,Strongly agree,6,
+R0374,2026-05-09,65+,Male,Ontario,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,6,Too many notifications
+R0375,2026-06-22,25-34,Female,Ontario,Neutral,Disagree,Disagree,Strongly disagree,Strongly disagree,1,Onboarding was smooth
+R0376,2026-05-17,65+,Female,Ontario,Neutral,Agree,Disagree,Agree,Agree,9,Onboarding was smooth
+R0377,2026-06-12,35-44,Prefer not to say,British Columbia,Agree,Neutral,Agree,Agree,Agree,6,Too many notifications
+R0378,2026-06-14,45-54,Non-binary,British Columbia,Strongly agree,Agree,Agree,Neutral,Agree,10,
+R0379,2026-05-25,18-24,Male,British Columbia,Strongly agree,Agree,Strongly agree,Strongly agree,Agree,6,Missing an export to Excel
+R0380,2026-06-02,25-34,Male,Atlantic,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,9,
+R0381,2026-05-09,65+,Male,Quebec,Neutral,Strongly agree,Agree,Disagree,Disagree,1,Pricing is fair for what we get
+R0382,2026-05-14,65+,Non-binary,Alberta,Strongly disagree,Strongly disagree,Disagree,Disagree,Strongly disagree,2,The reports are hard to read on a phone
+R0383,2026-06-14,65+,Male,Prairies,Agree,Neutral,Neutral,Neutral,Neutral,4,Support took too long to reply
+R0384,2026-05-11,65+,Prefer not to say,Prairies,Neutral,Agree,Disagree,Disagree,Agree,5,Pricing is fair for what we get
+R0385,2026-05-29,45-54,Male,Alberta,Strongly agree,Agree,Strongly agree,Neutral,Agree,7,Onboarding was smooth
+R0386,2026-06-27,25-34,Non-binary,Prairies,Agree,Neutral,Strongly agree,Agree,Agree,8,Support took too long to reply
+R0387,2026-06-10,35-44,Non-binary,Quebec,Strongly agree,Agree,Strongly agree,Agree,Agree,10,
+R0388,2026-05-04,35-44,Male,British Columbia,Strongly agree,Neutral,Strongly agree,Strongly agree,Strongly agree,8,Love the weekly summary email
+R0389,2026-06-15,18-24,Male,Quebec,Neutral,Agree,Neutral,Disagree,Neutral,7,Onboarding was smooth
+R0390,2026-06-30,45-54,Non-binary,Ontario,Agree,Strongly agree,Strongly agree,Agree,Agree,9,Easy to use and quick to set up
+R0391,2026-05-11,45-54,Prefer not to say,Ontario,Disagree,Neutral,Strongly agree,Strongly disagree,Disagree,6,The reports are hard to read on a phone
+R0392,2026-06-03,25-34,Non-binary,Atlantic,Agree,Strongly agree,Agree,Neutral,Agree,9,
+R0393,2026-06-27,45-54,Female,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,5,Support took too long to reply
+R0394,2026-07-03,45-54,Male,Ontario,Agree,Neutral,Disagree,Neutral,Agree,4,Missing an export to Excel
+R0395,2026-06-03,45-54,Non-binary,Quebec,Agree,Agree,Strongly agree,Neutral,Agree,10,Easy to use and quick to set up
+R0396,2026-06-04,65+,Male,Prairies,Neutral,Disagree,Neutral,Neutral,Disagree,4,Easy to use and quick to set up
+R0397,2026-06-30,65+,Male,Prairies,Strongly agree,Strongly agree,Agree,Neutral,Agree,6,Too many notifications
+R0398,2026-05-23,65+,Non-binary,Atlantic,Agree,Agree,Agree,Agree,Agree,10,Missing an export to Excel
+R0399,2026-06-03,35-44,Prefer not to say,Prairies,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,7,Too many notifications
+R0400,2026-06-21,35-44,Female,Alberta,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Pricing is fair for what we get
+R0401,2026-05-13,55-64,Non-binary,Atlantic,Neutral,Agree,Agree,Neutral,Agree,10,Onboarding was smooth
+R0402,2026-06-06,25-34,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,8,Onboarding was smooth
+R0403,2026-05-18,25-34,Non-binary,Prairies,Agree,Agree,Agree,Neutral,Agree,10,Love the weekly summary email
+R0404,2026-05-12,45-54,Female,Atlantic,Agree,Neutral,Agree,Neutral,Disagree,7,
+R0405,2026-06-15,55-64,Non-binary,Atlantic,Strongly agree,Agree,Strongly agree,Strongly agree,Agree,9,Slow on large files
+R0406,2026-05-30,35-44,Non-binary,Prairies,Neutral,Agree,Disagree,Agree,Agree,9,The reports are hard to read on a phone
+R0407,2026-05-04,45-54,Prefer not to say,British Columbia,Neutral,Strongly disagree,Neutral,Disagree,Agree,3,The reports are hard to read on a phone
+R0408,2026-05-17,55-64,Prefer not to say,Alberta,Agree,Strongly agree,Neutral,Neutral,Strongly agree,7,Missing an export to Excel
+R0409,2026-05-27,25-34,Male,Prairies,Neutral,Neutral,Neutral,Neutral,Disagree,8,Support took too long to reply
+R0410,2026-05-25,55-64,Non-binary,British Columbia,Strongly agree,Agree,Neutral,Agree,Strongly agree,5,Easy to use and quick to set up
+R0411,2026-05-29,35-44,Female,Prairies,Agree,Strongly disagree,Disagree,Disagree,Disagree,3,The reports are hard to read on a phone
+R0412,2026-06-14,35-44,Male,Ontario,Neutral,Strongly disagree,Strongly disagree,Disagree,Strongly disagree,2,The reports are hard to read on a phone
+R0413,2026-05-30,65+,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,7,Love the weekly summary email
+R0414,2026-05-19,18-24,Female,Ontario,Neutral,Agree,Agree,Agree,Strongly agree,10,Support took too long to reply
+R0415,2026-05-30,65+,Prefer not to say,British Columbia,Disagree,Agree,Neutral,Neutral,Neutral,6,Love the weekly summary email
+R0416,2026-05-25,35-44,Prefer not to say,Quebec,Strongly agree,Agree,Strongly agree,Neutral,Agree,10,Pricing is fair for what we get
+R0417,2026-05-22,65+,Female,Quebec,Agree,Agree,Agree,Agree,Strongly agree,6,Too many notifications
+R0418,2026-05-18,55-64,Female,Prairies,Agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,The reports are hard to read on a phone
+R0419,2026-05-19,35-44,Prefer not to say,Atlantic,Neutral,Agree,Strongly agree,Agree,Strongly agree,10,Would recommend to a friend
+R0420,2026-05-16,25-34,Male,British Columbia,Agree,Strongly agree,Agree,Agree,Agree,7,Too many notifications
+R0421,2026-06-18,65+,Non-binary,Alberta,Agree,Strongly agree,Strongly agree,Agree,Agree,4,
+R0422,2026-06-13,25-34,Prefer not to say,Ontario,Strongly agree,Agree,Agree,Disagree,Agree,7,Missing an export to Excel
+R0423,2026-05-23,18-24,Female,Prairies,Agree,Neutral,Neutral,Neutral,Neutral,4,Missing an export to Excel
+R0424,2026-05-30,65+,Non-binary,Atlantic,Disagree,Strongly disagree,Agree,Agree,Neutral,9,Support took too long to reply
+R0425,2026-07-02,35-44,Male,Ontario,Strongly agree,Disagree,Neutral,Neutral,Agree,6,Would recommend to a friend
+R0426,2026-06-22,35-44,Prefer not to say,Atlantic,Agree,Agree,Agree,Strongly agree,Strongly agree,10,Easy to use and quick to set up
+R0427,2026-06-15,25-34,Female,Prairies,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,10,Onboarding was smooth
+R0428,2026-06-30,25-34,Prefer not to say,Atlantic,Agree,Agree,Strongly agree,Agree,Disagree,7,Onboarding was smooth
+R0429,2026-06-11,35-44,Prefer not to say,Alberta,Disagree,Strongly disagree,Disagree,Disagree,Disagree,5,
+R0430,2026-05-20,55-64,Prefer not to say,Prairies,Agree,Agree,Strongly agree,Neutral,Agree,6,Slow on large files
+R0431,2026-06-15,45-54,Female,Ontario,Strongly agree,Neutral,Strongly agree,Agree,Neutral,6,Missing an export to Excel
+R0432,2026-06-29,35-44,Non-binary,British Columbia,Agree,Disagree,Neutral,Disagree,Neutral,6,The reports are hard to read on a phone
+R0433,2026-06-21,65+,Male,Prairies,Strongly agree,Disagree,Strongly agree,Neutral,Strongly agree,9,Would recommend to a friend
+R0434,2026-05-23,25-34,Male,Atlantic,Agree,Neutral,Disagree,Agree,Agree,5,Pricing is fair for what we get
+R0435,2026-05-12,65+,Female,Atlantic,Strongly agree,Agree,Agree,Agree,Strongly agree,5,Slow on large files
+R0436,2026-05-10,18-24,Non-binary,Ontario,Neutral,Disagree,Disagree,Strongly disagree,Neutral,4,Too many notifications
+R0437,2026-06-02,65+,Prefer not to say,British Columbia,Strongly agree,Strongly disagree,Neutral,Agree,Agree,6,Missing an export to Excel
+R0438,2026-06-28,35-44,Female,Atlantic,Neutral,Strongly disagree,Disagree,Disagree,Neutral,6,Onboarding was smooth
+R0439,2026-05-18,25-34,Male,British Columbia,Agree,Strongly agree,Strongly agree,Agree,Strongly agree,10,Too many notifications
+R0440,2026-06-18,25-34,Prefer not to say,Ontario,Neutral,Neutral,Agree,Strongly disagree,Neutral,4,Support took too long to reply
+R0441,2026-06-24,18-24,Male,British Columbia,Strongly agree,Disagree,Neutral,Agree,Neutral,10,The reports are hard to read on a phone
+R0442,2026-06-05,65+,Male,Alberta,Strongly agree,Strongly disagree,Disagree,Strongly disagree,Strongly disagree,2,Onboarding was smooth
+R0443,2026-06-23,25-34,Male,Ontario,Strongly agree,Agree,Strongly agree,Disagree,Neutral,8,The reports are hard to read on a phone
+R0444,2026-06-27,65+,Male,Atlantic,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,5,Too many notifications
+R0445,2026-06-11,65+,Non-binary,Atlantic,Agree,Strongly agree,Neutral,Neutral,Agree,5,Missing an export to Excel
+R0446,2026-06-23,25-34,Non-binary,Quebec,Agree,Neutral,Agree,Disagree,Disagree,8,The reports are hard to read on a phone
+R0447,2026-05-11,65+,Prefer not to say,Prairies,Strongly agree,Agree,Strongly agree,Agree,Agree,8,Easy to use and quick to set up
+R0448,2026-05-08,55-64,Prefer not to say,Quebec,Agree,Neutral,Agree,Neutral,Strongly agree,6,Onboarding was smooth
+R0449,2026-05-16,25-34,Male,Alberta,Neutral,Agree,Neutral,Agree,Neutral,6,
+R0450,2026-05-15,45-54,Prefer not to say,Alberta,Strongly agree,Agree,Neutral,Neutral,Agree,6,
+R0451,2026-05-13,55-64,Male,Quebec,Strongly agree,Agree,Strongly agree,Neutral,Neutral,10,Missing an export to Excel
+R0452,2026-06-14,25-34,Prefer not to say,Atlantic,Neutral,Agree,Agree,Agree,Neutral,7,
+R0453,2026-05-29,45-54,Non-binary,Quebec,Disagree,Disagree,Disagree,Strongly disagree,Neutral,2,Onboarding was smooth
+R0454,2026-06-16,25-34,Non-binary,Quebec,Neutral,Neutral,Agree,Agree,Strongly agree,9,Easy to use and quick to set up
+R0455,2026-06-01,45-54,Non-binary,British Columbia,Neutral,Disagree,Strongly disagree,Disagree,Disagree,3,Support took too long to reply
+R0456,2026-06-11,55-64,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,8,
+R0457,2026-05-22,45-54,Male,Prairies,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,The reports are hard to read on a phone
+R0458,2026-06-19,65+,Female,Quebec,Strongly agree,Disagree,Agree,Strongly agree,Strongly agree,9,Onboarding was smooth
+R0459,2026-06-04,65+,Prefer not to say,Alberta,Strongly agree,Strongly agree,Agree,Disagree,Agree,7,Easy to use and quick to set up
+R0460,2026-05-24,65+,Male,Ontario,Agree,Neutral,Agree,Neutral,Agree,7,The reports are hard to read on a phone
+R0461,2026-05-31,35-44,Prefer not to say,Alberta,Neutral,Neutral,Strongly agree,Strongly disagree,Disagree,9,Pricing is fair for what we get
+R0462,2026-06-13,65+,Female,Alberta,Neutral,Disagree,Neutral,Agree,Neutral,9,
+R0463,2026-05-05,55-64,Non-binary,Prairies,Neutral,Strongly agree,Strongly agree,Neutral,Agree,8,Pricing is fair for what we get
+R0464,2026-06-14,18-24,Female,British Columbia,Neutral,Disagree,Agree,Disagree,Neutral,6,Onboarding was smooth
+R0465,2026-06-10,55-64,Male,British Columbia,Agree,Neutral,Agree,Neutral,Neutral,8,Easy to use and quick to set up
+R0466,2026-05-24,65+,Non-binary,Atlantic,Neutral,Disagree,Agree,Strongly disagree,Disagree,9,Support took too long to reply
+R0467,2026-05-06,25-34,Prefer not to say,Ontario,Strongly disagree,Strongly disagree,Strongly disagree,Strongly disagree,Disagree,5,Pricing is fair for what we get
+R0468,2026-05-11,55-64,Prefer not to say,Alberta,Agree,Agree,Disagree,Agree,Agree,8,Missing an export to Excel
+R0469,2026-06-19,35-44,Male,Ontario,Agree,Agree,Neutral,Strongly agree,Strongly agree,9,Onboarding was smooth
+R0470,2026-06-14,35-44,Prefer not to say,Prairies,Disagree,Neutral,Disagree,Neutral,Disagree,6,Support took too long to reply
+R0471,2026-06-24,65+,Non-binary,Ontario,Agree,Agree,Strongly agree,Neutral,Agree,10,The reports are hard to read on a phone
+R0472,2026-06-01,45-54,Female,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Agree,9,
+R0473,2026-06-19,35-44,Non-binary,Atlantic,Neutral,Neutral,Neutral,Disagree,Neutral,6,Missing an export to Excel
+R0474,2026-05-18,45-54,Male,British Columbia,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,Love the weekly summary email
+R0475,2026-06-13,45-54,Prefer not to say,Quebec,Strongly agree,Strongly agree,Strongly agree,Neutral,Strongly agree,8,Too many notifications
+R0476,2026-05-16,35-44,Male,Atlantic,Agree,Disagree,Disagree,Disagree,Neutral,4,Pricing is fair for what we get
+R0477,2026-07-02,35-44,Non-binary,Ontario,Neutral,Agree,Agree,Agree,Strongly agree,7,Support took too long to reply
+R0478,2026-06-10,35-44,Non-binary,Alberta,Neutral,Disagree,Neutral,Neutral,Disagree,7,Too many notifications
+R0479,2026-06-13,35-44,Non-binary,Alberta,Strongly agree,Neutral,Disagree,Neutral,Agree,9,
+R0480,2026-06-18,25-34,Female,Alberta,Agree,Agree,Neutral,Neutral,Agree,7,Support took too long to reply
+R0481,2026-05-11,65+,Non-binary,Ontario,Strongly agree,Neutral,Agree,Neutral,Strongly agree,6,Love the weekly summary email
+R0482,2026-05-04,55-64,Prefer not to say,British Columbia,Strongly agree,Strongly agree,Neutral,Agree,Agree,6,The reports are hard to read on a phone
+R0483,2026-05-18,18-24,Male,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,Slow on large files
+R0484,2026-06-17,45-54,Female,Prairies,Agree,Agree,Neutral,Strongly disagree,Agree,9,Easy to use and quick to set up
+R0485,2026-05-31,55-64,Prefer not to say,Quebec,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,Pricing is fair for what we get
+R0486,2026-06-10,18-24,Male,British Columbia,Strongly agree,Neutral,Agree,Neutral,Agree,9,
+R0487,2026-05-19,45-54,Male,Quebec,Agree,Neutral,Agree,Neutral,Agree,4,
+R0488,2026-06-21,18-24,Male,Prairies,Neutral,Disagree,Disagree,Disagree,Disagree,4,Easy to use and quick to set up
+R0489,2026-05-08,35-44,Female,British Columbia,Agree,Disagree,Strongly agree,Agree,Strongly agree,6,Too many notifications
+R0490,2026-05-23,45-54,Non-binary,Ontario,Strongly agree,Agree,Neutral,Agree,Agree,8,Support took too long to reply
+R0491,2026-06-20,25-34,Female,British Columbia,Agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,Pricing is fair for what we get
+R0492,2026-05-20,65+,Prefer not to say,Ontario,Agree,Neutral,Agree,Disagree,Strongly disagree,6,Support took too long to reply
+R0493,2026-06-16,35-44,Non-binary,British Columbia,Agree,Strongly agree,Agree,Agree,Disagree,8,Support took too long to reply
+R0494,2026-06-07,25-34,Non-binary,Prairies,Strongly agree,Strongly agree,Strongly agree,Neutral,Agree,9,Would recommend to a friend
+R0495,2026-06-01,35-44,Female,Atlantic,Strongly agree,Neutral,Strongly agree,Strongly agree,Strongly agree,7,Slow on large files
+R0496,2026-06-19,18-24,Female,Ontario,Strongly agree,Agree,Agree,Agree,Strongly agree,10,Love the weekly summary email
+R0497,2026-05-27,45-54,Non-binary,Quebec,Agree,Neutral,Neutral,Disagree,Neutral,9,Would recommend to a friend
+R0498,2026-05-20,65+,Female,Ontario,Disagree,Disagree,Disagree,Disagree,Neutral,7,Missing an export to Excel
+R0499,2026-06-10,35-44,Prefer not to say,Prairies,Strongly agree,Disagree,Agree,Agree,Strongly agree,9,Pricing is fair for what we get
+R0500,2026-06-10,25-34,Non-binary,Prairies,Strongly agree,Agree,Strongly agree,Neutral,Strongly agree,7,Pricing is fair for what we get
+R0501,2026-05-11,65+,Prefer not to say,British Columbia,Agree,Agree,Strongly agree,Neutral,Agree,8,Onboarding was smooth
+R0502,2026-05-20,45-54,Non-binary,Prairies,Agree,Neutral,Neutral,Strongly agree,Neutral,8,Too many notifications
+R0503,2026-06-19,65+,Male,Quebec,Agree,Disagree,Neutral,Disagree,Neutral,8,
+R0504,2026-05-06,45-54,Non-binary,Quebec,Agree,Neutral,Strongly agree,Neutral,Disagree,9,Pricing is fair for what we get
+R0505,2026-05-21,45-54,Female,Prairies,Agree,Neutral,Strongly disagree,Agree,Neutral,6,Pricing is fair for what we get
+R0506,2026-05-14,35-44,Non-binary,Ontario,Agree,Strongly agree,Neutral,Neutral,Strongly agree,9,Easy to use and quick to set up
+R0507,2026-06-22,35-44,Female,Ontario,Agree,Disagree,Disagree,Neutral,Neutral,7,Onboarding was smooth
+R0508,2026-06-20,35-44,Female,British Columbia,Strongly agree,Neutral,Strongly agree,Neutral,Neutral,9,Easy to use and quick to set up
+R0509,2026-05-18,35-44,Female,Quebec,Neutral,Strongly disagree,Neutral,Neutral,Neutral,4,Support took too long to reply
+R0510,2026-06-14,55-64,Female,Atlantic,Neutral,Strongly disagree,Disagree,Strongly disagree,Neutral,6,Missing an export to Excel
+R0511,2026-05-25,45-54,Male,Prairies,Strongly agree,Neutral,Agree,Neutral,Strongly agree,8,Love the weekly summary email
+R0512,2026-06-03,45-54,Female,Ontario,Strongly agree,Neutral,Neutral,Neutral,Agree,7,
+R0513,2026-05-28,25-34,Female,British Columbia,Strongly agree,Disagree,Strongly agree,Neutral,Neutral,6,Slow on large files
+R0514,2026-05-09,25-34,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,10,
+R0515,2026-05-10,55-64,Prefer not to say,Ontario,Disagree,Agree,Neutral,Agree,Disagree,8,
+R0516,2026-06-21,18-24,Non-binary,Ontario,Agree,Disagree,Strongly agree,Neutral,Agree,6,Would recommend to a friend
+R0517,2026-05-30,18-24,Non-binary,Quebec,Agree,Agree,Neutral,Disagree,Neutral,6,The reports are hard to read on a phone
+R0518,2026-05-14,35-44,Female,Ontario,Strongly agree,Disagree,Strongly agree,Neutral,Strongly agree,9,Easy to use and quick to set up
+R0519,2026-05-16,55-64,Male,Ontario,Disagree,Strongly disagree,Neutral,Agree,Agree,6,Pricing is fair for what we get
+R0520,2026-05-22,55-64,Male,Prairies,Neutral,Neutral,Strongly agree,Strongly agree,Strongly agree,6,Would recommend to a friend
+R0521,2026-06-23,55-64,Male,Prairies,Neutral,Strongly agree,Neutral,Neutral,Agree,10,Pricing is fair for what we get
+R0522,2026-05-10,18-24,Female,Atlantic,Neutral,Strongly agree,Neutral,Agree,Agree,9,Support took too long to reply
+R0523,2026-06-06,18-24,Female,Atlantic,Strongly agree,Neutral,Strongly agree,Neutral,Neutral,10,The reports are hard to read on a phone
+R0524,2026-06-11,18-24,Male,British Columbia,Strongly agree,Disagree,Strongly agree,Agree,Neutral,5,Easy to use and quick to set up
+R0525,2026-05-21,35-44,Female,Quebec,Strongly agree,Agree,Agree,Neutral,Strongly agree,9,Slow on large files
+R0526,2026-07-03,65+,Prefer not to say,Atlantic,Agree,Strongly disagree,Disagree,Disagree,Agree,6,Onboarding was smooth
+R0527,2026-05-16,25-34,Non-binary,British Columbia,Agree,Disagree,Agree,Strongly agree,Neutral,5,The reports are hard to read on a phone
+R0528,2026-06-02,55-64,Non-binary,Atlantic,Strongly agree,Disagree,Agree,Agree,Disagree,4,Slow on large files
+R0529,2026-05-26,45-54,Prefer not to say,Quebec,Neutral,Neutral,Agree,Disagree,Disagree,8,The reports are hard to read on a phone
+R0530,2026-06-09,18-24,Non-binary,British Columbia,Neutral,Neutral,Agree,Neutral,Strongly agree,6,The reports are hard to read on a phone
+R0531,2026-06-28,35-44,Non-binary,Quebec,Disagree,Disagree,Neutral,Disagree,Neutral,10,Support took too long to reply
+R0532,2026-06-25,45-54,Prefer not to say,Prairies,Disagree,Neutral,Disagree,Neutral,Neutral,7,Pricing is fair for what we get
+R0533,2026-05-18,65+,Prefer not to say,Alberta,Neutral,Neutral,Neutral,Strongly disagree,Agree,6,The reports are hard to read on a phone
+R0534,2026-06-26,18-24,Female,Quebec,Strongly agree,Neutral,Strongly agree,Agree,Agree,6,Onboarding was smooth
+R0535,2026-05-23,65+,Male,Atlantic,Strongly agree,Agree,Strongly agree,Agree,Agree,10,Love the weekly summary email
+R0536,2026-06-19,18-24,Female,Atlantic,Strongly agree,Agree,Neutral,Neutral,Agree,8,Love the weekly summary email
+R0537,2026-05-15,35-44,Female,British Columbia,Strongly agree,Neutral,Agree,Strongly agree,Neutral,6,Easy to use and quick to set up
+R0538,2026-06-01,65+,Prefer not to say,Ontario,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,10,Onboarding was smooth
+R0539,2026-05-18,35-44,Prefer not to say,Ontario,Disagree,Disagree,Neutral,Strongly disagree,Disagree,4,Too many notifications
+R0540,2026-06-30,45-54,Male,Prairies,Strongly agree,Neutral,Neutral,Strongly agree,Neutral,6,
+R0541,2026-06-16,35-44,Prefer not to say,Ontario,Strongly agree,Neutral,Disagree,Disagree,Neutral,6,Love the weekly summary email
+R0542,2026-07-02,25-34,Male,Prairies,Strongly agree,Neutral,Agree,Neutral,Strongly agree,5,Slow on large files
+R0543,2026-05-25,18-24,Male,Ontario,Neutral,Disagree,Neutral,Disagree,Disagree,9,Support took too long to reply
+R0544,2026-07-02,35-44,Female,Prairies,Agree,Agree,Neutral,Disagree,Disagree,9,Slow on large files
+R0545,2026-06-06,45-54,Non-binary,Alberta,Strongly agree,Neutral,Neutral,Neutral,Agree,7,Would recommend to a friend
+R0546,2026-06-06,55-64,Non-binary,Ontario,Neutral,Disagree,Neutral,Neutral,Strongly agree,6,Pricing is fair for what we get
+R0547,2026-05-21,35-44,Male,Atlantic,Disagree,Disagree,Agree,Strongly disagree,Disagree,6,Onboarding was smooth
+R0548,2026-06-15,35-44,Prefer not to say,Prairies,Strongly agree,Agree,Agree,Strongly agree,Agree,10,
+R0549,2026-05-28,35-44,Male,Alberta,Agree,Neutral,Disagree,Neutral,Agree,7,
+R0550,2026-06-25,45-54,Prefer not to say,British Columbia,Neutral,Disagree,Disagree,Neutral,Disagree,5,Support took too long to reply
+R0551,2026-05-23,55-64,Female,Ontario,Neutral,Disagree,Disagree,Strongly disagree,Disagree,5,Too many notifications
+R0552,2026-05-05,35-44,Prefer not to say,Atlantic,Strongly agree,Disagree,Agree,Disagree,Disagree,5,Support took too long to reply
+R0553,2026-05-18,35-44,Female,British Columbia,Neutral,Agree,Agree,Neutral,Disagree,5,Love the weekly summary email
+R0554,2026-05-19,45-54,Prefer not to say,British Columbia,Agree,Strongly agree,Agree,Agree,Agree,6,
+R0555,2026-06-08,18-24,Female,British Columbia,Neutral,Disagree,Neutral,Agree,Neutral,3,Slow on large files
+R0556,2026-06-24,18-24,Male,Alberta,Agree,Agree,Agree,Disagree,Strongly agree,7,Onboarding was smooth
+R0557,2026-05-27,65+,Non-binary,Alberta,Neutral,Disagree,Disagree,Neutral,Agree,7,Missing an export to Excel
+R0558,2026-06-26,18-24,Male,Prairies,Strongly agree,Agree,Neutral,Strongly agree,Agree,10,Love the weekly summary email
+R0559,2026-05-25,35-44,Non-binary,Quebec,Strongly agree,Neutral,Strongly agree,Agree,Agree,7,Missing an export to Excel
+R0560,2026-05-13,65+,Male,British Columbia,Neutral,Agree,Neutral,Agree,Agree,8,Easy to use and quick to set up
+R0561,2026-06-02,18-24,Prefer not to say,Prairies,Strongly agree,Agree,Strongly agree,Agree,Agree,7,Support took too long to reply
+R0562,2026-06-15,55-64,Female,Quebec,Agree,Neutral,Agree,Agree,Agree,5,Easy to use and quick to set up
+R0563,2026-06-27,55-64,Female,Prairies,Agree,Disagree,Agree,Disagree,Agree,7,
+R0564,2026-05-14,25-34,Female,Prairies,Agree,Strongly agree,Neutral,Disagree,Disagree,5,Onboarding was smooth
+R0565,2026-06-09,65+,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Agree,7,Would recommend to a friend
+R0566,2026-05-31,55-64,Prefer not to say,Alberta,Neutral,Strongly disagree,Disagree,Strongly disagree,Disagree,4,
+R0567,2026-06-20,65+,Male,Quebec,Strongly agree,Agree,Neutral,Strongly agree,Strongly agree,8,Easy to use and quick to set up
+R0568,2026-05-07,25-34,Prefer not to say,Ontario,Agree,Agree,Agree,Agree,Neutral,6,
+R0569,2026-06-27,25-34,Female,Atlantic,Agree,Strongly agree,Agree,Neutral,Strongly agree,8,Easy to use and quick to set up
+R0570,2026-05-31,25-34,Male,British Columbia,Strongly agree,Agree,Agree,Strongly agree,Neutral,7,Too many notifications
+R0571,2026-06-26,18-24,Prefer not to say,Atlantic,Disagree,Strongly agree,Disagree,Disagree,Agree,1,
+R0572,2026-05-29,65+,Female,Alberta,Agree,Neutral,Disagree,Neutral,Neutral,5,
+R0573,2026-06-27,35-44,Female,Atlantic,Agree,Strongly disagree,Disagree,Agree,Neutral,6,The reports are hard to read on a phone
+R0574,2026-05-10,35-44,Female,British Columbia,Neutral,Disagree,Neutral,Disagree,Strongly disagree,4,
+R0575,2026-05-31,45-54,Male,Atlantic,Agree,Neutral,Agree,Neutral,Agree,5,Pricing is fair for what we get
+R0576,2026-05-07,25-34,Female,Prairies,Strongly agree,Strongly agree,Strongly agree,Agree,Neutral,7,Slow on large files
+R0577,2026-06-11,35-44,Male,Ontario,Agree,Agree,Neutral,Neutral,Agree,4,
+R0578,2026-05-27,18-24,Non-binary,Alberta,Neutral,Neutral,Neutral,Neutral,Neutral,8,
+R0579,2026-05-24,35-44,Female,Quebec,Disagree,Agree,Neutral,Neutral,Agree,3,Too many notifications
+R0580,2026-06-25,18-24,Male,Quebec,Neutral,Neutral,Disagree,Agree,Neutral,4,Love the weekly summary email
+R0581,2026-06-22,45-54,Non-binary,Quebec,Strongly agree,Agree,Agree,Neutral,Strongly agree,10,Love the weekly summary email
+R0582,2026-05-15,25-34,Non-binary,Quebec,Disagree,Neutral,Agree,Disagree,Disagree,7,Love the weekly summary email
+R0583,2026-05-10,65+,Non-binary,Prairies,Disagree,Agree,Agree,Agree,Neutral,5,Pricing is fair for what we get
+R0584,2026-05-04,18-24,Prefer not to say,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Would recommend to a friend
+R0585,2026-05-25,25-34,Male,Atlantic,Agree,Disagree,Agree,Disagree,Neutral,7,Onboarding was smooth
+R0586,2026-05-22,65+,Female,Quebec,Agree,Disagree,Agree,Agree,Strongly agree,8,Too many notifications
+R0587,2026-05-09,18-24,Prefer not to say,Ontario,Disagree,Disagree,Neutral,Agree,Agree,9,Would recommend to a friend
+R0588,2026-05-04,45-54,Prefer not to say,British Columbia,Strongly agree,Agree,Strongly agree,Neutral,Neutral,9,Onboarding was smooth
+R0589,2026-06-05,25-34,Non-binary,British Columbia,Neutral,Neutral,Strongly agree,Disagree,Agree,5,
+R0590,2026-06-13,55-64,Female,Alberta,Strongly agree,Neutral,Disagree,Neutral,Agree,9,Too many notifications
+R0591,2026-05-17,45-54,Female,Alberta,Agree,Disagree,Disagree,Strongly disagree,Agree,8,The reports are hard to read on a phone
+R0592,2026-05-27,55-64,Prefer not to say,Prairies,Strongly agree,Neutral,Strongly agree,Agree,Strongly agree,7,Support took too long to reply
+R0593,2026-07-02,45-54,Non-binary,Atlantic,Neutral,Neutral,Agree,Disagree,Disagree,5,Love the weekly summary email
+R0594,2026-06-19,45-54,Female,Alberta,Strongly agree,Neutral,Neutral,Neutral,Agree,1,Missing an export to Excel
+R0595,2026-05-17,25-34,Prefer not to say,British Columbia,Neutral,Agree,Neutral,Neutral,Strongly agree,8,Slow on large files
+R0596,2026-06-06,65+,Non-binary,British Columbia,Strongly agree,Strongly agree,Strongly agree,Neutral,Agree,9,Easy to use and quick to set up
+R0597,2026-06-28,65+,Prefer not to say,Prairies,Agree,Neutral,Strongly agree,Agree,Agree,9,Too many notifications
+R0598,2026-06-21,25-34,Prefer not to say,Atlantic,Neutral,Agree,Agree,Neutral,Agree,10,The reports are hard to read on a phone
+R0599,2026-05-25,45-54,Male,Atlantic,Agree,Neutral,Disagree,Agree,Agree,6,Love the weekly summary email
+R0600,2026-05-18,35-44,Male,Prairies,Neutral,Strongly disagree,Disagree,Strongly disagree,Disagree,3,Slow on large files
+R0601,2026-06-28,18-24,Female,Atlantic,Agree,Agree,Strongly agree,Neutral,Strongly agree,8,
+R0602,2026-05-06,45-54,Male,British Columbia,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,8,Pricing is fair for what we get
+R0603,2026-06-19,55-64,Male,British Columbia,Disagree,Neutral,Neutral,Disagree,Neutral,5,Support took too long to reply
+R0604,2026-05-16,55-64,Male,Quebec,Strongly agree,Neutral,Strongly agree,Neutral,Strongly agree,7,Support took too long to reply
+R0605,2026-05-30,35-44,Prefer not to say,British Columbia,Agree,Disagree,Agree,Disagree,Disagree,10,Slow on large files
+R0606,2026-05-24,25-34,Prefer not to say,British Columbia,Disagree,Disagree,Disagree,Disagree,Strongly disagree,6,Easy to use and quick to set up
+R0607,2026-05-12,25-34,Non-binary,Ontario,Strongly disagree,Strongly disagree,Strongly disagree,Strongly disagree,Neutral,4,Too many notifications
+R0608,2026-06-22,65+,Female,British Columbia,Strongly agree,Neutral,Strongly agree,Agree,Strongly agree,7,Too many notifications
+R0609,2026-06-29,35-44,Female,Quebec,Strongly agree,Disagree,Strongly agree,Neutral,Neutral,8,Too many notifications
+R0610,2026-06-15,18-24,Male,Prairies,Strongly agree,Agree,Agree,Strongly agree,Strongly agree,7,Slow on large files
+R0611,2026-05-26,18-24,Prefer not to say,Quebec,Disagree,Neutral,Strongly agree,Neutral,Neutral,7,Onboarding was smooth
+R0612,2026-06-21,35-44,Prefer not to say,Ontario,Agree,Agree,Neutral,Strongly disagree,Strongly agree,8,Missing an export to Excel
+R0613,2026-06-04,25-34,Male,Atlantic,Neutral,Agree,Agree,Neutral,Strongly agree,9,Support took too long to reply
+R0614,2026-05-16,55-64,Non-binary,British Columbia,Agree,Neutral,Neutral,Neutral,Neutral,6,Would recommend to a friend
+R0615,2026-06-03,35-44,Non-binary,British Columbia,Agree,Strongly disagree,Neutral,Neutral,Neutral,8,
+R0616,2026-07-03,18-24,Female,Atlantic,Strongly agree,Agree,Neutral,Agree,Agree,3,Too many notifications
+R0617,2026-06-25,35-44,Non-binary,Ontario,Disagree,Neutral,Disagree,Disagree,Disagree,7,The reports are hard to read on a phone
+R0618,2026-06-13,65+,Non-binary,Quebec,Agree,Neutral,Agree,Agree,Neutral,7,Slow on large files
+R0619,2026-05-10,45-54,Female,Alberta,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Pricing is fair for what we get
+R0620,2026-05-21,35-44,Female,Quebec,Agree,Strongly agree,Strongly agree,Neutral,Agree,2,
+R0621,2026-06-06,25-34,Male,Ontario,Agree,Neutral,Neutral,Neutral,Neutral,6,Too many notifications
+R0622,2026-06-17,65+,Male,Alberta,Strongly agree,Neutral,Strongly agree,Agree,Strongly agree,3,
+R0623,2026-05-06,35-44,Male,British Columbia,Agree,Disagree,Neutral,Neutral,Disagree,6,Would recommend to a friend
+R0624,2026-06-10,55-64,Male,Prairies,Disagree,Strongly disagree,Strongly disagree,Strongly disagree,Disagree,0,Onboarding was smooth
+R0625,2026-05-31,65+,Prefer not to say,Ontario,Neutral,Neutral,Neutral,Agree,Disagree,6,
+R0626,2026-06-19,18-24,Prefer not to say,Alberta,Agree,Neutral,Agree,Neutral,Agree,8,Easy to use and quick to set up
+R0627,2026-06-18,35-44,Prefer not to say,Prairies,Agree,Agree,Strongly agree,Disagree,Agree,8,Slow on large files
+R0628,2026-06-01,45-54,Female,Quebec,Neutral,Strongly agree,Strongly agree,Agree,Neutral,10,Missing an export to Excel
+R0629,2026-06-18,45-54,Male,Ontario,Disagree,Disagree,Disagree,Strongly disagree,Strongly disagree,1,
+R0630,2026-05-04,45-54,Prefer not to say,Quebec,Agree,Strongly disagree,Neutral,Agree,Neutral,8,Too many notifications
+R0631,2026-05-24,18-24,Prefer not to say,Atlantic,Agree,Disagree,Neutral,Disagree,Strongly agree,8,Missing an export to Excel
+R0632,2026-05-20,45-54,Male,Prairies,Neutral,Strongly disagree,Neutral,Disagree,Neutral,6,The reports are hard to read on a phone
+R0633,2026-06-12,25-34,Non-binary,British Columbia,Strongly agree,Neutral,Neutral,Agree,Agree,9,The reports are hard to read on a phone
+R0634,2026-05-16,45-54,Male,Quebec,Strongly agree,Strongly agree,Agree,Strongly agree,Agree,10,Too many notifications
+R0635,2026-05-27,18-24,Prefer not to say,Prairies,Agree,Strongly agree,Neutral,Neutral,Agree,8,Pricing is fair for what we get
+R0636,2026-06-17,45-54,Male,Quebec,Strongly agree,Agree,Strongly agree,Neutral,Neutral,10,Easy to use and quick to set up
+R0637,2026-05-15,18-24,Non-binary,Ontario,Agree,Agree,Disagree,Disagree,Neutral,3,Love the weekly summary email
+R0638,2026-06-17,18-24,Female,Atlantic,Neutral,Strongly agree,Strongly agree,Agree,Strongly agree,9,Would recommend to a friend
+R0639,2026-05-19,45-54,Non-binary,Alberta,Strongly agree,Neutral,Neutral,Agree,Agree,5,Missing an export to Excel
+R0640,2026-06-18,18-24,Male,Atlantic,Agree,Neutral,Neutral,Agree,Strongly agree,9,Support took too long to reply
+R0641,2026-05-09,55-64,Prefer not to say,British Columbia,Neutral,Neutral,Neutral,Agree,Disagree,10,Would recommend to a friend
+R0642,2026-06-09,18-24,Male,Ontario,Neutral,Disagree,Agree,Strongly disagree,Neutral,4,Slow on large files
+R0643,2026-05-14,18-24,Non-binary,Ontario,Agree,Neutral,Agree,Neutral,Neutral,7,Love the weekly summary email
+R0644,2026-05-10,55-64,Male,Alberta,Disagree,Disagree,Disagree,Neutral,Agree,8,Too many notifications
+R0645,2026-05-12,35-44,Prefer not to say,Quebec,Neutral,Neutral,Neutral,Strongly agree,Strongly agree,9,Too many notifications
+R0646,2026-06-21,55-64,Female,Atlantic,Neutral,Agree,Agree,Agree,Neutral,10,Onboarding was smooth
+R0647,2026-05-15,65+,Prefer not to say,British Columbia,Agree,Agree,Agree,Disagree,Neutral,8,Pricing is fair for what we get
+R0648,2026-06-14,18-24,Non-binary,British Columbia,Agree,Neutral,Strongly agree,Agree,Disagree,10,Missing an export to Excel
+R0649,2026-06-16,35-44,Non-binary,Alberta,Neutral,Strongly agree,Agree,Disagree,Agree,4,Onboarding was smooth
+R0650,2026-06-06,35-44,Male,Alberta,Strongly agree,Strongly agree,Neutral,Agree,Agree,10,Would recommend to a friend
+R0651,2026-06-14,55-64,Female,Quebec,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,Pricing is fair for what we get
+R0652,2026-06-30,65+,Prefer not to say,Alberta,Strongly agree,Agree,Agree,Agree,Agree,9,Missing an export to Excel
+R0653,2026-06-04,18-24,Non-binary,Alberta,Strongly agree,Disagree,Disagree,Neutral,Agree,9,Would recommend to a friend
+R0654,2026-06-18,65+,Prefer not to say,Atlantic,Neutral,Neutral,Disagree,Disagree,Agree,10,Onboarding was smooth
+R0655,2026-06-14,45-54,Female,Ontario,Disagree,Disagree,Strongly disagree,Disagree,Strongly disagree,9,Too many notifications
+R0656,2026-06-08,45-54,Non-binary,Atlantic,Disagree,Disagree,Disagree,Agree,Disagree,9,Slow on large files
+R0657,2026-05-30,18-24,Non-binary,Prairies,Strongly agree,Agree,Strongly agree,Neutral,Agree,9,The reports are hard to read on a phone
+R0658,2026-05-22,18-24,Female,Atlantic,Strongly agree,Strongly disagree,Strongly agree,Neutral,Neutral,6,Slow on large files
+R0659,2026-06-17,65+,Male,Alberta,Disagree,Agree,Neutral,Neutral,Agree,10,Would recommend to a friend
+R0660,2026-06-27,65+,Prefer not to say,Quebec,Disagree,Neutral,Agree,Disagree,Neutral,9,Missing an export to Excel
+R0661,2026-05-26,45-54,Female,British Columbia,Agree,Strongly agree,Strongly agree,Neutral,Agree,8,Support took too long to reply
+R0662,2026-05-24,25-34,Female,Ontario,Agree,Strongly disagree,Strongly agree,Strongly disagree,Neutral,1,Love the weekly summary email
+R0663,2026-06-07,35-44,Non-binary,Ontario,Disagree,Disagree,Strongly agree,Disagree,Neutral,6,Easy to use and quick to set up
+R0664,2026-05-22,35-44,Female,British Columbia,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,9,Too many notifications
+R0665,2026-05-08,55-64,Non-binary,British Columbia,Strongly agree,Strongly agree,Strongly agree,Neutral,Strongly agree,10,The reports are hard to read on a phone
+R0666,2026-06-07,35-44,Non-binary,Prairies,Neutral,Strongly disagree,Neutral,Disagree,Agree,10,
+R0667,2026-06-27,18-24,Female,Quebec,Strongly agree,Disagree,Neutral,Agree,Agree,6,The reports are hard to read on a phone
+R0668,2026-06-18,55-64,Male,Quebec,Neutral,Neutral,Strongly agree,Agree,Disagree,7,Pricing is fair for what we get
+R0669,2026-05-05,55-64,Non-binary,British Columbia,Agree,Neutral,Neutral,Agree,Agree,1,Support took too long to reply
+R0670,2026-05-18,25-34,Female,Alberta,Neutral,Neutral,Neutral,Strongly disagree,Strongly agree,6,Pricing is fair for what we get
+R0671,2026-05-14,35-44,Prefer not to say,Alberta,Agree,Agree,Neutral,Neutral,Agree,5,Slow on large files
+R0672,2026-06-27,25-34,Female,Atlantic,Strongly agree,Neutral,Neutral,Agree,Neutral,7,Pricing is fair for what we get
+R0673,2026-05-15,45-54,Non-binary,Atlantic,Agree,Neutral,Neutral,Disagree,Disagree,5,Slow on large files
+R0674,2026-06-25,45-54,Prefer not to say,Alberta,Strongly agree,Neutral,Agree,Agree,Strongly agree,8,Missing an export to Excel
+R0675,2026-06-03,25-34,Prefer not to say,Prairies,Strongly agree,Agree,Neutral,Agree,Neutral,9,The reports are hard to read on a phone
+R0676,2026-06-13,25-34,Male,British Columbia,Agree,Strongly disagree,Agree,Disagree,Agree,9,
+R0677,2026-06-30,18-24,Male,British Columbia,Agree,Disagree,Strongly agree,Agree,Strongly agree,7,Support took too long to reply
+R0678,2026-06-06,45-54,Prefer not to say,British Columbia,Agree,Strongly agree,Agree,Strongly agree,Neutral,10,Slow on large files
+R0679,2026-05-14,65+,Prefer not to say,British Columbia,Disagree,Disagree,Neutral,Strongly disagree,Disagree,6,Easy to use and quick to set up
+R0680,2026-06-30,45-54,Female,Atlantic,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Agree,10,Support took too long to reply
+R0681,2026-05-04,45-54,Female,Atlantic,Strongly agree,Neutral,Agree,Strongly agree,Agree,6,Easy to use and quick to set up
+R0682,2026-06-17,55-64,Male,Atlantic,Neutral,Agree,Disagree,Agree,Agree,7,The reports are hard to read on a phone
+R0683,2026-05-25,45-54,Female,British Columbia,Agree,Agree,Strongly agree,Neutral,Neutral,9,The reports are hard to read on a phone
+R0684,2026-06-20,45-54,Male,British Columbia,Agree,Neutral,Neutral,Disagree,Neutral,5,
+R0685,2026-05-10,35-44,Female,Alberta,Strongly agree,Agree,Neutral,Disagree,Agree,7,
+R0686,2026-05-30,45-54,Male,British Columbia,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,6,Pricing is fair for what we get
+R0687,2026-06-02,18-24,Non-binary,Quebec,Strongly disagree,Strongly disagree,Neutral,Strongly disagree,Strongly disagree,6,
+R0688,2026-06-07,65+,Male,Ontario,Neutral,Neutral,Neutral,Disagree,Disagree,6,Easy to use and quick to set up
+R0689,2026-06-07,35-44,Non-binary,Alberta,Strongly agree,Neutral,Agree,Disagree,Agree,8,Love the weekly summary email
+R0690,2026-05-05,55-64,Non-binary,Prairies,Agree,Disagree,Neutral,Neutral,Neutral,5,Too many notifications
+R0691,2026-06-25,45-54,Male,Ontario,Agree,Neutral,Neutral,Neutral,Agree,7,The reports are hard to read on a phone
+R0692,2026-05-28,55-64,Female,Prairies,Agree,Strongly agree,Strongly agree,Strongly agree,Neutral,6,Support took too long to reply
+R0693,2026-06-01,35-44,Female,Quebec,Disagree,Neutral,Strongly agree,Disagree,Agree,7,Onboarding was smooth
+R0694,2026-05-18,35-44,Prefer not to say,Alberta,Agree,Strongly agree,Strongly agree,Agree,Strongly agree,5,Love the weekly summary email
+R0695,2026-05-13,55-64,Male,Alberta,Agree,Agree,Agree,Agree,Strongly agree,10,Missing an export to Excel
+R0696,2026-05-18,18-24,Female,Ontario,Agree,Neutral,Neutral,Strongly agree,Agree,7,Support took too long to reply
+R0697,2026-06-10,45-54,Non-binary,British Columbia,Strongly agree,Neutral,Neutral,Agree,Strongly agree,6,Would recommend to a friend
+R0698,2026-06-13,18-24,Non-binary,Quebec,Disagree,Disagree,Neutral,Strongly disagree,Disagree,1,Too many notifications
+R0699,2026-06-04,45-54,Prefer not to say,Prairies,Agree,Agree,Strongly agree,Neutral,Agree,10,Too many notifications
+R0700,2026-06-04,35-44,Female,Prairies,Disagree,Strongly disagree,Neutral,Disagree,Neutral,5,Too many notifications
+R0701,2026-06-01,45-54,Non-binary,Alberta,Agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Missing an export to Excel
+R0702,2026-05-24,35-44,Prefer not to say,Alberta,Strongly agree,Disagree,Neutral,Strongly agree,Strongly agree,7,Missing an export to Excel
+R0703,2026-05-12,55-64,Prefer not to say,Atlantic,Disagree,Disagree,Neutral,Disagree,Agree,9,Easy to use and quick to set up
+R0704,2026-06-10,55-64,Female,Prairies,Neutral,Disagree,Agree,Disagree,Neutral,6,
+R0705,2026-06-30,25-34,Male,Alberta,Neutral,Agree,Agree,Neutral,Agree,8,Support took too long to reply
+R0706,2026-06-17,65+,Non-binary,Ontario,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,10,Too many notifications
+R0707,2026-05-27,35-44,Male,Alberta,Strongly agree,Strongly agree,Strongly agree,Agree,Agree,10,The reports are hard to read on a phone
+R0708,2026-05-10,45-54,Non-binary,Prairies,Agree,Strongly agree,Neutral,Disagree,Agree,5,Support took too long to reply
+R0709,2026-05-07,35-44,Male,Quebec,Agree,Neutral,Strongly agree,Neutral,Strongly agree,8,The reports are hard to read on a phone
+R0710,2026-05-23,35-44,Female,British Columbia,Neutral,Agree,Agree,Neutral,Agree,7,Love the weekly summary email
+R0711,2026-05-11,25-34,Male,Atlantic,Strongly agree,Agree,Agree,Neutral,Agree,3,Onboarding was smooth
+R0712,2026-05-21,45-54,Female,Atlantic,Agree,Agree,Agree,Strongly agree,Strongly agree,8,Pricing is fair for what we get
+R0713,2026-05-18,25-34,Female,British Columbia,Strongly agree,Agree,Disagree,Strongly agree,Neutral,10,Easy to use and quick to set up
+R0714,2026-06-05,18-24,Prefer not to say,Atlantic,Strongly agree,Agree,Neutral,Strongly agree,Strongly agree,9,Support took too long to reply
+R0715,2026-05-07,25-34,Non-binary,Atlantic,Neutral,Disagree,Strongly agree,Neutral,Strongly agree,8,Too many notifications
+R0716,2026-06-04,18-24,Male,Quebec,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,Slow on large files
+R0717,2026-05-15,35-44,Non-binary,Quebec,Agree,Neutral,Agree,Strongly disagree,Neutral,7,Easy to use and quick to set up
+R0718,2026-05-30,55-64,Female,Ontario,Agree,Neutral,Agree,Agree,Agree,7,Love the weekly summary email
+R0719,2026-06-07,45-54,Non-binary,Alberta,Strongly agree,Neutral,Agree,Agree,Agree,10,Onboarding was smooth
+R0720,2026-06-11,65+,Prefer not to say,Quebec,Agree,Agree,Agree,Disagree,Neutral,4,Pricing is fair for what we get
+R0721,2026-05-24,55-64,Prefer not to say,Alberta,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,9,Onboarding was smooth
+R0722,2026-05-26,35-44,Non-binary,Quebec,Neutral,Strongly agree,Disagree,Agree,Agree,8,Support took too long to reply
+R0723,2026-05-05,65+,Non-binary,British Columbia,Neutral,Disagree,Disagree,Neutral,Neutral,4,Too many notifications
+R0724,2026-05-17,55-64,Non-binary,Ontario,Agree,Neutral,Strongly agree,Neutral,Agree,7,Slow on large files
+R0725,2026-06-06,35-44,Non-binary,Ontario,Neutral,Strongly agree,Agree,Agree,Agree,7,
+R0726,2026-05-26,25-34,Male,Ontario,Strongly agree,Neutral,Strongly agree,Neutral,Agree,10,
+R0727,2026-06-01,55-64,Female,Atlantic,Agree,Agree,Neutral,Neutral,Neutral,7,Would recommend to a friend
+R0728,2026-05-21,45-54,Prefer not to say,British Columbia,Neutral,Neutral,Neutral,Disagree,Neutral,10,Support took too long to reply
+R0729,2026-06-22,55-64,Prefer not to say,Ontario,Agree,Agree,Strongly agree,Disagree,Strongly agree,9,Would recommend to a friend
+R0730,2026-05-13,18-24,Female,Atlantic,Neutral,Strongly disagree,Disagree,Disagree,Neutral,7,Slow on large files
+R0731,2026-06-26,55-64,Male,Alberta,Strongly agree,Agree,Strongly agree,Strongly agree,Neutral,7,Love the weekly summary email
+R0732,2026-05-14,35-44,Prefer not to say,British Columbia,Neutral,Neutral,Neutral,Disagree,Strongly agree,6,Love the weekly summary email
+R0733,2026-05-10,18-24,Female,Alberta,Strongly agree,Strongly agree,Neutral,Strongly agree,Strongly agree,6,Would recommend to a friend
+R0734,2026-05-08,65+,Prefer not to say,Quebec,Strongly agree,Neutral,Neutral,Agree,Agree,7,Slow on large files
+R0735,2026-07-03,55-64,Female,Prairies,Neutral,Neutral,Strongly agree,Neutral,Neutral,7,The reports are hard to read on a phone
+R0736,2026-06-14,25-34,Non-binary,British Columbia,Strongly agree,Agree,Disagree,Neutral,Strongly disagree,6,Love the weekly summary email
+R0737,2026-06-08,18-24,Non-binary,Alberta,Agree,Strongly agree,Agree,Agree,Strongly agree,8,Easy to use and quick to set up
+R0738,2026-05-18,65+,Female,British Columbia,Agree,Strongly agree,Agree,Neutral,Neutral,6,
+R0739,2026-05-26,35-44,Female,Atlantic,Strongly disagree,Neutral,Neutral,Disagree,Neutral,6,Easy to use and quick to set up
+R0740,2026-05-19,18-24,Male,Alberta,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,9,Missing an export to Excel
+R0741,2026-05-04,55-64,Female,Alberta,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,7,Would recommend to a friend
+R0742,2026-06-05,65+,Male,Quebec,Strongly agree,Neutral,Strongly disagree,Agree,Disagree,7,Missing an export to Excel
+R0743,2026-06-25,65+,Male,British Columbia,Strongly agree,Agree,Neutral,Disagree,Disagree,4,Easy to use and quick to set up
+R0744,2026-05-08,55-64,Male,British Columbia,Agree,Agree,Agree,Agree,Agree,9,Too many notifications
+R0745,2026-06-08,35-44,Prefer not to say,Quebec,Neutral,Neutral,Neutral,Disagree,Neutral,4,Pricing is fair for what we get
+R0746,2026-06-14,55-64,Male,British Columbia,Neutral,Neutral,Agree,Disagree,Agree,9,Missing an export to Excel
+R0747,2026-05-21,18-24,Male,Prairies,Agree,Neutral,Disagree,Agree,Agree,7,Missing an export to Excel
+R0748,2026-07-01,45-54,Male,British Columbia,Strongly agree,Neutral,Agree,Agree,Neutral,9,Would recommend to a friend
+R0749,2026-06-02,55-64,Non-binary,Prairies,Disagree,Disagree,Neutral,Neutral,Neutral,5,
+R0750,2026-05-25,25-34,Male,Quebec,Strongly agree,Agree,Neutral,Neutral,Disagree,8,Love the weekly summary email
+R0751,2026-06-04,45-54,Prefer not to say,Prairies,Strongly agree,Agree,Strongly agree,Neutral,Agree,8,Support took too long to reply
+R0752,2026-05-27,55-64,Non-binary,Ontario,Neutral,Neutral,Agree,Neutral,Disagree,8,Missing an export to Excel
+R0753,2026-07-03,25-34,Prefer not to say,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,8,Pricing is fair for what we get
+R0754,2026-06-08,45-54,Non-binary,Quebec,Strongly agree,Strongly agree,Strongly agree,Disagree,Neutral,7,Love the weekly summary email
+R0755,2026-05-06,18-24,Male,Prairies,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,5,Would recommend to a friend
+R0756,2026-05-23,25-34,Female,Quebec,Agree,Neutral,Agree,Strongly disagree,Neutral,7,
+R0757,2026-06-03,35-44,Prefer not to say,Prairies,Neutral,Neutral,Neutral,Neutral,Agree,6,Missing an export to Excel
+R0758,2026-06-22,65+,Prefer not to say,Atlantic,Agree,Agree,Neutral,Disagree,Neutral,10,Pricing is fair for what we get
+R0759,2026-05-28,18-24,Male,Quebec,Agree,Neutral,Strongly agree,Agree,Agree,8,Too many notifications
+R0760,2026-05-17,45-54,Female,Quebec,Disagree,Strongly agree,Strongly agree,Disagree,Neutral,10,Easy to use and quick to set up
+R0761,2026-06-17,45-54,Female,Prairies,Neutral,Agree,Neutral,Neutral,Neutral,6,
+R0762,2026-05-20,45-54,Female,Ontario,Neutral,Strongly agree,Agree,Agree,Neutral,8,
+R0763,2026-05-29,35-44,Prefer not to say,Prairies,Strongly agree,Neutral,Strongly agree,Strongly agree,Agree,5,
+R0764,2026-06-29,55-64,Male,Ontario,Strongly agree,Strongly agree,Strongly agree,Agree,Agree,9,
+R0765,2026-06-19,55-64,Female,Atlantic,Agree,Agree,Strongly agree,Strongly agree,Strongly agree,8,Would recommend to a friend
+R0766,2026-05-26,35-44,Female,Atlantic,Disagree,Neutral,Neutral,Agree,Disagree,6,Pricing is fair for what we get
+R0767,2026-05-16,45-54,Male,Alberta,Agree,Agree,Disagree,Disagree,Disagree,8,Too many notifications
+R0768,2026-05-18,45-54,Prefer not to say,Prairies,Strongly agree,Disagree,Agree,Neutral,Disagree,6,The reports are hard to read on a phone
+R0769,2026-06-07,35-44,Male,Quebec,Strongly agree,Agree,Neutral,Strongly agree,Strongly agree,8,Would recommend to a friend
+R0770,2026-05-15,65+,Non-binary,Quebec,Strongly agree,Agree,Neutral,Agree,Strongly agree,7,Support took too long to reply
+R0771,2026-06-11,18-24,Prefer not to say,British Columbia,Disagree,Neutral,Agree,Strongly agree,Neutral,7,Support took too long to reply
+R0772,2026-05-08,55-64,Prefer not to say,Ontario,Disagree,Neutral,Strongly agree,Agree,Neutral,6,Slow on large files
+R0773,2026-05-08,55-64,Prefer not to say,British Columbia,Agree,Strongly agree,Agree,Agree,Strongly agree,9,Missing an export to Excel
+R0774,2026-06-13,35-44,Female,Quebec,Disagree,Neutral,Agree,Neutral,Neutral,6,Love the weekly summary email
+R0775,2026-05-26,35-44,Female,Atlantic,Agree,Agree,Agree,Neutral,Strongly agree,8,Pricing is fair for what we get
+R0776,2026-05-19,55-64,Male,Quebec,Agree,Neutral,Agree,Neutral,Disagree,6,Easy to use and quick to set up
+R0777,2026-06-09,35-44,Female,British Columbia,Agree,Disagree,Neutral,Disagree,Neutral,9,Slow on large files
+R0778,2026-05-18,35-44,Female,Quebec,Neutral,Disagree,Disagree,Disagree,Disagree,7,Too many notifications
+R0779,2026-06-22,18-24,Male,British Columbia,Agree,Disagree,Disagree,Disagree,Strongly disagree,5,Slow on large files
+R0780,2026-05-21,35-44,Female,Prairies,Neutral,Neutral,Agree,Disagree,Agree,10,Would recommend to a friend
+R0781,2026-06-08,55-64,Prefer not to say,Ontario,Strongly agree,Agree,Agree,Agree,Agree,5,Easy to use and quick to set up
+R0782,2026-05-19,18-24,Male,Alberta,Strongly agree,Disagree,Strongly agree,Strongly agree,Neutral,10,Missing an export to Excel
+R0783,2026-06-15,45-54,Prefer not to say,Atlantic,Disagree,Disagree,Disagree,Agree,Neutral,4,Slow on large files
+R0784,2026-05-15,65+,Female,Alberta,Agree,Disagree,Agree,Disagree,Neutral,8,Love the weekly summary email
+R0785,2026-05-06,35-44,Prefer not to say,Quebec,Agree,Strongly agree,Neutral,Agree,Strongly agree,10,Would recommend to a friend
+R0786,2026-06-19,35-44,Prefer not to say,Ontario,Agree,Strongly agree,Agree,Disagree,Neutral,7,The reports are hard to read on a phone
+R0787,2026-06-26,55-64,Female,Prairies,Strongly agree,Disagree,Neutral,Neutral,Neutral,4,Missing an export to Excel
+R0788,2026-05-15,25-34,Female,Quebec,Neutral,Agree,Agree,Neutral,Agree,8,Would recommend to a friend
+R0789,2026-05-12,35-44,Non-binary,Atlantic,Strongly agree,Agree,Agree,Agree,Agree,10,Love the weekly summary email
+R0790,2026-06-14,65+,Female,Quebec,Disagree,Disagree,Strongly disagree,Strongly disagree,Disagree,4,Support took too long to reply
+R0791,2026-06-19,35-44,Female,Ontario,Neutral,Neutral,Neutral,Disagree,Disagree,9,
+R0792,2026-05-22,35-44,Male,Prairies,Neutral,Strongly agree,Strongly agree,Agree,Agree,7,Missing an export to Excel
+R0793,2026-06-07,35-44,Non-binary,British Columbia,Agree,Strongly agree,Strongly agree,Strongly agree,Agree,10,
+R0794,2026-05-11,55-64,Non-binary,Ontario,Neutral,Neutral,Agree,Agree,Strongly disagree,5,
+R0795,2026-06-26,25-34,Non-binary,Ontario,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,Slow on large files
+R0796,2026-06-14,25-34,Non-binary,Prairies,Strongly agree,Agree,Strongly agree,Strongly agree,Strongly agree,10,Would recommend to a friend
+R0797,2026-05-15,18-24,Non-binary,Atlantic,Neutral,Strongly disagree,Disagree,Disagree,Neutral,3,Love the weekly summary email
+R0798,2026-06-02,18-24,Prefer not to say,Atlantic,Strongly agree,Disagree,Strongly disagree,Neutral,Agree,6,Slow on large files
+R0799,2026-06-02,55-64,Prefer not to say,Ontario,Disagree,Disagree,Neutral,Disagree,Neutral,4,Missing an export to Excel
+R0800,2026-06-02,25-34,Non-binary,British Columbia,Strongly agree,Neutral,Agree,Neutral,Strongly agree,9,Love the weekly summary email
+R0801,2026-06-29,18-24,Non-binary,Prairies,Strongly agree,Strongly agree,Agree,Agree,Neutral,8,Onboarding was smooth
+R0802,2026-05-15,35-44,Male,Ontario,Agree,Agree,Agree,Strongly agree,Neutral,10,Too many notifications
+R0803,2026-05-30,25-34,Male,British Columbia,Agree,Neutral,Strongly agree,Agree,Agree,10,Love the weekly summary email
+R0804,2026-05-29,25-34,Female,Prairies,Disagree,Disagree,Disagree,Neutral,Neutral,6,Would recommend to a friend
+R0805,2026-06-10,65+,Female,Quebec,Agree,Disagree,Agree,Neutral,Agree,7,
+R0806,2026-06-27,25-34,Female,Ontario,Agree,Neutral,Strongly agree,Agree,Agree,7,Onboarding was smooth
+R0807,2026-06-27,18-24,Non-binary,British Columbia,Agree,Neutral,Neutral,Neutral,Neutral,5,Onboarding was smooth
+R0808,2026-06-27,65+,Female,Quebec,Disagree,Disagree,Neutral,Strongly disagree,Strongly disagree,4,Pricing is fair for what we get
+R0809,2026-06-16,18-24,Male,British Columbia,Strongly agree,Agree,Agree,Neutral,Strongly agree,4,Missing an export to Excel
+R0810,2026-05-30,65+,Prefer not to say,Alberta,Disagree,Neutral,Disagree,Strongly disagree,Disagree,6,Onboarding was smooth
+R0811,2026-06-24,65+,Male,Prairies,Agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Onboarding was smooth
+R0812,2026-06-18,55-64,Prefer not to say,Prairies,Neutral,Neutral,Neutral,Disagree,Disagree,1,Love the weekly summary email
+R0813,2026-06-09,55-64,Male,Quebec,Disagree,Disagree,Neutral,Neutral,Neutral,3,Would recommend to a friend
+R0814,2026-06-22,35-44,Prefer not to say,Ontario,Disagree,Disagree,Neutral,Neutral,Disagree,1,Support took too long to reply
+R0815,2026-05-09,18-24,Female,Prairies,Strongly agree,Disagree,Neutral,Neutral,Agree,10,Onboarding was smooth
+R0816,2026-06-08,25-34,Prefer not to say,Alberta,Strongly agree,Agree,Neutral,Agree,Agree,9,Support took too long to reply
+R0817,2026-05-11,35-44,Non-binary,Atlantic,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Slow on large files
+R0818,2026-05-07,55-64,Male,Ontario,Strongly agree,Strongly agree,Agree,Strongly agree,Neutral,2,Support took too long to reply
+R0819,2026-07-02,35-44,Female,Atlantic,Neutral,Agree,Neutral,Agree,Strongly agree,9,Onboarding was smooth
+R0820,2026-06-25,55-64,Non-binary,Alberta,Strongly agree,Agree,Neutral,Neutral,Neutral,8,
+R0821,2026-05-15,35-44,Non-binary,Prairies,Strongly agree,Strongly agree,Agree,Neutral,Disagree,10,Support took too long to reply
+R0822,2026-06-27,18-24,Female,Quebec,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,10,Support took too long to reply
+R0823,2026-06-06,65+,Prefer not to say,Quebec,Strongly agree,Agree,Strongly agree,Strongly agree,Agree,8,Too many notifications
+R0824,2026-06-12,18-24,Male,Ontario,Agree,Neutral,Agree,Strongly agree,Agree,10,
+R0825,2026-06-30,65+,Prefer not to say,Alberta,Strongly agree,Strongly agree,Agree,Strongly agree,Strongly agree,6,Missing an export to Excel
+R0826,2026-05-13,55-64,Non-binary,Alberta,Strongly agree,Strongly agree,Neutral,Disagree,Agree,7,The reports are hard to read on a phone
+R0827,2026-05-25,45-54,Non-binary,Prairies,Strongly agree,Strongly agree,Agree,Agree,Strongly agree,8,Onboarding was smooth
+R0828,2026-05-27,18-24,Non-binary,Quebec,Neutral,Agree,Agree,Neutral,Strongly agree,8,
+R0829,2026-06-04,45-54,Non-binary,Ontario,Neutral,Disagree,Neutral,Neutral,Agree,4,Pricing is fair for what we get
+R0830,2026-06-04,35-44,Prefer not to say,Ontario,Disagree,Strongly disagree,Agree,Disagree,Disagree,7,Would recommend to a friend
+R0831,2026-05-29,55-64,Prefer not to say,Ontario,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,8,The reports are hard to read on a phone
+R0832,2026-05-15,25-34,Non-binary,British Columbia,Strongly agree,Disagree,Strongly agree,Agree,Agree,6,Love the weekly summary email
+R0833,2026-05-16,65+,Male,Ontario,Agree,Disagree,Agree,Agree,Disagree,5,
+R0834,2026-05-08,65+,Prefer not to say,Ontario,Strongly agree,Strongly agree,Agree,Agree,Strongly agree,9,The reports are hard to read on a phone
+R0835,2026-07-03,55-64,Male,Atlantic,Strongly agree,Agree,Neutral,Neutral,Agree,9,
+R0836,2026-06-26,18-24,Non-binary,Quebec,Neutral,Disagree,Neutral,Strongly agree,Neutral,7,Missing an export to Excel
+R0837,2026-05-25,18-24,Female,Prairies,Neutral,Disagree,Neutral,Neutral,Neutral,8,
+R0838,2026-05-11,18-24,Female,British Columbia,Neutral,Neutral,Agree,Neutral,Strongly agree,7,
+R0839,2026-05-31,25-34,Non-binary,British Columbia,Agree,Strongly disagree,Disagree,Agree,Neutral,7,Would recommend to a friend
+R0840,2026-06-02,18-24,Non-binary,Prairies,Strongly agree,Agree,Disagree,Strongly agree,Strongly agree,7,Onboarding was smooth
+R0841,2026-06-15,55-64,Male,Atlantic,Strongly agree,Agree,Strongly agree,Neutral,Strongly agree,8,Too many notifications
+R0842,2026-05-05,25-34,Non-binary,Atlantic,Agree,Agree,Strongly agree,Disagree,Agree,8,Too many notifications
+R0843,2026-05-08,45-54,Non-binary,Atlantic,Strongly agree,Strongly agree,Strongly agree,Agree,Strongly agree,8,Pricing is fair for what we get
+R0844,2026-07-01,45-54,Prefer not to say,Ontario,Disagree,Strongly disagree,Neutral,Neutral,Neutral,7,
+R0845,2026-06-09,55-64,Non-binary,Alberta,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,10,Love the weekly summary email
+R0846,2026-06-12,65+,Prefer not to say,Quebec,Disagree,Disagree,Agree,Neutral,Neutral,6,Easy to use and quick to set up
+R0847,2026-06-25,18-24,Non-binary,Quebec,Neutral,Neutral,Agree,Neutral,Neutral,10,Pricing is fair for what we get
+R0848,2026-07-01,55-64,Non-binary,Prairies,Strongly agree,Agree,Strongly agree,Agree,Strongly agree,9,Onboarding was smooth
+R0849,2026-06-21,35-44,Prefer not to say,British Columbia,Neutral,Neutral,Disagree,Neutral,Neutral,4,
+R0850,2026-05-27,18-24,Male,Alberta,Agree,Neutral,Neutral,Agree,Agree,5,
+R0851,2026-06-09,18-24,Non-binary,Atlantic,Strongly agree,Disagree,Agree,Agree,Agree,8,Love the weekly summary email
+R0852,2026-05-08,65+,Female,Ontario,Agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,6,Missing an export to Excel
+R0853,2026-06-16,18-24,Prefer not to say,Prairies,Disagree,Disagree,Strongly disagree,Strongly disagree,Neutral,6,Pricing is fair for what we get
+R0854,2026-05-06,18-24,Non-binary,Ontario,Strongly agree,Agree,Agree,Agree,Neutral,10,Love the weekly summary email
+R0855,2026-06-12,35-44,Non-binary,Atlantic,Neutral,Strongly agree,Agree,Neutral,Agree,0,Onboarding was smooth
+R0856,2026-06-24,65+,Male,Alberta,Strongly agree,Strongly agree,Strongly agree,Strongly agree,Strongly agree,9,Missing an export to Excel
+R0857,2026-06-25,25-34,Prefer not to say,Quebec,Strongly agree,Neutral,Agree,Neutral,Agree,4,Love the weekly summary email
+R0858,2026-06-23,18-24,Non-binary,Alberta,Agree,Agree,Neutral,Disagree,Neutral,9,
+R0859,2026-05-24,45-54,Prefer not to say,Prairies,Agree,Disagree,Neutral,Strongly agree,Neutral,9,Onboarding was smooth
+R0860,2026-06-20,18-24,Prefer not to say,British Columbia,Strongly agree,Strongly agree,Neutral,Neutral,Agree,10,Love the weekly summary email

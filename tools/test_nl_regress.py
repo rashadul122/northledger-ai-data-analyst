@@ -2123,13 +2123,13 @@ def test_s08_a_statcan_table_draws_its_own_charts_and_each_figure_recomputes_fro
                     "analyses": [{"type": "relationship", "columns": ["VALUE"]}]})):
         assert rep["ok"], rep.get("error")
         charts = {c["chart"]: c for c in rep["viz"]["charts"]}
-        assert [c["chart"] for c in rep["viz"]["charts"]][:3] == ["contribution_waterfall", "change_heatmap", "slope"], \
+        assert [c["chart"] for c in rep["viz"]["charts"]][:4] == ["contribution_waterfall", "series_lines", "change_heatmap", "slope"], \
             ([c["chart"] for c in rep["viz"]["charts"]], rep["viz"]["refused"])
         # each in its chart's own section, or the page draws it as a table ("Its section is not its chart's", live 8 Oct 2026)
-        assert all(c["section"] == NV.REGISTRY[c["chart"]]["section"] for c in rep["viz"]["charts"][:3]), \
+        assert all(c["section"] == NV.REGISTRY[c["chart"]]["section"] for c in rep["viz"]["charts"][:4]), \
             [(c["chart"], c["section"]) for c in rep["viz"]["charts"]]
         # the phrase the shared report's proxy keys on (insight-proxy src/report.js SERIES_CHART_WHY) to show every one of them
-        assert all("a published series' own chart" in c["why"] for c in rep["viz"]["charts"][:3]), [c["why"] for c in rep["viz"]["charts"]]
+        assert all("a published series' own chart" in c["why"] for c in rep["viz"]["charts"][:4]), [c["why"] for c in rep["viz"]["charts"]]
         # (1) the bridge: totals are the headline finding's, steps the identity's terms, and they add up
         wf = charts["contribution_waterfall"]
         st = wf["data"]["steps"]
@@ -2242,6 +2242,193 @@ def test_s09_a_statcan_table_states_its_whole_period_and_every_figure_recomputes
     # an ordinary table has no such block
     plain = run_bytes(b"month,sales\n" + "".join("2024-%02d-01,%d\n" % (m, 100 + m) for m in range(1, 13)).encode())
     assert "period" not in plain, plain.get("period")
+
+
+BATCH = os.path.join(HERE, "fixtures", "batch")
+
+
+def batch(name: str) -> bytes:
+    with open(os.path.join(BATCH, name), "rb") as fh:
+        return fh.read()
+
+
+def test_s10_a_world_bank_download_is_read_as_countries_and_indicators_not_refused_or_withheld():
+    """The World Bank's download (impact6, a batch of real shapes): four lines of title above the column names, a trailing comma on every
+    line, country x indicator rows with a column a year. The engine refused it ("looks like a title"); after the title block was set aside
+    it withheld OBS_VALUE (a 13-digit GDP has the shape of a card number) and "Indicator Name" (a header that says "name"), so no number
+    moved over time and the report said it found no date. Now the block is set aside and said so, the value column and the indicator
+    list are released as a table's measure and categories, the table is read by its structure (a sum of its countries, "countries" and
+    not "regions"), and the GDP sums are the file's own."""
+    import pandas as pd
+    raw = batch("worldbank_wide.csv")
+    rep = run_bytes(raw)
+    assert rep["ok"], rep.get("error")
+    assert any("first 4 lines of the file are a title block" in l["text"] for l in rep["limitations"]), [l["text"][:80] for l in rep["limitations"]]
+    assert rep["cleaning"]["fixes"][0]["rule"] == "title_block_set_aside" and rep["cleaning"]["fixes"][0]["count"] == 4
+    assert rep["privacy"]["flagged"] == [], rep["privacy"]["flagged"]
+    rel = {r["header"]: r for r in rep["privacy"]["released"]}
+    assert rel["OBS_VALUE"]["kind"] == "measure" and "Indicator Name" in rel and "category" in rel["Indicator Name"]["text"], rel
+    st = rep["structure"]
+    assert st["kind"] == "cube" and st["usable"] and st["publisher"] == "worldbank" and st["period"]["kind"] == "year", st.get("reason")
+    assert "GDP (current US$)" in rep["story"]["headline"] and "the sum of 15 countries" in rep["story"]["headline"], rep["story"]["headline"]
+    assert "regions" not in rep["story"]["headline"]
+    lines = raw.decode().split("\n")
+    df = pd.read_csv(io.StringIO("\n".join(lines[4:])), dtype=str)
+    g = df[df["Indicator Code"] == "NY.GDP.MKTP.CD"][["2021", "2022"]].apply(pd.to_numeric)
+    want = g.sum()
+    f = next(x for x in rep["findings"] if x["id"] == "measure.gdp_current_us_total.change")
+    d = f["inference"]["describe"]
+    assert abs(d["latest"] - want["2022"]) < 1.0 and abs(d["prior"] - want["2021"]) < 1.0, (d, want.to_dict())
+    # the same file without its title block reads the same: nothing else changed
+    body = "\n".join(lines[4:]).encode()
+    rep2 = run_bytes(body)
+    assert rep2["ok"] and rep2["story"]["headline"] == rep["story"]["headline"] and rep2["privacy"]["released"] == rep["privacy"]["released"]
+    assert not any("title block" in l["text"] for l in rep2["limitations"])
+    # the title block is found by shape alone: a header with fewer than three filled cells below a title is not one, and a file with no
+    # title block is returned byte for byte
+    assert NB._strip_title_block(body) == (body, 0) and NB._strip_title_block(raw) == (body, 4)
+    assert NB._strip_title_block(b"a,b,c\n1,2,3\n")[1] == 0
+
+
+def test_s11_an_indicator_name_header_is_released_only_in_an_official_table():
+    """"Indicator Name" is released as a category in a table that carries a publisher's signature (the World Bank's four columns), and only
+    there: the same header over the same labels in an ordinary file stays withheld by default, as every column the scan flags is."""
+    rows = ["Indicator Name,Month,Reading"]
+    for m in range(24):
+        for k, name in enumerate(["Rainfall", "Humidity", "Wind speed", "Pressure"]):
+            rows.append("%s,%04d-%02d-01,%.1f" % (name, 2024 + m // 12, m % 12 + 1, 10 + k + m * 0.3))
+    plain = run_bytes(("\n".join(rows) + "\n").encode())
+    assert plain["ok"], plain.get("error")
+    assert [f["column"] for f in plain["privacy"]["flagged"]] == ["indicator_name"] and plain["privacy"]["flagged"][0]["decision"] == "withhold", plain["privacy"]
+    assert plain["privacy"]["released"] == []
+    # a roster of people under the same header is never released, whatever the table
+    people = ["Priya Sharma", "Tom Okafor", "Maria Rossi", "Chen Wei"]
+    rows = ["Country Name,Country Code,Indicator Name,Indicator Code," + ",".join(str(y) for y in range(2010, 2021))]
+    for c, code in (("Canada", "CAN"), ("France", "FRA"), ("Japan", "JPN")):
+        for i, nm in enumerate(people):
+            rows.append("%s,%s,%s,X.%d,%s" % (c, code, nm, i, ",".join(str(100 + i * 10 + y - 2010) for y in range(2010, 2021))))
+    pp = run_bytes(("\n".join(rows) + "\n").encode())
+    assert pp["ok"], pp.get("error")
+    assert "Indicator Name" not in [r["header"] for r in pp["privacy"]["released"]], pp["privacy"]["released"]
+
+
+def test_s12_a_balance_of_payments_table_is_a_flow_summed_over_four_quarters():
+    """Statistics Canada 12-10-0127-01 (Import, Export, Trade Balance by trading partner; Basis "Balance of payments"; dollars in millions).
+    The word "balance" in the Basis made every member a stock: the headline averaged the quarters ("$205.0B") and read Import, Export and
+    Trade Balance as parts of one another. A balance of payments is the framework a flow is published in: the headline is the 4-quarter
+    total, recomputed here from the file."""
+    import pandas as pd
+    raw = fixture("s11_statcan_trade_balance_of_payments.csv")
+    rep = run_bytes(raw)
+    assert rep["ok"], rep.get("error")
+    m = rep["estimand"]["measure"]
+    assert m["type"] == "flow" and m["aggregation"] == "sum over quarters" and m["type_why"].startswith("a currency"), m
+    df = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+    sl = {x["dim"]: x["member"] for x in rep["estimand"]["slice"]}
+    sub = df[(df["Principal trading partners"] == sl["Principal trading partners"]) & (df["Trade"] == m["label"])].copy()
+    sub["v"] = pd.to_numeric(sub["VALUE"]) * 1e6
+    sub = sub.sort_values("REF_DATE")
+    latest, prior = sub["v"].iloc[-4:].sum(), sub["v"].iloc[-8:-4].sum()
+    f = next(x for x in rep["findings"] if x["id"].endswith(".change") and x["kind"] == "business")
+    dsc = f["inference"]["describe"]
+    assert abs(dsc["latest"] - latest) < 1.0 and abs(dsc["prior"] - prior) < 1.0, (dsc, latest, prior)
+    assert "4 quarters" in rep["story"]["headline"] and "average" not in rep["story"]["headline"].lower(), rep["story"]["headline"]
+
+
+def test_s13_the_report_names_a_column_as_the_file_does_never_a_withheld_one():
+    """A sales ledger (impact6): the headline read "Total line_revenue +16.0%" and "average unit_price". The story, the bottom line, the
+    labels, the limitations and the findings' reasons now give a column the header the file gives it ("Line Revenue"), while a finding's
+    id and claim keep the landed name (the engine's keys and the report writer's slots), and a column the visitor withheld is named by
+    nothing (its header never appears)."""
+    rep = run_bytes(batch("sales_ledger.csv"))
+    assert rep["ok"], rep.get("error")
+    head = rep["story"]["headline"]
+    assert head.startswith("Total Line Revenue +16.0%") and "line_revenue" not in head and "unit_price" not in head, head
+    assert all("line_revenue" not in x and "unit_price" not in x for x in rep["story"]["what_happened"]), rep["story"]["what_happened"][:2]
+    ids = [f["id"] for f in rep["findings"]]
+    assert "measure.line_revenue.total.change" in ids
+    assert any("line_revenue" in f["claim"] for f in rep["findings"]), "a claim keeps the landed name"
+    flagged = {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}
+    assert flagged == {"customer": "withhold", "sales_rep": "withhold"}, flagged
+    text = json.dumps([rep["story"], rep["summary"], rep["limitations"]])
+    for gone in ("Sales Rep", "sales_rep", "Harbourview", "Anita Rahman", "Carlos Mendes"):
+        assert gone not in text, gone
+    # the sums are the file's: the total line revenue of each year (after the 25 exact duplicates the engine sets aside)
+    import pandas as pd
+    d = pd.read_csv(io.BytesIO(batch("sales_ledger.csv")), dtype=str)
+    d = d[d["Invoice No"] != "Total"].drop_duplicates()
+    d["y"] = d["Invoice Date"].str[:4]
+    g = pd.to_numeric(d["Line Revenue"]).groupby(d["y"]).sum()
+    f = next(x for x in rep["findings"] if x["id"] == "measure.line_revenue.total.change")
+    assert abs(f["value"] - 100 * (g["2025"] / g["2024"] - 1)) < 0.01, (f["value"], g.to_dict())
+
+
+def test_s14_the_ai_plan_reads_each_batch_file_as_the_rules_do():
+    """The same four kinds of file (a ledger, a survey, a World Bank download, a balance-of-payments cube) through the AI path, with the plan
+    a planner would write for each: the headline's figures, the privacy decisions and the structure are what the rules found. Nothing
+    the plan does may withhold what the rules released, release what they withheld, or move a figure."""
+    def plan(goal, cols, primary, ops=None, analyses=None):
+        return {"goal": goal, "columns": cols, "operations": ops or [], "primary": primary, "analyses": analyses or []}
+    c = lambda n, t, r="dimension", **kw: dict({"name": n, "semantic_type": t, "role": r}, **kw)
+    ledger = plan("How did revenue change from 2024 to 2025?", [
+        c("Invoice No", "identifier", "key"), c("Invoice Date", "date", "date"), c("Customer", "entity"), c("Region", "category", "segment"),
+        c("Product", "category"), c("Category", "category"), c("Qty", "count", "driver"), c("Unit Price", "level", "driver"),
+        c("Discount %", "percentage", "driver"), c("Line Revenue", "flow_amount", "target", label="line revenue", unit="dollars"),
+        c("Sales Rep", "entity")], "Line Revenue", [{"op": "exclude_rows", "column": "Invoice No", "values": ["Total"]}],
+        [{"type": "compare", "columns": ["Line Revenue", "Region"]}])
+    a, b = run_bytes(batch("sales_ledger.csv")), run_bytes(batch("sales_ledger.csv"), plan=ledger)
+    assert a["ok"] and b["ok"], (a.get("error"), b.get("error"))
+    val = lambda r, i: next(f["value"] for f in r["findings"] if f["id"] == i)
+    for i in ("measure.line_revenue.total.change", "measure.qty.total.change", "measure.volume.change_pct"):
+        assert abs(val(a, i) - val(b, i)) < 1e-9, (i, val(a, i), val(b, i))
+    assert {f["column"]: f["decision"] for f in a["privacy"]["flagged"]} == {f["column"]: f["decision"] for f in b["privacy"]["flagged"]}
+    assert "line_revenue" not in b["story"]["headline"] and b["story"]["headline"].startswith("Total"), b["story"]["headline"]
+    survey = plan("How satisfied are respondents?", [
+        c("Respondent ID", "identifier", "key"), c("Date Answered", "date", "date"), c("Age Group", "category"), c("Gender", "category"),
+        c("Region", "category"), c("Easy to use", "ordinal", "driver"), c("Good value", "ordinal", "driver"), c("Reliable", "ordinal", "driver"),
+        c("Support is helpful", "ordinal", "driver"), c("Would renew", "ordinal", "driver"),
+        c("Likelihood to recommend (0-10)", "rating", "target", label="likelihood to recommend", unit="points"), c("Comments", "free_text")],
+        "Likelihood to recommend (0-10)", None, [{"type": "compare", "columns": ["Likelihood to recommend (0-10)", "Region"]}])
+    a, b = run_bytes(batch("survey_responses.csv")), run_bytes(batch("survey_responses.csv"), plan=survey)
+    assert a["ok"] and b["ok"], (a.get("error"), b.get("error"))
+    wd = lambda r: {f["column"]: f["decision"] for f in r["privacy"]["flagged"]}
+    assert wd(a) == wd(b) == {"gender": "withhold", "comments": "withhold"}, (wd(a), wd(b))
+    assert "Likelihood to recommend (0-10)" in a["story"]["what_happened"][0] and "likelihood_to_recommend" not in json.dumps(a["story"])
+    wb = plan("How did GDP change across these countries?", [
+        c("Country Name", "geography"), c("Country Code", "code"), c("Indicator Name", "category"), c("Indicator Code", "code"),
+        c("TIME_PERIOD", "year", "date"), c("OBS_VALUE", "level", "target")], "OBS_VALUE")
+    a, b = run_bytes(batch("worldbank_wide.csv")), run_bytes(batch("worldbank_wide.csv"), plan=wb)
+    assert a["ok"] and b["ok"], (a.get("error"), b.get("error"))
+    assert a["story"]["headline"] == b["story"]["headline"] and "the sum of 15 countries" in b["story"]["headline"], b["story"]["headline"]
+    assert b["privacy"]["flagged"] == [] and any(l["text"].startswith("The first 4 lines") for l in b["limitations"])
+    trade = plan("How did trade change?", [c("REF_DATE", "date", "date"), c("Trade", "category"), c("Principal trading partners", "geography"),
+                                           c("VALUE", "flow_amount", "target")], "VALUE")
+    a, b = run_bytes(fixture("s11_statcan_trade_balance_of_payments.csv")), run_bytes(fixture("s11_statcan_trade_balance_of_payments.csv"), plan=trade)
+    assert a["ok"] and b["ok"], (a.get("error"), b.get("error"))
+    assert b["estimand"]["measure"]["type"] == "flow" and a["story"]["headline"] == b["story"]["headline"], (a["story"]["headline"], b["story"]["headline"])
+
+
+def test_s15_a_plain_table_with_a_column_a_year_says_it_has_no_months_and_fiscal_year_headers_are_years():
+    """A country x year table with no publisher's columns (nothing for the structure layer to claim) was reshaped to one row per country and
+    year and then reported "the engine found no date column to count months by": false, its columns were years. It now says it has years
+    and no months to compare, and a header "FY2005" is a year as "2005" is (a table of product revenue by fiscal year was read as 18
+    unrelated measures)."""
+    yrs = list(range(2005, 2023))
+    rows = ["Country," + ",".join(str(y) for y in yrs)]
+    for i, c in enumerate(["Canada", "Germany", "Japan", "India", "Brazil", "Norway", "Kenya", "Chile"]):
+        rows.append(c + "," + ",".join("%.2f" % (10 + i * 8 + k * 0.3) for k in range(len(yrs))))
+    fy = ["Product," + ",".join("FY%d" % y for y in yrs)]
+    for i, p in enumerate(["Widgets", "Gadgets", "Gizmos"]):
+        fy.append(p + "," + ",".join(str(1000 + i * 200 + k * (50 + 10 * i)) for k in range(len(yrs))))
+    for name, text in (("country x year", "\n".join(rows)), ("product x fiscal year", "\n".join(fy))):
+        rep = run_bytes((text + "\n").encode())
+        assert rep["ok"], (name, rep.get("error"))
+        h = rep["story"]["headline"]
+        assert "no months to compare" in h and "2005 to 2022" in h and "no date column" not in h, (name, h)
+        assert rep["limitations"][0]["text"].startswith("The table's columns are years (2005 to 2022)"), rep["limitations"][0]["text"][:90]
+        assert rep["roles"]["dimensions"] in (["country"], ["product"]), rep["roles"]
+    assert NS._header_period("FY2005") == ("year", "2005") and NS._header_period("Fiscal year 2019") == ("year", "2019") \
+        and NS._header_period("FY 12") is None and NS._header_period("FY2300") is None
 
 
 # ----------------------------------------------------------------------------- runner

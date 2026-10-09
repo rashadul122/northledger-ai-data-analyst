@@ -149,7 +149,9 @@ _ALT_HINT = re.compile(r"(?i)(?<![A-Za-z])(?:%s|%s)(?![A-Za-z])|(?<![A-Za-z])ex-
 _ALT_STRONG_RE = re.compile(r"(?i)(?<![A-Za-z])(?:%s)(?![A-Za-z])|(?<![A-Za-z])ex-(?=[A-Za-z])" % _ALT_STRONG)
 # the rest of something ("All other provinces", "Rest of Canada", "Autres provinces"): never a whole, in any branch
 _REST_NAME = re.compile(r"(?i)\b(?:other|others|rest of|remaining|remainder|autres?|reste|sonstige[nr]?|\u00fcbrige[nr]?|restliche[nr]?|otros|otras|resto)\b")
-_STOCK_WORDS = re.compile(r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?|holdings?|assets?|debts?|stocks?)\b")
+# "balance" is a level at a date, but "balance of payments" is the accounting framework a flow of exports and imports is published in (impact6:
+# Statistics Canada 12-10-0127-01, Basis "Balance of payments", was averaged as a stock)
+_STOCK_WORDS = re.compile(r"(?i)\b(?:inventor(?:y|ies)|outstanding|balances?(?!\s+of\s+(?:payments?|trade))|holdings?|assets?|debts?|stocks?)\b")
 # wave 5e (P8): the balance-sheet words of a currency that is a LEVEL at a date, not an amount that accumulates over a period (deposits, loans,
 # liabilities, reserves, net worth, money supply): a name only nominates, so one that comes with a flow word is ambiguous (averaged), never summed
 _STOCK_BALANCE_WORDS = re.compile(r"(?i)\b(?:deposits?|loans?|liabilit(?:y|ies)|reserves?|equity|equities|net worth|wealth|savings?|money supply|"
@@ -574,6 +576,10 @@ WIDE_MIN_PERIODS = 6
 WIDE_MIN_YEARS = 5
 
 
+# a fiscal-year header ("FY2005", "FY 2005", "Fiscal year 2005"): a year of its own, five or more of them make a wide table (impact6)
+_FY_HEADER = re.compile(r"(?i)^(?:fy|f\.y\.|fiscal(?:\s+year)?)\s*[-_ ]?\s*(\d{4})$")
+
+
 def _header_period(h: str) -> Optional[Tuple[str, str]]:
     """(the family "month" | "quarter" | "half-year" | "year", the header as one period label) for a column header that is a period,
     else None: 2019-01 and 2019M01 are months, 2019Q1 and 2019-Q1 quarters, 2019H1 and 2019-S2 half-years, 2019 a year."""
@@ -587,6 +593,9 @@ def _header_period(h: str) -> Optional[Tuple[str, str]]:
         return "half-year", t
     if _Y_ONLY.match(t) and 1800 <= int(t) <= 2200:
         return "year", t
+    fy = _FY_HEADER.match(t)
+    if fy and 1800 <= int(fy.group(1)) <= 2200:
+        return "year", fy.group(1)
     return None
 
 
@@ -2073,6 +2082,15 @@ def _nonneg(S: Dict[str, Any]) -> bool:
     return bool(not have.any() or float(V[have].min()) >= 0)
 
 
+_COUNTRY_WORD = re.compile(r"(?i)\b(?:countr(?:y|ies)|nations?|pays|pa[i\u00ed]s(?:es)?|l[a\u00e4]nder|land)\b")
+
+
+def _places_noun(column: Any) -> str:
+    """What the parts of a table with no total row are called: "countries" when the header says country (the World Bank's "Country
+    Name"), else "regions" (a province, a state, a GEO column)."""
+    return "countries" if _COUNTRY_WORD.search(str(column or "")) else "regions"
+
+
 def _is_geographic(column: str) -> bool:
     """Whether a dimension's header says its members are places (geo, region, province, state, territory ...: wave 5e adds the words
     the French, German and Spanish tables use). A header is a hint; it is the only reading of what the members ARE that the cells
@@ -2326,7 +2344,7 @@ def _parts_only(S: Dict[str, Any], rec: Dict[str, Any], A: Any, X: Any, tol_u: f
                duplicates={labels[d]: labels[k] for d, k in sorted(dup.items())},
                nested={labels[m]: labels[o] for m, o in sorted(nested.items())},
                alternatives={}, components={}, evidence="built",
-               sum_check=None, noun="regions",
+               sum_check=None, noun=_places_noun(rec.get("column")),
                why="no member is a total of the others: the table has no total row, so a flow's headline is the sum of its "
                    "%d parts" % len(keep))
     return True
@@ -4509,7 +4527,7 @@ def estimand(S: Dict[str, Any], where: Dict[str, Any], win: Dict[str, List[str]]
             choice["chosen"]["name"], "by the plan" if choice["by"] == "plan" else "by the engine's default order (%s)" % MEASURE_RULE)
     if built:
         bits = [built["text"]]
-        cells = "region-months" if built["noun"] == "regions" else "member-months"
+        cells = "country-months" if built["noun"] == "countries" else "region-months" if built["noun"] == "regions" else "member-months"
         if built["incomplete"]:
             bits.append("%s %s suppressed in the two windows, so this sum of the reported parts is incomplete" % (
                 _fmt_count(built["suppressed_part_months"]), cells))
@@ -4715,7 +4733,8 @@ def _evidence(S: Dict[str, Any], where: Dict[str, Any], built: Optional[Dict[str
     if level == "verified":
         return None
     tails = {"built": (" (the table has no total row; %s %s suppressed in the windows, so this sum of the reported parts is incomplete)" % (
-                _fmt_count(built["suppressed_part_months"]), "region-months" if built.get("noun") == "regions" else "member-months")
+                _fmt_count(built["suppressed_part_months"]), "country-months" if built.get("noun") == "countries" else
+                "region-months" if built.get("noun") == "regions" else "member-months")
                 if built and built.get("incomplete") else " (the table has no total row)"),
              "named": " (named as the total, not checked against its parts)" if any(
                  d.get("role") in ("partition", "hierarchy") and d.get("evidence") == "named" for d in S["dims"]) else

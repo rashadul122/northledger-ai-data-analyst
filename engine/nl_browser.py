@@ -1033,7 +1033,40 @@ def _looks_like_title(data: bytes) -> bool:
     return width >= 3 and first <= max(1, width // 4)
 
 
-def _record_lines(data: bytes) -> List[int]:
+def _strip_title_block(data: bytes) -> Tuple[bytes, int]:
+    """(the file from its real header, the lines set aside above it). A title block is a few lines of one or two cells above the
+    column names (the World Bank's "Data Source","World Development Indicators" and "Last Updated Date" lines, a report's name and
+    date): the file is read from the first line that holds the column names, and the report says so. (data, 0) when there is no such
+    block, or when no line below it looks like the column names (the file is then refused, as before)."""
+    if not _looks_like_title(data):
+        return data, 0
+    text = data.decode("latin-1")
+    best: Optional[Tuple[int, int]] = None
+    for delim in (",", ";", "\t", "|"):
+        rd = csv.reader(io.StringIO(text, newline=""), delimiter=delim)
+        recs: List[Tuple[int, int]] = []
+        try:
+            while len(recs) < 40:
+                before = rd.line_num
+                rec = next(rd)
+                recs.append((before, sum(1 for c in rec if c.strip())))
+        except StopIteration:
+            pass
+        except csv.Error:
+            continue
+        width = max((n for _b, n in recs[1:]), default=0)
+        for k, (b, n) in enumerate(recs[:16]):
+            if all(m <= 2 for _b, m in recs[:k]) and n >= 3 and n * 5 >= width * 4:
+                if best is None or width > best[0]:
+                    best = (width, b)
+                break
+    if best is None or best[1] <= 0:
+        return data, 0
+    lines = data.splitlines(True)
+    return b"".join(lines[best[1]:]), best[1]
+
+
+def _record_lines(data: bytes, offset: int = 0) -> List[int]:
     """The 1-based line on which each data record starts, counted as a text editor counts
     lines (a quoted line break inside a value moves the next record down). Blank lines and the
     header are skipped, as the reader skips them; a line of empty cells (",,,") is a row."""
@@ -1048,7 +1081,7 @@ def _record_lines(data: bytes) -> List[int]:
         except csv.Error:
             return []
         if rec and (len(rec) > 1 or rec[0].strip()):     # a row of empty cells is still a row
-            out.append(before + 1)
+            out.append(before + 1 + offset)
     return out[1:]
 
 
@@ -1265,6 +1298,8 @@ _THING_WORDS = frozenset((
     "timestamp", "created", "updated", "portal", "kind", "qty", "quantity", "total", "sum", "avg", "mean", "min",
     "max", "rate", "ratio", "pct", "percent", "size", "level", "flag", "format", "email", "mail", "phone",
     "address", "age", "gender", "sex", "industry", "language", "note", "comment", "version",
+    # impact6 (9 Oct 2026): what a statistical table names (the World Bank's "Indicator Name", a "Series Name", a "Metric Name")
+    "indicator", "series", "measure", "metric", "variable", "dimension", "commodity", "sector", "currency",
 ))
 # words after a person word that leave it the head ("salesperson assigned", "technician on duty", "customer 2")
 _TRAILING = frozenset(("assigned", "responsible", "on", "duty", "in", "charge", "of", "record", "primary",
@@ -1919,7 +1954,11 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
         header = head.get(col, col)
         if chosen.get(col) in ("withhold", "code") or chosen.get(header) in ("withhold", "code"):
             continue
-        if _kind_of(col, kinds or "", res) != _REASON_LABEL["free_text"]:
+        # impact6 (9 Oct 2026): in an official table a column the scan flagged ONLY because its header says "name" (the World Bank's "Indicator
+        # Name": a list of 1,500 indicators, each on a row for every country and year) is held to the same tests as free text below: a short
+        # list of labels that repeat, none shaped like a person's name; its header is never read as holding people (_person_hint)
+        only_name = official_table and str(kinds or "").strip() == "named_name"
+        if _kind_of(col, kinds or "", res) != _REASON_LABEL["free_text"] and not only_name:
             continue
         if any(k.strip() and not k.strip().startswith("named_") for k in str(kinds or "").split(",")):
             continue                                  # a value shape the scan matched: never released
@@ -1927,7 +1966,7 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
         # (a publisher's signature) "Central government debt" names the government's accounts, not a person's (a visitor's StatCan table, 8 Oct
         # 2026: the series column was withheld, every date repeated 32 times and the business analysis refused). Every other sensitive word blocks
         sensitive = SENSITIVE_HEADER.search(header) and not (official_table and not SENSITIVE_HEADER.search(_MONEY_WORDS.sub(" ", header)))
-        if str(kinds or "").strip() or sensitive or _person_hint(_header_tokens(header), header)[0]:
+        if (str(kinds or "").strip() and not only_name) or sensitive or _person_hint(_header_tokens(header), header)[0]:
             continue                                  # its name was a hint (named_...), is sensitive (AM1) or says people
         con = sqlite3.connect(eng.db_path)
         try:
@@ -4992,6 +5031,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
     try:
         if not data or not data.strip():
             return {"ok": False, "error": "empty"}
+        data, _title_lines = _strip_title_block(data)
         if _looks_like_title(data):
             return {"ok": False, "error": "the first row looks like a title"}
         _install_stubs()
@@ -9289,6 +9329,48 @@ def _mend_long_table_words(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
             c["why"] = mend_months(c["why"])
 
 
+def _mend_slug_words(rep: Dict[str, Any], colmap: Dict[str, str], hidden: Dict[str, str]) -> None:
+    """A column read by its landed name in the report's sentences ("Total line_revenue +16.0%", "average likelihood_to_recommend_0_10"
+    for the headers "Line Revenue" and "Likelihood to recommend (0-10)"): the header the visitor's file gives it, in the story, the bottom
+    line, the plain labels, the limitations and the findings' reasons. Only a landed name with an underscore (a one-word name is also a
+    word of the prose), only where the header is not a slug itself, never a column the visitor withheld or coded, and never a finding's
+    claim or id (the engine's own keys and the AI's slots keep them). The engine's decision code and its grades are unchanged."""
+    names: Dict[str, str] = {}
+    for header, land in colmap.items():
+        h, ld = str(header).strip(), str(land)
+        if "_" in ld and h and h != ld and "_" not in h and len(h) <= 80 and ld not in hidden and h not in hidden \
+                and re.search(r"[A-Za-z]", h) and "\n" not in h:
+            names.setdefault(ld, h)
+    if not names:
+        return
+    slug_re = re.compile(r"(?<![\w])(%s)(?![\w])" % "|".join(re.escape(x) for x in sorted(names, key=len, reverse=True)))
+
+    def mend(x: Any) -> Any:
+        return slug_re.sub(lambda m: names[m.group(1)], x) if isinstance(x, str) else x
+    st = rep.get("story") or {}
+    for k, v in list(st.items()):
+        st[k] = mend(v) if isinstance(v, str) else [mend(x) for x in v] if isinstance(v, list) else v
+    sm = rep.get("summary") or {}
+    for line in sm.get("lines") or []:
+        if isinstance(line, dict):
+            line["text"] = mend(line.get("text"))
+    labels = sm.get("labels")
+    if isinstance(labels, dict):
+        for k in list(labels):
+            labels[k] = mend(labels[k])
+    for l in rep.get("limitations") or []:
+        if isinstance(l, dict):
+            l["text"] = mend(l.get("text"))
+    for f in rep.get("findings") or []:
+        if isinstance(f, dict):
+            for k in ("why", "needed_to_upgrade"):
+                if isinstance(f.get(k), str):
+                    f[k] = mend(f[k])
+    fc = rep.get("forecast") or {}
+    if isinstance(fc.get("reason"), str):
+        fc["reason"] = mend(fc["reason"])
+
+
 def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
     """Say in the report how a long statistical table was read (limitations and cleaning)."""
     n = lay["series"]
@@ -9326,6 +9408,37 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
                          "what": "Exact zeros on Saturdays and Sundays in series that are otherwise always positive "
                                  "read as empty: they mark days with no value, not a value of zero"})
     rep.setdefault("input", {})["layout"] = lay
+
+
+def _wide_period_note(rep: Dict[str, Any], wide: Dict[str, Any]) -> None:
+    """A table with a column a year (2005 ... 2022) that no structure claimed (a plain country x year table, no publisher's columns) was
+    turned into one row per series and year, and the engine then found no date column ("no date column to count months by"): false, the
+    columns were years. Said as it is: the table has years, not months, so no change over time is tested here. Only when the engine found
+    no date and no structure; every other report is left as it is."""
+    if (rep.get("roles") or {}).get("date") or (rep.get("structure") or {}).get("usable"):
+        return
+    fam = {"year": "year", "quarter": "quarter", "half-year": "half-year", "month": "month"}.get(str(wide.get("family")), "period")
+    text = ("The table's columns are %ss (%s to %s): it was turned into one row per series and %s, the %s in the column TIME_PERIOD and the "
+            "figure in OBS_VALUE. The engine tests change over months, and a table with one figure a %s has none to compare, so no change "
+            "over time is tested; the figures are described by group where the file has one." % (
+                fam, wide.get("first"), wide.get("last"), fam, fam, fam))
+    rep.setdefault("limitations", []).insert(0, {"kind": "data", "finding_ids": [], "text": text})
+    st = rep.get("story") or {}
+    if "no date column" in str(st.get("headline") or ""):
+        st["headline"] = ("This table has one column a %s (%s to %s), so it has no months to compare: no change over time is tested." %
+                          (fam, wide.get("first"), wide.get("last")))
+        if st.get("what_happened") == ["The monthly change test did not run: the engine found no date column to count months by."]:
+            st["what_happened"] = [st["headline"]]
+
+
+def _title_note(rep: Dict[str, Any], n: int) -> None:
+    """Say in the report that a title block above the column names was set aside (the World Bank's download has four such lines)."""
+    rep["limitations"].insert(0, {"kind": "data", "finding_ids": [], "text": (
+        "The first %d lines of the file are a title block, not data (a few cells each, above the column names): they were set aside, and "
+        "the file was read from its column names on line %d." % (n, n + 1))})
+    rep.setdefault("cleaning", {}).setdefault("fixes", []).insert(0, {
+        "rule": "title_block_set_aside", "column": None, "count": n,
+        "what": "%d lines above the column names (a title block) were set aside before the file was read" % n})
 
 
 def _tidy_left_out_rows(rep: Dict[str, Any], tidy: Optional[Dict[str, Any]]) -> None:
@@ -10927,6 +11040,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "reads. Nothing was sampled or cut: send a smaller extract, or email me "
                           "about the full audit.")
         objective = " ".join(str(objective or "").split())[:300] or DEFAULT_OBJECTIVE
+        data, title_lines = _strip_title_block(data)
         if _looks_like_title(data):
             raise Refusal("The first row of this file looks like a title, not column names: it has "
                           "one or two cells and the rows below it have many. Delete the rows above "
@@ -11021,6 +11135,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 if inner is not None:
                     if date_notes or number_notes:
                         _tidy_notes(inner, None, date_notes, number_notes)
+                    if title_lines:
+                        _title_note(inner, title_lines)
                     return inner
                 struct_error = _slice_failure(data)                 # a table of series whose slice could not be run (else: read as before)
         if struct_error is not None:
@@ -11076,6 +11192,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                             inner.setdefault("ai_plan", {})["review"] = plan_review
                         if date_notes or number_notes:
                             _tidy_notes(inner, None, date_notes, number_notes)
+                        if title_lines:
+                            _title_note(inner, title_lines)
                         return inner
                     struct_error = _slice_failure(data)              # a table of series whose slice could not be run (else: read as before)
                     if struct_error is not None:
@@ -11141,7 +11259,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                             sent_rows = (None, sent_rows[1])
                     tidy_info = dict(t_, rows_in=int(len(df_t)), rows_out=int(len(pos_kept)))
                     if drop_t:
-                        lines_t = _record_lines(sent)
+                        lines_t = _record_lines(sent, title_lines)
                         if sent_rows_before is None:
                             map_t = list(range(len(df_t)))
                         else:
@@ -11193,7 +11311,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             file was read reshaped: a long table read as one column per series has no such line."""
             if layout is not None or structure_inner is not None or wide_info is not None:
                 return None
-            lines = _record_lines(sent)
+            lines = _record_lines(sent, title_lines)
             if sent_rows is None:
                 return lines                      # no plan ran: the engine read the visitor's own bytes
             pos, n_sent = sent_rows
@@ -11319,6 +11437,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         if inner is not None:
                             if date_notes or number_notes:
                                 _tidy_notes(inner, None, date_notes, number_notes)
+                            if title_lines:
+                                _title_note(inner, title_lines)
                             return inner
                         struct_error = _slice_failure(sent)         # a table of series whose slice could not be run (else: read as before)
                         if struct_error is not None:
@@ -11607,6 +11727,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
         if layout and structure_inner is None:
             _layout_notes(rep, layout)
+        if title_lines:
+            _title_note(rep, title_lines)
         if tidy_info is not None or date_notes or number_notes:
             _tidy_left_out_rows(rep, tidy_info)
             _tidy_notes(rep, tidy_info, date_notes, number_notes)
@@ -11619,6 +11741,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _official_inference(rep, _hdr, layout, [c for c, d in hidden_land.items()] + names_withheld)
         if layout and structure_inner is None and layout.get("layout") == "long statistical table":
             _mend_long_table_words(rep, layout)
+        else:
+            _mend_slug_words(rep, colmap, hidden_land)
         if ai_plan:
             if plan_review:
                 ai_plan["review"] = plan_review
@@ -11665,6 +11789,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                  r.roles.date if (r is not None and not date_withheld) else None)
         if r is not None and not date_withheld:
             _true_headline(rep, r, pub, _date_grain(cr.clean, r.roles.date))
+        if wide_info is not None and structure_inner is None:
+            _wide_period_note(rep, wide_info)
         # the question the report answers: the plan's goal, else the visitor's own (never the default question)
         goal = str((ai_plan or {}).get("goal") or (objective if objective != DEFAULT_OBJECTIVE else ""))
         if structure_inner is not None and r is not None:

@@ -837,14 +837,22 @@ def test_type_conversions_are_not_reported_as_repairs():
     assert any(w.startswith("Read as") for w in whats), whats
 
 
-def test_a_title_row_above_the_header_is_refused_plainly():
+def test_a_title_block_above_the_header_is_set_aside_and_said_so():
+    """A title above the column names was refused ("delete the rows above"); impact6 (9 Oct 2026) reads the file from its column names
+    instead, because the World Bank's own download has four such lines, and says so in the report (limitations and cleaning), with the
+    same figures the file gives without the title. The quarantine's line numbers still count from the first line of the visitor's file."""
     body = _csv([["2025-%02d-01" % (i % 12 + 1), "Unit %d" % (i % 9 + 1), "%d" % (1500 + i % 5 * 25)] for i in range(80)],
                 ["rent_due", "unit", "amount"])
     data = b"Rent Roll - 118 Dundas St W - printed Sept 2025\n\n" + body
     rep = NB.run(data, "rent-roll-with-title.csv", "")
     _assert_contract(rep)
-    assert rep["ok"] is False and "title" in rep["error"] and "column names" in rep["error"], rep["error"]
-    assert NB.run(body, "rent-roll.csv", "")["ok"], "the same file without its title was refused"
+    assert rep["ok"] is True, rep["error"]
+    assert any("first 2 lines of the file are a title block" in l["text"] and "column names on line 3" in l["text"] for l in rep["limitations"]), \
+        [l["text"][:90] for l in rep["limitations"]]
+    assert rep["cleaning"]["fixes"][0]["rule"] == "title_block_set_aside" and rep["cleaning"]["fixes"][0]["count"] == 2
+    plain = NB.run(body, "rent-roll.csv", "")
+    assert plain["ok"] and plain["story"]["headline"] == rep["story"]["headline"], "the same file without its title reads differently"
+    assert [f["value"] for f in plain["findings"]] == [f["value"] for f in rep["findings"]]
 
 
 def test_phone_numbers_and_emails_never_reach_a_text_field():

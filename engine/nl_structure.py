@@ -1586,7 +1586,9 @@ def _classify(uom: str, bag: str, column: str, member: str = "", says: str = "",
     if _RATE_WORDS.search(u) or (own and not u and _RATE_WORDS.search(own)):
         return done("rate", "a rate: a level, never summed", "the unit names a rate or a percentage (%s)" % (u or own)[:40], False)
     if _CURRENCY.search(u):
-        stock = _STOCK_WORDS.search(bag)
+        # the member's own label too, as the balance words below read it: "Total Outstanding Guarantees" in a table of government accounts is a
+        # balance at a date, and summing its 12 months printed $7.3T for a $0.6T balance (a visitor's StatCan table, 8 Oct 2026)
+        stock = _STOCK_WORDS.search(own + " " + bag)
         if stock:
             return done("stock", "positively a stock", "currency, but the labels say %s" % stock.group(0).lower(), False)
         bal = _STOCK_BALANCE_WORDS.search(own + " " + bag)

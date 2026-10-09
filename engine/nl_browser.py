@@ -1762,6 +1762,7 @@ SENSITIVE_HEADER = re.compile(
     r"cause of death|cause de d[e\u00e9]c[e\u00e8]s|causa de muerte|todesursache|\bicd\b|\bhiv\b|\baids\b|\bsida\b|marital|marriage|"
     r"civil status|[e\u00e9]tat (?:matrimonial|civil)|estado civil|familienstand|behinderung|discapacidad|handicap|"
     r"ethni|etnia|religi[o\u00f3]n|konfession|orientaci[o\u00f3]n sexual|geschlecht|g[e\u00e9]nero")
+_MONEY_WORDS = re.compile(r"(?i)salary|wage|income|debt|credit")      # the money words of SENSITIVE_HEADER (_release_categories)
 RELEASED_WORDS = "Read as a category, not personal data: %s (%s labels)"
 RELEASED_MEASURE_WORDS = "Read as the table's measure, not personal data: %s"
 RELEASE_NAME_SHARE = 0.30
@@ -1814,17 +1815,23 @@ def _publisher_header(headers: Iterable[str]) -> Optional[str]:
     return None
 
 
-def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: List[Dict[str, Any]]) -> None:
+def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: List[Dict[str, Any]],
+                          series: Optional[List[str]] = None) -> None:
     """Wave 5e (P10). The documented value column of an official table (VALUE, OBS_VALUE, VALEUR; the file carries a publisher's
     signature) that parses as numbers is a MEASURE, not a national ID number: real tables hold nine-digit values (dollars in thousands,
     a population in persons) and the engine's scan reads one in ten of them as a SIN. It is released with the consent line "Read as
     the table's measure, not personal data: VALUE" (privacy.released, kind "measure"); the visitor can still withhold it (the refusal
-    of wave 5d then stands). The long-ID rule and the scan stay for every other column."""
+    of wave 5d then stands). The long-ID rule and the scan stay for every other column.
+    `series`: a long statistical table's series, each now a column of the agency's numbers (_reshape_long_panel, which required the
+    agency's metadata columns), released the same way: a word in a series' name never makes it a person's data ("Medium-term notes",
+    a government bond, read as a notes column and withheld by default, a visitor's StatCan table, 8 Oct 2026)."""
     import sqlite3
     colmap = dict(getattr(res, "column_map", {}) or {})
+    series_set = {str(x) for x in series or []}
     # wave 5g (F): a publisher's signature, or three of the columns only a statistical publisher uses (the vocabulary the series guard reads, in
     # English, French, Spanish and German: a German table has MASSEINHEIT, SKALENFAKTOR and DEZIMALSTELLEN, and no signature of its own)
-    if _publisher_header(colmap.keys()) is None and sum(1 for h in colmap.keys() if _pnorm(h) in _GUARD_META_SPECIFIC) < 3:
+    if not series_set and _publisher_header(colmap.keys()) is None and \
+            sum(1 for h in colmap.keys() if _pnorm(h) in _GUARD_META_SPECIFIC) < 3:
         return
     head = {str(v): str(k) for k, v in colmap.items()}
     chosen: Dict[str, str] = {}
@@ -1841,7 +1848,9 @@ def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: 
         con.close()
     for col in sorted(flagged):
         header = head.get(col, col)
-        if _pnorm(header) not in _PANEL_VALUE or chosen.get(col) in ("withhold", "code") or chosen.get(header) in ("withhold", "code"):
+        is_series = header in series_set
+        if (_pnorm(header) not in _PANEL_VALUE and not is_series) or chosen.get(col) in ("withhold", "code") or \
+                chosen.get(header) in ("withhold", "code"):
             continue
         con = sqlite3.connect(eng.db_path)
         try:
@@ -1873,8 +1882,10 @@ def _release_value_column(E: Any, eng: Any, res: Any, decisions: Any, released: 
             con.close()
         released.append({"column": col, "header": header, "kind": "measure", "distinct": len(seen), "rows": ok, "min_repeat": 1,
                          "text": RELEASED_MEASURE_WORDS % header,
-                         "why": "the table's own value column (a publisher's layout names it), every cell a number: a count of nine or more "
-                                "digits has the shape of an ID number and is not one here"})
+                         "why": ("a series of the agency's table, every cell a number: a word in its name does not make it a person's data"
+                                 if is_series else
+                                 "the table's own value column (a publisher's layout names it), every cell a number: a count of nine or more "
+                                 "digits has the shape of an ID number and is not one here")})
 
 
 def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict[str, Any]]:
@@ -1912,7 +1923,11 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
             continue
         if any(k.strip() and not k.strip().startswith("named_") for k in str(kinds or "").split(",")):
             continue                                  # a value shape the scan matched: never released
-        if str(kinds or "").strip() or SENSITIVE_HEADER.search(header) or _person_hint(_header_tokens(header), header)[0]:
+        # a money word (debt, credit, income, salary, wage) blocks the release only outside an official table: in a statistics agency's table
+        # (a publisher's signature) "Central government debt" names the government's accounts, not a person's (a visitor's StatCan table, 8 Oct
+        # 2026: the series column was withheld, every date repeated 32 times and the business analysis refused). Every other sensitive word blocks
+        sensitive = SENSITIVE_HEADER.search(header) and not (official_table and not SENSITIVE_HEADER.search(_MONEY_WORDS.sub(" ", header)))
+        if str(kinds or "").strip() or sensitive or _person_hint(_header_tokens(header), header)[0]:
             continue                                  # its name was a hint (named_...), is sensitive (AM1) or says people
         con = sqlite3.connect(eng.db_path)
         try:
@@ -1991,7 +2006,8 @@ def _release_slice_measure(E: Any, eng: Any, res: Any, header: str) -> None:
 
 
 def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optional[Dict[str, str]] = None, sent_bytes: Any = None,
-                      kept: Optional[Dict[str, str]] = None, slice_measure: Optional[str] = None
+                      kept: Optional[Dict[str, str]] = None, slice_measure: Optional[str] = None,
+                      series: Optional[List[str]] = None
                       ) -> Tuple[List[Dict[str, str]], List[str], "Scrubber", List[Dict[str, Any]]]:
     """The decide stage, the same for a run and for the planner's profile: a free-text flag on a plain category is
     lifted (_release_categories, unless the visitor withheld or coded it), the adapter's personal-column check adds
@@ -2003,7 +2019,7 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     if slice_measure:
         _release_slice_measure(E, eng, res, slice_measure)
     released = _release_categories(E, eng, res, decisions)
-    _release_value_column(E, eng, res, decisions, released)
+    _release_value_column(E, eng, res, decisions, released, series)
     colmap = dict(getattr(res, "column_map", {}) or {})
     con = sqlite3.connect(eng.db_path)
     try:
@@ -4758,6 +4774,37 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     if personal_kept:
         lay["personal_kept"] = {str(c): k for c, k in personal_kept.items()}
     return out, lay
+
+
+def _plan_with_long_reshape(data: bytes, plan: Dict[str, Any], keep: Optional[Set[str]] = None
+                            ) -> Tuple[Dict[str, Any], List[str]]:
+    """An AI plan for a file the rules read as a long statistical table, with the reshape first: (the plan, its steps retired).
+    A visitor's StatCan table (8 Oct 2026): the plan kept REF_DATE, the series column and VALUE and dropped the blank values, but
+    asked for no reshape; with the agency's metadata gone the rules no longer saw a long table, the 32 series repeated every date and
+    the business analysis refused. When the rules read the visitor's own file as one (two or more series, no totals beside parts: those
+    the structure reads) and the plan has no long_to_wide, it runs first, as it does without a plan. The plan's steps that only did what
+    the reshape does (keep or set aside its date, value, series and metadata columns; drop blank values) are retired and named; any other
+    step stays and is refused by the plan's own checks if the reshaped table cannot take it."""
+    ops = [o for o in plan.get("operations") or [] if isinstance(o, dict)]
+    if any(o.get("op") == "long_to_wide" for o in ops):
+        return plan, []
+    try:
+        _nb, lay = _reshape_long_panel(data, keep=keep)
+        if not lay or int(lay.get("series") or 0) < 2 or (STRUCTURE_ON and _long_has_structure(data, keep=keep)):
+            return plan, []
+    except Exception:  # noqa: BLE001 - the plan runs as it came
+        return plan, []
+    consumed = {str(lay.get("date_column")), str(lay.get("value_column"))} | set(lay.get("metadata_set_aside") or []) | \
+        set(lay.get("constant_set_aside") or []) | {s.strip() for s in str(lay.get("series_column") or "").split(" | ") if s.strip()}
+    kept_ops, retired = [], []
+    for o in ops:
+        cols = [str(c) for c in (o.get("columns") or ([o["column"]] if o.get("column") else []))]
+        if o.get("op") in ("keep_columns", "set_aside", "exclude_blank") and cols and set(cols) <= consumed:
+            retired.append("%s: not needed: the file is a long statistical table, read one column per series (the reshape keeps "
+                           "the dates and values, sets the agency's metadata aside and leaves the unpublished months out)" % o["op"])
+        else:
+            kept_ops.append(o)
+    return dict(plan, operations=[{"op": "long_to_wide"}] + kept_ops), retired
 
 
 def _slug(name: Any) -> str:
@@ -10928,6 +10975,17 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     struct_error = got.get(_PROFILE_CACHE_ERROR)
                 else:
                     struct_error = got.get(_PROFILE_CACHE_ERROR)        # the pass itself failed (wave 5e, P7): a table of series is refused
+            if S_pre is not None and S_pre.get("usable") and struct_error is None:
+                # the same question with a plan or without: a long statistical table with no totals beside its parts is read one column
+                # per series, never as a cube slice (a visitor's StatCan debt table, 8 Oct 2026: with the AI plan its 32 separate accounts
+                # were read as one cube, and the slice led with a member the reader chose, not the file's first series)
+                try:
+                    kept_s = _kept_by_visitor(vis_dec)
+                    _nb_s, lay_s = _reshape_long_panel(data, keep=kept_s)
+                    if lay_s and int(lay_s.get("series") or 0) >= 2 and not _long_has_structure(data, keep=kept_s):
+                        S_pre = None
+                except Exception:  # noqa: BLE001 - the structure's reading stands
+                    pass
             if S_pre is not None and struct_error is None and _refusable_verdict(S_pre):
                 struct_error = _verdict_failure(sent, S_pre)
             if S_pre is not None and S_pre.get("kind") == "cube_incomplete":
@@ -11000,6 +11058,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     if struct_error is not None:
                         cube_refusal = _reason_in_sentence(struct_error)
                         rep["structure"] = struct_error
+                if S_use is None:
+                    ai_plan, retired = _plan_with_long_reshape(data, ai_plan, _kept_by_visitor(decisions))
+                    plan_refused = plan_refused + retired
                 data, applied, layout = _apply_plan(data, ai_plan)
                 if layout is None and S_use is None and S_pre is not None and S_pre.get("kind") == "panel_no_relations":
                     # wave 5g (A): the profile left this table of unrelated series to the layout and the plan did not make one: the old path would
@@ -11092,19 +11153,6 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 if layout:
                     data = reshaped
                     reshaped_after = True
-                    # a series of an agency's table is a published statistic, named by the agency: a word in its name
-                    # never makes it a person's data ("Medium-term notes", a government bond, was withheld as a notes
-                    # column, 8 Oct 2026). Kept only when its cells are numbers that no value check reads as personal;
-                    # the visitor's own decision on the column stands
-                    import pandas as pd
-                    wide_df = pd.read_csv(io.BytesIO(reshaped), dtype=str, keep_default_na=False)
-                    decisions = dict(decisions or {})
-                    for c in layout.get("order") or []:
-                        if c in wide_df.columns and c not in decisions and _engine_slug(c) not in decisions:
-                            cells = wide_df[c][wide_df[c].str.strip() != ""]
-                            num = pd.to_numeric(cells, errors="coerce")
-                            if len(cells) and num.notna().all() and _personal_kind("", cells) is None:
-                                decisions[c] = "keep"
             except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
                 layout = None
         if structure_inner is not None:
@@ -11176,7 +11224,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         flagged, withheld, scrub, released = _decide_and_guard(E, eng, res, decisions,
                                                                aside=(layout or {}).get("personal_set_aside"), sent_bytes=sent,
                                                                kept=(layout or {}).get("personal_kept"),
-                                                               slice_measure=(structure_inner or {}).get("column"))
+                                                               slice_measure=(structure_inner or {}).get("column"),
+                                                               series=(layout or {}).get("order") if structure_inner is None and
+                                                               (layout or {}).get("layout") == "long statistical table" else None)
         rep["privacy"]["flagged"] = flagged
         rep["privacy"]["released"] = released
         timings["decide"] = time.perf_counter() - t0

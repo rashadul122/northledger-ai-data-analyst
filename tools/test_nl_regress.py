@@ -2059,7 +2059,10 @@ def test_s07_a_statcan_table_keeps_its_history_skips_unpublished_months_and_name
     twice = [v for k, v in lay["set_aside"].items() if k.startswith("named more than once")]
     assert twice == [["Derivatives"]] and "Derivatives" not in lay["order"], lay["set_aside"]
     assert "medium_term_notes" in rep["roles"]["measures"], rep["roles"]
-    assert all(f["decision"] != "withhold" for f in rep["privacy"]["flagged"]), rep["privacy"]["flagged"]
+    # released, not flagged: the page asks about every flagged column with Withhold chosen, so a flag kept by default is
+    # still withheld on the live site (the live run of 8 Oct 2026 showed that)
+    assert not any(f["column"] == "medium_term_notes" for f in rep["privacy"]["flagged"]), rep["privacy"]["flagged"]
+    assert any(r.get("header") == "Medium-term notes" for r in rep["privacy"]["released"]), rep["privacy"]["released"]
     assert (rep["primary_metric"] or {}).get("claim_key") == "a_federal_debt_accumulated_deficit_b_e", rep["primary_metric"]
     lines = [l["text"] for l in rep["summary"]["lines"]]
     assert lines and lines[0].startswith("Average A. Federal debt"), lines
@@ -2072,6 +2075,24 @@ def test_s07_a_statcan_table_keeps_its_history_skips_unpublished_months_and_name
     # the health of a published series is not marked down for the months the agency skips
     assert not any(f["id"].startswith("health.col.a_federal") for f in rep["findings"]), \
         [f["id"] for f in rep["findings"] if f["id"].startswith("health.")]
+    # the AI plan the visitor's live run got (8 Oct 2026): keep REF_DATE, the series column and VALUE, drop blank values, no reshape. It
+    # used to withhold "Central government debt" (free text; "debt" blocked the release), refuse the business analysis ("the dates
+    # repeat"), and, once released, read the table as a cube that summed 12 monthly balances ($7.3T for a $0.6T balance)
+    plan = {"goal": "How has the value of these series moved?",
+            "columns": [{"name": "REF_DATE", "role": "date", "semantic_type": "date"},
+                        {"name": "Central government debt", "role": "dimension", "semantic_type": "category"},
+                        {"name": "VALUE", "role": "target", "semantic_type": "level", "unit": "millions of dollars"}],
+            "operations": [{"op": "exclude_blank", "column": "VALUE"},
+                           {"op": "keep_columns", "columns": ["REF_DATE", "Central government debt", "VALUE"]}],
+            "primary": "VALUE", "analyses": []}
+    ai = run_file("s07_statcan_debt_unpublished_months.csv", plan=plan)
+    assert ai["ok"], ai.get("error")
+    assert (ai["input"].get("layout") or {}).get("layout") == "long statistical table", ai["input"].get("layout")
+    assert not any(f.get("decision") == "withhold" for f in ai["privacy"]["flagged"]), ai["privacy"]["flagged"]
+    ai_lines = [l["text"] for l in ai["summary"]["lines"]]
+    assert ai_lines and ai_lines[0].startswith("Average A. Federal debt"), ai_lines
+    assert any("not needed: the file is a long statistical table" in x for x in ai["ai_plan"]["refused"]), ai["ai_plan"]["refused"]
+    assert "did not run" not in ai["story"]["headline"], ai["story"]["headline"]
 
 
 # ----------------------------------------------------------------------------- runner

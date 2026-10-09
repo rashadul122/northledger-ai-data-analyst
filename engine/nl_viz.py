@@ -2473,7 +2473,7 @@ def _b_series_change_heatmap(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
     return _record(
         "change_heatmap", "Year-on-year change of each series",
         "Each series' published months in a year against the same months a year earlier (%s to %s)" % (cols[0], cols[-1]),
-        "other", "How each published series moved, year by year", [], None, None,
+        REGISTRY["change_heatmap"]["section"], "How each published series moved, year by year", [], None, None,
         {"label": "change on the same months a year earlier", "unit": "%", "kind": "change_pct"}, data,
         _grid_table("Series", rows, cols, data["text"]), summary,
         (supp, "A year with fewer than 5 months published in both it and the year before is not shown." if supp else ""),
@@ -2638,7 +2638,7 @@ def _b_series_slope(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
     unit = ", ".join(lay.get("units") or [])[:20]
     return _record(
         "slope", "Where each series started and where it is now",
-        "The average published month of %s against %s" % (al, bl), "other",
+        "The average published month of %s against %s" % (al, bl), REGISTRY["slope"]["section"],
         "The change over the whole file, which the headline's latest year against the year before does not show", [],
         None, None, {"label": "average published month", "unit": unit, "kind": "average"},
         {"rows": rows, "a_label": al[:40], "b_label": bl[:40]},

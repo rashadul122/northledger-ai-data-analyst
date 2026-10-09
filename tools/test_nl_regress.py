@@ -34,6 +34,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 import nl_browser as NB  # noqa: E402
+import nl_viz as NV  # noqa: E402
 import nl_structure as NS  # noqa: E402
 import make_cubes as MC  # noqa: E402
 
@@ -2124,6 +2125,9 @@ def test_s08_a_statcan_table_draws_its_own_charts_and_each_figure_recomputes_fro
         charts = {c["chart"]: c for c in rep["viz"]["charts"]}
         assert [c["chart"] for c in rep["viz"]["charts"]][:3] == ["contribution_waterfall", "change_heatmap", "slope"], \
             ([c["chart"] for c in rep["viz"]["charts"]], rep["viz"]["refused"])
+        # each in its chart's own section, or the page draws it as a table ("Its section is not its chart's", live 8 Oct 2026)
+        assert all(c["section"] == NV.REGISTRY[c["chart"]]["section"] for c in rep["viz"]["charts"][:3]), \
+            [(c["chart"], c["section"]) for c in rep["viz"]["charts"]]
         # the phrase the shared report's proxy keys on (insight-proxy src/report.js SERIES_CHART_WHY) to show every one of them
         assert all("a published series' own chart" in c["why"] for c in rep["viz"]["charts"][:3]), [c["why"] for c in rep["viz"]["charts"]]
         # (1) the bridge: totals are the headline finding's, steps the identity's terms, and they add up

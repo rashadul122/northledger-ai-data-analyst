@@ -3683,7 +3683,7 @@ check('try-v2-falls-back-to-the-checked-v1-report-when-the-v2-blocks-are-empty-o
    v2 records (type "viz", rule V) inside a real adapter report, and as the AI report's [CHART:n] figures. */
 const VIZ_DIR = path.join(SITE_DIR, 'tools', 'fixtures', 'viz');
 const VIZ_SPEC = JSON.parse(fs.readFileSync(path.join(VIZ_DIR, 'spec.json'), 'utf8'));
-const VIZ_DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope'];
+const VIZ_DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'timeseries'];
 const VIZ_GLYPH = { 1: '○', 2: '◐', 3: '●' };
 const vizCopy = (x) => JSON.parse(JSON.stringify(x));
 // the engine's own records (tools/test_nl_viz.py --write): {engine_pick: {viz}, ai_pick: {viz}}, each viz as rep.viz holds it;
@@ -4381,6 +4381,86 @@ check('categories-the-engine-released-reach-the-reports-method-and-data-quality'
   ok(d.found && d.txt.indexOf(TEXT) >= 0 && d.inMethod, 'the released category is not in the report\'s method and data-quality section: ' + JSON.stringify(d));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
+
+/* ------------------------------------------------------------ a long statistical table: its whole period and its line chart (impact6)
+   The report of StatCan 10-10-0002-01 (the repo's copy, tools/fixtures/structure/regress), made by the native adapter and handed to the
+   page: the "Over the whole file" card (rep.period) and the line chart (series_lines, a timeseries record) with its gaps, its table view,
+   its phone layout and its dark colours. NL_UI_SHOTS=<dir> also saves screenshots of what the checks looked at. */
+let STATCAN_REP = null;
+function statcanReport() {
+  if (STATCAN_REP) return STATCAN_REP;
+  const code = 'import sys,os,json,gzip\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'd=gzip.open(site+"/tools/fixtures/structure/regress/s07_statcan_debt_unpublished_months.csv.gz").read()\nprint(json.dumps(NB.run(d,"1010000201_databaseLoadingData.csv","",{},"2026-09-30")))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Skip('the StatCan report could not be made (' + String(r.stderr || r.error || '').trim().split('\n').pop() + ')');
+  STATCAN_REP = JSON.parse(r.stdout);
+  return STATCAN_REP;
+}
+const SHOTS = process.env.NL_UI_SHOTS || '';
+async function shot(p, name, sel) {
+  if (!SHOTS) return;
+  fs.mkdirSync(SHOTS, { recursive: true });
+  const el = sel ? await p.$(sel) : null;
+  await (el || p).screenshot({ path: path.join(SHOTS, name + '.png'), ...(el ? {} : { fullPage: false }) });
+}
+async function statcanPage(ctx) {
+  const rep = statcanReport();
+  const { p } = await openV2(ctx, 'statcan', rep);
+  return { p, rep, rec: rep.viz.charts.find((c) => c.chart === 'series_lines'), P: rep.period };
+}
+const lineFig = '#try-report .nlv-fig[data-kind="timeseries"]';
+async function lineChecks(p, rec, P, rep) {
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  // the card: every series, the engine's own cells, the lead sentence, the skipped months named
+  const card = await p.evaluate(() => { const c = document.querySelector('#try-report .nl2-period'); if (!c) return null;
+    return { rows: Array.from(c.querySelectorAll('tbody tr')).map((tr) => Array.from(tr.children).map((x) => x.textContent.replace(/\s+/g, ' ').trim())),
+      head: Array.from(c.querySelectorAll('thead th')).map((x) => x.textContent.trim()), lead: (c.querySelector('.nl2-period-lead') || {}).textContent, gaps: (c.querySelector('.nl2-period-gaps') || {}).textContent || '' }; });
+  ok(card && card.rows.length === P.table.rows.length && JSON.stringify(card.rows) === JSON.stringify(P.table.rows), 'the whole-period card does not hold the engine\'s table: ' + JSON.stringify(card && card.rows[0]));
+  ok(card.rows[0][1] === '492,352 (2009-09)' && card.rows[0][2] === '1,322,004 (2026-03)' && card.lead === P.lines[0], 'the card lead or the first series is not the engine\'s: ' + card.lead);
+  ok(/2010-04 to 2010-08/.test(card.gaps) && /April to August/.test(card.gaps), 'the skipped months are not named: ' + card.gaps.slice(0, 200));
+  ok(!/NOT ENOUGH DATA|graded/i.test(card.lead + card.head.join(' ')), 'the whole-period card carries a grade');
+  // the figure: one path per run, shaded gaps, the accessible name, a table view equal to the record's table
+  const f = await p.evaluate((sel) => { const g = document.querySelector(sel); if (!g) return null; const svg = g.querySelector('svg.nlv');
+    return { label: svg && svg.getAttribute('aria-label'), paths: g.querySelectorAll('svg.nlv path.ts').length, gaps: g.querySelectorAll('svg.nlv rect.nlv-gap').length,
+      markers: g.querySelectorAll('svg.nlv .tsd-1, svg.nlv .tsd-2').length, w: svg && svg.getBoundingClientRect().width, vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth,
+      txt: svg ? svg.textContent : '' }; }, lineFig);
+  ok(f && f.label && f.label.indexOf(rec.title) === 0, 'the line chart is not drawn, or its name is not its title and summary: ' + JSON.stringify(f));
+  const runs = rec.data.series.reduce((a, s) => a + s.runs.length, 0);
+  ok(f.paths === runs || f.paths === runs + rec.data.series.length, 'the line chart draws ' + f.paths + ' paths for ' + runs + ' runs (a gap is a break, never a joined line; the narrow legend adds one mark a series)');
+  ok(f.gaps === 16, 'the periods no line has a figure for are shaded: ' + f.gaps + ' bands (the table skips 16 runs of months)');
+  ok(f.sw <= f.vw + 1, 'the page is wider than the viewport: ' + f.sw + ' > ' + f.vw);
+  ok(rec.data.series.every((s) => f.txt.indexOf(s.last_text) >= 0), 'a line\'s last figure is not on the chart');
+  await p.click(lineFig + ' .tbl-btn');
+  const t = await p.evaluate((sel) => Array.from(document.querySelectorAll(sel + ' .vtable tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent.replace(/\s+/g, ' ').trim())), lineFig);
+  ok(JSON.stringify(t) === JSON.stringify(rec.table.rows), 'the line chart\'s table view is not its record\'s table');
+  await p.click(lineFig + ' .tbl-btn');
+}
+check('statcan-whole-period-card-and-line-chart', DESK, async (ctx) => {
+  const { p, rec, P, rep } = await statcanPage(ctx);
+  await lineChecks(p, rec, P, rep);
+  await shot(p, 'statcan-desktop-light-card', '#try-report .nl2-period');
+  await shot(p, 'statcan-desktop-light-line', lineFig);
+});
+check('statcan-line-chart-on-a-phone', PHONE, async (ctx) => {
+  const { p, rec, P, rep } = await statcanPage(ctx);
+  await lineChecks(p, rec, P, rep);
+  const d = await p.evaluate((sel) => { const g = document.querySelector(sel); const svg = g.querySelector('svg.nlv'); const b = svg.getBoundingClientRect();
+    return { w: b.width, left: b.left, right: b.right, vw: window.innerWidth, legend: svg.textContent, small: Array.from(svg.querySelectorAll('text')).filter((t) => parseFloat(getComputedStyle(t).fontSize) < 11).length }; }, lineFig);
+  ok(d.left >= -0.5 && d.right <= d.vw + 0.5, 'the drawing leaves the viewport: ' + JSON.stringify(d));
+  ok(rec.data.series.every((s) => d.legend.indexOf(s.first_text + ' to ' + s.last_text) >= 0), 'the narrow layout has no legend line for a series (first to last)');
+  ok(d.small === 0, d.small + ' texts under 11 px');
+  await shot(p, 'statcan-phone-light-line', lineFig);
+  await shot(p, 'statcan-phone-light-card', '#try-report .nl2-period');
+});
+check('statcan-line-chart-in-the-dark-theme', DESK, async (ctx) => {
+  const { p, rec } = await statcanPage(ctx);
+  await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); });
+  await p.waitForTimeout(100);
+  const c = await p.evaluate((sel) => Array.from(document.querySelectorAll(sel + ' svg.nlv path.ts')).map((e) => getComputedStyle(e).stroke), lineFig);
+  const want = ['rgb(57, 135, 229)', 'rgb(217, 89, 38)', 'rgb(25, 158, 112)', 'rgb(201, 133, 0)', 'rgb(213, 81, 129)'];
+  ok(want.every((w) => c.indexOf(w) >= 0), 'the dark theme\'s line colours are not the spec\'s: ' + JSON.stringify(Array.from(new Set(c))));
+  await shot(p, 'statcan-desktop-dark-line', lineFig);
+}, { colorScheme: 'dark' });
 
 /* ------------------------------------------------------------ runner */
 (async () => {

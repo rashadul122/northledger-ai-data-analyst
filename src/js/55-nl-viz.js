@@ -1,5 +1,5 @@
 /* The chart registry, page side (tools/fixtures/viz/spec.json, plan/CHART-REGISTRY-DESIGN.md). window.NLV draws
-   one viz record by its draw kind (waterfall, heatmap, dot_range, pareto, slope) and draws its table for a kind it
+   one viz record by its draw kind (waterfall, heatmap, dot_range, pareto, slope, timeseries) and draws its table for a kind it
    does not know, or data it cannot read: a record is never dropped. The engine wrote every printed string and every
    colour tier; this file only places them. The only numbers formatted here are axis ticks.
    Colour is never the only channel: a number and a glyph in every heatmap cell, signed texts on every change,
@@ -14,11 +14,11 @@
   };
   var NLV = {};
   window.NLV = NLV;
-  var KINDS = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'table'];
+  var KINDS = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'timeseries', 'table'];
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 6, slots: 240 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }
@@ -182,6 +182,15 @@
       return obj(d) && arr(d.bars) && d.bars.length >= 1 && d.bars.length <= CAP.bars && d.bars.every(bar) &&
         (d.other === null || d.other === undefined || bar(d.other)) && obj(d.k80) && fin(d.k80.k) && str(d.k80.text);
     },
+    timeseries: function (d) {
+      var x = d && d.x;
+      return obj(d) && obj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= CAP.slots && fin(x.step) && x.step >= 1 && str(d.y_label) &&
+        arr(d.series) && d.series.length >= 1 && d.series.length <= CAP.lines && d.series.every(function (s) {
+          return obj(s) && str(s.label) && str(s.first_text) && str(s.last_text) && str(s.change_text) && arr(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
+            return obj(r) && fin(r.at) && r.at >= 0 && arr(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
+          });
+        });
+    },
     slope: function (d) {
       return obj(d) && arr(d.rows) && d.rows.length >= 1 && d.rows.length <= CAP.rows && str(d.a_label) && str(d.b_label) && d.rows.every(function (r) {
         return obj(r) && str(r.label) && pos(r.a) && pos(r.b) && str(r.a_text) && str(r.b_text) && str(r.change_text);
@@ -202,7 +211,7 @@
   // a menu chart's name in the reader's words (the analyst view's "Charts not drawn, and why")
   var NAMES = { contribution_waterfall: 'Contribution waterfall', pvm_waterfall: 'Price, volume and mix waterfall', calendar_heatmap: 'Calendar heatmap (month by year)',
     change_heatmap: 'Change heatmap (segment by month)', crosstab_heatmap: 'Crosstab heatmap', theme_rating_heatmap: 'Themes by rating heatmap',
-    correlation_heatmap: 'Correlation heatmap', group_ranges: 'Group ranges', pareto: 'Pareto chart', slope: 'Slope chart' };
+    correlation_heatmap: 'Correlation heatmap', group_ranges: 'Group ranges', pareto: 'Pareto chart', slope: 'Slope chart', series_lines: 'Line chart of the series over time' };
   NLV.chartName = function (c) { return has(NAMES, c) ? NAMES[c] : String(c || 'chart').replace(/_/g, ' '); };
 
   /* ------------------------------------------------------------ heatmap */
@@ -541,7 +550,97 @@
     return { body: b, H: bot + 22, layout: 'dumbbells' };
   }
 
-  var DRAW = { waterfall: waterfall, heatmap: heatmap, dot_range: dotRange, pareto: pareto, slope: slope };
+  /* ------------------------------------------------------------ timeseries */
+  // up to 6 lines over one time axis (slot i of x.n sits at i / (n - 1) of the plot's width; slot k is x.first + k x.step
+  // months). A run is a stretch of consecutive published periods; the line is drawn run by run, so a period with no
+  // published figure is a gap (shaded when no line has a figure there), never joined across. Identity is not colour alone:
+  // each line has its own dash, its own end marker and a direct label (the legend under a phone-width drawing).
+  var TS_DASH = ['', '7 4', '2 3', '9 3 2 3', '4 2'];
+  function tsMarker(k, x, y, cls) {
+    var r = 4.2;
+    if (k === 1) return '<rect class="' + cls + '" x="' + f1(x - r) + '" y="' + f1(y - r) + '" width="' + f1(2 * r) + '" height="' + f1(2 * r) + '"/>';
+    if (k === 2) return '<path class="' + cls + '" d="M' + f1(x) + ' ' + f1(y - r - 1) + 'L' + f1(x + r + 1) + ' ' + f1(y) + 'L' + f1(x) + ' ' + f1(y + r + 1) + 'L' + f1(x - r - 1) + ' ' + f1(y) + 'z"/>';
+    if (k === 3) return '<path class="' + cls + '" d="M' + f1(x) + ' ' + f1(y - r - 1) + 'L' + f1(x + r + 1) + ' ' + f1(y + r) + 'L' + f1(x - r - 1) + ' ' + f1(y + r) + 'z"/>';
+    if (k === 4) return '<path class="' + cls + ' ts-x" d="M' + f1(x - r) + ' ' + f1(y - r) + 'L' + f1(x + r) + ' ' + f1(y + r) + 'M' + f1(x + r) + ' ' + f1(y - r) + 'L' + f1(x - r) + ' ' + f1(y + r) + '"/>';
+    return '<circle class="' + cls + '" cx="' + f1(x) + '" cy="' + f1(y) + '" r="' + r + '"/>';
+  }
+  function ymOf(mi) { var y = Math.floor(mi / 12), m = mi % 12 + 1; return y + '-' + (m < 10 ? '0' : '') + m; }
+  // axis ticks: the years that start inside the span (every few, so none touches), or three month labels for a short span
+  function tsTicks(d, PW) {
+    var m0 = +d.x.first.slice(0, 4) * 12 + (+d.x.first.slice(5, 7)) - 1, st = d.x.step, n = d.x.n, last = m0 + (n - 1) * st, out = [], i, j;
+    if (last - m0 < 24) {
+      [0, Math.floor((n - 1) / 2), n - 1].forEach(function (k, q, a) { if (q === 0 || k !== a[q - 1]) out.push({ i: k, t: ymOf(m0 + k * st) }); });
+      return out;
+    }
+    var ys = [];
+    for (j = Math.ceil(m0 / 12) * 12; j <= last; j += 12) ys.push(j / 12);
+    var perYear = PW / ((last - m0) / 12), stride = Math.max(1, Math.ceil((tw('0000', 12) + 12) / perYear));
+    ys.forEach(function (y, q) { if (q % stride === 0) out.push({ i: (y * 12 - m0) / st, t: String(y) }); });
+    return out;
+  }
+  function timeseries(rec, W) {
+    var d = rec.data, S = d.series, n = d.x.n, wide = W >= 480, lo = Infinity, hi = -Infinity, b = '';
+    S.forEach(function (s) { s.runs.forEach(function (r) { r.values.forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }); }); });
+    var sp = U.lineSpan ? U.lineSpan(lo, hi, 0.06) : [lo, hi];
+    var yt = yTicks(sp[0], sp[1], 4), yw = mx(yt.lab.map(function (t) { return tw(t, 12); })) + 10;
+    var RW = wide ? Math.min(Math.round(W * 0.34), Math.max(110, mx(S.map(function (s) { return tw(s.last_text, 12, 700) + 8 + Math.min(tw(s.label, 12), 150); })) + 14)) : 10;
+    var L = yw, R = W - RW, PW = Math.max(60, R - L), T = 10, PH = wide ? 230 : 190, Bt = T + PH;
+    var X = function (i) { return L + (n > 1 ? i / (n - 1) : 0) * PW; };
+    var Y = scale(sp[0], sp[1] === sp[0] ? sp[0] + 1 : sp[1], Bt, T);
+    // no line has a figure for these periods: a shaded band from the last figure before to the first after
+    var cov = new Array(n), g = 0;
+    for (g = 0; g < n; g++) cov[g] = 0;
+    S.forEach(function (s) { s.runs.forEach(function (r) { for (var q = 0; q < r.values.length; q++) cov[r.at + q] = 1; }); });
+    var first = cov.indexOf(1), lastc = cov.lastIndexOf(1), gaps = 0, a;
+    for (a = first; a >= 0 && a <= lastc; a++) {
+      if (cov[a]) continue;
+      var e = a; while (e <= lastc && !cov[e]) e++;
+      b += '<rect class="nlv-gap" x="' + f1(X(a - 1)) + '" y="' + T + '" width="' + f1(Math.max(1, X(e) - X(a - 1))) + '" height="' + PH + '"/>';
+      gaps++; a = e;
+    }
+    yt.ts.forEach(function (t, k) {
+      b += '<line class="gridl" x1="' + f1(L) + '" x2="' + f1(R) + '" y1="' + f1(Y(t)) + '" y2="' + f1(Y(t)) + '"/>' + txt(L - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' });
+    });
+    b += '<line class="nlv-zero" x1="' + f1(L) + '" x2="' + f1(R) + '" y1="' + Bt + '" y2="' + Bt + '"/>';
+    tsTicks(d, PW).forEach(function (t) {
+      var x = X(t.i), w = tw(t.t, 12), cx = Math.min(W - w / 2 - 1, Math.max(w / 2 + 1, x));
+      b += '<line class="nlv-zero" x1="' + f1(x) + '" x2="' + f1(x) + '" y1="' + Bt + '" y2="' + (Bt + 4) + '"/>' + txt(cx, Bt + 18, t.t, { anchor: 'middle' });
+    });
+    var ends = [];
+    S.forEach(function (s, k) {
+      var cls = 'ts ts-' + (k + 1), body = '', ex = 0, ey = 0;
+      s.runs.forEach(function (r) {
+        var pts = r.values.map(function (v, q) { return [X(r.at + q), Y(v)]; });
+        if (pts.length === 1) body += '<circle class="tsd-' + (k + 1) + '" cx="' + f1(pts[0][0]) + '" cy="' + f1(pts[0][1]) + '" r="2"/>';
+        else body += '<path class="' + cls + '"' + (TS_DASH[k] ? ' stroke-dasharray="' + TS_DASH[k] + '"' : '') + ' d="' + pts.map(function (p, q) { return (q ? 'L' : 'M') + f1(p[0]) + ' ' + f1(p[1]); }).join('') + '"/>';
+        ex = pts[pts.length - 1][0]; ey = pts[pts.length - 1][1];
+      });
+      b += '<g data-tip="' + esc(s.label + ': ' + s.first_text + ' to ' + s.last_text + (s.change_text ? ' (' + s.change_text + ')' : '')) + '">' + body + tsMarker(k, ex, ey, 'tsd-' + (k + 1)) + '</g>';
+      ends.push(ey);
+    });
+    var H = Bt + 28;
+    if (wide) {
+      var ly = spread(ends, T + 4, Bt, 15);
+      S.forEach(function (s, k) {
+        var lt = tw(s.last_text, 12, 700);
+        b += (Math.abs(ly[k] - ends[k]) > 1 ? '<path class="nlv-lead" d="M' + f1(R + 6) + ' ' + f1(ends[k]) + 'L' + f1(R + 10) + ' ' + f1(ly[k] - 4) + '"/>' : '') +
+          txt(R + 12, ly[k], s.last_text, { cls: 'nlv-t nlv-b', wt: 700 }) + txt(R + 12 + lt + 6, ly[k], s.label, { cls: 'nlv-t', maxW: Math.max(0, W - (R + 12 + lt + 8)) });
+      });
+    } else {
+      // the legend under the drawing: the line's own mark, its label, then where it started and where it is
+      var y = Bt + 34;
+      S.forEach(function (s, k) {
+        b += '<path class="ts ts-' + (k + 1) + '"' + (TS_DASH[k] ? ' stroke-dasharray="' + TS_DASH[k] + '"' : '') + ' d="M2 ' + (y - 4) + 'h22"/>' + tsMarker(k, 13, y - 4, 'tsd-' + (k + 1)) +
+          txt(32, y, s.label, { cls: 'nlv-t', maxW: W - 34 }) +
+          txt(32, y + 15, s.first_text + ' to ' + s.last_text + (s.change_text ? ' (' + s.change_text + ')' : ''), { cls: 'lab', maxW: W - 34 });
+        y += 38;
+      });
+      H = y - 8;
+    }
+    return { body: b, H: H, layout: wide ? 'direct labels' : 'legend', after: gaps ? '<p class="note nlv-gapn">The shaded bands are periods with no published figure: the lines stop there and start again, and nothing is filled in.</p>' : '' };
+  }
+
+  var DRAW = { waterfall: waterfall, heatmap: heatmap, dot_range: dotRange, pareto: pareto, slope: slope, timeseries: timeseries };
 
   /* ------------------------------------------------------------ the table: the universal fallback */
   function num(c) { return /^[−+\-]?[\d.,]+(%| \S+)?$/.test(String(c)); }

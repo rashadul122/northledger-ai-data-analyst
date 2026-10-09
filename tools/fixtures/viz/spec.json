@@ -1,7 +1,7 @@
 {
  "spec": "northledger.viz",
  "version": "2026-09-30.1",
- "status": "frozen: wave 0 of the chart registry (plan/CHART-REGISTRY-DESIGN.md); builders start from this file",
+ "status": "frozen: wave 0 of the chart registry (plan/CHART-REGISTRY-DESIGN.md); builders start from this file; extended 9 Oct 2026 (impact6) with the timeseries draw kind and the series_lines menu chart",
  "contract": "engine/CONTRACT-v2.md section 5.9",
  "caps": {
   "VIZ_MAX": 8,
@@ -27,7 +27,10 @@
   "TABLE_COLS_MAX": 25,
   "TABLE_ROWS_MAX": 30,
   "ANCHORS_MAX": 24,
-  "RECONCILE_TOL": 1e-06
+  "RECONCILE_TOL": 1e-06,
+  "LINE_BYTES": 16000,
+  "LINE_SERIES_MAX": 6,
+  "LINE_SLOTS_MAX": 240
  },
  "caps_notes": {
   "VIZ_MAX": "charts per report (AI-chosen or engine-chosen), and items kept from plan.charts",
@@ -37,7 +40,10 @@
   "AI_CHARTS_MAX": "charts in results_for_ai and in /report (the analyses' charts and the viz records together)",
   "CHART_BYTES": "one record's size as JSON.stringify writes it, in UTF-8 bytes (new TextEncoder().encode(JSON.stringify(record)).length). A Python producer writes a whole-number float as an integer (100, never 100.0) and measures len(json.dumps(record, separators=(',', ':'), ensure_ascii=False).encode('utf-8')), the same number (validate_spec.py js_bytes() checks the other float spellings). Every kind but the heatmap; a heatmap's cap is HEATMAP_BYTES. Capacity: the 10 x 12 diverging calendar of edge_heatmap_diverging is 5996 bytes, so about 120 cells fit in 6,000 bytes",
   "HEATMAP_BYTES": "a heatmap record's cap, measured as CHART_BYTES is (the owner's decision on the spec's byte-cap conflict, 30 Sep 2026; recorded here under the same version: the engine's nl_viz and the worker's src/charts.js already apply it; the page and the PDF draw what they receive). At 6,000 bytes about 120 cells fit, so HEAT_ROWS_MAX x HEAT_COLS_MAX (288 cells) was unreachable; at 12,000 the same calendar widened to 10 x 24 (240 cells) is 10,355 bytes, and a grid over the cap is still trimmed (pipeline.engine)",
-  "RECONCILE_TOL": "relative tolerance of every add-up check, plus 1e-6 per part for each value's rounding to 1e-6"
+  "RECONCILE_TOL": "relative tolerance of every add-up check, plus 1e-6 per part for each value's rounding to 1e-6",
+  "LINE_BYTES": "a timeseries record's cap, measured as CHART_BYTES is: up to 6 lines of up to 240 periods (a long statistical table's own chart; impact6, 9 Oct 2026). A record over it loses its last line, one at a time, in the engine; the worker degrades one over it to its table",
+  "LINE_SERIES_MAX": "lines in a timeseries (the engine draws 5: the lead series and the 4 that changed most)",
+  "LINE_SLOTS_MAX": "periods a timeseries spans; a longer file shows its latest 240 and says so in the subtitle"
  },
  "rules": [
   "The engine computes every value and writes every printed string (cell texts, step texts, legend lines, labels, table cells, the summary) and every tier. Renderers never format a data value: only axis ticks are formatted locally.",
@@ -338,6 +344,23 @@
    "source": "scenarios items contribution.<segment>.prior, .latest and .pct",
    "reconcile": "the a values add up to headline.prior and the b values to headline.latest, to 1e-6",
    "privacy": "as contribution_waterfall"
+  },
+  "series_lines": {
+   "args": [],
+   "args_text": "[]",
+   "kind": "timeseries",
+   "section": "headline",
+   "batch": 2,
+   "what": "a published table's series as lines over time (the lead and the biggest movers), gaps left as gaps",
+   "conditions": [
+    "the file is a long statistical table (a date, one value column and the series named by other columns, read one column per series) with a series of 12 or more published periods",
+    "the lead series and, when the table has one unit, the 4 series that changed most in absolute terms (at most 5 lines); a table in several units draws its lead alone, because their amounts share no axis",
+    "a period with no published figure is a gap: the line stops and starts again, nothing is interpolated; a daily table is drawn as the average of each month's figures"
+   ],
+   "limit_needs": "needs a long statistical table: one published figure a period for each of its series",
+   "source": "the rows the engine kept (downloads.clean_csv) and the layout of the long table (input.layout)",
+   "reconcile": "every drawn point is a published figure of the download (a daily table: the mean of the month's figures); first_text and last_text are the first and last drawn points; change_text is their percent change",
+   "privacy": "as slope: no flagged column; a series is a column of the table the visitor sent and is named as the file names it"
   }
  },
  "draw_kinds": {
@@ -380,6 +403,13 @@
     "slope"
    ],
    "draw": "two vertical axes (a_label, b_label) on one scale; a line per row coloured by b vs a (rise, fall, flat); 'label a_text' at the left end, 'b_text change_text' at the right end, labels at each end spread at least 13 px apart with a leader line"
+  },
+  "timeseries": {
+   "data": "#/$defs/data_timeseries",
+   "menu": [
+    "series_lines"
+   ],
+   "draw": "up to 6 lines over one time axis: slot i of x.n sits at i / (n - 1) of the plot's width and slot k is x.first + k * x.step months; each series is a list of runs (consecutive published periods) drawn as separate paths, so a period with no figure is a gap, shaded when no line has a figure there; a run of one period is a dot; line k has its own colour (colors.timeseries.lines), its own dash and its own end marker; its last_text and label sit at its right end (the legend under the drawing on a narrow one: first_text to last_text and change_text); the value axis spans the data and includes 0 only when the data cross it or come within a quarter of their span of it; year ticks on the time axis"
   },
   "table": {
    "data": "#/$defs/data_table",
@@ -1004,6 +1034,116 @@
      }
     }
    },
+   "data_timeseries": {
+    "type": "object",
+    "required": [
+     "x",
+     "series",
+     "y_label"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "x": {
+      "type": "object",
+      "required": [
+       "first",
+       "n",
+       "step",
+       "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "first": {
+        "type": "string",
+        "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+       },
+       "n": {
+        "type": "integer",
+        "minimum": 2,
+        "maximum": 240
+       },
+       "step": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 12
+       },
+       "label": {
+        "type": "string",
+        "maxLength": 20,
+        "minLength": 1
+       }
+      }
+     },
+     "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+       "type": "object",
+       "required": [
+        "label",
+        "runs",
+        "first_text",
+        "last_text",
+        "change_text"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 1
+        },
+        "runs": {
+         "type": "array",
+         "minItems": 1,
+         "maxItems": 240,
+         "items": {
+          "type": "object",
+          "required": [
+           "at",
+           "values"
+          ],
+          "additionalProperties": false,
+          "properties": {
+           "at": {
+            "type": "integer",
+            "minimum": 0
+           },
+           "values": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 240,
+            "items": {
+             "type": "number"
+            }
+           }
+          }
+         }
+        },
+        "first_text": {
+         "type": "string",
+         "maxLength": 24,
+         "minLength": 1
+        },
+        "last_text": {
+         "type": "string",
+         "maxLength": 24,
+         "minLength": 1
+        },
+        "change_text": {
+         "type": "string",
+         "maxLength": 24
+        }
+       }
+      }
+     },
+     "y_label": {
+      "type": "string",
+      "maxLength": 40
+     }
+    }
+   },
    "data_table": {
     "type": "object",
     "properties": {},
@@ -1049,6 +1189,7 @@
      "dot_range",
      "pareto",
      "slope",
+     "timeseries",
      "table"
     ]
    },
@@ -1341,6 +1482,25 @@
      ],
      "properties": {
       "kind": {
+       "const": "timeseries"
+      }
+     }
+    },
+    "then": {
+     "properties": {
+      "data": {
+       "$ref": "#/$defs/data_timeseries"
+      }
+     }
+    }
+   },
+   {
+    "if": {
+     "required": [
+      "kind"
+     ],
+     "properties": {
+      "kind": {
        "const": "table"
       }
      }
@@ -1363,7 +1523,7 @@
    "every printed string is written by the engine: title, subtitle, labels, texts, legend, table cells, summary; every figure in summary is one of the record's own texts or a count stated in words",
    "anchors are unique; 'finding:<findings[].id>', 'scenario:<scenarios.items[].id>', 'analysis:<1-based index in results_for_ai.analyses>', 'chart:<charts[].id>'",
    "every table row has as many cells as table.cols; the table view shows every figure the chart shows",
-   "the record is at most CHART_BYTES (6000) bytes as caps_notes.CHART_BYTES measures it; a heatmap at most HEATMAP_BYTES (12000)",
+   "the record is at most CHART_BYTES (6000) bytes as caps_notes.CHART_BYTES measures it; a heatmap at most HEATMAP_BYTES (12000); a timeseries at most LINE_BYTES (16000)",
    "no string names a flagged column or holds a flagged column's value; no printed figure rests on fewer than SMALL_CELL (5) rows"
   ],
   "waterfall": [
@@ -1394,6 +1554,13 @@
   ],
   "slope": [
    "at most 12 rows; a and b are the two windows' totals; change_text the level's own change, or 'new' / 'left'"
+  ],
+  "timeseries": [
+   "x.first is a YYYY-MM month, x.n (2 to 240) the periods and x.step (1 to 12) the months between two; every run lies inside the axis: 0 <= at and at + len(values) <= n",
+   "a series' runs are in order and never touch: the next run starts at least one period after the last ended, because a gap is at least one period (a run that continued the last would be one run)",
+   "a series has 2 or more points in all; its first_text and last_text are its first and last point's figures as the engine writes them, and change_text is the percent change between them ('' when the first is not above 0)",
+   "at most 6 series, in order: the lead, then the biggest movers; no interpolation: a period with no figure is in no run",
+   "the table has a column for the periods then one for each series; its rows are the first period drawn, the last period of each calendar year, and the last, then a 'Change, first to last' row"
   ],
   "table": [
    "data is {}; the chart is its table: table.cols is not empty"
@@ -1495,6 +1662,16 @@
     "axis": "#b9b5aa",
     "hairline": "#e2dfd6",
     "focus": "#1f5fbf"
+   },
+   "timeseries": {
+    "lines": [
+     "#2a78d6",
+     "#d45a26",
+     "#12875c",
+     "#9a6a00",
+     "#c8457f"
+    ],
+    "gap": "#e2dfd6"
    }
   },
   "dark": {
@@ -1573,6 +1750,16 @@
     "axis": "#3b4d60",
     "hairline": "#26364a",
     "focus": "#8ab8ff"
+   },
+   "timeseries": {
+    "lines": [
+     "#3987e5",
+     "#d95926",
+     "#199e70",
+     "#c98500",
+     "#d55181"
+    ],
+    "gap": "#26364a"
    }
   },
   "contrast": {
@@ -1586,7 +1773,8 @@
     "suppressed_text_on_fill": 6.09,
     "marks_on_surface_min": 6.69
    }
-  }
+  },
+  "timeseries_note": "The first five slots of the dataviz skill's categorical palette, stepped for contrast (validated with its validate_palette.js on the white surface and on #121d28: lightness band, chroma floor, adjacent-pair colour-vision separation, normal-vision floor, 3:1 contrast). The adjacent colour-vision separation of the light set is 6.8 (the 6 to 8 band), legal only with secondary encoding: every line also has its own dash, its own end marker and a direct label"
  },
  "accessibility": {
   "accessible_name": "title + '. ' + summary: the page's figure and svg carry it (role='img', aria-label); the share viewer the same; the PDF prints the title as the figure caption and the summary under it",
@@ -1596,7 +1784,8 @@
    "a + or − sign on every change (the engine's texts)",
    "waterfall totals are labelled; a rise and a fall differ by sign, not only by colour",
    "a suppressed cell reads '<5' and has a dashed border; an empty one is blank with a dashed border",
-   "the pareto's k80 bar is marked with text; a slope's direction is in its change_text"
+   "the pareto's k80 bar is marked with text; a slope's direction is in its change_text",
+   "a timeseries line has its own dash and end marker and its label at its end (or in the legend); a gap is a break in the line and a shaded band, never a colour"
   ],
   "contrast": "text at least 4.5:1 on its fill, marks at least 3:1 on the surface, in both themes (colors.contrast holds the measured minimums)",
   "keyboard": "each chart is focusable (tabindex 0) with its accessible name; no figure is shown only in a tooltip",
@@ -1635,6 +1824,10 @@
    "slope": {
     "wide": "two axes, when both ends' labels fit (360 px and up)",
     "narrow": "a dumbbell list: one row per label (label above), a dot at a and at b on one shared axis, an arrow from a to b, a_text and b_text under the dots, change_text at the right"
+   },
+   "timeseries": {
+    "wide": "a plot with the value axis on the left and each line's last_text and label at its right end, spread 15 px apart with a leader",
+    "narrow": "the plot across the whole width and a legend under it: the line's mark, its label, then first_text to last_text and change_text on the next line (below 480 px)"
    },
    "table": {
     "all": "its own scroller; first column sticky"
@@ -1843,6 +2036,11 @@
     "chart": "slope",
     "ok": true,
     "why": "needs a total over two 12-month windows and a category of 2 to 12 levels; region has 4 levels"
+   },
+   {
+    "chart": "series_lines",
+    "ok": false,
+    "why": "needs a long statistical table: one published figure a period for each of its series; the file is not a long table of series"
    }
   ]
  },
@@ -1982,6 +2180,18 @@
      6,
      5,
      4
+    ],
+    "series_lines": [
+     9,
+     4,
+     3,
+     1,
+     1,
+     1,
+     6,
+     3,
+     3,
+     3
     ]
    },
    "note": "0-9 by plan.kind (a plan without a kind reads 'other'); never theme_rating_heatmap, and a pareto only on a column the plan types category, entity or geography"
@@ -2059,6 +2269,16 @@
     "shift",
     "gap",
     "overtook"
+   ],
+   "series_lines": [
+    "over time",
+    "trend",
+    "history",
+    "since",
+    "evolve",
+    "long run",
+    "lines",
+    "path"
    ]
   },
   "pick": "only charts whose limit is ok and that build; highest score first, ties in menu order; at most VIZ_AUTO (4) and at most HEAT_MAX (3) heatmaps; why = 'Chosen by the engine: <what>' (at most 200 characters)"
@@ -2086,10 +2306,12 @@
    "src/js/55-nl-viz.js draws the five kinds and the table fallback from the record alone",
    "N.check (52-nl2-report.js) accepts type 'viz' through SHAPE.viz (the record schema); an unknown kind is drawn as its table, never a reason to fall back to the v1 report",
    "50-try.js resolves [CHART:n] and builds shares from /report's returned charts",
-   "rep.viz.refused is listed under the charts in the analyst view, in the engine's words (the chart's name in the reader's words, and why)"
+   "rep.viz.refused is listed under the charts in the analyst view, in the engine's words (the chart's name in the reader's words, and why)",
+   "src/js/55-nl-viz.js also draws the timeseries kind (impact6, 9 Oct 2026)"
   ],
   "pdf": [
-   "a VIZ dispatch on kind: waterfall, heatmap, dot_range, pareto, slope; 'table' and any unknown kind as the table; legacy kinds unchanged"
+   "a VIZ dispatch on kind: waterfall, heatmap, dot_range, pareto, slope; 'table' and any unknown kind as the table; legacy kinds unchanged",
+   "the VIZ dispatch also draws timeseries (impact6, 9 Oct 2026)"
   ],
   "card_example": {
    "n": 3,
@@ -3126,6 +3348,141 @@
       "2025-12"
      ],
      "op": "revenue added up by region in each 12-month window"
+    }
+   }
+  },
+  "timeseries": {
+   "data_from": "synthetic",
+   "about": "a long statistical table's two series over 14 months, published in two runs (September to December 2024, then June to October 2025): the five skipped months are a gap",
+   "record": {
+    "id": "viz.5.series_lines",
+    "chart": "series_lines",
+    "kind": "timeseries",
+    "title": "Each series over the whole period",
+    "subtitle": "2024-09 to 2025-10: the lead series and the 1 that changed most, of 2 series; periods with no published figure are gaps",
+    "section": "headline",
+    "supports": "The table's published series over its whole period; no claim is graded",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: a published series' own chart: a published table's series as lines over time (the lead and the biggest movers), gaps left as gaps",
+    "measure": {
+     "label": "Federal debt",
+     "unit": "Dollars (millions)",
+     "kind": "amount"
+    },
+    "data": {
+     "x": {
+      "first": "2024-09",
+      "n": 14,
+      "step": 1,
+      "label": "Month"
+     },
+     "series": [
+      {
+       "label": "Federal debt",
+       "runs": [
+        {
+         "at": 0,
+         "values": [
+          100,
+          102,
+          104,
+          106
+         ]
+        },
+        {
+         "at": 9,
+         "values": [
+          110,
+          112,
+          113,
+          115,
+          117
+         ]
+        }
+       ],
+       "first_text": "100",
+       "last_text": "117",
+       "change_text": "+17.0%"
+      },
+      {
+       "label": "Gross liabilities",
+       "runs": [
+        {
+         "at": 0,
+         "values": [
+          200,
+          203,
+          206,
+          209
+         ]
+        },
+        {
+         "at": 9,
+         "values": [
+          215,
+          218,
+          222,
+          226,
+          230
+         ]
+        }
+       ],
+       "first_text": "200",
+       "last_text": "230",
+       "change_text": "+15.0%"
+      }
+     ],
+     "y_label": "Dollars (millions)"
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "Federal debt",
+      "Gross liabilities"
+     ],
+     "rows": [
+      [
+       "2024-09",
+       "100",
+       "200"
+      ],
+      [
+       "2024-12",
+       "106",
+       "209"
+      ],
+      [
+       "2025-10",
+       "117",
+       "230"
+      ],
+      [
+       "Change, first to last",
+       "+17.0%",
+       "+15.0%"
+      ]
+     ]
+    },
+    "summary": "Federal debt went from 100 in 2024-09 to 117 in 2025-10 (+17.0%). The lines drawn with it: Gross liabilities. Each point is a published figure, and where the publisher skipped a period the line stops and starts again.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The table's published series, one figure a period, as the engine read them",
+    "inputs": {
+     "columns": [
+      "Federal debt",
+      "Gross liabilities"
+     ],
+     "rows": 14,
+     "months": [
+      "2024-09",
+      "2025-10"
+     ],
+     "op": "each published figure in time order; a period with none is a gap"
     }
    }
   },

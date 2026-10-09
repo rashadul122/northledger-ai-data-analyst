@@ -153,7 +153,15 @@ def _read(path: str) -> bytes:
         return fh.read()
 
 
+def _statcan_bytes() -> bytes:
+    """StatCan 10-10-0002-01, a visitor's long statistical table of 25 series, published in runs of months (tools/fixtures/structure/regress)."""
+    import gzip
+    with gzip.open(os.path.join(HERE, "fixtures", "structure", "regress", "s07_statcan_debt_unpublished_months.csv.gz"), "rb") as fh:
+        return fh.read()
+
+
 CASES = {
+    "statcan": (_statcan_bytes, "1010000201_databaseLoadingData.csv", None, "2026-09-30"),
     "ship2": (lambda: _read(SHIP2), "ship2_privacy_orders.csv", None, SHIP2_AS_OF),
     "ship2_ai": (lambda: _read(SHIP2), "ship2_privacy_orders.csv", {"__plan__": dict(SHIP2_PLAN, charts=SHIP2_CHARTS)},
                  SHIP2_AS_OF),
@@ -341,7 +349,7 @@ def test_every_record_passes_the_specs_schema_and_invariants():
         for c in _viz(rep)["charts"]:
             errs = _check(c)
             assert not errs, (name, c["id"], errs[:5])
-            assert VS.js_bytes(c) <= SPEC["caps"]["HEATMAP_BYTES" if c["kind"] == "heatmap" else "CHART_BYTES"], (name, c["id"])
+            assert VS.js_bytes(c) <= SPEC["caps"]["HEATMAP_BYTES" if c["kind"] == "heatmap" else "LINE_BYTES" if c["kind"] == "timeseries" else "CHART_BYTES"], (name, c["id"])
             assert VS.js_bytes(c) == _nv().record_bytes(c), c["id"]
             seen.add(c["chart"])
     assert seen == set(MENU), "no case built %s" % sorted(set(MENU) - seen)
@@ -1646,6 +1654,121 @@ def test_a_withheld_columns_name_in_a_record_is_replaced_not_the_record_dropped(
     r2["summary"] = "Subjects that mention the phone most often."
     out = _nv().for_sending(r2, scrub)
     assert out["summary"] == "Subjects that mention the [withheld column] most often." and out["title"] == rec["title"], out
+
+
+def _month_add(first: str, k: int) -> str:
+    i = int(first[:4]) * 12 + int(first[5:7]) - 1 + k
+    return "%04d-%02d" % (i // 12, i % 12 + 1)
+
+
+def test_series_lines_draw_the_published_figures_gaps_as_gaps_and_say_which_series():
+    """The line chart of a long statistical table (impact6): the lead series and the biggest movers over the whole period. Every
+    point is recomputed here from the download; a month the publisher skipped is in no run (no interpolation); the first and last
+    texts are the first and last drawn points; the table holds the same figures; the subtitle and summary say which series."""
+    rep = _case("statcan")
+    rec = _rec(rep, "series_lines")
+    NV = _nv()
+    assert rec["kind"] == "timeseries" and rec["section"] == NV.REGISTRY["series_lines"]["section"] == "headline", (rec["kind"], rec["section"])
+    assert [c["chart"] for c in rep["viz"]["charts"]][:2] == ["contribution_waterfall", "series_lines"]
+    assert NV.record_bytes(rec) <= NV.LINE_BYTES == 16000
+    d, x = rec["data"], rec["data"]["x"]
+    clean = _clean(rep)
+    month = clean["ref_date"].str[:7]
+    by_month = {m: i for i, m in enumerate(month)}
+    lay = rep["input"]["layout"]
+    slug = {NB._engine_slug(h): h for h in lay["file_order"]}
+    series = d["series"]
+    assert 2 <= len(series) <= 5 and series[0]["label"] == lay["lead"] if lay.get("lead") else True
+    assert series[0]["label"] == lay["file_order"][0] and len({s["label"] for s in series}) == len(series)
+    covered = set()
+    for s in series:
+        col = NB._engine_slug(s["label"])
+        vals = pd_numeric(clean[col])
+        pts = {}
+        for run in s["runs"]:
+            for k, v in enumerate(run["values"]):
+                m = _month_add(x["first"], (run["at"] + k) * x["step"])
+                assert m in by_month, (s["label"], m)
+                assert abs(vals[by_month[m]] - v) < 1e-6, (s["label"], m, vals[by_month[m]], v)
+                pts[run["at"] + k] = v
+        # a gap is a gap: every slot between the first and last point that is in no run has no figure in the download
+        lo, hi = min(pts), max(pts)
+        for slot in range(lo, hi + 1):
+            m = _month_add(x["first"], slot * x["step"])
+            has = m in by_month and vals[by_month[m]] == vals[by_month[m]]
+            assert has == (slot in pts), (s["label"], m, has)
+        # the runs are separate: at least one empty slot between two
+        for a, b in zip(s["runs"], s["runs"][1:]):
+            assert b["at"] > a["at"] + len(a["values"]), (s["label"], a["at"], b["at"])
+        assert s["first_text"] == format(int(round(pts[lo])), ",") and s["last_text"] == format(int(round(pts[hi])), ","), s["label"]
+        assert s["change_text"] == "%+.1f%%" % (100.0 * (pts[hi] / pts[lo] - 1.0)), (s["label"], s["change_text"])
+        covered |= set(pts)
+    assert len(rec["data"]["series"][0]["runs"]) == 17 and x["n"] == 199 and x["first"] == "2009-09" and x["step"] == 1, (x, len(series[0]["runs"]))
+    # the table: the same figures, the last row each line's change
+    t = rec["table"]
+    assert t["cols"][0] == "Month" and t["cols"][1:] == [s["label"] for s in series] and t["rows"][-1][0] == "Change, first to last"
+    assert t["rows"][-1][1:] == [s["change_text"] for s in series] and t["rows"][0][0] == x["first"] and t["rows"][-2][0] == "2026-03"
+    for row in t["rows"][:-1]:
+        for s, cell in zip(series, row[1:]):
+            col = NB._engine_slug(s["label"])
+            assert cell == format(int(round(pd_numeric(clean[col])[by_month[row[0]]])), ","), (row, s["label"])
+    assert "the lead series and the %d that changed most" % (len(series) - 1) in rec["subtitle"] and "of 25 series" in rec["subtitle"], rec["subtitle"]
+    assert all(s["label"] in rec["summary"] for s in series[:2]) and series[0]["first_text"] in rec["summary"] and series[0]["last_text"] in rec["summary"]
+    assert slug  # the series are the file's own, by name
+
+
+def pd_numeric(s):
+    import pandas as pd
+    return pd.to_numeric(s.where(s != ""), errors="coerce").tolist()
+
+
+def _fx_daily_bytes() -> bytes:
+    """Six of Statistics Canada's daily exchange-rate series (33-10-0036-01) from 2017-01 to 2020-03, one of them an index (so the
+    table comes in two units): a long statistical table of daily figures with a value only on days the Bank published."""
+    import gzip
+    with gzip.open(os.path.join(HERE, "fixtures", "structure", "regress", "s10_statcan_daily_fx_subset.csv.gz"), "rb") as fh:
+        return fh.read()
+
+
+def test_series_lines_follow_the_table_s_own_period_unit_and_gaps():
+    """A table in several units draws its lead alone (their amounts share no axis); in one unit it draws the lead and the biggest
+    movers; a daily table is drawn as the average of each month's figures (recomputed here); a table whose series have fewer than
+    12 periods draws none."""
+    import pandas as pd
+    NV = _nv()
+    raw = _fx_daily_bytes()
+    mixed = NB.run(raw, "fx.csv", "", {}, "2026-09-29")
+    assert mixed["ok"] and mixed["input"]["layout"]["layout"] == "long statistical table", mixed.get("error")
+    rec = _rec(mixed, "series_lines")
+    lead = mixed["input"]["layout"]["lead"]
+    assert [s["label"] for s in rec["data"]["series"]] == [lead] and "different units" in rec["subtitle"], rec["subtitle"]
+    df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    df = df[df["Type of currency"] == lead]
+    v = pd.to_numeric(df["VALUE"].where(df["VALUE"] != ""), errors="coerce")
+    v = v.mask(v == 0)                       # the zeros of closed days read as empty (nl_browser._reshape_long_panel)
+    mon = df["REF_DATE"].str[:7]
+    avg = v.groupby(mon).mean().dropna()
+    x = rec["data"]["x"]
+    got = {_month_add(x["first"], (r["at"] + k) * x["step"]): val for r in rec["data"]["series"][0]["runs"] for k, val in enumerate(r["values"])}
+    assert set(got) == set(avg.index) and all(abs(got[m] - avg[m]) < 1e-6 for m in got), (len(got), len(avg))
+    assert rec["table"]["cols"][0] == "Month (average of its days)" and "averaged into its month" in rec["summary"]
+    # the same table in one unit: the lead and the series that changed most
+    one = NB.run(raw.replace(b"Index, 1992=100", b"Dollars"), "fx.csv", "", {}, "2026-09-29")
+    assert one["ok"], one.get("error")
+    rec1 = _rec(one, "series_lines")
+    names = [s["label"] for s in rec1["data"]["series"]]
+    assert len(names) == 5 and names[0] == lead and "the lead series and the 4 that changed most" in rec1["subtitle"], (names, rec1["subtitle"])
+    # a monthly table with one series in another unit is drawn as its lead alone
+    m = pd.read_csv(io.BytesIO(_statcan_bytes()), dtype=str, keep_default_na=False)
+    m.loc[m["Central government debt"] == "Treasury bills", "UOM"] = "Euros"
+    mm = NB.run(m.to_csv(index=False).encode(), "m.csv", "", {}, "2026-09-30")
+    assert mm["ok"] and [s["label"] for s in _rec(mm, "series_lines")["data"]["series"]] == [mm["input"]["layout"]["file_order"][0]]
+    # a table with under 12 published periods per series draws none, and says why
+    short = pd.read_csv(io.BytesIO(_statcan_bytes()), dtype=str, keep_default_na=False)
+    short = short[short["REF_DATE"] <= "2010-03"]
+    sh = NB.run(short.to_csv(index=False).encode(), "s.csv", "", {}, "2026-09-30")
+    assert not [c for c in sh["viz"]["charts"] if c["chart"] == "series_lines"], [c["chart"] for c in sh["viz"]["charts"]]
+    assert NV.REGISTRY["series_lines"]["kind"] == "timeseries"
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

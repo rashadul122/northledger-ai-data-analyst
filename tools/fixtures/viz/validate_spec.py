@@ -19,10 +19,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MENU_NAMES = ["contribution_waterfall", "pvm_waterfall", "calendar_heatmap", "change_heatmap", "crosstab_heatmap",
-              "theme_rating_heatmap", "correlation_heatmap", "group_ranges", "pareto", "slope"]
-DRAW = ["waterfall", "heatmap", "dot_range", "pareto", "slope", "table"]
+              "theme_rating_heatmap", "correlation_heatmap", "group_ranges", "pareto", "slope", "series_lines"]
+DRAW = ["waterfall", "heatmap", "dot_range", "pareto", "slope", "timeseries", "table"]
 CAPS = {"VIZ_MAX": 8, "VIZ_AUTO": 4, "HEAT_MAX": 3, "SMALL_CELL": 5, "AI_CHARTS_MAX": 10, "CHART_BYTES": 6000,
-        "HEATMAP_BYTES": 12000}
+        "HEATMAP_BYTES": 12000, "LINE_BYTES": 16000}
 # the breaks only the schema catches, so the jsonschema cross-check must catch them too (a byte cap is not a schema rule)
 SCHEMA_BREAKS = ("an unknown draw kind", "a missing summary", "an unknown key")
 
@@ -164,7 +164,7 @@ def check_record(r, spec):
         if len(row) != len(r["table"]["cols"]):
             E.append("table row %d has %d cells for %d columns" % (i, len(row), len(r["table"]["cols"])))
     # the byte cap by kind: HEATMAP_BYTES for a heatmap, CHART_BYTES for every other kind (the owner's decision)
-    cap = "HEATMAP_BYTES" if kind == "heatmap" else "CHART_BYTES"
+    cap = "HEATMAP_BYTES" if kind == "heatmap" else "LINE_BYTES" if kind == "timeseries" else "CHART_BYTES"
     size = js_bytes(r)
     if size > caps[cap]:
         E.append("%d bytes, over %s" % (size, cap))
@@ -260,6 +260,23 @@ def check_record(r, spec):
             E.append("pareto: k80.k lies beyond the bars only when the bars stay under 80%")
     elif kind == "slope" and not d["rows"]:
         E.append("slope: no rows")
+    elif kind == "timeseries":
+        x = d["x"]
+        for s_ in d["series"]:
+            end, pts = -1, 0
+            for run in s_["runs"]:
+                if run["at"] <= end:
+                    E.append("timeseries %r: runs overlap or touch (a gap is at least one period)" % s_["label"])
+                if run["at"] + len(run["values"]) > x["n"]:
+                    E.append("timeseries %r: a run ends after the axis" % s_["label"])
+                end = run["at"] + len(run["values"])
+                pts += len(run["values"])
+            if pts < 2:
+                E.append("timeseries %r: fewer than 2 points" % s_["label"])
+        if len(r["table"]["cols"]) != 1 + len(d["series"]) or not r["table"]["rows"] or r["table"]["rows"][-1][0] != "Change, first to last":
+            E.append("timeseries: the table has a period column, a column a series and a final change row")
+        if [row[j + 1] for row in r["table"]["rows"][-1:] for j in range(len(d["series"]))] != [s_["change_text"] or "\u2014" for s_ in d["series"]]:
+            E.append("timeseries: the final table row is each series' change_text")
     return E
 
 
@@ -307,6 +324,9 @@ def check_spec(spec):
                                                                          p["pareto"]["cumulative"], p["dot_range"]["dot"]]
         if min(contrast(c, p["frame"]["surface"]) for c in marks) < 3:
             E.append("colors.%s: a mark under 3:1 on the surface" % mode)
+        ts = p["timeseries"]["lines"]
+        if len(ts) != 5 or min(contrast(c, p["frame"]["surface"]) for c in ts) < 3:
+            E.append("colors.%s: a timeseries line under 3:1 on the surface" % mode)
     light = spec["colors"]["light"]
     design = {"sequential": ["#cfe9e4", "#add9d2", "#87c7bc"], "falls": ["#d9e7f8", "#b7d1f1", "#94bcea"],
               "rises": ["#f1e2d1", "#e5c8a8", "#d9ae80"]}

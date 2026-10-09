@@ -156,12 +156,14 @@ TOKENS = {
               "hairline": "#e2dfd6", "accent": "#0b7366", "accent-ink": "#0a5c52", "on-accent": "#ffffff",
               "grid": "#e8e5dd", "axis": "#b9b5aa", "series": "#24425c", "series-2": "#0b7366", "series-3": "#945400",
               "band-green": "#0f8f7a", "band-yellow": "#e0a000", "band-red": "#d4502c",
-              "div-neg": "#2a78d6", "div-pos": "#b35c00", "focus": "#1f5fbf", "fan": "rgba(11,115,102,0.16)"},
+              "div-neg": "#2a78d6", "div-pos": "#b35c00", "focus": "#1f5fbf", "fan": "rgba(11,115,102,0.16)",
+              "ts-1": "#2a78d6", "ts-2": "#d45a26", "ts-3": "#12875c", "ts-4": "#9a6a00", "ts-5": "#c8457f"},
     "dark": {"bg": "#0c141c", "surface": "#121d28", "ink": "#e9eef3", "body": "#c3ced8", "muted": "#9aabb8",
              "hairline": "#26364a", "accent": "#2bb5a3", "accent-ink": "#5fd6c5", "on-accent": "#062521",
              "grid": "#1f2d3b", "axis": "#3b4d60", "series": "#b9cce0", "series-2": "#2bb5a3", "series-3": "#e3a33b",
              "band-green": "#199e86", "band-yellow": "#bc8c00", "band-red": "#e2507a",
-             "div-neg": "#3987e5", "div-pos": "#c8741c", "focus": "#8ab8ff", "fan": "rgba(43,181,163,0.20)"},
+             "div-neg": "#3987e5", "div-pos": "#c8741c", "focus": "#8ab8ff", "fan": "rgba(43,181,163,0.20)",
+             "ts-1": "#3987e5", "ts-2": "#d95926", "ts-3": "#199e70", "ts-4": "#c98500", "ts-5": "#d55181"},
 }
 TINTS = {"light": (0.20, 0.34, 0.50), "dark": (0.24, 0.36, 0.48)}
 

@@ -39,6 +39,9 @@ SMALL_CELL = 5              # no printed figure rests on fewer rows
 AI_CHARTS_MAX = 10          # charts in results_for_ai (the analyses' and these together)
 CHART_BYTES = 6000          # one record as JSON.stringify writes it, in UTF-8 bytes
 HEATMAP_BYTES = 12000       # ... a heatmap's (the owner's decision on the spec's byte-cap conflict, 30 Sep 2026)
+LINE_BYTES = 16000          # ... a timeseries': up to 6 lines of up to 240 periods (impact6, 9 Oct 2026)
+LINE_SERIES_MAX = 6         # lines in a timeseries (the engine draws 5: the lead and the 4 that changed most)
+LINE_SLOTS_MAX = 240        # periods a timeseries spans (the latest, when the file spans more)
 CHART_LIMITS_MAX = 16
 CHART_LIMIT_WHY_MAX = 160
 PLAN_CHARTS_READ = 12
@@ -144,6 +147,10 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "kind": "slope", "section": "scenarios", "args": [("segment", False), ("total", True)],
         "args_text": "[category, total?]", "what": "each segment's prior and latest total, joined by a line",
         "limit_needs": "needs a total over two 12-month windows and a category of 2 to 12 levels"},
+    "series_lines": {
+        "kind": "timeseries", "section": "headline", "args": [], "args_text": "[]",
+        "what": "a published table's series as lines over time (the lead and the biggest movers), gaps left as gaps",
+        "limit_needs": "needs a long statistical table: one published figure a period for each of its series"},
 }
 MENU = tuple(REGISTRY)
 
@@ -161,6 +168,7 @@ RANK_BASE = {
     "group_ranges": (4, 5, 4, 8, 8, 6, 6, 5, 3, 5),
     "pareto": (3, 6, 7, 3, 5, 4, 2, 5, 7, 5),
     "slope": (6, 4, 6, 2, 2, 1, 3, 6, 5, 4),
+    "series_lines": (9, 4, 3, 1, 1, 1, 6, 3, 3, 3),
 }
 RANK_ANALYSIS = {"compare": "group_ranges", "themes": "theme_rating_heatmap", "relationship": "correlation_heatmap",
                  "rank": "pareto", "share": "pareto", "trend": "calendar_heatmap", "extremes": "calendar_heatmap"}
@@ -175,6 +183,7 @@ GOAL_KEYWORDS = {
     "group_ranges": ("compare", "best", "worst", "differ", "group"),
     "pareto": ("top", "concentrat", "80/20", "pareto", "biggest", "largest"),
     "slope": ("before", "after", "shift", "gap", "overtook"),
+    "series_lines": ("over time", "trend", "history", "since", "evolve", "long run", "lines", "path"),
 }
 
 # the reasons a chart is refused (spec.json plan_directive.refusal_reasons; the limit's why and a few specific
@@ -231,7 +240,7 @@ def record_bytes(rec: Dict[str, Any]) -> int:
 
 
 def bytes_cap(kind: str) -> int:
-    return HEATMAP_BYTES if kind == "heatmap" else CHART_BYTES
+    return HEATMAP_BYTES if kind == "heatmap" else LINE_BYTES if kind == "timeseries" else CHART_BYTES
 
 
 def _count(n: Any) -> str:
@@ -881,6 +890,7 @@ def limits(facts: List[Dict[str, Any]], priv: Dict[str, Any], time: Optional[Dic
     if seg_ok:
         sl_has = seg_has.split(", ", 1)[1] if ", " in seg_has else seg_has
     add("slope", seg_ok, sl_has)
+    add("series_lines", False, "the file is not a long table of series")
     return out[:CHART_LIMITS_MAX]
 
 
@@ -2225,7 +2235,8 @@ def _b_pareto(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
 BUILD: Dict[str, Callable[[Ctx, Optional[List[str]]], Dict[str, Any]]] = {
     "contribution_waterfall": _b_contribution, "pvm_waterfall": _b_pvm, "calendar_heatmap": _b_calendar,
     "change_heatmap": _b_change, "crosstab_heatmap": _b_crosstab, "theme_rating_heatmap": _b_theme,
-    "correlation_heatmap": _b_correlation, "group_ranges": _b_group_ranges, "pareto": _b_pareto, "slope": _b_slope}
+    "correlation_heatmap": _b_correlation, "group_ranges": _b_group_ranges, "pareto": _b_pareto, "slope": _b_slope,
+    "series_lines": lambda ctx, _lands: _b_series_lines(ctx, (ctx.rep.get("input") or {}).get("layout") or {})}
 
 
 # ----------------------------------------------------------------------------- the plan's charts[]
@@ -2902,6 +2913,120 @@ def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "lines": lines, "table": table}
 
 
+def _line_selection(pf: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The lines of the chart: the lead, then the biggest movers (series_facts' ranking), at most 5. A table in several units
+    draws its lead alone: amounts in different units share no axis."""
+    k = 1 if pf["mixed_units"] else min(5, len(pf["facts"]))
+    return [pf["facts"][0]] + [f for f in pf["movers"] if f["published"] >= 12][:max(0, k - 1)]
+
+
+def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
+    pf = series_facts(ctx, lay) if lay.get("layout") == "long statistical table" else None
+    if pf is None:
+        raise Refused("the table is not a long statistical table with dates, so it has no series to draw over time")
+    axis, grain = pf["axis"], pf["grain"]
+    pick = _line_selection(pf)
+    if pick[0]["published"] < 12:
+        raise Refused("needs a series with 12 or more published periods")
+    ts = axis["ts"]
+    step = 1 if grain == "day" else max(1, int(axis["step"]))
+    rows = [(t.year * 12 + t.month - 1, i) for i, t in enumerate(ts) if t == t]
+    lo = min(m for m, _i in rows)
+    if any((m - lo) % step for m, _i in rows):
+        raise Refused("the dates do not fall on one regular step")
+    n_all = (max(m for m, _i in rows) - lo) // step + 1
+    skip = max(0, n_all - LINE_SLOTS_MAX)
+    n = n_all - skip
+    if n < 2:
+        raise Refused("needs two or more periods")
+    first_month = lo + skip * step
+
+    def month_text(slot: int) -> str:
+        return _idx_month(first_month + slot * step)
+    drawn: List[Dict[str, Any]] = []
+    for f in pick:
+        v = ctx.nums(f["column"])
+        cell: Dict[int, List[float]] = {}
+        for m, i in rows:
+            x = v.iloc[i]
+            slot = (m - lo) // step - skip
+            if x == x and slot >= 0:
+                cell.setdefault(slot, []).append(float(x))
+        pts = {sl: math.fsum(xs) / len(xs) for sl, xs in cell.items()}
+        if len(pts) < 2:
+            continue
+        runs: List[Dict[str, Any]] = []
+        for sl in sorted(pts):
+            if runs and sl == runs[-1]["at"] + len(runs[-1]["values"]):
+                runs[-1]["values"].append(_r6(pts[sl]))
+            else:
+                runs.append({"at": sl, "values": [_r6(pts[sl])]})
+        a, b = pts[min(pts)], pts[max(pts)]
+        dp = min(6, f["decimals"] + (1 if grain == "day" else 0))
+        drawn.append({"fact": f, "pts": pts, "dp": dp, "line": {
+            "label": f["label"], "runs": runs, "first_text": _figure(a, dp), "last_text": _figure(b, dp),
+            "change_text": _pct_text(100.0 * (b / a - 1.0)) if a > 0 and b >= 0 else ""}})
+    if not drawn:
+        raise Refused("no series has two published periods")
+    labels = _unique_labels([d["line"]["label"] for d in drawn])
+    for d, lab in zip(drawn, labels):
+        d["line"]["label"] = lab
+    unit = pf["unit"]
+    noun = {"month": "Month", "quarter": "Quarter", "year": "Year"}.get(grain, "Month")
+
+    def assemble(use: List[Dict[str, Any]]) -> Dict[str, Any]:
+        # the table: each series' figure in the first period drawn, in the last period of each calendar year, and in the last
+        # period; a period a series has no figure for reads "—"; a final row with each line's change
+        slots = sorted({sl for d in use for sl in d["pts"]})
+        picks = {slots[0], slots[-1]}
+        by_year: Dict[str, int] = {}
+        for sl in slots:
+            by_year[month_text(sl)[:4]] = sl
+        picks |= set(by_year.values())
+        rows_sl = sorted(picks)
+        if len(rows_sl) > TABLE_ROWS_MAX - 1:
+            keep = {rows_sl[0], rows_sl[-1]} | {rows_sl[int(round(k * (len(rows_sl) - 1) / (TABLE_ROWS_MAX - 2)))] for k in range(TABLE_ROWS_MAX - 1)}
+            rows_sl = sorted(keep)[:TABLE_ROWS_MAX - 1]
+        who = "Month (average of its days)" if grain == "day" else noun
+        tcols = [who] + [d["line"]["label"] for d in use]
+        trows = [[month_text(sl)] + [(_figure(d["pts"][sl], d["dp"]) if sl in d["pts"] else "—") for d in use] for sl in rows_sl]
+        trows.append(["Change, first to last"] + [d["line"]["change_text"] or "—" for d in use])
+        lead = use[0]
+        l0, l1 = month_text(min(lead["pts"])), month_text(max(lead["pts"]))
+        more = [d["line"]["label"] for d in use[1:]]
+        what = "the lead series and the %d that changed most" % len(more) if more else "the lead series"
+        if pf["mixed_units"] and len(pf["facts"]) > 1:
+            what += " (the series come in different units, so only the lead is drawn)"
+        title = "Each series over the whole period" if more else "%s over the whole period" % lead["line"]["label"]
+        subtitle = "%s to %s: %s, of %s series; periods with no published figure are gaps%s" % (
+            month_text(0), month_text(n - 1), what, _count(len(pf["facts"])),
+            ("; the latest %s of %s periods" % (_count(n), _count(n_all))) if skip else "")
+        summary = ("%s went from %s in %s to %s in %s%s. %s Each point is a published figure%s, and where the publisher skipped a period the "
+                   "line stops and starts again." % (
+                       lead["line"]["label"], lead["line"]["first_text"], l0, lead["line"]["last_text"], l1,
+                       (" (%s)" % lead["line"]["change_text"]) if lead["line"]["change_text"] else "",
+                       ("The lines drawn with it: %s." % ", ".join(more)) if more else "",
+                       " (a day's figures averaged into its month)" if grain == "day" else ""))
+        data = {"x": {"first": month_text(0), "n": n, "step": step, "label": noun}, "series": [d["line"] for d in use],
+                "y_label": _cut(unit, 40)}
+        return _record(
+            "series_lines", title, subtitle, REGISTRY["series_lines"]["section"],
+            "The table's published series over its whole period; no claim is graded", [], None, None,
+            {"label": lead["line"]["label"][:80], "unit": _cut(unit, 20), "kind": "amount"}, data,
+            {"cols": tcols, "rows": trows}, summary, (0, ""),
+            "The table's published series, one figure a period, as the engine read them",
+            {"columns": [d["fact"]["label"] for d in use], "rows": len(ctx.frame), "months": [month_text(0), month_text(n - 1)],
+             "op": "each published figure in time order; a period with none is a gap"})
+    use = drawn
+    while True:
+        rec = assemble(use)
+        if record_bytes(rec) <= LINE_BYTES:
+            return rec
+        if len(use) == 1:
+            raise Refused(R_SIZE)
+        use = use[:-1]
+
+
 def _period_into(rep: Dict[str, Any], ctx: Ctx) -> None:
     """rep["period"] for a long statistical table (the report stands without it)."""
     import os
@@ -2924,8 +3049,8 @@ def _series_panel(rep: Dict[str, Any], ctx: Ctx, viz: Dict[str, Any], heat: int)
     if lay.get("layout") != "long statistical table" or int(lay.get("kept") or 0) < 2 or ctx.month is None:
         return heat
     made = []
-    for chart, fn in (("contribution_waterfall", _b_series_bridge), ("change_heatmap", _b_series_change_heatmap),
-                      ("slope", _b_series_slope)):
+    for chart, fn in (("contribution_waterfall", _b_series_bridge), ("series_lines", _b_series_lines),
+                      ("change_heatmap", _b_series_change_heatmap), ("slope", _b_series_slope)):
         try:
             made.append(fn(ctx, lay))
         except Refused as exc:
@@ -3551,7 +3676,12 @@ def run_limits(ctx: Ctx) -> Dict[str, Dict[str, Any]]:
     detail: Dict[str, Any] = {}
     lst = limits(facts, priv, time, stats, rows, ctx.plan_by, ctx.additive, detail)
     ctx.lim_detail = detail
-    return {x["chart"]: x for x in lst}
+    out = {x["chart"]: x for x in lst}
+    lay = (ctx.rep.get("input") or {}).get("layout") or {}
+    if lay.get("layout") == "long statistical table" and ctx.date is not None and "series_lines" in out:
+        out["series_lines"] = {"chart": "series_lines", "ok": True, "why": NB._cut160(
+            REGISTRY["series_lines"]["limit_needs"] + "; the file has %s series" % _count(int(lay.get("kept") or 0)))}
+    return out
 
 
 def v2_records(viz: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -3637,5 +3767,5 @@ def for_sending(rec: Dict[str, Any], scrub: Any = None) -> Optional[Dict[str, An
 
 def is_record(c: Any) -> bool:
     """A viz record in a charts list (results_for_ai): its kind is a draw kind and it names its menu chart."""
-    return isinstance(c, dict) and c.get("kind") in ("waterfall", "heatmap", "dot_range", "pareto", "slope", "table") \
+    return isinstance(c, dict) and c.get("kind") in ("waterfall", "heatmap", "dot_range", "pareto", "slope", "timeseries", "table") \
         and isinstance(c.get("chart"), str) and isinstance(c.get("data"), dict)

@@ -903,7 +903,7 @@
   };
 
   /* ---- the chart registry's records (tools/fixtures/viz/spec.json, version 2026-09-30.1) ----
-     Five draw kinds (waterfall, heatmap, dot_range, pareto, slope), each drawn from its record alone in the spec's
+     Six draw kinds (waterfall, heatmap, dot_range, pareto, slope, timeseries), each drawn from its record alone in the spec's
      light colours; 'table', a kind this writer does not know, or data a drawer cannot read, drawn as the record's
      table (never an empty box). The engine wrote every printed string: a drawer prints them as they are (a label that
      does not fit is cut at a character with an ellipsis, and the figure's table view shows it whole) and formats only
@@ -914,7 +914,7 @@
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
     total: '#24425c', rise: '#0b7366', fall: '#945400', conn: '#b9b5aa', dot: '#24425c', median: '#945400', bar: '#24425c',
     other: '#56646f', cum: '#945400', ref: '#16232e', k80: '#0b7366', flat: '#56646f', ink: '#16232e', body: '#33424e',
-    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa' };
+    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa', ts: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'] };
   var LEGACY = { line: 1, bars: 1, scatter: 1 };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
@@ -1316,6 +1316,89 @@
           if (Math.abs(lb[i] - yb) > 1) self.line(xb + 3, yb, xb + 7, lb[i], VC.axis, 0.5);
           self.text(o.bt[i], xb + 8, lb[i] - 2.5, 7, 'R', VC.ink);
           self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', dir(q));
+        });
+      }
+    },
+    // up to 6 lines over one time axis (slot i of x.n at i / (n - 1) of the plot's width; slot k is x.first + k x.step
+    // months), drawn run by run so a period with no published figure is a gap (shaded when no line has a figure there);
+    // each line has its own dash and end marker, and its last figure and label sit at its right end, spread 10 pt apart
+    timeseries: {
+      ok: function (d) {
+        var x = d.x;
+        return isObj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= 240 && fin(x.step) && x.step >= 1 && isStr(d.y_label) && Array.isArray(d.series) &&
+          d.series.length >= 1 && d.series.length <= 6 && d.series.every(function (s) {
+            return isObj(s) && isStr(s.label) && isStr(s.first_text) && isStr(s.last_text) && isStr(s.change_text) && Array.isArray(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
+              return isObj(r) && fin(r.at) && r.at >= 0 && Array.isArray(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
+            });
+          });
+      },
+      lay: function (r, CW) {
+        var d = r.data, S = d.series, lo = Infinity, hi = -Infinity, o = {};
+        S.forEach(function (s) { s.runs.forEach(function (q) { q.values.forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }); }); });
+        var sp = lineSpan(lo, hi);
+        o.nt = axis(sp[0], sp[1], 4);
+        o.lt = S.map(function (s) { return enc(s.last_text); });
+        o.names = [];
+        var lab = Math.min(CW * 0.34, Math.max.apply(null, S.map(function (s, k) { return tw(o.lt[k], 7, 'B') + 6 + Math.min(tw(enc(s.label), 7, 'R'), 110); })) + 12);
+        o.RW = Math.max(60, lab);
+        o.names = S.map(function (s, k) { return fitB(enc(s.label), 7, 'R', o.RW - tw(o.lt[k], 7, 'B') - 10); });
+        o.x0 = o.nt.max + 8;
+        o.h = 150;
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), d = r.data, S = d.series, n = d.x.n, self = this, L = this.L, R = L + this.CW, nt = o.nt, i, k, q;
+        var x0 = L + o.x0, x1 = R - o.RW, pt = top - 4, pb = bottom + 22, PW = x1 - x0;
+        var X = function (j) { return x0 + (n > 1 ? j / (n - 1) : 0) * PW; }, Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); };
+        var cov = []; for (i = 0; i < n; i++) cov.push(0);
+        S.forEach(function (s) { s.runs.forEach(function (rn) { for (q = 0; q < rn.values.length; q++) cov[rn.at + q] = 1; }); });
+        var first = cov.indexOf(1), lastc = cov.lastIndexOf(1), g, e;
+        for (g = first; g >= 0 && g <= lastc; g++) {
+          if (cov[g]) continue;
+          e = g; while (e <= lastc && !cov[e]) e++;
+          this.rect(X(g - 1), pb, Math.max(0.6, X(e) - X(g - 1)), pt - pb, VC.supFill);
+          g = e;
+        }
+        nt.ticks.forEach(function (t, j) { self.line(x0, Y(t), x1, Y(t), VC.grid, 0.5); self.text(nt.lab[j], x0 - 5 - nt.w[j], Y(t) - 2.5, 7, 'R', VC.muted); });
+        this.line(x0, pb, x1, pb, VC.axis, 0.7);
+        var m0 = Number(d.x.first.slice(0, 4)) * 12 + Number(d.x.first.slice(5, 7)) - 1, st = d.x.step, lastm = m0 + (n - 1) * st, ticks = [], yy, j;
+        var ym = function (mi) { var y = Math.floor(mi / 12), m = mi % 12 + 1; return y + '-' + (m < 10 ? '0' : '') + m; };
+        if (lastm - m0 < 24) [0, Math.floor((n - 1) / 2), n - 1].forEach(function (v, p, a) { if (p === 0 || v !== a[p - 1]) ticks.push({ i: v, t: ym(m0 + v * st) }); });
+        else {
+          var stride = Math.max(1, Math.ceil((tw('0000', 7, 'R') + 8) / (PW / ((lastm - m0) / 12))));
+          yy = 0;
+          for (j = Math.ceil(m0 / 12) * 12; j <= lastm; j += 12, yy++) if (yy % stride === 0) ticks.push({ i: (j - m0) / st, t: String(j / 12) });
+        }
+        ticks.forEach(function (t) {
+          var b = enc(t.t), w = tw(b, 7, 'R'), cx = X(t.i);
+          self.line(cx, pb, cx, pb - 3, VC.axis, 0.6);
+          self.text(b, Math.min(R - w, Math.max(L, cx - w / 2)), pb - 11, 7, 'R', VC.muted);
+        });
+        var DASH = ['', '4 2.5', '1.2 2', '5 1.5 1.2 1.5', '2.5 1.5'], ends = [];
+        S.forEach(function (s, kk) {
+          var col = VC.ts[kk % VC.ts.length], ex = 0, ey = 0;
+          s.runs.forEach(function (rn) {
+            var pts = rn.values.map(function (v, p) { return [X(rn.at + p), Y(v)]; });
+            if (pts.length === 1) self.circle(pts[0][0], pts[0][1], 1.3, col);
+            else self.op('q ' + rgb(col) + ' RG 1.3 w 1 J 1 j ' + (DASH[kk] ? '[' + DASH[kk] + '] 0 d ' : '') + pts.map(function (p2, p) { return f2(p2[0]) + ' ' + f2(p2[1]) + (p ? ' l' : ' m'); }).join(' ') + ' S Q');
+            ex = pts[pts.length - 1][0]; ey = pts[pts.length - 1][1];
+          });
+          var rr = 2.6;
+          if (kk === 1) self.rect(ex - rr, ey - rr, 2 * rr, 2 * rr, col);
+          else if (kk === 2) self.op('q ' + rgb(col) + ' rg ' + [[ex, ey + rr + 0.8], [ex + rr + 0.8, ey], [ex, ey - rr - 0.8], [ex - rr - 0.8, ey]].map(function (p, p2) { return f2(p[0]) + ' ' + f2(p[1]) + (p2 ? ' l' : ' m'); }).join(' ') + ' h f Q');
+          else if (kk === 3) self.op('q ' + rgb(col) + ' rg ' + [[ex, ey + rr + 0.8], [ex + rr + 0.8, ey - rr], [ex - rr - 0.8, ey - rr]].map(function (p, p2) { return f2(p[0]) + ' ' + f2(p[1]) + (p2 ? ' l' : ' m'); }).join(' ') + ' h f Q');
+          else if (kk === 4) { self.line(ex - rr, ey - rr, ex + rr, ey + rr, col, 1.2); self.line(ex + rr, ey - rr, ex - rr, ey + rr, col, 1.2); }
+          else self.circle(ex, ey, rr, col);
+          ends.push({ i: kk, y: ey, ly: ey, ex: ex });
+        });
+        var a = ends.slice().sort(function (p, q2) { return (q2.y - p.y) || (p.i - q2.i); });
+        for (k = 1; k < a.length; k++) if (a[k].ly > a[k - 1].ly - 10) a[k].ly = a[k - 1].ly - 10;
+        if (a.length && a[a.length - 1].ly < pb + 3) { a[a.length - 1].ly = pb + 3; for (k = a.length - 2; k >= 0; k--) if (a[k].ly < a[k + 1].ly + 10) a[k].ly = a[k + 1].ly + 10; }
+        a.forEach(function (p) {
+          var kk = p.i, w = tw(o.lt[kk], 7, 'B');
+          if (Math.abs(p.ly - p.y) > 1) self.line(p.ex + 3, p.y, x1 + 5, p.ly, VC.axis, 0.5);
+          self.text(o.lt[kk], x1 + 7, p.ly - 2.5, 7, 'B', VC.ink);
+          if (o.names[kk]) self.text(o.names[kk], x1 + 7 + w + 4, p.ly - 2.5, 7, 'R', VC.body);
         });
       }
     }

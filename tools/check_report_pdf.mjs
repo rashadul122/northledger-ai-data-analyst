@@ -776,7 +776,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   const vizInp = (name, res, o) => ({ report: VP[name].report, sources: VP[name].sources, model: VP[name].model, repaired: VP[name].repaired,
     removed_figures: VP[name].removed_figures, results: res, kept: [], name: NAME, showName: false, date, goal: res && res.goal, ...(o || {}) });
   const recOf = (c) => (c && c.type === 'viz' && c.data ? c.data : c);
-  const DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope'];
+  const DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'timeseries'];
   const vizRun = (label, input, paper, charts, also, extra) => {   // also: records drawn without a marker (after the placed ones); extra: more options for checkPdf
     const m = W.model(input), trace = [];
     const u8 = W.build(m, { paper, trace });
@@ -847,6 +847,12 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     const fa = p1.indexOf('figure 1. where the change in revenue came from, by region'), ta = p1.indexOf('where the change in total revenue came from');
     expect('viz auto, ' + paper, /where the change sits/.test(p1) && fa >= 0 && ta > fa && auto.trace.length === 1 && auto.trace[0].kind === 'waterfall',
       'Part 1 does not draw the unplaced contribution waterfall above the engine\'s table');
+    // the line chart (impact6): a long table's lines with their gaps, a daily table in two units (its lead alone) and in one (five lines)
+    const TSR = J('timeseries-records.json').records;
+    const lines = vizRun('viz: line charts', vizInp('ten', vizRes(TSR)), paper, TSR);
+    vizAll.push(lines);
+    expect('viz lines, ' + paper, lines.trace.length === 3 && lines.trace.every((t) => t.kind === 'timeseries' && !t.as && t.layout === 'wide'), 'the three line charts are not all drawn as lines: ' + JSON.stringify(lines.trace.map((t) => [t.kind, t.as, t.layout])));
+    expect('viz lines, ' + paper, TSR.every((r) => lines.T.indexOf(plainText(r.title)) >= 0 && r.data.series.every((s) => lines.T.indexOf(plainText(s.last_text)) >= 0)), 'a line chart\'s title or a last figure is not printed');
     // ... also from results.viz (the engine's rep.viz) when the charts do not carry it; and never when the AI placed one
     const fromViz = W.model(vizInp('auto', Object.assign({}, VR.results, { charts: [], viz: { charts: VR.auto.charts } })));
     const sits = (mm) => { const bs = mm.parts[0].blocks, i = bs.findIndex((b) => b.type === 'h2' && b.id === 'p1-sits'); return i < 0 ? [] : bs.slice(i + 1).filter((b) => b.type === 'chart'); };
@@ -859,7 +865,7 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
   }
   // every kind drawn, in each of its layouts; heatmap cells with their text and with the glyph alone
   const layouts = new Set(vizAll.flatMap((x) => x.trace.filter((t) => !t.as).map((t) => t.kind + ' ' + t.layout)));
-  const want = ['waterfall vertical', 'waterfall horizontal', 'heatmap grid', 'heatmap transposed', 'dot_range wide', 'pareto vertical', 'pareto horizontal', 'slope wide'];
+  const want = ['waterfall vertical', 'waterfall horizontal', 'heatmap grid', 'heatmap transposed', 'dot_range wide', 'pareto vertical', 'pareto horizontal', 'timeseries wide', 'slope wide'];
   const missing = want.filter((k) => !layouts.has(k));
   console.log((missing.length ? 'PDF FAIL ' : 'PDF PASS ') + 'every draw kind in each of its layouts (' + want.join(', ') + ')' + (missing.length ? ': missing ' + missing.join(', ') : ''));
   ok = !missing.length && ok;

@@ -470,6 +470,24 @@
       return '<li data-move="' + esc(g.move) + '">' + lead + items + '<p class="nl2-settle-t">' + esc(g.settle) + '</p></li>';
     }).join('');
   }
+  // A long statistical table's whole period (rep.period, engine/nl_viz.py period_block): where each series began and how far it
+  // has come, as the engine wrote it (nothing is computed here), with the months the publisher skipped named, and no grade
+  function periodHtml(r, inSection) {
+    var P = r && r.period, T = P && P.table;
+    if (!P || !T || !Array.isArray(T.cols) || !Array.isArray(T.rows) || !T.rows.length) return '';
+    var sk = P.skipped, runs = sk && Array.isArray(sk.ranges) ? sk.ranges.map(function (x) { return x[0] === x[1] ? x[0] : x[0] + ' to ' + x[1]; }).join(', ') : '';
+    var lead = (P.lines && P.lines[0]) || '';
+    return '<article class="tr-card nl2-period" data-period="1">' + (inSection ? '<h4>Over the whole file</h4>' : '<p class="kicker">Over the whole file</p>') +
+      (lead ? '<p class="nl2-period-lead">' + esc(lead) + '</p>' : '') +
+      '<div class="tscroll" tabindex="0" role="region" aria-label="Each series over the whole file"><table class="dt nl2-ptab"><caption class="sr">Each series: its first and its latest published figure, and the change between them</caption><thead><tr>' +
+      T.cols.map(function (c, i) { return '<th scope="col"' + (i ? ' class="num"' : '') + '>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      T.rows.map(function (row) {
+        return '<tr>' + row.map(function (c, i) { return i === 0 ? '<th scope="row" dir="auto">' + esc(c) + '</th>' : '<td class="num" dir="auto">' + esc(c) + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<p class="note nl2-period-note">' + esc(P.basis || '') + (P.unit ? ' Figures are in ' + esc(P.unit) + '.' : '') +
+      ' Average a year is the change divided by the years between the two figures; the compound rate is the constant yearly rate that gives the same change.</p>' +
+      (runs ? '<details class="nl2-period-gaps"><summary>' + esc(cap1((sk.text || '').replace(/[.\s]+$/, '')) + (sk.pattern ? ' (mostly ' + sk.pattern + ')' : '')) + '</summary><p class="note">The months with no published figure, left as gaps and never filled in: ' + esc(runs) + '.</p></details>' : '') + '</article>';
+  }
   function manager(r, CH, parts) {
     var K = CH.kpi, B = CH.benchmark, drv = (r.charts_suppressed || []).filter(function (s) { return s.rule === '#2b'; })[0];
     var figs = r.charts.filter(function (c) { return c.view === 'manager' && c.default_visible && c.type !== 'viz' && ['kpi', 'findings_table', 'benchmark'].indexOf(c.id) < 0; });
@@ -499,6 +517,7 @@
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
     // the optional AI summaries (50-try.js) sit right under the bottom line, where the visitor reads and asks
     h += (parts && parts.ai) || '';
+    h += periodHtml(r);
     if (K) h += '<div class="nl2-kpis" data-chart="kpi" data-findings="' + esc(K.finding_ids.join(' ')) + '" role="list" aria-label="' + esc(K.title) + '">' + tiles(r, K).replace(/<div class="nl2-tile"/g, '<div role="listitem" class="nl2-tile"') + '</div>';
     h += '<article class="tr-card nl2-trustcard"><p class="nl2-trust-line"><b>Can I trust it?</b> ' + esc(trustLine(r)) + '</p>' +
       '<details class="nl2-trust-more"><summary>How much to trust it, layer by layer</summary><ul class="nl2-trust">' + trustLayers(r).map(function (x) { return '<li data-layer="' + x[0] + '">' + x[1] + '</li>'; }).join('') + '</ul></details></article>';
@@ -659,7 +678,7 @@
     var VZa = vizCharts(r), wfa = driversChart(VZa);
     var res = r.charts.filter(function (c) { return ['kpi', 'findings_table', 'benchmark', 'cleaning.before_after', 'missingness'].indexOf(c.id) < 0 && c.type !== 'viz'; })
       .map(function (c, i) { return [c, i]; }).sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (x) { return x[0]; });
-    S.results = '<h4>Findings</h4><div data-chart="findings_table" data-findings="' + esc(CH.findings_table ? CH.findings_table.finding_ids.join(' ') : '') + '">' + ftab(r, 'analyst', CH) + '</div>' +
+    S.results = periodHtml(r, true) + '<h4>Findings</h4><div data-chart="findings_table" data-findings="' + esc(CH.findings_table ? CH.findings_table.finding_ids.join(' ') : '') + '">' + ftab(r, 'analyst', CH) + '</div>' +
       '<p class="note">p: for a change claim, how often a result at least this strong would appear if the change were smaller than the bar; q: the same after allowing for the claims tested together in its family. Neither is the probability that the claim is true. The interval is the same test inverted; a selection-adjusted bound allows for having picked the confirmed claims out of the family.</p>' +
       '<h4>Forecast</h4>' + forecastStats(r) +
       '<h4>Charts</h4>' + res.map(function (c) {

@@ -2648,6 +2648,276 @@ def _b_series_slope(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
          "op": "the average of each window's published months"})
 
 
+# --------------------------------------------------------------------------- a long statistical table's whole period
+# The headline of such a table compares the latest 12 months with the 12 before; it never says where each series began or
+# how far it has come (a visitor's StatCan 10-10-0002-01: federal debt 492,352 in 2009-09, 1,322,004 in 2026-03, not stated
+# anywhere). The figures are the publisher's, one value a period, fully observed: not a sample, so the arithmetic below is
+# exact and is never graded. For each series: its first and its latest published figure with their dates, the change and the
+# percent change, the average yearly change and the compound yearly rate (stated as such), and the periods the publisher
+# skipped, named. Every figure is computed from the rows the visitor downloads (ctx.frame) and is written here, once, in the
+# engine's words: the story, the summary line, the page's table, the line chart's table and the report writer's table all
+# read it from rep["period"], never from their own arithmetic.
+PERIOD_VERSION = 1
+PERIOD_BASIS = ("The publisher's own figures, one value a period and nothing estimated: first and latest are published "
+                "values, and every change is exact arithmetic on them, so none is graded.")
+PERIOD_STORY_MOVERS = 2                    # other series said in the story, after the lead
+PERIOD_TABLE_AI_ROWS = 12                  # rows of the report writer's table (the worker keeps 12)
+PERIOD_ROWS_MAX = 30                       # series in the page's table (TABLE_ROWS_MAX)
+_MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+                "November", "December")
+
+
+def _dec_places(texts: Sequence[Any]) -> int:
+    """The decimals the published figures are written with: the most, after the zeros a trailing ".0" adds are dropped."""
+    best = 0
+    for t in texts:
+        t = str(t).strip()
+        if "." in t and "e" not in t.lower():
+            best = max(best, len(t.split(".", 1)[1].rstrip("0")))
+    return min(best, 6)
+
+
+def _figure(v: float, dp: int) -> str:
+    """A published figure as the table prints it: thousands separated, a true minus sign, at its own decimals."""
+    s = format(abs(v), ",.%df" % dp)
+    return (MINUS + s) if v < 0 and float(s.replace(",", "")) != 0 else s
+
+
+def _signed_figure(v: float, dp: int) -> str:
+    s = _figure(v, dp)
+    return s if s[:1] == MINUS or float(s.replace(",", "")) == 0 else "+" + s
+
+
+def _period_axis(ctx: Ctx) -> Optional[Dict[str, Any]]:
+    """How the file's dates run: {ts: each row's timestamp (NaT when blank), grain: month, quarter, year, day or other,
+    step: months between two dates for the first three}, or None when the file has no usable dates."""
+    import pandas as pd
+    if ctx.date is None or ctx.frame is None:
+        return None
+    raw = ctx.frame[ctx.date]
+    ts = pd.to_datetime(raw.where(raw != ""), errors="coerce")
+    uniq = sorted(set(ts.dropna()))
+    if len(uniq) < 2:
+        return None
+    idx = [t.year * 12 + t.month - 1 for t in uniq]
+    if len(set(idx)) != len(uniq):
+        return {"ts": ts, "grain": "day", "step": 0}
+    diffs = [b - a for a, b in zip(idx, idx[1:])]
+    step = max(set(diffs), key=lambda d: (diffs.count(d), -d))
+    return {"ts": ts, "grain": {1: "month", 3: "quarter", 12: "year"}.get(step, "other"), "step": step}
+
+
+def _date_text(t: Any, grain: str, whole_year: bool = False) -> str:
+    if grain == "day":
+        return t.strftime("%Y-%m-%d")
+    return t.strftime("%Y") if (grain == "year" and whole_year) else t.strftime("%Y-%m")
+
+
+def _month_ranges(missing: List[int]) -> List[Tuple[int, int]]:
+    """Consecutive month indexes as (first, last) runs."""
+    out: List[Tuple[int, int]] = []
+    for m in missing:
+        if out and m == out[-1][1] + 1:
+            out[-1] = (out[-1][0], m)
+        else:
+            out.append((m, m))
+    return out
+
+
+def _idx_month(i: int) -> str:
+    return "%04d-%02d" % (i // 12, i % 12 + 1)
+
+
+def _skipped_text(sk: Dict[str, Any], unit: str) -> str:
+    """The skipped periods in a sentence: how many of how many, and which (a calendar pattern when there is one, else the runs)."""
+    n, of = sk["count"], sk["of"]
+    s = "no figure was published for %s of the %s %ss from %s to %s" % (_count(n), _count(of), unit, sk["first"], sk["last"])
+    if sk.get("pattern"):
+        s += ", mostly " + sk["pattern"]
+    elif sk["ranges"] and len(sk["ranges"]) <= 3:
+        s += " (" + ", ".join(a if a == b else "%s to %s" % (a, b) for a, b in sk["ranges"]) + ")"
+    return s
+
+
+def _skipped(axis: Dict[str, Any], have: List[int], whole: bool) -> Optional[Dict[str, Any]]:
+    """The periods inside the span with no published figure in any series, named; None when there are none or the dates
+    are not a regular month, quarter or year (a daily table has weekends: nothing is "skipped")."""
+    if axis["grain"] not in ("month", "quarter", "year") or not have:
+        return None
+    step = axis["step"]
+    lo, hi, got = min(have), max(have), set(have)
+    slots = list(range(lo, hi + 1, step))
+    miss = [m for m in slots if m not in got]
+    if not miss:
+        return None
+    runs = [(_idx_month(a), _idx_month(b)) for a, b in _month_ranges(miss)] if step == 1 else [(_idx_month(m), _idx_month(m)) for m in miss]
+    out: Dict[str, Any] = {"count": len(miss), "of": len(slots), "first": _idx_month(lo), "last": _idx_month(hi),
+                           "unit": {"month": "month", "quarter": "quarter", "year": "year"}[axis["grain"]],
+                           "ranges": [list(r) for r in runs], "pattern": ""}
+    if axis["grain"] == "month":
+        # a calendar pattern: the months of the year skipped in at least 3 of every 5 years, when together they hold 3 of every
+        # 4 skipped months
+        by: Dict[int, List[int]] = {}
+        for m in slots:
+            by.setdefault(m % 12, []).append(m)
+        hit = sorted(k for k, ms in by.items() if len([m for m in ms if m not in got]) * 5 >= 3 * len(ms) and len(ms) >= 3)
+        if hit and sum(len([m for m in by[k] if m not in got]) for k in hit) * 4 >= 3 * len(miss):
+            names = [_MONTH_NAMES[k] for k in hit]
+            consec = all((b - a) == 1 for a, b in zip(hit, hit[1:]))
+            out["pattern"] = ("%s to %s each year" % (names[0], names[-1])) if consec and len(hit) > 2 else \
+                (" and ".join(names) + " each year")
+    return out
+
+
+def _series_ranking(facts: List[Dict[str, Any]], mixed_units: bool) -> List[Dict[str, Any]]:
+    """The series after the lead, the biggest movers first: by the size of the change in the table's one unit, or by its
+    percent change when the series come in different units (their amounts are not comparable)."""
+    def key(f: Dict[str, Any]) -> Tuple[float, int]:
+        pct = f["change_pct"]["value"] if f.get("change_pct") else None
+        size = abs(pct) if (mixed_units and pct is not None) else (0.0 if mixed_units else abs(f["change"]["value"]))
+        return (-size, f["order"])
+    return sorted(facts[1:], key=key)
+
+
+def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The whole-period facts of a long statistical table's series, computed from the rows the visitor downloads, or None
+    when the table has no usable series or dates. See the block comment above."""
+    lands = _series_lands(ctx, lay)
+    axis = _period_axis(ctx)
+    if not lands or axis is None:
+        return None
+    ts, grain = axis["ts"], axis["grain"]
+    lead_h = str(lay.get("lead") or "")
+    lead = next((l for l in lands if ctx.header(l) == lead_h), lands[0])
+    lands = [lead] + [l for l in lands if l != lead] if lead_h else lands
+    facts: List[Dict[str, Any]] = []
+    have: List[int] = []
+    whole_year = grain == "year" and all(t.month == ts.dropna().iloc[0].month for t in ts.dropna())
+    for order, land in enumerate(lands):
+        v = ctx.nums(land)
+        pts = [(t, float(x)) for t, x in zip(ts, v) if t == t and x == x]
+        if len(pts) < 2:
+            continue
+        pts.sort(key=lambda p: p[0])
+        (t0, v0), (t1, v1) = pts[0], pts[-1]
+        dp = _dec_places(ctx.texts(land)[v.notna()])
+        if grain == "day":
+            years = (t1 - t0).days / 365.25
+        else:
+            years = ((t1.year * 12 + t1.month) - (t0.year * 12 + t0.month)) / 12.0
+        change = v1 - v0
+        f: Dict[str, Any] = {
+            "id": "period." + land, "column": land, "label": _short_label(ctx.header(land)), "order": order,
+            "first": {"date": _date_text(t0, grain, whole_year), "value": _r6(v0), "text": _figure(v0, dp)},
+            "latest": {"date": _date_text(t1, grain, whole_year), "value": _r6(v1), "text": _figure(v1, dp)},
+            "published": len(pts), "years": round(years, 3), "decimals": dp,
+            "change": {"value": _r6(change), "text": _figure(abs(change), dp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
+            "change_pct": None, "per_year": None, "cagr_pct": None}
+        if v0 != 0 and (v0 > 0) == (v1 >= 0 if v1 != 0 else v0 > 0):
+            pct = 100.0 * (v1 / v0 - 1.0) if v0 > 0 else 100.0 * (v1 - v0) / abs(v0)
+            f["change_pct"] = {"value": _r6(pct), "text": _pct_text(pct)}
+        if years >= 1.0:
+            py = change / years
+            f["per_year"] = {"value": _r6(py), "text": _signed_figure(py, dp)}
+            if v0 > 0 and v1 > 0:
+                cagr = 100.0 * ((v1 / v0) ** (1.0 / years) - 1.0)
+                f["cagr_pct"] = {"value": _r6(cagr), "text": _pct_text(cagr)}
+        facts.append(f)
+        if grain != "day":
+            have += [t.year * 12 + t.month - 1 for t, _x in pts]
+    if not facts:
+        return None
+    mixed = len(lay.get("units") or []) > 1
+    unit = ", ".join(lay.get("units") or [])
+    scale = ", ".join(lay.get("scale") or [])
+    span_lo = min(f["first"]["date"] for f in facts)
+    span_hi = max(f["latest"]["date"] for f in facts)
+    sk = _skipped(axis, sorted(set(have)), whole_year)
+    nunit = {"month": "month", "quarter": "quarter", "year": "year", "day": "day"}.get(grain, "period")
+    return {"axis": axis, "grain": grain, "facts": facts, "lead": facts[0]["id"], "mixed_units": mixed,
+            "unit": (unit + (" (" + scale + ")" if scale and not mixed else "")) if unit and not mixed else "",
+            "first": span_lo, "last": span_hi, "skipped": sk, "period_noun": nunit,
+            "published_periods": len({t for t in ts.dropna()}), "movers": _series_ranking(facts, mixed)}
+
+
+def _fact_sentence(f: Dict[str, Any]) -> str:
+    """One series, whole period, in the engine's words."""
+    d = f["change"]["direction"]
+    head = "%s went from %s in %s to %s in %s" % (f["label"], f["first"]["text"], f["first"]["date"], f["latest"]["text"],
+                                                  f["latest"]["date"])
+    if d == "unchanged":
+        return head + ": unchanged."
+    tail = ": %s %s" % (d, f["change"]["text"])
+    if f["change_pct"]:
+        tail += " (%s)" % f["change_pct"]["text"]
+    if f["per_year"]:
+        tail += ", averaging %s a year" % f["per_year"]["text"]
+        if f["cagr_pct"]:
+            tail += " (%s a year compounded)" % f["cagr_pct"]["text"]
+    return head + tail + "."
+
+
+def _period_table(facts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    cols = ["Series", "First published", "Latest published", "Change", "Change %", "Average a year"]
+    rows = []
+    for f in facts[:PERIOD_ROWS_MAX]:
+        sign = {"up": "+", "down": MINUS, "unchanged": ""}[f["change"]["direction"]]
+        rows.append([f["label"], "%s (%s)" % (f["first"]["text"], f["first"]["date"]),
+                     "%s (%s)" % (f["latest"]["text"], f["latest"]["date"]),
+                     (sign + f["change"]["text"]) if sign else f["change"]["text"],
+                     f["change_pct"]["text"] if f["change_pct"] else "",
+                     (f["per_year"]["text"] + (" (%s compounded)" % f["cagr_pct"]["text"] if f["cagr_pct"] else ""))
+                     if f["per_year"] else ""])
+    return {"cols": cols, "rows": rows}
+
+
+def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """rep["period"]: the whole-period facts of a long statistical table and the sentences that say them (see above)."""
+    pf = series_facts(ctx, lay)
+    if pf is None:
+        return None
+    facts = pf["facts"]
+    sk = pf["skipped"]
+    lead = facts[0]
+    n_pub = pf["published_periods"]
+    noun = pf["period_noun"]
+    if sk:
+        first = "Over the whole file, %s to %s, the table has figures for %s of %s %ss and none for %s%s; those %ss stay gaps, never filled in." % (
+            pf["first"], pf["last"], _count(sk["of"] - sk["count"]), _count(sk["of"]), noun, _count(sk["count"]),
+            (", mostly " + sk["pattern"]) if sk.get("pattern") else "", noun)
+    else:
+        first = "Over the whole file, %s to %s, the table has figures for %s %ss." % (pf["first"], pf["last"], _count(n_pub), noun)
+    unit = pf["unit"]
+    lines = [first + ((" Figures are in %s." % unit) if unit else ""),
+             "These changes are exact arithmetic on published figures, so none is graded.",
+             _fact_sentence(lead)] + [_fact_sentence(f) for f in pf["movers"][:PERIOD_STORY_MOVERS]]
+    table = _period_table(facts)
+    return {"version": PERIOD_VERSION, "basis": PERIOD_BASIS, "grain": pf["grain"], "first": pf["first"], "last": pf["last"],
+            "periods_published": n_pub, "unit": unit, "lead": pf["lead"],
+            "skipped": ({k: sk[k] for k in ("count", "of", "first", "last", "unit", "ranges", "pattern")} | {"text": _skipped_text(sk, sk["unit"])})
+            if sk else None,
+            "series": [{k: f[k] for k in ("id", "label", "first", "latest", "published", "years", "change", "change_pct",
+                                          "per_year", "cagr_pct")} | {"text": _fact_sentence(f)} for f in facts],
+            "movers": [f["id"] for f in pf["movers"][:PERIOD_STORY_MOVERS]],
+            "lines": lines, "table": table}
+
+
+def _period_into(rep: Dict[str, Any], ctx: Ctx) -> None:
+    """rep["period"] for a long statistical table (the report stands without it)."""
+    import os
+    lay = (rep.get("input") or {}).get("layout") or {}
+    if lay.get("layout") != "long statistical table" or int(lay.get("kept") or 0) < 1 or ctx.date is None:
+        return
+    try:
+        blk = period_block(ctx, lay)
+    except Exception:  # noqa: BLE001 - one block never stops the report
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        blk = None
+    if blk:
+        rep["period"] = blk
+
+
 def _series_panel(rep: Dict[str, Any], ctx: Ctx, viz: Dict[str, Any], heat: int) -> int:
     """A long statistical table's own charts, placed first (see above); each refused with its reason. Returns the heatmaps."""
     lay = (rep.get("input") or {}).get("layout") or {}
@@ -3222,6 +3492,7 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
     # a long statistical table's own charts (one value a month per series: the charts above need categories), placed first
     chosen = viz["chosen_by"]
     heat = _series_panel(rep, ctx, viz, heat)
+    _period_into(rep, ctx)
     if viz["charts"] and chosen == "none":
         viz["chosen_by"] = "engine"
     rep["charts"] = list(rep.get("charts") or []) + v2_records(viz)

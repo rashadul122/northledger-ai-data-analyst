@@ -4755,6 +4755,11 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
         if norm[c] in ("uom", "unit", "units", "unitmeasure"):
             units = {str(k): str(u) for k, u in df.groupby(key)[c].agg(lambda x: x.mode().iat[0] if len(x.mode()) else "").items()}
             break
+    scales: Dict[str, str] = {}
+    for c in meta:
+        if norm[c] in ("scalarfactor", "facteurscalaire", "factorescalar", "skalierung"):
+            scales = {str(k): str(u) for k, u in df.groupby(key)[c].agg(lambda x: x.mode().iat[0] if len(x.mode()) else "").items()}
+            break
     out = wide.to_csv(index=False).encode("utf-8")
     lay = {
         "layout": "long statistical table", "rows_in": rows_in, "rows_out": int(len(wide)),
@@ -4767,6 +4772,11 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
         # the file's own order of the kept series (the lead series is the file's first, as _lead_series says)
         "file_order": [str(c) for c in sorted((c for c in order if c in wide.columns), key=lambda k: first_seen.get(k, 0))],
     }
+    # the scale the agency's figures are written in ("millions"): said beside the unit in the whole-period sentences, only where
+    # the file states one that is not plain units, so every other table's layout record is what it was
+    scale_words = sorted({u for k, u in scales.items() if u and k in kept and u.strip().lower() not in ("units", "unit", "ones")})
+    if scale_words:
+        lay["scale"] = scale_words
     if unpublished:                               # only where there are some, so every other table's layout record is what it was
         lay["unpublished_dates"] = {"count": len(unpublished), "first": unpublished[0], "last": unpublished[-1]}
     if personal:                                  # wave 5d: only where there is one, so every other table's layout record is what it was
@@ -5796,6 +5806,13 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     drove = drove_of(scenarios)
     if drove is not None:
         tables.append(drove)
+    # a long statistical table's whole period (rep.period): each series' first and latest published figure with the change,
+    # one table, last, so no table above it moves; the report writer's figures for the long run are these cells
+    pt = (rep.get("period") or {}).get("table") if isinstance(rep.get("period"), dict) else None
+    if isinstance(pt, dict) and pt.get("rows"):
+        tables.append({"title": "The whole period, series by series",
+                       "cols": [safe(c, 60) for c in pt["cols"]][:6],
+                       "rows": [[safe(v, 80) for v in r][:6] for r in pt["rows"][:12]]})
 
     clean = rep.get("cleaning") or {}
     health = rep.get("health") or {}
@@ -11658,6 +11675,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens,
                           scrub.flag_tokens_by, structure_inner)
+        _period_story(rep)
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -11675,6 +11693,23 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["timings"] = [{"stage": s, "seconds": round(float(timings[s]), 3)} for s in STAGES]
         _ensure_v2(rep)
     return rep
+
+
+def _period_story(rep: Dict[str, Any]) -> None:
+    """A long statistical table's whole-period sentences (rep["period"], engine/nl_viz.py period_block) into the story, after its
+    first line (the headline series' latest year), and the lead series' into the bottom line: the report states where each series
+    began and how far it has come, in the engine's words, so the AI writer and the shared report cite them and never type a figure."""
+    pb = rep.get("period")
+    if not isinstance(pb, dict) or not pb.get("lines"):
+        return
+    st = rep.setdefault("story", {})
+    wh = [x for x in st.get("what_happened") or [] if isinstance(x, str)]
+    at = 1 if wh else 0
+    st["what_happened"] = wh[:at] + [str(x) for x in pb["lines"]] + wh[at:]
+    lead = next((str(x.get("text")) for x in pb.get("series") or [] if x.get("id") == pb.get("lead")), "")
+    if lead:
+        sm = rep.setdefault("summary", {"lines": [], "labels": {}, "monitoring": []})
+        sm.setdefault("lines", []).append({"kind": "period", "text": lead, "finding_ids": []})
 
 
 def _first_sentence(text: str) -> str:

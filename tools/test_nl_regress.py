@@ -2166,6 +2166,84 @@ def test_s08_a_statcan_table_draws_its_own_charts_and_each_figure_recomputes_fro
         no_formula["viz"]["refused"]
 
 
+def test_s09_a_statcan_table_states_its_whole_period_and_every_figure_recomputes_from_the_file():
+    """The visitor's report (8 Oct 2026) compared the latest 12 months with the 12 before and never said where each series began or
+    how far it has come (federal debt 492,352 in 2009-09 and 1,322,004 in 2026-03 was nowhere). rep.period now states, for each
+    series, its first and its latest published figure with their dates, the change, the percent change, the average yearly change and
+    the compound yearly rate, with the skipped months named; none of it is graded (the figures are the publisher's, not a sample).
+    Every figure is recomputed here from the visitor's own file, and the writer receives the sentences and one table."""
+    raw = frame("s07_statcan_debt_unpublished_months.csv")
+    raw["v"] = pd.to_numeric(raw["VALUE"], errors="coerce")
+    w = raw.pivot_table(index="REF_DATE", columns="Central government debt", values="v", aggfunc="first")
+    for rep in (run_file("s07_statcan_debt_unpublished_months.csv"),
+                run_file("s07_statcan_debt_unpublished_months.csv", plan={
+                    "goal": "How has Canada's federal government debt evolved since 2009, and what is it made of?",
+                    "columns": [{"name": "REF_DATE", "role": "date", "semantic_type": "date"},
+                                {"name": "Central government debt", "role": "dimension", "semantic_type": "category"},
+                                {"name": "VALUE", "role": "target", "semantic_type": "level"}],
+                    "operations": [{"op": "exclude_blank", "column": "VALUE"}], "primary": "VALUE",
+                    "analyses": [{"type": "relationship", "columns": ["VALUE"]}]})):
+        assert rep["ok"], rep.get("error")
+        P = rep["period"]
+        assert P["first"] == "2009-09" and P["last"] == "2026-03" and P["periods_published"] == 123, (P["first"], P["last"])
+        assert P["unit"] == "Dollars (millions)", P["unit"]
+        by = {x["label"]: x for x in P["series"]}
+        # every series the engine compared, from its first published month to its latest, recomputed from the file
+        n_checked = 0
+        pub_months = {m for m in w.index if "2009-09" <= m <= "2026-03" and w.loc[m].notna().sum() > 5}   # the months the agency published
+        for label, x in by.items():
+            col = w[label].dropna()
+            col = col[col.index.isin(pub_months)]
+            assert x["first"]["date"] == col.index[0][:7] and x["latest"]["date"] == col.index[-1][:7], label
+            a, b = float(col.iloc[0]), float(col.iloc[-1])
+            assert abs(x["first"]["value"] - a) < 1e-6 and abs(x["latest"]["value"] - b) < 1e-6, label
+            assert x["first"]["text"] == format(int(round(a)), ",").replace("-", "\u2212"), (label, x["first"]["text"])
+            assert abs(x["change"]["value"] - (b - a)) < 1e-6, label
+            years = ((int(col.index[-1][:4]) * 12 + int(col.index[-1][5:7])) - (int(col.index[0][:4]) * 12 + int(col.index[0][5:7]))) / 12.0
+            assert abs(x["years"] - years) < 1e-3 and x["published"] == len(col), label
+            if a > 0:
+                assert abs(x["change_pct"]["value"] - 100.0 * (b / a - 1.0)) < 1e-4, label
+                if b > 0:
+                    assert abs(x["cagr_pct"]["value"] - 100.0 * ((b / a) ** (1.0 / years) - 1.0)) < 1e-4, label
+            assert abs(x["per_year"]["value"] - (b - a) / years) < 1e-3, label
+            n_checked += 1
+        assert n_checked == len(by) >= 20, n_checked
+        lead = by["A. Federal debt (accumulated deficit), (B - E)"]
+        assert (lead["first"]["text"], lead["first"]["date"], lead["latest"]["text"], lead["latest"]["date"]) == \
+            ("492,352", "2009-09", "1,322,004", "2026-03"), lead
+        assert lead["text"].startswith("A. Federal debt (accumulated deficit), (B - E) went from 492,352 in 2009-09 to 1,322,004 in 2026-03: up 829,652 (+168.5%)"), lead["text"]
+        # the skipped months are named, and they are exactly the months of the span the file has no published figure for
+        sk = P["skipped"]
+        have = pub_months
+        allm = []
+        y, m = 2009, 9
+        while (y, m) <= (2026, 3):
+            allm.append("%04d-%02d" % (y, m))
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+        miss = [m for m in allm if m not in have]
+        named = []
+        for a0, b0 in sk["ranges"]:
+            named += [m for m in allm if a0 <= m <= b0]
+        assert named == miss and sk["count"] == len(miss) == 76 and sk["of"] == len(allm) == 199, (sk["count"], len(miss), sk["of"])
+        assert sk["pattern"] == "April to August each year", sk["pattern"]
+        # said in the story (after its first line), in the bottom line, and never graded
+        wh = rep["story"]["what_happened"]
+        assert wh[2] == P["lines"][1] and P["lines"][0] in wh and lead["text"] in wh, wh[:6]
+        assert any(l.get("kind") == "period" and l["text"] == lead["text"] for l in rep["summary"]["lines"])
+        for line in P["lines"]:
+            assert len(line) <= 300 and "NOT ENOUGH DATA" not in line and "not enough data" not in line.lower(), line
+            assert "went from" in line or "gaps" in line or "none is graded" in line, line
+        # what the report writer receives: the lines inside its first 8, and ONE table of the series with the same figures
+        ai = NB.results_for_ai(rep)
+        assert all(x in ai["story"]["what_happened"] for x in P["lines"][:3]), ai["story"]["what_happened"]
+        tab = next(t for t in ai["tables"] if t["title"] == "The whole period, series by series")
+        assert len(tab["cols"]) == 6 and 1 <= len(tab["rows"]) <= 12 and tab["rows"][0][1] == "492,352 (2009-09)" and \
+            tab["rows"][0][2] == "1,322,004 (2026-03)" and tab["rows"][0][3] == "+829,652", tab["rows"][0]
+    # an ordinary table has no such block
+    plain = run_bytes(b"month,sales\n" + "".join("2024-%02d-01,%d\n" % (m, 100 + m) for m in range(1, 13)).encode())
+    assert "period" not in plain, plain.get("period")
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

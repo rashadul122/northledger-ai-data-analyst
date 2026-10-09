@@ -2101,6 +2101,67 @@ def test_s07_a_statcan_table_keeps_its_history_skips_unpublished_months_and_name
     assert any("separately published" in str(x) for x in an.get("refused") or []), an.get("refused")
 
 
+def test_s08_a_statcan_table_draws_its_own_charts_and_each_figure_recomputes_from_the_file():
+    """The visitor's shared report of the same table (8 Oct 2026) drew one chart, a correlation of levels that all rise: every
+    other chart needs a category column or 5 rows a month. A long statistical table now draws its own: the bridge of the lead
+    series by the identity its labels state (A = B - E, B = C - D: exact in every month), a heat grid of each series' change on
+    the same months a year earlier, and each series' first 12 months against its latest 12. Every figure is recomputed here
+    from the visitor's own file, not from the engine."""
+    raw = frame("s07_statcan_debt_unpublished_months.csv")
+    raw["v"] = pd.to_numeric(raw["VALUE"], errors="coerce")
+    w = raw.pivot_table(index="REF_DATE", columns="Central government debt", values="v", aggfunc="first")
+    A, C, D, E = (w[k].dropna() for k in ("A. Federal debt (accumulated deficit), (B - E)", "C. Liabilities, gross debt",
+                                            "D. Financial assets", "E. Non-financial assets"))
+    for rep in (run_file("s07_statcan_debt_unpublished_months.csv"),
+                run_file("s07_statcan_debt_unpublished_months.csv", plan={
+                    "goal": "How has Canada's federal government debt evolved since 2009, and what is it made of?",
+                    "columns": [{"name": "REF_DATE", "role": "date", "semantic_type": "date"},
+                                {"name": "Central government debt", "role": "dimension", "semantic_type": "category"},
+                                {"name": "VALUE", "role": "target", "semantic_type": "level"}],
+                    "operations": [{"op": "exclude_blank", "column": "VALUE"}], "primary": "VALUE",
+                    "analyses": [{"type": "relationship", "columns": ["VALUE"]}]})):
+        assert rep["ok"], rep.get("error")
+        charts = {c["chart"]: c for c in rep["viz"]["charts"]}
+        assert [c["chart"] for c in rep["viz"]["charts"]][:3] == ["contribution_waterfall", "change_heatmap", "slope"], \
+            ([c["chart"] for c in rep["viz"]["charts"]], rep["viz"]["refused"])
+        # the phrase the shared report's proxy keys on (insight-proxy src/report.js SERIES_CHART_WHY) to show every one of them
+        assert all("a published series' own chart" in c["why"] for c in rep["viz"]["charts"][:3]), [c["why"] for c in rep["viz"]["charts"]]
+        # (1) the bridge: totals are the headline finding's, steps the identity's terms, and they add up
+        wf = charts["contribution_waterfall"]
+        st = wf["data"]["steps"]
+        pw, lw = wf["data"]["basis"]["prior"], wf["data"]["basis"]["latest"]
+        assert (pw, lw) == (["2024-04", "2025-03"], ["2025-04", "2026-03"]), (pw, lw)
+        win = lambda s, a, b: s[(s.index.str[:7] >= a) & (s.index.str[:7] <= b)].mean()
+        dA = win(A, *lw) - win(A, *pw)
+        dC, dD, dE = (win(x, *lw) - win(x, *pw) for x in (C, D, E))
+        assert abs(dA - (dC - dD - dE)) < 1e-6
+        got = {s["label"]: s["value"] for s in st}
+        assert abs(got["C. Liabilities, gross debt"] - dC) < 1e-4 and abs(got["less D. Financial assets"] + dD) < 1e-4 and \
+            abs(got["less E. Non-financial assets"] + dE) < 1e-4, got
+        assert abs(st[-1]["value"] - dA) < 1e-4 and st[0]["value"] == 0.0
+        fid = wf["data"]["basis"]["finding_id"]
+        dsc = next(f for f in rep["findings"] if f["id"] == fid)["inference"]["describe"]
+        assert abs((dsc["latest"] - dsc["prior"]) - dA) < 1e-4, (dsc, dA)
+        # (2) the heat grid: Federal debt in 2025 against the same months of 2024
+        hm = charts["change_heatmap"]
+        i, j = hm["data"]["rows"].index("A. Federal debt (accumulated deficit), (B - E)"), hm["data"]["cols"].index("2025")
+        a25 = A[A.index.str[:4] == "2025"]
+        same = [m for m in a25.index if m.replace("2025", "2024", 1) in A.index]
+        want = 100.0 * (a25[same].sum() / A[[m.replace("2025", "2024", 1) for m in same]].sum() - 1.0)
+        assert abs(hm["data"]["values"][i][j] - want) < 1e-4 and hm["data"]["n"][i][j] == len(same), (hm["data"]["values"][i][j], want)
+        assert all(n is None or n == 0 or n >= 5 for row in hm["data"]["n"] for n in row)  # suppressed, empty or shown
+        # (3) the slope: Federal debt's first 12 months against its latest 12
+        sl = charts["slope"]
+        r = next(x for x in sl["data"]["rows"] if x["label"].startswith("A. Federal debt"))
+        assert abs(r["a"] - win(A, "2009-09", "2010-08")) < 1e-4 and abs(r["b"] - win(A, "2025-04", "2026-03")) < 1e-4, r
+    # a table whose labels state no identity draws no bridge, and says why (the heat grid and the slope still draw)
+    no_formula = run_bytes(fixture("s07_statcan_debt_unpublished_months.csv").replace(b"(B - E)", b"").replace(b"(C - D)", b""))
+    names = [c["chart"] for c in no_formula["viz"]["charts"]]
+    assert "contribution_waterfall" not in names and "change_heatmap" in names and "slope" in names, names
+    assert any(x["chart"] == "contribution_waterfall" and "label states" in x["why"] for x in no_formula["viz"]["refused"]), \
+        no_formula["viz"]["refused"]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

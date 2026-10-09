@@ -2378,6 +2378,307 @@ def _built(ctx: Ctx, chart: str, lands: Optional[List[str]]) -> Dict[str, Any]:
         raise Refused("the chart could not be built for this file (%s)" % type(exc).__name__)
 
 
+# --------------------------------------------------------------------------- a long statistical table's charts
+# A visitor's StatCan debt table (8 Oct 2026; nl_browser._reshape_long_panel reads it one column per series, one row a month)
+# drew one chart, a correlation of levels that all rise: every other chart above needs a category column or 5 rows a month,
+# and such a table has neither. Its series are published figures, one value a month, so these charts read them directly,
+# each from the kinds every reader already draws (heatmap, waterfall, slope) and the same checks:
+#  (1) change_heatmap: each series (rows, the file's order) by calendar year (columns), the % change of the year's published
+#      months against the SAME months a year earlier; a cell rests on its matched months (n), 5 or more or "<5";
+#  (2) contribution_waterfall: the lead series' change over the headline's two windows, split by the identity the agency's
+#      own labels state ("A. Federal debt (accumulated deficit), (B - E)", "B. Net debt, (C - D)"), drawn only when that
+#      identity holds in every month of the file (to the rounding of its figures, else the gap is its own step) and the
+#      two windows' averages are the headline finding's own;
+#  (3) slope: each series' first 12 months against its latest 12 (the averages of their published months): the story
+#      over the whole file, which the headline (the latest 12 months against the 12 before) does not tell.
+SERIES_ROWS_MAX = 12
+# in each such chart's "why": the report writer's proxy (insight-proxy src/report.js SERIES_CHART_WHY, addUnplacedViz) adds a chart
+# carrying it that the writer left out, so the shared report shows it as the page does. Change both together
+SERIES_CHART_WHY = "a published series' own chart"
+_FORMULA = re.compile(r"^\s*([A-Z])\.\s+.*\(\s*([A-Z])\s*([+-])\s*([A-Z])\s*\)\s*$")
+_LETTER = re.compile(r"^\s*([A-Z])\.\s+")
+
+
+def _series_lands(ctx: Ctx, lay: Dict[str, Any]) -> List[str]:
+    """The long table's series as landed columns, in the file's order (the layout's file_order), numeric and not flagged."""
+    by_header = {ctx.header(c): c for c in ctx.measures}
+    out = []
+    for h in lay.get("file_order") or lay.get("order") or []:
+        land = by_header.get(str(h))
+        if land and land in ctx.columns and land not in ctx.flag_land:
+            out.append(land)
+    return out
+
+
+def _avg_by_month(ctx: Ctx, land: str) -> Dict[str, float]:
+    """{YYYY-MM: the published value} of one series (one row a month in a long table read one column per series)."""
+    v = ctx.nums(land)
+    out: Dict[str, float] = {}
+    for m, x in zip(ctx.month, v):
+        if m and x == x and x is not None:
+            out[str(m)] = float(x)
+    return out
+
+
+def _pct_text(v: float) -> str:
+    return ("%+.1f%%" % v).replace("-", "−")
+
+
+def _amount_text(v: float) -> str:
+    s = format(int(round(v)), ",")
+    return s.replace("-", "−") if v < 0 else s
+
+
+def _b_series_change_heatmap(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
+    lands = _series_lands(ctx, lay)
+    series = []
+    for land in lands:
+        bym = _avg_by_month(ctx, land)
+        if len(bym) >= 24 and len(set(bym.values())) > 1:
+            series.append((land, bym))
+        if len(series) >= SERIES_ROWS_MAX:
+            break
+    if len(series) < 2:
+        raise Refused("needs two or more series with 24 or more published months")
+    years = sorted({m[:4] for _l, b in series for m in b})
+    cols = [y for y in years[1:]][-HEAT_COLS_MAX:]
+    if not cols:
+        raise Refused("needs two or more calendar years")
+    cells, rows = [], []
+    for land, bym in series:
+        row = []
+        for y in cols:
+            prev = str(int(y) - 1)
+            months = [m for m in bym if m.startswith(y) and (prev + m[4:]) in bym]
+            a = math.fsum(bym[prev + m[4:]] for m in months)
+            b = math.fsum(bym[m] for m in months)
+            if not months or a <= 0:
+                row.append(_cell(None, 0, ""))
+                continue
+            pct = 100.0 * (b / a - 1.0)
+            row.append(_cell(pct, len(months), _pct_text(pct)[:CELL_TEXT_MAX]))
+        cells.append(row)
+        rows.append(_short_label(ctx.header(land)))
+    rows = _unique_labels(rows)
+    data, supp = _grid(rows, cols, cells, "diverging", _pct_text, "Series", "Year")
+    if _shown(data) == 0:
+        raise Refused("no year has 5 or more months published in both it and the year before")
+    shown = [(data["values"][i][j], rows[i], cols[j]) for i in range(len(rows)) for j in range(len(cols))
+             if data["values"][i][j] is not None]
+    hi = max(shown, key=lambda x: x[0])
+    lo = min(shown, key=lambda x: x[0])
+    summary = ("The largest rise: %s in %s (%s on the same months of %d); the largest fall: %s in %s (%s). Each cell compares a "
+               "year's published months with the same months a year earlier; the figures are the agency's, not graded."
+               % (hi[1], hi[2], _pct_text(hi[0]), int(hi[2]) - 1, lo[1], lo[2], _pct_text(lo[0])))
+    return _record(
+        "change_heatmap", "Year-on-year change of each series",
+        "Each series' published months in a year against the same months a year earlier (%s to %s)" % (cols[0], cols[-1]),
+        "other", "How each published series moved, year by year", [], None, None,
+        {"label": "change on the same months a year earlier", "unit": "%", "kind": "change_pct"}, data,
+        _grid_table("Series", rows, cols, data["text"]), summary,
+        (supp, "A year with fewer than 5 months published in both it and the year before is not shown." if supp else ""),
+        "The table's published series, one value a month, as the engine read them",
+        {"columns": [ctx.header(l) for l, _b in series], "rows": len(ctx.frame), "months": None,
+         "op": "each year's published months against the same months a year earlier"})
+
+
+def _identity(ctx: Ctx, lands: List[str]) -> Optional[Tuple[str, List[Tuple[int, str]]]]:
+    """(the lead series, [(sign, leaf series)]): the lead's formula in the agency's labels, expanded through the formulas of
+    its terms ("A ... (B - E)" with "B ... (C - D)": A = C - D - E), or None when its label states none."""
+    by_letter: Dict[str, str] = {}
+    formula: Dict[str, Tuple[str, int, str]] = {}
+    for land in lands:
+        h = ctx.header(land)
+        m = _LETTER.match(h)
+        if m:
+            by_letter.setdefault(m.group(1), land)
+        f = _FORMULA.match(h)
+        if f:
+            formula[f.group(1)] = (f.group(2), 1 if f.group(3) == "+" else -1, f.group(4))
+    lead = next((l for l in lands if _FORMULA.match(ctx.header(l))), None)
+    if lead is None:
+        return None
+
+    def expand(letter: str, sign: int, depth: int) -> Optional[List[Tuple[int, str]]]:
+        if depth > 6 or letter not in by_letter:
+            return None
+        if letter not in formula:
+            return [(sign, by_letter[letter])]
+        x, s2, y = formula[letter]
+        a = expand(x, sign, depth + 1)
+        b = expand(y, sign * s2, depth + 1)
+        return None if a is None or b is None else a + b
+    root = _LETTER.match(ctx.header(lead)).group(1)
+    x, s2, y = formula[root]
+    left, right = expand(x, 1, 1), expand(y, s2, 1)
+    if left is None or right is None:
+        return None
+    return lead, left + right
+
+
+def _b_series_bridge(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
+    lands = _series_lands(ctx, lay)
+    got = _identity(ctx, lands)
+    if got is None:
+        raise Refused("no series' label states how it is made from the others (such as \"(B - E)\")")
+    lead, terms = got
+    if len(terms) > WATERFALL_PARTS_MAX:
+        raise Refused("the identity has more terms than a waterfall shows")
+    lm = _avg_by_month(ctx, lead)
+    tm = [(s, l, _avg_by_month(ctx, l)) for s, l in terms]
+    common = [m for m in lm if all(m in b for _s, _l, b in tm)]
+    if len(common) < 24:
+        raise Refused("the identity's series share fewer than 24 published months")
+    # the identity in every shared month, to the rounding of the published figures (half a unit a term, at the table's decimals)
+    gap = max(abs(lm[m] - math.fsum(s * b[m] for s, _l, b in tm)) for m in common)
+    if gap > 0.5 * (len(terms) + 1):
+        raise Refused("the identity its labels state does not hold in the published figures")
+    end = max(lm)
+    ey, emo = int(end[:4]), int(end[5:])
+    def shift(y: int, mo: int, k: int) -> str:
+        t = y * 12 + (mo - 1) - k
+        return "%04d-%02d" % (t // 12, t % 12 + 1)
+    latest_w = (shift(ey, emo, 11), end)
+    prior_w = (shift(ey, emo, 23), shift(ey, emo, 12))
+    inw = lambda m, w: w[0] <= m <= w[1]
+    pm = [m for m in common if inw(m, prior_w)]
+    lmn = [m for m in common if inw(m, latest_w)]
+    if len(pm) < SMALL_CELL or len(lmn) < SMALL_CELL or set(pm) != {m for m in lm if inw(m, prior_w)} or \
+            set(lmn) != {m for m in lm if inw(m, latest_w)}:
+        raise Refused(R_RECON)
+    avg = lambda b, ms: math.fsum(b[m] for m in ms) / len(ms)
+    prior, latest = avg(lm, pm), avg(lm, lmn)
+    # the totals are the headline's own (the finding's described averages), else the chart is not the headline's
+    fid = next((f for f, x in ctx.findings.items() if f.endswith(".change") and
+                ((x.get("inference") or {}).get("describe") or {}).get("prior") is not None and
+                str((x.get("claim") or "")).endswith("latest 12 months against the 12 before") and
+                ctx.header(lead) in str(ctx.pub(x.get("claim") or "")) + str(x.get("claim") or "")), None)
+    if fid is None:
+        fid = next((f for f in ctx.findings if f == "measure.%s.change" % lead), None)
+    if fid is not None:
+        dsc = (ctx.findings[fid].get("inference") or {}).get("describe") or {}
+        for want, have in ((dsc.get("prior"), prior), (dsc.get("latest"), latest)):
+            if want is not None and abs(float(want) - have) > 1e-6 * max(1.0, abs(have)):
+                raise Refused(R_RECON)
+    change = latest - prior
+    parts = []
+    for s, l, b in tm:
+        d = s * (avg(b, lmn) - avg(b, pm))
+        h = ctx.header(l)
+        label = _short_label(("less " if s < 0 else "") + h)
+        parts.append((label, d, _amount_text(d)))
+    resid = change - math.fsum(p[1] for p in parts)
+    if abs(resid) > RECONCILE_TOL * max(1.0, abs(change)):
+        parts.append((UNALLOCATED_ROUNDING, resid, _amount_text(resid)))
+    basis = {"split": "segment", "finding_id": fid, "column": None, "prior": list(prior_w), "latest": list(latest_w)}
+    data = _waterfall_data((WATERFALL_START, 0.0, "0"), parts, (WATERFALL_TOTAL, change, _amount_text(change)),
+                           (change, _amount_text(change)), basis)
+    _check_waterfall(data)
+    unit = ", ".join(lay.get("units") or [])[:20]
+    lh = ctx.header(lead)
+    big = max(parts, key=lambda p: abs(p[1]))
+    summary = ("%s changed by %s between the average month of %s to %s and of %s to %s. By the identity its label states, "
+               "the largest part is %s (%s). Exact arithmetic on the agency's figures; the change itself is graded %s."
+               % (lh, _amount_text(change), prior_w[0], prior_w[1], latest_w[0], latest_w[1], big[0], big[2],
+                  (ctx.findings.get(fid) or {}).get("grade") or "by the engine"))
+    return _record(
+        "contribution_waterfall", "What moved %s" % _short_label(lh, 60),
+        "The change in its average month, %s to %s against %s to %s, split by the identity in the agency's labels"
+        % (latest_w[0], latest_w[1], prior_w[0], prior_w[1]),
+        "drove", str((ctx.findings.get(fid) or {}).get("claim") or lh), ["finding:" + fid] if fid else [], None,
+        (ctx.findings.get(fid) or {}).get("grade"),
+        {"label": lh[:80], "unit": unit, "kind": "amount"}, data,
+        {"cols": ["Step", "Change"], "rows": [[s["label"], s["text"]] for s in data["steps"]]}, summary, (0, ""),
+        "The table's published series and the identity its labels state (it holds in every published month: largest gap %s)"
+        % _amount_text(gap),
+        {"columns": [lh] + [ctx.header(l) for _s, l in terms], "rows": len(pm) + len(lmn),
+         "months": [prior_w[0], latest_w[1]], "op": "each term's change in its average month, signed as the identity adds it"})
+
+
+def _b_series_slope(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
+    lands = _series_lands(ctx, lay)
+    rows, start, stop = [], None, None
+    for land in lands:
+        bym = _avg_by_month(ctx, land)
+        if len(bym) < 24:
+            continue
+        ms = sorted(bym)
+        f0 = ms[0]
+        y0, m0 = int(f0[:4]), int(f0[5:])
+        w0 = (f0, "%04d-%02d" % ((y0 * 12 + m0 + 10) // 12, (y0 * 12 + m0 + 10) % 12 + 1))
+        e = ms[-1]
+        ye, me = int(e[:4]), int(e[5:])
+        w1 = ("%04d-%02d" % ((ye * 12 + me - 12) // 12, (ye * 12 + me - 12) % 12 + 1), e)
+        a_ms = [m for m in ms if w0[0] <= m <= w0[1]]
+        b_ms = [m for m in ms if w1[0] <= m <= w1[1]]
+        if len(a_ms) < SMALL_CELL or len(b_ms) < SMALL_CELL:
+            continue
+        if start is None:
+            start, stop = w0, w1
+        elif (w0, w1) != (start, stop):
+            continue                                      # one pair of windows for every row of the chart
+        a = math.fsum(bym[m] for m in a_ms) / len(a_ms)
+        b = math.fsum(bym[m] for m in b_ms) / len(b_ms)
+        if a <= 0:
+            continue
+        rows.append({"label": _short_label(ctx.header(land)), "a": _r6(a), "b": _r6(b), "a_text": _amount_text(a),
+                     "b_text": _amount_text(b), "change_text": _pct_text(100.0 * (b / a - 1.0))[:24]})
+        if len(rows) >= SLOPE_ROWS_MAX:
+            break
+    if len(rows) < 2:
+        raise Refused("needs two or more series published over the same span of 24 or more months")
+    labels = _unique_labels([r["label"] for r in rows])
+    for r, l in zip(rows, labels):
+        r["label"] = l
+    al, bl = "%s to %s" % start, "%s to %s" % stop
+    top = rows[0]
+    summary = ("%s: %s on average in %s, %s in %s (%s). Averages of each window's published months, the agency's own figures; "
+               "the whole-file change is history, not a graded claim." % (top["label"], top["a_text"], al, top["b_text"], bl,
+                                                                          top["change_text"]))
+    unit = ", ".join(lay.get("units") or [])[:20]
+    return _record(
+        "slope", "Where each series started and where it is now",
+        "The average published month of %s against %s" % (al, bl), "other",
+        "The change over the whole file, which the headline's latest year against the year before does not show", [],
+        None, None, {"label": "average published month", "unit": unit, "kind": "average"},
+        {"rows": rows, "a_label": al[:40], "b_label": bl[:40]},
+        {"cols": ["Series", al, bl, "Change"], "rows": [[r["label"], r["a_text"], r["b_text"], r["change_text"]] for r in rows]},
+        summary, (0, ""), "The table's published series, one value a month, as the engine read them",
+        {"columns": [r["label"] for r in rows], "rows": len(ctx.frame), "months": [start[0], stop[1]],
+         "op": "the average of each window's published months"})
+
+
+def _series_panel(rep: Dict[str, Any], ctx: Ctx, viz: Dict[str, Any], heat: int) -> int:
+    """A long statistical table's own charts, placed first (see above); each refused with its reason. Returns the heatmaps."""
+    lay = (rep.get("input") or {}).get("layout") or {}
+    if lay.get("layout") != "long statistical table" or int(lay.get("kept") or 0) < 2 or ctx.month is None:
+        return heat
+    made = []
+    for chart, fn in (("contribution_waterfall", _b_series_bridge), ("change_heatmap", _b_series_change_heatmap),
+                      ("slope", _b_series_slope)):
+        try:
+            made.append(fn(ctx, lay))
+        except Refused as exc:
+            viz["refused"].append({"chart": chart, "columns": [], "why": _cut(str(exc), 300), "chosen_by": "engine"})
+    if not made:
+        return heat
+    others = viz["charts"]
+    viz["charts"] = []
+    for rec in made:
+        heat += int(rec["kind"] == "heatmap")
+        _place(viz, rec, "engine", ENGINE_WHY + SERIES_CHART_WHY + ": " + REGISTRY[rec["chart"]]["what"])
+    for rec in others:
+        if len(viz["charts"]) >= VIZ_MAX:
+            break
+        if rec["chart"] in {r["chart"] for r in made}:
+            continue
+        if rec["kind"] == "heatmap" and heat >= HEAT_MAX:
+            continue
+        heat += int(rec["kind"] == "heatmap")
+        _place(viz, rec, rec.get("chosen_by") or "engine", rec.get("why") or "")
+    return heat
+
+
 # --------------------------------------------------------------------------- a statistical table's charts
 # WAVE 4, track A1 (plan/WAVE4-A-DESIGN.md section 2(10)). A table read by its structure (nl_structure) is charted from
 # its published parts, never its raw rows: (1) a contribution waterfall per breakdown (the headline's verified parts,
@@ -2918,6 +3219,11 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
             heat += int(rec["kind"] == "heatmap")
             _place(viz, rec, "engine", ENGINE_WHY + REGISTRY[chart]["what"])
         viz["chosen_by"] = "engine" if viz["charts"] else "none"
+    # a long statistical table's own charts (one value a month per series: the charts above need categories), placed first
+    chosen = viz["chosen_by"]
+    heat = _series_panel(rep, ctx, viz, heat)
+    if viz["charts"] and chosen == "none":
+        viz["chosen_by"] = "engine"
     rep["charts"] = list(rep.get("charts") or []) + v2_records(viz)
     drop_driver_line(rep, viz)
     mend_catmonth_why(rep, viz)

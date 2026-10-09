@@ -32,6 +32,11 @@
   --div-pos: #b35c00;
   --focus: #1f5fbf;
   --fan: rgba(11,115,102,0.16);
+  --ts-1: #2a78d6;
+  --ts-2: #d45a26;
+  --ts-3: #12875c;
+  --ts-4: #9a6a00;
+  --ts-5: #c8457f;
   --heat-green-1: #cfe9e4;
   --heat-green-2: #add9d2;
   --heat-green-3: #87c7bc;
@@ -72,6 +77,11 @@
   --div-pos: #c8741c;
   --focus: #8ab8ff;
   --fan: rgba(43,181,163,0.20);
+  --ts-1: #3987e5;
+  --ts-2: #d95926;
+  --ts-3: #199e70;
+  --ts-4: #c98500;
+  --ts-5: #d55181;
   --heat-green-1: #143c3f;
   --heat-green-2: #154b4a;
   --heat-green-3: #155b55;
@@ -112,6 +122,11 @@
   --div-pos: #c8741c;
   --focus: #8ab8ff;
   --fan: rgba(43,181,163,0.20);
+  --ts-1: #3987e5;
+  --ts-2: #d95926;
+  --ts-3: #199e70;
+  --ts-4: #c98500;
+  --ts-5: #d55181;
   --heat-green-1: #143c3f;
   --heat-green-2: #154b4a;
   --heat-green-3: #155b55;
@@ -889,6 +904,13 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
 .nl2-estimand { border-top: 4px solid var(--accent); }
 .nl2-estimand .kicker { margin-bottom: 4px; }
 .nl2-estimand-in { border-top: 0; box-shadow: none; padding: 0; border: 0; background: none; }
+.nl2-period .kicker { margin-bottom: 4px; }
+.nl2-period .nl2-period-lead { margin: 0 0 10px; }
+.nl2-period table.dt { width: auto; min-width: 100%; }
+.nl2-period table.dt thead th:first-child, .nl2-period table.dt tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.nl2-period table.dt td.num, .nl2-period table.dt th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.nl2-period .nl2-period-gaps { margin: 6px 0 0; }
+.nl2-period .nl2-period-gaps summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .nl2-est-title { margin: 0 0 4px; font-size: clamp(17px, 1.9vw, 21px); line-height: 1.3; letter-spacing: -0.01em; }
 .nl2-est-what { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
 .nl2-est-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
@@ -1296,6 +1318,11 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nlv .p-cumd { fill: var(--series-3); }
 .nlv .p-80 { stroke: var(--ink); stroke-dasharray: 5 4; }
 .nlv .nlv-k80t { fill: var(--series-2); font-size: 12px; font-weight: 700; }
+.nlv .ts { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.nlv .ts-1 { stroke: var(--ts-1); } .nlv .ts-2 { stroke: var(--ts-2); } .nlv .ts-3 { stroke: var(--ts-3); } .nlv .ts-4 { stroke: var(--ts-4); } .nlv .ts-5 { stroke: var(--ts-5); }
+.nlv .tsd-1 { fill: var(--ts-1); } .nlv .tsd-2 { fill: var(--ts-2); } .nlv .tsd-3 { fill: var(--ts-3); } .nlv .tsd-4 { fill: var(--ts-4); } .nlv .tsd-5 { fill: var(--ts-5); }
+.nlv .ts-x { fill: none; stroke: var(--ts-5); stroke-width: 2; }
+.nlv .nlv-gap { fill: var(--hairline); opacity: 0.6; }
 .nlv .s-rise { stroke: var(--series-2); stroke-width: 2; }
 .nlv .s-fall { stroke: var(--series-3); stroke-width: 2; }
 .nlv .s-flat { stroke: var(--muted); stroke-width: 2; }
@@ -1365,7 +1392,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-09 02:39:08 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-09 10:48:54 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2078,7 +2105,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-09 02:39:08 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-09 10:48:54 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -4564,7 +4591,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   };
 
   /* ---- the chart registry's records (tools/fixtures/viz/spec.json, version 2026-09-30.1) ----
-     Five draw kinds (waterfall, heatmap, dot_range, pareto, slope), each drawn from its record alone in the spec's
+     Six draw kinds (waterfall, heatmap, dot_range, pareto, slope, timeseries), each drawn from its record alone in the spec's
      light colours; 'table', a kind this writer does not know, or data a drawer cannot read, drawn as the record's
      table (never an empty box). The engine wrote every printed string: a drawer prints them as they are (a label that
      does not fit is cut at a character with an ellipsis, and the figure's table view shows it whole) and formats only
@@ -4575,7 +4602,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
     total: '#24425c', rise: '#0b7366', fall: '#945400', conn: '#b9b5aa', dot: '#24425c', median: '#945400', bar: '#24425c',
     other: '#56646f', cum: '#945400', ref: '#16232e', k80: '#0b7366', flat: '#56646f', ink: '#16232e', body: '#33424e',
-    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa' };
+    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa', ts: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'] };
   var LEGACY = { line: 1, bars: 1, scatter: 1 };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
@@ -4977,6 +5004,89 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           if (Math.abs(lb[i] - yb) > 1) self.line(xb + 3, yb, xb + 7, lb[i], VC.axis, 0.5);
           self.text(o.bt[i], xb + 8, lb[i] - 2.5, 7, 'R', VC.ink);
           self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', dir(q));
+        });
+      }
+    },
+    // up to 6 lines over one time axis (slot i of x.n at i / (n - 1) of the plot's width; slot k is x.first + k x.step
+    // months), drawn run by run so a period with no published figure is a gap (shaded when no line has a figure there);
+    // each line has its own dash and end marker, and its last figure and label sit at its right end, spread 10 pt apart
+    timeseries: {
+      ok: function (d) {
+        var x = d.x;
+        return isObj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= 240 && fin(x.step) && x.step >= 1 && isStr(d.y_label) && Array.isArray(d.series) &&
+          d.series.length >= 1 && d.series.length <= 6 && d.series.every(function (s) {
+            return isObj(s) && isStr(s.label) && isStr(s.first_text) && isStr(s.last_text) && isStr(s.change_text) && Array.isArray(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
+              return isObj(r) && fin(r.at) && r.at >= 0 && Array.isArray(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
+            });
+          });
+      },
+      lay: function (r, CW) {
+        var d = r.data, S = d.series, lo = Infinity, hi = -Infinity, o = {};
+        S.forEach(function (s) { s.runs.forEach(function (q) { q.values.forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }); }); });
+        var sp = lineSpan(lo, hi);
+        o.nt = axis(sp[0], sp[1], 4);
+        o.lt = S.map(function (s) { return enc(s.last_text); });
+        o.names = [];
+        var lab = Math.min(CW * 0.34, Math.max.apply(null, S.map(function (s, k) { return tw(o.lt[k], 7, 'B') + 6 + Math.min(tw(enc(s.label), 7, 'R'), 110); })) + 12);
+        o.RW = Math.max(60, lab);
+        o.names = S.map(function (s, k) { return fitB(enc(s.label), 7, 'R', o.RW - tw(o.lt[k], 7, 'B') - 10); });
+        o.x0 = o.nt.max + 8;
+        o.h = 150;
+        return o;
+      },
+      draw: function (r, top, bottom) {
+        var o = this.lay(r), d = r.data, S = d.series, n = d.x.n, self = this, L = this.L, R = L + this.CW, nt = o.nt, i, k, q;
+        var x0 = L + o.x0, x1 = R - o.RW, pt = top - 4, pb = bottom + 22, PW = x1 - x0;
+        var X = function (j) { return x0 + (n > 1 ? j / (n - 1) : 0) * PW; }, Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); };
+        var cov = []; for (i = 0; i < n; i++) cov.push(0);
+        S.forEach(function (s) { s.runs.forEach(function (rn) { for (q = 0; q < rn.values.length; q++) cov[rn.at + q] = 1; }); });
+        var first = cov.indexOf(1), lastc = cov.lastIndexOf(1), g, e;
+        for (g = first; g >= 0 && g <= lastc; g++) {
+          if (cov[g]) continue;
+          e = g; while (e <= lastc && !cov[e]) e++;
+          this.rect(X(g - 1), pb, Math.max(0.6, X(e) - X(g - 1)), pt - pb, VC.supFill);
+          g = e;
+        }
+        nt.ticks.forEach(function (t, j) { self.line(x0, Y(t), x1, Y(t), VC.grid, 0.5); self.text(nt.lab[j], x0 - 5 - nt.w[j], Y(t) - 2.5, 7, 'R', VC.muted); });
+        this.line(x0, pb, x1, pb, VC.axis, 0.7);
+        var m0 = Number(d.x.first.slice(0, 4)) * 12 + Number(d.x.first.slice(5, 7)) - 1, st = d.x.step, lastm = m0 + (n - 1) * st, ticks = [], yy, j;
+        var ym = function (mi) { var y = Math.floor(mi / 12), m = mi % 12 + 1; return y + '-' + (m < 10 ? '0' : '') + m; };
+        if (lastm - m0 < 24) [0, Math.floor((n - 1) / 2), n - 1].forEach(function (v, p, a) { if (p === 0 || v !== a[p - 1]) ticks.push({ i: v, t: ym(m0 + v * st) }); });
+        else {
+          var stride = Math.max(1, Math.ceil((tw('0000', 7, 'R') + 8) / (PW / ((lastm - m0) / 12))));
+          yy = 0;
+          for (j = Math.ceil(m0 / 12) * 12; j <= lastm; j += 12, yy++) if (yy % stride === 0) ticks.push({ i: (j - m0) / st, t: String(j / 12) });
+        }
+        ticks.forEach(function (t) {
+          var b = enc(t.t), w = tw(b, 7, 'R'), cx = X(t.i);
+          self.line(cx, pb, cx, pb - 3, VC.axis, 0.6);
+          self.text(b, Math.min(R - w, Math.max(L, cx - w / 2)), pb - 11, 7, 'R', VC.muted);
+        });
+        var DASH = ['', '4 2.5', '1.2 2', '5 1.5 1.2 1.5', '2.5 1.5'], ends = [];
+        S.forEach(function (s, kk) {
+          var col = VC.ts[kk % VC.ts.length], ex = 0, ey = 0;
+          s.runs.forEach(function (rn) {
+            var pts = rn.values.map(function (v, p) { return [X(rn.at + p), Y(v)]; });
+            if (pts.length === 1) self.circle(pts[0][0], pts[0][1], 1.3, col);
+            else self.op('q ' + rgb(col) + ' RG 1.3 w 1 J 1 j ' + (DASH[kk] ? '[' + DASH[kk] + '] 0 d ' : '') + pts.map(function (p2, p) { return f2(p2[0]) + ' ' + f2(p2[1]) + (p ? ' l' : ' m'); }).join(' ') + ' S Q');
+            ex = pts[pts.length - 1][0]; ey = pts[pts.length - 1][1];
+          });
+          var rr = 2.6;
+          if (kk === 1) self.rect(ex - rr, ey - rr, 2 * rr, 2 * rr, col);
+          else if (kk === 2) self.op('q ' + rgb(col) + ' rg ' + [[ex, ey + rr + 0.8], [ex + rr + 0.8, ey], [ex, ey - rr - 0.8], [ex - rr - 0.8, ey]].map(function (p, p2) { return f2(p[0]) + ' ' + f2(p[1]) + (p2 ? ' l' : ' m'); }).join(' ') + ' h f Q');
+          else if (kk === 3) self.op('q ' + rgb(col) + ' rg ' + [[ex, ey + rr + 0.8], [ex + rr + 0.8, ey - rr], [ex - rr - 0.8, ey - rr]].map(function (p, p2) { return f2(p[0]) + ' ' + f2(p[1]) + (p2 ? ' l' : ' m'); }).join(' ') + ' h f Q');
+          else if (kk === 4) { self.line(ex - rr, ey - rr, ex + rr, ey + rr, col, 1.2); self.line(ex + rr, ey - rr, ex - rr, ey + rr, col, 1.2); }
+          else self.circle(ex, ey, rr, col);
+          ends.push({ i: kk, y: ey, ly: ey, ex: ex });
+        });
+        var a = ends.slice().sort(function (p, q2) { return (q2.y - p.y) || (p.i - q2.i); });
+        for (k = 1; k < a.length; k++) if (a[k].ly > a[k - 1].ly - 10) a[k].ly = a[k - 1].ly - 10;
+        if (a.length && a[a.length - 1].ly < pb + 3) { a[a.length - 1].ly = pb + 3; for (k = a.length - 2; k >= 0; k--) if (a[k].ly < a[k + 1].ly + 10) a[k].ly = a[k + 1].ly + 10; }
+        a.forEach(function (p) {
+          var kk = p.i, w = tw(o.lt[kk], 7, 'B');
+          if (Math.abs(p.ly - p.y) > 1) self.line(p.ex + 3, p.y, x1 + 5, p.ly, VC.axis, 0.5);
+          self.text(o.lt[kk], x1 + 7, p.ly - 2.5, 7, 'B', VC.ink);
+          if (o.names[kk]) self.text(o.names[kk], x1 + 7 + w + 4, p.ly - 2.5, 7, 'R', VC.body);
         });
       }
     }
@@ -10741,6 +10851,24 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       return '<li data-move="' + esc(g.move) + '">' + lead + items + '<p class="nl2-settle-t">' + esc(g.settle) + '</p></li>';
     }).join('');
   }
+  // A long statistical table's whole period (rep.period, engine/nl_viz.py period_block): where each series began and how far it
+  // has come, as the engine wrote it (nothing is computed here), with the months the publisher skipped named, and no grade
+  function periodHtml(r, inSection) {
+    var P = r && r.period, T = P && P.table;
+    if (!P || !T || !Array.isArray(T.cols) || !Array.isArray(T.rows) || !T.rows.length) return '';
+    var sk = P.skipped, runs = sk && Array.isArray(sk.ranges) ? sk.ranges.map(function (x) { return x[0] === x[1] ? x[0] : x[0] + ' to ' + x[1]; }).join(', ') : '';
+    var lead = (P.lines && P.lines[0]) || '';
+    return '<article class="tr-card nl2-period" data-period="1">' + (inSection ? '<h4>Over the whole file</h4>' : '<p class="kicker">Over the whole file</p>') +
+      (lead ? '<p class="nl2-period-lead">' + esc(lead) + '</p>' : '') +
+      '<div class="tscroll" tabindex="0" role="region" aria-label="Each series over the whole file"><table class="dt nl2-ptab"><caption class="sr">Each series: its first and its latest published figure, and the change between them</caption><thead><tr>' +
+      T.cols.map(function (c, i) { return '<th scope="col"' + (i ? ' class="num"' : '') + '>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      T.rows.map(function (row) {
+        return '<tr>' + row.map(function (c, i) { return i === 0 ? '<th scope="row" dir="auto">' + esc(c) + '</th>' : '<td class="num" dir="auto">' + esc(c) + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<p class="note nl2-period-note">' + esc(P.basis || '') + (P.unit ? ' Figures are in ' + esc(P.unit) + '.' : '') +
+      ' Average a year is the change divided by the years between the two figures; the compound rate is the constant yearly rate that gives the same change.</p>' +
+      (runs ? '<details class="nl2-period-gaps"><summary>' + esc(cap1((sk.text || '').replace(/[.\s]+$/, ''))) + '</summary><p class="note">The months with no published figure, left as gaps and never filled in: ' + esc(runs) + '.</p></details>' : '') + '</article>';
+  }
   function manager(r, CH, parts) {
     var K = CH.kpi, B = CH.benchmark, drv = (r.charts_suppressed || []).filter(function (s) { return s.rule === '#2b'; })[0];
     var figs = r.charts.filter(function (c) { return c.view === 'manager' && c.default_visible && c.type !== 'viz' && ['kpi', 'findings_table', 'benchmark'].indexOf(c.id) < 0; });
@@ -10770,6 +10898,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';
     // the optional AI summaries (50-try.js) sit right under the bottom line, where the visitor reads and asks
     h += (parts && parts.ai) || '';
+    h += periodHtml(r);
     if (K) h += '<div class="nl2-kpis" data-chart="kpi" data-findings="' + esc(K.finding_ids.join(' ')) + '" role="list" aria-label="' + esc(K.title) + '">' + tiles(r, K).replace(/<div class="nl2-tile"/g, '<div role="listitem" class="nl2-tile"') + '</div>';
     h += '<article class="tr-card nl2-trustcard"><p class="nl2-trust-line"><b>Can I trust it?</b> ' + esc(trustLine(r)) + '</p>' +
       '<details class="nl2-trust-more"><summary>How much to trust it, layer by layer</summary><ul class="nl2-trust">' + trustLayers(r).map(function (x) { return '<li data-layer="' + x[0] + '">' + x[1] + '</li>'; }).join('') + '</ul></details></article>';
@@ -10930,7 +11059,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var VZa = vizCharts(r), wfa = driversChart(VZa);
     var res = r.charts.filter(function (c) { return ['kpi', 'findings_table', 'benchmark', 'cleaning.before_after', 'missingness'].indexOf(c.id) < 0 && c.type !== 'viz'; })
       .map(function (c, i) { return [c, i]; }).sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (x) { return x[0]; });
-    S.results = '<h4>Findings</h4><div data-chart="findings_table" data-findings="' + esc(CH.findings_table ? CH.findings_table.finding_ids.join(' ') : '') + '">' + ftab(r, 'analyst', CH) + '</div>' +
+    S.results = periodHtml(r, true) + '<h4>Findings</h4><div data-chart="findings_table" data-findings="' + esc(CH.findings_table ? CH.findings_table.finding_ids.join(' ') : '') + '">' + ftab(r, 'analyst', CH) + '</div>' +
       '<p class="note">p: for a change claim, how often a result at least this strong would appear if the change were smaller than the bar; q: the same after allowing for the claims tested together in its family. Neither is the probability that the claim is true. The interval is the same test inverted; a selection-adjusted bound allows for having picked the confirmed claims out of the family.</p>' +
       '<h4>Forecast</h4>' + forecastStats(r) +
       '<h4>Charts</h4>' + res.map(function (c) {
@@ -11115,7 +11244,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
 })();
 
 /* The chart registry, page side (tools/fixtures/viz/spec.json, plan/CHART-REGISTRY-DESIGN.md). window.NLV draws
-   one viz record by its draw kind (waterfall, heatmap, dot_range, pareto, slope) and draws its table for a kind it
+   one viz record by its draw kind (waterfall, heatmap, dot_range, pareto, slope, timeseries) and draws its table for a kind it
    does not know, or data it cannot read: a record is never dropped. The engine wrote every printed string and every
    colour tier; this file only places them. The only numbers formatted here are axis ticks.
    Colour is never the only channel: a number and a glyph in every heatmap cell, signed texts on every change,
@@ -11130,11 +11259,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   };
   var NLV = {};
   window.NLV = NLV;
-  var KINDS = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'table'];
+  var KINDS = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'timeseries', 'table'];
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 6, slots: 240 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }
@@ -11298,6 +11427,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       return obj(d) && arr(d.bars) && d.bars.length >= 1 && d.bars.length <= CAP.bars && d.bars.every(bar) &&
         (d.other === null || d.other === undefined || bar(d.other)) && obj(d.k80) && fin(d.k80.k) && str(d.k80.text);
     },
+    timeseries: function (d) {
+      var x = d && d.x;
+      return obj(d) && obj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= CAP.slots && fin(x.step) && x.step >= 1 && str(d.y_label) &&
+        arr(d.series) && d.series.length >= 1 && d.series.length <= CAP.lines && d.series.every(function (s) {
+          return obj(s) && str(s.label) && str(s.first_text) && str(s.last_text) && str(s.change_text) && arr(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
+            return obj(r) && fin(r.at) && r.at >= 0 && arr(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
+          });
+        });
+    },
     slope: function (d) {
       return obj(d) && arr(d.rows) && d.rows.length >= 1 && d.rows.length <= CAP.rows && str(d.a_label) && str(d.b_label) && d.rows.every(function (r) {
         return obj(r) && str(r.label) && pos(r.a) && pos(r.b) && str(r.a_text) && str(r.b_text) && str(r.change_text);
@@ -11318,7 +11456,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   // a menu chart's name in the reader's words (the analyst view's "Charts not drawn, and why")
   var NAMES = { contribution_waterfall: 'Contribution waterfall', pvm_waterfall: 'Price, volume and mix waterfall', calendar_heatmap: 'Calendar heatmap (month by year)',
     change_heatmap: 'Change heatmap (segment by month)', crosstab_heatmap: 'Crosstab heatmap', theme_rating_heatmap: 'Themes by rating heatmap',
-    correlation_heatmap: 'Correlation heatmap', group_ranges: 'Group ranges', pareto: 'Pareto chart', slope: 'Slope chart' };
+    correlation_heatmap: 'Correlation heatmap', group_ranges: 'Group ranges', pareto: 'Pareto chart', slope: 'Slope chart', series_lines: 'Line chart of the series over time' };
   NLV.chartName = function (c) { return has(NAMES, c) ? NAMES[c] : String(c || 'chart').replace(/_/g, ' '); };
 
   /* ------------------------------------------------------------ heatmap */
@@ -11657,7 +11795,97 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return { body: b, H: bot + 22, layout: 'dumbbells' };
   }
 
-  var DRAW = { waterfall: waterfall, heatmap: heatmap, dot_range: dotRange, pareto: pareto, slope: slope };
+  /* ------------------------------------------------------------ timeseries */
+  // up to 6 lines over one time axis (slot i of x.n sits at i / (n - 1) of the plot's width; slot k is x.first + k x.step
+  // months). A run is a stretch of consecutive published periods; the line is drawn run by run, so a period with no
+  // published figure is a gap (shaded when no line has a figure there), never joined across. Identity is not colour alone:
+  // each line has its own dash, its own end marker and a direct label (the legend under a phone-width drawing).
+  var TS_DASH = ['', '7 4', '2 3', '9 3 2 3', '4 2'];
+  function tsMarker(k, x, y, cls) {
+    var r = 4.2;
+    if (k === 1) return '<rect class="' + cls + '" x="' + f1(x - r) + '" y="' + f1(y - r) + '" width="' + f1(2 * r) + '" height="' + f1(2 * r) + '"/>';
+    if (k === 2) return '<path class="' + cls + '" d="M' + f1(x) + ' ' + f1(y - r - 1) + 'L' + f1(x + r + 1) + ' ' + f1(y) + 'L' + f1(x) + ' ' + f1(y + r + 1) + 'L' + f1(x - r - 1) + ' ' + f1(y) + 'z"/>';
+    if (k === 3) return '<path class="' + cls + '" d="M' + f1(x) + ' ' + f1(y - r - 1) + 'L' + f1(x + r + 1) + ' ' + f1(y + r) + 'L' + f1(x - r - 1) + ' ' + f1(y + r) + 'z"/>';
+    if (k === 4) return '<path class="' + cls + ' ts-x" d="M' + f1(x - r) + ' ' + f1(y - r) + 'L' + f1(x + r) + ' ' + f1(y + r) + 'M' + f1(x + r) + ' ' + f1(y - r) + 'L' + f1(x - r) + ' ' + f1(y + r) + '"/>';
+    return '<circle class="' + cls + '" cx="' + f1(x) + '" cy="' + f1(y) + '" r="' + r + '"/>';
+  }
+  function ymOf(mi) { var y = Math.floor(mi / 12), m = mi % 12 + 1; return y + '-' + (m < 10 ? '0' : '') + m; }
+  // axis ticks: the years that start inside the span (every few, so none touches), or three month labels for a short span
+  function tsTicks(d, PW) {
+    var m0 = +d.x.first.slice(0, 4) * 12 + (+d.x.first.slice(5, 7)) - 1, st = d.x.step, n = d.x.n, last = m0 + (n - 1) * st, out = [], i, j;
+    if (last - m0 < 24) {
+      [0, Math.floor((n - 1) / 2), n - 1].forEach(function (k, q, a) { if (q === 0 || k !== a[q - 1]) out.push({ i: k, t: ymOf(m0 + k * st) }); });
+      return out;
+    }
+    var ys = [];
+    for (j = Math.ceil(m0 / 12) * 12; j <= last; j += 12) ys.push(j / 12);
+    var perYear = PW / ((last - m0) / 12), stride = Math.max(1, Math.ceil((tw('0000', 12) + 12) / perYear));
+    ys.forEach(function (y, q) { if (q % stride === 0) out.push({ i: (y * 12 - m0) / st, t: String(y) }); });
+    return out;
+  }
+  function timeseries(rec, W) {
+    var d = rec.data, S = d.series, n = d.x.n, wide = W >= 480, lo = Infinity, hi = -Infinity, b = '';
+    S.forEach(function (s) { s.runs.forEach(function (r) { r.values.forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }); }); });
+    var sp = U.lineSpan ? U.lineSpan(lo, hi, 0.06) : [lo, hi];
+    var yt = yTicks(sp[0], sp[1], 4), yw = mx(yt.lab.map(function (t) { return tw(t, 12); })) + 10;
+    var RW = wide ? Math.min(Math.round(W * 0.34), Math.max(110, mx(S.map(function (s) { return tw(s.last_text, 12, 700) + 8 + Math.min(tw(s.label, 12), 150); })) + 14)) : 10;
+    var L = yw, R = W - RW, PW = Math.max(60, R - L), T = 10, PH = wide ? 230 : 190, Bt = T + PH;
+    var X = function (i) { return L + (n > 1 ? i / (n - 1) : 0) * PW; };
+    var Y = scale(sp[0], sp[1] === sp[0] ? sp[0] + 1 : sp[1], Bt, T);
+    // no line has a figure for these periods: a shaded band from the last figure before to the first after
+    var cov = new Array(n), g = 0;
+    for (g = 0; g < n; g++) cov[g] = 0;
+    S.forEach(function (s) { s.runs.forEach(function (r) { for (var q = 0; q < r.values.length; q++) cov[r.at + q] = 1; }); });
+    var first = cov.indexOf(1), lastc = cov.lastIndexOf(1), gaps = 0, a;
+    for (a = first; a >= 0 && a <= lastc; a++) {
+      if (cov[a]) continue;
+      var e = a; while (e <= lastc && !cov[e]) e++;
+      b += '<rect class="nlv-gap" x="' + f1(X(a - 1)) + '" y="' + T + '" width="' + f1(Math.max(1, X(e) - X(a - 1))) + '" height="' + PH + '"/>';
+      gaps++; a = e;
+    }
+    yt.ts.forEach(function (t, k) {
+      b += '<line class="gridl" x1="' + f1(L) + '" x2="' + f1(R) + '" y1="' + f1(Y(t)) + '" y2="' + f1(Y(t)) + '"/>' + txt(L - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' });
+    });
+    b += '<line class="nlv-zero" x1="' + f1(L) + '" x2="' + f1(R) + '" y1="' + Bt + '" y2="' + Bt + '"/>';
+    tsTicks(d, PW).forEach(function (t) {
+      var x = X(t.i), w = tw(t.t, 12), cx = Math.min(W - w / 2 - 1, Math.max(w / 2 + 1, x));
+      b += '<line class="nlv-zero" x1="' + f1(x) + '" x2="' + f1(x) + '" y1="' + Bt + '" y2="' + (Bt + 4) + '"/>' + txt(cx, Bt + 18, t.t, { anchor: 'middle' });
+    });
+    var ends = [];
+    S.forEach(function (s, k) {
+      var cls = 'ts ts-' + (k + 1), body = '', ex = 0, ey = 0;
+      s.runs.forEach(function (r) {
+        var pts = r.values.map(function (v, q) { return [X(r.at + q), Y(v)]; });
+        if (pts.length === 1) body += '<circle class="tsd-' + (k + 1) + '" cx="' + f1(pts[0][0]) + '" cy="' + f1(pts[0][1]) + '" r="2"/>';
+        else body += '<path class="' + cls + '"' + (TS_DASH[k] ? ' stroke-dasharray="' + TS_DASH[k] + '"' : '') + ' d="' + pts.map(function (p, q) { return (q ? 'L' : 'M') + f1(p[0]) + ' ' + f1(p[1]); }).join('') + '"/>';
+        ex = pts[pts.length - 1][0]; ey = pts[pts.length - 1][1];
+      });
+      b += '<g data-tip="' + esc(s.label + ': ' + s.first_text + ' to ' + s.last_text + (s.change_text ? ' (' + s.change_text + ')' : '')) + '">' + body + tsMarker(k, ex, ey, 'tsd-' + (k + 1)) + '</g>';
+      ends.push(ey);
+    });
+    var H = Bt + 28;
+    if (wide) {
+      var ly = spread(ends, T + 4, Bt, 15);
+      S.forEach(function (s, k) {
+        var lt = tw(s.last_text, 12, 700);
+        b += (Math.abs(ly[k] - ends[k]) > 1 ? '<path class="nlv-lead" d="M' + f1(R + 6) + ' ' + f1(ends[k]) + 'L' + f1(R + 10) + ' ' + f1(ly[k] - 4) + '"/>' : '') +
+          txt(R + 12, ly[k], s.last_text, { cls: 'nlv-t nlv-b', wt: 700 }) + txt(R + 12 + lt + 6, ly[k], s.label, { cls: 'nlv-t', maxW: Math.max(0, W - (R + 12 + lt + 8)) });
+      });
+    } else {
+      // the legend under the drawing: the line's own mark, its label, then where it started and where it is
+      var y = Bt + 34;
+      S.forEach(function (s, k) {
+        b += '<path class="ts ts-' + (k + 1) + '"' + (TS_DASH[k] ? ' stroke-dasharray="' + TS_DASH[k] + '"' : '') + ' d="M2 ' + (y - 4) + 'h22"/>' + tsMarker(k, 13, y - 4, 'tsd-' + (k + 1)) +
+          txt(32, y, s.label, { cls: 'nlv-t', maxW: W - 34 }) +
+          txt(32, y + 15, s.first_text + ' to ' + s.last_text + (s.change_text ? ' (' + s.change_text + ')' : ''), { cls: 'lab', maxW: W - 34 });
+        y += 38;
+      });
+      H = y - 8;
+    }
+    return { body: b, H: H, layout: wide ? 'direct labels' : 'legend', after: gaps ? '<p class="note nlv-gapn">The shaded bands are periods with no published figure: the lines stop there and start again, and nothing is filled in.</p>' : '' };
+  }
+
+  var DRAW = { waterfall: waterfall, heatmap: heatmap, dot_range: dotRange, pareto: pareto, slope: slope, timeseries: timeseries };
 
   /* ------------------------------------------------------------ the table: the universal fallback */
   function num(c) { return /^[−+\-]?[\d.,]+(%| \S+)?$/.test(String(c)); }

@@ -486,7 +486,7 @@
       }).join('') + '</tbody></table></div>' +
       '<p class="note nl2-period-note">' + esc(P.basis || '') + (P.unit ? ' Figures are in ' + esc(P.unit) + '.' : '') +
       ' Average a year is the change divided by the years between the two figures; the compound rate is the constant yearly rate that gives the same change.</p>' +
-      (runs ? '<details class="nl2-period-gaps"><summary>' + esc(cap1((sk.text || '').replace(/[.\s]+$/, ''))) + '</summary><p class="note">The months with no published figure, left as gaps and never filled in: ' + esc(runs) + '.</p></details>' : '') + '</article>';
+      (runs ? '<details class="nl2-period-gaps"><summary>' + esc(cap1((sk.text || '').replace(/[.\s]+$/, ''))) + '</summary><p class="note">The ' + esc(sk.unit || 'month') + 's with no published figure, left as gaps and never filled in: ' + esc(runs) + '.</p></details>' : '') + '</article>';
   }
   function manager(r, CH, parts) {
     var K = CH.kpi, B = CH.benchmark, drv = (r.charts_suppressed || []).filter(function (s) { return s.rule === '#2b'; })[0];

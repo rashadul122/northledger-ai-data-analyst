@@ -40,7 +40,7 @@ AI_CHARTS_MAX = 10          # charts in results_for_ai (the analyses' and these 
 CHART_BYTES = 6000          # one record as JSON.stringify writes it, in UTF-8 bytes
 HEATMAP_BYTES = 12000       # ... a heatmap's (the owner's decision on the spec's byte-cap conflict, 30 Sep 2026)
 LINE_BYTES = 16000          # ... a timeseries': up to 6 lines of up to 240 periods (impact6, 9 Oct 2026)
-LINE_SERIES_MAX = 6         # lines in a timeseries (the engine draws 5: the lead and the 4 that changed most)
+LINE_SERIES_MAX = 5         # lines in a timeseries: the lead and the 4 that changed most (the palette has five colours)
 LINE_SLOTS_MAX = 240        # periods a timeseries spans (the latest, when the file spans more)
 CHART_LIMITS_MAX = 16
 CHART_LIMIT_WHY_MAX = 160
@@ -2756,13 +2756,14 @@ def _skipped(axis: Dict[str, Any], have: List[int], whole: bool) -> Optional[Dic
     if axis["grain"] not in ("month", "quarter", "year") or not have:
         return None
     step = axis["step"]
+    lab = (lambda i: _idx_month(i)[:4]) if (whole and axis["grain"] == "year") else _idx_month
     lo, hi, got = min(have), max(have), set(have)
     slots = list(range(lo, hi + 1, step))
     miss = [m for m in slots if m not in got]
     if not miss:
         return None
-    runs = [(_idx_month(a), _idx_month(b)) for a, b in _month_ranges(miss)] if step == 1 else [(_idx_month(m), _idx_month(m)) for m in miss]
-    out: Dict[str, Any] = {"count": len(miss), "of": len(slots), "first": _idx_month(lo), "last": _idx_month(hi),
+    runs = [(lab(a), lab(b)) for a, b in _month_ranges(miss)] if step == 1 else [(lab(m), lab(m)) for m in miss]
+    out: Dict[str, Any] = {"count": len(miss), "of": len(slots), "first": lab(lo), "last": lab(hi),
                            "unit": {"month": "month", "quarter": "quarter", "year": "year"}[axis["grain"]],
                            "ranges": [list(r) for r in runs], "pattern": ""}
     if axis["grain"] == "month":
@@ -2806,7 +2807,7 @@ def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     whole_year = grain == "year" and all(t.month == ts.dropna().iloc[0].month for t in ts.dropna())
     for order, land in enumerate(lands):
         v = ctx.nums(land)
-        pts = [(t, float(x)) for t, x in zip(ts, v) if t == t and x == x]
+        pts = [(t, float(x)) for t, x in zip(ts, v) if t == t and x == x and abs(x) != float("inf")]
         if len(pts) < 2:
             continue
         pts.sort(key=lambda p: p[0])
@@ -2930,6 +2931,8 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         raise Refused("needs a series with 12 or more published periods")
     ts = axis["ts"]
     step = 1 if grain == "day" else max(1, int(axis["step"]))
+    if step > 12:
+        raise Refused("the dates are more than a year apart")
     rows = [(t.year * 12 + t.month - 1, i) for i, t in enumerate(ts) if t == t]
     lo = min(m for m, _i in rows)
     if any((m - lo) % step for m, _i in rows):
@@ -2941,8 +2944,11 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         raise Refused("needs two or more periods")
     first_month = lo + skip * step
 
+    whole_year = grain == "year" and len({t.month for t in ts if t == t}) == 1
+
     def month_text(slot: int) -> str:
-        return _idx_month(first_month + slot * step)
+        m = _idx_month(first_month + slot * step)
+        return m[:4] if whole_year else m
     drawn: List[Dict[str, Any]] = []
     for f in pick:
         v = ctx.nums(f["column"])
@@ -2950,7 +2956,7 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         for m, i in rows:
             x = v.iloc[i]
             slot = (m - lo) // step - skip
-            if x == x and slot >= 0:
+            if x == x and abs(x) != float("inf") and slot >= 0:
                 cell.setdefault(slot, []).append(float(x))
         pts = {sl: math.fsum(xs) / len(xs) for sl, xs in cell.items()}
         if len(pts) < 2:
@@ -2972,7 +2978,7 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
     for d, lab in zip(drawn, labels):
         d["line"]["label"] = lab
     unit = pf["unit"]
-    noun = {"month": "Month", "quarter": "Quarter", "year": "Year"}.get(grain, "Month")
+    noun = {"month": "Month", "quarter": "Quarter start", "year": "Year"}.get(grain, "Month")
 
     def assemble(use: List[Dict[str, Any]]) -> Dict[str, Any]:
         # the table: each series' figure in the first period drawn, in the last period of each calendar year, and in the last
@@ -2998,16 +3004,17 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         if pf["mixed_units"] and len(pf["facts"]) > 1:
             what += " (the series come in different units, so only the lead is drawn)"
         title = "Each series over the whole period" if more else "%s over the whole period" % lead["line"]["label"]
-        subtitle = "%s to %s: %s, of %s series; periods with no published figure are gaps%s" % (
+        subtitle = "%s to %s: %s, of %s series; periods with no published figure are gaps%s%s" % (
             month_text(0), month_text(n - 1), what, _count(len(pf["facts"])),
-            ("; the latest %s of %s periods" % (_count(n), _count(n_all))) if skip else "")
-        summary = ("%s went from %s in %s to %s in %s%s. %s Each point is a published figure%s, and where the publisher skipped a period the "
+            ("; the latest %s of %s periods" % (_count(n), _count(n_all))) if skip else "",
+            ("; in %s" % unit) if unit else "")
+        summary = ("%s went from %s in %s to %s in %s%s.%s Each point is a published figure%s, and where the publisher skipped a period the "
                    "line stops and starts again." % (
                        lead["line"]["label"], lead["line"]["first_text"], l0, lead["line"]["last_text"], l1,
                        (" (%s)" % lead["line"]["change_text"]) if lead["line"]["change_text"] else "",
-                       ("The lines drawn with it: %s." % ", ".join(more)) if more else "",
+                       (" The lines drawn with it: %s." % ", ".join(more)) if more else "",
                        " (a day's figures averaged into its month)" if grain == "day" else ""))
-        data = {"x": {"first": month_text(0), "n": n, "step": step, "label": noun}, "series": [d["line"] for d in use],
+        data = {"x": {"first": _idx_month(first_month), "n": n, "step": step, "label": noun}, "series": [d["line"] for d in use],
                 "y_label": _cut(unit, 40)}
         return _record(
             "series_lines", title, subtitle, REGISTRY["series_lines"]["section"],
@@ -3015,7 +3022,7 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
             {"label": lead["line"]["label"][:80], "unit": _cut(unit, 20), "kind": "amount"}, data,
             {"cols": tcols, "rows": trows}, summary, (0, ""),
             "The table's published series, one figure a period, as the engine read them",
-            {"columns": [d["fact"]["label"] for d in use], "rows": len(ctx.frame), "months": [month_text(0), month_text(n - 1)],
+            {"columns": [d["fact"]["label"] for d in use], "rows": len(ctx.frame), "months": [_idx_month(first_month), _idx_month(first_month + (n - 1) * step)],
              "op": "each published figure in time order; a period with none is a gap"})
     use = drawn
     while True:
@@ -3055,6 +3062,12 @@ def _series_panel(rep: Dict[str, Any], ctx: Ctx, viz: Dict[str, Any], heat: int)
             made.append(fn(ctx, lay))
         except Refused as exc:
             viz["refused"].append({"chart": chart, "columns": [], "why": _cut(str(exc), 300), "chosen_by": "engine"})
+        except Exception as exc:  # noqa: BLE001 - one chart never stops the report (the plan's charts are guarded the same way, _built)
+            import os
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
+            viz["refused"].append({"chart": chart, "columns": [], "chosen_by": "engine",
+                                   "why": "the chart could not be built for this file (%s)" % type(exc).__name__})
     if not made:
         return heat
     others = viz["charts"]

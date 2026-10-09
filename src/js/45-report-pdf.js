@@ -1326,7 +1326,7 @@
       ok: function (d) {
         var x = d.x;
         return isObj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= 240 && fin(x.step) && x.step >= 1 && isStr(d.y_label) && Array.isArray(d.series) &&
-          d.series.length >= 1 && d.series.length <= 6 && d.series.every(function (s) {
+          d.series.length >= 1 && d.series.length <= 5 && d.series.every(function (s) {
             return isObj(s) && isStr(s.label) && isStr(s.first_text) && isStr(s.last_text) && isStr(s.change_text) && Array.isArray(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
               return isObj(r) && fin(r.at) && r.at >= 0 && Array.isArray(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
             });
@@ -1348,7 +1348,9 @@
       },
       draw: function (r, top, bottom) {
         var o = this.lay(r), d = r.data, S = d.series, n = d.x.n, self = this, L = this.L, R = L + this.CW, nt = o.nt, i, k, q;
-        var x0 = L + o.x0, x1 = R - o.RW, pt = top - 4, pb = bottom + 22, PW = x1 - x0;
+        var yl = isStr(d.y_label) && d.y_label ? fitB(enc(d.y_label), 7, 'B', this.CW) : '';
+        var x0 = L + o.x0, x1 = R - o.RW, pt = top - (yl ? 13 : 4), pb = bottom + 22, PW = x1 - x0;
+        if (yl) this.text(yl, L, top - 7.5, 7, 'B', VC.muted);
         var X = function (j) { return x0 + (n > 1 ? j / (n - 1) : 0) * PW; }, Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); };
         var cov = []; for (i = 0; i < n; i++) cov.push(0);
         S.forEach(function (s) { s.runs.forEach(function (rn) { for (q = 0; q < rn.values.length; q++) cov[rn.at + q] = 1; }); });

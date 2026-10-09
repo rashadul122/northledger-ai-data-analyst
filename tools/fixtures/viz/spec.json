@@ -29,7 +29,7 @@
   "ANCHORS_MAX": 24,
   "RECONCILE_TOL": 1e-06,
   "LINE_BYTES": 16000,
-  "LINE_SERIES_MAX": 6,
+  "LINE_SERIES_MAX": 5,
   "LINE_SLOTS_MAX": 240
  },
  "caps_notes": {
@@ -42,7 +42,7 @@
   "HEATMAP_BYTES": "a heatmap record's cap, measured as CHART_BYTES is (the owner's decision on the spec's byte-cap conflict, 30 Sep 2026; recorded here under the same version: the engine's nl_viz and the worker's src/charts.js already apply it; the page and the PDF draw what they receive). At 6,000 bytes about 120 cells fit, so HEAT_ROWS_MAX x HEAT_COLS_MAX (288 cells) was unreachable; at 12,000 the same calendar widened to 10 x 24 (240 cells) is 10,355 bytes, and a grid over the cap is still trimmed (pipeline.engine)",
   "RECONCILE_TOL": "relative tolerance of every add-up check, plus 1e-6 per part for each value's rounding to 1e-6",
   "LINE_BYTES": "a timeseries record's cap, measured as CHART_BYTES is: up to 6 lines of up to 240 periods (a long statistical table's own chart; impact6, 9 Oct 2026). A record over it loses its last line, one at a time, in the engine; the worker degrades one over it to its table",
-  "LINE_SERIES_MAX": "lines in a timeseries (the engine draws 5: the lead series and the 4 that changed most)",
+  "LINE_SERIES_MAX": "lines in a timeseries (the lead series and the 4 that changed most)",
   "LINE_SLOTS_MAX": "periods a timeseries spans; a longer file shows its latest 240 and says so in the subtitle"
  },
  "rules": [
@@ -1077,7 +1077,7 @@
      "series": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 6,
+      "maxItems": 5,
       "items": {
        "type": "object",
        "required": [

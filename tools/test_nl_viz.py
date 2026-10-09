@@ -1771,6 +1771,39 @@ def test_series_lines_follow_the_table_s_own_period_unit_and_gaps():
     assert NV.REGISTRY["series_lines"]["kind"] == "timeseries"
 
 
+def test_a_series_longer_than_the_window_draws_its_latest_periods_and_says_so():
+    """A table spanning more periods than LINE_SLOTS_MAX draws the latest ones: the first drawn month moves, every point still equals
+    the published figure of that month, and the subtitle names how many of how many are drawn."""
+    import pandas as pd
+    NV = _nv()
+    raw = _statcan_bytes()
+    full = NB.run(raw, "d.csv", "", {}, "2026-09-30")
+    assert full["ok"], full.get("error")
+    rf = _rec(full, "series_lines")
+    n_full = rf["data"]["x"]["n"]
+    assert n_full > 120, n_full
+    old = NV.LINE_SLOTS_MAX
+    try:
+        NV.LINE_SLOTS_MAX = 100
+        cut = NB.run(raw, "d.csv", "", {}, "2026-09-30")
+    finally:
+        NV.LINE_SLOTS_MAX = old
+    assert cut["ok"], cut.get("error")
+    rc = _rec(cut, "series_lines")
+    x = rc["data"]["x"]
+    assert x["n"] == 100 and x["first"] == _month_add(rf["data"]["x"]["first"], n_full - 100), (x, rf["data"]["x"])
+    assert "the latest 100 of %d periods" % n_full in rc["subtitle"] or "the latest 100 of %s periods" % format(n_full, ",") in rc["subtitle"], rc["subtitle"]
+    # every drawn point is the same published figure the full chart carries for that month
+    def pts(rec):
+        r = rec["data"]
+        return {s["label"]: {_month_add(r["x"]["first"], (run["at"] + k) * r["x"]["step"]): v
+                             for run in s["runs"] for k, v in enumerate(run["values"])} for s in r["series"]}
+    a, b = pts(rf), pts(rc)
+    assert set(a) == set(b)
+    for lab, got in b.items():
+        assert got and all(abs(a[lab][m] - v) < 1e-9 for m, v in got.items()), lab
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

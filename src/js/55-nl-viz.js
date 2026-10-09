@@ -18,7 +18,7 @@
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 6, slots: 240 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 5, slots: 240 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }
@@ -582,9 +582,12 @@
     var d = rec.data, S = d.series, n = d.x.n, wide = W >= 480, lo = Infinity, hi = -Infinity, b = '';
     S.forEach(function (s) { s.runs.forEach(function (r) { r.values.forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }); }); });
     var sp = U.lineSpan ? U.lineSpan(lo, hi, 0.06) : [lo, hi];
-    var yt = yTicks(sp[0], sp[1], 4), yw = mx(yt.lab.map(function (t) { return tw(t, 12); })) + 10;
+    // the value axis prints whole figures, not 1.2M: the table's unit may itself be millions (the unit is named over the axis)
+    var yts = ticks(sp[0], sp[1], 4), ystep = yts.length > 1 ? Math.abs(yts[1] - yts[0]) : 1, ydp = !(ystep > 0) || ystep >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log(ystep) / Math.LN10 - 1e-9));
+    var yt = { ts: yts, lab: yts.map(function (t) { return (t < 0 ? '\u2212' : '') + Math.abs(t).toLocaleString(undefined, { minimumFractionDigits: ydp, maximumFractionDigits: ydp }); }) };
+    var yw = mx(yt.lab.map(function (t) { return tw(t, 12); })) + 10;
     var RW = wide ? Math.min(Math.round(W * 0.34), Math.max(110, mx(S.map(function (s) { return tw(s.last_text, 12, 700) + 8 + Math.min(tw(s.label, 12), 150); })) + 14)) : 10;
-    var L = yw, R = W - RW, PW = Math.max(60, R - L), T = 10, PH = wide ? 230 : 190, Bt = T + PH;
+    var L = yw, R = W - RW, PW = Math.max(60, R - L), T = d.y_label ? 28 : 10, PH = wide ? 230 : 190, Bt = T + PH;
     var X = function (i) { return L + (n > 1 ? i / (n - 1) : 0) * PW; };
     var Y = scale(sp[0], sp[1] === sp[0] ? sp[0] + 1 : sp[1], Bt, T);
     // no line has a figure for these periods: a shaded band from the last figure before to the first after
@@ -598,6 +601,7 @@
       b += '<rect class="nlv-gap" x="' + f1(X(a - 1)) + '" y="' + T + '" width="' + f1(Math.max(1, X(e) - X(a - 1))) + '" height="' + PH + '"/>';
       gaps++; a = e;
     }
+    if (d.y_label) b += txt(0, 13, d.y_label, { cls: 'lab nlv-axn', maxW: Math.max(40, W - 4) });
     yt.ts.forEach(function (t, k) {
       b += '<line class="gridl" x1="' + f1(L) + '" x2="' + f1(R) + '" y1="' + f1(Y(t)) + '" y2="' + f1(Y(t)) + '"/>' + txt(L - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' });
     });

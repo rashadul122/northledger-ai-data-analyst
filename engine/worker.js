@@ -175,7 +175,8 @@ async function onScan(m) {
   // the categories the adapter read as categories, not personal data (privacy.released, AM1): the consent step shows each
   // and the visitor may still withhold it
   var released = ((report.privacy || {}).released || []).map(function (r) {
-    return { column: r.column, header: r.header, distinct: r.distinct, text: r.text };
+    // series: a long statistical table's series released as a measure (nl_browser._release_value_column), said as a series on the page
+    return { column: r.column, header: r.header, distinct: r.distinct, text: r.text, series: !!r.series };
   });
   post({ type: 'scanned', id: m.id, result: { ok: true, error: null, flagged: flagged, released: released,
     excel: (file && file.excel) ? { sheet: file.excel.sheet, sheets: file.excel.sheets } : null } });

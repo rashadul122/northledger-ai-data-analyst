@@ -3054,6 +3054,13 @@ class _V2:
                 pick = (tot + avg) if st in ("flow_amount", "count") else (avg + tot)
                 if pick:
                     return pick[0]
+            if not tested:
+                # no claim could be tested (a monthly series has too few rows for the core's test): the named measure's
+                # own change still leads, with its NOT ENOUGH DATA grade, rather than an empty bottom line (a visitor's
+                # federal-debt table, 8 Oct 2026, had no summary at all)
+                own = [g for g in self.shown() if str(g.fact.claim_key or "") == m and str(g.fact.id).endswith(".change")]
+                if own:
+                    return own[0]
         return (prim or tested or [None])[0]
 
     def shown(self) -> List[Any]:
@@ -4656,6 +4663,14 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     n_series = int(key.nunique())
     if n_series > PANEL_MAX_SERIES or pd.Series(list(zip(df[date], key))).duplicated().mean() > 0.01:
         return data, None
+    # a name that holds two series for one date (StatCan 10-10-0002-01 lists "Derivatives" under liabilities and again
+    # under assets): nothing in the file's own columns tells the two apart, so the name is set aside and named, never
+    # averaged into one series (a visitor's file, 8 Oct 2026). More repeats than this are a cube's, and its reader decides
+    twice = pd.Series(list(zip(df[date], key)), index=df.index).duplicated(keep=False)
+    named_twice = sorted(set(key[twice])) if twice.any() else []
+    rows_in = int(len(df))
+    if named_twice:
+        df, key = df[~key.isin(named_twice)], key[~key.isin(named_twice)]
     dt = pd.to_datetime(df[date], errors="coerce")
     v = pd.to_numeric(df[value].str.replace(",", "", regex=False), errors="coerce")
     if dt.notna().mean() < 0.95 or v.notna().sum() < 50:
@@ -4682,7 +4697,15 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     lasting = active[active["max"] - active["min"] >= pd.Timedelta(days=3 * 365)]
     if lasting.empty:
         return data, None
-    start = lasting["min"].max()
+    # the start keeps the most history: of the lasting series' own starts, the one with the most series-years from it
+    # to the end (series that begin later are set aside as too recent). The latest start of any series cut a visitor's
+    # 17 years of federal debt to the 4 years two small FX-account series ran (StatCan 10-10-0002-01, 8 Oct 2026)
+    def _years(s: Any) -> float:
+        ok = lasting[lasting["min"] <= s]
+        return float(len(ok)) * max((last - s).days, 1)
+    start = max(sorted(lasting["min"].unique()), key=lambda s: (_years(s), -pd.Timestamp(s).value))
+    later = set(lasting.index[lasting["min"] > start])
+    lasting = lasting[lasting["min"] <= start]
     inwin = long[long["_d"] >= start]
     n_dates = inwin["_d"].nunique()
     cover = inwin.groupby("_key")["_d"].nunique() / float(max(n_dates, 1))
@@ -4690,11 +4713,23 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     if not kept:
         return data, None
     dropped = {"discontinued": sorted(k for k in span.index if k not in active.index),
-               "too recent": sorted(k for k in active.index if k not in lasting.index),
-               "too sparse": sorted(k for k in lasting.index if k not in kept)}
+               "too recent": sorted(set(k for k in active.index if k not in lasting.index) | later),
+               "too sparse": sorted(k for k in lasting.index if k not in kept),
+               "named more than once for the same date (nothing in the file tells the series apart)": named_twice}
     inwin = inwin[inwin["_key"].isin(kept)]
     wide = inwin.groupby([inwin["_d"].dt.strftime("%Y-%m-%d").rename("_date"), "_key"], sort=True)["_v"].mean().unstack("_key")
     wide = wide.dropna(how="all")
+    # dates the agency did not publish: most kept series are listed for the date with no value (a status such as "..";
+    # StatCan's Fiscal Monitor skips April to August), so the date is set aside instead of reading as 40% missing data
+    # in every column (which graded every finding NOT ENOUGH DATA). A date whose series are simply absent is untouched.
+    listed = pd.DataFrame({"_date": dt.dt.strftime("%Y-%m-%d"), "_key": key})[v.isna() & dt.notna() & key.isin(kept)]
+    listed_empty = listed.groupby("_date")["_key"].nunique()
+    present = wide.notna().sum(axis=1)
+    unpublished = [d for d in wide.index if listed_empty.get(d, 0) > present.get(d, 0)]
+    if unpublished and len(unpublished) < len(wide):
+        wide = wide.drop(index=unpublished)
+    else:
+        unpublished = []
     first_seen = {k: i for i, k in enumerate(pd.unique(key))}
     counts = inwin.groupby("_key")["_v"].count()
     order = sorted(kept, key=lambda k: (-int(counts.get(k, 0)), first_seen.get(k, 0)))
@@ -4706,14 +4741,18 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
             break
     out = wide.to_csv(index=False).encode("utf-8")
     lay = {
-        "layout": "long statistical table", "rows_in": int(len(df)), "rows_out": int(len(wide)),
+        "layout": "long statistical table", "rows_in": rows_in, "rows_out": int(len(wide)),
         "series_column": " | ".join(varying) if varying else None, "series": n_series, "kept": len(kept),
         "set_aside": {k: v for k, v in dropped.items() if v}, "start": start.strftime("%Y-%m-%d"),
         "order": [str(c) for c in order if c in wide.columns],
         "value_column": str(value), "date_column": str(date), "metadata_set_aside": [str(c) for c in meta],
         "constant_set_aside": [str(c) for c in constant], "zeros_as_empty": zeroed,
         "units": sorted(set(u for u in units.values() if u)),
+        # the file's own order of the kept series (the lead series is the file's first, as _lead_series says)
+        "file_order": [str(c) for c in sorted((c for c in order if c in wide.columns), key=lambda k: first_seen.get(k, 0))],
     }
+    if unpublished:                               # only where there are some, so every other table's layout record is what it was
+        lay["unpublished_dates"] = {"count": len(unpublished), "first": unpublished[0], "last": unpublished[-1]}
     if personal:                                  # wave 5d: only where there is one, so every other table's layout record is what it was
         lay["personal_set_aside"] = {str(c): k for c, k in personal.items()}
     if personal_kept:
@@ -4755,7 +4794,9 @@ def _measure_names(plan: Any, colmap: Dict[str, str], pub: Any) -> Dict[str, str
 def _lead_series(lay: Dict[str, Any], objective: str) -> Tuple[str, str]:
     """The series a long table's report leads with, and why: the one the visitor's question names
     (every word of its name, apart from words all the series share), else the file's first."""
-    order = lay.get("order") or []
+    # the file's own order when the layout records it: `order` ranks by value count, so its first is not the file's
+    # first (a visitor's debt table led with "Derivatives", "it comes first in the file", which it did not)
+    order = lay.get("file_order") or lay.get("order") or []
     if not order:
         return "", ""
     if len(order) == 1:
@@ -9111,6 +9152,73 @@ def _mend_cannot_answer(rep: Dict[str, Any]) -> None:
         st[k] = lines
 
 
+_SAMPLE_WHY = re.compile(r"Based on ([\d,]+) rows over [\d,]+ periods -- too little history to act on yet\. The "
+                         r"(?:[^ ]+ difference|difference of [^.]*?(?:\.\d+)?[^.]*?) is real in this sample, but a sample "
+                         r"this small moves that much on its own\.")
+_SAMPLE_NEED = re.compile(r"(?:About [\d,]+ more periods of history at the current rate of [\d,]+ rows per period "
+                          r"\(roughly 1,000 in total\), or a wider pull that goes further back|At least 100 rows before this "
+                          r"is worth watching and about 1,000 before it can be advice -- a longer date range, or a source "
+                          r"with fewer gaps)\.")
+
+
+def _mend_long_table_words(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
+    """A long statistical table's report in the agency's words (a visitor's federal-debt table, 8 Oct 2026): each series by
+    its published name, not the engine's column slug ("a_federal_debt_accumulated_deficit_b_e"); a published figure's change
+    said to be exact arithmetic on the agency's figures, not "a sample this small" that needs "roughly 1,000" rows; and, when
+    the agency skips months, the forecast's refusal says so instead of "123 months of history is too short". The engine's
+    decision code and its grades are unchanged: only the sentences that misdescribe this kind of table are mended."""
+    names = {}
+    for c in lay.get("file_order") or lay.get("order") or []:
+        s = _engine_slug(c)
+        if s and "_" in s and s != c:          # a slug of one word ("value", "sales") is also a plain word of the prose
+            names[s] = str(c)
+    slug_re = re.compile(r"\b(%s)\b" % "|".join(re.escape(s) for s in sorted(names, key=len, reverse=True))) if names else None
+    official = any(((f.get("inference") or {}).get("mode") == "official_aggregate") for f in rep.get("findings") or []
+                   if isinstance(f, dict))
+    up = lay.get("unpublished_dates")
+    why_fc = ("the agency did not publish %s of the months in this span (it skips some months each year), and a forecast "
+              "is checked by replaying unbroken months." % format(up["count"], ",")) if up else ""
+    no_fc = ("no forecast is made: " + why_fc) if up else ""
+
+    def mend_months(x: str) -> str:
+        if official:
+            x = _SAMPLE_WHY.sub(lambda m: "These are the agency's published figures, not a sample: the change is exact "
+                                          "arithmetic on them. The grade asks whether it stands out from the series' own "
+                                          "month-to-month movement, and %s monthly values are too few to say." % m.group(1), x)
+            x = _SAMPLE_NEED.sub("A monthly series never holds enough values in two years for this test: read the change "
+                                 "as the published arithmetic, not as a tested finding.", x)
+        if no_fc:
+            x = _MONTHS_HISTORY.sub(lambda m: "There are %s published months, but %s" % (m.group(1), no_fc), x)
+            x = _MONTHS_TOO_SHORT.sub(lambda m: why_fc, x)
+        if slug_re is not None:
+            x = slug_re.sub(lambda m: names[m.group(1)], x)
+        return x
+
+    st = rep.get("story") or {}
+    for k, v in list(st.items()):
+        if isinstance(v, str):
+            st[k] = mend_months(v)
+        elif isinstance(v, list):
+            st[k] = [mend_months(x) if isinstance(x, str) else x for x in v]
+    for line in (rep.get("summary") or {}).get("lines") or []:
+        if isinstance(line, dict) and isinstance(line.get("text"), str):
+            line["text"] = mend_months(line["text"])
+    for l in rep.get("limitations") or []:
+        if isinstance(l, dict) and isinstance(l.get("text"), str):
+            l["text"] = mend_months(l["text"])
+    for f in rep.get("findings") or []:
+        if isinstance(f, dict):
+            for k in ("why", "needed_to_upgrade"):
+                if isinstance(f.get(k), str):
+                    f[k] = mend_months(f[k])
+    fc = rep.get("forecast") or {}
+    if isinstance(fc.get("reason"), str):
+        fc["reason"] = mend_months(fc["reason"])
+    for c in rep.get("charts_suppressed") or []:
+        if isinstance(c, dict) and isinstance(c.get("why"), str):
+            c["why"] = mend_months(c["why"])
+
+
 def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
     """Say in the report how a long statistical table was read (limitations and cleaning)."""
     n = lay["series"]
@@ -9124,6 +9232,11 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
         "series is analysed on its own.%s" % (format(lay["rows_out"], ","), lay["start"], unit_note),
     ]
     parts += ["Set aside as %s: %s." % (why, ", ".join(ks)) for why, ks in lay["set_aside"].items()]
+    up = lay.get("unpublished_dates")
+    if up:
+        parts.append("%s dates between %s and %s were set aside: the agency lists most series for them with no value "
+                     "(it did not publish them), so they are not counted as missing data."
+                     % (format(up["count"], ","), up["first"], up["last"]))
     if lay["metadata_set_aside"]:
         parts.append("The agency's metadata columns (%s) were set aside: they describe the series, they are "
                      "not measures." % ", ".join(lay["metadata_set_aside"]))
@@ -10979,6 +11092,19 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                 if layout:
                     data = reshaped
                     reshaped_after = True
+                    # a series of an agency's table is a published statistic, named by the agency: a word in its name
+                    # never makes it a person's data ("Medium-term notes", a government bond, was withheld as a notes
+                    # column, 8 Oct 2026). Kept only when its cells are numbers that no value check reads as personal;
+                    # the visitor's own decision on the column stands
+                    import pandas as pd
+                    wide_df = pd.read_csv(io.BytesIO(reshaped), dtype=str, keep_default_na=False)
+                    decisions = dict(decisions or {})
+                    for c in layout.get("order") or []:
+                        if c in wide_df.columns and c not in decisions and _engine_slug(c) not in decisions:
+                            cells = wide_df[c][wide_df[c].str.strip() != ""]
+                            num = pd.to_numeric(cells, errors="coerce")
+                            if len(cells) and num.notna().all() and _personal_kind("", cells) is None:
+                                decisions[c] = "keep"
             except Exception:  # noqa: BLE001 - the layout pass is an aid; the file is read as it stands
                 layout = None
         if structure_inner is not None:
@@ -11392,9 +11518,19 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             pcs = {str(c.get("name")): c for c in ai_plan.get("columns") or [] if isinstance(c, dict)}
             pc = pcs.get(prim_head) or pcs.get(str(ai_plan.get("primary") or "")) or {}
             plan_measure = (str(colmap.get(prim_head) or _slug(prim_head)), str(pc.get("semantic_type") or ""))
+        elif layout and structure_inner is None and layout.get("lead"):
+            # a long table with no plan leads with the series its layout note names (_lead_series), so the bottom line
+            # and the note agree (the note said "leads with Derivatives" while the summary led with another series)
+            plan_measure = (str(colmap.get(layout["lead"]) or _engine_slug(layout["lead"])), "")
+        mnames = _measure_names(ai_plan, colmap, pub)
+        if layout and structure_inner is None and layout.get("layout") == "long statistical table":
+            # each series by the agency's name ("Average A. Federal debt ..."), not its column slug; a plan's label wins
+            for c in layout.get("order") or []:
+                land = str(colmap.get(c) or _engine_slug(c))
+                if land and land not in mnames:
+                    mnames[land] = pub(str(c))
         _build_v2(rep, audit, r if (r is not None and not date_withheld) else None, th, cr, eng.db_path,
-                  flagged, withheld, pub, as_of_eff, objective, reasons, rules, plan_measure,
-                  _measure_names(ai_plan, colmap, pub))
+                  flagged, withheld, pub, as_of_eff, objective, reasons, rules, plan_measure, mnames)
         timings["story"] = st.get("narrate", 0.0) + st.get("write", 0.0) + (time.perf_counter() - t_story)
         if layout and structure_inner is None:
             _layout_notes(rep, layout)
@@ -11408,6 +11544,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         except Exception:  # noqa: BLE001 - no header, no publisher signature
             _hdr = []
         _official_inference(rep, _hdr, layout, [c for c, d in hidden_land.items()] + names_withheld)
+        if layout and structure_inner is None and layout.get("layout") == "long statistical table":
+            _mend_long_table_words(rep, layout)
         if ai_plan:
             if plan_review:
                 ai_plan["review"] = plan_review

@@ -2042,6 +2042,38 @@ def test_s06_a_verified_total_row_of_a_withheld_column_is_left_out_and_never_nam
     assert any(f["column"] in ("place_of_birth", "Place of birth") for f in rep["privacy"]["flagged"]), rep["privacy"]["flagged"]
 
 
+def test_s07_a_statcan_table_keeps_its_history_skips_unpublished_months_and_names_its_series():
+    """A visitor's file, 8 Oct 2026: StatCan 10-10-0002-01 (central government debt, 2009-07 to 2026-07), as the visitor sent it.
+    The engine compared every series from the LATEST start of any (an FX-accounts series from 2022-08), so 17 years read as
+    4; the months the agency skips (April to August, status "..") read as 40% missing data in every column, so every claim
+    was graded NOT ENOUGH DATA for "health"; the two series named "Derivatives" (liabilities and assets) were averaged into
+    one (now set aside and named: nothing in the file tells them apart); "Medium-term notes" (a bond) was withheld as a notes column; the note said the report led with the file's first
+    series while it led with another; and the bottom line was empty. Each is checked here."""
+    rep = run_file("s07_statcan_debt_unpublished_months.csv")
+    assert rep["ok"], rep.get("error")
+    lay = rep["input"]["layout"]
+    assert lay["start"] == "2009-09-01", lay["start"]
+    assert "Foreign exchange accounts assets" in lay["set_aside"].get("too recent", []), lay["set_aside"]
+    assert (lay.get("unpublished_dates") or {}).get("count", 0) >= 60, lay.get("unpublished_dates")
+    assert lay["lead"] == "A. Federal debt (accumulated deficit), (B - E)", lay["lead"]
+    twice = [v for k, v in lay["set_aside"].items() if k.startswith("named more than once")]
+    assert twice == [["Derivatives"]] and "Derivatives" not in lay["order"], lay["set_aside"]
+    assert "medium_term_notes" in rep["roles"]["measures"], rep["roles"]
+    assert all(f["decision"] != "withhold" for f in rep["privacy"]["flagged"]), rep["privacy"]["flagged"]
+    assert (rep["primary_metric"] or {}).get("claim_key") == "a_federal_debt_accumulated_deficit_b_e", rep["primary_metric"]
+    lines = [l["text"] for l in rep["summary"]["lines"]]
+    assert lines and lines[0].startswith("Average A. Federal debt"), lines
+    texts = [rep["story"]["headline"]] + [x for k in ("what_happened", "cannot_answer", "why", "whats_next")
+                                          for x in rep["story"].get(k) or []]
+    texts += lines + [l["text"] for l in rep["limitations"]] + [str(rep["forecast"].get("reason") or "")]
+    blob = "\n".join(texts)
+    for bad in ("a sample this small", "roughly 1,000 in total", "is too short to replay", "a_federal_debt_accumulated"):
+        assert bad not in blob, bad
+    # the health of a published series is not marked down for the months the agency skips
+    assert not any(f["id"].startswith("health.col.a_federal") for f in rep["findings"]), \
+        [f["id"] for f in rep["findings"] if f["id"].startswith("health.")]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

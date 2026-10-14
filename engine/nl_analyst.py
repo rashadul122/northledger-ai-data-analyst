@@ -2040,12 +2040,13 @@ def op_crosstab(ctx: Ctx, st: Step) -> Step:
                     int(t.values[ii].sum()),
                 )
             )
+    ctx.pairs = list(res)  # every pair scored, for op_answers: which questions the rest of the survey hangs on
     if not res:
         return st.refuse("no two answer columns share 30 respondents")
     res.sort(reverse=True)
     v, a, b, n, p, ra, cb, share, base, ra_n = res[0]
-    st.word("a", a)
-    st.word("b", b)
+    st.word("a", _qtext(a))
+    st.word("b", _qtext(b))
     st.num("v", v, "r")
     st.num("n", n, "int")
     st.num("respondents", int(ctx.base.sum()), "int")
@@ -2070,13 +2071,116 @@ def op_crosstab(ctx: Ctx, st: Step) -> Step:
         % (ra, a, cb, b, st.numbers["share"]["text"], st.numbers["base"]["text"]),
     )
     if len(res) > 1:
-        st.word("a2", res[1][1])
-        st.word("b2", res[1][2])
+        st.word("a2", _qtext(res[1][1]))
+        st.word("b2", _qtext(res[1][2]))
         st.num("v2", res[1][0], "r")
     st.numbers["explained"] = {"value": v, "text": "", "kind": "score"}
     st.table = {
         "columns": ["answer", "answer", "Cramer's V", "respondents", "p"],
         "rows": [[x[1], x[2], _r(x[0], 3), x[3], _r(x[4], 4)] for x in res[:8]],
+    }
+    return st
+
+
+def _qtext(c: str, cap: int = 160) -> str:
+    """A survey question as a sentence quotes it: markup a form tool left in the header (<br>) read as a space, runs of
+    space as one, cut at a word past `cap` characters."""
+    t = " ".join(re.sub(r"<[^>]*>", " ", str(c)).split())
+    if len(t) > cap:
+        t = t[:cap].rsplit(" ", 1)[0] + "..."
+    return t
+
+
+# a question about who answered, not what they think: ordered after the survey's own questions
+_DEMOGRAPHIC = re.compile(
+    r"\b(age|gender|sex|income|education|degree|region|location|state|country|zip|postcode|ethnicity|race|"
+    r"household|marital|occupation|employment)\b",
+    re.I,
+)
+
+
+def op_answers(ctx: Ctx, st: Step) -> Step:
+    """A survey: each question's most common answer among those who answered it (answers given by fewer than 5
+    respondents left out of the ranking, never out of the base). The questions are ordered by how strongly their
+    answers go with the rest (the sum of the crosstab's Cramer's V over every pair scored, when the crosstab ran),
+    so the survey's subject leads and a screening question trails; then the question with the widest agreement and
+    the most divided one."""
+    cols = [
+        c
+        for c in ctx.df.columns
+        if c in ctx.sh.dims and 2 <= _text(ctx.df[c]).replace("", None).nunique() <= 12
+    ][:16]
+    rows = []
+    for c in cols:
+        a = _group_texts(ctx.df, c)
+        ok = ctx.base & (a != "")
+        n = int(ok.sum())
+        if n < 30:
+            continue
+        vc = a[ok].value_counts()
+        vc = vc[vc >= MIN_GROUP_ROWS]
+        if len(vc) < 2:
+            continue
+        rows.append(
+            (
+                c,
+                n,
+                str(vc.index[0]),
+                float(vc.iloc[0] / n),
+                str(vc.index[1]),
+                float(vc.iloc[1] / n),
+                len(vc),
+            )
+        )
+    if not rows:
+        return st.refuse("no question has two answers given by 5 or more of 30 respondents")
+    weight = {c: 0.0 for c, *_ in rows}
+    for v, x, y, *_ in getattr(ctx, "pairs", None) or []:
+        for c in (x, y):
+            if c in weight:
+                weight[c] += float(v)
+    topic = [w for w in getattr(ctx, "topic", None) or [] if isinstance(w, str)]
+
+    def on_topic(c: str) -> bool:
+        low = c.lower()
+        return any(re.search(r"\b" + re.escape(w[:-1] if w.endswith("s") else w), low) for w in topic)
+
+    # the questions naming the file's subject first, demographics (who answered) last, then how strongly each
+    # question's answers go with the rest
+    order = sorted(
+        rows,
+        key=lambda r: (
+            not on_topic(r[0]),
+            bool(_DEMOGRAPHIC.search(r[0])),
+            -weight[r[0]],
+            -r[1],
+            cols.index(r[0]),
+        ),
+    )
+    for i, (c, n, t1, s1, t2, s2, k) in enumerate(order[:3], 1):
+        st.word("q%d" % i, _qtext(c))
+        st.word("q%d_top" % i, t1)
+        st.num("q%d_share" % i, s1, "share")
+        st.num("q%d_n" % i, n, "int")
+        st.word("q%d_second" % i, t2)
+        st.num("q%d_second_share" % i, s2, "share")
+    st.num("questions", len(rows), "int")
+    opinion = [r for r in rows if not _DEMOGRAPHIC.search(r[0])]
+    if len(opinion) >= 3:
+        agree = max(opinion, key=lambda r: (r[3], r[1]))
+        split = min(opinion, key=lambda r: (r[3] * r[6] ** 0.5, -r[1]))
+        if agree[0] != split[0]:
+            st.word("agree_q", _qtext(agree[0]))
+            st.word("agree_top", agree[2])
+            st.num("agree_share", agree[3], "share")
+            st.word("split_q", _qtext(split[0]))
+            st.word("split_top", split[2])
+            st.num("split_share", split[3], "share")
+            st.word("split_second", split[4])
+            st.num("split_second_share", split[5], "share")
+    st.table = {
+        "columns": ["question", "most common answer", "share", "next answer", "share", "answered"],
+        "rows": [[r[0], r[2], _r(r[3], 4), r[4], _r(r[5], 4), r[1]] for r in order],
     }
     return st
 
@@ -2511,6 +2615,7 @@ _OP_FN = {
     "rank_labels": op_rank_labels,
     "concentration": op_concentration,
     "crosstab": op_crosstab,
+    "answers": op_answers,
 }
 OPS = tuple(_OP_FN)
 
@@ -2530,6 +2635,7 @@ OP_DOCS = {
     "rank_labels": "labelled rows (brands, products) ranked with small samples pulled toward the overall average",
     "concentration": "how much of a total the largest groups hold: top shares and the Herfindahl-Hirschman index",
     "crosstab": "a survey: the pairs of answer columns most strongly linked (Cramer's V) and the cell furthest above chance",
+    "answers": "a survey: each question's most common answer and its share, the survey's central questions first",
 }
 
 # Every argument an op may take, by name: its JSON schema and the role a column it names must have in the shape.
@@ -2547,6 +2653,7 @@ OP_NEEDS = {
     "rank_entities": "entity",
     "rank_labels": "label",
     "crosstab": "answers",
+    "answers": "answers",
 }
 
 
@@ -3531,6 +3638,7 @@ def explore(
     t0 = time.perf_counter()
     sh = shape_of(df, kinds, hint)
     ctx = Ctx(df, sh)
+    ctx.topic = list((hint or {}).get("topic") or [])
     ins: List[Dict[str, Any]] = []
     out = {
         "version": ANALYST_VERSION,
@@ -3541,6 +3649,7 @@ def explore(
         "story": None,
         "refused": ctx.refused,
         "rounds": 0,
+        "cut_short": None,
         "note": "Descriptive: computed from the rows the engine kept, not tested by the engine's gate.",
     }
     m = sh.primary
@@ -3569,7 +3678,18 @@ def explore(
             )
 
     def over():
-        return time.perf_counter() - t0 > budget_s or len(ctx.order) >= MAX_STEPS
+        """True once the step cap is reached (deterministic) or, as a safety net only, the time budget runs out;
+        the time cut is recorded so a report shortened by a slow device says so instead of differing silently."""
+        if len(ctx.order) >= MAX_STEPS:
+            return True
+        if time.perf_counter() - t0 > budget_s:
+            if not out.get("cut_short"):
+                out["cut_short"] = "time"
+                ctx.refused.append(
+                    {"op": "rest", "why": "the time budget ran out; the later rounds were not run on this device"}
+                )
+            return True
+        return False
 
     def agg_note(st: Step) -> str:
         """The aggregate rows set apart, as slots of the step that left them out."""
@@ -3739,7 +3859,7 @@ def explore(
                 say(
                     "relationship",
                     _ids(
-                        "The strongest link between answers is {C.a} with {C.b} (Cramer's V {C.v}, "
+                        "The strongest link between answers is between \"{C.a}\" and \"{C.b}\" (Cramer's V {C.v}, "
                         "{C.n} respondents answered both; {C.p_word}): {C.detail}.",
                         C=ct,
                     ),
@@ -3748,8 +3868,30 @@ def explore(
                 if "a2" in ct.numbers:
                     say(
                         "relationship",
-                        _ids("Next: {C.a2} with {C.b2} (Cramer's V {C.v2}).", C=ct),
+                        _ids("Next: \"{C.a2}\" with \"{C.b2}\" (Cramer's V {C.v2}).", C=ct),
                         [ct.id],
+                    )
+            an = op_answers(
+                ctx,
+                ctx.new(rnd, "answers", {}, "a survey: what did most people answer?"),
+            )
+            if an.ok:
+                tm = 'Most common answers: to "{A.q1}", {A.q1_top} ({A.q1_share} of {A.q1_n} who answered)'
+                if "q2" in an.numbers:
+                    tm += '; to "{A.q2}", {A.q2_top} ({A.q2_share})'
+                if "q3" in an.numbers:
+                    tm += '; to "{A.q3}", {A.q3_top} ({A.q3_share})'
+                say("headline", _ids(tm + ".", A=an), [an.id])
+                if "agree_q" in an.numbers:
+                    say(
+                        "distribution",
+                        _ids(
+                            'Widest agreement: {A.agree_share} answered {A.agree_top} to "{A.agree_q}". Most '
+                            'divided: "{A.split_q}", where {A.split_top} ({A.split_share}) leads '
+                            "{A.split_second} ({A.split_second_share}).",
+                            A=an,
+                        ),
+                        [an.id],
                     )
             if m is None:
                 out["rounds"] = 1

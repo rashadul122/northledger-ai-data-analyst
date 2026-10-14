@@ -538,6 +538,31 @@
     "args"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "a survey: each question's most common answer and its share, the survey's central questions first",
+   "x-needs": "answers",
+   "properties": {
+    "op": {
+     "const": "answers"
+    },
+    "args": {
+     "type": "object",
+     "properties": {},
+     "required": [],
+     "additionalProperties": false
+    },
+    "why": {
+     "type": "string",
+     "maxLength": 200
+    }
+   },
+   "required": [
+    "op",
+    "args"
+   ],
+   "additionalProperties": false
   }
  ]
 }

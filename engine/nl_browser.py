@@ -471,7 +471,7 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         # the analyst loop (engine/nl_analyst.py; CONTRACT §5.10): rounds of typed steps over the kept rows, each
         # chosen from what the last found, every number in a step's ledger and every sentence filled from it
         "analyst": {"version": 1, "chosen_by": "none", "shape": None, "steps": [], "insights": [], "refused": [],
-                    "rounds": 0, "note": ""},
+                    "rounds": 0, "cut_short": None, "note": ""},
     }
 
 
@@ -7951,7 +7951,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
-        rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout)
+        rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal))
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8118,13 +8118,28 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
                 "note": "No scenario or contribution figures for this file; the reasons are listed."}
 
 
-def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any) -> Dict[str, Any]:
+def _topic_words(name: Any, goal: Any) -> List[str]:
+    """The words of the file's name and the visitor's question that can name a subject (4 letters or more, not a
+    generic file word), lower case: the analyst loop reads them only to order what it already found, never as data
+    and never into a sentence, so no word of the name reaches the report or the AI."""
+    generic = {"data", "dataset", "file", "files", "table", "export", "final", "copy", "sheet", "report", "survey",
+               "results", "what", "does", "this", "that", "with", "from", "about", "should", "done", "csv", "xlsx"}
+    words = re.findall(r"[a-z]{4,}", (str(name or "") + " " + str(goal or "")).lower())
+    out: List[str] = []
+    for w in words:
+        if w not in generic and w not in out:
+            out.append(w)
+    return out[:12]
+
+
+def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any,
+             topic: Optional[List[str]] = None) -> Dict[str, Any]:
     """rep["analyst"] (engine/nl_analyst.py, CONTRACT §5.10): the analyst loop over the rows the engine kept, read as the
     AI's analyses read them (_analysis_frame: no withheld or coded column is in the frame, so no step can read one). The
     plan's date and primary column steer it when there is a plan; with none, the loop reads the file's shape itself.
     The report stands without it, and says so."""
     blank = {"version": 1, "chosen_by": "none", "shape": None, "steps": [], "insights": [], "refused": [], "rounds": 0,
-             "note": ""}
+             "cut_short": None, "note": ""}
     if reading is None:
         blank["refused"] = [{"op": "all", "why": "the engine's table could not be read"}]
         return blank
@@ -8133,7 +8148,8 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
         p = plan if isinstance(plan, dict) else {}
         df, date, _ent, _why, info = _analysis_frame({"reading": reading, "clean": cr.clean, "hide": hide}, p, layout)
         roles = {str(c.get("role")): c.get("name") for c in p.get("columns") or [] if isinstance(c, dict)}
-        hint = {"date": date, "primary": p.get("primary") or roles.get("measure"), "entity": roles.get("entity")}
+        hint = {"date": date, "primary": p.get("primary") or roles.get("measure"), "entity": roles.get("entity"),
+                "topic": list(topic or [])}
         out = _na.explore(df, info.get("kinds") or {}, hint)
         out["rows"] = {"kept": info.get("kept"), "set_aside": info.get("aside")}
         return out

@@ -569,8 +569,9 @@ def test_step_schema_is_generated_from_ops_and_their_signatures():
     sv = na.explore(_survey(), _kinds_of(_survey()))["shape"]
     ops2 = {v["properties"]["op"]["const"] for v in na.step_schema(sv)["oneOf"]}
     assert ops2 == {
-        "crosstab"
-    }, ops2  # a survey with no measure: only the cross-tabulation
+        "crosstab",
+        "answers",
+    }, ops2  # a survey with no measure: only the cross-tabulation and the answers
     # the reference worker reads the same file (docs/ai-analyst/step-schema.json), so it must be the current one
     with open(os.path.join(SITE, "docs", "ai-analyst", "step-schema.json")) as f:
         assert json.load(f) == json.loads(
@@ -737,6 +738,62 @@ def test_planner_steps_get_sentences_only_from_their_ledger_and_the_ai_sees_no_r
     blk = na.explore(df.copy(), kinds)
     seen = na.ledger_for_ai(blk)
     assert len(seen) == len(blk["steps"]) and '"table"' not in json.dumps(seen)
+
+
+def _steak_survey(seed=3, n=400):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for _ in range(n):
+        smoke = "Yes" if rng.random() < 0.3 else "No"
+        rows.append(
+            {
+                "Do you smoke?": smoke,
+                "Do you drink?": ("Yes" if rng.random() < (0.8 if smoke == "Yes" else 0.4) else "No"),
+                "How do you like your steak<br>prepared?": rng.choice(
+                    ["Rare", "Medium rare", "Medium", "Well"], p=[0.1, 0.45, 0.3, 0.15]
+                ),
+                "Age": rng.choice(["18-29", "30-44", "45-60", "> 60"]),
+                "Gender": rng.choice(["Male", "Female"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_a_survey_says_what_most_people_answered_subject_first_demographics_last():
+    df = _steak_survey()
+    blk = _explore(df, {"topic": ["steak", "risk"]})
+    assert blk["shape"]["kind"] == "survey", blk["shape"]
+    ans = [s for s in blk["steps"] if s["op"] == "answers"]
+    assert ans and ans[0]["ok"], blk["refused"]
+    nums = ans[0]["numbers"]
+    # the subject named by the file leads, its markup read as a space; a demographic never leads
+    assert nums["q1"]["text"] == "How do you like your steak prepared?", nums["q1"]
+    assert nums["q1_top"]["text"] == "Medium rare"
+    want = (df["How do you like your steak<br>prepared?"] == "Medium rare").mean()
+    assert abs(nums["q1_share"]["value"] - want) < 1e-9
+    assert nums.get("agree_q", {}).get("text") not in ("Age", "Gender")
+    assert nums.get("split_q", {}).get("text") not in ("Age", "Gender")
+    head = [i["text"] for i in blk["insights"] if i["steps"] == [ans[0]["id"]]]
+    assert any("Medium rare" in t for t in head), head
+    assert not any("<br>" in i["text"] for i in blk["insights"])
+    # with no subject words the order comes from the answers alone, and still never puts a demographic first
+    blk2 = _explore(df)
+    q1 = [s for s in blk2["steps"] if s["op"] == "answers"][0]["numbers"]["q1"]["text"]
+    assert q1 not in ("Age", "Gender"), q1
+
+
+def test_a_time_cut_is_recorded_never_silent():
+    blk = na.explore(
+        _explore.__globals__["_orders"]().assign(date=lambda d: pd.to_datetime(d["date"])),
+        {"date": "date", "region": "text", "product": "text", "revenue": "number", "units": "number",
+         "email": "text"},
+        None,
+        budget_s=0.0,
+    )
+    assert blk["cut_short"] == "time", blk.get("cut_short")
+    assert any(r["op"] == "rest" for r in blk["refused"]), blk["refused"]
+    full = _explore(_orders())
+    assert full["cut_short"] is None
 
 
 def main() -> int:

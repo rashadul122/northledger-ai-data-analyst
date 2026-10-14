@@ -21,10 +21,13 @@
   // the insight kinds, in the order an analyst reads them, with the heading each group gets
   var KINDS = [['headline', 'The headline'], ['trend', 'The long run'], ['driver', 'What carried the change'],
     ['drill', 'Inside the top group'], ['mix', 'Rate or mix'], ['relationship', 'Measures that move together'],
+    ['yoy', 'Against a year earlier'], ['seasonality', 'The seasonal pattern'], ['concentration', 'How concentrated'],
     ['distribution', 'How the values spread'], ['robustness', 'Does it hold up']];
   var OPS = { change: 'change between two periods', panel_change: 'each entry\'s own change', breakdown: 'breakdown by group',
     trend: 'straight-line trend', mix: 'rate and mix split', correlate: 'rank correlation', outliers: 'unusual values',
-    rank_entities: 'entries ranked', rank_labels: 'labels ranked', crosstab: 'answers crossed by group' };
+    rank_entities: 'entries ranked', rank_labels: 'labels ranked', crosstab: 'answers crossed by group',
+    yoy: 'same month a year earlier', seasonality: 'seasonal pattern', volatility: 'how much it swings',
+    concentration: 'how concentrated the total is', answers: 'most common answers' };
   var SHAPES = { ledger: 'a ledger of dated rows', time_series: 'a time series', panel: 'a panel (entries over time)',
     survey: 'a survey', cross_section: 'a table with no time axis' };
   var ROWS_SHOWN = 12;

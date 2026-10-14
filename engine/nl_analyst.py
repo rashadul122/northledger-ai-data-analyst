@@ -473,6 +473,10 @@ def _idlike(name: str, s, n: int) -> bool:
     return float(v.max() - v.min()) <= 3 * len(v)
 
 
+_META_TIME = re.compile(
+    r"(publish|upload|creat|updat|modif|scrap|retriev|download|fetch|ingest|import|timestamp|last_?seen)", re.I
+)
+
 def detect_date(df, kinds: Dict[str, str]) -> Tuple[Optional[str], Any, str, str]:
     """(column, a datetime Series for every row, grain, how it was read). Dates the engine read are used as they
     are; else a whole-year number column; else a year column with a month column beside it; else a text column of
@@ -480,8 +484,18 @@ def detect_date(df, kinds: Dict[str, str]) -> Tuple[Optional[str], Any, str, str
     """
     import pandas as pd
 
+    # a record's own timestamp (when it was published, uploaded, scraped) is not what the rows are about when the
+    # file also has a year column: the Super Bowl ads are dated by the game's year, not by their YouTube upload
+    has_year = any(
+        kinds.get(c) == "number"
+        and _has(c, _YEAR_NAMES)
+        and _num(df[c]).dropna().between(1000, 2999).mean() >= 0.95
+        for c in df.columns
+    )
     for c in df.columns:
         if kinds.get(c) == "date":
+            if has_year and _META_TIME.search(str(c)):
+                continue
             d = pd.to_datetime(df[c], errors="coerce")
             if d.notna().mean() >= 0.5:
                 return c, d, _grain(d), "the engine's dates"
@@ -780,6 +794,7 @@ def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -
         sh.date, sh.dates, sh.grain, sh.date_how = detect_date(df, kinds)
     _rating_histograms(df, kinds)
     month_col = None
+    label_cands: List[str] = []
     if sh.date_how.startswith(str(sh.date) + " with the month in "):
         month_col = sh.date_how.split(" with the month in ", 1)[1]
     for c in df.columns:
@@ -822,10 +837,20 @@ def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -
             elif (
                 lv > DIM_MAX_LEVELS
                 and sh.date is None
-                and sh.label is None
                 and (t != "").mean() >= 0.9
             ):
-                sh.label = c
+                label_cands.append(c)
+    if label_cands:
+        # of the columns that name each row, the one a reader knows: words (Apple Inc.) over codes (AAPL)
+        def readable(c):
+            t = _text(df[c])
+            t = t[t != ""].head(500)
+            words = float(t.str.contains(r"[a-z]").mean()) + float(t.str.contains(" ").mean())
+            # a name is (nearly) one per row; a column with repeats is a group, however wordy
+            unique = t.nunique() >= 0.9 * max(1, len(t))
+            return (not unique, -round(words, 1), label_cands.index(c))
+
+        sh.label = sorted(label_cands, key=readable)[0]
     if hint.get("entity") in df.columns and kinds.get(hint["entity"]) == "text":
         sh.entity = hint["entity"]
         if sh.entity in sh.dims:
@@ -1750,9 +1775,14 @@ def op_outliers(ctx: Ctx, st: Step, measure: str) -> Step:
             where.append(str(pd.Timestamp(d0).date()))
             st.word("max_where", " ".join(where))
         else:
-            lab = sh.dims[0] if sh.dims else None
+            # the row is named by its label (a company, a product) when the file has one, else by its first group
+            multi = [d for d in sh.dims if not _is_binary(_num(ctx.df[d]))]
+            lab = sh.label or (
+                max(multi, key=lambda d: _group_texts(ctx.df, d).nunique()) if multi else (sh.dims[0] if sh.dims else None)
+            )
             if lab:
                 st.word("max_where", str(_group_texts(ctx.df, lab).loc[top[0]]))
+        st.word("side", "largest" if float(z.loc[top[0]]) > 0 else "smallest")
         st.table = {
             "columns": ["row", measure, "robust z"],
             "rows": [[str(i), _r(x.loc[i]), _r(z.loc[i], 2)] for i in top],
@@ -4182,13 +4212,31 @@ def explore(
                 ),
                 [mx.id],
             )
+    cdim = None
+    if sh.kind == "ledger" and sh.dims:
+        cdim = best[1] if best is not None else sh.dims[0]
+    elif sh.kind == "cross_section":
+        # a table with no time axis: the total's split across the group a reader would name (3 to 20 levels, the
+        # most detailed of those)
+        lv = {d: _group_texts(df, d).replace("", None).nunique() for d in sh.dims}
+        fit = [d for d in sh.dims if 3 <= lv[d] <= 20]
+        cdim = max(fit, key=lambda d: (lv[d], -sh.dims.index(d))) if fit else None
+        if cdim is None:
+            # a group column too detailed to be a driver (120 industries) still splits a total: rows repeat in
+            # it (two or more a group on average), unlike a label
+            for c in df.columns:
+                if kinds.get(c) != "text" or c in (sh.label, sh.entity) or c in sh.dims:
+                    continue
+                t = _text(df[c])
+                k = t[t != ""].nunique()
+                if 3 <= k <= 200 and k <= 0.5 * max(1, (t != "").sum()):
+                    cdim = c
+                    break
     if (
         not over()
-        and sh.kind == "ledger"
+        and cdim is not None
         and _agg_for(sh, m) in ("sum", "stock")
-        and sh.dims
     ):
-        cdim = best[1] if best is not None else sh.dims[0]
         cc = op_concentration(
             ctx,
             ctx.new(
@@ -4215,6 +4263,8 @@ def explore(
                 )
             if "topk_then" in cc.numbers:
                 tm += "; the top {K.top_k} held {K.topk_then} in {K.then_label} ({K.topk_change}, {K.trend_word})"
+            if not cc.numbers["cur_label"]["text"]:
+                tm = tm.replace("In {K.cur_label}, {K.top1}", "{K.top1}", 1)
             say("concentration", _ids(tm + ".", K=cc), [cc.id])
     if not over() and monthly and sh.kind in ("time_series", "ledger"):
         se = op_seasonality(
@@ -4300,7 +4350,7 @@ def explore(
         if o.ok and o.numbers["far"]["value"]:
             tm = (
                 "{O.far} of {O.n} {O.what} {O.measure} ({O.far_share}) sit far from the rest (robust z beyond 3.5); "
-                "the largest is {O.max}"
+                "the furthest out is the {O.side}, {O.max}"
             )
             if "max_where" in o.numbers:
                 tm += " ({O.max_where})"

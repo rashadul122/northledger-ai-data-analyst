@@ -876,7 +876,7 @@ def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -
                 break
     for m in sh.measures:
         sh.mkind[m] = _measure_kind(m, _num(df[m]))
-    sh.primary = _pick_primary(sh, df, hint.get("primary"))
+    sh.primary = _pick_primary(sh, df, hint.get("primary"), hint.get("topic"))
     if sh.entity and sh.date is not None:
         t = _text(df[sh.entity])
         pairs = df.groupby([t, sh.dates]).size()
@@ -928,7 +928,10 @@ def _looks_survey(df, kinds, sh) -> bool:
     return low_card >= 0.6 * len(texts) and len(sh.measures) <= 2
 
 
-def _pick_primary(sh: Shape, df, hint: Optional[str]) -> Optional[str]:
+_DERIVED = re.compile(r"(change|pct|percent|per_capita|per_gdp|share|ratio|intensity|growth|_rank$|index)", re.I)
+
+
+def _pick_primary(sh: Shape, df, hint: Optional[str], topic: Optional[List[str]] = None) -> Optional[str]:
     if hint in sh.measures:
         return hint
     for d in df.attrs.get("derived", []):
@@ -936,6 +939,18 @@ def _pick_primary(sh: Shape, df, hint: Optional[str]) -> Optional[str]:
             return d["average"]
     if not sh.measures:
         return None
+    # a wide file named for its subject (owid-energy-data): the measure that is the subject itself, not the gdp or
+    # population beside it nor a share, change or per-head figure derived from it; the best-filled of those
+    words = [w for w in (topic or []) if isinstance(w, str) and len(w) >= 3]
+    if words:
+        def toks(m):
+            return re.sub(r"[^a-z0-9]+", "_", m.lower()).split("_")
+
+        on = [m for m in sh.measures if any(w in toks(m) or w.rstrip("s") in toks(m) for w in words)]
+        base = [m for m in on if not _DERIVED.search(re.sub(r"[^a-z0-9]+", "_", m.lower()))]
+        pick = base or on
+        if pick:
+            return sorted(pick, key=lambda m: (-int(_num(df[m]).notna().sum()), sh.measures.index(m)))[0]
     order = (
         "revenue",
         "market_cap",
@@ -1082,6 +1097,23 @@ def _windows(ctx: Ctx, measure: Optional[str] = None):
         if len(full) < 2:
             return None
         last = int(max(full))
+        # a panel's latest year can lack a few small entries (World Bank: 2023 without some islands) and still hold
+        # nearly all of the total: it is complete when the entries reported in it held 95% of the year before's
+        if sh.entity and measure is not None and measure in ctx.df.columns:
+            import pandas as pd
+
+            f = pd.DataFrame(
+                {"y": y, "e": _text(ctx.df[sh.entity])[ok], "v": _num(ctx.df[measure])[ok]}
+            )
+            for cand in sorted((int(k) for k in cnt.index if k > last), reverse=True):
+                if cnt.loc[cand] < 0.5 * cnt.max() or (cand - 1) not in cnt.index:
+                    continue
+                before = f[f["y"] == cand - 1].groupby("e")["v"].sum().clip(lower=0)
+                there = set(f.loc[f["y"] == cand, "e"])
+                tot = float(before.sum())
+                if tot > 0 and float(before[before.index.isin(there)].sum()) >= 0.95 * tot:
+                    last = cand
+                    break
         prev = last - 1 if (last - 1) in cnt.index else int(sorted(full)[-2])
         return ("year", [prev], [last], str(prev), str(last))
     m = d[ok].dt.year * 12 + d[ok].dt.month - 1
@@ -1089,6 +1121,12 @@ def _windows(ctx: Ctx, measure: Optional[str] = None):
     last = int(cnt.index.max())
     if len(cnt) >= 3 and cnt.loc[last] < 0.5 * cnt.median():
         last -= 1  # a month only partly in the file
+    # a tail where one of several parallel series has stopped (GISTEMP ends 2025-12, GCAG runs on): the latest
+    # month is the last one every series still reports, so a window never compares a different mix of sources
+    typical = float(cnt.median())
+    if typical >= 2:
+        while last in cnt.index and cnt.loc[last] < 0.75 * typical and last - 24 > int(cnt.index.min()):
+            last -= 1
     have = set(int(x) for x in cnt.index)
     kind = sh.mkind.get(measure or sh.primary or "", "flow")
     one_a_month = float(cnt.median()) <= 1.5 and not sh.entity
@@ -1301,6 +1339,16 @@ def op_change(
         st.num("groups", len(per), "int")
         k3 = per["part"].head(3).sum()
         st.num("top3_share", k3, "share")
+        if sh.dates is not None:
+            # a group that only started partway through (a building bought, a store opened) carries a change that
+            # is an addition, not growth of what was already there: say when it first appears
+            gall = _group_texts(ctx.df, by)
+            seen = sh.dates[ctx.base & (gall == top)].dropna()
+            first_all = sh.dates[ctx.base].dropna()
+            if len(seen) and len(first_all):
+                t0, tf, tl = seen.min(), first_all.min(), first_all.max()
+                if (t0 - tf).days > 180 and (tl - t0).days < 2 * 366:
+                    st.word("top_first", t0.strftime("%Y-%m"))
         against = per[per["delta"] * tot < 0]
         if len(against):
             st.word(
@@ -1704,7 +1752,10 @@ def op_outliers(ctx: Ctx, st: Step, measure: str) -> Step:
             rel = bool((f["v"] > 0).mean() >= 0.9) and _pct_ok(sh, measure)
             if rel:
                 before = f.groupby("e")["v"].shift(1)
-                f["x"] = (f["v"] - before) / before.where(before > 0)
+                # a base under 1% of the entry's own median (a first token value, a unit slip) makes any change a
+                # thousand-fold: such a step is not compared at all
+                floor = 0.01 * f.groupby("e")["v"].transform("median")
+                f["x"] = (f["v"] - before) / before.where((before > 0) & (before >= floor))
             else:
                 f["x"] = f.groupby("e")["v"].diff()
             if rel:
@@ -4006,7 +4057,13 @@ def explore(
                 tm += "; the top three of {S.groups} groups carried {S.top3_share}"
             if "against" in st.numbers:
                 tm += ", while {S.against} moved the other way ({S.against_delta})"
-            say("driver", _ids(tm + ".", S=st), [st.id])
+            tm += "."
+            if "top_first" in st.numbers:
+                tm += (
+                    " {S.top} first appears in {S.top_first}, so much of that is a group added, not growth of what "
+                    "was already there."
+                )
+            say("driver", _ids(tm, S=st), [st.id])
         elif st.op == "change" and "top_delta" in st.numbers:
             say(
                 "driver",
@@ -4122,6 +4179,11 @@ def explore(
                     where={d: top},
                 )
             sc2 = (s2.numbers.get("explained") or {}).get("value")
+            if sc2 is not None:
+                # a column mostly blank inside the group (a vendor on one bill in ten) explains the change by its
+                # blanks: what it says is weighed by the share of the change it actually names
+                blank = (s2.numbers.get("blank_share") or {}).get("value") or 0.0
+                sc2 = sc2 * (1.0 - min(1.0, max(0.0, blank)))
             if s2.ok and sc2 is not None and (sub_best is None or sc2 > sub_best[0]):
                 sub_best = (sc2, d2, s2)
         if sub_best is not None:

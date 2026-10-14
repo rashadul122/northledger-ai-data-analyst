@@ -8123,7 +8123,9 @@ def _topic_words(name: Any, goal: Any) -> List[str]:
     generic file word), lower case: the analyst loop reads them only to order what it already found, never as data
     and never into a sentence, so no word of the name reaches the report or the AI."""
     generic = {"data", "dataset", "file", "files", "table", "export", "final", "copy", "sheet", "report", "survey",
-               "results", "what", "does", "this", "that", "with", "from", "about", "should", "done", "csv", "xlsx"}
+               "results", "what", "does", "this", "that", "with", "from", "about", "should", "done", "csv", "xlsx",
+               "monthly", "daily", "weekly", "annual", "yearly", "quarterly", "clean", "cleaned", "messy", "sample",
+               "test", "latest", "full", "new", "old", "raw", "input", "output", "download", "dump", "main"}
     words = re.findall(r"[a-z]{4,}", (str(name or "") + " " + str(goal or "")).lower())
     out: List[str] = []
     for w in words:

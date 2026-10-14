@@ -1181,3 +1181,20 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .ai-fig-note .note { margin: 6px 0 0; font-size: 13.5px; }
 @media print { body.print-try .nl2-viz-list { display: block !important; } body.print-try .nl2-viz-list > * { margin-bottom: 12px; } }
 .nlv .nlv-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+/* What the analyst found (src/js/53-analyst.js): insights by kind, each opening to the steps behind it */
+.nla { min-width: 0; overflow-wrap: anywhere; }
+.nla .nla-read { margin: 0 0 4px; font-size: 14px; }
+.nla-group { margin-top: 14px; min-width: 0; }
+.nla-group h4 { margin: 0 0 6px; font-size: 15.5px; }
+.nla-list { margin: 0; padding-left: 20px; }
+.nla-list > li { margin: 6px 0; min-width: 0; }
+.nla-text { margin: 0; }
+.nla-how { margin-top: 6px; }
+.nla-steps { margin: 6px 0 0; padding-left: 20px; }
+.nla-step { margin: 10px 0; min-width: 0; }
+.nla-step-h, .nla-why { margin: 2px 0; font-size: 14px; }
+.nla-tbl { max-height: 320px; overflow: auto; margin: 6px 0 2px; }
+.nla-tbl table.dt { width: auto; min-width: 100%; }
+/* a table keeps whole words: it scrolls sideways inside its own box instead of breaking a name letter by letter */
+.nla-tbl th, .nla-tbl td { overflow-wrap: normal; word-break: normal; }
+.nla-tbl tbody th { min-width: 9em; }

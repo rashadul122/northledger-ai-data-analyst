@@ -260,8 +260,10 @@ def _texts(rep):
 
 def _strip(rep):
     """A report without what legitimately differs between two runs: the timings, and each
-    fact's computed_at clock stamp inside the ledger download."""
+    fact's computed_at clock stamp inside the ledger download, and the analyst loop's own run time."""
     out = json.loads(json.dumps({k: v for k, v in rep.items() if k != "timings"}))
+    if isinstance(out.get("analyst"), dict):
+        out["analyst"].pop("seconds", None)
     led = out["downloads"]["ledger_json"]
     if led:
         doc = json.loads(led)

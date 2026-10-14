@@ -6,6 +6,14 @@
     python tools/pack_engine.py --imports  # list every import the packed code makes, and where it
                                            # comes from in Pyodide
 
+NL_ENGINE_ROOT=<folder holding northledger/> packs from a copy of northledger-core instead of
+../northledger-core beside this site.
+That copy may also be an unzipped northledger-browser.zip (it has nl_pack.json beside
+northledger/). It holds only the packed modules, so the engine-wide ids (engine snapshot,
+decision-code snapshot, the list of modules not packed) cannot be recomputed from it: they are
+taken from its nl_pack.json, after every engine file in it is checked byte for byte against that
+stamp, and the benchmark receipt in it is already cut. Only the adapter files can change.
+
 The zip holds exactly what the browser needs and nothing else:
   northledger/<module>.py   the engine modules the adapter's path uses, copied byte for byte
   northledger/<data file>   data the packed modules read from beside themselves (ENGINE_DATA:
@@ -15,6 +23,7 @@ The zip holds exactly what the browser needs and nothing else:
   nl_browser.py             the adapter (engine/nl_browser.py)
   nl_scenarios.py           the adapter's scenario and contribution block (engine/nl_scenarios.py)
   nl_viz.py                 the adapter's charts chosen from the data (engine/nl_viz.py, the chart registry)
+  nl_analyst.py             the adapter's analyst loop (engine/nl_analyst.py, CONTRACT §5.10)
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
@@ -44,7 +53,11 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = os.path.normpath(os.path.join(HERE, ".."))
-ENGINE_SRC = os.path.normpath(os.path.join(SITE, "..", "northledger-core", "northledger"))
+# NL_ENGINE_ROOT: the folder that holds northledger/ (a copy of northledger-core), as for
+# tools/test_nl_browser.py; by default the northledger-core checkout beside this site.
+ENGINE_SRC = os.path.normpath(os.path.join(
+    os.path.abspath(os.environ.get("NL_ENGINE_ROOT") or os.path.join(SITE, "..", "northledger-core")),
+    "northledger"))
 OUT_DIR = os.path.join(SITE, "engine")
 ZIP_NAME = "northledger-browser.zip"
 MANIFEST = os.path.join(OUT_DIR, "pack.json")
@@ -110,6 +123,9 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the charts chosen from the data (the chart registry, CONTRACT §5.9), imported by nl_browser.run(),
                  # _validate_plan, profile_for_ai and results_for_ai
                  "nl_viz.py": "nl_viz.py",
+                 # the analyst loop (typed analysis steps and the insights filled from their numbers,
+                 # CONTRACT §5.10), imported by nl_browser.run()
+                 "nl_analyst.py": "nl_analyst.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",
@@ -244,15 +260,53 @@ def _sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+# An unzipped pack used as the engine source (see the module docstring): its stamp, or None.
+PACK_COPY_STAMP = os.path.join(ENGINE_ROOT, "nl_pack.json")
+
+
+def pack_copy_stamp():
+    if not os.path.exists(PACK_COPY_STAMP):
+        return None
+    with open(PACK_COPY_STAMP, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def engine_ids() -> tuple:
+    """(engine snapshot, decision-code snapshot, modules not packed) of the engine the pack is cut
+    from: computed from a real northledger-core, or, from an unzipped pack, read from its stamp once
+    every engine file in it matches that stamp byte for byte."""
+    stamp = pack_copy_stamp()
+    if stamp is None:
+        return (engine_snapshot(), decision_snapshot(),
+                sorted(f[:-3] for f in os.listdir(ENGINE_SRC) if f.endswith(".py") and f[:-3] not in ENGINE_MODULES))
+    for arc, src in members():
+        if arc.startswith("northledger/") or arc in ENGINE_EXTRA:
+            with open(src, "rb") as fh:
+                if _sha(fh.read()) != (stamp.get("files") or {}).get(arc):
+                    raise SystemExit("pack: %s in the unzipped pack at NL_ENGINE_ROOT differs from its nl_pack.json; "
+                                     "the engine snapshot cannot be carried over" % arc)
+    try:
+        with open(MANIFEST, encoding="utf-8") as fh:
+            prev = json.load(fh)
+    except (FileNotFoundError, ValueError):
+        prev = {}
+    if prev.get("engine_snapshot_full") != stamp.get("engine_snapshot_full"):
+        raise SystemExit("pack: engine/pack.json is not for the engine snapshot of the unzipped pack at NL_ENGINE_ROOT "
+                         "(%s), so the modules not packed are unknown; pack from northledger-core instead"
+                         % (stamp.get("engine_snapshot") or "none"))
+    return stamp["engine_snapshot_full"], stamp["decision_code_snapshot"], list(prev.get("not_packed") or [])
+
+
 def build() -> tuple:
     """(zip bytes, manifest dict), computed from the sources on disk."""
-    snap = engine_snapshot()
+    snap, decision, not_packed = engine_ids()
+    from_pack = pack_copy_stamp() is not None
     files = []
     blobs = []
     for arc, src in members():
         with open(src, "rb") as fh:
             b = fh.read()
-        if arc in ENGINE_EXTRA:
+        if arc in ENGINE_EXTRA and not from_pack:     # an unzipped pack's receipt is already cut
             b = cut_receipt(b)
         blobs.append((arc, b))
         source = ("northledger-core/northledger/%s" % os.path.basename(src) if arc.startswith("northledger/")
@@ -260,7 +314,7 @@ def build() -> tuple:
                   else "portfolio-website/engine/%s" % arc)
         files.append({"path": arc, "sha256": _sha(b), "bytes": len(b), "source": source})
     stamp = {"engine_snapshot": snap[:12], "engine_snapshot_full": snap,
-             "decision_code_snapshot": decision_snapshot(),
+             "decision_code_snapshot": decision,
              "engine_version": engine_version(),
              "snapshot_recipe": "sha256 of northledger/*.py (no git commit available)",
              "files": {f["path"]: f["sha256"] for f in files}}
@@ -287,13 +341,12 @@ def build() -> tuple:
         "engine_snapshot": snap[:12],
         "engine_snapshot_full": snap,
         "engine_version": engine_version(),
-        "decision_code_snapshot": decision_snapshot(),
+        "decision_code_snapshot": decision,
         "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id "
                            "build.py and northledger.loop.engine_snapshot() compute",
         "zip": {"file": ZIP_NAME, "sha256": _sha(zbytes), "bytes": len(zbytes)},
         "files": files,
-        "not_packed": sorted(f[:-3] for f in os.listdir(ENGINE_SRC)
-                             if f.endswith(".py") and f[:-3] not in ENGINE_MODULES),
+        "not_packed": not_packed,
         "runtime": {"pyodide_packages": list(PYODIDE_PACKAGES),
                     "entry": "import nl_browser; nl_browser.run_json(data, name, objective, "
                              "decisions_json, as_of)",

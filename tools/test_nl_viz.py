@@ -118,6 +118,13 @@ STORES_CHARTS = [{"kind": "change_heatmap", "columns": ["store", "revenue"], "wh
                  {"kind": "contribution_waterfall", "columns": ["store", "revenue"], "why": "What moved revenue."},
                  {"kind": "slope", "columns": ["store"], "why": "Before and after."},
                  {"kind": "group_ranges", "columns": ["revenue", "store"], "why": "Order size by store."}]
+G_CHARTS = [{"kind": "line_chart", "columns": ["revenue"], "why": "Revenue month by month."},
+            {"kind": "area_chart", "columns": ["region", "revenue"], "why": "What revenue is made of over time."},
+            {"kind": "bar_chart", "columns": ["region", "revenue"], "why": "Revenue by region."},
+            {"kind": "grouped_bar", "columns": ["region", "revenue"], "why": "Each region this year against last."},
+            {"kind": "small_multiples", "columns": ["region", "revenue"], "why": "Each region's own path."},
+            {"kind": "line_chart", "columns": ["revenue", "region"], "why": "The regions side by side."}]
+RENTALS = os.path.join(SITE, "engine", "sample-messy.csv")
 CORR_CHARTS = [{"kind": "correlation_heatmap", "columns": [], "why": "Do the measures move together?"},
                {"kind": "correlation_heatmap", "columns": ["revenue", "units", "cost"], "why": "The three flows."}]
 
@@ -164,6 +171,10 @@ CASES = {
     "stores_ai": (_stores_bytes, "stores.csv", {"__plan__": dict(STORES_PLAN, charts=STORES_CHARTS)}, "2026-03-15"),
     "stores_corr": (_stores_bytes, "stores.csv", {"__plan__": dict(STORES_PLAN, charts=CORR_CHARTS)}, "2026-03-15"),
     "stores": (_stores_bytes, "stores.csv", None, "2026-03-15"),
+    # Batch 2, the chart grammar: ship2 with the five new charts asked for, and the site's sample ledger (a forecast)
+    "ship2_g": (lambda: _read(SHIP2), "ship2_privacy_orders.csv", {"__plan__": dict(SHIP2_PLAN, charts=G_CHARTS)},
+                SHIP2_AS_OF),
+    "rentals": (lambda: _read(RENTALS), "sample-messy.csv", None, "2026-10-01"),
 }
 _CACHE = {}
 
@@ -285,8 +296,9 @@ def test_ship2_engine_picks_the_top_four_by_the_designs_scores():
     rep = _case("ship2")
     v = _viz(rep)
     assert v["chosen_by"] == "engine" and v["refused"] == [], v
-    assert [c["id"] for c in v["charts"]] == ["viz.1.contribution_waterfall", "viz.2.calendar_heatmap",
-                                              "viz.3.group_ranges", "viz.4.pvm_waterfall"], [c["id"] for c in v["charts"]]
+    # Batch 2: the series over time leads with its line (line_chart outranks the calendar and the waterfall)
+    assert [c["id"] for c in v["charts"]] == ["viz.1.line_chart", "viz.2.contribution_waterfall",
+                                              "viz.3.calendar_heatmap", "viz.4.group_ranges"], [c["id"] for c in v["charts"]]
     for c in v["charts"]:
         assert c["chosen_by"] == "engine" and c["why"] == "Chosen by the engine: " + SPEC["menu"][c["chart"]]["what"], c["why"]
     # the order is the design's: highest score first, ties in menu order, only charts whose limit is ok and that build
@@ -310,7 +322,7 @@ def test_ship2_and_fx_records_equal_the_specs_real_examples():
     ex = {k: v["record"] for k, v in SPEC["examples"].items()}
     auto, ai, fx = _case("ship2"), _case("ship2_ai"), _case("fx")
     for rep, chart, name in ((auto, "contribution_waterfall", "waterfall"), (auto, "calendar_heatmap", "heatmap"),
-                             (auto, "group_ranges", "dot_range"), (auto, "pvm_waterfall", "edge_waterfall_pvm"),
+                             (auto, "group_ranges", "dot_range"), (ai, "pvm_waterfall", "edge_waterfall_pvm"),
                              (ai, "slope", "slope"), (fx, "calendar_heatmap", "edge_heatmap_diverging")):
         r = _rec(rep, chart)
         want = ex[name]
@@ -377,7 +389,7 @@ def test_waterfalls_and_slope_recompute_from_the_download_and_reconcile_with_the
         assert abs(math.fsum(s["value"] for s in st[1:-1]) - wf["data"]["change"]["value"]) <= 1e-6 * R1
         assert abs(st[-2]["to"] - it["headline.latest"]["value"]) <= 1e-6 * R1 and \
             wf["data"]["change"]["value"] == it["headline.change"]["value"]
-        pvm = _rec(rep, "pvm_waterfall")
+        pvm = _rec(_case("ship2_ai"), "pvm_waterfall")      # the engine's own ship2 picks lead with the line (Batch 2)
         U0, U1 = sum(uni["p"].values()), sum(uni["l"].values())
         P0 = R0 / U0
         price = sum(uni["l"][k] * (tot["l"][k] / uni["l"][k] - tot["p"][k] / uni["p"][k]) for k in tot["p"])
@@ -903,11 +915,13 @@ def test_chart_limits_ship2_is_the_specs_example_and_fx_and_reviews_say_what_the
         for c, x in lim.items():
             assert set(x) == {"chart", "ok", "why"} and isinstance(x["ok"], bool) and len(x["why"]) <= 160, x
             assert x["why"].startswith(SPEC["menu"][c]["limit_needs"] + "; "), x
-    assert [c for c in MENU if fx[c]["ok"]] == ["calendar_heatmap"], fx
+    assert [c for c in MENU if fx[c]["ok"]] == ["calendar_heatmap", "line_chart"], fx
     assert fx["calendar_heatmap"]["why"].endswith("the file spans 116 months (2017-01 to 2026-08)"), fx["calendar_heatmap"]
     assert fx["correlation_heatmap"]["why"].endswith("the file has 1 (VALUE)"), fx["correlation_heatmap"]
     assert [c for c in MENU if rv[c]["ok"]] == ["contribution_waterfall", "calendar_heatmap", "change_heatmap",
-                                              "crosstab_heatmap", "group_ranges", "pareto", "slope"], rv
+                                              "crosstab_heatmap", "group_ranges", "pareto", "slope", "line_chart",
+                                              "area_chart", "bar_chart", "grouped_bar", "small_multiples"], rv
+    assert fx["area_chart"]["why"].endswith("no category column") and not fx["area_chart"]["ok"], fx["area_chart"]
     # the review text is flagged (free text), withheld by default: never counted as the free-text column
     assert rv["theme_rating_heatmap"]["why"].endswith("no free-text column") and "review_text" not in json.dumps(rv)
     assert rv["change_heatmap"]["why"].endswith("verified_purchase has 71 of 78"), rv["change_heatmap"]
@@ -916,10 +930,12 @@ def test_chart_limits_ship2_is_the_specs_example_and_fx_and_reviews_say_what_the
     yl = {x["chart"]: x for x in NB.profile_for_ai(("\n".join(rows) + "\n").encode(), "co2.csv")["chart_limits"]}
     for c in ("contribution_waterfall", "pvm_waterfall", "calendar_heatmap", "change_heatmap", "slope"):
         assert not yl[c]["ok"] and yl[c]["why"].endswith("no column the engine reads as dates"), yl[c]
+    # ... while Batch 2's time charts read its years
+    assert yl["line_chart"]["ok"] and yl["line_chart"]["why"].endswith("year spans 34 years (1990 to 2023)"), yl["line_chart"]
     # what the engine then builds from the same files with no chart asked for
-    assert [c["chart"] for c in _viz(_case("fx"))["charts"]] == ["calendar_heatmap"]
-    assert [c["chart"] for c in _viz(_case("reviews"))["charts"]] == ["contribution_waterfall", "calendar_heatmap",
-                                                                      "crosstab_heatmap", "group_ranges"]
+    assert [c["chart"] for c in _viz(_case("fx"))["charts"]] == ["line_chart", "calendar_heatmap"]
+    assert [c["chart"] for c in _viz(_case("reviews"))["charts"]] == ["line_chart", "contribution_waterfall",
+                                                                      "calendar_heatmap", "crosstab_heatmap"]
 
 
 def test_a_record_over_its_byte_cap_is_trimmed_and_says_so():
@@ -1541,6 +1557,210 @@ def test_a_withheld_columns_name_in_a_record_is_replaced_not_the_record_dropped(
     r2["summary"] = "Subjects that mention the phone most often."
     out = _nv().for_sending(r2, scrub)
     assert out["summary"] == "Subjects that mention the [withheld column] most often." and out["title"] == rec["title"], out
+
+
+# ------------------------------------------------------------------------ Batch 2: the chart grammar (14 Oct 2026)
+def _period(m, grain):
+    return m if grain == "month" else ("%s-Q%d" % (m[:4], (int(m[5:7]) - 1) // 3 + 1) if grain == "quarter" else m[:4])
+
+
+def _cells_of(rep, date, measure, seg, grain, mask=None):
+    """{level (or ''): {period: [sum, rows]}} recomputed from the download with plain pandas."""
+    import pandas as pd
+    df = _clean(rep)
+    mon = pd.to_datetime(df[date].where(df[date] != ""), errors="coerce").dt.strftime("%Y-%m")
+    v = _num(df[measure]) if measure else pd.Series(1.0, index=df.index)
+    ok = mon.notna() & v.notna() & (mask if mask is not None else True)
+    out = {}
+    for i in df.index[ok]:
+        g = df[seg][i] if seg else ""
+        c = out.setdefault(g, {}).setdefault(_period(mon[i], grain), [0.0, 0])
+        c[0] += float(v[i])
+        c[1] += 1
+    return out
+
+
+def _points_match(rec, key, cells, how="sum"):
+    """Each point equals the recomputed figure when it rests on 5 or more rows, else is null with its cell '<5' (1 to 4
+    rows) or '' (none)."""
+    d = rec["data"]
+    for k, s in enumerate(d[key]):
+        c = cells[s["label"]] if s["label"] in cells else cells[""]
+        for i, p in enumerate(d["x"]):
+            tot, n = c.get(p, [0.0, 0])
+            cell = rec["table"]["rows"][i][1 + k]
+            if n >= 5:
+                want = tot if how == "sum" else tot / n
+                assert s["values"][i] is not None and _close(s["values"][i], want), (rec["id"], s["label"], p, s["values"][i], want)
+                assert cell not in ("", "<5"), (rec["id"], p, cell)
+            else:
+                assert s["values"][i] is None and cell == ("<5" if n else ""), (rec["id"], s["label"], p, n, cell)
+
+
+def test_a_time_series_leads_with_its_line_the_primary_series():
+    rep = _case("ship2")
+    v = _viz(rep)
+    assert v["charts"][0]["chart"] == "line_chart", [c["chart"] for c in v["charts"]]
+    rec = v["charts"][0]
+    d = rec["data"]
+    assert rec["kind"] == "lines" and rec["section"] == "headline" and d["grain"] == "month" and d["forecast"] is None
+    assert d["x"] == ["%d-%02d" % (y, m) for y in (2024, 2025) for m in range(1, 13)], d["x"]
+    _points_match(rec, "series", _cells_of(rep, "order_date", "revenue", None, "month"))
+    # the engine's own charted series of the primary claim, month for month, and its table prints the engine's texts
+    tr = next(c for c in rep["charts"] if c["id"] == "trend.total:revenue")["data"]
+    got = dict(zip(d["x"], d["series"][0]["values"]))
+    assert all(_close(got[m], x) for m, x in zip(tr["months"], tr["values"]) if x is not None and m in got)
+    assert [r[1] for r in rec["table"]["rows"]] == [NB._fmt(x) for x in d["series"][0]["values"]]
+    assert rec["anchors"][:2] == ["finding:measure.revenue.total.change", "chart:trend.total:revenue"], rec["anchors"]
+    assert "Nov 2025 (18,723)" in rec["summary"] and "Jun 2025 (5,845)" in rec["summary"], rec["summary"]
+
+
+def test_a_line_carries_the_engines_forecast_of_the_same_series():
+    rep = _case("rentals")
+    rec = _rec(rep, "line_chart")
+    d, fc = rec["data"], rec["data"]["forecast"]
+    fan = next(c for c in rep["charts"] if c["id"].startswith("fan."))["data"]
+    assert fc is not None and fc["x"] == [p["month"] for p in fan["forward"]], fc
+    for k, kk in (("values", "value"), ("lo", "lo"), ("hi", "hi")):
+        assert all(_close(a, p[kk]) for a, p in zip(fc[k], fan["forward"])), k
+    assert d["grain"] == "month" and len(d["series"]) == 1 and len(d["x"]) + len(fc["x"]) <= 30 and len(d["x"]) >= 12
+    hist = {h["month"]: h["actual"] for h in fan["history"]}
+    assert all(_close(x, hist[m]) for m, x in zip(d["x"], d["series"][0]["values"]) if x is not None)
+    # the primary claim's own rows (total amount where category is 'RENT'), not the whole column
+    assert "where" in rec["title"] and "RENT" in rec["title"] and rec["section"] == "headline", rec["title"]
+    assert rec["table"]["cols"][-2:] == ["Forecast", "80% range"] and len(rec["table"]["rows"]) == len(d["x"]) + len(fc["x"])
+    assert "chart:" + next(c["id"] for c in rep["charts"] if c["id"].startswith("fan.")) in rec["anchors"]
+
+
+def test_a_line_by_category_and_small_multiples_rest_every_point_on_5_rows():
+    rep = _case("ship2_g")
+    lines = [c for c in _viz(rep)["charts"] if c["chart"] == "line_chart"]
+    by = next(c for c in lines if len(c["data"]["series"]) > 1)
+    sm = _rec(rep, "small_multiples")
+    # by month most region-months hold fewer than 5 orders: both go to quarters, where half the points have 5 or more
+    month = _cells_of(rep, "order_date", "revenue", "region", "month")
+    ns = [c[1] for g in month.values() for c in g.values()]
+    assert 2 * sum(1 for n in ns if n >= 5) < len(ns)
+    quarter = _cells_of(rep, "order_date", "revenue", "region", "quarter")
+    for rec, key in ((by, "series"), (sm, "panels")):
+        assert rec["data"]["grain"] == "quarter" and len(rec["data"]["x"]) == 8, rec["data"]["x"]
+        assert sorted(s["label"] for s in rec["data"][key]) == ["East", "North", "South", "West"]
+        _points_match(rec, key, quarter)
+        cells = sum(1 for r in rec["table"]["rows"] for c in r[1:] if c == "<5")
+        assert cells == rec["suppressed"]["cells"] > 0, rec["suppressed"]
+    assert NB.results_for_ai(rep)["charts"] and all(c["inputs"]["rows"] is None for c in NB.results_for_ai(rep)["charts"]
+                                                   if _nv().is_record(c) and c["suppressed"]["cells"])
+
+
+def test_an_area_stacks_parts_that_add_up_and_rest_on_5_rows():
+    rep = _case("ship2_g")
+    rec = _rec(rep, "area_chart")
+    d = rec["data"]
+    q = _cells_of(rep, "order_date", "revenue", "region", d["grain"])
+    whole = _cells_of(rep, "order_date", "revenue", None, d["grain"])[""]
+    named = [p["label"] for p in d["parts"] if p["label"] != "other"]
+    for i, p in enumerate(d["x"]):
+        assert _close(sum(x["values"][i] for x in d["parts"]), whole[p][0]) and _close(d["total"][i], whole[p][0])
+        for x in d["parts"]:
+            if x["label"] != "other":
+                n = q[x["label"]].get(p, [0, 0])[1]
+                assert n == 0 or n >= 5, (x["label"], p, n)
+                assert _close(x["values"][i], q[x["label"]].get(p, [0.0, 0])[0])
+    # a region with a quarter of 1 to 4 orders is never a part of its own: it is in 'other'
+    small = [g for g, c in q.items() if any(0 < c.get(p, [0, 0])[1] < 5 for p in d["x"])]
+    assert small and not set(small) & set(named) and d["parts"][-1]["label"] == "other", (small, named)
+
+
+def test_bars_and_grouped_bars_recompute_and_match_the_scenarios():
+    rep = _case("ship2_g")
+    bar, grp = _rec(rep, "bar_chart"), _rec(rep, "grouped_bar")
+    tot = {g: c["2024"][0] + c["2025"][0] for g, c in _cells_of(rep, "order_date", "revenue", "region", "year").items()}
+    rows = bar["data"]["rows"]
+    assert [r["label"] for r in rows] == sorted(tot, key=lambda g: -tot[g]) and bar["data"]["other"] is False
+    assert all(_close(r["values"][0], tot[r["label"]]) and r["texts"][0] == NB._fmt(tot[r["label"]]) for r in rows)
+    # the grouped bar's two periods are the scenarios' two windows: each region's change is the waterfall's
+    assert grp["data"]["series"] == ["2024-01 to 2024-12", "2025-01 to 2025-12"], grp["data"]["series"]
+    ch = {r["label"]: r["change_text"] for r in grp["data"]["rows"]}
+    assert ch == {"East": "+16,220", "North": "+7,116", "West": "+330", "South": "+292"}, ch
+    assert [r["label"] for r in grp["data"]["rows"]] == sorted(ch, key=lambda g: -next(
+        r["values"][1] for r in grp["data"]["rows"] if r["label"] == g))
+    assert bar["kind"] == grp["kind"] == "hbar" and not _check(bar) and not _check(grp)
+
+
+def _panel_bytes():
+    """A long table: three symbols' closing prices, one row a month each, 2021 to 2024."""
+    rng = random.Random(7)
+    rows = []
+    for s, base in (("AAA", 50.0), ("BBB", 120.0), ("CCC", 15.0)):
+        p = base
+        for k in range(48):
+            p *= 1 + rng.uniform(-0.04, 0.05)
+            rows.append(["%04d-%02d-01" % (2021 + k // 12, k % 12 + 1), s, "%.2f" % p])
+    return _csv(["date", "symbol", "close"], rows)
+
+
+def _years_bytes():
+    """A yearly file with no dates: a year column, a region and sales, 8 rows a region-year."""
+    rng = random.Random(3)
+    rows = [[str(y), r, "%.1f" % rng.uniform(80, 120)] for y in range(2012, 2024) for r in ("North", "South") for _ in range(8)]
+    return _csv(["year", "region", "sales"], rows)
+
+
+def test_time_charts_read_a_long_tables_series_and_a_year_column():
+    rep = NB.run(_panel_bytes(), "prices.csv", "", None, "2026-10-01")
+    assert rep["ok"], rep["error"]
+    nv = _nv()
+    import pandas as pd
+    clean = _clean(rep)
+    assert nv._panel_cat(nv.Ctx(rep, {"claims": {}}), pd.to_datetime(clean["date"]).dt.strftime("%Y-%m")) == "symbol"
+    v = _viz(rep)
+    rec = v["charts"][0]
+    assert rec["chart"] == "line_chart", [c["chart"] for c in v["charts"]]
+    d = rec["data"]
+    # one row a symbol-month: the points go to years (12 rows each), a series per symbol, averaged
+    assert d["grain"] == "year" and d["x"] == ["2021", "2022", "2023", "2024"] and len(d["series"]) == 3, d
+    _points_match(rec, "series", _cells_of(rep, "date", "close", "symbol", "year"), how="mean")
+    assert "small_multiples" in [c["chart"] for c in v["charts"]], [c["chart"] for c in v["charts"]]
+    rep = NB.run(_years_bytes(), "regions.csv", "", {"__plan__": {
+        "goal": "Sales over the years", "columns": [{"name": "year", "semantic_type": "year", "role": "date"},
+                                                    {"name": "region", "semantic_type": "category", "role": "segment"},
+                                                    {"name": "sales", "semantic_type": "flow_amount", "role": "target"}],
+        "operations": [], "analyses": [], "primary": "sales",
+        "charts": [{"kind": "line_chart", "columns": ["sales"], "why": "Sales by year."},
+                   {"kind": "grouped_bar", "columns": ["region", "sales"], "why": "The last two years."}]}}, "2026-10-01")
+    assert rep["ok"], rep["error"]
+    line, grp = _rec(rep, "line_chart"), _rec(rep, "grouped_bar")
+    assert line["data"]["grain"] == "year" and line["data"]["x"] == [str(y) for y in range(2012, 2024)]
+    clean = _clean(rep)
+    want = clean.assign(s=_num(clean["sales"])).groupby("year")["s"].sum()
+    assert all(_close(x, want[p]) for p, x in zip(line["data"]["x"], line["data"]["series"][0]["values"]))
+    assert grp["data"]["series"] == ["2022", "2023"] and line["inputs"]["months"] == ["2012-01", "2023-12"]
+
+
+def test_the_grammars_charts_are_refused_with_the_engines_reasons():
+    nv = _nv()
+    plan = dict(SHIP2_PLAN, charts=[{"kind": "line_chart", "columns": ["region"], "why": "a"},
+                                    {"kind": "area_chart", "columns": ["region", "customer_name"], "why": "b"},
+                                    {"kind": "bar_chart", "columns": ["revenue"], "why": "c"},
+                                    {"kind": "small_multiples", "columns": ["region", "revenue", "units"], "why": "d"}])
+    rep = NB.run(_read(SHIP2), "ship2_privacy_orders.csv", "", {"__plan__": plan}, SHIP2_AS_OF)
+    why = [r["why"] for r in rep["viz"]["refused"]]
+    assert why == ["region is not a number column the engine reads", nv.R_PERSONAL, "revenue is not a category column",
+                   nv.R_ARGS % "[category, measure?]"], why
+    # with no date or year column a time chart is refused with its limit; a level is never stacked
+    rows = [["store %d" % (i % 4), "%.1f" % (10 + i % 7)] for i in range(60)]
+    rep = NB.run(_csv(["store", "score"], rows), "scores.csv", "", {"__plan__": {
+        "goal": "x", "columns": [{"name": "store", "semantic_type": "category", "role": "segment"},
+                                 {"name": "score", "semantic_type": "level", "role": "target"}], "operations": [],
+        "analyses": [], "charts": [{"kind": "line_chart", "columns": ["score"], "why": "a"},
+                                   {"kind": "bar_chart", "columns": ["store", "score"], "why": "b"}]}}, "2026-10-01")
+    ref = {r["chart"]: r["why"] for r in rep["viz"]["refused"]}
+    assert ref["line_chart"].startswith(nv.REGISTRY["line_chart"]["limit_needs"] + "; no column"), ref
+    bar = _rec(rep, "bar_chart")
+    assert bar["measure"]["kind"] == "average" and len(bar["data"]["rows"]) == 4, bar["data"]
+    fx = NB.run(_read(FX), "fx_usd_cad.csv", "", {"__plan__": dict(FX_PLAN, charts=[
+        {"kind": "area_chart", "columns": ["STATUS"], "why": "x"}])}, "2026-09-29")
+    assert [r["why"] for r in fx["viz"]["refused"]], fx["viz"]
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

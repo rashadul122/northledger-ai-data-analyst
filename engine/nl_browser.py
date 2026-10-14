@@ -468,6 +468,10 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         "scenarios": {"basis": None, "items": [], "refused": [], "note": ""},
         # the charts chosen from the data (the chart registry, engine/nl_viz.py; CONTRACT §5.9): nothing built yet
         "viz": {"version": VIZ_VERSION, "charts": [], "refused": [], "chosen_by": "none"},
+        # the analyst loop (engine/nl_analyst.py; CONTRACT §5.10): rounds of typed steps over the kept rows, each
+        # chosen from what the last found, every number in a step's ledger and every sentence filled from it
+        "analyst": {"version": 1, "chosen_by": "none", "shape": None, "steps": [], "insights": [], "refused": [],
+                    "rounds": 0, "note": ""},
     }
 
 
@@ -4536,6 +4540,10 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         "scenarios": scenarios,
         # the claim the report leads with ({id, claim, grade} or null): the PDF's key figures read it exactly
         "primary": _primary_for_ai(rep, safe, scrub),
+        # the analyst loop's insights (rep.analyst, engine/nl_analyst.py; CONTRACT §5.10): their texts only, as the
+        # report holds them (every figure in one is a figure a step recorded), in the loop's order, at most
+        # ANALYST_INSIGHTS_MAX; descriptive, never graded. One that names a withheld column is never sent.
+        "analyst_insights": _analyst_insights_for_ai(rep.get("analyst"), safe, scrub),
     }
     # never the file's name (final review, 29 Sep 2026: the engine's sentences name it, "22 values in the amount
     # column of private_mix.csv could not be read", and every one went to /report): FILE_WORD stands in, as in
@@ -4547,7 +4555,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         # a name shorter than the placeholder makes a text longer: each analysis's sentence and method are cut again
         ana = [dict(a, **{k: _cut_words(a[k], n) for k, n in ANALYSIS_TEXT_MAX.items() if isinstance(a.get(k), str)})
                for a in o.get("analyses") or []]
-        return dict(o, analyses=ana, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []])
+        return dict(o, analyses=ana, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []],
+                    analyst_insights=[_cut_words(x, ANALYST_INSIGHT_MAX) for x in o.get("analyst_insights") or []])
     return _within_budget(out, final, drove_of, n_tables, links)
 
 
@@ -4571,6 +4580,26 @@ def _cut_text(s: str, n: int) -> str:
 # word with an ellipsis (_cut_words), so the worker never has to cut one (review of the live run, 30 Sep 2026: a
 # method note reached the report as "...each of the last 4 predicted by a model trained only on the blocks befor").
 ANALYSIS_TEXT_MAX = {"sentence": 700, "method": 300}
+
+# The analyst loop's insights results_for_ai sends (rep.analyst, CONTRACT §5.10): at most ANALYST_INSIGHTS_MAX, in the
+# loop's order, each at most ANALYST_INSIGHT_MAX characters (whole, or cut at a word by _cut_words). Under the byte
+# budget they go from the last, after the scenario items and the charts chosen from the data, before any analysis.
+ANALYST_INSIGHTS_MAX = 10
+ANALYST_INSIGHT_MAX = 400
+
+
+def _analyst_insights_for_ai(block: Any, safe: Any, scrub: Any) -> List[str]:
+    """The texts of rep.analyst's insights for the report writer: as the report holds them, made safe as every other
+    text in results_for_ai; an insight whose text names a withheld column is left out, never reworded."""
+    out: List[str] = []
+    for ins in (block.get("insights") if isinstance(block, dict) else None) or []:
+        if len(out) >= ANALYST_INSIGHTS_MAX:
+            break
+        text = ins.get("text") if isinstance(ins, dict) else None
+        if not isinstance(text, str) or not text.strip() or scrub.names(text):
+            continue
+        out.append(_cut_words(safe(text, 4000), ANALYST_INSIGHT_MAX))
+    return out
 
 
 def _cut_words(s: str, n: int) -> str:
@@ -4635,7 +4664,8 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
                    links: Optional[List[Tuple[Optional[int], Optional[int]]]] = None) -> Dict[str, Any]:
     """final(out), at most RESULTS_MAX_BYTES: scenario items dropped (_budget_drop_order) until it fits, the "Where the
     change came from" table rebuilt from the items kept and scenarios.refused saying first how many were left out;
-    then, if it is still over, the charts chosen from the data (rep.viz records) from the last; then the analyses
+    then, if it is still over, the charts chosen from the data (rep.viz records) from the last; then the analyst
+    loop's insights (analyst_insights) from the last; then the analyses
     from the last (with the chart and table each one has: links, their
     indices in charts and tables) and analyses_refused saying so first; then the charts, the tables and the findings
     from the end. Never returns a payload over the budget."""
@@ -4686,6 +4716,13 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
         is_viz = None
     while is_viz is not None and size > RESULTS_MAX_BYTES and out.get("charts") and is_viz(list(out["charts"])[-1]):
         out = dict(out, charts=list(out["charts"])[:-1])
+        done = final(out)
+        size = _payload_bytes(done)
+    if size <= RESULTS_MAX_BYTES:
+        return done
+    # still over: the analyst loop's insights, from the last
+    while size > RESULTS_MAX_BYTES and out.get("analyst_insights"):
+        out = dict(out, analyst_insights=list(out["analyst_insights"])[:-1])
         done = final(out)
         size = _payload_bytes(done)
     if size <= RESULTS_MAX_BYTES:
@@ -7914,6 +7951,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
+        rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout)
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8078,6 +8116,32 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
         return {"basis": None, "items": [], "refused": ["the scenarios could not be computed for this file (%s)"
                                                         % type(exc).__name__],
                 "note": "No scenario or contribution figures for this file; the reasons are listed."}
+
+
+def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any) -> Dict[str, Any]:
+    """rep["analyst"] (engine/nl_analyst.py, CONTRACT §5.10): the analyst loop over the rows the engine kept, read as the
+    AI's analyses read them (_analysis_frame: no withheld or coded column is in the frame, so no step can read one). The
+    plan's date and primary column steer it when there is a plan; with none, the loop reads the file's shape itself.
+    The report stands without it, and says so."""
+    blank = {"version": 1, "chosen_by": "none", "shape": None, "steps": [], "insights": [], "refused": [], "rounds": 0,
+             "note": ""}
+    if reading is None:
+        blank["refused"] = [{"op": "all", "why": "the engine's table could not be read"}]
+        return blank
+    try:
+        import nl_analyst as _na
+        p = plan if isinstance(plan, dict) else {}
+        df, date, _ent, _why, info = _analysis_frame({"reading": reading, "clean": cr.clean, "hide": hide}, p, layout)
+        roles = {str(c.get("role")): c.get("name") for c in p.get("columns") or [] if isinstance(c, dict)}
+        hint = {"date": date, "primary": p.get("primary") or roles.get("measure"), "entity": roles.get("entity")}
+        out = _na.explore(df, info.get("kinds") or {}, hint)
+        out["rows"] = {"kept": info.get("kept"), "set_aside": info.get("aside")}
+        return out
+    except Exception as exc:  # noqa: BLE001 - the report stands without the loop, and says so
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        blank["refused"] = [{"op": "all", "why": "the analyst loop could not run on this file (%s)" % type(exc).__name__}]
+        return blank
 
 
 def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",

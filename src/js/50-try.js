@@ -3088,7 +3088,8 @@
       return h;
     }
     function tailHtml(r) {
-      var h = '';
+      // what the analyst loop found (rep.analyst; src/js/53-analyst.js), in both layouts, before the downloads
+      var h = window.NLA ? window.NLA.html(r) : '';
       var hasLine = /^source_line,/.test(r.downloads.clean_csv) || /^source_line,/.test(r.downloads.quarantine_csv);
       var held = r.privacy.flagged.filter(function (f) { return f.decision === 'withhold'; }).map(function (f) { return f.column; });
       h += '<article class="tr-card tr-dl"><h3>Take it with you</h3><div class="tr-actions">' +

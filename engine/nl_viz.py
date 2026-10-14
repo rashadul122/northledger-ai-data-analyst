@@ -75,6 +75,22 @@ CORR_MIN_ROWS = 10
 THEME_WORDS = 12
 THEME_MIN_TEXTS = NB.THEMES_MIN_TEXTS
 COMPARE_SEED, COMPARE_B = 20260925, 999
+# Batch 2, the chart grammar (14 October 2026)
+POINTS_MAX = 30             # periods on a time chart: a table row each (TABLE_ROWS_MAX)
+MULTI_POINTS_MAX = 24       # ... on small multiples (12 panels' points within CHART_BYTES)
+SERIES_MAX = 5              # a line chart's series
+AREA_PARTS = 6              # an area chart's parts: the 5 largest groups and "other"
+BAR_ROWS = 12               # a bar chart's bars: the 11 largest and "other"
+PANELS_MAX = 12             # small multiples' panels
+TIME_MIN_POINTS = 4         # a line is drawn with 4 or more points that rest on 5 or more rows
+PANEL_MIN_POINTS = 3        # ... a small multiple with 3
+LINE_MIN_MONTHS, LINE_MIN_YEARS = 6, 4
+GROUPED_MIN_MONTHS = 24
+PANEL_LEVELS_MAX = 60       # a long table's category (_panel_cat)
+FORECAST_MIN_HISTORY = 12   # history months kept beside a forecast
+GRAINS = ("month", "quarter", "year")
+GRAIN_LABEL = {"month": "Month", "quarter": "Quarter", "year": "Year"}
+BLANK = "\x00blank"
 
 OTHER = "other"
 MINUS = "−"
@@ -144,6 +160,35 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "kind": "slope", "section": "scenarios", "args": [("segment", False), ("total", True)],
         "args_text": "[category, total?]", "what": "each segment's prior and latest total, joined by a line",
         "limit_needs": "needs a total over two 12-month windows and a category of 2 to 12 levels"},
+    # Batch 2, the chart grammar (14 October 2026): the line, the stacked area, the bar, the grouped bar and small
+    # multiples, on Batch 1's rules (the rows the engine kept, no flagged column, no point or bar on fewer than 5 rows)
+    "line_chart": {
+        "kind": "lines", "section": "headline", "section_if_not_primary": "other",
+        "args": [("measure", True), ("category", True)], "args_text": "[measure?, category?]",
+        "what": "the measure over time (the primary series, or up to 5 series of a long table), with the engine's "
+                "forecast range when it has one",
+        "limit_needs": "needs a date column over 6 or more months, or a year column over 4 or more years"},
+    "area_chart": {
+        "kind": "area", "section": "drove", "section_if_not_primary": "other",
+        "args": [("category", False), ("total", True)], "args_text": "[category, total?]",
+        "what": "a total over time split into its largest groups and 'other', stacked",
+        "limit_needs": "needs a date or year column over 6 or more periods and a category of 2 or more levels"},
+    "bar_chart": {
+        "kind": "hbar", "section": "other", "args": [("category", False), ("measure", True)],
+        "args_text": "[category, measure?]",
+        "what": "each group's total, average or rows as a sorted bar, the largest first",
+        "limit_needs": "needs a category of 2 or more levels"},
+    "grouped_bar": {
+        "kind": "hbar", "section": "other", "args": [("category", False), ("measure", True)],
+        "args_text": "[category, measure?]",
+        "what": "each group's total, average or rows in two periods side by side: the latest 12 months and the 12 "
+                "before, or the latest year and the year before",
+        "limit_needs": "needs 24 or more months (or 2 or more years) and a category of 2 or more levels"},
+    "small_multiples": {
+        "kind": "multiples", "section": "other", "args": [("category", False), ("measure", True)],
+        "args_text": "[category, measure?]",
+        "what": "one small line per group (up to 12), all on one scale",
+        "limit_needs": "needs a date or year column over 6 or more periods and a category of 2 or more levels"},
 }
 MENU = tuple(REGISTRY)
 
@@ -161,9 +206,19 @@ RANK_BASE = {
     "group_ranges": (4, 5, 4, 8, 8, 6, 6, 5, 3, 5),
     "pareto": (3, 6, 7, 3, 5, 4, 2, 5, 7, 5),
     "slope": (6, 4, 6, 2, 2, 1, 3, 6, 5, 4),
+    # Batch 2: a series over time leads with its line (it outranks the calendar wherever the dates are the file's point)
+    "line_chart": (9, 7, 7, 2, 1, 2, 9, 3, 7, 6),
+    "area_chart": (5, 5, 6, 1, 1, 1, 3, 3, 6, 4),
+    "bar_chart": (2, 4, 5, 6, 7, 3, 2, 7, 4, 4),
+    "grouped_bar": (3, 3, 5, 3, 3, 1, 2, 5, 5, 3),
+    "small_multiples": (8, 4, 4, 2, 2, 1, 6, 6, 3, 4),
 }
-RANK_ANALYSIS = {"compare": "group_ranges", "themes": "theme_rating_heatmap", "relationship": "correlation_heatmap",
-                 "rank": "pareto", "share": "pareto", "trend": "calendar_heatmap", "extremes": "calendar_heatmap"}
+# the analysis the plan ran -> the charts it lifts (+2 each)
+RANK_ANALYSIS = {"compare": ("group_ranges", "bar_chart"), "themes": ("theme_rating_heatmap",),
+                 "relationship": ("correlation_heatmap",), "rank": ("pareto", "bar_chart"), "share": ("pareto",),
+                 "trend": ("calendar_heatmap", "line_chart"), "extremes": ("calendar_heatmap",),
+                 "agreement": ("line_chart",)}
+RANK_PANEL = ("line_chart", "small_multiples")    # +2 when the file is a long table (_panel_cat finds its category)
 GOAL_KEYWORDS = {
     "contribution_waterfall": ("drove", "driver", "contribut", "why", "bridge", "grew", "fell"),
     "pvm_waterfall": ("price", "volume", "mix", "per unit"),
@@ -175,6 +230,11 @@ GOAL_KEYWORDS = {
     "group_ranges": ("compare", "best", "worst", "differ", "group"),
     "pareto": ("top", "concentrat", "80/20", "pareto", "biggest", "largest"),
     "slope": ("before", "after", "shift", "gap", "overtook"),
+    "line_chart": ("trend", "over time", "history", "forecast", "line", "since"),
+    "area_chart": ("composition", "share of", "make up", "stacked", "mix over time"),
+    "bar_chart": ("rank", "by category", "which", "highest", "lowest"),
+    "grouped_bar": ("last year", "this year", "versus last", "two periods", "side by side"),
+    "small_multiples": ("each", "every", "per ", "panel", "across"),
 }
 
 # the reasons a chart is refused (spec.json plan_directive.refusal_reasons; the limit's why and a few specific
@@ -673,6 +733,8 @@ def limits(facts: List[Dict[str, Any]], priv: Dict[str, Any], time: Optional[Dic
     tcol = time.get("column") if isinstance(time, dict) else None
     tfact = next((f for f in usable if f["header"] == tcol), None)
     tland = tfact["landed"] if tfact is not None else None
+    # Batch 2's time charts read a year column when the file has no dates (whole years, no months)
+    yfact = tfact if tfact is not None and (tfact.get("time") or {}).get("year_column") else None
     if tfact is None or (tfact.get("time") or {}).get("year_column") or tfact.get("kind") != "date":
         time, tcol, tland = None, None, None    # no date column (a year column has no months), or a flagged one
     months = int(time.get("months") or 0) if isinstance(time, dict) else 0
@@ -812,6 +874,26 @@ def limits(facts: List[Dict[str, Any]], priv: Dict[str, Any], time: Optional[Dic
     if seg_ok:
         sl_has = seg_has.split(", ", 1)[1] if ", " in seg_has else seg_has
     add("slope", seg_ok, sl_has)
+
+    # Batch 2: the line, the area, the bars and small multiples
+    if tcol:
+        t_ok, t_has, two = months >= LINE_MIN_MONTHS, span, months >= GROUPED_MIN_MONTHS
+    elif yfact is not None:
+        yrs = [int(y) for y in yfact["time"].get("years") or []]
+        t_ok = len(yrs) >= LINE_MIN_YEARS
+        two = len(yrs) >= 2
+        t_has = "%s spans %s years (%s to %s)" % (yfact["header"], _count(yrs[-1] - yrs[0] + 1), yrs[0], yrs[-1]) \
+            if yrs else span
+    else:
+        t_ok, t_has, two = False, span, False
+    c0 = cats[0] if cats else None
+    cat_has = ("%s has %s" % (c0["header"], _plural(int(c0.get("distinct") or 0), "level"))) if c0 else \
+        "no category column"
+    add("line_chart", t_ok, t_has)
+    add("area_chart", t_ok and bool(cats), "%s; %s" % (t_has, cat_has) if t_ok else t_has)
+    add("bar_chart", bool(cats), cat_has)
+    add("grouped_bar", two and bool(cats), "%s; %s" % (t_has, cat_has) if two else t_has)
+    add("small_multiples", t_ok and bool(cats), "%s; %s" % (t_has, cat_has) if t_ok else t_has)
     return out[:CHART_LIMITS_MAX]
 
 
@@ -2149,10 +2231,978 @@ def _b_pareto(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
     return _fit(build, max(0, len(ranked[:PARETO_BARS_MAX]) - 1))
 
 
+# ----------------------------------------------------------------------------- Batch 2: the chart grammar
+# The line, the stacked area, the bar, the grouped bar and small multiples (14 October 2026). Batch 1's rules hold:
+# every figure from the rows the engine kept (downloads.clean_csv) without any flagged column; no printed point, part
+# or bar rests on fewer than 5 rows (a period under 5 rows is a gap that reads "<5" in the table; a level under 5 rows
+# is folded into 'other'); each chart's monthly figures equal the engine's own trend chart of the same series where it
+# has one (to 1e-6), or it is refused; deterministic, finite, at most CHART_BYTES. A time chart has at most 30 periods
+# (a table row each): months while the file's months fit, else quarters, else years (the latest 30), at the finest
+# grain where half its points rest on 5 or more rows; a total's part-quarter or part-year at either end is left out
+# (it would read as a fall). The point texts are the table's cells (table.rows[i][1 + k] is series k at x[i]): the
+# record carries each figure's text once, so 5 series or 12 panels fit the byte cap.
+def _first_measure(ctx: Ctx) -> Optional[str]:
+    """The engine's first measure a time chart can draw: never the year column it reads as its time axis (corpus run,
+    14 Oct 2026: a CO2 panel's line read "Average year by year")."""
+    y = _year_col(ctx)
+    return next((m for m in ctx.measures if ctx.numeric(m) and m != y), None)
+
+
+def _year_col(ctx: Ctx) -> Optional[str]:
+    """With no date column, the column the engine reads as years: whole numbers from 1000 to 2999, named like a year
+    (nl_browser._YEAR_NAME, the profile's rule) or typed `year` by the plan; never a flagged column."""
+    if "year_col" in ctx.lim_detail:
+        return ctx.lim_detail["year_col"]
+    out = None
+    if ctx.date is None:
+        for c in ctx.columns:
+            st = ctx.ptype(c)
+            if c in ctx.flag_land or (st and st != "year") or not (st == "year" or NB._YEAR_NAME.search(ctx.header(c))):
+                continue
+            t = ctx.texts(c)
+            v = ctx.nums(c)[t != ""]
+            if len(v) and bool(v.notna().all()) and bool((v % 1 == 0).all()) and 1000 <= float(v.min()) and \
+                    float(v.max()) <= 2999:
+                out = c
+                break
+    ctx.lim_detail["year_col"] = out
+    return out
+
+
+def _axis(ctx: Ctx) -> Tuple[str, Any, str]:
+    """("month", each row's 'YYYY-MM', the date column's name) or ("year", each row's 'YYYY', the year column's name)."""
+    if ctx.month is not None and bool(ctx.month.notna().any()):
+        return "month", ctx.month, ctx.header(ctx.date)
+    y = _year_col(ctx)
+    if y is not None:
+        v = ctx.nums(y)
+        return "year", v.map(lambda x: None if x != x else "%04d" % int(x)), ctx.header(y)
+    raise Refused("no column the engine reads as dates or years")
+
+
+def _how(ctx: Ctx, land: Optional[str]) -> str:
+    """'count' (rows), 'sum' (a flow or a count column is added up) or 'mean' (anything else is averaged)."""
+    return "count" if land is None else ("sum" if ctx.is_flow(land) else "mean")
+
+
+def _vals(ctx: Ctx, land: Optional[str], how: str) -> Tuple[Any, str]:
+    """The measure's numbers (None for rows), a level's placeholder zeros made missing as the engine reads them."""
+    if land is None:
+        return None, ""
+    v = ctx.nums(land)
+    if how == "mean":
+        v, _nz, note = _placeholder_zeros(ctx, land, v)
+        return v, note
+    return v, ""
+
+
+def _words(ctx: Ctx, land: Optional[str], how: str) -> str:
+    return "rows" if land is None else ("total %s" % ctx.header(land)) if how == "sum" else \
+        ("average %s" % ctx.header(land))
+
+
+def _trend_ids(land: Optional[str], how: str) -> List[str]:
+    return ["trend.volume"] if land is None else ["trend.total:%s" % land] if how == "sum" else ["trend.%s" % land]
+
+
+def _cells(keys: Any, vals: Any, mask: Any, grp: Any = None) -> Dict[str, Dict[str, Tuple[float, int]]]:
+    """{group: {axis key: (sum, rows)}} over the rows in mask with a key (and a value); one group "" without grp, a
+    blank level as BLANK."""
+    import pandas as pd
+    sel = mask & keys.notna()
+    if vals is not None:
+        sel = sel & vals.notna()
+    df = pd.DataFrame({"k": keys[sel].astype(str),
+                       "g": grp[sel].fillna(BLANK).astype(str) if grp is not None else "",
+                       "v": vals[sel].astype(float) if vals is not None else 1.0})
+    out: Dict[str, Dict[str, Tuple[float, int]]] = {}
+    for (g, k), s in df.groupby(["g", "k"], sort=True)["v"]:
+        out.setdefault(str(g), {})[str(k)] = (math.fsum(float(x) for x in s.tolist()), int(len(s)))
+    return out
+
+
+def _pkey(k: str, grain: str) -> str:
+    if grain == "month" or len(k) == 4:
+        return k
+    return "%s-Q%d" % (k[:4], (int(k[5:7]) - 1) // 3 + 1) if grain == "quarter" else k[:4]
+
+
+def _periods(first: str, last: str, axis: str, grain: str, whole: bool) -> Tuple[List[str], int]:
+    """(the periods from the first key to the last at the grain, how many part-periods at the ends were left out:
+    a total's part-quarter or part-year would read as a fall)."""
+    if axis == "year":
+        return [str(y) for y in range(int(first), int(last) + 1)], 0
+    members: Dict[str, int] = {}
+    order: List[str] = []
+    for m in NB._month_range(first, last):
+        p = _pkey(m, grain)
+        if p not in members:
+            members[p] = 0
+            order.append(p)
+        members[p] += 1
+    if not whole or grain == "month":
+        return order, 0
+    size = 3 if grain == "quarter" else 12
+    keep = [p for p in order if members[p] == size]
+    return keep, len(order) - len(keep)
+
+
+def _roll(cells: Dict[str, Tuple[float, int]], grain: str) -> Dict[str, Tuple[float, int]]:
+    acc: Dict[str, List[Any]] = {}
+    for k in sorted(cells):
+        s, n = cells[k]
+        a = acc.setdefault(_pkey(k, grain), [[], 0])
+        a[0].append(s)
+        a[1] += n
+    return {p: (math.fsum(a[0]), int(a[1])) for p, a in acc.items()}
+
+
+def _val(cell: Tuple[float, int], how: str) -> float:
+    s, n = cell
+    return float(n) if how == "count" else s if how == "sum" else s / n
+
+
+def _show_p(p: str) -> str:
+    """A period as a reader says it: "Jan 2024", "2024 Q1", "2024"."""
+    if len(p) == 7 and p[4] == "-" and p[5] != "Q":
+        return _mon(p)
+    return p.replace("-", " ") if "-Q" in p else p
+
+
+def _p_months(p: str) -> List[str]:
+    """A period's first and last month."""
+    if len(p) == 4:
+        return ["%s-01" % p, "%s-12" % p]
+    if "-Q" in p:
+        q = int(p[-1])
+        return ["%s-%02d" % (p[:4], 3 * q - 2), "%s-%02d" % (p[:4], 3 * q)]
+    return [p, p]
+
+
+def _grid_pick(axis: str, span: Tuple[str, str], groups: Dict[str, Dict[str, Tuple[float, int]]], whole: bool,
+               max_points: int, forced: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """The finest grain whose periods over the whole span fit max_points (else the coarsest, its latest max_points)
+    and where half the groups' points with rows rest on 5 or more: {grain, periods, all (the span's periods), dropped
+    (part-periods left out), cells {group: {period: (sum, rows)}}}, or None."""
+    grains = (forced,) if forced else (GRAINS if axis == "month" else ("year",))
+    for i, g in enumerate(grains):
+        p_all, dropped = _periods(span[0], span[1], axis, g, whole)
+        if not p_all or (len(p_all) > max_points and i < len(grains) - 1 and not forced):
+            continue
+        per = p_all[-max_points:]
+        rolled = {k: _roll(c, g) for k, c in groups.items()}
+        ns = [rolled[k][p][1] for k in rolled for p in per if p in rolled[k] and rolled[k][p][1] > 0]
+        if ns and 2 * sum(1 for n in ns if n >= SMALL_CELL) >= len(ns):
+            return {"grain": g, "periods": per, "all": p_all, "dropped": dropped, "cells": rolled}
+    return None
+
+
+def _reconcile_opt(ctx: Ctx, ids: List[str], got: Dict[str, Tuple[float, int]], how: str) -> Optional[str]:
+    """Each month's figure against the engine's own trend chart of the same series where they overlap, to 1e-6: the
+    chart's id when one overlaps (Refused when a month differs), None when the engine charted no such series."""
+    for cid in ids:
+        ch = ctx.charts.get(cid)
+        if not ch:
+            continue
+        d = ch.get("data") or {}
+        over = 0
+        for m, v in zip(d.get("months") or [], d.get("values") or []):
+            if v is None or m not in got:
+                continue
+            over += 1
+            if not _close(_val(got[m], how), float(v)):
+                raise Refused(R_RECON)
+        if over:
+            return cid
+    return None
+
+
+def _anchor_of(ctx: Ctx, cid: Optional[str]) -> List[str]:
+    if not cid:
+        return []
+    fids = [str(f) for f in (ctx.charts.get(cid) or {}).get("finding_ids") or [] if str(f) in ctx.findings]
+    return (["finding:" + fids[0]] if fids else []) + ["chart:" + cid]
+
+
+def _primary_series(ctx: Ctx) -> Dict[str, Any]:
+    """The primary claim's own series: {land, how, mask (the claim's rows, or None), words, trend (the chart ids it
+    reconciles with), primary, fid}: "total revenue", "rows", "average price", "total amount where category is
+    'RENT'" (the claim's conditions, nl_scenarios._claim_mask, as its trend chart reads them). With no primary claim
+    (or one on a column this chart cannot read), the engine's first measure, not called the primary."""
+    import pandas as pd
+    pmet = ctx.rep.get("primary_metric") or {}
+    key, fid = str(pmet.get("claim_key") or ""), str(pmet.get("finding_id") or "")
+    parts = key.split(":") if key else []
+    lfl = bool(parts) and parts[-1] == "like_for_like"
+    if lfl:
+        parts = parts[:-1]
+    land: Optional[str] = None
+    how = "count"
+    if parts and parts[0] == "total" and len(parts) >= 2:
+        land, how = parts[1], "sum"
+    elif parts and parts[0] != "volume":
+        land, how = parts[0], "mean"
+
+    def plain(lnd: Optional[str], hw: str, primary: bool) -> Dict[str, Any]:
+        return {"land": lnd, "how": hw, "mask": None, "words": _words(ctx, lnd, hw), "trend": _trend_ids(lnd, hw),
+                "primary": primary, "fid": fid if primary else ""}
+    if not parts or (land is not None and not ctx.numeric(land)):
+        first = _first_measure(ctx)
+        return plain(first, _how(ctx, first), False)
+    claim = ctx.claims.get(fid) or {}
+    conds = [k for k in ("kind_split", "currency", "status_excluded") if claim.get(k)]
+    if lfl:                                     # a like-for-like claim's levels are not re-read here: its measure
+        return plain(land, how, False)
+    if not conds:
+        return dict(plain(land, how, True), trend=["trend.%s" % key])
+    need = [c for c in [land] + [str((claim.get(k) or {}).get("column")) for k in conds] if c]
+    mask = None
+    if all(c in ctx.columns for c in need):
+        typed = pd.DataFrame(index=ctx.frame.index)
+        for c in dict.fromkeys(need):
+            typed[c] = ctx.nums(c) if c == land else ctx.texts(c).where(ctx.texts(c) != "", None)
+        m, why = NS._claim_mask(typed, claim, land)
+        if not why:
+            mask = m
+    sp, cur, stx = claim.get("kind_split"), claim.get("currency"), claim.get("status_excluded")
+    shown = ([str(sp.get("level"))] if sp and sp.get("group") != "other" else []) + \
+        [str(v) for v in (stx or {}).get("values") or []][:2]
+    if mask is None or any(not _label_ok(ctx, s) for s in shown):
+        # the claim's rows cannot be chosen here (a column it reads is flagged), or a level it names reads as personal
+        # data: the measure on every row, reconciled with the engine's chart of that series when it has one
+        return plain(land, how, False)
+    words = _words(ctx, land, how)
+    if cur:
+        words += " in %s" % str(cur.get("code"))[:12]
+    elif sp:
+        words += (" where %s is '%s'" % (ctx.header(str(sp.get("column"))), str(sp.get("level"))[:40])
+                  if sp.get("group") != "other" else " for the other %s values" % ctx.header(str(sp.get("column"))))
+    if stx:
+        vs = [str(v) for v in stx.get("values") or []]
+        words += ", %s %s left out" % (ctx.header(str(stx.get("column"))),
+                                       " and ".join("'%s'" % v[:30] for v in vs[:2]) + (" and more" if len(vs) > 2
+                                                                                        else ""))
+    return {"land": land, "how": how, "mask": mask, "words": words, "trend": ["trend.%s" % key], "primary": True,
+            "fid": fid}
+
+
+def _panel_cat(ctx: Ctx, keys: Any) -> Optional[str]:
+    """A long table's category: one whose levels each hold the same few rows (3 or fewer) in 80% or more of their
+    periods and appear in half the periods or more (a series per level, stacked: stock prices by symbol, temperatures
+    by source); None for a breakdown of transactions."""
+    import pandas as pd
+    if "panel" in ctx.lim_detail:
+        return ctx.lim_detail["panel"]
+    out = None
+    for c in _cat_cands(ctx):
+        t = ctx.texts(c)
+        ok = (t != "") & keys.notna()
+        if not ok.any():
+            continue
+        n_lv = int(t[ok].nunique())
+        if not 2 <= n_lv <= PANEL_LEVELS_MAX:
+            continue
+        cnt = pd.DataFrame({"g": t[ok], "k": keys[ok].astype(str)}).groupby(["g", "k"], sort=True).size()
+        per = int(keys[ok].nunique())
+        cover = cnt.groupby(level=0).size() / float(per)
+        vals = cnt.tolist()
+        mode = sorted(set(vals), key=lambda v: (-vals.count(v), v))[0]
+        if mode <= 3 and vals.count(mode) >= 0.8 * len(vals) and float(cover.median()) >= 0.5:
+            out = c
+            break
+    ctx.lim_detail["panel"] = out
+    return out
+
+
+def _fmt_for(how: str, values: Sequence[Optional[float]]) -> Callable[[Any], str]:
+    """A point's text: a count whole, anything else as the report prints a figure (3 significant digits), compact
+    ("1.235B") when a text would pass 12 characters."""
+    base: Callable[[Any], str] = (lambda v: _count(round(v))) if how == "count" else _fmt
+    return _cell_fmt(base, [v for v in values if v is not None])
+
+
+def _pick_levels(ctx: Ctx, seg: str, keep: int, rows: Any, check: int = 10 ** 6) -> Tuple[List[str], Any, int]:
+    """(the `keep` levels of seg with the most rows among `rows` (ties by name), each row's level (None blank), how
+    many levels more); one of the first `check` that reads as personal data refuses the chart."""
+    _names_check(ctx, seg)
+    t = ctx.texts(seg)
+    grp = t.where(t != "", None)
+    vc = t[rows & (t != "")].value_counts()
+    lv = sorted(((str(k), int(v)) for k, v in vc.items()), key=lambda kv: (-kv[1], kv[0]))
+    top = [g for g, _n in lv[:keep]]
+    for g in top[:check]:
+        if not _label_ok(ctx, g):
+            raise Refused("%s has a level too long to print or that reads as personal data" % ctx.header(seg))
+    return top, grp, max(0, len(lv) - len(top))
+
+
+def _time_record(chart: str, ctx: Ctx, title: str, sub: str, section: str, supports: str, anchors: List[str],
+                 land: Optional[str], how: str, data: Dict[str, Any], table: Dict[str, Any], summary: str,
+                 supp: Tuple[int, str], source: str, cols: List[str], rows: int, periods: List[str],
+                 op: str) -> Dict[str, Any]:
+    return _record(chart, title, sub, section, supports, anchors, None, None,
+                   {"label": ctx.header(land) if land else "rows", "unit": ctx.unit(land) if land else "",
+                    "kind": "count" if how == "count" else "amount" if how == "sum" else "average"},
+                   data, table, summary, supp, source,
+                   {"columns": cols, "rows": int(rows), "months": [_p_months(periods[0])[0], _p_months(periods[-1])[1]],
+                    "op": op})
+
+
+def _span_of(groups: Dict[str, Dict[str, Tuple[float, int]]]) -> Tuple[str, str]:
+    ks = sorted({k for c in groups.values() for k in c})
+    if not ks:
+        raise Refused("no dated rows")
+    return ks[0], ks[-1]
+
+
+def _fan_for(ctx: Ctx, got: Dict[str, Tuple[float, int]], how: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """The engine's forecast of this very series: a fan chart whose history equals the series in every month they
+    share (3 or more), its forward months each with a finite point and range."""
+    for cid in sorted(ctx.charts):
+        if not cid.startswith("fan."):
+            continue
+        d = (ctx.charts[cid] or {}).get("data") or {}
+        hist = [(str(h.get("month")), h.get("actual")) for h in d.get("history") or [] if isinstance(h, dict)]
+        over = [(m, a) for m, a in hist if a is not None and m in got]
+        fw = [p for p in d.get("forward") or [] if isinstance(p, dict)]
+        if len(over) < 3 or not fw or not all(_close(_val(got[m], how), float(a)) for m, a in over):
+            continue
+        if not all(all(isinstance(p.get(k), (int, float)) and math.isfinite(float(p[k])) for k in ("value", "lo", "hi"))
+                   and float(p["lo"]) <= float(p["hi"]) for p in fw):
+            continue
+        return cid, d
+    return None
+
+
+def _title(*variants: str) -> str:
+    """The first variant that fits a title (120 characters), else the last cut at a word."""
+    return next((v for v in variants if len(v) <= 120), variants[-1])
+
+
+def _latest_shared(ser: List[Dict[str, Any]]) -> Tuple[int, List[Tuple[float, int]]]:
+    """(the latest period where the most series have a point, [(value, series index)] there): a summary compares
+    the series where they meet, not where one runs on alone."""
+    n = len(ser[0]["values"])
+    have = [[(s["values"][i], j) for j, s in enumerate(ser) if s["values"][i] is not None] for i in range(n)]
+    most = max(len(h) for h in have)
+    i = max(i for i in range(n) if len(have[i]) == most)
+    return i, have[i]
+
+
+def _b_line(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
+    import pandas as pd
+    axis, keys, axis_h = _axis(ctx)
+    seg = None
+    if cols:
+        land = cols[0]
+        seg = cols[1] if len(cols) > 1 else None
+        how = _how(ctx, land)
+        _h, pm = ctx.primary_measure()
+        S = {"land": land, "how": how, "mask": None, "words": _words(ctx, land, how), "trend": _trend_ids(land, how),
+             "primary": seg is None and pm == land, "fid": ""}
+    else:
+        # a long table: a series per level of its category (the measure on every row); else the primary claim's series
+        seg = _panel_cat(ctx, keys)
+        S = _primary_series(ctx)
+        if seg is not None:
+            land = S["land"] if S["land"] is not None and S["mask"] is None else _first_measure(ctx)
+            if land is None:
+                seg = None
+            else:
+                how = _how(ctx, land)
+                S = {"land": land, "how": how, "mask": None, "words": _words(ctx, land, how),
+                     "trend": _trend_ids(land, how), "primary": False, "fid": ""}
+        if S["land"] is None and not S["primary"]:
+            # rows a period are the engine's own pick only when its headline is a count of rows
+            raise Refused("no measure the engine reads, and its headline is not a count of rows")
+    land, how = S["land"], S["how"]
+    vals, note = _vals(ctx, land, how)
+    mask = S["mask"] if S["mask"] is not None else pd.Series(True, index=ctx.frame.index)
+    whole = _cells(keys, vals, mask).get("", {})
+    if not whole:
+        raise Refused("no dated rows")
+    trend = _reconcile_opt(ctx, S["trend"], whole, how) if axis == "month" else None
+    more = 0
+    if seg is not None:
+        sh = ctx.header(seg)
+        ok = mask & keys.notna() & (vals.notna() if vals is not None else True)
+        top, grp, more = _pick_levels(ctx, seg, SERIES_MAX, ok)
+        if len(top) < 2:
+            raise Refused("%s has fewer than 2 levels with dated rows" % sh)
+        allg = _cells(keys, vals, mask, grp)
+        groups = {g: allg.get(g, {}) for g in top}
+    else:
+        groups = {"": whole}
+    span = _span_of(groups)
+    fan, pick = None, None
+    if seg is None and axis == "month":
+        fan = _fan_for(ctx, whole, how)
+        if fan is not None:
+            h = len(fan[1]["forward"])
+            if POINTS_MAX - h >= FORECAST_MIN_HISTORY:
+                pick = _grid_pick(axis, span, groups, how != "mean", POINTS_MAX - h, forced="month")
+            if pick is None:
+                fan = None
+    if pick is None:
+        pick = _grid_pick(axis, span, groups, how != "mean", POINTS_MAX)
+    if pick is None:
+        raise Refused("fewer than half its points rest on 5 or more rows, by month, quarter or year")
+    grain, per = pick["grain"], pick["periods"]
+    series = []
+    dropped_lv = 0
+    for g, c in pick["cells"].items():
+        v = [(_val(c[p], how) if p in c and c[p][1] >= SMALL_CELL else None) for p in per]
+        n = [c[p][1] if p in c else 0 for p in per]
+        if sum(1 for x in v if x is not None) < TIME_MIN_POINTS:
+            dropped_lv += 1
+            continue
+        series.append({"label": g if seg is not None else NB._cap(S["words"])[:LABEL_MAX], "v": v, "n": n})
+    if not series or (seg is not None and len(series) < 2):
+        raise Refused("fewer than %s of its series have %d or more points that rest on 5 or more rows" % (
+            "two" if seg is not None else "one", TIME_MIN_POINTS))
+    fmt = _fmt_for(how, [x for s in series for x in s["v"]] + (
+        [float(p[k]) for p in fan[1]["forward"] for k in ("value", "lo", "hi")] if fan else []))
+    fid = S.get("fid") or ""
+    words = S["words"]
+    gw = grain
+    unit = ctx.unit(land) if land else ""
+
+    def build(k: int) -> Dict[str, Any]:
+        P = per[k:]
+        ser = [{"label": s["label"], "values": [None if x is None else _r6(x) for x in s["v"][k:]]} for s in series]
+        ns = [s["n"][k:] for s in series]
+        txt = [["<5" if (x is None and 0 < n < SMALL_CELL) else "" if x is None else fmt(x) for x, n in zip(s["values"], nn)]
+               for s, nn in zip(ser, ns)]
+        supp = sum(1 for row in txt for t in row if t == "<5")
+        fc = None
+        rows_t = [[_show_p(p)] + [txt[j][i] for j in range(len(ser))] for i, p in enumerate(P)]
+        cols_t = [GRAIN_LABEL[gw]] + ([s["label"] for s in ser] if seg is not None else
+                                      [NB._cap(words) + (" (%s)" % unit if unit and unit != "%" else "")])
+        if fan:
+            fw = fan[1]["forward"]
+            lvl = int(round(100 * float(fan[1].get("level") or 0.8)))
+            fc = {"x": [str(p["month"]) for p in fw], "values": [_r6(float(p["value"])) for p in fw],
+                  "lo": [_r6(float(p["lo"])) for p in fw], "hi": [_r6(float(p["hi"])) for p in fw], "level": lvl}
+            cols_t += ["Forecast", "%d%% range" % lvl]
+            rows_t = [r + ["", ""] for r in rows_t] + [
+                [_show_p(str(p["month"]))] + [""] * len(ser) + [fmt(float(p["value"])),
+                                                               "%s to %s" % (fmt(float(p["lo"])), fmt(float(p["hi"])))]
+                for p in fw]
+        data = {"x": list(P), "grain": gw, "x_label": GRAIN_LABEL[gw], "series": ser, "forecast": fc}
+        pts = [(x, i, j) for j, s in enumerate(ser) for i, x in enumerate(s["values"]) if x is not None]
+        if seg is None:
+            sh_ = [(x, i) for x, i, _j in pts]
+            a, b = sh_[0], sh_[-1]
+            hi, lo = max(sh_, key=lambda t: (t[0], -t[1])), min(sh_, key=lambda t: (t[0], t[1]))
+            summary = "%s went from %s in %s to %s in %s; the highest %s was %s (%s) and the lowest %s (%s)." % (
+                NB._cap(words), txt[0][a[1]], _show_p(P[a[1]]), txt[0][b[1]], _show_p(P[b[1]]), gw,
+                _show_p(P[hi[1]]), txt[0][hi[1]], _show_p(P[lo[1]]), txt[0][lo[1]])
+        else:
+            last, at = _latest_shared(ser)
+            hi, lo = max(at, key=lambda t: (t[0], -t[1])), min(at, key=lambda t: (t[0], t[1]))
+            summary = "In %s, %s is highest (%s)%s of %s of %s shown." % (
+                _show_p(P[last]), ser[hi[1]]["label"], txt[hi[1]][last],
+                "" if hi[1] == lo[1] else " and %s lowest (%s)" % (ser[lo[1]]["label"], txt[lo[1]][last]),
+                _plural(len(ser), "level"), sh)
+        if fc:
+            summary += " The engine's forecast for %s is %s (%d%% range %s to %s)." % (
+                _show_p(fc["x"][-1]), fmt(fc["values"][-1]), fc["level"], fmt(fc["lo"][-1]), fmt(fc["hi"][-1]))
+        if supp:
+            summary += " %s %s on fewer than 5 rows and %s not shown." % (
+                _plural(supp, "point"), "rests" if supp == 1 else "rest", "is" if supp == 1 else "are")
+        notes = []
+        if more or dropped_lv:
+            notes.append("%s more %s not shown" % (_plural(more + dropped_lv, "level"),
+                                                   "is" if more + dropped_lv == 1 else "are"))
+        if note:
+            notes.append(note)
+        if fc:
+            notes.append("%sthe engine's forecast with its %d%% range, dashed" % (
+                "the latest %s, then " % _plural(len(P), gw) if len(pick["all"]) > len(P) else "then ", fc["level"]))
+        elif len(pick["all"]) > len(P):
+            notes.append("the latest %s shown: the chart's %s" % (_plural(len(P), gw),
+                                                                 "size limit" if k else "%d-point limit" % POINTS_MAX))
+        if pick["dropped"]:
+            notes.append("a part-%s at either end is left out" % gw)
+        rng = "%s to %s" % (_show_p(P[0]), _show_p(P[-1]))
+        head = ("%s by %s" % (NB._cap(words), gw)) if seg is None else ("%s by %s and %s" % (NB._cap(words), gw, sh))
+        title = _title("%s, %s%s" % (head, rng, ", and the engine's forecast" if fc else ""),
+                       "%s%s" % (head, " and the forecast" if fc else ""))
+        sub = "%s in each %s of %s%s" % (NB._cap(words), gw, axis_h, ("; " + "; ".join(notes)) if notes else "")
+        anchors = (["finding:" + fid] if fid in ctx.findings and S["primary"] and trend else []) + _anchor_of(ctx, trend)
+        if fc:
+            anchors += ["chart:" + fan[0]] + ["finding:" + f for f in (ctx.charts[fan[0]].get("finding_ids") or [])
+                                              if str(f) in ctx.findings]
+        n_rows = sum(n for nn in ns for n in nn if n >= SMALL_CELL)
+        return _time_record(
+            "line_chart", ctx, title, sub, "headline" if S["primary"] and seg is None else "other",
+            str((ctx.findings.get(fid) or {}).get("claim") or "%s over time" % NB._cap(words)) if seg is None else
+            "%s by %s over time" % (NB._cap(words), sh), anchors, land, how, data, {"cols": cols_t, "rows": rows_t},
+            summary, (supp, "%s %s on fewer than 5 rows" % (_plural(supp, "point"), "rests" if supp == 1 else "rest")
+                      if supp else ""),
+            "The rows the engine kept, by %s %s%s" % (axis_h, gw, "; each month equals the engine's own charted "
+                                                                  "series" if trend else ""),
+            ([ctx.header(land)] if land else []) + ([sh] if seg is not None else []) + [axis_h], n_rows, P,
+            "%s by %s%s" % ("rows counted" if land is None else "%s %s" % (ctx.header(land), "added up" if how == "sum"
+                                                                          else "averaged"), gw,
+                            " and %s" % sh if seg is not None else ""))
+    if seg is not None:
+        sh = ctx.header(seg)
+    return _fit(build, len(per) - TIME_MIN_POINTS)
+
+
+def _seg_and_total(ctx: Ctx, cols: Optional[List[str]], total: bool) -> Tuple[str, Optional[str]]:
+    """The category and the measure (None: rows) a chart reads: the plan's columns, else the scenarios' category (or
+    the engine's first) and the primary claim's measure (a total, for a chart that adds up)."""
+    if cols:
+        return cols[0], (cols[1] if len(cols) > 1 else None)
+    cands = _cat_cands(ctx)
+    basis_seg = (((ctx.sc or {}).get("basis") or {}).get("segment") or {}).get("column")
+    seg = basis_seg if basis_seg in cands else next(iter(cands), None)
+    if seg is None:
+        raise Refused("no category column")
+    _h, pm = ctx.primary_measure()
+    if pm is not None and not ctx.numeric(pm):
+        pm = None
+    if total and pm is not None and not ctx.is_flow(pm):
+        pm = None
+    return seg, pm
+
+
+def _b_area(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
+    import pandas as pd
+    axis, keys, axis_h = _axis(ctx)
+    seg, land = _seg_and_total(ctx, cols, True)
+    how = _how(ctx, land)
+    if how == "mean":
+        raise Refused("%s is not a total (a flow or a count); it is averaged" % ctx.header(land))
+    sh = ctx.header(seg)
+    vals, _note = _vals(ctx, land, how)
+    mask = pd.Series(True, index=ctx.frame.index)
+    whole = _cells(keys, vals, mask).get("", {})
+    if not whole:
+        raise Refused("no dated rows")
+    trend = _reconcile_opt(ctx, _trend_ids(land, how), whole, how) if axis == "month" else None
+    ok = keys.notna() & (vals.notna() if vals is not None else True)
+    order, grp, _more = _pick_levels(ctx, seg, 10 ** 6, ok, check=0)
+    allg = _cells(keys, vals, mask, grp)
+    if len(order) < 2:
+        raise Refused("%s has fewer than 2 levels with dated rows" % sh)
+    if OTHER in allg:
+        raise Refused("%s already has a level named other" % sh)
+    span = _span_of({"": whole})
+    words = _words(ctx, land, how)
+
+    def parts_at(pick: Dict[str, Any]) -> Optional[Tuple[List[str], Dict[str, Dict[str, Tuple[float, int]]], int]]:
+        g, P = pick["grain"], pick["periods"]
+        rolled = {lv: _roll(allg.get(lv, {}), g) for lv in sorted(allg)}
+        tot = {lv: math.fsum(rolled[lv].get(p, (0.0, 0))[0] for p in P) for lv in order}
+        if any(c[0] < 0 for r in rolled.values() for p, c in r.items() if p in P):
+            raise Refused("a part of %s is below zero in a period, so the parts cannot be stacked" % words)
+        cand = sorted(order, key=lambda lv: (-tot[lv], lv))
+        good = [lv for lv in cand if all(not (0 < rolled[lv].get(p, (0, 0))[1] < SMALL_CELL) for p in P)
+                and any(rolled[lv].get(p, (0, 0))[1] for p in P)]
+        chosen = good[:AREA_PARTS - 1]
+        for lv in chosen:
+            if not _label_ok(ctx, lv):
+                raise Refused("%s has a level too long to print or that reads as personal data" % sh)
+
+        def other() -> Dict[str, Tuple[float, int]]:
+            o: Dict[str, List[Any]] = {}
+            for lv, r in rolled.items():
+                if lv in chosen:
+                    continue
+                for p in P:
+                    if p in r:
+                        a = o.setdefault(p, [[], 0])
+                        a[0].append(r[p][0])
+                        a[1] += r[p][1]
+            return {p: (math.fsum(a[0]), a[1]) for p, a in o.items()}
+        folded = 0
+        oth = other()
+        while chosen and any(0 < c[1] < SMALL_CELL for c in oth.values()):
+            chosen.pop()
+            folded += 1
+            oth = other()
+        if any(0 < c[1] < SMALL_CELL for c in oth.values()) or len(chosen) + (1 if any(c[1] for c in oth.values())
+                                                                                 else 0) < 2:
+            return None
+        out = {lv: rolled[lv] for lv in chosen}
+        if any(c[1] for c in oth.values()):
+            out[OTHER] = oth
+        return chosen, out, folded
+    # the finest grain whose span fits, unless a coarser one names more of the groups (fewer folded for small cells)
+    pick, got = None, None
+    gs = GRAINS if axis == "month" else ("year",)
+    for g in gs:
+        pk = _grid_pick(axis, span, {"": whole}, True, POINTS_MAX, forced=g)
+        if pk is None or len(pk["periods"]) < TIME_MIN_POINTS or (len(pk["all"]) > POINTS_MAX and g != gs[-1]):
+            continue
+        res = parts_at(pk)
+        if res is not None and (got is None or len(res[0]) > len(got[0])):
+            pick, got = pk, res
+    if pick is None or got is None:
+        raise Refused("no grain (month, quarter or year) gives every part 5 or more rows in each period it has rows in")
+    chosen, parts, folded = got
+    grain, per = pick["grain"], pick["periods"]
+    rolled_whole = _roll(whole, grain)
+    labels = list(parts)
+    vals_all = [_val(parts[lb].get(p, (0.0, 0)), how) if parts[lb].get(p, (0.0, 0))[1] else 0.0
+                for lb in labels for p in per]
+    totals = [math.fsum(_val(parts[lb][p], how) for lb in labels if p in parts[lb] and parts[lb][p][1]) for p in per]
+    fmt = _fmt_for(how, vals_all + totals)
+    unit = ctx.unit(land) if land else ""
+    n_small = sum(1 for lv in order if lv not in chosen and lv != BLANK)
+
+    def build(k: int) -> Dict[str, Any]:
+        P = per[k:]
+        ps = [{"label": lb if lb != OTHER else OTHER,
+               "values": [_r6(_val(parts[lb][p], how)) if p in parts[lb] and parts[lb][p][1] else 0 for p in P]}
+              for lb in labels]
+        tot = [_r6(math.fsum(s["values"][i] for s in ps)) for i in range(len(P))]
+        for i, p in enumerate(P):                   # the parts add up to the whole series, period by period
+            want = _val(rolled_whole[p], how) if p in rolled_whole and rolled_whole[p][1] else 0.0
+            if abs(tot[i] - want) > RECONCILE_TOL * max(1.0, abs(want)) + 1e-6 * len(ps):
+                raise Refused(R_RECON)
+        rows_t = [[_show_p(p)] + [fmt(s["values"][i]) for s in ps] + [fmt(tot[i])] for i, p in enumerate(P)]
+        data = {"x": list(P), "grain": grain, "x_label": GRAIN_LABEL[grain], "parts": ps, "total": tot}
+        li = len(P) - 1
+        big = max(range(len(ps)), key=lambda j: (ps[j]["values"][li], -j))
+        summary = "In %s, %s is %s, of which %s is the largest part (%s)." % (
+            _show_p(P[li]), words, fmt(tot[li]), ps[big]["label"], fmt(ps[big]["values"][li]))
+        first_big = max(range(len(ps)), key=lambda j: (ps[j]["values"][0], -j))
+        if first_big != big:
+            summary += " In %s the largest was %s (%s)." % (_show_p(P[0]), ps[first_big]["label"],
+                                                           fmt(ps[first_big]["values"][0]))
+        notes = []
+        if OTHER in parts:
+            notes.append("'other': %s%s" % (_plural(len(order) - len(chosen), "more level"),
+                                            " and the rows with no %s" % sh if BLANK in allg else ""))
+        if folded:
+            notes.append("%s in 'other' to rest on 5 rows a period" % _plural(folded, "level"))
+        if len(pick["all"]) > len(P):
+            notes.append("the latest %s shown: the chart's %s" % (_plural(len(P), grain),
+                                                                 "size limit" if k else "%d-point limit" % POINTS_MAX))
+        if pick["dropped"]:
+            notes.append("a part-%s at either end is left out" % grain)
+        sub = "%s in each %s, stacked by %s%s" % (NB._cap(words), grain, sh, ("; " + "; ".join(notes)) if notes else "")
+        _h, pm = ctx.primary_measure()
+        return _time_record(
+            "area_chart", ctx, "%s by %s and %s, %s to %s" % (NB._cap(words), grain, sh, _show_p(P[0]), _show_p(P[-1])),
+            sub, "drove" if pm == land else "other", "What %s is made of over time, by %s" % (words, sh),
+            _anchor_of(ctx, trend), land, how, data,
+            {"cols": [GRAIN_LABEL[grain]] + [s["label"] for s in ps] + ["Total" + (" (%s)" % unit if unit and unit != "%"
+                                                                                  else "")], "rows": rows_t},
+            summary, (n_small if OTHER in parts else 0,
+                      ("levels with fewer than 5 rows in a period are counted only in 'other'") if OTHER in parts else ""),
+            "The rows the engine kept, by %s %s and %s%s" % (axis_h, grain, sh, "; each month's total equals the "
+                                                             "engine's own charted series" if trend else ""),
+            ([ctx.header(land)] if land else []) + [sh, axis_h],
+            sum(parts[lb][p][1] for lb in labels for p in P if p in parts[lb]), P,
+            "%s by %s and %s, the 5 largest stacked" % ("rows counted" if land is None else "%s added up" %
+                                                         ctx.header(land), grain, sh))
+    return _fit(build, len(per) - TIME_MIN_POINTS)
+
+
+def _bars_of(ctx: Ctx, seg: str, cells: Dict[str, List[Tuple[float, int]]], how: str, n_win: int
+             ) -> Tuple[List[Tuple[str, List[Tuple[float, int]]]], Optional[List[Tuple[float, int]]], int, int]:
+    """Bars from {level: [(sum, rows) per window]}: levels with 5 or more rows in every window, the 11 largest (by
+    the last window's figure), the rest in 'other', which rests on 5 or more rows in each window it has rows in (the
+    smallest bar joins it until it does). (bars, other or None, levels in other, bars folded for 'other')."""
+    good = [lv for lv, c in cells.items() if lv != BLANK and all(x[1] >= SMALL_CELL for x in c)]
+    good.sort(key=lambda lv: (-_val(cells[lv][-1], how), lv))
+    bars = good[:BAR_ROWS - 1]
+    for lv in bars:
+        if not _label_ok(ctx, lv):
+            raise Refused("%s has a level too long to print or that reads as personal data" % ctx.header(seg))
+
+    def other() -> Optional[List[Tuple[float, int]]]:
+        rest = [c for lv, c in cells.items() if lv not in bars and lv != BLANK]
+        if not rest:
+            return None
+        return [(math.fsum(c[w][0] for c in rest), sum(c[w][1] for c in rest)) for w in range(n_win)]
+    folded = 0
+    oth = other()
+    while bars and oth is not None and any(0 < x[1] < SMALL_CELL for x in oth):
+        bars.pop()
+        folded += 1
+        oth = other()
+    if oth is not None and any(0 < x[1] < SMALL_CELL for x in oth):
+        raise Refused("no level of %s can be shown with 'other' resting on 5 or more rows" % ctx.header(seg))
+    if len(bars) < 2:
+        raise Refused("fewer than 2 levels of %s rest on 5 or more rows%s" % (
+            ctx.header(seg), " in each period" if n_win > 1 else ""))
+    n_other = sum(1 for lv in cells if lv not in bars and lv != BLANK)
+    return [(lv, cells[lv]) for lv in bars], oth, n_other, folded
+
+
+def _b_bar(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
+    import pandas as pd
+    seg, land = _seg_and_total(ctx, cols, not cols)
+    if not cols and land is None:
+        # the engine's own bars add up a total: its ranked chart (#7) already counts the rows of each level, and the
+        # group ranges show each level's average with its range
+        land = next((m for m in ctx.measures if ctx.numeric(m) and ctx.is_flow(m)), None)
+        if land is None:
+            raise Refused("no total (a flow or a count) to add up by %s" % ctx.header(seg))
+    how = _how(ctx, land)
+    sh = ctx.header(seg)
+    _names_check(ctx, seg)
+    vals, note = _vals(ctx, land, how)
+    t = ctx.texts(seg)
+    ok = (t != "") & (vals.notna() if vals is not None else True)
+    if OTHER in set(t[ok].tolist()):
+        raise Refused("%s already has a level named other" % sh)
+    df = pd.DataFrame({"g": t[ok], "v": vals[ok].astype(float) if vals is not None else 1.0})
+    cells = {str(g): [(math.fsum(float(x) for x in s.tolist()), int(len(s)))] for g, s in df.groupby("g", sort=True)["v"]}
+    if len(cells) < 2:
+        raise Refused("%s has fewer than 2 levels" % sh)
+    bars, oth, n_other, folded = _bars_of(ctx, seg, cells, how, 1)
+    whole = (math.fsum(c[0][0] for c in cells.values()), sum(c[0][1] for c in cells.values()))
+    parts = [c[0] for _lv, c in bars] + ([oth[0]] if oth else [])
+    if abs(math.fsum(p[0] for p in parts) - whole[0]) > RECONCILE_TOL * max(1.0, abs(whole[0])) + 1e-6 * len(parts) \
+            or sum(p[1] for p in parts) != whole[1]:
+        raise Refused(R_RECON)
+    # rows counted: the engine's ranked chart of the same column, where it counts the same rows, ranks them alike
+    rk = ctx.charts.get("ranked.%s" % seg)
+    if rk and land is None and int((rk.get("data") or {}).get("total") or -1) == whole[1]:
+        rb = [(str(b.get("label")), int(b.get("rows") or 0)) for b in (rk.get("data") or {}).get("bars") or []]
+        mine = sorted(((lv, c[0][1]) for lv, c in cells.items()), key=lambda kv: (-kv[1], kv[0]))[:len(rb)]
+        if rb != mine:
+            raise Refused("the ranking of %s differs from the engine's own ranked chart of the same rows" % sh)
+    figs = [_val(c[0], how) for _lv, c in bars] + ([_val(oth[0], how)] if oth else [])
+    fmt = _fmt_for(how, figs)
+    words = _words(ctx, land, how)
+    unit = ctx.unit(land) if land else ""
+    rows = [{"label": lv, "values": [_r6(_val(c[0], how))], "texts": [fmt(_val(c[0], how))]} for lv, c in bars]
+    if oth:
+        rows.append({"label": OTHER, "values": [_r6(_val(oth[0], how))], "texts": [fmt(_val(oth[0], how))]})
+    head = NB._cap(words) + (" (%s)" % unit if unit and unit != "%" else "")
+    data = {"series": [NB._cap(words)], "rows": rows, "other": bool(oth)}
+    lo_r = rows[len(bars) - 1]
+    if how == "count":
+        summary = "%s has the most rows (%s) and %s the fewest (%s) of %s of %s shown." % (
+            rows[0]["label"], rows[0]["texts"][0], lo_r["label"], lo_r["texts"][0], _plural(len(bars), "level"), sh)
+    else:
+        summary = "%s is highest for %s (%s) and lowest for %s (%s) of %s of %s shown." % (
+            NB._cap(words), rows[0]["label"], rows[0]["texts"][0], lo_r["label"], lo_r["texts"][0],
+            _plural(len(bars), "level"), sh)
+    if oth:
+        summary += " 'other' holds %s (%s)." % (_plural(n_other, "more level"), rows[-1]["texts"][0])
+    small = sum(1 for lv, c in cells.items() if c[0][1] < SMALL_CELL)
+    notes = ([note] if note else []) + (["%s with fewer than 5 rows %s counted only in 'other'" % (
+        _plural(small, "level"), "is" if small == 1 else "are")] if small else []) + (
+        ["%s more %s in 'other' so that it rests on 5 or more rows" % (_count(folded), "level is" if folded == 1
+                                                                      else "levels are")] if folded else [])
+    return _record(
+        "bar_chart", "%s by %s" % (NB._cap(words), sh),
+        "%s for each %s, the largest first%s" % (NB._cap(words), sh, ("; " + "; ".join(notes)) if notes else ""),
+        "other", "%s by %s" % (NB._cap(words), sh), ["chart:ranked.%s" % seg] if rk and land is None else [],
+        None, None, {"label": ctx.header(land) if land else "rows", "unit": unit,
+                     "kind": "count" if how == "count" else "amount" if how == "sum" else "average"},
+        data, {"cols": [sh, head], "rows": [[r["label"] if r["label"] != OTHER else "other (%s)" % _plural(
+            n_other, "level"), r["texts"][0]] for r in rows]}, summary,
+        (small, notes[-1] if (small or folded) else ""),
+        "The rows the engine kept, by %s" % sh,
+        {"columns": ([ctx.header(land)] if land else []) + [sh], "rows": int(whole[1]),
+         "months": _span_months(ctx, ok), "op": "%s by %s; the largest %s, the rest as other" % (
+             "rows counted" if land is None else "%s %s" % (ctx.header(land), "added up" if how == "sum" else
+                                                             "averaged"), sh, _count(len(bars)))})
+
+
+def _windows_two(ctx: Ctx, axis: str, keys: Any, ok: Any) -> Tuple[List[List[str]], List[str]]:
+    """The two periods a grouped bar compares, from the last dated key: the latest 12 months and the 12 before (24 or
+    more months), or the latest year and the year before; (the keys of each window, their labels)."""
+    ks = keys[ok].dropna()
+    if not len(ks):
+        raise Refused("no dated rows")
+    last, first = str(ks.max()), str(ks.min())
+    if axis == "month":
+        pm, lm = _windows_of(last)
+        if pm[0] < first:
+            raise Refused(REGISTRY["grouped_bar"]["limit_needs"] + "; the file spans %s months" %
+                          _count(len(NB._month_range(first, last))))
+        return [pm, lm], ["%s to %s" % (pm[0], pm[-1]), "%s to %s" % (lm[0], lm[-1])]
+    y = int(last)
+    if str(y - 1) < first:
+        raise Refused(REGISTRY["grouped_bar"]["limit_needs"] + "; the file has one year")
+    return [[str(y - 1)], [str(y)]], [str(y - 1), str(y)]
+
+
+def _b_grouped(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
+    import pandas as pd
+    axis, keys, axis_h = _axis(ctx)
+    seg, land = _seg_and_total(ctx, cols, False)
+    how = _how(ctx, land)
+    sh = ctx.header(seg)
+    _names_check(ctx, seg)
+    vals, note = _vals(ctx, land, how)
+    t = ctx.texts(seg)
+    ok = keys.notna() & (vals.notna() if vals is not None else True)
+    wins, wlab = _windows_two(ctx, axis, keys, ok)
+    allg = _cells(keys, vals, pd.Series(True, index=ctx.frame.index), t.where(t != "", None))
+    if OTHER in allg:
+        raise Refused("%s already has a level named other" % sh)
+    whole = _cells(keys, vals, pd.Series(True, index=ctx.frame.index)).get("", {})
+    trend = _reconcile_opt(ctx, _trend_ids(land, how), whole, how) if axis == "month" else None
+
+    def win(c: Dict[str, Tuple[float, int]], w: List[str]) -> Tuple[float, int]:
+        xs = [c[k] for k in w if k in c]
+        return (math.fsum(x[0] for x in xs), sum(x[1] for x in xs))
+    cells = {lv: [win(c, wins[0]), win(c, wins[1])] for lv, c in allg.items()}
+    cells = {lv: c for lv, c in cells.items() if c[0][1] or c[1][1]}
+    if len([lv for lv in cells if lv != BLANK]) < 2:
+        raise Refused("%s has fewer than 2 levels in the two periods" % sh)
+    bars, oth, n_other, folded = _bars_of(ctx, seg, cells, how, 2)
+    for w in range(2):                          # the levels add up to the whole series in each period
+        parts = [c[w] for c in cells.values()]
+        want = win(whole, wins[w])
+        if abs(math.fsum(p[0] for p in parts) - want[0]) > RECONCILE_TOL * max(1.0, abs(want[0])) + 1e-6 * len(parts) \
+                or sum(p[1] for p in parts) != want[1]:
+            raise Refused(R_RECON)
+    figs = [_val(x, how) for _lv, c in bars for x in c if x[1]] + ([_val(x, how) for x in oth if x[1]] if oth else [])
+    fmt = _fmt_for(how, figs)
+    words = _words(ctx, land, how)
+    unit = ctx.unit(land) if land else ""
+
+    def row(lv: str, c: List[Tuple[float, int]]) -> Dict[str, Any]:
+        v = [_r6(_val(x, how)) if x[1] else 0 for x in c]
+        tx = [fmt(_val(x, how)) if x[1] else "" for x in c]
+        ch = _chg(_r6(v[1] - v[0]), unit if unit != "%" else "") if c[0][1] and c[1][1] else ("new" if c[1][1] else "left")
+        return {"label": lv, "values": v, "texts": tx, "change_text": ch[:24]}
+    rows = [row(lv, c) for lv, c in bars] + ([row(OTHER, oth)] if oth else [])
+    data = {"series": list(wlab), "rows": rows, "other": bool(oth)}
+    up = max(rows[:len(bars)], key=lambda r: (r["values"][1] - r["values"][0], r["label"]))
+    dn = min(rows[:len(bars)], key=lambda r: (r["values"][1] - r["values"][0], r["label"]))
+    summary = "%s, %s against %s: %s is highest in the latest period (%s, %s before)." % (
+        NB._cap(words), wlab[1], wlab[0], rows[0]["label"], rows[0]["texts"][1], rows[0]["texts"][0])
+    if up["label"] != dn["label"]:
+        summary += " The largest rise is %s (%s) and the %s %s (%s)." % (
+            up["label"], up["change_text"], "largest fall" if dn["values"][1] < dn["values"][0] else "smallest rise",
+            dn["label"], dn["change_text"])
+    small = sum(1 for lv, c in cells.items() if lv != BLANK and any(x[1] < SMALL_CELL for x in c))
+    notes = ([note] if note else []) + (["%s with fewer than 5 rows in a period %s counted only in 'other'" % (
+        _plural(small, "level"), "is" if small == 1 else "are")] if small else []) + (
+        ["%s more %s in 'other' so that it rests on 5 or more rows in each period" % (
+            _count(folded), "level is" if folded == 1 else "levels are")] if folded else [])
+    n_rows = sum(x[1] for c in cells.values() for x in c)
+    head = lambda s: s + (" (%s)" % unit if unit and unit != "%" else "")  # noqa: E731
+    return _record(
+        "grouped_bar", "%s by %s, %s against %s" % (NB._cap(words), sh, wlab[1], wlab[0]),
+        "%s for each %s in the two periods side by side%s" % (NB._cap(words), sh, ("; " + "; ".join(notes)) if notes
+                                                              else ""),
+        "other", "%s by %s, the latest period against the one before" % (NB._cap(words), sh), _anchor_of(ctx, trend),
+        None, None, {"label": ctx.header(land) if land else "rows", "unit": unit,
+                     "kind": "count" if how == "count" else "amount" if how == "sum" else "average"},
+        data, {"cols": [sh, head(wlab[0]), head(wlab[1]), "Change"],
+               "rows": [[r["label"] if r["label"] != OTHER else "other (%s)" % _plural(n_other, "level")] + r["texts"] +
+                        [r["change_text"]] for r in rows]}, summary,
+        (small, notes[-1] if (small or folded) else ""),
+        "The rows the engine kept, by %s and %s%s" % (sh, axis_h, "; each month's figure equals the engine's own "
+                                                      "charted series" if trend else ""),
+        {"columns": ([ctx.header(land)] if land else []) + [sh, axis_h], "rows": int(n_rows),
+         "months": [_p_months(wins[0][0])[0], _p_months(wins[1][-1])[1]],
+         "op": "%s by %s in each period" % ("rows counted" if land is None else "%s %s" % (
+             ctx.header(land), "added up" if how == "sum" else "averaged"), sh)})
+
+
+def _b_multiples(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
+    import pandas as pd
+    axis, keys, axis_h = _axis(ctx)
+    if cols:
+        seg, land = cols[0], (cols[1] if len(cols) > 1 else None)
+    else:
+        seg = _panel_cat(ctx, keys)
+        if seg is None:
+            seg, _t = _seg_and_total(ctx, None, False)
+        S = _primary_series(ctx)
+        land = S["land"]
+        if land is None:
+            land = _first_measure(ctx)
+        if land is None and not S["primary"]:
+            raise Refused("no measure the engine reads, and its headline is not a count of rows")
+    how = _how(ctx, land)
+    sh = ctx.header(seg)
+    vals, note = _vals(ctx, land, how)
+    mask = pd.Series(True, index=ctx.frame.index)
+    whole = _cells(keys, vals, mask).get("", {})
+    if not whole:
+        raise Refused("no dated rows")
+    trend = _reconcile_opt(ctx, _trend_ids(land, how), whole, how) if axis == "month" else None
+    ok = keys.notna() & (vals.notna() if vals is not None else True)
+    top, grp, more = _pick_levels(ctx, seg, PANELS_MAX, ok)
+    if len(top) < 2:
+        raise Refused("%s has fewer than 2 levels with dated rows" % sh)
+    allg = _cells(keys, vals, mask, grp)
+    groups = {g: allg.get(g, {}) for g in top}
+    pick = _grid_pick(axis, _span_of(groups), groups, how != "mean", MULTI_POINTS_MAX)
+    if pick is None:
+        raise Refused("fewer than half its points rest on 5 or more rows, by month, quarter or year")
+    grain, per = pick["grain"], pick["periods"]
+    panels, gone = [], 0
+    for g in top:
+        c = pick["cells"][g]
+        v = [(_val(c[p], how) if p in c and c[p][1] >= SMALL_CELL else None) for p in per]
+        if sum(1 for x in v if x is not None) < PANEL_MIN_POINTS:
+            gone += 1
+            continue
+        panels.append({"label": g, "v": v, "n": [c[p][1] if p in c else 0 for p in per]})
+    if len(panels) < 2:
+        raise Refused("fewer than 2 levels of %s have %d or more points that rest on 5 or more rows" % (
+            sh, PANEL_MIN_POINTS))
+    fmt = _fmt_for(how, [x for s in panels for x in s["v"]])
+    words = _words(ctx, land, how)
+
+    def build(k: int) -> Dict[str, Any]:
+        P = per[k:]
+        ps = [{"label": s["label"], "values": [None if x is None else _r6(x) for x in s["v"][k:]]} for s in panels]
+        txt = [["<5" if (x is None and 0 < n < SMALL_CELL) else "" if x is None else fmt(x)
+                for x, n in zip(p["values"], s["n"][k:])] for p, s in zip(ps, panels)]
+        supp = sum(1 for r in txt for t in r if t == "<5")
+        data = {"x": list(P), "grain": grain, "x_label": GRAIN_LABEL[grain], "panels": ps}
+        li, at = _latest_shared(ps)
+        hi, lo = max(at, key=lambda t: (t[0], -t[1])), min(at, key=lambda t: (t[0], t[1]))
+        summary = "In %s, %s is highest (%s)%s of %s of %s shown, all on one scale." % (
+            _show_p(P[li]), ps[hi[1]]["label"], txt[hi[1]][li],
+            "" if hi[1] == lo[1] else " and %s lowest (%s)" % (ps[lo[1]]["label"], txt[lo[1]][li]),
+            _plural(len(ps), "level"), sh)
+        if supp:
+            summary += " %s %s on fewer than 5 rows and %s not shown." % (
+                _plural(supp, "point"), "rests" if supp == 1 else "rest", "is" if supp == 1 else "are")
+        notes = ([note] if note else [])
+        if more or gone:
+            notes.append("%s more %s not shown" % (_plural(more + gone, "level"), "is" if more + gone == 1 else "are"))
+        if len(pick["all"]) > len(P):
+            notes.append("the latest %s shown: the chart's %s" % (_plural(len(P), grain),
+                                                                 "size limit" if k else "%d-point limit" %
+                                                                 MULTI_POINTS_MAX))
+        if pick["dropped"]:
+            notes.append("a part-%s at either end is left out" % grain)
+        sub = "%s in each %s, one panel per %s, every panel on the same scale%s" % (
+            NB._cap(words), grain, sh, ("; " + "; ".join(notes)) if notes else "")
+        n_rows = sum(n for s in panels for n in s["n"][k:] if n >= SMALL_CELL)
+        return _time_record(
+            "small_multiples", ctx, "%s by %s, one panel per %s, %s to %s" % (
+                NB._cap(words), grain, sh, _show_p(P[0]), _show_p(P[-1])), sub, "other",
+            "%s by %s over time" % (NB._cap(words), sh), _anchor_of(ctx, trend), land, how, data,
+            {"cols": [GRAIN_LABEL[grain]] + [p["label"] for p in ps],
+             "rows": [[_show_p(p)] + [txt[j][i] for j in range(len(ps))] for i, p in enumerate(P)]},
+            summary, (supp, "%s %s on fewer than 5 rows" % (_plural(supp, "point"), "rests" if supp == 1 else "rest")
+                      if supp else ""),
+            "The rows the engine kept, by %s %s and %s%s" % (axis_h, grain, sh, "; each month over every %s equals "
+                                                             "the engine's own charted series" % sh if trend else ""),
+            ([ctx.header(land)] if land else []) + [sh, axis_h], n_rows, P,
+            "%s by %s and %s" % ("rows counted" if land is None else "%s %s" % (
+                ctx.header(land), "added up" if how == "sum" else "averaged"), grain, sh))
+    return _fit(build, len(per) - PANEL_MIN_POINTS)
+
+
 BUILD: Dict[str, Callable[[Ctx, Optional[List[str]]], Dict[str, Any]]] = {
     "contribution_waterfall": _b_contribution, "pvm_waterfall": _b_pvm, "calendar_heatmap": _b_calendar,
     "change_heatmap": _b_change, "crosstab_heatmap": _b_crosstab, "theme_rating_heatmap": _b_theme,
-    "correlation_heatmap": _b_correlation, "group_ranges": _b_group_ranges, "pareto": _b_pareto, "slope": _b_slope}
+    "correlation_heatmap": _b_correlation, "group_ranges": _b_group_ranges, "pareto": _b_pareto, "slope": _b_slope,
+    "line_chart": _b_line, "area_chart": _b_area, "bar_chart": _b_bar, "grouped_bar": _b_grouped,
+    "small_multiples": _b_multiples}
 
 
 # ----------------------------------------------------------------------------- the plan's charts[]
@@ -2265,7 +3315,8 @@ def _score(ctx: Ctx, chart: str) -> int:
     if prim:
         uses = {"contribution_waterfall": "measure", "pvm_waterfall": "measure", "slope": "measure",
                 "calendar_heatmap": "measure", "change_heatmap": "measure", "group_ranges": "measure",
-                "pareto": "measure"}
+                "pareto": "measure", "line_chart": "measure", "area_chart": "measure", "bar_chart": "measure",
+                "grouped_bar": "measure", "small_multiples": "measure"}
         basis = (ctx.sc or {}).get("basis") or {}
         has, pm = ctx.primary_measure()
         m = basis.get("measure") if chart in ("contribution_waterfall", "pvm_waterfall", "slope") else pm
@@ -2273,8 +3324,14 @@ def _score(ctx: Ctx, chart: str) -> int:
             s += 3
     ran = {str(a.get("type") or "") for a in ctx.analyses} | \
         {str(a.get("type") or "") for a in (ctx.plan or {}).get("analyses") or [] if isinstance(a, dict)}
-    if any(RANK_ANALYSIS.get(t) == chart for t in ran):
+    if any(chart in RANK_ANALYSIS.get(t, ()) for t in ran):
         s += 2
+    if chart in RANK_PANEL:                     # a long table: a series per level is the file's own shape
+        try:
+            if _panel_cat(ctx, _axis(ctx)[1]) is not None:
+                s += 2
+        except Refused:
+            pass
     g = ctx.goal.lower()
     s += min(2, sum(1 for w in GOAL_KEYWORDS[chart] if w in g))
     return s
@@ -2353,6 +3410,8 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             if REGISTRY[chart]["kind"] == "heatmap" and heat >= HEAT_MAX:
                 continue
+            if REGISTRY[chart]["kind"] == "hbar" and any(c["kind"] == "hbar" for c in viz["charts"]):
+                continue                        # one bar chart among the engine's own picks: the plain or the grouped
             try:
                 rec = _built(ctx, chart, None)
             except Refused:
@@ -2455,7 +3514,7 @@ def cards_for_ai(viz: Any, start: int = 1) -> List[Dict[str, Any]]:
 WITHHELD_COLUMN = "[withheld column]"
 # the fields that are names, not words (never rewritten): the record's own keys and codes
 _SEND_KEEP = frozenset(("id", "chart", "kind", "section", "grade", "parent_grade", "chosen_by", "anchors", "scale",
-                        "split", "finding_id", "prior", "latest", "months", "unit"))
+                        "split", "finding_id", "prior", "latest", "months", "unit", "x", "grain"))
 # each printed string's cap, by its key (a string over it after a rewrite: the record is not sent)
 _SEND_CAPS = {"title": 120, "subtitle": 160, "summary": 400, "supports": 200, "source": 200, "why": 200, "op": 120,
               "text": 40, "cum_text": 12, "a_text": 24, "b_text": 24, "change_text": 24}
@@ -2502,5 +3561,9 @@ def for_sending(rec: Dict[str, Any], scrub: Any = None) -> Optional[Dict[str, An
 
 def is_record(c: Any) -> bool:
     """A viz record in a charts list (results_for_ai): its kind is a draw kind and it names its menu chart."""
-    return isinstance(c, dict) and c.get("kind") in ("waterfall", "heatmap", "dot_range", "pareto", "slope", "table") \
-        and isinstance(c.get("chart"), str) and isinstance(c.get("data"), dict)
+    return isinstance(c, dict) and c.get("kind") in DRAW_KINDS and isinstance(c.get("chart"), str) \
+        and isinstance(c.get("data"), dict)
+
+
+# the draw kinds (spec.json draw_kinds; Batch 2's never take a legacy name: line, bars and scatter are the analyses')
+DRAW_KINDS = ("waterfall", "heatmap", "dot_range", "pareto", "slope", "lines", "area", "hbar", "multiples", "table")

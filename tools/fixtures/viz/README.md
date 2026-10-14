@@ -56,6 +56,20 @@ deliberately broken copies, each of which must be caught (among them a waterfall
 `jsonschema` package installed it also checks the schema as draft 2020-12 and re-validates the examples. An engine
 test can import `check_record()` and `validate()` from it to check its own records.
 
+## Batch 2: the chart grammar (14 October 2026)
+
+`batch_2` in `spec.json` adds five menu charts and four draw kinds: `line_chart` (kind `lines`: the primary
+claim's own series, or up to 5 series of a long table, with the engine's forecast range when its fan chart
+forecasts the same series), `area_chart` (`area`: a total split into its 5 largest groups and 'other', stacked),
+`bar_chart` and `grouped_bar` (`hbar`: sorted bars, or two periods side by side) and `small_multiples`
+(`multiples`: up to 12 panels on one scale). Time charts read the engine's date column, or with none a year column,
+at the finest grain (month, quarter, year) whose periods fit 30 points and where half the points rest on 5 or more
+rows; a point under 5 rows is a gap whose table cell reads `<5`. Their point texts are the table's cells
+(`table.rows[i][1 + k]`), so 5 series or 12 panels fit `CHART_BYTES`. Seven real examples (ship2 and the site's
+sample ledger) and ten more broken copies are checked by `validate_spec.py`. The version is unchanged because
+`engine/nl_browser.py` pins it too (`VIZ_VERSION`); the worker's menu and `sanitizeChart` do not know the new kinds
+yet (it degrades them to tables), and `src/js/51-nl2-charts.js` teaches `window.NLV` to draw them on the page.
+
 ## Changing it
 
 The spec is frozen for the builders of wave 1: a change bumps `version`, updates section 5.9 when it touches the

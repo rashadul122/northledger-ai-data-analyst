@@ -860,6 +860,33 @@ def test_group_averages_that_only_follow_size_are_called_out_and_size_named_over
     assert any("per unit of carat" in i["text"] for i in blk["insights"]), [i["text"] for i in blk["insights"]]
 
 
+def test_the_most_common_value_is_named_and_numbers_are_never_counted_as_categories():
+    rng = np.random.default_rng(8)
+    n = 600
+    peaks = rng.choice(["Everest"] * 5 + ["Ama Dablam"] * 2 + ["Cho Oyu", "Manaslu", "Lhotse"], n)
+    peaks = np.where(np.arange(n) < 30, "Peak %d" % 0, peaks)
+    df = pd.DataFrame(
+        {
+            "date": pd.date_range("2015-01-01", periods=n, freq="5D"),
+            "peak_name": np.concatenate([peaks[:-40], ["Peak %d" % i for i in range(40)]]),
+            "season": rng.choice(["Spring", "Autumn", "Winter"], n, p=[0.5, 0.45, 0.05]),
+            "stars_2": rng.integers(0, 3, n),
+            "members": rng.integers(1, 20, n),
+            # people repeat more than any peak, yet a person is an identifier, never the thing the rows are about
+            "customer_name": rng.choice(["Ann Lee"] * 90 + ["Bo Chan %d" % i for i in range(60)], n),
+            "contact": rng.choice(["ann@mailbox.test"] * 90 + ["bo%d@mailbox.test" % i for i in range(60)], n),
+        }
+    )
+    blk = na.explore(df, _kinds_of(df), {"primary": "members"})
+    fq = [s for s in blk["steps"] if s["op"] == "frequency" and s["ok"]]
+    assert fq, [s["op"] for s in blk["steps"]]
+    nums = fq[0]["numbers"]
+    assert nums["a_col"]["text"] == "peak_name" and nums["a_top"]["text"] == "Everest", nums
+    assert nums["b_col"]["text"] == "season", nums
+    assert "stars_2" not in json.dumps(nums)
+    assert "Ann" not in json.dumps(nums) and "@" not in json.dumps(nums), nums
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

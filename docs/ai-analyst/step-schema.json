@@ -636,6 +636,31 @@
     "args"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "what the rows are mostly about: the most common value of a detailed name column and of a coarse group, with their shares (weighted by answers when the file counts them)",
+   "x-needs": "rows",
+   "properties": {
+    "op": {
+     "const": "frequency"
+    },
+    "args": {
+     "type": "object",
+     "properties": {},
+     "required": [],
+     "additionalProperties": false
+    },
+    "why": {
+     "type": "string",
+     "maxLength": 200
+    }
+   },
+   "required": [
+    "op",
+    "args"
+   ],
+   "additionalProperties": false
   }
  ]
 }

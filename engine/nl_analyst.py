@@ -1806,6 +1806,70 @@ def op_correlate(ctx: Ctx, st: Step, measures: List[str]) -> Step:
     return st
 
 
+# a column that names a person: counting its most common value would single someone out
+_PERSON_COL = re.compile(
+    r"(^|[^a-z])(customer|client|user|member|person|contact|employee|patient|buyer|seller|owner|e-?mail|"
+    r"first_?name|last_?name|full_?name|surname|phone)"
+)
+
+
+def op_frequency(ctx: Ctx, st: Step) -> Step:
+    """What the rows are mostly about: the most common value of the detailed name column that repeats most (a peak
+    in a file of expeditions, a brand in a file of products) and of a coarse group (3 to 20 levels), each with its
+    share; rows are weighted by their answer count when the file counts answers (reviews)."""
+    import pandas as pd
+
+    sh, df = ctx.sh, ctx.df
+    w = next((d["count"] for d in df.attrs.get("derived", [])), None)
+    weight = _num(df[w]).fillna(0) if w else pd.Series(1.0, index=df.index)
+    unit = "answers" if w else "rows"
+    skip = {sh.date, sh.entity}
+    fine, coarse = [], []
+    for c in df.columns:
+        if c in skip or ctx.col(c) is None or c in sh.measures:
+            continue
+        if _num(df[c]).notna().mean() >= 0.9:
+            continue  # numbers (a scale's counts, a year) are not categories to count
+        if _PERSON_COL.search(str(c).lower()):
+            continue  # people (a customer's name, an email) are identifiers, never a breakdown
+        t = _group_texts(df, c)[ctx.base]
+        t = t[t != ""]
+        if len(t) < 10 or t.head(200).str.contains("@").mean() > 0.2:
+            continue
+        k = int(t.nunique())
+        if k < 3:
+            continue
+        g = weight[t.index].groupby(t).sum().sort_values(ascending=False)
+        tot = float(g.sum())
+        if tot <= 0:
+            continue
+        share = float(g.iloc[0]) / tot
+        readable = float(t.head(500).str.contains(r"[a-z]").mean())
+        if k <= 20:
+            coarse.append((share, c, g, tot))
+        elif k <= 2000 and k <= 0.5 * len(t) and readable >= 0.5:
+            fine.append((share, c, g, tot))
+    if not fine and not coarse:
+        return st.refuse("no column repeats a value often enough to count")
+    st.word("unit", unit)
+    for key, pool in (("a", fine), ("b", coarse)):
+        if not pool:
+            continue
+        share, c, g, tot = max(pool, key=lambda x: (x[0], -list(df.columns).index(x[1])))
+        st.word(key + "_col", c)
+        st.word(key + "_top", g.index[0])
+        st.num(key + "_top_n", float(g.iloc[0]), "int")
+        st.num(key + "_n", tot, "int")
+        st.num(key + "_share", share, "share")
+        if len(g) >= 2:
+            st.word(key + "_second", g.index[1])
+            st.num(key + "_second_share", float(g.iloc[1]) / tot, "share")
+        st.table.setdefault("columns", [])
+        st.table[key] = {"columns": [c, unit], "rows": [[i, _r(v)] for i, v in g.head(10).items()]}
+    st.table["columns"], st.table["rows"] = [], []
+    return st
+
+
 def op_confound(ctx: Ctx, st: Step, measure: str, by: str, against: str) -> Step:
     """Whether the groups' averages of a measure just follow their averages of a second measure it moves with (cut and
     price, with stone size behind both): the rank correlation of the two across the groups, the group lowest on the
@@ -2222,6 +2286,12 @@ def op_rank_labels(ctx: Ctx, st: Step, measure: str) -> Step:
         st.num("top%d_shrunk" % i, r.shrunk)
         st.num("top%d_raw" % i, r.own)
         st.num("top%d_n" % i, r.w, "int")
+    if cnt_col and len(g) >= 5:
+        # the entry with the most answers is part of the story too: the best-known brand, whatever its average
+        big = g["w"].idxmax()
+        st.word("most", big)
+        st.num("most_n", float(g.loc[big, "w"]), "int")
+        st.num("most_raw", float(g.loc[big, "own"]))
     raw = g.sort_values("own", ascending=False)
     if raw.index[0] not in list(g.index[:3]):
         st.word("raw_top", raw.index[0])
@@ -2991,6 +3061,7 @@ _OP_FN = {
     "answers": op_answers,
     "periods": op_periods,
     "confound": op_confound,
+    "frequency": op_frequency,
 }
 OPS = tuple(_OP_FN)
 
@@ -3013,6 +3084,8 @@ OP_DOCS = {
     "answers": "a survey: each question's most common answer and its share, the survey's central questions first",
     "periods": "columns that repeat a count by period (x_85_99, x_00_14): totals per period, who leads each, and the "
     "latest read as a rate against a size column when there is one",
+    "frequency": "what the rows are mostly about: the most common value of a detailed name column and of a coarse "
+    "group, with their shares (weighted by answers when the file counts them)",
     "confound": "whether the groups' averages of a measure just follow their averages of a second measure (price by "
     "cut following stone size): the rank correlation across groups and the measure per unit of the second",
 }
@@ -3020,7 +3093,8 @@ OP_DOCS = {
 # Every argument an op may take, by name: its JSON schema and the role a column it names must have in the shape.
 # step_schema() reads each op's own signature, so an op with an argument missing here fails at import.
 # What the file must have for an op to run at all (step_schema(shape) leaves an op out when it is missing):
-# date = a time axis, entity = a panel, label = a column naming each row, answers = two or more group columns.
+# date = a time axis, entity = a panel, label = a column naming each row, answers = two or more group columns,
+# periods = counts by period in the columns, rows = a file whose rows are events or items (ledger, table, series).
 OP_NEEDS = {
     "change": "date",
     "panel_change": "entity",
@@ -3034,6 +3108,7 @@ OP_NEEDS = {
     "crosstab": "answers",
     "answers": "answers",
     "periods": "periods",
+    "frequency": "rows",
 }
 
 
@@ -3048,6 +3123,8 @@ def _shape_has(shape: Dict[str, Any], need: str) -> bool:
         return len(shape.get("dimensions") or []) >= 2
     if need == "periods":
         return bool(shape.get("periods"))
+    if need == "rows":
+        return shape.get("kind") in ("ledger", "cross_section", "time_series")
     return True
 
 
@@ -4270,6 +4347,8 @@ def explore(
                     "{R.m} {R.unit} at that average), {R.top1} leads ({R.top1_shrunk}; {R.top1_raw} on {R.top1_n} "
                     "{R.unit}), then {R.top2} ({R.top2_shrunk}) and {R.top3} ({R.top3_shrunk})"
                 )
+                if "most" in rl.numbers:
+                    tm += "; the most-answered, {R.most} ({R.most_n} {R.unit}), averages {R.most_raw}"
                 if "raw_top" in rl.numbers:
                     tm += (
                         "; the highest raw average, {R.raw_top} ({R.raw_top_value} on {R.raw_top_n} {R.raw_top_unit}), "
@@ -4682,6 +4761,20 @@ def explore(
             if not cc.numbers["cur_label"]["text"]:
                 tm = tm.replace("In {K.cur_label}, {K.top1}", "{K.top1}", 1)
             say("concentration", _ids(tm + ".", K=cc), [cc.id])
+    if not over() and sh.kind in ("ledger", "cross_section", "time_series"):
+        fq = op_frequency(
+            ctx, ctx.new(rnd, "frequency", {}, "what are the rows mostly about?")
+        )
+        if fq.ok:
+            parts = []
+            if "a_top" in fq.numbers:
+                parts.append("{Q.a_top} is the most common {Q.a_col} ({Q.a_top_n} of {Q.a_n} {Q.unit}, {Q.a_share})")
+            if "b_top" in fq.numbers:
+                tb = "{Q.b_top} the most common {Q.b_col} ({Q.b_share})"
+                if "b_second" in fq.numbers:
+                    tb += ", then {Q.b_second} ({Q.b_second_share})"
+                parts.append(tb)
+            say("distribution", _ids("; ".join(parts) + ".", Q=fq), [fq.id])
     if not over() and monthly and sh.kind in ("time_series", "ledger"):
         se = op_seasonality(
             ctx,

@@ -887,6 +887,22 @@ def test_the_most_common_value_is_named_and_numbers_are_never_counted_as_categor
     assert "Ann" not in json.dumps(nums) and "@" not in json.dumps(nums), nums
 
 
+def test_a_crash_names_its_monthly_record_and_a_season_does_not():
+    rng = np.random.default_rng(3)
+    d = pd.date_range("2000-01-01", periods=120, freq="MS")
+    # a price that climbs to a peak in 2007-10, crashes to 2009-02 and recovers a little: the years, not the months
+    path = np.concatenate([np.linspace(100, 150, 94), np.linspace(150, 70, 16), np.linspace(70, 95, 10)])
+    df = pd.DataFrame({"date": d, "price": path + rng.normal(0, 0.5, 120)})
+    blk = na.explore(df, _kinds_of(df), {"primary": "price"})
+    tr = [i["text"] for i in blk["insights"] if i["kind"] == "trend"]
+    assert tr and "monthly record high" in tr[0] and re.search(r"2007-(09|10|11)", tr[0]) and re.search(r"2009-0[1-4]", tr[0]), tr
+    # a temperature that only follows its seasons: no record sentence, the summer peak is not news
+    temp = 10 + 8 * np.sin(np.arange(120) * 2 * np.pi / 12) + rng.normal(0, 0.3, 120)
+    df2 = pd.DataFrame({"date": d, "temp": temp})
+    blk2 = na.explore(df2, _kinds_of(df2), {"primary": "temp"})
+    assert not any("record high" in i["text"] for i in blk2["insights"]), [i["text"] for i in blk2["insights"]]
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

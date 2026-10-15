@@ -1692,6 +1692,37 @@ def op_trend(ctx: Ctx, st: Step, measure: str) -> Step:
         )  # a difference: a level near zero has no percent
     clear = (slope - 1.96 * se) > 0 or (slope + 1.96 * se) < 0
     st.numbers["clear"] = {"value": 1.0 if clear else 0.0, "text": "", "kind": "score"}
+    # the monthly record high and low, beneath a yearly trend too (a price's 2009 trough is a month, not a year's
+    # average): a story only when the years move the series more than the seasons do (a price through a crash, not
+    # a temperature through its summers), over three full years or more; the months only partly in the file are left
+    # out as the periods above are
+    story = 0.0
+    if sh.grain in ("month", "day", "hour", "week") or grain == "month":
+        mf = pd.DataFrame({"v": _num(ctx.df[measure]), "p": _period_key(sh.dates, "month")})[ctx.base]
+        if sh.entity:
+            mf["e"] = _text(ctx.df[sh.entity])[ctx.base]
+        mf = mf.dropna(subset=["v", "p"])
+        mc = mf.groupby("p").size()
+        mk = list(mc.index)
+        if len(mk) > 2 and mc.iloc[-1] < 0.9 * mc.iloc[:-1].tail(12).median():
+            mk = mk[:-1]
+        if len(mk) > 2 and mc.loc[mk[0]] < 0.9 * mc.loc[mk[1:]].head(12).median():
+            mk = mk[1:]
+        ms = _aggregate(mf[mf["p"].isin(mk)], "v", agg, ["p"], "e" if sh.entity else None).dropna().sort_index()
+        if len(ms) >= 36:
+            yrs = pd.Series(ms.to_numpy(dtype=float), index=[int(k) // 100 for k in ms.index])
+            size = yrs.groupby(level=0).size()
+            full = size[size >= 10].index
+            means = yrs[yrs.index.isin(full)].groupby(level=0).mean()
+            spans = yrs[yrs.index.isin(full)].groupby(level=0).agg(lambda v: v.max() - v.min())
+            if len(means) >= 3 and float(means.max() - means.min()) > 2 * float(spans.median()):
+                story = 1.0
+                hi, lo = int(np.argmax(ms.to_numpy())), int(np.argmin(ms.to_numpy()))
+                st.word("rec_hi_at", _period_label(ms.index[hi], "month"))
+                st.num("rec_hi", float(ms.iloc[hi]))
+                st.word("rec_lo_at", _period_label(ms.index[lo], "month"))
+                st.num("rec_lo", float(ms.iloc[lo]))
+    st.numbers["extremes"] = {"value": story, "text": "", "kind": "score"}
     if (
         y[0] > 0
         and y[-1] > 0
@@ -4274,6 +4305,8 @@ def explore(
                     tmpl[:-1]
                     + ", a compound {T.cagr} a year from {T.first_value} to {T.last_value}."
                 )
+            if tr.numbers["extremes"]["value"]:
+                tmpl += " Its monthly record high was {T.rec_hi} in {T.rec_hi_at} and its low {T.rec_lo} in {T.rec_lo_at}."
             say("trend", _ids(tmpl, T=tr), [tr.id])
     else:
         if sh.periods:

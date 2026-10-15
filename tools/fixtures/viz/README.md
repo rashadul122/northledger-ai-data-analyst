@@ -69,6 +69,9 @@ rows; a point under 5 rows is a gap whose table cell reads `<5`. Their point tex
 sample ledger) and ten more broken copies are checked by `validate_spec.py`. The version is unchanged because
 `engine/nl_browser.py` pins it too (`VIZ_VERSION`); the worker's menu and `sanitizeChart` do not know the new kinds
 yet (it degrades them to tables), and `src/js/51-nl2-charts.js` teaches `window.NLV` to draw them on the page.
+The worker's side is ready to port: `worker-batch2.mjs` holds `checkBatch2`, the same invariants in JavaScript,
+checked against the batch 2 examples (all kept) and the broken copies (all caught) by
+`node tools/fixtures/viz/worker-batch2.mjs`; its header says where it goes in `sanitizeChart`.
 
 ## Changing it
 

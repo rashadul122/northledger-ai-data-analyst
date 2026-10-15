@@ -3907,7 +3907,12 @@ check('viz-ai-report-markers-draw-every-kind-from-the-validated-list', DESK, asy
   // one record of each kind, and one of a kind no reader knows
   const V = vizRecords(vizOddRecords().slice(0, 1)).filter((r, i, a) => a.findIndex((x) => x.kind === r.kind) === i);
   const bars = { kind: 'bars', title: 'Revenue by region', series: [{ label: 'East', value: 44616.75 }, { label: 'North', value: 42350.45 }] };
-  const validated = V.map((r) => { const c = vizCopy(r); delete c.__name; return c; }).concat([bars]);
+  const all = V.map((r) => { const c = vizCopy(r); delete c.__name; return c; }).concat([bars]);
+  // /report sends at most AI_CHARTS_MAX charts, so the kinds go in reports of that many; every kind is drawn once
+  const cap = VIZ_SPEC.caps.AI_CHARTS_MAX, parts = [];
+  for (let i = 0; i < all.length; i += cap) parts.push(all.slice(i, i + cap));
+  ok(all.some((c) => c.suppressed && c.suppressed.cells > 0), 'no validated record suppresses a cell: the check proves little');
+  for (const validated of parts) {
   const local = validated.slice().reverse();          // the page's own copy, in another order: it must not be what is drawn
   const report = 'Revenue rose in [your file].\n## The headline: revenue rose\n' + validated.map((c, i) => '[CHART:' + (i + 1) + ']').join('\n') + '\n## What to do\n- Check it.';
   const rep = optinReport(); rep.__resultsJson = { charts: local, tables: [] };
@@ -3942,15 +3947,16 @@ check('viz-ai-report-markers-draw-every-kind-from-the-validated-list', DESK, asy
     if (vizKind(c) === 'table') { ok(!d.svg && !d.btn && JSON.stringify(d.direct) === JSON.stringify(want), '[CHART:' + (i + 1) + '] (' + c.kind + ') is not its table: ' + JSON.stringify(d).slice(0, 200)); return; }
     ok(d.svg && d.name === vizLabel(c) && d.btn && d.back && JSON.stringify(d.table) === JSON.stringify(want), '[CHART:' + (i + 1) + '] (' + c.kind + ') is not drawn with its name and a Table button: ' + JSON.stringify(d).slice(0, 240));
   });
+  if (!validated.some((c) => c.suppressed && c.suppressed.cells > 0)) { ok(!p.__errs.length, 'page error: ' + p.__errs[0]); continue; }
   await p.click('#try-share');
   await tryUntil(p, '#try-share-out .try-share-warn');
   await p.click('#try-share-yes');
   await p.waitForFunction((l) => document.getElementById('try-share-out').textContent.indexOf(l) >= 0, SHARE_LINK);
   // as a link carries them (the chart review, 30 Sep 2026): a record with a suppressed cell goes with no rows read
   const linked = validated.map((c) => (c.suppressed && c.suppressed.cells > 0 && c.inputs ? Object.assign(vizCopy(c), { inputs: Object.assign({}, c.inputs, { rows: null }) }) : c));
-  ok(validated.some((c) => c.suppressed && c.suppressed.cells > 0), 'no validated record suppresses a cell: the check proves little');
   ok(shares.length === 1 && JSON.stringify(shares[0].charts) === JSON.stringify(linked), 'the shared link does not carry the validated charts: ' + JSON.stringify((shares[0] || {}).charts || null).slice(0, 160));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  }
 });
 
 // screenshots of every kind, light and dark, at 390 px and on a desktop: only when VIZ_SHOTS names a folder

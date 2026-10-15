@@ -3065,7 +3065,7 @@ _OP_FN = {
 }
 OPS = tuple(_OP_FN)
 
-# What a planner is told each op does (the system prompt of docs/ai-analyst/analyst-endpoint.js carries these).
+# What a planner is told each op does (the system prompt of docs/ai-analyst/analyst-endpoint.mjs carries these).
 OP_DOCS = {
     "change": "the measure in the latest complete window against the one before; with by, each group's part of the change",
     "panel_change": "a panel of levels (prices, rates): each entity's own change between the two latest windows",

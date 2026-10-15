@@ -1,6 +1,6 @@
 # The AI analyst rounds: `POST /analyst`
 
-Status: proposal with a reference handler (`analyst-endpoint.js`) for the insight-proxy Worker. The page wiring and the
+Status: proposal with a reference handler (`analyst-endpoint.mjs`) for the insight-proxy Worker. The page wiring and the
 engine-worker hook below are not built yet. The engine side (`engine/nl_analyst.py`: `step_schema`, `run_steps`,
 `ledger_for_ai`) is built and tested (`tools/test_nl_analyst.py`).
 

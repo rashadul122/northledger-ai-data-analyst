@@ -681,7 +681,9 @@ def main() -> int:
             rep = nl_browser.run(data, nm, as_of=a.as_of)
             res["rep_withheld"] = rep
             flagged = [
-                f["column"] for f in (rep.get("privacy") or {}).get("flagged") or []
+                f["column"]
+                for f in (rep.get("privacy") or {}).get("flagged") or []
+                if f.get("decision") != "keep"  # amounts kept by default are not withheld
             ]
             res["flagged"] = flagged
             if flagged and a.keep_flagged:

@@ -796,6 +796,70 @@ def test_a_time_cut_is_recorded_never_silent():
     assert full["cut_short"] is None
 
 
+def _safety(seed=11, n=40):
+    rng = np.random.default_rng(seed)
+    size = np.exp(rng.uniform(np.log(1e8), np.log(5e9), n)).round()
+    df = pd.DataFrame(
+        {
+            "airline": ["Air %02d" % i for i in range(n)],
+            "avail_seat_km_per_week": size,
+            "incidents_85_99": rng.poisson(size / 4e8),
+            "fatalities_85_99": rng.poisson(size / 1e8),
+            "incidents_00_14": rng.poisson(size / 8e8),
+            "fatalities_00_14": rng.poisson(size / 3e8),
+        }
+    )
+    df.loc[7, "fatalities_00_14"] = 900  # one airline with a disaster in the latest period
+    return df
+
+
+def test_counts_by_period_in_the_columns_are_compared_led_and_read_against_size():
+    df = _safety()
+    blk = na.explore(df, _kinds_of(df))
+    assert blk["shape"]["periods"] == {
+        "incidents": ["incidents_85_99", "incidents_00_14"],
+        "fatalities": ["fatalities_85_99", "fatalities_00_14"],
+    }, blk["shape"].get("periods")
+    # the outcome is the primary measure, never the size column beside it
+    assert blk["shape"]["primary"] == "fatalities_00_14", blk["shape"]["primary"]
+    pe = [s for s in blk["steps"] if s["op"] == "periods"][0]["numbers"]
+    a, b = df["fatalities_85_99"].sum(), df["fatalities_00_14"].sum()
+    assert abs(pe["s1_change"]["value"] - (b / a - 1)) < 1e-9, pe["s1_change"]
+    assert pe["first"]["text"] == "1985-99" and pe["last"]["text"] == "2000-14"
+    assert pe["s1_lead_b"]["text"] == "Air 07", pe["s1_lead_b"]
+    assert pe["per"]["text"].startswith("per ") and pe["overall_rate"]["value"] >= 1, pe["per"]
+    texts = " ".join(i["text"] for i in blk["insights"])
+    assert "Air 07" in texts and "fold in avail seat km per week" in texts, texts
+
+
+def test_numbered_columns_that_are_not_years_are_not_periods():
+    assert na._period_columns(["score_10", "score_20", "score_30"]) == {}
+    assert na._period_columns(["male_18_24", "male_25_34", "female_18_24", "female_25_34"]) == {}
+    # two-digit spans read as years only when two quantities share them
+    assert na._period_columns(["x_85_99", "x_00_14"]) == {}
+    assert list(na._period_columns(["pop_2019", "pop_2020"])) == ["pop"]
+
+
+def test_group_averages_that_only_follow_size_are_called_out_and_size_named_over_its_dimensions():
+    rng = np.random.default_rng(4)
+    n = 2000
+    cut = rng.choice(["Fair", "Good", "Very Good", "Premium", "Ideal"], n)
+    # better cuts are cut from smaller stones; price per carat rises with the cut, the stone size does the rest
+    base = {"Fair": 1.2, "Good": 1.0, "Very Good": 0.85, "Premium": 0.8, "Ideal": 0.65}
+    carat = np.array([base[c] for c in cut]) * rng.lognormal(0, 0.3, n)
+    per = {"Fair": 3000, "Good": 3200, "Very Good": 3400, "Premium": 3500, "Ideal": 3700}
+    price = carat ** 1.6 * np.array([per[c] for c in cut]) * rng.lognormal(0, 0.1, n)
+    df = pd.DataFrame({"carat": carat, "cut": cut, "x": carat ** (1 / 3) * 6.5, "price": price})
+    blk = na.explore(df, _kinds_of(df), {"primary": "price"})
+    cr = [s for s in blk["steps"] if s["op"] == "correlate"][0]["numbers"]
+    assert (cr["x"]["text"], cr["y"]["text"]) == ("price", "carat"), (cr["x"], cr["y"])
+    cf = [s for s in blk["steps"] if s["op"] == "confound" and s["ok"]]
+    assert cf, [s["op"] for s in blk["steps"]]
+    nums = cf[0]["numbers"]
+    assert nums["low"]["text"] == "Ideal" and nums["rho"]["value"] >= 0.7, nums
+    assert any("per unit of carat" in i["text"] for i in blk["insights"]), [i["text"] for i in blk["insights"]]
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

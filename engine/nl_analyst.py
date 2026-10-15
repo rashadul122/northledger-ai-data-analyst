@@ -718,6 +718,8 @@ class Shape:
         self.label: Optional[str] = (
             None  # a column naming each row (a brand, a product) with no time axis
         )
+        # wide period columns (incidents_85_99, incidents_00_14): stem -> [(start year, label, column)], oldest first
+        self.periods: Dict[str, List[Tuple[int, str, str]]] = {}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -730,6 +732,11 @@ class Shape:
             "dimensions": self.dims,
             "primary": self.primary,
             "label": self.label,
+            **(
+                {"periods": {k: [c for _y, _l, c in v] for k, v in self.periods.items()}}
+                if self.periods
+                else {}
+            ),
             "aggregates": (
                 {
                     "column": self.entity,
@@ -876,6 +883,8 @@ def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -
                 break
     for m in sh.measures:
         sh.mkind[m] = _measure_kind(m, _num(df[m]))
+    if sh.date is None:
+        sh.periods = _period_columns(sh.measures)
     sh.primary = _pick_primary(sh, df, hint.get("primary"), hint.get("topic"))
     if sh.entity and sh.date is not None:
         t = _text(df[sh.entity])
@@ -939,6 +948,11 @@ def _pick_primary(sh: Shape, df, hint: Optional[str], topic: Optional[List[str]]
             return d["average"]
     if not sh.measures:
         return None
+    if sh.periods:
+        # a table of counts by period (incidents_85_99 ... fatalities_00_14): the latest period of the stem with the
+        # largest total, never the size column beside it (avail_seat_km_per_week)
+        stem = _period_order(sh, df)[0]
+        return sh.periods[stem][-1][2]
     # a wide file named for its subject (owid-energy-data): the measure that is the subject itself, not the gdp or
     # population beside it nor a share, change or per-head figure derived from it; the best-filled of those
     words = [w for w in (topic or []) if isinstance(w, str) and len(w) >= 3]
@@ -992,6 +1006,116 @@ def _pick_primary(sh: Shape, df, hint: Optional[str], topic: Optional[List[str]]
         key=lambda m: (-int(_num(df[m]).notna().sum()), sh.measures.index(m)),
     )
     return filled[0]
+
+
+# a number column that ends in a year or a span of years: incidents_85_99, fatalities_00_14, pop_2019, sales 2020-21
+_PERIOD_TAIL = re.compile(
+    r"^(?P<stem>.*?[a-z].*?)[ _-]+(?P<a>(?:19|20)\d{2}|\d{2})(?:[ _-]+(?:to[ _-]+)?(?P<b>(?:19|20)\d{2}|\d{2}))?$",
+    re.I,
+)
+# stems whose numbered columns are bands or ranks, not years (age_18_24, male_25_34, top_10)
+_NOT_PERIOD = re.compile(
+    r"(^|_)(age|aged|ages|male|female|men|women|boys|girls|grade|size|top|bottom|rank|q|quarter|week|day|hour|month|"
+    r"score|stars|level|tier|band|bin|bucket|pct|percentile)(_|$)",
+    re.I,
+)
+
+
+def _period_columns(measures: List[str]) -> Dict[str, List[Tuple[int, str, str]]]:
+    """Measures that repeat one quantity by period in the column name. Four-digit years count on their own;
+    two-digit ones (85_99) only when two or more quantities share the same periods, so a run of numbered columns
+    (q_10, q_20) is not read as years."""
+    found: Dict[str, List[Tuple[int, str, str, bool]]] = {}
+    for c in measures:
+        m = _PERIOD_TAIL.match(str(c).strip())
+        if not m:
+            continue
+        stem = m.group("stem").strip(" _-")
+        if not stem or _NOT_PERIOD.search(re.sub(r"[^a-z0-9]+", "_", stem.lower())):
+            continue
+        a, b = m.group("a"), m.group("b")
+        ya = int(a) if len(a) == 4 else (2000 + int(a) if int(a) <= 30 else 1900 + int(a))
+        short = len(a) == 2
+        if b:
+            yb = int(b) if len(b) == 4 else (ya // 100) * 100 + int(b)
+            if yb < ya:
+                yb += 100
+            if not (0 < yb - ya <= 50):
+                continue
+            label = "%d-%s" % (ya, ("%02d" % (yb % 100)) if yb // 100 == ya // 100 else str(yb))
+            short = short or len(b) == 2
+        else:
+            label = str(ya)
+        found.setdefault(stem, []).append((ya, label, c, short))
+    out: Dict[str, List[Tuple[int, str, str]]] = {}
+    sets: Dict[Tuple[str, ...], int] = {}
+    for stem, v in found.items():
+        if len(v) >= 2 and len({x[0] for x in v}) == len(v):
+            key = tuple(sorted(x[1] for x in v))
+            sets[key] = sets.get(key, 0) + 1
+    for stem, v in found.items():
+        if len(v) < 2 or len({x[0] for x in v}) != len(v):
+            continue
+        if any(x[3] for x in v) and sets.get(tuple(sorted(x[1] for x in v)), 0) < 2:
+            continue
+        out[stem] = [(y, l, c) for y, l, c, _s in sorted(v)]
+    return out
+
+
+def _period_order(sh: "Shape", df) -> List[str]:
+    """The period stems, the one with the largest latest-period total first (fatalities before incidents)."""
+
+    def tot(stem):
+        return float(_num(df[sh.periods[stem][-1][2]]).abs().sum())
+
+    stems = list(sh.periods)
+    return sorted(stems, key=lambda k: (-tot(k), stems.index(k)))
+
+
+# a column that measures how large each row is (seat-km flown, people, hours worked): counts are read against it
+_EXPOSURE_WORDS = (
+    "km",
+    "kms",
+    "miles",
+    "seat",
+    "seats",
+    "population",
+    "pop",
+    "members",
+    "employees",
+    "staff",
+    "headcount",
+    "hours",
+    "passengers",
+    "users",
+    "customers",
+    "subscribers",
+    "exposure",
+    "capacity",
+    "enrollment",
+    "enrolment",
+    "students",
+    "households",
+    "beds",
+    "flights",
+    "trips",
+    "visits",
+)
+
+
+def _exposure_col(sh: "Shape", df, skip: List[str]) -> Optional[str]:
+    """A size column a count is read against: named for size, all positive, spread at least tenfold."""
+    for c in sh.measures:
+        if c in skip or not _has(c, _EXPOSURE_WORDS) or _DERIVED.search(c.lower()):
+            continue
+        v = _num(df[c]).dropna()
+        if len(v) >= 5 and (v > 0).mean() >= 0.95 and v[v > 0].max() >= 10 * v[v > 0].min():
+            return c
+    return None
+
+
+def _readable(name: str) -> str:
+    return re.sub(r"[_]+", " ", str(name)).strip()
 
 
 # ----------------------------------------------------------------------------- the executor
@@ -1093,7 +1217,12 @@ def _windows(ctx: Ctx, measure: Optional[str] = None):
     if sh.grain == "year":
         y = d[ok].dt.year
         cnt = y.value_counts().sort_index()
-        full = cnt[cnt >= 0.9 * cnt.max()].index
+        if sh.kind == "ledger":
+            # a ledger's rows are events and their number varies year to year (8 ads one year, 18 the next): a year
+            # is short only against the typical year, not against the busiest
+            full = cnt[cnt >= 0.5 * cnt.median()].index
+        else:
+            full = cnt[cnt >= 0.9 * cnt.max()].index
         if len(full) < 2:
             return None
         last = int(max(full))
@@ -1622,6 +1751,22 @@ def op_correlate(ctx: Ctx, st: Step, measures: List[str]) -> Step:
     if not best:
         return st.refuse("no pair of measures shares 10 rows")
     best.sort(reverse=True)
+    prim = ctx.sh.primary
+    mine = [b for b in best if prim in (b[2], b[3]) and b[0] >= 0.3]
+    if mine:
+        # what moves with the measure the report is about comes first; of near ties (carat and its own x, y, z), the
+        # column a reader can name
+        top = mine[0][0]
+
+        def named(b):
+            other = b[3] if b[2] == prim else b[2]
+            return (len(re.sub(r"[^a-z]", "", other.lower())) >= 3, b[0])
+
+        pick = max([b for b in mine if b[0] >= top - 0.01], key=named)
+        best.remove(pick)
+        if pick[3] == prim:
+            pick = (pick[0], pick[1], pick[3], pick[2]) + tuple(pick[4:])
+        best.insert(0, pick)
     _a, r, x, y, n, lo, hi = best[0]
     st.word("x", x)
     st.word("y", y)
@@ -1657,6 +1802,48 @@ def op_correlate(ctx: Ctx, st: Step, measures: List[str]) -> Step:
         "rows": [
             [b[2], b[3], _r(b[1], 3), _r(b[5], 3), _r(b[6], 3), b[4]] for b in best[:8]
         ],
+    }
+    return st
+
+
+def op_confound(ctx: Ctx, st: Step, measure: str, by: str, against: str) -> Step:
+    """Whether the groups' averages of a measure just follow their averages of a second measure it moves with (cut and
+    price, with stone size behind both): the rank correlation of the two across the groups, the group lowest on the
+    measure and its value of the second, and the measure per unit of the second by group (price per carat)."""
+    import pandas as pd
+
+    f = pd.DataFrame(
+        {"g": _group_texts(ctx.df, by), "m": _num(ctx.df[measure]), "c": _num(ctx.df[against])}
+    )[ctx.base]
+    f = f[(f["g"] != "")].dropna()
+    g = f.groupby("g").agg(m=("m", "mean"), c=("c", "mean"), n=("m", "size"), ms=("m", "sum"), cs=("c", "sum"))
+    g = g[g["n"] >= 5]
+    if len(g) < 4:
+        return st.refuse("fewer than four groups of five rows")
+    rho = float(g["m"].rank().corr(g["c"].rank()))
+    if rho != rho:
+        return st.refuse("the averages do not vary")
+    lo, hi = g["m"].idxmin(), g["m"].idxmax()
+    st.word("measure", measure)
+    st.word("by", by)
+    st.word("against", against)
+    st.num("rho", rho, "r", signed=True)
+    st.num("groups", len(g), "int")
+    st.word("low", lo)
+    st.num("low_value", g.loc[lo, "m"])
+    st.num("low_against", g.loc[lo, "c"])
+    st.word("high", hi)
+    st.num("high_value", g.loc[hi, "m"])
+    st.num("high_against", g.loc[hi, "c"])
+    per = g["ms"] / g["cs"].where(g["cs"] > 0)
+    if per.notna().sum() >= 4 and (g["c"] > 0).all():
+        st.word("per_top", per.idxmax())
+        st.num("per_top_value", float(per.max()))
+        st.num("per_low_value", float(per.loc[lo]))
+    st.numbers["explained"] = {"value": abs(rho), "text": "", "kind": "score"}
+    st.table = {
+        "columns": [by, "average " + measure, "average " + against, measure + " per " + against, "rows"],
+        "rows": [[k, _r(r.m), _r(r.c), _r(per.loc[k]), int(r.n)] for k, r in g.sort_values("m").iterrows()],
     }
     return st
 
@@ -2049,6 +2236,101 @@ def op_rank_labels(ctx: Ctx, st: Step, measure: str) -> Step:
             [k, _r(r.shrunk), _r(r.own), _r(r.w)] for k, r in g.head(12).iterrows()
         ],
     }
+    return st
+
+
+def op_periods(ctx: Ctx, st: Step) -> Step:
+    """A table of counts by period in its columns (incidents_85_99, incidents_00_14): each quantity's total in the
+    first and the latest period over the rows that report both, the entry that leads each, and, when a column says
+    how large each row is (seat-km flown), the latest period read as a rate per unit of size with small entries
+    pulled toward the overall rate: (count + R * E0) / (size + E0), R the overall rate and E0 the median size.
+    """
+    import pandas as pd
+
+    sh, df = ctx.sh, ctx.df
+    if not sh.periods:
+        return st.refuse("no columns repeat one quantity by period")
+    stems = _period_order(sh, df)[:3]
+    lab = sh.label
+    if lab is None:
+        # a short table (56 airlines) keeps its name column among the groups: one row each still names the rows
+        for d in sh.dims:
+            t = _text(df[d])
+            if (t != "").mean() >= 0.9 and t[t != ""].nunique() >= 0.9 * max(1, int((t != "").sum())) >= 5:
+                lab = d
+                break
+    names = _text(df[lab]) if lab else None
+    first_l, last_l = sh.periods[stems[0]][0][1], sh.periods[stems[0]][-1][1]
+    st.word("first", first_l)
+    st.word("last", last_l)
+    rows = []
+    n_both = None
+    for i, stem in enumerate(stems, 1):
+        ps = sh.periods[stem]
+        ca, cb = ps[0][2], ps[-1][2]
+        a, b = _num(df[ca])[ctx.base], _num(df[cb])[ctx.base]
+        both = a.notna() & b.notna()
+        if both.sum() < 3:
+            continue
+        ta, tb = float(a[both].sum()), float(b[both].sum())
+        whole = bool(((a[both] % 1) == 0).all() and ((b[both] % 1) == 0).all())
+        k = "s%d" % i
+        st.word(k, _readable(stem))
+        st.num(k + "_a", ta, "int" if whole else "plain")
+        st.num(k + "_b", tb, "int" if whole else "plain")
+        st.word(k + "_dir", "rose" if tb > ta else "fell" if tb < ta else "held")
+        if ta > 0 and tb >= 0 and _pct_ok(sh, cb):
+            st.num(k + "_change", tb / ta - 1.0, "pct", signed=True)
+        else:
+            st.num(k + "_change", tb - ta, signed=True)
+        n_both = int(both.sum()) if n_both is None else max(n_both, int(both.sum()))
+        if names is not None:
+            for side, col, ser in (("a", ca, a), ("b", cb, b)):
+                g = ser[both].groupby(names[ctx.base][both]).sum()
+                g = g[g.index != ""]
+                if len(g) >= 3 and float(g.max()) > 0:
+                    st.word("%s_lead_%s" % (k, side), g.idxmax())
+                    st.num("%s_lead_%s_value" % (k, side), float(g.max()), "int" if whole else "plain")
+        rows.append([_readable(stem), first_l, _r(ta), last_l, _r(tb), _r(tb - ta)])
+    if not rows:
+        return st.refuse("too few rows report both periods")
+    st.num("n", n_both or 0, "int")
+    st.word("unit", (lab + "s") if lab and re.fullmatch(r"[a-z]+", lab) and not lab.endswith("s") else "rows")
+    st.table = {
+        "columns": ["quantity", "first period", "total", "latest period", "total", "change"],
+        "rows": rows,
+    }
+    # the latest period read against size
+    skip = [c for v in sh.periods.values() for _y, _l, c in v]
+    ex = _exposure_col(sh, df, skip)
+    if ex is not None and names is not None:
+        cb = sh.periods[stems[0]][-1][2]
+        f = pd.DataFrame({"e": names, "c": _num(df[cb]), "x": _num(df[ex])})[ctx.base]
+        f = f[(f["e"] != "") & f["c"].notna() & (f["x"] > 0)]
+        g = f.groupby("e").agg(c=("c", "sum"), x=("x", "sum"))
+        if len(g) >= 5 and float(g["c"].sum()) > 0:
+            med = float(g["x"].median())
+            R = float(g["c"].sum() / g["x"].sum())
+            # the unit that puts the overall rate at 1 or more: 40 per billion seat-km, not 0.04 per million
+            scale = next((x for x in (1.0, 1e3, 1e6, 1e9, 1e12) if R * x >= 1), 1e12)
+            word = {1e3: "thousand", 1e6: "million", 1e9: "billion", 1e12: "trillion"}.get(scale, "")
+            g["rate"] = g["c"] / g["x"] * scale
+            g["shrunk"] = (g["c"] + R * med) / (g["x"] + med) * scale
+            g = g.sort_values("shrunk", ascending=False)
+            top = g.index[0]
+            st.word("exposure", _readable(ex))
+            st.word("per", ("per %s " % word if word else "per ") + _readable(ex))
+            st.num("spread", float(g["x"].max() / g["x"].min()), "int")
+            st.num("overall_rate", R * scale)
+            st.word("rate_top", top)
+            st.word("rate_top_s", top + ("'" if top.endswith("s") else "'s"))
+            st.num("rate_top_value", g["rate"].iloc[0])
+            st.num("rate_top_count", g["c"].iloc[0], "int" if (g["c"] % 1 == 0).all() else "plain")
+            st.num("rate_top_shrunk", g["shrunk"].iloc[0])
+            st.table["rate"] = {
+                "columns": [lab, "rate (pulled toward overall)", "own rate", "count", ex],
+                "rows": [[k2, _r(r.shrunk), _r(r.rate), _r(r.c), _r(r.x)] for k2, r in g.head(12).iterrows()],
+            }
     return st
 
 
@@ -2673,6 +2955,16 @@ def op_concentration(
         )
         # the largest groups then, not now: who the top was is part of the story
         st.word("top1_then", then.index[0])
+    if sh.kind in ("ledger", "cross_section"):
+        # rows that are events (ads, orders, expeditions): which group has the most of them over the whole file,
+        # apart from which holds the most of the measure (Bud Light ran the most ads; Doritos drew the most views)
+        rc = _group_texts(ctx.df, g)[ctx.base]
+        rc = rc[rc != ""].value_counts()
+        if len(rc) >= 3 and int(rc.iloc[0]) >= 2 and int(rc.iloc[0]) > int(rc.iloc[1]):
+            st.word("rows_top", rc.index[0])
+            st.num("rows_top_n", int(rc.iloc[0]), "int")
+            st.num("rows_n", int(rc.sum()), "int")
+            st.num("rows_top_share", float(rc.iloc[0]) / float(rc.sum()), "share")
     st.numbers["explained"] = {"value": float(now.iloc[0]), "text": "", "kind": "score"}
     st.table = {
         "columns": [g, "share" + (" " + lc if lc else "")],
@@ -2697,6 +2989,8 @@ _OP_FN = {
     "concentration": op_concentration,
     "crosstab": op_crosstab,
     "answers": op_answers,
+    "periods": op_periods,
+    "confound": op_confound,
 }
 OPS = tuple(_OP_FN)
 
@@ -2717,6 +3011,10 @@ OP_DOCS = {
     "concentration": "how much of a total the largest groups hold: top shares and the Herfindahl-Hirschman index",
     "crosstab": "a survey: the pairs of answer columns most strongly linked (Cramer's V) and the cell furthest above chance",
     "answers": "a survey: each question's most common answer and its share, the survey's central questions first",
+    "periods": "columns that repeat a count by period (x_85_99, x_00_14): totals per period, who leads each, and the "
+    "latest read as a rate against a size column when there is one",
+    "confound": "whether the groups' averages of a measure just follow their averages of a second measure (price by "
+    "cut following stone size): the rank correlation across groups and the measure per unit of the second",
 }
 
 # Every argument an op may take, by name: its JSON schema and the role a column it names must have in the shape.
@@ -2735,6 +3033,7 @@ OP_NEEDS = {
     "rank_labels": "label",
     "crosstab": "answers",
     "answers": "answers",
+    "periods": "periods",
 }
 
 
@@ -2747,6 +3046,8 @@ def _shape_has(shape: Dict[str, Any], need: str) -> bool:
         return bool(shape.get("label"))
     if need == "answers":
         return len(shape.get("dimensions") or []) >= 2
+    if need == "periods":
+        return bool(shape.get("periods"))
     return True
 
 
@@ -2777,6 +3078,12 @@ _ARG_SPEC: Dict[str, Dict[str, Any]] = {
         "propertyNames": {"type": "string", "maxLength": 200, "x-role": "dimension"},
         "additionalProperties": {"type": "string", "maxLength": 80},
         "description": "keep only the rows where each group column holds the given value",
+    },
+    "against": {
+        "type": "string",
+        "maxLength": 200,
+        "x-role": "measure",
+        "description": "the second number column the group averages are read against",
     },
     "years": {
         "type": "integer",
@@ -3892,8 +4199,46 @@ def explore(
                 )
             say("trend", _ids(tmpl, T=tr), [tr.id])
     else:
+        if sh.periods:
+            pe = op_periods(
+                ctx,
+                ctx.new(
+                    rnd,
+                    "periods",
+                    {},
+                    "the same counts by period in the columns: what changed, and who leads each",
+                ),
+            )
+            if pe.ok:
+                tm = "Across {P.n} {P.unit} from {P.first} to {P.last}, {P.s1} {P.s1_dir} from {P.s1_a} to {P.s1_b} ({P.s1_change})"
+                for k in ("s2", "s3"):
+                    if k + "_change" in pe.numbers:
+                        tm += "; {P.%s} {P.%s_dir} from {P.%s_a} to {P.%s_b} ({P.%s_change})" % ((k,) * 5)
+                say("headline", _ids(tm + ".", P=pe), [pe.id])
+                parts = []
+                for k in ("s1", "s2", "s3"):
+                    for side, per in (("b", "last"), ("a", "first")):
+                        if "%s_lead_%s" % (k, side) in pe.numbers:
+                            parts.append(
+                                "{P.%s_lead_%s} had the most {P.%s} in {P.%s} ({P.%s_lead_%s_value})"
+                                % (k, side, k, per, k, side)
+                            )
+                if parts:
+                    say("drill", _ids("; ".join(parts[:4]) + ".", P=pe), [pe.id])
+                if "rate_top" in pe.numbers:
+                    say(
+                        "drill",
+                        _ids(
+                            "Read against size ({P.unit} differ {P.spread}-fold in {P.exposure}), {P.s1} in {P.last} "
+                            "run {P.overall_rate} {P.per} overall; the highest rate is {P.rate_top_s}, {P.rate_top_value} "
+                            "({P.rate_top_count} {P.s1}; {P.rate_top_shrunk} once its size is weighed).",
+                            P=pe,
+                        ),
+                        [pe.id],
+                    )
         if (
-            sh.label is not None
+            not sh.periods
+            and sh.label is not None
             and m is not None
             and not (sh.mkind.get(m) == "level" and _has(m, _UNRANKED_LEVEL_WORDS))
         ):
@@ -4275,8 +4620,15 @@ def explore(
                 [mx.id],
             )
     cdim = None
+    lv_all = None
     if sh.kind == "ledger" and sh.dims:
         cdim = best[1] if best is not None else sh.dims[0]
+        lv_all = {d: _group_texts(df, d).replace("", None).nunique() for d in sh.dims}
+        if lv_all.get(cdim, 0) < 3:
+            # a two-way split (with or without animals) has no concentration to speak of: the most detailed group a
+            # reader would name instead (3 to 20 levels)
+            fit = [d for d in sh.dims if 3 <= lv_all[d] <= 20]
+            cdim = max(fit, key=lambda d: (lv_all[d], -sh.dims.index(d))) if fit else None
     elif sh.kind == "cross_section":
         # a table with no time axis: the total's split across the group a reader would name (3 to 20 levels, the
         # most detailed of those)
@@ -4325,6 +4677,8 @@ def explore(
                 )
             if "topk_then" in cc.numbers:
                 tm += "; the top {K.top_k} held {K.topk_then} in {K.then_label} ({K.topk_change}, {K.trend_word})"
+            if "rows_top" in cc.numbers:
+                tm += ". Across all {K.rows_n} rows, {K.rows_top} appears most often ({K.rows_top_n}, {K.rows_top_share})"
             if not cc.numbers["cur_label"]["text"]:
                 tm = tm.replace("In {K.cur_label}, {K.top1}", "{K.top1}", 1)
             say("concentration", _ids(tm + ".", K=cc), [cc.id])
@@ -4373,6 +4727,43 @@ def explore(
                 ),
                 [cr.id],
             )
+            # a table with no time axis whose measure moves strongly with another: do the groups' averages differ
+            # only because their rows differ in that other measure (Ideal diamonds are cheapest, being smallest)?
+            other = cr.numbers["y"]["text"] if cr.numbers["x"]["text"] == m else None
+            if (
+                sh.date is None
+                and other is not None
+                and (cr.numbers["rho"]["value"] or 0) >= 0.7
+                and not over()
+            ):
+                cands = [d for d in sh.dims if 4 <= _group_texts(df, d).replace("", None).nunique() <= 20]
+                best_cf = None
+                for d in cands[:3]:
+                    if over():
+                        break
+                    cf = op_confound(
+                        ctx,
+                        ctx.new(
+                            rnd,
+                            "confound",
+                            {"measure": m, "by": d, "against": other},
+                            "do the %s groups differ in %s only through %s?" % (d, m, other),
+                        ),
+                        m,
+                        d,
+                        other,
+                    )
+                    if cf.ok and (best_cf is None or (cf.numbers["rho"]["value"] or 0) > (best_cf.numbers["rho"]["value"] or 0)):
+                        best_cf = cf
+                if best_cf is not None and (best_cf.numbers["rho"]["value"] or 0) >= 0.7:
+                    tm = (
+                        "By {F.by}, the average {F.measure} follows the average {F.against} (rank correlation across "
+                        "the {F.groups} groups {F.rho}): {F.low} averages the lowest {F.measure} ({F.low_value}) and has "
+                        "smaller {F.against} ({F.low_against} against {F.high_against} for {F.high})"
+                    )
+                    if "per_top" in best_cf.numbers:
+                        tm += "; per unit of {F.against}, {F.low} runs {F.per_low_value} and {F.per_top} the most ({F.per_top_value})"
+                    say("drill", _ids(tm + ".", F=best_cf), [cr.id, best_cf.id])
     # ---- round 5: robustness
     rnd = 5
     if not over() and sh.kind == "time_series":

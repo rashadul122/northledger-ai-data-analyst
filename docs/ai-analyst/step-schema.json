@@ -563,6 +563,79 @@
     "args"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "columns that repeat a count by period (x_85_99, x_00_14): totals per period, who leads each, and the latest read as a rate against a size column when there is one",
+   "x-needs": "periods",
+   "properties": {
+    "op": {
+     "const": "periods"
+    },
+    "args": {
+     "type": "object",
+     "properties": {},
+     "required": [],
+     "additionalProperties": false
+    },
+    "why": {
+     "type": "string",
+     "maxLength": 200
+    }
+   },
+   "required": [
+    "op",
+    "args"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "whether the groups' averages of a measure just follow their averages of a second measure (price by cut following stone size): the rank correlation across groups and the measure per unit of the second",
+   "x-needs": "",
+   "properties": {
+    "op": {
+     "const": "confound"
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "measure": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "a number column of the analysis (one of shape.measures)",
+       "x-role": "measure"
+      },
+      "by": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "a group column (one of shape.dimensions, or shape.entity)",
+       "x-role": "dimension"
+      },
+      "against": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "the second number column the group averages are read against",
+       "x-role": "measure"
+      }
+     },
+     "required": [
+      "measure",
+      "by",
+      "against"
+     ],
+     "additionalProperties": false
+    },
+    "why": {
+     "type": "string",
+     "maxLength": 200
+    }
+   },
+   "required": [
+    "op",
+    "args"
+   ],
+   "additionalProperties": false
   }
  ]
 }

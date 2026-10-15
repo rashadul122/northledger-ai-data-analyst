@@ -27,7 +27,8 @@
     trend: 'straight-line trend', mix: 'rate and mix split', correlate: 'rank correlation', outliers: 'unusual values',
     rank_entities: 'entries ranked', rank_labels: 'labels ranked', crosstab: 'answers crossed by group',
     yoy: 'same month a year earlier', seasonality: 'seasonal pattern', volatility: 'how much it swings',
-    concentration: 'how concentrated the total is', answers: 'most common answers' };
+    concentration: 'how concentrated the total is', answers: 'most common answers',
+    periods: 'counts by period, read against size', confound: 'group averages read against size' };
   var SHAPES = { ledger: 'a ledger of dated rows', time_series: 'a time series', panel: 'a panel (entries over time)',
     survey: 'a survey', cross_section: 'a table with no time axis' };
   var ROWS_SHOWN = 12;

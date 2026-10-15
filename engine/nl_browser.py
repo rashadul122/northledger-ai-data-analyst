@@ -1018,6 +1018,47 @@ def _kind_of(col: str, kinds: str, res: Any) -> str:
     return ", ".join(labels) or "possible personal data"
 
 
+AMOUNTS_KEPT = "kept by default: plain numbers of every size, read as amounts, not identifiers"
+
+
+def _weak_reason(res: Any, col: str) -> bool:
+    """The scan's reason for the column is a weak or unconfirmed value match (never a name-like header, free text,
+    people's names or a coded kind)."""
+    global _REASON_KIND
+    if _REASON_KIND is None:
+        from northledger import intake as _intake
+        _REASON_KIND = {v: k for k, v in getattr(_intake, "_REVIEW_REASONS", {}).items()}
+    key = _REASON_KIND.get((getattr(res, "review_reasons", None) or {}).get(col, ""), "")
+    return key in ("weak", "unconfirmed")
+
+
+def _amount_like(eng: Any, res: Any, col: str) -> bool:
+    """Every value a plain number, and their digit counts spread over three or more lengths (a phone, card or SIN
+    number keeps one length; GDP runs from millions to trillions)."""
+    import sqlite3
+    try:
+        con = sqlite3.connect(eng.db_path)
+        try:
+            vals = [r[0] for r in con.execute('SELECT "%s" FROM "%s" LIMIT 5000'
+                                              % (col.replace('"', '""'), res.table.replace('"', '""')))]
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001 - any doubt keeps the column withheld
+        return False
+    nums = []
+    for v in vals:
+        t = str(v).strip() if v is not None else ""
+        if not t:
+            continue
+        if not re.fullmatch(r"-?\d+(\.\d+)?([eE][+-]?\d+)?", t):
+            return False
+        nums.append(t)
+    if len(nums) < 20:
+        return False
+    lengths = {len(t.lstrip("-").split(".")[0].split("e")[0].split("E")[0]) for t in nums}
+    return len(lengths) >= 3 and max(lengths) - min(lengths) >= 3
+
+
 def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, Any]]
                      ) -> List[Dict[str, str]]:
     """Every flagged column gets a decision: the visitor's, else withhold. A column the
@@ -1046,6 +1087,11 @@ def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, A
             continue
         seen.add(col)
         want = wanted.get(col, "withhold")
+        amounts = False
+        if col not in wanted and current != "coded" and _weak_reason(res, col) and _amount_like(eng, res, col):
+            # a weak match on a column of plain numbers whose length varies by orders of magnitude (GDP, market
+            # cap, seat-km): amounts, not identifiers; kept by default and said so, the visitor can still withhold
+            want, amounts = "keep", True
         if current == "coded":
             if want == "withhold":
                 E.decide(eng, col, "withhold", table=res.table, note="withheld by the visitor")
@@ -1054,9 +1100,12 @@ def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, A
                 effective = "code"
         else:
             E.decide(eng, col, want, table=res.table,
-                     note="decided by the visitor" if col in wanted else "withheld by default")
+                     note="decided by the visitor" if col in wanted else
+                     AMOUNTS_KEPT if amounts else "withheld by default")
             effective = want
         kind = _kind_of(col, kinds or "", res)
+        if amounts:
+            kind += "; " + AMOUNTS_KEPT
         if current == "coded":
             kind += "; " + CODED_ON_ARRIVAL
         out.append({"column": col, "kind": kind, "decision": effective})
@@ -1077,7 +1126,9 @@ def _effective_decisions(flagged: List[Dict[str, str]], colmap: Dict[str, str], 
             wanted[colmap[str(k)]] = d
     out: Dict[str, str] = {}
     for f in flagged:
-        want = wanted.get(f["column"], "withhold")
+        # an amount column the scan kept by default stays kept unless the visitor says otherwise
+        default = "keep" if AMOUNTS_KEPT in str(f.get("kind") or "") else "withhold"
+        want = wanted.get(f["column"], default)
         if CODED_ON_ARRIVAL in str(f.get("kind") or ""):
             want = "withhold" if want == "withhold" else "code"
         out[f["column"]] = want

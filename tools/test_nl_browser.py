@@ -5897,6 +5897,22 @@ def _payload_bytes_of(x) -> int:
 
 TESTS =[v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
+def test_amounts_of_every_size_are_kept_by_default_and_fixed_length_numbers_are_not():
+    import random
+    rnd = random.Random(1)
+    rows = ["id,phone,amount"] + ["%d,%d,%d" % (i, 4165550000 + rnd.randint(0, 9999), rnd.randint(1, 10 ** rnd.randint(2, 9)))
+                                   for i in range(200)]
+    rep = _run("\n".join(rows).encode(), "t.csv", "", None, "2026-01-10")
+    dec = {f["column"]: (f["decision"], f["kind"]) for f in rep["privacy"]["flagged"]}
+    assert dec.get("phone", ("", ""))[0] == "withhold", dec
+    if "amount" in dec:
+        assert dec["amount"][0] == "keep" and NB.AMOUNTS_KEPT in dec["amount"][1], dec
+    # a visitor who withholds it is obeyed
+    rep2 = _run("\n".join(rows).encode(), "t.csv", "", {"amount": "withhold"}, "2026-01-10")
+    dec2 = {f["column"]: f["decision"] for f in rep2["privacy"]["flagged"]}
+    assert dec2.get("amount", "withhold") == "withhold", dec2
+
+
 if __name__ == "__main__":
     print("adapter under test: %s" % ("engine/ (the site)" if not os.environ.get("NL_BROWSER_DIR")
                                       else "a copy (NL_BROWSER_DIR)"))

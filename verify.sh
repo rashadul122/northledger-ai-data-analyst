@@ -44,7 +44,8 @@
 #                layouts at 320 to 390 px, dark theme, accessible names, the "Try it" demo's
 #                refusals, report, AI consent flow and a real engine run of the sample, which
 #                prints SKIP with the reason when cdn.jsdelivr.net cannot be reached); needs Node
-#                and Playwright (PLAYWRIGHT_MODULE=/path/to/node_modules/playwright), else SKIP
+#                and Playwright (PLAYWRIGHT_MODULE=/path/to/node_modules/playwright), else SKIP; the step is
+#                PASS only when no single check skipped (one "UI SKIP" line makes the whole step SKIP)
 #   7 visual     full-page and narrow screenshots plus a print PDF into $QA_OUT
 #   8 print      tools/check_print.py reads that PDF page by page (poppler tools, else SKIP): the
 #                hero on page 1, no near-empty page, no chart caption left at the foot of a page
@@ -176,10 +177,13 @@ fi
 
 # 6b) behaviour in a real browser engine (Playwright), when Node and Playwright are available
 if command -v node >/dev/null 2>&1; then
-  CHROME="$CHROME" node "$DIR/tools/check_ui.js" "$DIR/index.html"
-  rc=$?
-  if [ $rc = 0 ]; then record ui PASS "every tools/check_ui.js behaviour check passed"
+  CHROME="$CHROME" node "$DIR/tools/check_ui.js" "$DIR/index.html" 2>&1 | tee "$TMPD/check_ui.log"
+  rc=${PIPESTATUS[0]}
+  nskip=$(grep -c '^UI SKIP ' "$TMPD/check_ui.log")
+  # PASS only when every check ran: a check that skipped (exit 3, or any "UI SKIP" line) is not a pass
+  if [ $rc = 0 ] && [ "$nskip" = 0 ]; then record ui PASS "every tools/check_ui.js behaviour check ran and passed"
   elif [ $rc = 2 ]; then record ui SKIP "Playwright not found (set PLAYWRIGHT_MODULE)"
+  elif [ $rc = 0 ] || [ $rc = 3 ]; then record ui SKIP "$nskip tools/check_ui.js check(s) skipped (the UI SKIP lines above say why)"
   else record ui FAIL "see the UI FAIL lines above"; fi
 else
   record ui SKIP "node not found"

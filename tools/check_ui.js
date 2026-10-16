@@ -11,7 +11,10 @@
    checks serve the site folder to Chrome through Playwright's request routing. The one check that
    runs the real engine loads Pyodide from cdn.jsdelivr.net and prints SKIP with the reason when
    that address cannot be reached.
-   Exit code 1 when any check fails. */
+   Exit code 1 when any check fails, 3 when none fails but any was skipped (a skipped check is not a pass:
+   verify.sh records the ui step as SKIP and deploy.sh refuses it). A check marked opt-in (opts.optIn names
+   the environment variable that turns it on) is not run, and not counted, unless that variable is set or
+   the check is named on the command line. */
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -4096,7 +4099,7 @@ check('viz-screenshots', DESK, async (ctx) => {
     }
   }
   console.log('   ' + n + ' screenshots in ' + dir);
-});
+}, { optIn: 'VIZ_SHOTS' });
 
 /* ------------------------------------------------------------ the final evaluation (1 Oct 2026), page side
    The live page drew the first 10 bars of an analysis chart (the payload had cut them to 4), and nothing on it said the
@@ -4549,6 +4552,7 @@ check('rates-card-and-line-chart-dark', DESK, async (ctx) => { await ratesChecks
   let failed = 0, ran = 0, skipped = 0;
   for (const c of checks) {
     if (ONLY.size && !ONLY.has(c.name)) continue;
+    if (c.opts.optIn && !process.env[c.opts.optIn] && !ONLY.has(c.name)) { console.log('UI OFF ' + c.name + ': opt-in, set ' + c.opts.optIn); continue; }
     ran++;
     const ctx = await browser.newContext({ viewport: c.viewport, isMobile: !!c.opts.mobile, hasTouch: !!c.opts.mobile, reducedMotion: 'reduce', colorScheme: c.opts.colorScheme || 'light',
       acceptDownloads: !!c.opts.acceptDownloads });
@@ -4563,5 +4567,5 @@ check('rates-card-and-line-chart-dark', DESK, async (ctx) => { await ratesChecks
   }
   await browser.close();
   console.log(failed ? 'UI CHECKS: ' + failed + ' of ' + ran + ' FAILED' : 'UI CHECKS: ALL ' + (ran - skipped) + ' PASS' + (skipped ? ', ' + skipped + ' SKIPPED (reason printed above)' : ''));
-  process.exit(failed ? 1 : 0);
+  process.exit(failed ? 1 : skipped ? 3 : 0);
 })();

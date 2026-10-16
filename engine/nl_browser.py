@@ -9608,6 +9608,56 @@ def _mend_short_history_line(rep: Dict[str, Any], clean: Any = None, date_col: O
 _NO_DATES_LINE = "No column holds dates, so nothing can be said about change over time and no forecast is possible."
 
 
+# a measure's own name is not a unit: the core writes a figure's unit after it, and a measure with no unit of its own got its name
+# there ("Monthly price forecast at 114.2 price for 2026-10", brent_monthly, 16 Oct 2026). A plural count noun reads as a unit
+# ("2,000 deaths", "5 units") and stays; a singular name (price, mean, value, co2, gdp) is dropped after a number
+_UNIT_NOUN_KEEP = frozenset(("units", "unit", "rows", "people", "persons", "items", "tonnes", "tons", "hours", "days", "dollars",
+                             "points", "percent", "kg", "km", "mt", "kwh", "mwh", "gwh", "twh"))
+
+
+def _unit_noun_words(rep: Dict[str, Any]) -> Set[str]:
+    """The finding units that are only the measure's own name (effect.scale equal to the measure in the finding's id)."""
+    out: Set[str] = set()
+    for f in rep.get("findings") or []:
+        if not isinstance(f, dict):
+            continue
+        sc = str(((f.get("effect") or {}).get("scale") or "")).strip()
+        parts = str(f.get("id") or "").split(".")
+        if not sc or len(parts) < 3 or parts[0] not in ("forecast", "measure"):
+            continue
+        slug = parts[1]
+        if _engine_slug(sc) != slug and sc.lower() != slug.lower():
+            continue
+        last = re.split(r"[\s_]+", sc.strip().lower())[-1]
+        if sc.lower() in _UNIT_NOUN_KEEP or last in _UNIT_NOUN_KEEP or (last.endswith("s") and not last.endswith("ss")):
+            continue
+        out.add(sc)
+    return out
+
+
+def _mend_unit_nouns(rep: Dict[str, Any]) -> None:
+    """Drop a measure's own name written as a unit after a figure, in the story and the bottom line (never in a claim or a number)."""
+    words = _unit_noun_words(rep)
+    if not words:
+        return
+    pat = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?(?:\s*(?:thousand|million|billion|trillion))?) (?:%s)(?![\w-])"
+                     % "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True)))
+
+    def fix(t: Any) -> Any:
+        return pat.sub(r"\1", t) if isinstance(t, str) else t
+
+    st = rep.get("story")
+    if isinstance(st, dict):
+        for k, v in list(st.items()):
+            if isinstance(v, str):
+                st[k] = fix(v)
+            elif isinstance(v, list):
+                st[k] = [fix(x) for x in v]
+    for ln in (rep.get("summary") or {}).get("lines") or []:
+        if isinstance(ln, dict) and isinstance(ln.get("text"), str):
+            ln["text"] = fix(ln["text"])
+
+
 def _mend_cannot_answer(rep: Dict[str, Any]) -> None:
     """The engine's lines that deny what the AI plan's analyses show (review, 29 Sep 2026: "No column holds
     dates, so nothing can be said about change over time" under a headline quoting a trend over the years):
@@ -12286,6 +12336,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                   personal=[f for f in flagged if isinstance(f, dict) and f.get("column")],
                                   structure=structure_inner)
         _mend_cannot_answer(rep)
+        _mend_unit_nouns(rep)
         # a rate's change in percentage points, everywhere the report states it, before anything reads the report (_rate_points)
         _rate_points(rep)
         # what answers the visitor's question, decided by the engine (the AI report words it): _answer

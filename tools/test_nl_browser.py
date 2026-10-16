@@ -6492,7 +6492,28 @@ def test_results_for_ai_forwards_each_trend_test_in_a_compact_record():
 def _payload_bytes_of(x) -> int:
     return len(json.dumps(x, default=str))
 
-TESTS =[v for k, v in sorted(globals().items()) if k.startswith("test_")]
+def test_a_measures_own_name_is_never_written_as_its_unit_after_a_figure():
+    """brent_monthly (16 Oct 2026): "Monthly price forecast at 114.2 price for 2026-10." The core writes a figure's unit after it, and a
+    measure with no unit got its own name there. A singular name (price, mean, value) is dropped after a figure in the story and the
+    bottom line; a plural count noun (deaths, units) reads as a unit and stays; the claims and the numbers are untouched."""
+    rep = {"findings": [{"id": "forecast.price.next", "effect": {"scale": "price"}, "claim": "Forecast of monthly price for 2026-10"},
+                        {"id": "measure.deaths.change", "effect": {"scale": "deaths"}}],
+           "story": {"headline": "Monthly price forecast at 114.2 price for 2026-10.",
+                     "what_to_do": ["Plan with it: monthly price for 2026-10 is 114.2 price, with an 80% range of 103.1 to 126.7.",
+                                    "Deaths: 2,000 deaths in 2017."]},
+           "summary": {"lines": [{"text": "The price forecast is 1.5 million price (80% range 1.2 to 1.9)."}]}}
+    NB._mend_unit_nouns(rep)
+    assert rep["story"]["headline"] == "Monthly price forecast at 114.2 for 2026-10.", rep["story"]["headline"]
+    assert rep["story"]["what_to_do"][0] == "Plan with it: monthly price for 2026-10 is 114.2, with an 80% range of 103.1 to 126.7."
+    assert rep["story"]["what_to_do"][1] == "Deaths: 2,000 deaths in 2017."
+    assert rep["summary"]["lines"][0]["text"] == "The price forecast is 1.5 million (80% range 1.2 to 1.9)."
+    assert rep["findings"][0]["claim"] == "Forecast of monthly price for 2026-10"
+    # the real file: a monthly Brent price
+    rows = ["Date,Price"] + ["%04d-%02d-15,%.2f" % (2018 + i // 12, i % 12 + 1, 60 + 10 * math.sin(i / 5.0) + i * 0.3) for i in range(96)]
+    out = _run("\n".join(rows).encode(), "brent.csv", "", None, "2026-01-20")
+    text = json.dumps([out["story"], out["summary"]])
+    assert not re.search(r"\d price\b", text), re.search(r".{40}\d price\b.{20}", text)
+
 
 def test_amounts_of_every_size_are_kept_by_default_and_fixed_length_numbers_are_not():
     import random
@@ -6508,6 +6529,10 @@ def test_amounts_of_every_size_are_kept_by_default_and_fixed_length_numbers_are_
     rep2 = _run("\n".join(rows).encode(), "t.csv", "", {"amount": "withhold"}, "2026-01-10")
     dec2 = {f["column"]: f["decision"] for f in rep2["privacy"]["flagged"]}
     assert dec2.get("amount", "withhold") == "withhold", dec2
+
+
+# every test above, the last one included (the list once stood above the last test, which never ran)
+TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 
 if __name__ == "__main__":

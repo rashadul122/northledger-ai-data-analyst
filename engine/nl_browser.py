@@ -339,10 +339,61 @@ def _profile_and_clean_once():
         return out
 
     _hl.score_table, _cl.clean_table, _cl.clean_frame = score_table, clean_table, clean_frame
+    cell_fns = _fast_cell_readers(_cl)
+    real_cells = {k: getattr(_cl, k) for k in cell_fns}
+    for k, f in cell_fns.items():
+        setattr(_cl, k, f)
     try:
         yield
     finally:
         _hl.score_table, _cl.clean_table, _cl.clean_frame = real_score, real_clean, real_frame
+        for k, f in real_cells.items():
+            setattr(_cl, k, f)
+
+
+# A plain decimal written with digits only ("1234", "-0.5"): what the cleaner's number readers do with such a text is fixed
+# (no currency, space, sign mark, unit, percent or comma to read), so they answer it at once; any other value goes to them.
+_PLAIN_DECIMAL = re.compile(r"-?[0-9]+(?:\.[0-9]+)?")
+_PLAIN_KINDS = (str, float, int, bool, type(None))
+
+
+def _fast_cell_readers(_cl: Any) -> Dict[str, Any]:
+    """The cleaner's per-cell helpers with a shortcut for the cells whose answer is certain without reading them in full; every
+    other cell is read by the helper itself. On a 50,000-row table of 79 number columns these helpers run four million times."""
+    import math as _m
+    import numpy as np
+    real_coerce, real_body, real_changed = _cl._coerce_numeric_detail, _cl._numeric_body, _cl._changed_mask
+    plain = _PLAIN_DECIMAL.fullmatch
+
+    def coerce(value: Any, allow_parens: bool, decimal: str = ".", units: Any = ()) -> Any:
+        # a plain decimal under the dot convention, in a column whose units are words: float(value), as the reader returns it
+        if type(value) is str and decimal == "." and plain(value) and all(isinstance(u, str) and u.isalpha() for u in units):
+            f = float(value)
+            if _m.isfinite(f):
+                return f, "", ""
+        return real_coerce(value, allow_parens, decimal, units)
+
+    def body(text: str, allow_parens: bool) -> Any:
+        if type(text) is str and plain(text):
+            return text, False                   # nothing to strip: no space, bracket, currency, sign mark
+        return real_body(text, allow_parens)
+
+    def changed(old: Any, new: Any) -> Any:
+        # cells of text and plain numbers compare as the reader compares them, one array at a time
+        import pandas as pd
+        ov = old.to_numpy(dtype=object)
+        nv = new.to_numpy(dtype=object)
+        if len(old) != len(new) or not set(map(type, ov)) <= set(_PLAIN_KINDS) or not set(map(type, nv)) <= set(_PLAIN_KINDS):
+            return real_changed(old, new)
+        old_na = old.isna().to_numpy()
+        new_na = new.isna().to_numpy()
+        both = ~old_na & ~new_na
+        out = old_na != new_na
+        if both.any():
+            out[both] = np.not_equal(ov[both], nv[both]).astype(bool)
+        return pd.Series(out, index=old.index)
+
+    return {"_coerce_numeric_detail": coerce, "_numeric_body": body, "_changed_mask": changed}
 
 
 # The profiler's per-column statements on a wide table (score_table: one classifying scan per column, then the
@@ -351,7 +402,7 @@ def _profile_and_clean_once():
 # of their own while the profiler walks its columns; the profiler gets the very rows its own statement returns,
 # taken from the statement run ahead when its text matches exactly, else run on its own connection as before.
 PREFETCH_CELLS = 500_000           # rows x columns below which the profiler runs alone (a small file gains nothing)
-PREFETCH_WORKERS = 6
+PREFETCH_WORKERS = max(2, min(8, (os.cpu_count() or 2) - 1))
 
 
 class _Rows:
@@ -392,8 +443,9 @@ class _PrefetchCon:
 
 
 def _prefetch_statements(con: Any, table: str) -> List[str]:
-    """The profiler's own per-column statements on this table (its builders, else its formats): the classifying
-    scan, and the counts of placeholders, padding, casing and negatives. A text that does not match what the
+    """The profiler's own statements on this table (its builders, else its formats): the table's missing cells, completeness and
+    duplicate rows, each column's classifying scan and commonest values, and the counts of placeholders, padding, casing and
+    negatives. A text that does not match what the
     profiler then sends is only a wasted read, never a different answer."""
     from northledger import health as H
     qt = H._qi(H._resolve_table(con, table))
@@ -401,7 +453,17 @@ def _prefetch_statements(con: Any, table: str) -> List[str]:
     n = int(con.execute("SELECT COUNT(*) FROM %s" % qt).fetchone()[0] or 0)
     if len(cols) * n < PREFETCH_CELLS:
         return []
-    out = [H._profile_sql(qt, c) for c in cols]
+    out = ["SELECT %s FROM %s" % (H._null_cells_expr(cols), qt),
+           "SELECT ROUND(100.0 * (1.0 - CAST(%s AS REAL) / (COUNT(*) * %d)), 1) FROM %s"
+           % (H._null_cells_expr(cols), len(cols), qt),
+           "SELECT (SELECT COUNT(*) FROM %s) - (SELECT COUNT(*) FROM (SELECT DISTINCT %s FROM %s))"
+           % (qt, ", ".join(H._qi(c) for c in cols), qt)]
+    for c in cols:
+        out.append(H._profile_sql(qt, c))
+        # the commonest values, as text: a cell the default reader cannot decode fails here and is read by the profiler itself
+        expr = H._display_expr(c)
+        out.append("SELECT %s AS v, COUNT(*) AS n FROM %s GROUP BY %s ORDER BY COUNT(*) DESC, %s LIMIT %d"
+                   % (expr, qt, expr, expr, H._TOP_VALUES))
     for c in cols:
         qc = H._qi(c)
         x = H._trim(qc)

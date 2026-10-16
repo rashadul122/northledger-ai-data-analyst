@@ -2425,6 +2425,20 @@ def op_rank_entities(ctx: Ctx, st: Step, measure: str, years: int = 10) -> Step:
         st.num("riser_growth", big["growth"].iloc[0], gk, signed=True)
         st.word("faller", big.index[-1])
         st.num("faller_growth", big["growth"].iloc[-1], gk, signed=True)
+        # the fastest of ALL entries, when the larger-half rule left it out (gdp_panel: Guyana +303% from 2013, 175th of 233 by
+        # size): stated only for an entry with a real base (at least a twentieth of the median entry's) and a figure in every
+        # period of the window, so a near-zero base or a gap never reads as growth
+        if len(both) >= 10 and rel and both.index[0] != big.index[0]:
+            floor = 0.05 * float(both["then"].median())
+            for k0, r0 in both.iterrows():
+                if k0 == big.index[0]:
+                    break
+                yrs = f[(f["e"] == k0) & (f["y"] >= then_y) & (f["y"] <= last_y)]["y"].nunique()
+                if float(r0["then"]) >= floor and yrs >= last_y - then_y + 1:
+                    st.word("riser_all", k0)
+                    st.num("riser_all_growth", r0["growth"], gk, signed=True)
+                    st.num("movers_all", len(both), "int")
+                    break
     # a ranking of levels that do not compare across entries (share prices, index points) is not stated
     st.word(
         "comparable",
@@ -4849,6 +4863,8 @@ def explore(
                     "Since {R.then_year}, {R.riser} grew most ({R.riser_growth}) and {R.faller} least "
                     "({R.faller_growth}), {R.movers_scope}"
                 )
+            if "riser_all" in rk.numbers:
+                parts.append("Of all {R.movers_all} entries with a figure in both years, {R.riser_all} grew fastest ({R.riser_all_growth})")
             if parts:
                 say("drill", _ids(". ".join(parts), R=rk) + agg_note(rk) + ".", [rk.id])
         if not over() and _agg_for(sh, m) in ("sum", "stock"):

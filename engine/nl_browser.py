@@ -10340,7 +10340,8 @@ def _outer_of(got: Dict[str, Any], rep: Dict[str, Any], data: Optional[bytes] = 
     inp["columns"] = int(got.get("columns") or len(got.get("colmap") or {}) or 0)
     return {"input": inp, "flagged": [dict(f) for f in got.get("flagged") or []],
             "released": [dict(x) for x in got.get("released") or []], "file_health": got.get("file_health"),
-            "header": _sent_header(data), "hidden": _hidden_names(got.get("flagged") or [], got.get("colmap") or {})}
+            "header": _sent_header(data), "hidden": _hidden_names(got.get("flagged") or [], got.get("colmap") or {}),
+            "data": data}
 
 
 def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], released: List[Dict[str, Any]],
@@ -10367,7 +10368,7 @@ def _hook_cache(sent: bytes, reading: Any, flagged: List[Dict[str, Any]], releas
     _PROFILE_CACHE.update(sha=hashlib.sha256(sent).hexdigest(), value=value)
     inp = dict(rep["input"])
     return {"input": inp, "flagged": value["flagged"], "released": value["released"], "file_health": fh,
-            "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap)}
+            "header": _sent_header(sent), "hidden": _hidden_names(flagged, colmap), "data": sent}
 
 
 def _quick_structure(data: bytes, keep: Optional[Set[str]] = None, fail: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
@@ -10657,6 +10658,12 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
         for k in ("scenarios", "viz", "charts", "summary"):
             if k in rep:
                 rep[k] = _window_rewrite(rep[k], per)
+    # a panel of members with a total row (the World Bank's countries by year with "IDA & IBRD total", disasters by type with "All
+    # natural disasters"): the report reads the total, and the analyst loop reads every member side by side, as it read the file
+    # before the structure layer sliced it (16 Oct 2026: gdp_panel's analyst saw 64 rows of one total and ranked no country)
+    panel = _member_panel_analyst(S, outer, ai_plan, objective)
+    if panel is not None:
+        rep["analyst"] = panel
     # the slice's own run restated its rates and chose its answer before the lines above were rewritten (the bottom line's first
     # sentence is now the estimand's headline): once more, on the report as it leaves (_rate_points never restates a claim twice)
     _rate_points(rep)
@@ -10670,6 +10677,70 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
         tm[k] = tm.get(k, 0.0) + float(v or 0.0)
     rep["timings"] = [{"stage": s, "seconds": round(tm.get(s, 0.0), 3)} for s in STAGES]
     return rep
+
+
+MEMBER_PANEL_MIN = 3        # members (besides the total) a one-dimension table needs for the analyst to read it as a panel
+
+
+def _member_panel_analyst(S: Dict[str, Any], outer: Dict[str, Any], ai_plan: Optional[Dict[str, Any]],
+                          objective: str) -> Optional[Dict[str, Any]]:
+    """rep["analyst"] over the whole file when the structure sliced a plain panel: ONE dimension of members (a partition or
+    parts, every other column a date, the measure, a constant or an alias of the members), so the file is entities by date
+    and the loop reads it as one (who leads, who moved, how concentrated), leaving the total row out as an aggregate as it
+    does any panel's. None when the table is anything else (a cube of several dimensions, a wide file, a withheld column):
+    the slice's own analyst block stands."""
+    try:
+        data = outer.get("data")
+        dims = [d for d in S.get("dims") or [] if d.get("role") != "constant"]
+        if not data or S.get("wide") or len(dims) != 1 or dims[0].get("role") not in ("partition", "parts"):
+            return None
+        d0 = dims[0]
+        if int(d0.get("members") or 0) < MEMBER_PANEL_MIN + (1 if d0.get("total") else 0):
+            return None
+        dcol = S.get("date")
+        date = str((dcol.get("column") if isinstance(dcol, dict) else dcol) or "")
+        ent, meas = str(d0.get("column") or ""), str((S.get("measure") or {}).get("column") or "")
+        hidden = set(str(h) for h in outer.get("hidden") or [])
+        if not date or not ent or not meas or hidden & {date, ent, meas} or (S.get("measure") or {}).get("embedded_flags"):
+            return None
+        import nl_analyst as _na
+        import pandas as pd
+        raw = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+        if not {date, ent, meas} <= set(raw.columns):
+            return None
+        # every column the structure did not read as the members, the date or the measure must be one it set aside as an alias
+        # or a constant (a code beside each name); anything else is a second dimension the panel cannot see
+        known = {date, ent, meas} | {str(m.get("column")) for m in S.get("metadata") or []} | \
+            {str(d.get("column")) for d in S.get("dims") or [] if d.get("role") == "constant"}
+        if any(str(c) not in known for c in raw.columns):
+            return None
+        raw = raw.drop_duplicates().reset_index(drop=True)     # an exact repeat of a row is one row, as the engine's cleaning reads it
+        y = _year_dates(raw[date]) if int((S.get("period") or {}).get("step") or 1) == 12 else pd.Series(pd.NaT, index=raw.index)
+        if y.notna().mean() < 0.95:
+            y = pd.to_datetime(raw[date], errors="coerce")
+        v = pd.to_numeric(raw[meas].str.replace(",", "", regex=False).str.strip(), errors="coerce")
+        factor = float((S.get("measure") or {}).get("factor") or 1.0)
+        df = pd.DataFrame({date: y, ent: raw[ent].str.strip(), meas: v * factor})
+        df = df[df[date].notna()].reset_index(drop=True)
+        if len(df) < 2 or df[meas].notna().sum() < 2:
+            return None
+        kinds = {date: "date", ent: "text", meas: "number"}
+        p = ai_plan if isinstance(ai_plan, dict) else {}
+        goal = str(p.get("goal") or (objective if objective != DEFAULT_OBJECTIVE else ""))
+        hint: Dict[str, Any] = {"date": date, "primary": meas, "entity": ent, "topic": _topic_words("", goal), "free_text": []}
+        t = str((S.get("measure") or {}).get("type") or "")
+        kind = {"rate": "rate", "index": "level", "stock": "stock", "flow": "flow", "count": "flow", "precision": "level"}.get(t)
+        if kind:
+            hint["mkind"] = {meas: kind}
+        out = _na.explore(df, kinds, hint)
+        out["rows"] = {"kept": int(len(df)), "set_aside": int(len(raw) - len(df))}
+        _LAST_ANALYST.clear()
+        _LAST_ANALYST.update(df=df, kinds=kinds, hint=hint)
+        return out
+    except Exception:  # noqa: BLE001 - the slice's own analyst block stands
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return None
 
 
 def _structure_inner_blocks(rep: Dict[str, Any], inner: Dict[str, Any]) -> None:

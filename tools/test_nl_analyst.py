@@ -223,6 +223,27 @@ def test_panel_aggregates_are_found_and_left_out():
     ), head["numbers"]
 
 
+def test_the_fastest_grower_of_all_entries_is_named_when_the_larger_half_leaves_it_out():
+    """gdp_panel (16 Oct 2026): Guyana grew +303% from 2013, the fastest of every country, but 175th of 233 by size, so the
+    larger-half rule named Ethiopia and never Guyana. The fastest of ALL entries is named beside it, with its own growth, when
+    its base is real (a twentieth of the median entry's) and it has a figure every year; a near-zero base never is."""
+    rows = []
+    for y in range(2010, 2021):
+        k = y - 2010
+        for i in range(12):
+            rows.append({"Country": "Big%02d" % i, "Year": y, "Value": 1000.0 * (i + 1) * (1 + 0.02 * k + 0.001 * i * k)})
+        rows.append({"Country": "Smallgrow", "Year": y, "Value": 600.0 * (1 + 0.3 * k)})       # +300%, a small base (a tenth of the median)
+        rows.append({"Country": "Dust", "Year": y, "Value": 0.01 * (1 + 5.0 * k)})              # +5,000% from nothing
+    blk = na.explore(pd.DataFrame(rows), {"Country": "text", "Year": "number", "Value": "number"})
+    rk = next(s for s in blk["steps"] if s["op"] == "rank_entities")
+    n = rk["numbers"]
+    assert n["riser_all"]["text"] == "Smallgrow", n.get("riser_all")
+    assert abs(n["riser_all_growth"]["value"] - 3.0) < 1e-9, n["riser_all_growth"]
+    assert n["riser"]["text"] != "Smallgrow"          # the larger half's own riser still leads its sentence
+    text = " ".join(i["text"] for i in blk["insights"])
+    assert "Smallgrow grew fastest" in text and "Dust" not in text.split("grew fastest")[0][-40:], text
+
+
 def test_a_rate_changes_in_points_and_a_level_is_never_summed():
     d = pd.date_range("2020-01-01", periods=48, freq="MS")
     df = pd.DataFrame({"date": d, "unemployment_rate": np.linspace(4.0, 6.0, 48)})

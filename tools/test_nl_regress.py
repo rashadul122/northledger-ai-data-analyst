@@ -2765,6 +2765,38 @@ def test_s20_a_rates_forecast_is_a_level_in_a_month_never_added_up_and_a_differe
                 assert src["effect"]["scale"] == "difference", src["effect"]
 
 
+def test_s21_a_panel_with_a_total_row_is_read_by_the_analyst_as_a_panel_with_or_without_a_plan():
+    """A regression (16 Oct 2026): once the structure layer was in the deployed line, a panel of members with a total row (the World
+    Bank's countries with "IDA & IBRD total", disasters by type with "All natural disasters") reached the analyst loop as the slice's
+    one series: shape time_series, no entity, 117 rows, so it ranked no type and never named Drought or Flood. The report still reads
+    the total (the structure's headline); the analyst reads every member side by side and leaves the total out as an aggregate.
+    Figures recomputed from the file (Our World in Data / EM-DAT via vega-datasets)."""
+    raw = fixture("s21_disasters_by_type.csv")
+    df = pd.read_csv(io.BytesIO(raw))
+    y17 = df[(df.Year == 2017) & (df.Entity != "All natural disasters")].set_index("Entity")["Deaths"].sort_values(ascending=False)
+    plan = {"goal": "Which disasters kill most people?", "primary": "Deaths", "analyses": [], "operations": [],
+            "columns": [{"name": "Entity", "semantic_type": "category", "role": "entity"},
+                        {"name": "Year", "semantic_type": "date", "role": "date"},
+                        {"name": "Deaths", "semantic_type": "count", "role": "target"}]}
+    for rep in (run_bytes(raw, name="disasters.csv"), run_bytes(raw, plan=plan, name="disasters.csv")):
+        assert rep["ok"], rep.get("error")
+        assert (rep.get("structure") or {}).get("kind") == "cube", "the report still reads the verified total"
+        an = rep["analyst"]
+        sh = an["shape"]
+        assert sh["kind"] == "panel" and sh["entity"] == "Entity", sh
+        assert "All natural disasters" in (sh.get("aggregates") or {}).get("values", []), sh.get("aggregates")
+        assert an["rows"]["kept"] == len(df), an["rows"]
+        rk = next(s for s in an["steps"] if s["op"] == "rank_entities")
+        assert rk["numbers"]["year"]["text"] == "2017" and rk["numbers"]["top1"]["text"] == y17.index[0], rk["numbers"]
+        assert abs(rk["numbers"]["top1_value"]["value"] - float(y17.iloc[0])) < 1e-9
+        text = " ".join(i["text"] for i in an["insights"])
+        assert y17.index[0] in text and "All natural disasters leads" not in text, text
+    # a table of several dimensions is never read as one panel of its series (the long table's own reading stands): the debt table
+    rep = run_bytes(fixture("s07_statcan_debt_unpublished_months.csv"))
+    assert rep["ok"], rep.get("error")
+    assert (rep["analyst"].get("shape") or {}).get("entity") is None, rep["analyst"].get("shape")
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

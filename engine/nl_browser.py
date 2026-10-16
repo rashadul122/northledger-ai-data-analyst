@@ -265,7 +265,7 @@ def _profile_and_clean_once():
             return real_score(con, table, *args, **kw)
         key = ("score", db, table)
         if key not in memo:
-            th = real_score(con, table)
+            th = _score_prefetched(real_score, con, table, db[0])
             memo[key] = (copy.deepcopy(th), th)
             return th
         pristine, _first = memo[key]
@@ -289,7 +289,11 @@ def _profile_and_clean_once():
             return real_clean(con, table, *args, **kw)
         key = ("clean", db, table, src, rest)
         if key not in memo:
-            cr = real_clean(con, table, **kw)
+            _READ_SNAP["ctx"] = (db, table)          # clean_frame below records the cleaner's reading (_engine_reading)
+            try:
+                cr = real_clean(con, table, **kw)
+            finally:
+                _READ_SNAP["ctx"] = None
             # the result, and the profile as cleaning left it (clean_table may note things on it)
             memo[key] = (copy.deepcopy(cr), copy.deepcopy(th.__dict__))
             return cr
@@ -297,11 +301,171 @@ def _profile_and_clean_once():
         th.__dict__.update(copy.deepcopy(after))
         return copy.deepcopy(cr)
 
-    _hl.score_table, _cl.clean_table = score_table, clean_table
+    real_frame = _cl.clean_frame
+
+    def clean_frame(df: Any, rules: Any = None) -> Any:
+        # Inside the cached clean_table above: the cleaner's work frame as it stands once its reading rules (null_like,
+        # trim, case, numeric, date, boolean) have run and before any other rule, kept for _engine_reading, which would
+        # otherwise replay those same rules on the same table (on a wide 50,000-row panel, 12 seconds of the run). Only
+        # taken when every reading rule comes before every other rule, so the replay and the cleaner run the same steps.
+        ctx = _READ_SNAP.get("ctx")
+        rl = list(rules or [])
+        k = next((i for i, rr in enumerate(rl) if rr.kind not in _READ_RULE_KINDS), len(rl))
+        if ctx is None or any(rr.kind in _READ_RULE_KINDS for rr in rl[k:]) or not k:
+            return real_frame(df, rules)
+        seen = {"n": 0}
+        snap: Dict[str, Any] = {}
+        wrapped = {}
+        for kind, fn in list(_cl._DISPATCH.items()):
+            def w(state: Any, rule: Any, _fn: Any = fn) -> Any:
+                i = seen["n"]
+                seen["n"] = i + 1
+                if i == k:
+                    snap["work"] = state.work.copy(deep=True)
+                out = _fn(state, rule)
+                if i == k - 1 and k == len(rl):
+                    snap["work"] = state.work.copy(deep=True)
+                return out
+            wrapped[kind] = w
+        saved = dict(_cl._DISPATCH)
+        _cl._DISPATCH.update(wrapped)
+        try:
+            out = real_frame(df, rules)
+        finally:
+            _cl._DISPATCH.clear()
+            _cl._DISPATCH.update(saved)
+        if "work" in snap:
+            _READ_SNAP["entry"] = {"ctx": ctx, "rules": copy.deepcopy(rl[:k]), "raw": df, "work": snap["work"]}
+        return out
+
+    _hl.score_table, _cl.clean_table, _cl.clean_frame = score_table, clean_table, clean_frame
     try:
         yield
     finally:
-        _hl.score_table, _cl.clean_table = real_score, real_clean
+        _hl.score_table, _cl.clean_table, _cl.clean_frame = real_score, real_clean, real_frame
+
+
+# The profiler's per-column statements on a wide table (score_table: one classifying scan per column, then the
+# per-column defect counts) are most of the audit: 27 of co2_panel's 80 seconds. Each is a plain SELECT on the landed
+# file, so where threads exist (natively, never in Pyodide) the same statements run ahead on read-only connections
+# of their own while the profiler walks its columns; the profiler gets the very rows its own statement returns,
+# taken from the statement run ahead when its text matches exactly, else run on its own connection as before.
+PREFETCH_CELLS = 500_000           # rows x columns below which the profiler runs alone (a small file gains nothing)
+PREFETCH_WORKERS = 6
+
+
+class _Rows:
+    def __init__(self, rows: List[Any]) -> None:
+        self._rows = rows
+
+    def fetchone(self) -> Any:
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> List[Any]:
+        return list(self._rows)
+
+    def __iter__(self) -> Any:
+        return iter(list(self._rows))
+
+
+class _PrefetchCon:
+    """The profiler's connection, answering a statement run ahead with that statement's own rows."""
+
+    def __init__(self, con: Any, ahead: Dict[str, Any]) -> None:
+        object.__setattr__(self, "_con", con)
+        object.__setattr__(self, "_ahead", ahead)
+
+    def execute(self, sql: Any, *args: Any) -> Any:
+        fut = None if args else self._ahead.pop(sql, None)
+        if fut is not None:
+            try:
+                return _Rows(fut.result())
+            except Exception:  # noqa: BLE001 - the statement failed ahead: run here, where its error belongs
+                pass
+        return self._con.execute(sql, *args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._con, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._con, name, value)
+
+
+def _prefetch_statements(con: Any, table: str) -> List[str]:
+    """The profiler's own per-column statements on this table (its builders, else its formats): the classifying
+    scan, and the counts of placeholders, padding, casing and negatives. A text that does not match what the
+    profiler then sends is only a wasted read, never a different answer."""
+    from northledger import health as H
+    qt = H._qi(H._resolve_table(con, table))
+    cols = [str(r[1]) for r in con.execute("PRAGMA table_info(%s)" % qt).fetchall()]
+    n = int(con.execute("SELECT COUNT(*) FROM %s" % qt).fetchone()[0] or 0)
+    if len(cols) * n < PREFETCH_CELLS:
+        return []
+    out = [H._profile_sql(qt, c) for c in cols]
+    for c in cols:
+        qc = H._qi(c)
+        x = H._trim(qc)
+        nl = H._null_like_on(x)
+        is_text = "typeof(%s) = 'text'" % qc
+        cased = "UPPER(%s) <> LOWER(%s)" % (x, x)
+        out.append("SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL AND %s" % (qt, qc, nl))
+        out.append("SELECT COUNT(*) FROM %s WHERE %s AND NOT %s AND CAST(%s AS TEXT) <> %s" % (qt, is_text, nl, qc, x))
+        out.append("SELECT COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END),0), "
+                   "COALESCE(SUM(CASE WHEN %s AND %s = UPPER(%s) THEN 1 ELSE 0 END),0), "
+                   "COALESCE(SUM(CASE WHEN %s AND %s = LOWER(%s) THEN 1 ELSE 0 END),0) "
+                   "FROM %s WHERE %s AND NOT %s" % (cased, cased, x, x, cased, x, x, qt, is_text, nl))
+        out.append("SELECT COUNT(*) FROM %s WHERE NOT %s AND CAST(%s AS REAL) < 0" % (qt, nl, x))
+    return out
+
+
+def _score_prefetched(real_score: Any, con: Any, table: str, path: str) -> Any:
+    if sys.platform == "emscripten" or os.environ.get("NL_NO_PREFETCH") or not path:
+        return real_score(con, table)
+    try:
+        import concurrent.futures as cf
+        import sqlite3
+        import threading
+        from northledger._sqlite import ro_uri
+        sqls = _prefetch_statements(con, table)
+    except Exception:  # noqa: BLE001 - no statements run ahead: the profiler runs as before
+        return real_score(con, table)
+    if not sqls:
+        return real_score(con, table)
+    local = threading.local()
+    opened: List[Any] = []
+    lock = threading.Lock()
+
+    def run_one(sql: str) -> List[Any]:
+        c = getattr(local, "con", None)
+        if c is None:
+            c = sqlite3.connect(ro_uri(path), uri=True, check_same_thread=False)
+            local.con = c
+            with lock:
+                opened.append(c)
+        return c.execute(sql).fetchall()
+
+    pool = cf.ThreadPoolExecutor(max_workers=PREFETCH_WORKERS)
+    ahead: Dict[str, Any] = {}
+    try:
+        for q in sqls:
+            if q not in ahead:
+                ahead[q] = pool.submit(run_one, q)
+        return real_score(_PrefetchCon(con, ahead), table)
+    finally:
+        for f in ahead.values():
+            f.cancel()
+        pool.shutdown(wait=True)
+        for c in opened:
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# the cleaner's reading of the last table cleaned inside _profile_and_clean_once (see its clean_frame): one entry,
+# replaced by the next clean, read by _engine_reading only when the database file, the table, the rules and the
+# landed frame all match
+_READ_SNAP: Dict[str, Any] = {"ctx": None, "entry": None}
 
 
 @contextlib.contextmanager
@@ -1705,6 +1869,21 @@ _ID_HEADER_WORDS = frozenset(("id", "identifier", "identification", "ident", "ss
                               "nie", "nif", "cpf", "aadhaar"))
 
 
+_LETTER = re.compile(r"[^\W\d_]")
+
+
+def _spaced_texts(values: Any) -> Any:
+    """values.astype(object).where(values.notna(), "").astype(str).str.split().str.join(" "): each cell's text with its runs of
+    spaces made one, worked out once per different text (a column of 50,000 cells holds far fewer)."""
+    import numpy as np
+    import pandas as pd
+    raw = values.astype(object).where(values.notna(), "").astype(str)
+    codes, uniq = pd.factorize(raw.to_numpy(dtype=object))   # every cell is text here: equal texts, one code
+    norm = np.empty(len(uniq), dtype=object)
+    norm[:] = [" ".join(str(u).split()) for u in uniq]
+    return pd.Series(norm[codes] if len(codes) else np.empty(0, dtype=object), index=values.index, dtype=object)
+
+
 def _personal_kind(header: Any, values: Any) -> Optional[str]:
     """The kind of personal data a column holds by this check (see above), or None: `email`, `phone_na`, `account_number`,
     `street_address`, `person_name` or (wave 5f) `sensitive_category`. `header` is the column's name as the file writes it, `values` its
@@ -1712,7 +1891,7 @@ def _personal_kind(header: Any, values: Any) -> Optional[str]:
     import numpy as np
     import pandas as pd
     nulls = _null_tokens()
-    t = values.astype(object).where(values.notna(), "").astype(str).str.split().str.join(" ")
+    t = _spaced_texts(values)
     t = t[~t.str.lower().isin(nulls)]
     if not len(t):
         return None
@@ -1745,12 +1924,15 @@ def _personal_kind(header: Any, values: Any) -> Optional[str]:
     if len(vals) <= PERSONAL_ID_MAX_DISTINCT and len(vals) <= PERSONAL_ID_MAX_SHARE * total and \
             share(vals.str.fullmatch(r"\d{9,19}")) >= PERSONAL_MIN_SHARE:
         return "id_number"
-    if not set(toks) & _PLACE_WORDS and share([_street_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+    # a street, a person's name or a given name holds a letter: a value with none is none of them, and is not read
+    lettered = [bool(_LETTER.search(x)) for x in vals]
+    if not set(toks) & _PLACE_WORDS and share([b and _street_value(x) for x, b in zip(vals, lettered)]) >= PERSONAL_MIN_SHARE:
         return "street_address"
-    if _person_hint(toks, header)[0] and share([_person_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+    if _person_hint(toks, header)[0] and share([b and _person_value(x) for x, b in zip(vals, lettered)]) >= PERSONAL_MIN_SHARE:
         return "person_name"
     # wave 5f (C): under any other header, values that open with a given name and carry a surname (at least 3 different ones, 60% of the cells)
-    if len(vals) >= 3 and not set(toks) & _PLACE_WORDS and share([_given_name_value(x) for x in vals]) >= PERSONAL_MIN_SHARE:
+    if len(vals) >= 3 and not set(toks) & _PLACE_WORDS and \
+            share([b and _given_name_value(x) for x, b in zip(vals, lettered)]) >= PERSONAL_MIN_SHARE:
         return "person_name"
     return None
 
@@ -5116,6 +5298,19 @@ def _span(d: Any) -> Dict[str, Any]:
 
 
 def _profile_facts(R: "_Reading", headers: List[str], hidden: Iterable[str] = ()) -> List[Dict[str, Any]]:
+    """The profile facts of a reading (_profile_facts_of), worked out once per reading and arguments: the structure
+    hook and the chart limits ask for the same facts of the same reading (on a wide panel, 2.4 seconds each). A
+    later call gets its own copy."""
+    import copy
+    key = (tuple(str(h) for h in headers), tuple(sorted(str(x) for x in hidden or ())),
+           id(R.values), id(R.texts), id(R.kept))
+    memo = getattr(R, "__dict__", {}).setdefault("_facts_memo", {})
+    if key not in memo:
+        memo[key] = _profile_facts_of(R, headers, hidden)
+    return copy.deepcopy(memo[key])
+
+
+def _profile_facts_of(R: "_Reading", headers: List[str], hidden: Iterable[str] = ()) -> List[Dict[str, Any]]:
     """What the planner's profile may say about each column, from the engine's reading: counts, how many
     values the engine read as numbers and as dates, the numbers' range, the commonest values, and the time
     span over the rows the engine kept (the rows the analyses read). Nothing here is sent anywhere by itself:
@@ -7144,7 +7339,11 @@ class _Reading:
         return "text"
 
     def filled(self, landed: str) -> Any:
-        return _filled_text(self.texts[landed]).to_numpy()
+        # read once per column (a wide table's profile asks for each column's filled cells three times or more)
+        memo = self.__dict__.setdefault("_filled_memo", {})
+        if landed not in memo:
+            memo[landed] = _filled_text(self.texts[landed]).to_numpy()
+        return memo[landed].copy()
 
     def numbers(self, landed: str) -> Any:
         """The column as the engine's numbers (NaN where it holds none, and everywhere when the engine did not
@@ -7184,17 +7383,43 @@ def _engine_reading(db_path: str, table: str, rules: List[Any], cr: Any, colmap:
         raw = pd.read_sql_query("SELECT * FROM %s" % _clean._quote_ident(table), con)
     finally:
         con.close()
-    state = _clean._Pass(raw)
-    for rule in rules:
-        if rule.kind in _READ_RULE_KINDS:
+    read_rules = [rule for rule in rules if rule.kind in _READ_RULE_KINDS]
+    work = _cleaned_reading(db_path, table, read_rules, raw)
+    if work is None:
+        state = _clean._Pass(raw)
+        for rule in read_rules:
             _clean._DISPATCH[rule.kind](state, rule)
+        work = state.work
     texts = raw.astype(object).where(raw.notna(), "").astype(str)
     kept = np.zeros(len(raw), dtype=bool)
     kept[[int(i) for i in cr.clean.index if 0 <= int(i) < len(raw)]] = True
     q = cr.quarantined
     aside = ({int(i): str(v) for i, v in q[_clean.QUARANTINE_COL].items()}
              if q is not None and _clean.QUARANTINE_COL in getattr(q, "columns", []) else {})
-    return _Reading(state.work, texts, kept, colmap, aside)
+    return _Reading(work, texts, kept, colmap, aside)
+
+
+def _cleaned_reading(db_path: str, table: str, read_rules: List[Any], raw: Any) -> Any:
+    """The cleaner's own work frame after these reading rules on this landed table, when the audit's clean just
+    computed it (_READ_SNAP): the same database file, table, rules (in order) and landed frame; else None."""
+    ent = _READ_SNAP.get("entry")
+    if not ent or not read_rules:
+        return None
+    try:
+        st = os.stat(db_path)
+        db, tbl = ent["ctx"]
+        if (db is None or tbl != table or os.path.realpath(db[0]) != os.path.realpath(db_path)
+                or (st.st_size, st.st_mtime_ns) != (db[1], db[2])):
+            return None
+        if ent["rules"] != read_rules:
+            return None
+        r0 = ent["raw"]
+        if (list(r0.columns) != list(raw.columns) or list(r0.dtypes) != list(raw.dtypes) or not r0.index.equals(raw.index)
+                or not r0.equals(raw)):
+            return None
+    except Exception:  # noqa: BLE001 - no match: the rules are replayed
+        return None
+    return ent["work"].copy(deep=True)
 
 
 def _fallback_values(s: Any, kind: str) -> Any:
@@ -10905,6 +11130,22 @@ def _to_csv_bytes(df: Any) -> bytes:
     return df.to_csv(index=False, lineterminator="\n").encode("utf-8")
 
 
+def _share_at_least(values: Any, test: Any, share: float) -> bool:
+    """float(values.map(test).mean()) >= share, stopping as soon as the misses already rule it out (a column of numbers
+    is not a column of dates after its first few values)."""
+    vals = list(values)
+    n = len(vals)
+    if not n:
+        return bool(float("nan") >= share)
+    misses = 0
+    for v in vals:
+        if not test(v):
+            misses += 1
+            if (n - misses) / n < share:
+                return False
+    return (n - misses) / n >= share
+
+
 def _dates_in_place(df: Any) -> List[Dict[str, Any]]:
     """Rewrite, in the frame, every column of dates written in a format the core does not read as ISO dates (H); [{column, format, rows}]. A column is
     rewritten only when at least 95% of its filled cells fit ONE format (never a text column that merely holds a date now and then). 03/04/2019
@@ -10920,13 +11161,13 @@ def _dates_in_place(df: Any) -> List[Dict[str, Any]]:
         sample = filled.drop_duplicates()
         if len(sample) > 3000:
             sample = sample.sample(3000, random_state=0)
-        if float(sample.map(lambda v: bool(_ISO_LIKE.match(v))).mean()) >= 0.95:
+        if _share_at_least(sample, lambda v: bool(_ISO_LIKE.match(v)), 0.95):
             continue                                           # the core reads these
         picks = []
         for label, rx, fmt, res in _DATE_FORMATS:
             if res in ("month_digits", "day_digits") and not _DATE_HEADER.search(str(c)):
                 continue                                       # six or eight digits are a date only under a heading that says so
-            if float(sample.map(lambda v, rx=rx: bool(re.match(rx, _month_fix(v), re.I) or re.match(rx, v, re.I))).mean()) >= 0.95:
+            if _share_at_least(sample, lambda v, rx=rx: bool(re.match(rx, _month_fix(v), re.I) or re.match(rx, v, re.I)), 0.95):
                 picks.append((label, rx, fmt, res))
         if not picks:
             continue
@@ -12234,6 +12475,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
+        _READ_SNAP["entry"] = None                # the cleaner's frames are not held past the run
         rep["timings"] = [{"stage": s, "seconds": round(float(timings[s]), 3)} for s in STAGES]
         _ensure_v2(rep)
     return rep

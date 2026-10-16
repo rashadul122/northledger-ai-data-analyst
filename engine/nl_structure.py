@@ -264,6 +264,24 @@ def _parse_periods(t: Any, allow_year: bool) -> Tuple[Any, str, float]:
     return best
 
 
+def _label_texts(R: Any, c: str) -> Any:
+    """A column's landed text, stripped: worked out once per reading and column (the two period readers below both read it)."""
+    memo = getattr(R, "__dict__", {}).setdefault("_label_texts_memo", {})
+    if c not in memo:
+        memo[c] = R.texts[c].astype(str).str.strip()
+    return memo[c].copy()
+
+
+def _periods_of(R: Any, c: str, t: Any, allow_year: bool) -> Tuple[Any, str, float]:
+    """_parse_periods(t, allow_year) of a column of a reading, read once per reading, column and allow_year (each caller gets its own copy)."""
+    memo = getattr(R, "__dict__", {}).setdefault("_periods_memo", {})
+    key = (c, bool(allow_year), id(R.texts))
+    if key not in memo:
+        memo[key] = _parse_periods(t, allow_year=allow_year)
+    out, fam, share = memo[key]
+    return (out.copy() if out is not None else None), fam, share
+
+
 def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tuple[str, Any, str]]:
     """The date column when the engine read none: a column of period labels (a quarter, a half-year or a year), at least 95% of
     its filled cells read, 6 or more different periods. (column, dates, family) or None."""
@@ -272,10 +290,10 @@ def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tu
         if R.kind(c) == "date":
             continue
         name = _norm(head[c])
-        t = R.texts[c].astype(str).str.strip()
+        t = _label_texts(R, c)
         if int((t != "").sum()) < 6:
             continue
-        out, fam, share = _parse_periods(t, allow_year=name in _YEAR_NAMES)
+        out, fam, share = _periods_of(R, c, t, name in _YEAR_NAMES)
         if out is None or share < 0.95 or int(out.nunique()) < 6:
             continue
         if best is None or (name in _YEAR_NAMES and not best[3]):
@@ -290,10 +308,10 @@ def _few_period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> int:
     for c in cols:
         if R.kind(c) == "date":
             continue
-        t = R.texts[c].astype(str).str.strip()
+        t = _label_texts(R, c)
         if int((t != "").sum()) < 2:
             continue
-        out, _fam, share = _parse_periods(t, allow_year=_norm(head[c]) in _YEAR_NAMES)
+        out, _fam, share = _periods_of(R, c, t, _norm(head[c]) in _YEAR_NAMES)
         if out is not None and share >= 0.95:
             best = max(best, int(out.nunique()))
     return best

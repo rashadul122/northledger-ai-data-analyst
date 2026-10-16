@@ -637,6 +637,13 @@ _NO_PCT_WORDS = (
 _UNRANKED_LEVEL_WORDS = ("price", "close", "open", "high", "low", "index", "adj_close")
 
 
+def _no_negatives(s) -> bool:
+    """A measure a percent change may be read on: (nearly) no value below zero. Zeros are allowed (a country with no emissions
+    in 1850 does not make the world's change a difference); a measure that crosses zero is read as a difference."""
+    v = _num(s).dropna()
+    return bool(len(v)) and (v >= 0).mean() > 0.99 and (v > 0).mean() > 0.5
+
+
 def _pct_ok(sh: "Shape", measure: str) -> bool:
     """Whether a change of this measure may be read in percent (the values must be positive too, checked apart)."""
     k = sh.mkind.get(measure, "flow")
@@ -1394,13 +1401,30 @@ def op_change(
         a
         and a > 0
         and _pct_ok(sh, measure)
-        and (_num(ctx.df[measure]).dropna() > 0).mean() > 0.99
+        and _no_negatives(ctx.df[measure])
     ):
         st.num("change", (b - a) / abs(a), "pct", signed=True)
     else:
         st.num(
             "change", b - a, "plain", signed=True
         )  # a measure that crosses zero: a difference, never a %
+    # a panel's own World row (a publisher's grand total, left out of the sum of entries with every other aggregate): its change
+    # beside the entries' total, since the World row also counts what no entry holds (co2_panel: international shipping and
+    # aviation; 38,094 to 38,599 Mt, +1.3%, against the countries' 37,003 to 37,398)
+    if sh.entity and sh.aggregates and not by and not where and agg in ("sum", "stock"):
+        wname = next((x for x in sh.aggregates if str(x).strip().lower() == "world"), None)
+        if wname is not None:
+            wm = _text(ctx.df[sh.entity]) == wname
+            wv = _num(ctx.df[measure])
+            wa = wv[wm & _in(ctx, prev, unit)].dropna()
+            wb = wv[wm & _in(ctx, cur, unit)].dropna()
+            if len(wa) and len(wb):
+                wa_, wb_ = (wa.sum(), wb.sum()) if agg == "sum" else (wa.mean(), wb.mean())
+                if wa_ > 0 and _pct_ok(sh, measure) and _no_negatives(ctx.df[measure]):
+                    st.word("world_name", wname)
+                    st.num("world_prev", wa_)
+                    st.num("world_cur", wb_)
+                    st.num("world_change", (wb_ - wa_) / abs(wa_), "pct", signed=True)
     st.numbers["direction"] = {
         "value": None,
         "text": "rose" if b > a else "fell" if b < a else "held level",
@@ -1665,6 +1689,83 @@ def _figure(st: "Step", n: int, about: str) -> Optional[Dict[str, Any]]:
         data={"series": [_clip(x, 40) for x in c["series"]], "rows": rows, "other": False},
         table={"cols": tcols, "rows": trows}, suppressed={"cells": 0, "why": ""}, **common,
     )
+
+
+OWN_WINDOW_MAX = 4      # parallel series read over their own latest 12 months, at most
+
+
+def _parallel_dim(ctx: Ctx, measure: str) -> Optional[str]:
+    """A dimension whose members are parallel series of one measure (two sources of one temperature record): 2 to OWN_WINDOW_MAX
+    members, one row per member and month, each with at least 24 months. None when there is none (or the data is not monthly)."""
+    import pandas as pd
+
+    sh = ctx.sh
+    if sh.date is None or sh.grain != "month" or sh.entity:
+        return None
+    v = _num(ctx.df[measure])
+    k = sh.dates.dt.year * 12 + sh.dates.dt.month - 1
+    for d in sh.dims:
+        t = _text(ctx.df[d])
+        ok = (t != "") & v.notna() & k.notna() & ctx.base
+        n = t[ok].nunique()
+        if not 2 <= n <= OWN_WINDOW_MAX:
+            continue
+        f = pd.DataFrame({"t": t[ok], "k": k[ok]})
+        if f.duplicated().mean() > 0.05 or f.groupby("t")["k"].nunique().min() < 24:
+            continue
+        return d
+    return None
+
+
+def op_own_windows(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
+    """Parallel series that end at different months (GISTEMP stops at 2025-12, GCAG runs to 2026-07): each read over ITS OWN
+    latest 12 months against the 12 before, so a series is never compared over months it did not report. Refused when every
+    series ends in the same month (the shared window already reads each over its own months)."""
+    import pandas as pd
+
+    sh = ctx.sh
+    agg = _agg_for(sh, measure)
+    kind = sh.mkind.get(measure, "flow")
+    t = _text(ctx.df[by])
+    v = _num(ctx.df[measure])
+    k = sh.dates.dt.year * 12 + sh.dates.dt.month - 1
+    ok = (t != "") & v.notna() & k.notna() & ctx.base
+    f = pd.DataFrame({"t": t[ok], "k": k[ok].astype(int), "v": v[ok]})
+    lab = lambda x: "%d-%02d" % (x // 12, x % 12 + 1)  # noqa: E731
+    rows = []
+    for name, g in f.groupby("t", sort=False):
+        s_ = g.groupby("k")["v"].mean()
+        last = int(s_.index.max())
+        if not all((last - i) in s_.index for i in range(24)):
+            continue
+        cur = s_.loc[last - 11:last]
+        prev = s_.loc[last - 23:last - 12]
+        a, b = (prev.sum(), cur.sum()) if agg == "sum" else (prev.mean(), cur.mean())
+        rows.append((str(name), last, float(a), float(b)))
+    if len(rows) < 2:
+        return st.refuse("fewer than two series with 24 months of their own")
+    if len({r[1] for r in rows}) == 1:
+        return st.refuse("every series ends in the same month")
+    rows.sort(key=lambda r: (-r[1], r[0]))
+    pos = (v.dropna() > 0).mean() > 0.99
+    st.word("by", by)
+    st.word("measure", measure)
+    st.word("verb", "totalled" if agg == "sum" else "averaged")
+    st.num("series", len(rows), "int")
+    for i, (name, last, a, b) in enumerate(rows, 1):
+        st.word("s%d" % i, name)
+        st.word("s%d_end" % i, lab(last))
+        st.num("s%d_prev" % i, a)
+        st.num("s%d_cur" % i, b)
+        if kind == "rate":
+            st.num("s%d_delta" % i, (b - a) * (100 if _frac_scale(f["v"]) else 1), "pp", signed=True)
+        elif a > 0 and pos and _pct_ok(sh, measure):
+            st.num("s%d_delta" % i, (b - a) / abs(a), "pct", signed=True)
+        else:
+            st.num("s%d_delta" % i, b - a, "plain", signed=True)
+    st.table = {"columns": [by, "latest month", "12 months before", "latest 12 months", "change"],
+                "rows": [[n, lab(l_), _r(a), _r(b), _r(b - a, 4)] for n, l_, a, b in rows]}
+    return st
 
 
 def op_breakdown(
@@ -2005,6 +2106,63 @@ _PERSON_COL = re.compile(
     r"(^|[^a-z])(customer|client|user|member|person|contact|employee|patient|buyer|seller|owner|e-?mail|"
     r"first_?name|last_?name|full_?name|surname|phone)"
 )
+
+
+# an outcome column's success class: the values that begin with one of these words (himalaya_expeditions: "Success (main peak)" and
+# "Success (subpeak)" of 15 termination reasons)
+_SUCCESS_WORD = re.compile(r"(?i)^\s*(success(?:ful)?|succeeded|completed?|won|passed|approved|accepted|converted)\b")
+OUTCOME_MIN_ROWS = 30      # rows each group of an outcome-rate comparison needs
+
+
+def op_outcome_rate(ctx: Ctx, st: Step) -> Step:
+    """Rows are attempts and one column says how each ended: the share that succeeded (its values that begin with a success word)
+    in each group of a two-valued column (with or without oxygen), the pair with the widest gap. Descriptive: the groups differ in
+    more than the grouping, so the gap is an association, said so."""
+    import pandas as pd
+
+    sh = ctx.sh
+    best = None
+    for oc in sh.dims:
+        t = _text(ctx.df[oc])
+        filled = t != ""
+        if filled.sum() < 2 * OUTCOME_MIN_ROWS or not 3 <= t[filled].nunique() <= 60:
+            continue
+        ok = t[filled].map(lambda x: bool(_SUCCESS_WORD.match(x)))
+        share = float(ok.mean())
+        if not 0.05 <= share <= 0.95:
+            continue
+        win = t.map(lambda x: bool(_SUCCESS_WORD.match(x)))
+        for by in sh.dims:
+            if by == oc:
+                continue
+            g = _group_texts(ctx.df, by)
+            use = filled & (g != "") & ctx.base
+            if g[use].nunique() != 2:
+                continue
+            f = pd.DataFrame({"g": g[use], "w": win[use]})
+            r = f.groupby("g")["w"].agg(["mean", "size"])
+            if int(r["size"].min()) < OUTCOME_MIN_ROWS:
+                continue
+            r = r.sort_values("mean", ascending=False)
+            gap = float(r["mean"].iloc[0] - r["mean"].iloc[1])
+            if best is None or gap > best[0]:
+                best = (gap, oc, by, r, sorted(set(t[filled][ok])))
+    if best is None or best[0] < 0.05:
+        return st.refuse("no outcome column with a success class and a two-valued grouping")
+    gap, oc, by, r, wins = best
+    st.word("outcome", oc)
+    st.word("success_word", _SUCCESS_WORD.match(wins[0]).group(1))
+    st.word("by", by)
+    st.word("a_name", r.index[0])
+    st.num("a_rate", r["mean"].iloc[0], "share")
+    st.num("a_n", int(r["size"].iloc[0]), "int")
+    st.word("b_name", r.index[1])
+    st.num("b_rate", r["mean"].iloc[1], "share")
+    st.num("b_n", int(r["size"].iloc[1]), "int")
+    st.num("gap", gap * 100, "pp", signed=True)
+    st.table = {"columns": [by, "success rate", "rows"],
+                "rows": [[k, _r(v.mean, 4), int(v.size)] for k, v in r.iterrows()]}
+    return st
 
 
 def op_frequency(ctx: Ctx, st: Step) -> Step:
@@ -3208,6 +3366,9 @@ def op_concentration(
     st.num("groups", len(now), "int")
     st.word("top1", now.index[0])
     st.num("top1_share", now.iloc[0], "share")
+    if len(now) >= 2:
+        st.word("top2", now.index[1])
+        st.num("top2_share", now.iloc[1], "share")
     st.num("top3_share", now.head(3).sum(), "share")
     if len(now) >= 6:
         st.num("top5_share", now.head(5).sum(), "share")
@@ -4535,9 +4696,26 @@ def explore(
                     H=head,
                 )
                 + agg_note(head)
+                + (_ids("; the file's own grand-total row, which also counts what no entry holds, went from {H.world_prev} to {H.world_cur} "
+                          "({H.world_change})", H=head)
+                   if "world_cur" in head.numbers else "")
                 + ".",
                 [head.id],
             )
+        # parallel series that stop at different months (two sources of one record): each over its own latest 12 months
+        pdim = _parallel_dim(ctx, m) if head.ok and not over() else None
+        if pdim is not None:
+            ow = op_own_windows(
+                ctx,
+                ctx.new(rnd, "own_windows", {"measure": m, "by": pdim},
+                        "parallel series that end at different months: each over its own latest 12 months"),
+                m,
+                pdim,
+            )
+            if ow.ok:
+                parts = ["{O.s%d} to {O.s%d_end} {O.verb} {O.s%d_cur} against {O.s%d_prev} the 12 months before ({O.s%d_delta})"
+                         % (i, i, i, i, i) for i in range(1, int(ow.numbers["series"]["value"]) + 1)]
+                say("headline", _ids("Each {O.by} over its own latest 12 months: " + "; ".join(parts) + ".", O=ow), [ow.id])
         # a monthly flow compared 12 months to 12: the latest month against the same month a year earlier too
         if (
             monthly
@@ -5065,8 +5243,8 @@ def explore(
         if cc.ok:
             if (cc.numbers["groups"]["value"] or 0) > 3:
                 tm = (
-                    "In {K.cur_label}, {K.top1} holds {K.top1_share} of the total {K.measure} and the top three of "
-                    "{K.groups} {K.by} groups {K.top3_share} (Herfindahl-Hirschman index {K.hhi}, the same as "
+                    "In {K.cur_label}, {K.top1} holds {K.top1_share} of the total {K.measure}, then {K.top2} ({K.top2_share}), "
+                    "and the top three of {K.groups} {K.by} groups {K.top3_share} (Herfindahl-Hirschman index {K.hhi}, the same as "
                     "{K.effective} equal-sized groups: {K.level_word})"
                 )
             else:
@@ -5096,6 +5274,12 @@ def explore(
                     tb += ", then {Q.b_second} ({Q.b_second_share})"
                 parts.append(tb)
             say("distribution", _ids("; ".join(parts) + ".", Q=fq), [fq.id])
+    if not over() and sh.kind in ("ledger", "cross_section"):
+        oc = op_outcome_rate(ctx, ctx.new(rnd, "outcome_rate", {}, "rows are attempts: how often each kind succeeded"))
+        if oc.ok:
+            say("relationship", _ids(
+                "Success rate (a {O.outcome} that begins \"{O.success_word}\"): {O.a_rate} of {O.a_n} rows {O.a_name} against {O.b_rate} of "
+                "{O.b_n} {O.b_name}, a gap of {O.gap}; that is association, not cause.", O=oc), [oc.id])
     if not over() and monthly and sh.kind in ("time_series", "ledger"):
         se = op_seasonality(
             ctx,

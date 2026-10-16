@@ -244,6 +244,76 @@ def test_the_fastest_grower_of_all_entries_is_named_when_the_larger_half_leaves_
     assert "Smallgrow grew fastest" in text and "Dust" not in text.split("grew fastest")[0][-40:], text
 
 
+def test_parallel_series_that_end_at_different_months_are_each_read_over_their_own_latest_12_months():
+    """global_temp (16 Oct 2026): GISTEMP ends 2025-12 and GCAG runs to 2026-07. Each source is read over ITS OWN latest 12 months
+    against the 12 before (GISTEMP -0.0925 in the real file), never over months it did not report; two sources ending together are not
+    read twice."""
+    rows = []
+    for i, d in enumerate(pd.date_range("2018-01-01", "2026-07-01", freq="MS")):
+        rows.append({"Source": "A", "Date": d, "Anomaly": 0.5 + 0.01 * i})
+        if d <= pd.Timestamp("2025-12-01"):
+            rows.append({"Source": "B", "Date": d, "Anomaly": 0.4 + 0.02 * i})
+    df = pd.DataFrame(rows)
+    blk = na.explore(df, {"Source": "text", "Date": "date", "Anomaly": "number"}, {"date": "Date", "primary": "Anomaly"})
+    ow = next(s for s in blk["steps"] if s["op"] == "own_windows")
+    n = ow["numbers"]
+    got = {n["s1"]["text"]: (n["s1_end"]["text"], n["s1_delta"]["value"]), n["s2"]["text"]: (n["s2_end"]["text"], n["s2_delta"]["value"])}
+    assert got["A"][0] == "2026-07" and abs(got["A"][1] - 0.12) < 1e-9, got        # 12 months of +0.01 a month
+    assert got["B"][0] == "2025-12" and abs(got["B"][1] - 0.24) < 1e-9, got
+    text = " ".join(i["text"] for i in blk["insights"])
+    assert "Each Source over its own latest 12 months: A to 2026-07" in text and "B to 2025-12" in text, text
+    same = df[df["Date"] <= pd.Timestamp("2025-12-01")]
+    blk2 = na.explore(same, {"Source": "text", "Date": "date", "Anomaly": "number"}, {"date": "Date", "primary": "Anomaly"})
+    assert not any(s["op"] == "own_windows" and s["ok"] for s in blk2["steps"]), "series that end together are read by the shared window"
+
+
+def test_the_success_rate_of_attempts_is_compared_across_a_two_valued_group():
+    """himalaya_expeditions: 79.5% of expeditions with oxygen reached a summit against 45.8% without. Rows are attempts, one column says
+    how each ended (values that begin "Success"), and a two-valued column splits them: each group's success rate, with the gap, said as
+    an association."""
+    rng = np.random.default_rng(5)
+    rows = []
+    for i in range(600):
+        ox = i % 3 == 0
+        win = rng.uniform() < (0.8 if ox else 0.45)
+        reason = ("Success (main peak)" if rng.uniform() < 0.9 else "Success (subpeak)") if win else \
+            ["Bad weather", "Bad conditions", "Illness", "Other"][int(rng.integers(0, 4))]
+        rows.append({"date": pd.Timestamp("2015-01-01") + pd.Timedelta(days=int(rng.integers(0, 2000))), "season": ["Spring", "Autumn"][i % 2],
+                     "termination_reason": reason, "oxygen_used": "TRUE" if ox else "FALSE", "members": int(rng.integers(1, 12))})
+    df = pd.DataFrame(rows)
+    blk = _explore(df)
+    oc = next(s for s in blk["steps"] if s["op"] == "outcome_rate")
+    n = oc["numbers"]
+    w = df["termination_reason"].str.startswith("Success")
+    want = {"with oxygen_used": w[df["oxygen_used"] == "TRUE"].mean(), "without oxygen_used": w[df["oxygen_used"] == "FALSE"].mean()}
+    assert n["a_name"]["text"] == "with oxygen_used" and abs(n["a_rate"]["value"] - want["with oxygen_used"]) < 1e-12, n
+    assert abs(n["b_rate"]["value"] - want["without oxygen_used"]) < 1e-12 and n["a_n"]["value"] == 200, n
+    text = " ".join(i["text"] for i in blk["insights"])
+    assert 'Success rate (a termination_reason that begins "Success")' in text and "association, not cause" in text, text
+
+
+def test_a_panels_world_row_change_is_stated_and_zeros_do_not_turn_a_percent_into_a_difference():
+    """co2_panel (16 Oct 2026): the entries' total printed "+395.0" (zeros in early years blocked a percent) and the World row, which also
+    counts international shipping and aviation, was never stated: world CO2 2023 to 2024 +1.3%."""
+    rows = []
+    for y in range(2000, 2021):
+        tot = 0.0
+        for c, b in (("Aland", 10), ("Bland", 20), ("Cland", 30), ("Dland", 0)):
+            v = 0.0 if (c == "Dland" and y < 2010) else b * (1 + 0.05 * (y - 2000)) + (5 if c == "Dland" else 0)
+            tot += v
+            rows.append({"Country": c, "Year": y, "co2": v})
+        rows.append({"Country": "World", "Year": y, "co2": tot + 7.0})
+    df = pd.DataFrame(rows)
+    blk = na.explore(df, {"Country": "text", "Year": "number", "co2": "number"})
+    head = blk["steps"][0]
+    n = head["numbers"]
+    assert n["change"]["kind"] == "pct", n["change"]
+    w = df[df["Country"] == "World"].set_index("Year")["co2"]
+    assert abs(n["world_change"]["value"] - (w[2020] / w[2019] - 1)) < 1e-12, n.get("world_change")
+    text = blk["insights"][0]["text"]
+    assert "grand-total row" in text and "World" not in text.split("grand-total row")[1], text
+
+
 def test_a_rate_changes_in_points_and_a_level_is_never_summed():
     d = pd.date_range("2020-01-01", periods=48, freq="MS")
     df = pd.DataFrame({"date": d, "unemployment_rate": np.linspace(4.0, 6.0, 48)})

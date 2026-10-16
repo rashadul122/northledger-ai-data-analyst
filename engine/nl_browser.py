@@ -5710,6 +5710,52 @@ def _primary_for_ai(rep: Dict[str, Any], safe: Any, scrub: Any) -> Optional[Dict
     return None
 
 
+def _answer_for_ai(a: Any, safe: Any, scrub: Any) -> Optional[Dict[str, Any]]:
+    """rep["answer"] for the report writer (CONTRACT §5.13): its texts made safe as every other text; never one that names a withheld
+    column. The worker keeps these keys only (insight-proxy src/report.js validAnswer)."""
+    if not isinstance(a, dict) or a.get("leads") not in ("whole_period", "latest_change") or not a.get("text"):
+        return None
+    if scrub.names(a.get("text")) or scrub.names(a.get("title")):
+        return None
+    out: Dict[str, Any] = {"leads": a["leads"], "why": safe(a.get("why"), 120), "text": safe(a.get("text"), 400),
+                           "key_figures": [safe(x, 40) for x in a.get("key_figures") or [] if x][:4]}
+    if a.get("title"):
+        out["title"] = safe(a["title"], 200)
+    if isinstance(a.get("span"), list) and len(a["span"]) == 2:
+        out["span"] = [str(x)[:10] for x in a["span"]]
+    rk = a.get("ranked")
+    if isinstance(rk, dict):
+        row = lambda x: {"label": safe(x.get("label"), 120), "change_text": safe(x.get("change_text"), 40),
+                         "first": str(x.get("first") or "")[:10], "latest": str(x.get("latest") or "")[:10]}
+        r2 = {"unit": safe(rk.get("unit"), 40), "rose": [row(x) for x in rk.get("rose") or [] if isinstance(x, dict) and not scrub.names(x.get("label"))][:3],
+              "fell": [row(x) for x in rk.get("fell") or [] if isinstance(x, dict) and not scrub.names(x.get("label"))][:3],
+              "text": safe(rk.get("text"), 600)}
+        if isinstance(rk.get("of"), int):
+            r2["of"] = rk["of"]
+        if r2["rose"] or r2["fell"]:
+            out["ranked"] = r2
+    lt = a.get("latest")
+    if isinstance(lt, dict) and lt.get("text") and not scrub.names(lt.get("text")):
+        out["latest"] = {"text": safe(lt["text"], 300), "grade": str(lt.get("grade") or "")[:20], "label": safe(lt.get("label"), 120)}
+    return out
+
+
+def _rate_series_for_ai(r: Any, safe: Any, scrub: Any) -> List[Dict[str, Any]]:
+    """rep["rates"]["series"] for the worker's guard (G26, rate_change_percent): each rate's label and its change in points, and its
+    relative change for the guard's repair only (the worker never shows the model relative_pct: src/report.js modelResults)."""
+    out = []
+    for x in ((r or {}).get("series") or []) if isinstance(r, dict) else []:
+        if not isinstance(x, dict) or not x.get("label") or scrub.names(x.get("label")):
+            continue
+        d = {"label": safe(x["label"], 120), "unit": safe(x.get("unit"), 40), "text": safe(x.get("text"), 60)}
+        for k in ("points", "relative_pct"):
+            v = x.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf"):
+                d[k] = float(v)
+        out.append(d)
+    return out[:20]
+
+
 def _estimand_for_ai(est: Any, safe: Any) -> Optional[Dict[str, Any]]:
     """rep["estimand"] for the report writer: every figure with its text, the slice and what was left out, its words made
     safe as every other text (never a withheld column's name)."""
@@ -5896,6 +5942,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             v = _num(f.get(k))
             if v is not None:
                 d[k] = v
+        if f.get("value_unit") in ("percentage points", "the rate's own units"):
+            d["value_unit"] = f["value_unit"]          # a rate's change, in points (_rate_points): the PDF prints it so
         if f.get("why"):
             d["why"] = safe(f["why"], 240)
         if f.get("layout_artifact") is True:
@@ -6207,6 +6255,14 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         # ANALYST_INSIGHTS_MAX; descriptive, never graded. One that names a withheld column is never sent.
         "analyst_insights": _analyst_insights_for_ai(rep.get("analyst"), safe, scrub),
     }
+    # what answers the visitor's question, as the engine decided it (rep.answer, _answer): the report's title, first bullet and headline
+    # state it; and each rate whose change the report states in percentage points (rep.rates, _rate_points)
+    ans = _answer_for_ai(rep.get("answer"), safe, scrub)
+    if ans:
+        out["answer"] = ans
+    rs = _rate_series_for_ai(rep.get("rates"), safe, scrub)
+    if rs:
+        out["rate_series"] = rs
     pv = _privacy_for_ai(rep.get("privacy"), safe, scrub)
     if pv:
         out["privacy"] = pv        # what was read as a category, for the report's method section (the worker drops it: the AI never reads it)
@@ -8508,37 +8564,61 @@ def _short_labels(names: List[str]) -> Dict[str, str]:
 
 def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
     """Series side by side (currencies after long_to_wide): each one's change from its first complete
-    year to its last, as a percentage of the first year's average (a level) or total (an amount)."""
+    year to its last, as a percentage of the first year's average (a level) or total (an amount). A rate in percent
+    changes in percentage points (the last year's average minus the first's: a percent of a percent reads as a relative
+    change nobody means), and the rates are ranked apart from the series compared as percentages (16 Oct 2026)."""
     rows = []
     for col in cols[:60]:
         st, _u = _col_type(plan, col, layout)
         y, _g = _period_values(df, date, None, col, _how(st))
         y = y.dropna()
-        if len(y) < RANK_MIN_YEARS or not y.iloc[0]:
+        if len(y) < RANK_MIN_YEARS:
             continue
-        rows.append((col, int(y.index[0]), int(y.index[-1]), float(y.iloc[0]), float(y.iloc[-1]),
-                     100.0 * (float(y.iloc[-1]) / float(y.iloc[0]) - 1.0) if y.iloc[0] > 0 else None))
+        a, b = float(y.iloc[0]), float(y.iloc[-1])
+        if st == "percentage":
+            rows.append((col, int(y.index[0]), int(y.index[-1]), a, b, b - a, "pp"))
+        elif a:
+            rows.append((col, int(y.index[0]), int(y.index[-1]), a, b, 100.0 * (b / a - 1.0) if a > 0 else None, "pct"))
     rows = [r for r in rows if r[5] is not None]
     if len(rows) < 2:
         return {"refused": "rank: fewer than two series with two complete years"}
-    rows.sort(key=lambda r: -r[5])
     y0 = min(r[1] for r in rows)
     y1 = max(r[2] for r in rows)
-    up = [r for r in rows if r[5] > 0]
-    text = ("From %d to %d (yearly averages, or totals for an amount), %s rose most (%s%%) and %s fell most "
-            "(%s%%); %d of %d series rose." % (y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5]),
-                                               len(up), len(rows)))
-    if rows[-1][5] > 0:
-        text = ("From %d to %d (yearly averages, or totals for an amount) every series rose: most %s (%s%%), least "
-                "%s (%s%%)." % (y0, y1, rows[0][0], _fmt(rows[0][5]), rows[-1][0], _fmt(rows[-1][5])))
-    shown = rows if len(rows) <= 12 else rows[:6] + rows[-6:]
+    pp = sorted([r for r in rows if r[6] == "pp"], key=lambda r: -r[5])
+    pc = sorted([r for r in rows if r[6] == "pct"], key=lambda r: -r[5])
+
+    def amt(r: Tuple[Any, ...], words: str = " percentage points") -> str:
+        return (("+" if r[5] > 0 else "") + _fmt(r[5]) + words) if r[6] == "pp" else _fmt(r[5]) + "%"
+
+    def said(grp: List[Tuple[Any, ...]], what: str) -> str:
+        if len(grp) == 1:
+            return "%s %s" % (grp[0][0], amt(grp[0]))
+        up = [r for r in grp if r[5] > 0]
+        if grp[-1][5] > 0:
+            return "every %s rose: most %s (%s), least %s (%s)" % (what, grp[0][0], amt(grp[0]), grp[-1][0], amt(grp[-1]))
+        return "%s rose most (%s) and %s fell most (%s); %d of %d %s rose" % (
+            grp[0][0], amt(grp[0]), grp[-1][0], amt(grp[-1]), len(up), len(grp), what if len(grp) != 1 else what)
+    if pp and pc:
+        text = ("From %d to %d (yearly averages, or totals for an amount), each unit apart. The rates in percent, in percentage points: %s. "
+                "The other series, as percentages: %s." % (y0, y1, said(pp, "rates"), said(pc, "series")))
+        method_unit = ("change as a percentage of the first year, except a rate in percent, whose change is in percentage points "
+                       "(the last year's average minus the first's); the rates are ranked apart from the other series.")
+    elif pp:
+        text = "From %d to %d (yearly averages), in percentage points, %s." % (y0, y1, said(pp, "rates"))
+        method_unit = "change in percentage points (the last year's average minus the first's): every series is a rate in percent."
+    else:
+        text = ("From %d to %d (yearly averages, or totals for an amount), %s." % (y0, y1, said(pc, "series")))
+        method_unit = "change as a percentage of the first year. Series of different units are compared only as percentages."
+    text = text[:1].upper() + text[1:]
+    ordered = pp + pc
+    lead = pp if len(pp) >= 2 or not pc else pc
+    shown = lead if len(lead) <= 12 else lead[:6] + lead[-6:]
     return {"type": "rank", "title": "Which series moved most", "sentence": text,
-            "method": "Each series' first and last complete calendar year, averaged (a total for an amount); "
-                      "change as a percentage of the first year. Series of different units are compared "
-                      "only as percentages.",
+            "method": "Each series' first and last complete calendar year, averaged (a total for an amount); " + method_unit,
             "table": {"cols": ["Series", "First year", "Last year", "First", "Last", "Change"],
-                      "rows": [[r[0], str(r[1]), str(r[2]), _fmt(r[3]), _fmt(r[4]), _fmt(r[5]) + "%"] for r in rows]},
-            "chart": {"kind": "bars", "unit": "%", "series": [{"label": _short_labels([x[0] for x in rows])[r[0]], "value": r[5]} for r in shown]}}
+                      "rows": [[r[0], str(r[1]), str(r[2]), _fmt(r[3]), _fmt(r[4]), amt(r, " points")] for r in ordered]},
+            "chart": {"kind": "bars", "unit": "percentage points" if lead is pp else "%",
+                      "series": [{"label": _short_labels([x[0] for x in lead])[r[0]], "value": r[5]} for r in shown]}}
 
 
 def _shrink_m(groups: Any, st: str = "") -> Tuple[int, Dict[str, Any]]:
@@ -10575,6 +10655,14 @@ def _run_slice(S: Dict[str, Any], where: Dict[str, Any], slice_id: str, plan_sou
         for k in ("scenarios", "viz", "charts", "summary"):
             if k in rep:
                 rep[k] = _window_rewrite(rep[k], per)
+    # the slice's own run restated its rates and chose its answer before the lines above were rewritten (the bottom line's first
+    # sentence is now the estimand's headline): once more, on the report as it leaves (_rate_points never restates a claim twice)
+    _rate_points(rep)
+    ans = _answer(rep, str((ai_plan or {}).get("goal") or (objective if objective != DEFAULT_OBJECTIVE else "")))
+    if ans is not None:
+        rep["answer"] = ans
+    else:
+        rep.pop("answer", None)
     tm = {t["stage"]: float(t["seconds"]) for t in rep.get("timings") or []}
     for k, v in (timings or {}).items():
         tm[k] = tm.get(k, 0.0) + float(v or 0.0)
@@ -10737,7 +10825,9 @@ def _official_inference(rep: Dict[str, Any], header: List[str], layout: Optional
             ("a total of the published values" if total else "a published level, averaged by month")
         f["inference"] = _ni.official_inference(
             pubr, hide, why_total, words,
-            {"change_pct": _num(f.get("value")), "prior": _num(prior), "latest": _num(latest)},
+            # a rate's claim restated in percentage points (_rate_points, 16 Oct 2026): its value is the points, never a percent
+            ({"change_points": _num(f.get("value")), "prior": _num(prior), "latest": _num(latest)} if f.get("value_unit") else
+             {"change_pct": _num(f.get("value")), "prior": _num(prior), "latest": _num(latest)}),
             None if (isinstance(rep.get("estimand"), dict) and isinstance(rep["estimand"].get("period"), dict) and
                      int(rep["estimand"]["period"].get("step") or 1) != 1) else (f.get("test") or {}).get("n_months"),
             "sum" if total else "mean", quality, revisions,
@@ -12120,8 +12210,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             lay_o.pop("own_span", None)           # the figures of the series read over their own span: used by the charts, never in the report
         _period_story(rep)
         rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal),
-                                  personal=[f for f in flagged if isinstance(f, dict) and f.get("column")])
+                                  personal=[f for f in flagged if isinstance(f, dict) and f.get("column")],
+                                  structure=structure_inner)
         _mend_cannot_answer(rep)
+        # a rate's change in percentage points, everywhere the report states it, before anything reads the report (_rate_points)
+        _rate_points(rep)
+        # what answers the visitor's question, decided by the engine (the AI report words it): _answer
+        ans = _answer(rep, goal)
+        if ans is not None:
+            rep["answer"] = ans
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -12163,6 +12260,414 @@ def _period_story(rep: Dict[str, Any]) -> None:
     if lead:
         sm = rep.setdefault("summary", {"lines": [], "labels": {}, "monitoring": []})
         sm.setdefault("lines", []).append({"kind": "period", "text": lead, "finding_ids": []})
+
+
+# ----------------------------------------------------------------------------- a rate's change, in percentage points (16 Oct 2026)
+# A visitor's rates table (StatCan 10-10-0122-01): the primary finding said "a change of -22.4%" for a Bank rate that went from 3.250
+# to 2.521 on average, and the AI report printed "(−22.4% in the engine's read)". A rate's change is in percentage points (2.521 -
+# 3.250 = -0.729 points); a percent of a percent reads as a relative change nobody means. One restatement step, applied to the whole
+# report at the end of the run, before the page, the PDF, results_for_ai or the AI's figure index read it: the findings' values and
+# effects, the story's sentences, the bottom line, the KPI tiles and the findings table, the change chart, the estimand's figures and
+# the scenarios. The core's grade is kept as it is.
+#
+# The core's interval is NOT restated in points: northledger.stats.trend_test inverts a bootstrap test of a level shift in a model of
+# the LOG monthly values (seasonal terms, AR(1) momentum, REML), and reports expm1 of its bounds; the point estimate beside it is the
+# plain ratio of the two windows' arithmetic means. The interval is therefore exact only as a ratio of the latest year's level to the
+# year before's (exp of the model's shift); multiplying it by the prior average would treat the model's geometric, seasonally adjusted
+# level as the arithmetic one. It is said as that ratio ("0.59 to 1.11 times the year before's level"), never in points or percent.
+RATE_RESTATE_VERSION = 1
+_RATE_MOVE_RE = re.compile(
+    r"^(?P<head>Average (?P<label>.+?) \(the average month\) moved from (?P<a>[−+\-]?[\d,]*\.?\d+) in the year before to "
+    r"(?P<b>[−+\-]?[\d,]*\.?\d+) in the latest year, a change of )(?P<c>[+\-−]?[\d,]*\.?\d+%)(?P<rest>.*)$", re.S)
+_RATE_IV_RE = re.compile(r"(The same test's|The model's) interval for the change runs from [+\-−]?[\d,]*\.?\d+% to "
+                         r"[+\-−]?[\d,]*\.?\d+%")
+_RATE_SUMMARY_RE = re.compile(r"^(?P<head>.+? is )(?P<dir>up|down) (?P<c>[\d,]*\.?\d+%) on the year before")
+_RATE_PEAK_RE = re.compile(r"; it peaked in the 3 months to [^;]*? and is (?:up|down) [\d,.]+% since, a pattern found by looking, "
+                           r"not a tested change")
+_RATE_MODEL_RE = re.compile(r"the model's estimate of the change \(([+\-\u2212]?[\d,]*\.?\d+)%,")
+_RATE_PLAIN_RE = re.compile(r"the plain ratio of the average months \([+\-\u2212]?[\d,]*\.?\d+%\)")
+_PCT_TOKEN_RE = re.compile(r"(?<![\w.])(?P<s>[+\-−]?)(?P<n>\d+(?:\.\d+)?)%(?P<after>\s+(?P<w>[a-z]+))?")
+_CHANGE_NOUNS = frozenset("difference change rise fall drop gap increase decrease decline move swing gain loss".split())
+_CHANGE_BEFORE = re.compile(r"(?:\bchange(?:d)? (?:of|by)|\bdifference of|\b(?:up|down|rose|fell|grew|dropped|declined|increased|"
+                            r"decreased|moved)(?: by)?) $")
+_LEVEL_BEFORE = re.compile(r"\b(?:from|to|at|of about|around|near|reached|peaked at) $")
+
+
+def _shown_decimals(s: str) -> int:
+    s = s.replace(",", "")
+    return len(s.split(".", 1)[1]) if "." in s else 0
+
+
+def _num_of(s: str) -> Optional[float]:
+    try:
+        return float(str(s).replace(",", "").replace("−", "-"))
+    except ValueError:
+        return None
+
+
+def _points_text(v: float, pct: bool, signed: bool = True) -> str:
+    """A rate's change: "−0.729 percentage points" (nl_structure.points' wording, 3 significant digits); a rate in another unit (per
+    1,000, an index rate) "−0.729 in the rate's own units"."""
+    body = "%.3g" % abs(v)
+    if not re.search(r"[1-9]", body):
+        return "0 percentage points" if pct else "0 in the rate's own units"
+    sign = ("+" if v > 0 else "−") if signed else ""
+    return sign + body + (" percentage points" if pct else " in the rate's own units")
+
+
+def _ratio_text(lo: float, hi: float) -> str:
+    return "%s to %s times" % ("%.3g" % (1.0 + lo), "%.3g" % (1.0 + hi))
+
+
+def _rate_findings(rep: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """{finding id: what its restatement needs} for every business change claim of a rate: a series whose unit is Percent (a long
+    statistical table's UOM, input.layout.unit_of), or the measure nl_structure reads as type "rate" (the estimand's). A claim whose two
+    window averages cannot be found is left out (and keeps its words)."""
+    F = [f for f in rep.get("findings") or [] if isinstance(f, dict) and f.get("kind") == "business"
+         and str(f.get("id") or "").startswith("measure.") and str(f.get("id")).endswith(".change")]
+    if not F:
+        return {}
+    want: Dict[str, Dict[str, Any]] = {}
+    lay = (rep.get("input") or {}).get("layout")
+    if isinstance(lay, dict) and lay.get("unit_of"):
+        names = list(lay.get("order") or []) + [k for k in (lay.get("unit_of") or {}) if k not in (lay.get("order") or [])]
+        pct = {}
+        for s in names:
+            if _series_is_percent(lay, s):
+                pct.setdefault(_engine_slug(s), str(s))
+        for f in F:
+            slug = f["id"][len("measure."):-len(".change")]
+            land = [str(c) for c in f.get("columns_read") or [] if c]
+            hit = slug if slug in pct else next((c for c in land if c in pct), None)
+            if hit:
+                want[f["id"]] = {"pct": True, "uom": "Percent", "label": pct[hit], "slug": hit}
+    est = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
+    m = (est or {}).get("measure") or {}
+    if m.get("type") == "rate":
+        pm = (rep.get("primary_metric") or {}).get("finding_id")
+        for f in F:
+            if f["id"] == pm:
+                want.setdefault(f["id"], {"pct": bool(re.search(r"(?i)percent|%", str(m.get("uom") or ""))),
+                                          "uom": str(m.get("uom") or ""), "label": str(m.get("label") or ""),
+                                          "slug": f["id"][len("measure."):-len(".change")]})
+    charts = {str(c.get("id")): c for c in rep.get("charts") or [] if isinstance(c, dict)}
+    out = {}
+    for f in F:
+        w = want.get(f["id"])
+        if w is None:
+            continue
+        d = ((f.get("inference") or {}).get("describe") or {}) if isinstance(f.get("inference"), dict) else {}
+        prior, latest = _num(d.get("prior")), _num(d.get("latest"))
+        if prior is None or latest is None:
+            wm = ((charts.get("trend." + w["slug"]) or {}).get("data") or {}).get("window_means") or {}
+            prior, latest = _num(wm.get("prior")), _num(wm.get("latest"))
+        if prior is None or latest is None:
+            continue
+        eff = f.get("effect") if isinstance(f.get("effect"), dict) else {}
+        rel = _num(f.get("value"))
+        if eff.get("scale") == "difference" and isinstance(eff.get("relative"), dict):
+            continue                                        # restated already
+        ci = eff.get("ci") if isinstance(eff.get("ci"), list) and len(eff["ci"]) == 2 and None not in eff["ci"] else None
+        pts = latest - prior
+        out[f["id"]] = dict(w, prior=prior, latest=latest, rel=rel, ci=[float(ci[0]), float(ci[1])] if ci else None,
+                            pts=pts, text=_points_text(pts, w["pct"]))
+    return out
+
+
+def _swap_rel_pct(text: Any, rel: Optional[float], pts: float, pct: bool) -> Any:
+    """Every "X%" in `text` that states the claim's relative change (its value at the precision the token shows, any sign) as the
+    change in points: "The 12% difference" reads "The 0.883-percentage-point difference", "a change of -22.4%" reads "a change of
+    −0.729 percentage points". Any other percent is left as it is."""
+    if not isinstance(text, str) or rel is None or "%" not in text:
+        return text
+
+    def sub(m: "re.Match[str]") -> str:
+        n = float(m.group("n"))
+        dec = _shown_decimals(m.group("n"))
+        if abs(n - round(abs(rel), dec)) > 0.5 * 10 ** (-dec) + 1e-9:
+            return m.group(0)
+        after = m.group("after") or ""
+        w = (m.group("w") or "").lower()
+        before = text[max(0, m.start() - 24):m.start()].lower()
+        # a change, never a level that happens to share the digits ("went from 6.00% ... to 2.50%"): signed, a change noun after
+        # it, or a change word before it
+        if not (m.group("s") or w in _CHANGE_NOUNS or _CHANGE_BEFORE.search(before)) or _LEVEL_BEFORE.search(before):
+            return m.group(0)
+        if w in _CHANGE_NOUNS:
+            body = "%.3g" % abs(pts)
+            unit = "-percentage-point" if pct else " (in the rate's own units)"
+            return (("+" if pts > 0 else "−") if m.group("s") else "") + body + unit + after
+        return _points_text(pts, pct, signed=bool(m.group("s"))) + after
+    return _PCT_TOKEN_RE.sub(sub, text)
+
+
+def _rate_sentence(text: Any, rates: Dict[str, Dict[str, Any]]) -> Any:
+    """The core's "Average X (the average month) moved from A in the year before to B in the latest year, a change of C%. The same
+    test's interval for the change runs from L% to H%. ..." of a rate, in points and with the interval as a ratio of levels."""
+    if not isinstance(text, str):
+        return text
+    m = _RATE_MOVE_RE.match(text)
+    if not m:
+        return text
+    a, b, c = _num_of(m.group("a")), _num_of(m.group("b")), _num_of(m.group("c").rstrip("%"))
+    if a is None or b is None or c is None:
+        return text
+    da, db, dc = _shown_decimals(m.group("a")), _shown_decimals(m.group("b")), _shown_decimals(m.group("c").rstrip("%"))
+    hit = None
+    for fid, x in rates.items():
+        if abs(round(x["prior"], da) - a) <= 0.5 * 10 ** (-da) + 1e-9 and abs(round(x["latest"], db) - b) <= 0.5 * 10 ** (-db) + 1e-9 \
+                and (x["rel"] is None or abs(round(x["rel"], dc) - c) <= 0.5 * 10 ** (-dc) + 1e-9):
+            hit = x
+            break
+    if hit is None:
+        return text
+    rest = m.group("rest")
+    if hit["ci"] is not None:
+        rest = _RATE_IV_RE.sub(lambda mm: "%s interval for the change, as a ratio of the latest year's level to the year before's, runs "
+                                          "from %s" % (mm.group(1), _ratio_text(*hit["ci"])), rest)
+    else:
+        rest = _RATE_IV_RE.sub(lambda mm: "%s interval for the change is not restated: it is a ratio of levels" % mm.group(1), rest)
+    rest = rest.replace("which does not contain this plain ratio of the average months",
+                        "which does not contain the plain ratio of the two years' averages")
+    return m.group("head") + hit["text"] + _swap_rel_pct(rest, hit["rel"], hit["pts"], hit["pct"])
+
+
+def _rate_points(rep: Dict[str, Any]) -> None:
+    """The restatement step (see above). Idempotent: a claim restated once is never restated again."""
+    rates = _rate_findings(rep)
+    if not rates:
+        return
+    by_label = {}
+    labels = (rep.get("summary") or {}).get("labels") or {}
+    for fid, x in rates.items():
+        by_label[fid] = str(labels.get(fid) or x["label"] or "")
+    # the claims: the value is the change in points; the effect is in points with no interval in points (the core's is a ratio of
+    # levels: kept as one, and the relative figures kept under "relative" for the record)
+    for f in rep.get("findings") or []:
+        x = rates.get(f.get("id")) if isinstance(f, dict) else None
+        if x is None:
+            continue
+        f["value"] = x["pts"]
+        f["value_unit"] = "percentage points" if x["pct"] else "the rate's own units"
+        eff = f.get("effect") if isinstance(f.get("effect"), dict) else None
+        if eff is not None:
+            eff["relative"] = {k: eff.get(k) for k in ("estimate", "ci", "ci_fcr", "scale")}
+            eff.update(estimate=x["pts"], scale="difference", unit="percentage points" if x["pct"] else None, ci=None, ci_fcr=None,
+                       fcr_level=None)
+            if x["ci"] is not None:
+                eff["ci_ratio"] = [1.0 + x["ci"][0], 1.0 + x["ci"][1]]
+                eff["ci_ratio_note"] = "the interval of the core's test, as a ratio of the latest year's level to the year before's"
+        inf = f.get("inference") if isinstance(f.get("inference"), dict) else None
+        if inf is not None and isinstance(inf.get("describe"), dict) and "change_pct" in inf["describe"]:
+            inf["describe"].pop("change_pct", None)
+            inf["describe"]["change_points"] = x["pts"]
+        for k in ("why", "needed_to_upgrade"):
+            f[k] = _swap_rel_pct(f.get(k), x["rel"], x["pts"], x["pct"])
+        t = f.get("test") if isinstance(f.get("test"), dict) else None
+        if t is not None and isinstance(t.get("not_run_reason"), str):
+            # "the model's estimate of the change (-12.6%, ...) and the plain ratio of the average months (+0.2%) point opposite ways": the
+            # model's estimate is a ratio of levels (said as one), the plain change is the points figure
+            r0 = _RATE_MODEL_RE.sub(lambda m: "the model's estimate of the change (%s times the year before's level," % (
+                "%.3g" % (1.0 + (_num_of(m.group(1)) or 0.0) / 100.0)), t["not_run_reason"])
+            t["not_run_reason"] = _RATE_PLAIN_RE.sub("the plain change of the average months (%s)" % x["text"], r0)
+        if isinstance(f.get("watch"), dict):
+            for k in ("reason", "settle"):
+                f["watch"][k] = _swap_rel_pct(f["watch"].get(k), x["rel"], x["pts"], x["pct"])
+    # the story: the core's sentence of each claim, then any other sentence that names the series and states its relative change
+    st = rep.get("story") or {}
+    for key in ("what_happened", "why", "what_to_do", "whats_next", "cannot_answer"):
+        v = st.get(key)
+        if not isinstance(v, list):
+            continue
+        out = []
+        for s in v:
+            s = _rate_sentence(s, rates)
+            if isinstance(s, str) and "%" in s:
+                for fid, x in rates.items():
+                    lab = by_label.get(fid) or ""
+                    names = [n for n in {lab.split(",")[0], x["label"], fid[len("measure."):-len(".change")]} if n]
+                    if any(n.lower() in s.lower() for n in names):
+                        s = _swap_rel_pct(s, x["rel"], x["pts"], x["pct"])
+            out.append(s)
+        st[key] = out
+    if isinstance(st.get("headline"), str):
+        st["headline"] = _rate_sentence(st["headline"], rates)
+    # the bottom line: "X is down 23.5% on the year before" reads "X is down 0.774 percentage points on the year before"; the peak's
+    # relative fall (a percent of the rate, measured from a level the line does not give) goes
+    for line in (rep.get("summary") or {}).get("lines") or []:
+        ids = [i for i in line.get("finding_ids") or [] if i in rates] if isinstance(line, dict) else []
+        if not ids:
+            continue
+        x = rates[ids[0]]
+        t = str(line.get("text") or "")
+        t = _RATE_SUMMARY_RE.sub(lambda m: "%s%s %s on the year before" % (
+            m.group("head"), "up" if x["pts"] > 0 else "down", _points_text(x["pts"], x["pct"], signed=False)), t, count=1)
+        t2 = _RATE_PEAK_RE.sub("", t)
+        if t2 != t:
+            line["finding_ids"] = [i for i in line["finding_ids"] if not str(i).endswith(".from_peak")]
+        line["text"] = _swap_rel_pct(t2, x["rel"], x["pts"], x["pct"])
+    # the KPI tiles, the findings table and the change chart
+    for c in rep.get("charts") or []:
+        if not isinstance(c, dict):
+            continue
+        d = c.get("data") if isinstance(c.get("data"), dict) else {}
+        for row in (d.get("tiles") or []) + (d.get("rows") or []):
+            x = rates.get(row.get("finding_id")) if isinstance(row, dict) else None
+            if x is None:
+                continue
+            k = "value" if "value" in row else "effect"
+            row[k] = x["pts"]
+            row.update(scale="difference", unit="percentage points" if x["pct"] else None, ci=None)
+            if x["ci"] is not None:
+                row["ci_ratio"] = [1.0 + x["ci"][0], 1.0 + x["ci"][1]]
+        if c.get("type") == "trend_windows" and isinstance(d.get("effect"), dict):
+            x = next((rates[i] for i in c.get("finding_ids") or [] if i in rates), None)
+            if x is not None:
+                d["effect"].update(estimate=x["pts"], ci=None, scale="difference", unit="percentage points" if x["pct"] else None)
+                if x["ci"] is not None:
+                    d["effect"]["ci_ratio"] = [1.0 + x["ci"][0], 1.0 + x["ci"][1]]
+    # the estimand of a rate: its change is the points figure it already holds ("change"); the percent of it goes, from its figures
+    # and from what its inference describes
+    est = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
+    pm = (rep.get("primary_metric") or {}).get("finding_id")
+    if est is not None and pm in rates and ((est.get("measure") or {}).get("type") == "rate"):
+        figs = est.get("figures") if isinstance(est.get("figures"), dict) else {}
+        if "change_pct" in figs:
+            est["relative_change_pct"] = figs.pop("change_pct")
+        inf = est.get("inference") if isinstance(est.get("inference"), dict) else None
+        if inf is not None and isinstance(inf.get("describe"), dict) and "change_pct" in inf["describe"]:
+            inf["describe"].pop("change_pct", None)
+            inf["describe"]["change_points"] = rates[pm]["pts"]
+    # the scenarios: a rate's headline change in percent goes (its change in points is the item beside it)
+    sc = rep.get("scenarios") if isinstance(rep.get("scenarios"), dict) else None
+    if sc is not None and (sc.get("basis") or {}).get("finding_id") in rates and isinstance(sc.get("items"), list):
+        sc["items"] = [it for it in sc["items"] if not (isinstance(it, dict) and it.get("id") == "headline.change_pct")]
+    rep["rates"] = {"version": RATE_RESTATE_VERSION,
+                    "series": [{"finding_id": fid, "label": x["label"] or by_label.get(fid), "claim_label": by_label.get(fid) or "",
+                                "unit": x["uom"],
+                                "points": x["pts"], "text": x["text"], "relative_pct": x["rel"],
+                                **({"ci_ratio": [1.0 + x["ci"][0], 1.0 + x["ci"][1]]} if x["ci"] is not None else {})}
+                               for fid, x in rates.items()],
+                    "note": "A rate's change is stated in percentage points (the later level minus the earlier); the core's interval, "
+                            "a ratio of levels, is stated as that ratio. The grades are the core's."}
+
+
+# ----------------------------------------------------------------------------- what answers the question (16 Oct 2026)
+# A visitor asked "How have Canadian interest rates and mortgage rates moved since 2000, and which rates rose and fell most?". The
+# engine's own headline answered it (the Bank rate from 6.00% in 2000-05 to 2.50% in 2026-09, down 3.50 percentage points) and its
+# whole-period card ranked the movers, but the AI report led its title, first bullet and headline with the graded 12-month claim
+# ("no settled change over the latest 12 months") and pushed the answer to paragraph two. The ENGINE decides what answers the question
+# (rep["answer"]; results_for_ai "answer"), from the goal's words and the table, and the AI words it: a question about the whole period
+# ("since 2000", "over time", "history", "long run", "how has X moved", a year before the last two) is answered by the whole-period
+# figures (a long statistical table's period block; another file's long-run line from the analyst loop, when its dates span 3 years or
+# more); any other question by the graded claim, as before. The graded claim still stands beside a whole-period answer, labelled as
+# the latest 12 months' test.
+ANSWER_VERSION = 1
+_LONG_Q = re.compile(
+    r"\b(?:since|from|after)\s+(?:the\s+)?(?:early\s+|mid[- ]|late\s+)?(?:19|20)\d{2}s?\b|\bover\s+(?:the\s+)?(?:time|years|decades?|"
+    r"long(?:[- ](?:run|term))?|whole\s+(?:period|history|file|series|span))\b|\bhistor(?:y|ic|ical|ically)\b|\blong[- ](?:run|term)\b|"
+    r"\bdecades?\b|\bthe whole (?:period|history|series|span)\b|\bbetween\s+(?:19|20)\d{2}\s+and\s+(?:19|20)\d{2}\b|"
+    r"\bhow (?:has|have|did|do|does)\b[^?.]{0,100}?\b(?:move[ds]?|moving|chang\w*|evolv\w*|develop\w*|trend\w*|grow\w*|grew|fall\w*|"
+    r"fell|ris\w*|rose|behav\w*|shift\w*)\b|\bover the (?:past|last) (?:\d+|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|"
+    r"several|many) (?:years|decades)\b", re.I)
+_RANK_Q = re.compile(
+    r"\bwhich\b[^?.]{0,100}?\b(?:most|least|biggest|largest|smallest|fastest|slowest|more|less)\b|\b(?:rose|fell|rise|fall|risen|fallen|"
+    r"grew|grown|declin\w*|increas\w*|decreas\w*|dropp?\w*|moved?|changed?)\s+(?:the\s+)?most\b|\brank\w*\b|\b(?:top|bottom|biggest)\s+"
+    r"(?:\d+\s+)?movers?\b|\bwinners?\b|\blosers?\b|\bleaders?\b|\blaggards?\b", re.I)
+_YEAR_Q = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
+_KEY_FIG = re.compile(r"(?<![\w.\-])[+\-−]?\$?\d[\d,]*(?:\.\d+)?(?:\s?%|\s(?:percentage points|points))?")
+
+
+def _asks_long_run(goal: str, last_year: Optional[int]) -> bool:
+    """The goal asks about the whole period: its words (_LONG_Q), or a year more than two before the file's last."""
+    g = str(goal or "")
+    if not g.strip() or g == DEFAULT_OBJECTIVE:
+        return False
+    if _LONG_Q.search(g):
+        return True
+    return bool(last_year) and any(int(y) < int(last_year) - 2 for y in _YEAR_Q.findall(g))
+
+
+def _key_figures(text: str, n: int = 3) -> List[str]:
+    """The figures of an answer sentence a report must carry, as the sentence writes them: never a year or a date."""
+    out = []
+    for m in _KEY_FIG.finditer(text or ""):
+        s = m.group(0).strip()
+        tail = text[m.end():m.end() + 1]
+        if re.fullmatch(r"(?:19|20)\d{2}", s) or tail == "-" or (m.start() > 0 and text[m.start() - 1] == "-" and s[0].isdigit()) \
+                or re.match(r"\s*(?:months?|quarters?|years?|weeks?|days?|periods?)\b", text[m.end():m.end() + 12]):
+            continue                                       # a year, a part of a date (2000-05), or a count of periods
+        out.append(s)
+    return out[:n]
+
+
+def _answer(rep: Dict[str, Any], goal: str) -> Optional[Dict[str, Any]]:
+    """rep["answer"] (see above), or None when the report has nothing to lead with. Every text is the report's own sentence."""
+    pb = rep.get("period") if isinstance(rep.get("period"), dict) else None
+    last_year = None
+    if pb and re.match(r"\d{4}", str(pb.get("last") or "")):
+        last_year = int(str(pb["last"])[:4])
+    an = rep.get("analyst") if isinstance(rep.get("analyst"), dict) else {}
+    long_run = None
+    for ins in an.get("insights") or []:
+        if not isinstance(ins, dict) or not re.match(r"Over \{A\d+\.periods\} \{A\d+\.unit\}s \(", str(ins.get("template") or "")):
+            continue
+        m = re.match(r"Over (\d+) (year|quarter|month)s \(((?:19|20)\d{2})\S* to ((?:19|20)\d{2})", str(ins.get("text") or ""))
+        if m and int(m.group(1)) >= {"year": 3, "quarter": 12, "month": 36}[m.group(2)]:
+            long_run = ins
+            last_year = last_year or int(m.group(4))
+            break
+    # the graded claim: the bottom line's line of the primary claim (restated in points for a rate), else the story's headline
+    pm = (rep.get("primary_metric") or {}).get("finding_id")
+    moved = next((l for l in (rep.get("summary") or {}).get("lines") or [] if isinstance(l, dict) and l.get("kind") == "moved"
+                  and (not pm or pm in (l.get("finding_ids") or []))), None)
+    F = {f.get("id"): f for f in rep.get("findings") or [] if isinstance(f, dict)}
+    latest = None
+    if moved is not None:
+        f = F.get(pm) or {}
+        latest = {"text": str(moved.get("text") or ""), "finding_id": pm, "grade": str(f.get("verdict") or f.get("grade") or ""),
+                  "label": "the latest 12 months against the 12 before (the graded test)"}
+    if _asks_long_run(goal, last_year):
+        lead = None
+        if pb:
+            lead = next((x for x in pb.get("series") or [] if x.get("id") == pb.get("lead")), None)
+        if lead and lead.get("text"):
+            ch = lead.get("change") or {}
+            pts = "percentage points" in str(lead.get("text"))
+            unit = "%" if pts else ""
+            word = {"up": "up ", "down": "down ", "unchanged": ""}.get(str(ch.get("direction") or ""), "")
+            change = (str(ch.get("text") or "") + (" percentage points" if pts else "")) if word else str(ch.get("text") or "")
+            if not pts and (lead.get("change_pct") or {}).get("text"):
+                change += " (%s)" % lead["change_pct"]["text"]
+            title = "%s: %s%s in %s to %s%s in %s, %s%s" % (
+                lead["label"], lead["first"]["text"], unit, lead["first"]["date"], lead["latest"]["text"], unit, lead["latest"]["date"],
+                word, change)
+            out = {"version": ANSWER_VERSION, "leads": "whole_period", "why": "the question asks about the whole period",
+                   "source": "period", "text": str(lead["text"]), "title": title,
+                   "key_figures": [str(ch.get("text") or "") + (" percentage points" if pts else "")] + [
+                       lead["first"]["text"] + unit, lead["latest"]["text"] + unit],
+                   "span": [str(pb.get("first") or ""), str(pb.get("last") or "")]}
+            rk = pb.get("ranked") if isinstance(pb.get("ranked"), dict) else None
+            if rk and _RANK_Q.search(goal or "") and (rk.get("rose") or rk.get("fell")):
+                items = lambda xs: [{"label": x["label"], "change_text": x["change_text"], "first": x["first"], "latest": x["latest"]}
+                                    for x in xs]
+                out["ranked"] = {"unit": rk.get("unit") or "", "of": rk.get("of"), "rose": items(rk.get("rose") or []),
+                                 "fell": items(rk.get("fell") or []), "text": " ".join(rk.get("lines") or [])}
+            if latest:
+                out["latest"] = latest
+            return out
+        if long_run is not None:
+            text = str(long_run.get("text") or "")
+            first = re.split(r";\s", text, 1)[0].rstrip(".")
+            out = {"version": ANSWER_VERSION, "leads": "whole_period", "why": "the question asks about the whole period",
+                   "source": "analyst", "text": text, "title": first, "key_figures": _key_figures(first)}
+            if latest:
+                out["latest"] = latest
+            return out
+    if latest:
+        return {"version": ANSWER_VERSION, "leads": "latest_change", "why": "the question asks about the latest change",
+                "source": "graded_claim", "text": latest["text"], "key_figures": _key_figures(latest["text"]), "latest": latest}
+    return None
 
 
 def _first_sentence(text: str) -> str:
@@ -12380,7 +12885,8 @@ def _people_words(flag: Dict[str, Any], df: Any) -> bool:
 
 
 def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any,
-             topic: Optional[List[str]] = None, personal: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+             topic: Optional[List[str]] = None, personal: Optional[List[Dict[str, Any]]] = None,
+             structure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """rep["analyst"] (engine/nl_analyst.py, CONTRACT §5.10): the analyst loop over the rows the engine kept, read as the
     AI's analyses read them (_analysis_frame: no withheld or coded column is in the frame, so no step can read one). The
     plan's date and primary column steer it when there is a plan; with none, the loop reads the file's shape itself.
@@ -12418,6 +12924,16 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
                     df[c] = _col_nums(df, c) * scale_of[_engine_slug(str(c))]
             if not hint.get("primary") and layout.get("lead") in df.columns:
                 hint["primary"] = layout.get("lead")
+        elif isinstance(structure, dict) and structure.get("S") is not None:
+            # a table of series read by its structure (the slice's own run): its measure as the structure reads it (16 Oct 2026: a rate
+            # slice was "the total of value fell from 85.40 to 74.80 (-12.4%)", twelve monthly rates added up, in percent)
+            try:
+                t = str(((_ns().local(structure["S"], structure.get("where") or {}) or {}).get("measure") or {}).get("type") or "")
+            except Exception:  # noqa: BLE001 - the loop keeps its own reading
+                t = ""
+            kind = {"rate": "rate", "index": "level", "stock": "stock", "flow": "flow", "count": "flow", "precision": "level"}.get(t)
+            if kind:
+                hint["mkind"] = {str(c): kind for c in df.columns if str(c) != str(date)}
         out = _na.explore(df, info.get("kinds") or {}, hint)
         out["rows"] = {"kept": info.get("kept"), "set_aside": info.get("aside")}
         # the frame the loop read, kept for the AI rounds the page may ask for next (analyst_more_json): the same rows,

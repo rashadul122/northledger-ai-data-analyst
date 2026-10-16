@@ -232,7 +232,7 @@
   ],
   "left_out": 0,
   "ok": true,
-  "pct": -12.412178,
+  "pct": null,
   "prior": 7.116667,
   "refused": false,
   "roles": {
@@ -254,7 +254,7 @@
   ],
   "left_out": 0,
   "ok": true,
-  "pct": -1.727862,
+  "pct": null,
   "prior": 11.575,
   "refused": false,
   "roles": {

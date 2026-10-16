@@ -4050,6 +4050,17 @@ def _rank_line(facts: List[Dict[str, Any]], sign: int, n: int = 3) -> str:
     return "; ".join(parts)
 
 
+def _rank_items(facts: List[Dict[str, Any]], sign: int, n: int = 3) -> List[Dict[str, Any]]:
+    """_rank_line's series as records (16 Oct 2026: the report's answer to "which rose and fell most", rep.answer.ranked): each with its
+    change as _rank_line writes it and its own span."""
+    lead_unit = facts[0].get("unit", "")
+    pool = [f for f in facts if f.get("unit", "") == lead_unit and f.get("eligible", True) and (f["change"]["value"] * sign) > 0]
+    pool.sort(key=lambda f: (-abs(f["change"]["value"]), f["order"]))
+    return [{"id": f["id"], "label": f["label"], "change": f["change"]["value"],
+             "change_text": ("+" if sign > 0 else MINUS) + f["change"]["text"] + (" points" if f.get("pp") else ""),
+             "first": f["first"]["date"], "latest": f["latest"]["date"], "own_span": bool(f.get("own"))} for f in pool[:n]]
+
+
 def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """rep["period"]: the whole-period facts of a long statistical table and the sentences that say them (see above)."""
     pf = series_facts(ctx, lay)
@@ -4076,11 +4087,13 @@ def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             _count(len({f.get("unit", "") for f in facts})), pf["lead_unit"] or "first")
     risen, fallen = _rank_line(facts, 1), _rank_line(facts, -1)
     n_grp = len(lead_group)
+    rank_lines: List[str] = []
     if n_grp > 2 and (risen or fallen):
         unit_w = (pf["lead_unit"] + " ") if pf["lead_unit"] else ""
         lines.append(("Of the %s %sseries, those that rose most over their published span: %s." % (_count(n_grp), unit_w, risen)) if risen else
                      "Of the %s %sseries, none rose over its published span." % (_count(n_grp), unit_w))
         lines.append(("Those that fell most: %s." % fallen) if fallen else "None fell over its published span.")
+        rank_lines = lines[-2:]
     else:
         lines += [_fact_sentence(f) for f in pf["movers"][:PERIOD_STORY_MOVERS]]
     # each other unit: its first series, said in full, so a table with percent rates and dollar amounts answers for both
@@ -4101,7 +4114,10 @@ def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "series": [{k: f[k] for k in ("id", "label", "first", "latest", "published", "years", "change", "change_pct",
                                           "per_year", "cagr_pct")} | {"text": _fact_sentence(f)} for f in shown],
             "movers": [f["id"] for f in pf["movers"][:PERIOD_STORY_MOVERS]],
-            "lines": lines, "table": table}
+            "lines": lines, "table": table,
+            # which series of the lead's unit rose and fell most over their published span (the sentences above, as records)
+            "ranked": {"unit": pf["lead_unit"], "points": bool(lead.get("pp")), "of": n_grp, "rose": _rank_items(facts, 1),
+                       "fell": _rank_items(facts, -1), "lines": rank_lines}}
 
 
 def _line_selection(pf: Dict[str, Any]) -> List[Dict[str, Any]]:

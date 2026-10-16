@@ -2726,6 +2726,45 @@ def test_s19_the_answer_follows_the_question_on_the_debt_table_and_a_plain_file(
     assert [x["label"] for x in ai["rate_series"]] == ["Unemployment rate"], ai["rate_series"]
 
 
+def test_s20_a_rates_forecast_is_a_level_in_a_month_never_added_up_and_a_difference_is_never_a_percent():
+    """The rates table's scenarios (16 Oct 2026) printed "Base: the forecast, the next 12 months added up (monthly bank_rate)": 29.9, twelve
+    monthly Bank rates added together. A rate, a level or a stock never adds up across months: each horizon is the forecast level in its
+    last month with that month's own range (a flow keeps its total: test_nl_browser's three_measures). And the PDF printed "+13333.3%" for
+    the auction amount maturing, whose change has no ratio (a difference of 13,333 in its own units): results_for_ai says the value's unit,
+    so the PDF prints it in the series' own units. With and without the plan; the debt table (s07) keeps no forecast items and no unit
+    for a percent change."""
+    raw = fixture("s12_statcan_interest_rates.csv")
+    for rep in (run_bytes(raw), run_bytes(raw, plan=_rates_plan())):
+        assert rep["ok"], rep.get("error")
+        pts = rep["forecast"]["forecast"]
+        it = {x["id"]: x for x in rep["scenarios"]["items"] if x["group"] == "forecast"}
+        assert it and rep["forecast"]["label"] == "monthly bank_rate", (sorted(it), rep["forecast"].get("label"))
+        for h in (3, 6, 12):
+            p = pts[h - 1]
+            for part, key in (("base", "value"), ("low", "lo"), ("high", "hi")):
+                x = it["forecast.%d.%s" % (h, part)]
+                assert abs(x["value"] - round(p[key], 6)) < 1e-6, (h, part, x["value"], p[key])
+                assert "never added up over months" in x["label"] and "a rate" in x["label"] and "the next %d months added up" % h not in x["label"], x["label"]
+                assert x["kind"] == "amount" and x["grade"] == "CONFIRMED", x
+        for x in it.values():
+            assert x["value"] < 10, x            # a rate, never a sum of twelve rates (29.9)
+        ai = NB.results_for_ai(rep)
+        assert "months added up" not in json.dumps(ai["scenarios"]), "the report writer never reads a summed rate"
+        mat = next(f for f in ai["findings"] if f["claim"].startswith("Change in the average month of treasury_bill_auction_amount_maturing"))
+        assert mat["value_unit"] == "own units" and abs(mat["value"] - 13333.333) < 0.01, mat
+        assert all("value_unit" not in f for f in ai["findings"] if f["claim"].startswith("Change in the average month of treasury_bill_auction_amount_auctioned")), \
+            "a percent change keeps no unit: it is a percent"
+    deb = fixture("s07_statcan_debt_unpublished_months.csv")
+    for rep in (run_bytes(deb), run_bytes(deb, plan=PLAN)):
+        assert rep["ok"], rep.get("error")
+        assert not any("added up" in x["label"] and "never" not in x["label"] for x in (rep.get("scenarios") or {}).get("items") or [] if x["group"] == "forecast")
+        ai = NB.results_for_ai(rep)
+        for f in ai["findings"]:
+            if f.get("value_unit") == "own units":
+                src = next(x for x in rep["findings"] if x["claim"] == f["claim"])
+                assert src["effect"]["scale"] == "difference", src["effect"]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

@@ -2087,3 +2087,14 @@ a relative change (src/figures.js `buildIndex`). After every parse and repair, `
 summary bullet and the headline section carry the answer's key figure, and puts the engine's own words there when they do not (counted as
 `removed_reasons.answer_led`); G26 (`rate_change_percent`) repairs a percent of a rate the model writes into the rate's points
 (`rate_series[].text`, when the percent is one of the rates' relative changes) or drops the sentence.
+
+**A level's forecast is never added up (16 October 2026).** `scenarios.items` of group `forecast` add a forecast's months only for a flow
+(`nl_scenarios._forecast_sums`: a long table's Percent series is a rate and its other series follow the structure's rule; a table read by its
+structure follows its measure's aggregation; else the engine's claim on the series, "the monthly total of" a flow, "the average month of" a
+level; row counts add up). For a rate, a level or a stock, `forecast.<h>.base|low|high` is the forecast level in the horizon's last month and
+that month's own range, labelled "Base: the forecast level in <month>, <h> months ahead (<series>, <kind>: a level, never added up over
+months)"; the PDF's table reads "The forecast level, months ahead". The worker's prompt says so, and G27 (`forecast_summed`) drops a sentence
+that adds such a forecast up.
+
+**A change with no ratio is in its own units.** `results_for_ai.findings[].value_unit` is also `"own units"` for a change claim whose effect
+is a difference (the core's change when the year before has no ratio: "+13,333", never "+13333.3%"); the PDF prints it so.

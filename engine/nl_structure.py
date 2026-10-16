@@ -218,6 +218,7 @@ _Q_A = re.compile(r"^(\d{4})\s*[-_/ ]?\s*[Qq]\s*([1-4])$")
 _Q_B = re.compile(r"^[Qq]\s*([1-4])\s*[-_/ ]?\s*(\d{4})$")
 _H_A = re.compile(r"^(\d{4})\s*[-_/ ]?\s*[HhSs]\s*([12])$")
 _Y_ONLY = re.compile(r"^(\d{4})$")
+_PERIODISH = re.compile(r"[\dQqHhSs\s\-_/]+\Z")      # every text the four patterns above can read is written with these only
 
 
 def _parse_periods(t: Any, allow_year: bool) -> Tuple[Any, str, float]:
@@ -229,11 +230,30 @@ def _parse_periods(t: Any, allow_year: bool) -> Tuple[Any, str, float]:
     fams = [("quarter", [(_Q_A, "yq"), (_Q_B, "qy")]), ("half-year", [(_H_A, "yh")])]
     if allow_year:
         fams.append(("year", [(_Y_ONLY, "y")]))
+    # every label of every family is written with digits, Q, H or S, spaces and - _ / only: the patterns are tried on the different
+    # texts so written (a column of decimals or of names has none to try), each read once, and their groups put back on the rows
+    import numpy as np
+    codes, uniq = pd.factorize(f.to_numpy(dtype=object))
+    cand = [i for i, u in enumerate(uniq) if isinstance(u, str) and _PERIODISH.match(u)]
+    cand_s = pd.Series([uniq[i] for i in cand], index=cand, dtype=object)
+
+    def extract(rx: Any) -> Any:
+        if not len(f):
+            return f.str.extract(rx)
+        mu = cand_s.str.extract(rx) if len(cand_s) else pd.DataFrame(columns=range(rx.groups), dtype=object)
+        cols = list(mu.columns) if len(cand_s) else list(range(rx.groups))
+        full = pd.DataFrame(np.nan, index=range(len(uniq)), columns=cols, dtype=object)
+        if len(cand_s):
+            full.loc[mu.index, cols] = mu.to_numpy(dtype=object)
+        m = full.iloc[codes].reset_index(drop=True)
+        m.index = f.index
+        return m
+
     for fam, rxs in fams:
         out = pd.Series(pd.NaT, index=t.index, dtype="datetime64[ns]")
         ok = pd.Series(False, index=t.index)
         for rx, kind in rxs:
-            m = f.str.extract(rx)
+            m = extract(rx)
             if m.empty:
                 continue
             good = m.notna().all(axis=1)
@@ -264,6 +284,25 @@ def _parse_periods(t: Any, allow_year: bool) -> Tuple[Any, str, float]:
     return best
 
 
+def _label_texts(R: Any, c: str) -> Any:
+    """A column's landed text, stripped: worked out once per reading and column (the two period readers below both read it)."""
+    memo = getattr(R, "__dict__", {}).setdefault("_label_texts_memo", {})
+    key = (c, id(R.texts))
+    if key not in memo:
+        memo[key] = R.texts[c].astype(str).str.strip()
+    return memo[key].copy()
+
+
+def _periods_of(R: Any, c: str, t: Any, allow_year: bool) -> Tuple[Any, str, float]:
+    """_parse_periods(t, allow_year) of a column of a reading, read once per reading, column and allow_year (each caller gets its own copy)."""
+    memo = getattr(R, "__dict__", {}).setdefault("_periods_memo", {})
+    key = (c, bool(allow_year), id(R.texts))
+    if key not in memo:
+        memo[key] = _parse_periods(t, allow_year=allow_year)
+    out, fam, share = memo[key]
+    return (out.copy() if out is not None else None), fam, share
+
+
 def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tuple[str, Any, str]]:
     """The date column when the engine read none: a column of period labels (a quarter, a half-year or a year), at least 95% of
     its filled cells read, 6 or more different periods. (column, dates, family) or None."""
@@ -272,10 +311,10 @@ def _period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> Optional[Tu
         if R.kind(c) == "date":
             continue
         name = _norm(head[c])
-        t = R.texts[c].astype(str).str.strip()
+        t = _label_texts(R, c)
         if int((t != "").sum()) < 6:
             continue
-        out, fam, share = _parse_periods(t, allow_year=name in _YEAR_NAMES)
+        out, fam, share = _periods_of(R, c, t, name in _YEAR_NAMES)
         if out is None or share < 0.95 or int(out.nunique()) < 6:
             continue
         if best is None or (name in _YEAR_NAMES and not best[3]):
@@ -290,10 +329,10 @@ def _few_period_labels(R: Any, cols: List[str], head: Dict[str, str]) -> int:
     for c in cols:
         if R.kind(c) == "date":
             continue
-        t = R.texts[c].astype(str).str.strip()
+        t = _label_texts(R, c)
         if int((t != "").sum()) < 2:
             continue
-        out, _fam, share = _parse_periods(t, allow_year=_norm(head[c]) in _YEAR_NAMES)
+        out, _fam, share = _periods_of(R, c, t, _norm(head[c]) in _YEAR_NAMES)
         if out is not None and share >= 0.95:
             best = max(best, int(out.nunique()))
     return best
@@ -536,7 +575,7 @@ def _measure_values(R: Any, land: str) -> Tuple[Any, Any, bool]:
     import pandas as pd
     nums = R.numbers(land).to_numpy(dtype=float, copy=True) if R.kind(land) == "number" else \
         np.full(R.n, np.nan)
-    txt = R.texts[land].astype(str).str.strip()
+    txt = _label_texts(R, land)
     todo = np.isnan(nums) & (txt != "").to_numpy()
     flags = np.array([""] * R.n, dtype=object)
     embedded = False
@@ -558,7 +597,7 @@ def _measure_values(R: Any, land: str) -> Tuple[Any, Any, bool]:
 
 def _embedded_share(R: Any, land: str) -> float:
     """The share of a text column's filled cells that read as a number with an embedded flag, or a bare flag."""
-    txt = R.texts[land].astype(str).str.strip()
+    txt = _label_texts(R, land)
     f = txt[txt != ""]
     if not len(f):
         return 0.0
@@ -751,7 +790,7 @@ def _detect(R: Any, hidden: Set[str], tm: _Timer, headers: Optional[Sequence[str
     for c in cols:
         if c in (date, measure):
             continue
-        t = R.texts[c].astype(str).str.strip().to_numpy()[rows]
+        t = _label_texts(R, c).to_numpy()[rows]
         filled = t != ""
         nf = int(filled.sum())
         if nf == 0:
@@ -1268,7 +1307,7 @@ def _repeat_phrase(pair: Any, dims: List[Tuple[str, Any, List[str]]], base: Dict
 
 def _factor_text(R: Any, c: str, rows: Any) -> Tuple[Any, List[str], Any]:
     import numpy as np
-    t = R.texts[c].astype(str).str.strip().to_numpy()[rows]
+    t = _label_texts(R, c).to_numpy()[rows]
     codes, labels = _factorize(t)
     return codes, labels, t != ""
 
@@ -1321,7 +1360,7 @@ def _decimals(R: Any, measure: str, metadata: List[Dict[str, Any]]) -> int:
                 return max(0, min(9, int(float(m["value"]))))
             except ValueError:
                 pass
-    t = R.texts[measure].astype(str).str.strip()
+    t = _label_texts(R, measure)
     t = t[t.str.contains(r"\.\d", regex=True)].head(5000)
     if not len(t):
         return 0

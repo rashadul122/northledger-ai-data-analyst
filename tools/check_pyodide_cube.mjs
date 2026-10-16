@@ -167,7 +167,7 @@ try {
           kind: s2.kind || null, usable: s2.usable === undefined ? null : s2.usable,
           roles: Object.fromEntries((s2.dims || []).map((d) => [d.column, d.role])),
           source: e2 ? 'estimand' : null, prior: f2.prior ? f2.prior.value : null, latest: f2.latest ? f2.latest.value : null,
-          pct: f2.change_pct ? f2.change_pct.value : null, seconds: (performance.now() - c0) / 1000,
+          pct: f2.change_pct ? f2.change_pct.value : null, change: f2.change ? f2.change.value : null, seconds: (performance.now() - c0) / 1000,
           // wave 5f: the aggregation, the withheld columns, the rows the adapter left out, and the analysis ledger's amount totals
           aggregation: e2 && e2.measure ? e2.measure.aggregation : null,
           flagged: ((r.privacy && r.privacy.flagged) || []).map((f) => f.column + ':' + f.decision).sort(),
@@ -250,8 +250,11 @@ for (const [name, want] of Object.entries(CASES)) {
   }
   if (want.source === 'estimand') {
     ok('case ' + name + ': the same figures (prior, latest, change)', close(g.prior, want.prior, 1e-6 * Math.max(1, Math.abs(want.prior))) &&
-      close(g.latest, want.latest, 1e-6 * Math.max(1, Math.abs(want.latest))) && close(g.pct, want.pct, 1e-6),
-      JSON.stringify({ pyodide: [g.prior, g.latest, g.pct], native: [want.prior, want.latest, want.pct] }));
+      close(g.latest, want.latest, 1e-6 * Math.max(1, Math.abs(want.latest))) &&
+      // a rate has no percent change (its change is in percentage points, 16 Oct 2026): then both say none, and the change itself agrees
+      (want.pct === null ? g.pct === null : close(g.pct, want.pct, 1e-6)) &&
+      (want.change === null || want.change === undefined || close(g.change, want.change, 1e-6 * Math.max(1, Math.abs(want.change)))),
+      JSON.stringify({ pyodide: [g.prior, g.latest, g.pct, g.change], native: [want.prior, want.latest, want.pct, want.change] }));
   }
 }
 console.log('PYODIDE the ' + Object.keys(CASES).length + ' wave 5e cases took ' + caseSeconds.toFixed(1) + ' s');

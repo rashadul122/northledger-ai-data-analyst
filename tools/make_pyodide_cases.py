@@ -88,6 +88,8 @@ def say(data: bytes) -> dict:
     fixes = (rep.get("cleaning") or {}).get("fixes") or []
     out = {"ok": s["ok"], "estimand": s["estimand"], "refused": s["refused"], "kind": s["structure_kind"], "usable": s["usable"],
            "roles": s["roles"], "source": s.get("source"), "prior": s.get("prior"), "latest": s.get("latest"), "pct": s.get("pct"),
+           # the estimand's change in its own unit (a rate's in percentage points, which has no percent change: 16 Oct 2026)
+           "change": ((((rep.get("estimand") or {}).get("figures") or {}).get("change") or {}).get("value")),
            # wave 5f: how the figure is aggregated, what was withheld, how many rows the adapter left out and what the ledger says of the amount
            "aggregation": s.get("aggregation"),
            "flagged": sorted("%s:%s" % (f["column"], f["decision"]) for f in (rep.get("privacy") or {}).get("flagged") or []),

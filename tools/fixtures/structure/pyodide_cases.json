@@ -1,6 +1,7 @@
 {
  "f01_sensitive_category_dimension": {
   "aggregation": null,
+  "change": null,
   "estimand": false,
   "file": "pyodide_sensitive_dimension.csv.gz",
   "flagged": [
@@ -23,6 +24,7 @@
  },
  "f05_average_dollars_whole_row": {
   "aggregation": "mean over months",
+  "change": 25000.0,
   "estimand": true,
   "file": "pyodide_average_dollars.csv.gz",
   "flagged": [],
@@ -45,6 +47,7 @@
  },
  "f12_marginalised_business_file": {
   "aggregation": null,
+  "change": null,
   "estimand": false,
   "file": "f12_seed4_weekly_total_rows_two_measures.csv",
   "flagged": [],
@@ -65,6 +68,7 @@
  },
  "f12_unworded_dollars_no_total": {
   "aggregation": "mean over months",
+  "change": 32750.0,
   "estimand": true,
   "file": "pyodide_dollars_no_total.csv.gz",
   "flagged": [],
@@ -87,6 +91,7 @@
  },
  "g01_german_panel_one_member": {
   "aggregation": "mean over months",
+  "change": 74065.333333,
   "estimand": true,
   "file": "g01_seed644_german_sa_nsa_panel.csv",
   "flagged": [],
@@ -109,6 +114,7 @@
  },
  "g02_price_bases_ledger": {
   "aggregation": "sum over weeks",
+  "change": 312716946.099999,
   "estimand": true,
   "file": "g02_seed687_weekly_price_bases_ledger.csv",
   "flagged": [],
@@ -132,6 +138,7 @@
  },
  "g03_case_number_beside_a_total": {
   "aggregation": null,
+  "change": null,
   "estimand": false,
   "file": "g03_seed832_case_number_beside_a_total.csv.gz",
   "flagged": [
@@ -155,6 +162,7 @@
  },
  "r02_combined_member_disjoint_parts": {
   "aggregation": "sum over months",
+  "change": 9923000.0,
   "estimand": true,
   "file": "r02_combined_disjoint_periods.csv",
   "flagged": [],
@@ -177,6 +185,7 @@
  },
  "r06_french_statcan": {
   "aggregation": "sum over months",
+  "change": 9487000.0,
   "estimand": true,
   "file": "r06_french_statcan.csv",
   "flagged": [],
@@ -199,6 +208,7 @@
  },
  "r07_weekly_official": {
   "aggregation": "sum over weeks",
+  "change": 41.0,
   "estimand": true,
   "file": "r07_weekly_official.csv",
   "flagged": [],
@@ -221,6 +231,7 @@
  },
  "rate_panel_with_its_aggregate": {
   "aggregation": "mean over months",
+  "change": -0.883333,
   "estimand": true,
   "file": "pyodide_rate_with_aggregate.csv.gz",
   "flagged": [],
@@ -243,6 +254,7 @@
  },
  "rate_panel_without_one": {
   "aggregation": "mean over months",
+  "change": -0.2,
   "estimand": true,
   "file": "pyodide_rate_without_aggregate.csv.gz",
   "flagged": [],

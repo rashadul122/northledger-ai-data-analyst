@@ -853,6 +853,14 @@ if (isMain && args[0] && !args[0].startsWith('--')) {
     vizAll.push(lines);
     expect('viz lines, ' + paper, lines.trace.length === 3 && lines.trace.every((t) => t.kind === 'timeseries' && !t.as && t.layout === 'wide'), 'the three line charts are not all drawn as lines: ' + JSON.stringify(lines.trace.map((t) => [t.kind, t.as, t.layout])));
     expect('viz lines, ' + paper, TSR.every((r) => lines.T.indexOf(plainText(r.title)) >= 0 && r.data.series.every((s) => lines.T.indexOf(plainText(s.last_text)) >= 0)), 'a line chart\'s title or a last figure is not printed');
+    // the rates (impact7): the lines under their unit "Percent", a stopped series labelled where it ends, its change in points; the slope and the
+    // year-on-year heatmap in percentage points, all drawn as figures
+    const RR = J('rates-records.json').records;
+    const rates = vizRun('viz: rates and dollars', vizInp('ten', vizRes(RR)), paper, RR);
+    vizAll.push(rates);
+    expect('viz rates, ' + paper, rates.trace.length === 3 && rates.trace.every((t) => !t.as) && rates.trace.map((t) => t.kind).sort().join(',') === 'heatmap,slope,timeseries', 'the rates charts are not all drawn as figures: ' + JSON.stringify(rates.trace.map((t) => [t.kind, t.as])));
+    const rt = rates.T.replace(/\s+/g, ' ');
+    expect('viz rates, ' + paper, /percent/i.test(rt) && /\(to 2019-09\)/.test(rt) && /pts/.test(rt) && /percentage points/.test(rt), 'the rates figures do not print their unit, the stopped series\' end or the points: ' + JSON.stringify(['percent', '(to 2019-09)', 'pts', 'percentage points'].map((w) => [w, rt.toLowerCase().indexOf(w) >= 0])));
     // ... also from results.viz (the engine's rep.viz) when the charts do not carry it; and never when the AI placed one
     const fromViz = W.model(vizInp('auto', Object.assign({}, VR.results, { charts: [], viz: { charts: VR.auto.charts } })));
     const sits = (mm) => { const bs = mm.parts[0].blocks, i = bs.findIndex((b) => b.type === 'h2' && b.id === 'p1-sits'); return i < 0 ? [] : bs.slice(i + 1).filter((b) => b.type === 'chart'); };

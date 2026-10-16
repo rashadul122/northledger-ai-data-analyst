@@ -479,6 +479,8 @@
     var lead = (P.lines && P.lines[0]) || '';
     return '<article class="tr-card nl2-period" data-period="1">' + (inSection ? '<h4>Over the whole file</h4>' : '<p class="kicker">Over the whole file</p>') +
       (lead ? '<p class="nl2-period-lead">' + esc(lead) + '</p>' : '') +
+      // the lead series' own sentence, then what rose and fell most, each other unit, the series read over their own span (the engine's lines)
+      (P.lines && P.lines.length > 2 ? '<ul class="nl2-period-says">' + P.lines.slice(2).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
       '<div class="tscroll" tabindex="0" role="region" aria-label="Each series over the whole file"><table class="dt nl2-ptab"><caption class="sr">Each series: its first and its latest published figure, and the change between them</caption><thead><tr>' +
       T.cols.map(function (c, i) { return '<th scope="col"' + (i ? ' class="num"' : '') + '>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       T.rows.map(function (row) {

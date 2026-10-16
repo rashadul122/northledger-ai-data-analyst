@@ -1912,6 +1912,39 @@ check('try-no-replan-when-the-engine-gate-trips', DESK, async (ctx) => {
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
+// impact7: the report's own title is the top heading of the AI report (largest type), the visitor's question under it, the file's name a small
+// line after it; the placeholder is never a heading, and the title is not repeated as the body's first paragraph.
+async function aiTitleCheck(ctx, tag) {
+  const plan = { goal: 'How has order value changed?', understanding: 'Orders.', quality_risks: [], operations: [], analyses: [{ type: 'trend', columns: ['amount'] }],
+    columns: [{ name: 'order_date', semantic_type: 'date', role: 'date' }, { name: 'amount', semantic_type: 'flow_amount', role: 'target' }] };
+  const rep = stubReport(); rep.__profile = true; rep.__results = true;
+  const TITLE = 'Order value: no settled change in the latest year';
+  const reply = (b) => b.profile ? { status: 200, json: { plan } }
+    : { status: 200, json: { report: TITLE + '\n\n## Executive summary\n\n- The amount column of [your file] held steady.\n\n## The headline: steady\nA sentence.', sources: [], model: 'check', repaired: 0 } };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
+  await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-report:not([hidden])');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  if (/dark/.test(tag)) { await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); }); await p.waitForTimeout(100); }
+  const d = await p.evaluate(() => {
+    const body = document.querySelector('#try-ai-report .ai-rep-body'), kids = Array.from(body.children);
+    const fs = (el) => el ? parseFloat(getComputedStyle(el).fontSize) : 0, t = body.querySelector('.ai-title');
+    return { first: kids[0] && kids[0].className, order: Array.from(body.querySelectorAll('.ai-rep-title > *')).map((e) => e.className + ':' + e.textContent.trim()),
+      titleSize: fs(t), h4: fs(body.querySelector('h4.ai-sec')), p0: (body.querySelector(':scope > p') || {}).textContent || '', vw: document.documentElement.clientWidth,
+      sw: document.documentElement.scrollWidth, tw: t ? t.getBoundingClientRect().right : 0, text: body.textContent };
+  });
+  ok(d.first === 'ai-rep-title', tag + ': the title block is not the first thing in the report: ' + d.first);
+  ok(d.order.length === 3 && d.order[0] === 'ai-title:' + TITLE && d.order[1] === 'ai-q:How has order value changed?' && /^ai-file:File: sample-messy\.csv$/.test(d.order[2]), tag + ': title, question, file in the wrong order: ' + JSON.stringify(d.order));
+  ok(d.titleSize > d.h4 + 4 && d.titleSize >= 21, tag + ': the title (' + d.titleSize + ' px) is not the largest type over the section headings (' + d.h4 + ' px)');
+  ok(d.text.split(TITLE).length === 2, tag + ': the title is repeated in the body');
+  ok(!/\[your file\]/.test(d.text) && d.tw <= d.vw + 1 && d.sw <= d.vw + 1, tag + ': the placeholder shows, or the title overflows the page: ' + JSON.stringify({ tw: d.tw, vw: d.vw, sw: d.sw }));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await shot(p, 'ai-title-' + tag, '#try-ai-report');
+}
+check('ai-report-title-is-the-top-heading-desktop', DESK, async (ctx) => { await aiTitleCheck(ctx, 'desktop-light'); });
+check('ai-report-title-is-the-top-heading-phone', PHONE, async (ctx) => { await aiTitleCheck(ctx, 'phone-light'); });
+check('ai-report-title-is-the-top-heading-dark', DESK, async (ctx) => { await aiTitleCheck(ctx, 'desktop-dark'); }, { colorScheme: 'dark' });
+
 // The same promise on the adapter's real profile and report (tools/make_ui_fixtures.py orders-private: a coded
 // email, a withheld note, a kept staff name, all three typed by the plan): /plan never carries a withheld or
 // coded value, and the Data tests card and the flagged-cells download show the adapter's words exactly as it
@@ -2277,13 +2310,13 @@ check('try-pdf-downloads-in-this-browser-with-no-share-request', DESK, async (ct
   const d = await downloadPdf(p);
   const w = pdfWords(d.bytes), today = await p.evaluate(() => { const t = new Date(), z = (n) => (n < 10 ? '0' : '') + n; return t.getFullYear() + '-' + z(t.getMonth() + 1) + '-' + z(t.getDate()); });
   ok(w.head === '%PDF-', 'the download is not a PDF: it starts ' + JSON.stringify(w.head));
-  ok(d.name === 'NorthLedger report - ' + today + '.pdf', 'the download is named ' + JSON.stringify(d.name));
+  ok(/^Revenue rose 18\.7 on 1\.3 fewer orders/.test(d.name) && d.name.endsWith(' - ' + today + '.pdf') && !/NorthLedger report/.test(d.name), 'the download is not named for the report title: ' + JSON.stringify(d.name));
   ok(toProxy(ctx).length === before && !proxyPosts(ctx, 'share').length, 'Download PDF sent a request: ' + JSON.stringify(toProxy(ctx).slice(before).map((r) => r.url)));
   // the cover says the visitor sent a personal column, and names it
   ok(/PERSONAL COLUMNS/.test(w.text) && /Sent to the AI at the reader's choice: staff_name/.test(w.text), 'the cover does not say which personal columns were sent: ' + w.text.slice(0, 600));
   ok(/Page 1 of \d+/.test(w.text) && /EXECUTIVE SUMMARY/.test(w.text) && /PART 3 . SCENARIOS/.test(w.text) && /RUN RATE, A YEAR/.test(w.text), 'the PDF lacks its footer, sections or scenario cards');
   ok(!/sample-messy/.test(w.text) && !/sample-messy/.test(d.bytes.toString('latin1')), 'the PDF names the file without the visitor asking');
-  ok(/Saved as .NorthLedger report/.test(await p.textContent('#try-share-out')) && /nothing was sent/.test(await p.textContent('#try-share-out')), 'the page does not say the PDF was saved and nothing sent');
+  ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders/.test(await p.textContent('#try-share-out')) && /nothing was sent/.test(await p.textContent('#try-share-out')), 'the page does not say the PDF was saved and nothing sent');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });
 
@@ -4461,6 +4494,48 @@ check('statcan-line-chart-in-the-dark-theme', DESK, async (ctx) => {
   ok(want.every((w) => c.indexOf(w) >= 0), 'the dark theme\'s line colours are not the spec\'s: ' + JSON.stringify(Array.from(new Set(c))));
   await shot(p, 'statcan-desktop-dark-line', lineFig);
 }, { colorScheme: 'dark' });
+
+/* ------------------------------------------------------------ rates and dollar amounts in one long table (impact7)
+   StatCan 10-10-0122-01 trimmed to 15 series (s12_statcan_interest_rates): the card says each rate's change in percentage points, what rose and
+   fell most, the dollar series apart, and reads the series the agency stopped publishing over their own span; the line chart draws the rates
+   only, in "Percent", a stopped series ends where its figures end and says so in its label. */
+let RATES_REP = null;
+function ratesReport() {
+  if (RATES_REP) return RATES_REP;
+  const code = 'import sys,os,json,gzip\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'd=gzip.open(site+"/tools/fixtures/structure/regress/s12_statcan_interest_rates.csv.gz").read()\nprint(json.dumps(NB.run(d,"1010012201_databaseLoadingData.csv","",{},"2026-09-30")))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Skip('the rates report could not be made (' + String(r.stderr || r.error || '').trim().split('\n').pop() + ')');
+  RATES_REP = JSON.parse(r.stdout);
+  return RATES_REP;
+}
+async function ratesChecks(ctx, tag) {
+  const rep = ratesReport();
+  const { p } = await openV2(ctx, 'rates', rep);
+  const rec = rep.viz.charts.find((c) => c.chart === 'series_lines'), P = rep.period;
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  const card = await p.evaluate(() => { const c = document.querySelector('#try-report .nl2-period'); if (!c) return null;
+    return { rows: Array.from(c.querySelectorAll('tbody tr')).map((tr) => Array.from(tr.children).map((x) => x.textContent.replace(/\s+/g, ' ').trim())),
+      says: Array.from(c.querySelectorAll('.nl2-period-says li')).map((x) => x.textContent.trim()), lead: (c.querySelector('.nl2-period-lead') || {}).textContent, w: c.getBoundingClientRect().right,
+      vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth }; });
+  ok(card && JSON.stringify(card.rows) === JSON.stringify(P.table.rows), 'the card does not hold the engine\'s table');
+  ok(JSON.stringify(card.says) === JSON.stringify(P.lines.slice(2)), 'the card does not say the engine\'s lines: ' + JSON.stringify(card.says).slice(0, 300));
+  ok(card.says.some((x) => /percentage points/.test(x)) && card.says.some((x) => /^Those that fell most:/.test(x)) && card.says.some((x) => /^In Dollars/.test(x)), 'the card lacks the points, the fell-most or the dollars line');
+  ok(card.rows[0][3].endsWith('points') && card.rows[0][4] === '', 'the lead row is not in points with no percent: ' + JSON.stringify(card.rows[0]));
+  ok(card.rows.some((r) => /no longer published after/.test(r[0])) && card.rows.some((r) => /\[Dollars/.test(r[0])), 'a stopped series or a dollar series is not labelled in the table');
+  ok(card.sw <= card.vw + 1, 'the page is wider than the viewport: ' + card.sw + ' > ' + card.vw);
+  const f = await p.evaluate((sel) => { const g = document.querySelector(sel); if (!g) return null; const svg = g.querySelector('svg.nlv');
+    return { txt: svg ? svg.textContent : '', paths: g.querySelectorAll('svg.nlv path.ts').length, right: svg ? svg.getBoundingClientRect().right : 0, vw: window.innerWidth }; }, lineFig);
+  ok(f && /Percent/.test(f.txt), 'the line chart does not name its unit "Percent": ' + (f && f.txt.slice(0, 120)));
+  ok(rec.data.series.some((s) => / \(to \d{4}-\d{2}\)$/.test(s.label)) && f.right <= f.vw + 0.5, 'a stopped series is not labelled in the chart, or the chart leaves the viewport');
+  ok(f.paths >= rec.data.series.length, 'the chart draws ' + f.paths + ' paths for ' + rec.data.series.length + ' series');
+  await shot(p, 'rates-' + tag + '-card', '#try-report .nl2-period');
+  await shot(p, 'rates-' + tag + '-line', lineFig);
+  await shot(p, 'rates-' + tag + '-slope', '#try-report .nlv-fig[data-kind="slope"]');
+}
+check('rates-card-and-line-chart-desktop', DESK, async (ctx) => { await ratesChecks(ctx, 'desktop-light'); });
+check('rates-card-and-line-chart-phone', PHONE, async (ctx) => { await ratesChecks(ctx, 'phone-light'); });
+check('rates-card-and-line-chart-dark', DESK, async (ctx) => { await ratesChecks(ctx, 'desktop-dark'); }, { colorScheme: 'dark' });
 
 /* ------------------------------------------------------------ runner */
 (async () => {

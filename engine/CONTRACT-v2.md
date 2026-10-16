@@ -1966,3 +1966,18 @@ first and latest dated figure.
 
 **Title block (impact6).** A few lines of one or two cells above the column names (the World Bank's download has four) are set aside, and
 the report says so (`limitations[0]`, `cleaning.fixes[0].rule` = `title_block_set_aside`); a file with no such line below is refused as before.
+
+**Units, rates and own spans (impact7, 9 October 2026).** A long statistical table that carries its units (StatCan's UOM) is read per unit.
+`input.layout.unit_of` ({series: "Percent" | "Dollars (millions)"}, present when the table mixes units or states a rate in percent) keeps the
+units apart: the lead is the first series of the unit most series come in (`layout.lead`), the whole-period sentences, the movers, the line
+chart, the slope and the year-on-year heatmap are of the lead's unit, and every other unit gets its own sentence ("In Dollars (millions), 2
+series: ..."). A rate (unit "Percent") is said in percentage points: no percent change and no compounded rate, "down 3.50 percentage points";
+a plan that typed the value column as a flow or a count never makes a total of a rate over a year (`nl_browser._col_type`: a series in percent
+is a percentage whatever the plan said). A series the layout sets aside (discontinued, too recent, too sparse) with 12 or more published figures
+is read over its own span and labelled ("no longer published after 2019-09"); it is ranked and drawn only when its span is 3 in 5 of the
+table's, and the page's table lists it with its span either way. The figures travel in `layout.own_span` only while the report is built; they
+never reach the report. A series with no published figure at all is named under `layout.set_aside["no figure ever published"]`, and
+`layout.blank_rows` counts the rows with no value: unpublished months, said once in the limitations as no defect. A plan's step that sets rows
+aside by a status whose every row has no value (`exclude_rows` on STATUS "..") is retired as the reshape's own work, so it is no "rows the plan
+set aside". The timeseries chart spans up to 360 periods (30 years of months). When the question is not about the future, a forecast headline of
+such a table is replaced by the lead series' whole-period sentence.

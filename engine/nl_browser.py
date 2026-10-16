@@ -4676,6 +4676,9 @@ def _kept_by_visitor(decisions: Any) -> Set[str]:
     return {str(k) for k, v in dict(decisions or {}).items() if not str(k).startswith("__") and str(v or "").strip().lower() == "keep"}
 
 
+_PERCENT_UNIT = re.compile(r"^\s*(percent|percentage|per cent|%)\s*$", re.I)
+
+
 def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[str] = None,
                         value_col: Optional[str] = None, keep: Optional[Set[str]] = None
                         ) -> Tuple[bytes, Optional[Dict[str, Any]]]:
@@ -4770,7 +4773,9 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     dropped = {"discontinued": sorted(k for k in span.index if k not in active.index),
                "too recent": sorted(set(k for k in active.index if k not in lasting.index) | later),
                "too sparse": sorted(k for k in lasting.index if k not in kept),
-               "named more than once for the same date (nothing in the file tells the series apart)": named_twice}
+               "named more than once for the same date (nothing in the file tells the series apart)": named_twice,
+               # a series the agency lists but never published a figure for (StatCan 10-10-0122-01: two terminated series, every month blank)
+               "no figure ever published": sorted(k for k in key.unique() if k not in span.index and k not in named_twice)}
     inwin = inwin[inwin["_key"].isin(kept)]
     wide = inwin.groupby([inwin["_d"].dt.strftime("%Y-%m-%d").rename("_date"), "_key"], sort=True)["_v"].mean().unstack("_key")
     wide = wide.dropna(how="all")
@@ -4816,6 +4821,28 @@ def _reshape_long_panel(data: bytes, planned: bool = False, date_col: Optional[s
     scale_words = sorted({u for k, u in scales.items() if u and k in kept and u.strip().lower() not in ("units", "unit", "ones")})
     if scale_words:
         lay["scale"] = scale_words
+    # impact7: each series' own unit, where the table mixes units or states a rate in percent (the whole-period sentences say a rate's
+    # change in percentage points and never as a percent of a percent, and rank each unit's series apart), and the series the layout
+    # sets aside that still have 12 or more published figures, kept for the whole-period card and the line chart so each is read over
+    # its own span and labelled (a rate the agency stopped publishing is not dropped from the answer). The figures leave the layout
+    # once the report's charts are built (_viz) and never reach the report.
+    if units and (len(set(u for u in units.values() if u)) > 1 or any(_PERCENT_UNIT.match(u or "") for u in units.values())):
+        lay["unit_of"] = {k: u + (" (%s)" % scales[k].strip() if scales.get(k, "").strip().lower() not in ("", "units", "unit", "ones") else "")
+                          for k, u in units.items() if u}
+    own: Dict[str, Any] = {}
+    txt_v = df[value].str.replace(",", "", regex=False).str.strip()
+    for why, names in dropped.items():
+        if why.startswith("named more than once"):
+            continue
+        for k in names:
+            m = (key == k) & v.notna()
+            if int(m.sum()) >= 12:
+                own[k] = {"why": why, "unit": units.get(k, ""),
+                          "pts": [[d.strftime("%Y-%m-%d"), t] for d, t in zip(dt[m], txt_v[m])]}
+    if own:
+        lay["own_span"] = own
+    if int(v.isna().sum()) and own:
+        lay["blank_rows"] = int(v.isna().sum())   # only with the own-span series (the tables of this kind), so other layout records are as they were
     if unpublished:                               # only where there are some, so every other table's layout record is what it was
         lay["unpublished_dates"] = {"count": len(unpublished), "first": unpublished[0], "last": unpublished[-1]}
     if personal:                                  # wave 5d: only where there is one, so every other table's layout record is what it was
@@ -4846,8 +4873,23 @@ def _plan_with_long_reshape(data: bytes, plan: Dict[str, Any], keep: Optional[Se
     consumed = {str(lay.get("date_column")), str(lay.get("value_column"))} | set(lay.get("metadata_set_aside") or []) | \
         set(lay.get("constant_set_aside") or []) | {s.strip() for s in str(lay.get("series_column") or "").split(" | ") if s.strip()}
     kept_ops, retired = [], []
+    blank_flag = None
+    try:
+        import pandas as pd
+        raw_df = pd.read_csv(io.BytesIO(data), dtype=str, encoding="utf-8-sig", keep_default_na=False)
+        vcol = str(lay.get("value_column"))
+        blank_flag = (raw_df, raw_df[vcol].str.strip() == "") if vcol in raw_df.columns else None
+    except Exception:  # noqa: BLE001 - the plan's own steps then stand
+        blank_flag = None
     for o in ops:
         cols = [str(c) for c in (o.get("columns") or ([o["column"]] if o.get("column") else []))]
+        # impact7: a step that sets rows aside by their status ("..": not published) only does what the reshape does when every row it
+        # selects has no value: the unpublished months are left out by the reshape, said once in the limitations, and are no defect to recover
+        if o.get("op") == "exclude_rows" and blank_flag is not None and o.get("column") in blank_flag[0].columns and o.get("values"):
+            sel = blank_flag[0][str(o["column"])].isin([str(x) for x in o.get("values") or []])
+            if bool(sel.any()) and bool(blank_flag[1][sel].all()):
+                retired.append("exclude_rows: not needed: every row it sets aside has no published value, and the reshape leaves unpublished months out")
+                continue
         if o.get("op") in ("keep_columns", "set_aside", "exclude_blank") and cols and set(cols) <= consumed:
             retired.append("%s: not needed: the file is a long statistical table, read one column per series (the reshape keeps "
                            "the dates and values, sets the agency's metadata aside and leaves the unpublished months out)" % o["op"])
@@ -4893,6 +4935,15 @@ def _lead_series(lay: Dict[str, Any], objective: str) -> Tuple[str, str]:
     # the file's own order when the layout records it: `order` ranks by value count, so its first is not the file's
     # first (a visitor's debt table led with "Derivatives", "it comes first in the file", which it did not)
     order = lay.get("file_order") or lay.get("order") or []
+    unit_of = lay.get("unit_of") or {}
+    if unit_of and len(set(unit_of.get(k, "") for k in order)) > 1:
+        # a table in several units leads with the unit most of its series come in (57 series, 53 of them percent rates: not a dollar
+        # amount); the question's own series is still found among all
+        from collections import Counter
+        top = Counter(unit_of.get(k, "") for k in order).most_common(1)[0][0]
+        order_u = [k for k in order if unit_of.get(k, "") == top]
+    else:
+        order_u = order
     if not order:
         return "", ""
     if len(order) == 1:
@@ -4904,6 +4955,9 @@ def _lead_series(lay: Dict[str, Any], objective: str) -> Tuple[str, str]:
         core = t - common
         if core and core <= asked:
             return k, "your question names it"
+    if order_u is not order:
+        return order_u[0], "it is the first of the %s series, the unit most of the table's series come in; name another series in the question box to lead with it" % (
+            unit_of.get(order_u[0]) or "most common")
     return order[0], "it comes first in the file; name another series in the question box to lead with it"
 
 
@@ -7977,6 +8031,8 @@ def _col_type(plan: Dict[str, Any], col: str, layout: Optional[Dict[str, Any]]) 
     """(semantic type, unit) the plan gave a column; a reshaped series takes its value column's."""
     by = {c["name"]: c for c in plan.get("columns", []) if c.get("name")}
     c = by.get(col) or (by.get(layout.get("value_column")) if layout else None) or {}
+    if layout and col not in by and _series_is_percent(layout, col):
+        return "percentage", "%"        # a rate in percent is a level whatever the plan called the value column: never a total of months
     unit = str(c.get("unit") or "")
     if layout and col not in by and len(layout.get("units") or []) > 1:
         unit = ""                        # series in several units: one unit for all of them would be wrong
@@ -7984,6 +8040,18 @@ def _col_type(plan: Dict[str, Any], col: str, layout: Optional[Dict[str, Any]]) 
     if st == "percentage":
         unit = "%"                       # the frame holds it in percent (_pct_reading), so every value is in %
     return st, unit
+
+
+def _series_is_percent(layout: Dict[str, Any], col: Any) -> bool:
+    """Whether a reshaped series is a rate in percent (its UOM): by its header, or by the slug the engine lands it under."""
+    unit_of = layout.get("unit_of") or {}
+    if not unit_of:
+        return False
+    u = unit_of.get(str(col))
+    if u is None:
+        slug = _engine_slug(str(col))
+        u = next((v for k, v in unit_of.items() if _engine_slug(str(k)) == slug), None)
+    return bool(u) and bool(_PERCENT_UNIT.match(str(u).split(" (")[0]))
 
 
 def _how(st: str) -> str:
@@ -9383,7 +9451,19 @@ def _layout_notes(rep: Dict[str, Any], lay: Dict[str, Any]) -> None:
         "It was read as one column per series, one row per date with a value (%s dates from %s), so every "
         "series is analysed on its own.%s" % (format(lay["rows_out"], ","), lay["start"], unit_note),
     ]
-    parts += ["Set aside as %s: %s." % (why, ", ".join(ks)) for why, ks in lay["set_aside"].items()]
+    own = lay.get("own_span") or {}
+    for why, ks in lay["set_aside"].items():
+        read = [k for k in ks if k in own]
+        rest = [k for k in ks if k not in own]
+        if read:
+            parts.append("Set aside as %s from the analyses beside the others, and read over their own span in the whole-period figures "
+                         "and the line chart: %s." % (why, ", ".join(read)))
+        if rest:
+            parts.append("Set aside as %s: %s." % (why, ", ".join(rest)))
+    if lay.get("blank_rows"):
+        parts.append("%s rows have no value: months the agency did not publish, which it lists with a blank and a status instead of leaving "
+                     "out (after a series ends, for instance). They are not defects to recover and are not counted as missing data."
+                     % format(lay["blank_rows"], ","))
     up = lay.get("unpublished_dates")
     if up:
         parts.append("%s dates between %s and %s were set aside: the agency lists most series for them with no value "
@@ -11162,7 +11242,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         except Exception:  # noqa: BLE001 - no layout then
                             lay_p = None
                     if lay_p is None and _ns().read_one_member_panel(S_pre):
-                        S_use = S_pre
+                        # impact7: a table the layout pass can read as one column per series (a rates table, a debt table: no totals beside
+                        # parts) is read so with a plan as without one; reading one member of it answered a question about 57 rates with one
+                        # Treasury bill auction amount (a visitor's StatCan 10-10-0122-01, 9 Oct 2026)
+                        try:
+                            _nb_q, lay_q = _reshape_long_panel(data, keep=_kept_by_visitor(vis_dec))
+                        except Exception:  # noqa: BLE001 - the one-member reading stands
+                            lay_q = None
+                        if not (lay_q and int(lay_q.get("series") or 0) >= 2):
+                            S_use = S_pre
                 ai_plan, plan_refused = _validate_plan(raw_plan, cols, S_use)
                 if S_use is not None:
                     # a table read by its structure: the plan's rows are checked against it (check_rows) and the slice
@@ -11769,11 +11857,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     pct: Dict[str, Any] = {}
                     for pc in ai_plan.get("columns") or []:
                         nm = pc.get("name") if isinstance(pc, dict) else None
-                        if not nm or pc.get("semantic_type") != "percentage" or private(nm):
+                        vl = bool(layout and nm == layout.get("value_column"))
+                        if not nm or private(nm) or (pc.get("semantic_type") != "percentage" and not (vl and layout.get("unit_of"))):
                             continue
                         lands = [reading.landed(nm)]
-                        if layout and nm == layout.get("value_column"):
-                            lands = [reading.landed(x) for x in layout.get("order") or []]
+                        if vl:
+                            names = layout.get("order") or []
+                            if pc.get("semantic_type") != "percentage":
+                                names = [x for x in names if _series_is_percent(layout, x)]    # the series in percent, whatever the plan typed
+                            lands = [reading.landed(x) for x in names]
                         for land in lands:
                             if land is not None and reading.kind(land) == "number":
                                 pct[reading.header(land)] = _pct_reading(reading.numbers(land), reading.texts[land],
@@ -11801,6 +11893,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens,
                           scrub.flag_tokens_by, structure_inner)
+        lay_o = (rep.get("input") or {}).get("layout")
+        if isinstance(lay_o, dict):
+            lay_o.pop("own_span", None)           # the figures of the series read over their own span: used by the charts, never in the report
         _period_story(rep)
         _mend_cannot_answer(rep)
         rep["ok"] = True
@@ -11833,6 +11928,14 @@ def _period_story(rep: Dict[str, Any]) -> None:
     at = 1 if wh else 0
     st["what_happened"] = wh[:at] + [str(x) for x in pb["lines"]] + wh[at:]
     lead = next((str(x.get("text")) for x in pb.get("series") or [] if x.get("id") == pb.get("lead")), "")
+    # impact7: the headline of such a table was a forecast of its lead series ("Monthly Bank rate forecast at 2.497 ... for 2026-10") for a
+    # visitor who asked how rates moved since 2000. A forecast answers what comes next; when the question is about the past, the headline
+    # is the lead series' own whole-period sentence (exact arithmetic, in the story just below it).
+    hd = str(st.get("headline") or "")
+    goal = str(((rep.get("reproducibility") or {}).get("parameters") or {}).get("objective") or "")
+    asked_ahead = goal != DEFAULT_OBJECTIVE and re.search(r"forecast|predict|\bnext\b|will|future|expect|outlook", goal, re.I)
+    if lead and re.search(r"\bforecast\b", hd, re.I) and not asked_ahead:
+        st["headline"] = lead
     if lead:
         sm = rep.setdefault("summary", {"lines": [], "labels": {}, "monitoring": []})
         sm.setdefault("lines", []).append({"kind": "period", "text": lead, "finding_ids": []})

@@ -18,7 +18,7 @@
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 5, slots: 240 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 5, slots: 360 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }

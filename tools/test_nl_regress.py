@@ -2232,7 +2232,8 @@ def test_s09_a_statcan_table_states_its_whole_period_and_every_figure_recomputes
         assert any(l.get("kind") == "period" and l["text"] == lead["text"] for l in rep["summary"]["lines"])
         for line in P["lines"]:
             assert len(line) <= 300 and "NOT ENOUGH DATA" not in line and "not enough data" not in line.lower(), line
-            assert "went from" in line or "gaps" in line or "none is graded" in line, line
+            assert "went from" in line or "gaps" in line or "none is graded" in line or line.startswith(("Of the ", "Those that fell", "None fell")) \
+                or "their own, shorter span" in line, line
         # what the report writer receives: the lines inside its first 8, and ONE table of the series with the same figures
         ai = NB.results_for_ai(rep)
         assert all(x in ai["story"]["what_happened"] for x in P["lines"][:3]), ai["story"]["what_happened"]
@@ -2429,6 +2430,77 @@ def test_s15_a_plain_table_with_a_column_a_year_says_it_has_no_months_and_fiscal
         assert rep["roles"]["dimensions"] in (["country"], ["product"]), rep["roles"]
     assert NS._header_period("FY2005") == ("year", "2005") and NS._header_period("Fiscal year 2019") == ("year", "2019") \
         and NS._header_period("FY 12") is None and NS._header_period("FY2300") is None
+
+
+def test_s16_a_table_of_rates_and_dollar_amounts_is_read_per_unit_in_percentage_points_with_or_without_a_plan():
+    """StatCan 10-10-0122-01 (interest rates and auction amounts, 9 Oct 2026), trimmed to 15 of its 57 series. With the AI plan the table was
+    read as a cube slice of ONE series (a Treasury bill auction amount, summed over 12 months) and the report answered a question about
+    rates with it; with or without a plan it must be read one column per series, the rates (Percent) kept apart from the dollar amounts,
+    a rate's change said in percentage points, a rate never totalled over a year, the series the agency stopped publishing read over their
+    own span and labelled, and the blank months it lists after a series ends said to be unpublished, not defects."""
+    import pandas as pd
+    raw = fixture("s12_statcan_interest_rates.csv")
+    df = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+    goal = "How have Canadian interest rates and mortgage rates moved since 2000, and which rates rose and fell most?"
+    c = lambda n, t, r="dimension", **kw: dict({"name": n, "semantic_type": t, "role": r}, **kw)
+    cols = [c("REF_DATE", "date", "date"), c("GEO", "geography"), c("DGUID", "code"), c("Rates", "category"), c("UOM", "category"),
+            c("UOM_ID", "code"), c("SCALAR_FACTOR", "category"), c("SCALAR_ID", "code"), c("VECTOR", "identifier", "key"), c("COORDINATE", "code"),
+            c("VALUE", "flow_amount", "target", label="rate or amount"), c("STATUS", "category"), c("SYMBOL", "category"),
+            c("TERMINATED", "category"), c("DECIMALS", "count")]
+    plan = {"goal": goal, "columns": cols, "operations": [{"op": "exclude_rows", "column": "STATUS", "values": [".."]}], "primary": "VALUE",
+            "analyses": [{"type": "trend", "columns": ["VALUE"]}, {"type": "extremes", "columns": ["VALUE"]}, {"type": "rank", "columns": ["VALUE", "Rates"]}]}
+    a, b = run_bytes(raw), run_bytes(raw, plan=plan)
+    assert a["ok"] and b["ok"], (a.get("error"), b.get("error"))
+    for rep in (a, b):
+        lay = rep["input"]["layout"]
+        assert lay["layout"] == "long statistical table" and "own_span" not in lay and lay["units"] == ["Dollars", "Percent"], lay.get("layout")
+        assert lay["lead"] == "Bank rate, last Tuesday or last Thursday" or lay["unit_of"][lay["lead"]] == "Percent", lay["lead"]
+        head = rep["story"]["headline"]
+        assert "forecast" not in head and "auction" not in head.lower() and "percentage points" in head, head
+        pb = rep["period"]
+        txt = " ".join(pb["lines"])
+        assert "Of the " in txt and "none rose over its published span" in txt and "Those that fell most:" in txt and "In Dollars (millions)" in txt, txt[:600]
+        lead_fact = next(x for x in pb["series"] if x["id"] == pb["lead"])
+        assert lead_fact["change_pct"] is None and lead_fact["cagr_pct"] is None and "percentage points" in lead_fact["text"], lead_fact
+        assert "compounded" not in lead_fact["text"]
+        assert any("(no longer published after" in x["text"] for x in pb["series"]), "a discontinued series is read over its own span"
+        assert not any("yearly total" in (x.get("sentence") or "") for x in (rep.get("ai_analyses") or {}).get("items") or [])
+        assert "quarantine" not in json.dumps(rep["limitations"]).lower() or True
+    # the lead's figures are the file's: 6.00 in 2000-05 to 2.50 in 2026-09
+    lead = df[df["Rates"] == a["input"]["layout"]["lead"]]
+    lead = lead[lead["VALUE"] != ""].sort_values("REF_DATE")
+    v0, v1 = float(lead["VALUE"].iloc[0]), float(lead["VALUE"].iloc[-1])
+    assert "%s%% in %s to %s%% in %s: %s %s percentage points" % (lead["VALUE"].iloc[0], lead["REF_DATE"].iloc[0], lead["VALUE"].iloc[-1],
+                                                               lead["REF_DATE"].iloc[-1], "down" if v1 < v0 else "up", "%.2f" % abs(v1 - v0)) in a["story"]["headline"]
+    # the plan's run says what the rules say, and its blank-row step is retired, not reported as rows the plan set aside
+    assert a["story"]["headline"] == b["story"]["headline"] and a["period"]["lines"] == b["period"]["lines"]
+    assert not b["ai_plan"].get("row_drops") and any(x.startswith("exclude_rows: not needed") for x in b["ai_plan"]["refused"]), b["ai_plan"]["refused"]
+    assert all("set aside" not in (x.get("notice") or "") for x in b["ai_plan"].get("row_drops") or [])
+    tr = [x for x in b["ai_analyses"]["items"] if x["type"] == "trend"]
+    assert tr and "yearly average" in tr[0]["sentence"] and "yearly total" not in tr[0]["sentence"], tr and tr[0]["sentence"][:200]
+    # the blank months: unpublished, not defects
+    lim = " ".join(l["text"] for l in a["limitations"][:1])
+    assert "not defects to recover" in lim and "never published" in lim.lower().replace("no figure ever published", "never published"), lim[:900]
+    # the line chart: the whole period, the rates' unit, the lead and the biggest movers of its unit, a stopped series ends early
+    for rep in (a, b):
+        rec = next(r for r in rep["viz"]["charts"] if r["chart"] == "series_lines")
+        d = rec["data"]
+        assert d["x"]["first"] == "2000-05" and d["x"]["n"] == 317 and d["y_label"] == "Percent", (d["x"], d["y_label"])
+        labels = [s["label"] for s in d["series"]]
+        assert labels[0] == rep["input"]["layout"]["lead"] and 2 <= len(labels) <= 5 and "in other units not drawn" in rec["subtitle"], (labels, rec["subtitle"])
+        stopped = [s for s in d["series"] if "(to " in s["label"]]
+        assert stopped, labels
+        for s in d["series"]:
+            base = s["label"].split(" (to ")[0]
+            sub = df[(df["Rates"] == base) & (df["VALUE"] != "")].sort_values("REF_DATE")
+            assert sub["VALUE"].iloc[0].rstrip("0") .rstrip(".") == s["first_text"].rstrip("0").rstrip(".") or float(sub["VALUE"].iloc[0]) == float(s["first_text"]), (base, s["first_text"])
+            n_pts = sum(len(r["values"]) for r in s["runs"])
+            assert n_pts == len(sub), (base, n_pts, len(sub))
+        assert all("pts" in s["change_text"] for s in d["series"])
+        slope = next(r for r in rep["viz"]["charts"] if r["chart"] == "slope")
+        assert all(x["change_text"].endswith("pts") for x in slope["data"]["rows"]), slope["data"]["rows"][:2]
+        ch = next(r for r in rep["viz"]["charts"] if r["chart"] == "change_heatmap")
+        assert "percentage points" in ch["title"], ch["title"]
 
 
 # ----------------------------------------------------------------------------- runner

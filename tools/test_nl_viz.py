@@ -1712,7 +1712,7 @@ def test_series_lines_draw_the_published_figures_gaps_as_gaps_and_say_which_seri
         for s, cell in zip(series, row[1:]):
             col = NB._engine_slug(s["label"])
             assert cell == format(int(round(pd_numeric(clean[col])[by_month[row[0]]])), ","), (row, s["label"])
-    assert "the lead series and the %d that changed most" % (len(series) - 1) in rec["subtitle"] and "of 25 series" in rec["subtitle"], rec["subtitle"]
+    assert "the lead series and the %d that changed most" % (len(series) - 1) in rec["subtitle"] and 25 <= int(re.search(r"of (\d+) series", rec["subtitle"]).group(1)) <= len(rep["period"]["series"]), rec["subtitle"]
     assert all(s["label"] in rec["summary"] for s in series[:2]) and series[0]["first_text"] in rec["summary"] and series[0]["last_text"] in rec["summary"]
     assert slug  # the series are the file's own, by name
 
@@ -1741,7 +1741,10 @@ def test_series_lines_follow_the_table_s_own_period_unit_and_gaps():
     assert mixed["ok"] and mixed["input"]["layout"]["layout"] == "long statistical table", mixed.get("error")
     rec = _rec(mixed, "series_lines")
     lead = mixed["input"]["layout"]["lead"]
-    assert [s["label"] for s in rec["data"]["series"]] == [lead] and "different units" in rec["subtitle"], rec["subtitle"]
+    got = [s["label"] for s in rec["data"]["series"]]
+    unit_of = mixed["input"]["layout"]["unit_of"]
+    assert got[0] == lead and all(unit_of[g] == unit_of[lead] for g in got) and "in other units not drawn" in rec["subtitle"], (got, rec["subtitle"])
+    assert rec["data"]["y_label"] == unit_of[lead], rec["data"]["y_label"]
     df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding="utf-8-sig", keep_default_na=False)
     df = df[df["Type of currency"] == lead]
     v = pd.to_numeric(df["VALUE"].where(df["VALUE"] != ""), errors="coerce")
@@ -1762,7 +1765,10 @@ def test_series_lines_follow_the_table_s_own_period_unit_and_gaps():
     m = pd.read_csv(io.BytesIO(_statcan_bytes()), dtype=str, keep_default_na=False)
     m.loc[m["Central government debt"] == "Treasury bills", "UOM"] = "Euros"
     mm = NB.run(m.to_csv(index=False).encode(), "m.csv", "", {}, "2026-09-30")
-    assert mm["ok"] and [s["label"] for s in _rec(mm, "series_lines")["data"]["series"]] == [mm["input"]["layout"]["file_order"][0]]
+    assert mm["ok"], mm.get("error")
+    drawn_m = [s["label"] for s in _rec(mm, "series_lines")["data"]["series"]]
+    assert drawn_m[0] == mm["input"]["layout"]["file_order"][0] and "Treasury bills" not in drawn_m and len(drawn_m) <= 5, drawn_m
+    assert "in other units not drawn" in _rec(mm, "series_lines")["subtitle"]
     # a table with under 12 published periods per series draws none, and says why
     short = pd.read_csv(io.BytesIO(_statcan_bytes()), dtype=str, keep_default_na=False)
     short = short[short["REF_DATE"] <= "2010-03"]

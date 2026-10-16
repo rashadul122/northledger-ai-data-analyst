@@ -162,7 +162,9 @@
   var NF = Object.create(null);
   function nf(min, max) { var k = min + ':' + max; return NF[k] || (NF[k] = new Intl.NumberFormat('en-US', { minimumFractionDigits: min, maximumFractionDigits: max })); }
   function fmtTick(v, step) {
-    var dp = step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log10(step) - 1e-9));
+    // the decimals the step needs: none for 5 or 25, one for 0.5 or 2.5, two for 0.25 (a step of 2.5 printed its ticks as 3 and 8)
+    var dp = 0;
+    while (dp < 4 && Math.abs(step * Math.pow(10, dp) - Math.round(step * Math.pow(10, dp))) > 1e-9) dp++;
     return nf(dp, dp).format(Number(v));
   }
   function fmtVal(v) {
@@ -1325,7 +1327,7 @@
     timeseries: {
       ok: function (d) {
         var x = d.x;
-        return isObj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= 240 && fin(x.step) && x.step >= 1 && isStr(d.y_label) && Array.isArray(d.series) &&
+        return isObj(x) && /^\d{4}-(0[1-9]|1[0-2])$/.test(x.first) && fin(x.n) && x.n >= 2 && x.n <= 360 && fin(x.step) && x.step >= 1 && isStr(d.y_label) && Array.isArray(d.series) &&
           d.series.length >= 1 && d.series.length <= 5 && d.series.every(function (s) {
             return isObj(s) && isStr(s.label) && isStr(s.first_text) && isStr(s.last_text) && isStr(s.change_text) && Array.isArray(s.runs) && s.runs.length >= 1 && s.runs.every(function (r) {
               return isObj(r) && fin(r.at) && r.at >= 0 && Array.isArray(r.values) && r.values.length >= 1 && r.at + r.values.length <= x.n && r.values.every(pos);
@@ -1341,7 +1343,7 @@
         o.names = [];
         var lab = Math.min(CW * 0.34, Math.max.apply(null, S.map(function (s, k) { return tw(o.lt[k], 7, 'B') + 6 + Math.min(tw(enc(s.label), 7, 'R'), 110); })) + 12);
         o.RW = Math.max(60, lab);
-        o.names = S.map(function (s, k) { return fitB(enc(s.label), 7, 'R', o.RW - tw(o.lt[k], 7, 'B') - 10); });
+        o.names = S.map(function (s, k) { return fitB(enc(s.label), 7, 'R', o.RW - tw(o.lt[k], 7, 'B') - 14); });
         o.x0 = o.nt.max + 8;
         o.h = 150;
         return o;
@@ -2495,9 +2497,12 @@
     }
     return 'letter';
   }
-  // "NorthLedger report - YYYY-MM-DD.pdf"; the file's name is added only when the visitor asks for it
-  function fileName(date, name) {
-    var base = 'NorthLedger report - ' + isoDate(date instanceof Date ? date : new Date());
+  // "<the report's title> - YYYY-MM-DD.pdf" (the title is the report's own, said first on its cover), else "NorthLedger report - YYYY-MM-DD.pdf";
+  // the file's name is added only when the visitor asks for it
+  function fileName(date, name, title) {
+    var day = isoDate(date instanceof Date ? date : new Date());
+    var tt = title ? String(title).replace(/\[(?:your file|value [A-Z]{1,3})\]/g, '').replace(/[^A-Za-z0-9 ._()'+-]+/g, ' ').replace(/\s+/g, ' ').replace(/^[-. ]+|[-. ]+$/g, '').slice(0, 80).replace(/[-. ]+$/g, '') : '';
+    var base = (tt || 'NorthLedger report') + ' - ' + day;
     var nm = name ? String(name).replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/[^A-Za-z0-9 ._-]+/g, '-').replace(/^[-. ]+|[-. ]+$/g, '').slice(0, 60) : '';
     return base + (nm ? ' - ' + nm : '') + '.pdf';
   }

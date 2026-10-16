@@ -1033,6 +1033,11 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 /* the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden */
 .ai-rep-trust { margin: 10px 0 0; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--green, #3b7a4b) 45%, transparent);
   border-radius: 8px; font-size: .84rem; color: color-mix(in srgb, var(--green, #3b7a4b) 80%, var(--ink, #1b1a21)); }
+.ai-rep-title { margin: 14px 0 4px; }
+.ai-rep-body .ai-title { margin: 0 0 6px; font-size: 1.7rem; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
+.ai-rep-body .ai-q { margin: 0 0 4px; color: var(--muted-foreground, inherit); font-size: 1rem; }
+.ai-rep-body .ai-file { margin: 0 0 6px; color: var(--muted-foreground, inherit); font-size: .78rem; }
+@media (max-width: 520px) { .ai-rep-body .ai-title { font-size: 1.35rem; } }
 .ai-rep-body h4 { margin: 18px 0 6px; font-size: 1.02rem; }
 .ai-rep-body p { margin: 8px 0; }
 .ai-rep-body ul, .ai-rep-body ol { margin: 8px 0; padding-left: 22px; }
@@ -1223,3 +1228,6 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .ai-fig-note .note { margin: 6px 0 0; font-size: 13.5px; }
 @media print { body.print-try .nl2-viz-list { display: block !important; } body.print-try .nl2-viz-list > * { margin-bottom: 12px; } }
 .nlv .nlv-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+
+.nl2-period-says { margin: 8px 0 12px; padding-left: 20px; font-size: .92rem; }
+.nl2-period-says li { margin: 4px 0; overflow-wrap: anywhere; }

@@ -41,7 +41,7 @@ CHART_BYTES = 6000          # one record as JSON.stringify writes it, in UTF-8 b
 HEATMAP_BYTES = 12000       # ... a heatmap's (the owner's decision on the spec's byte-cap conflict, 30 Sep 2026)
 LINE_BYTES = 16000          # ... a timeseries': up to 6 lines of up to 240 periods (impact6, 9 Oct 2026)
 LINE_SERIES_MAX = 5         # lines in a timeseries: the lead and the 4 that changed most (the palette has five colours)
-LINE_SLOTS_MAX = 240        # periods a timeseries spans (the latest, when the file spans more)
+LINE_SLOTS_MAX = 360        # periods a timeseries spans (30 years of months) (the latest, when the file spans more)
 CHART_LIMITS_MAX = 16
 CHART_LIMIT_WHY_MAX = 160
 PLAN_CHARTS_READ = 12
@@ -2421,6 +2421,18 @@ def _series_lands(ctx: Ctx, lay: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _lead_unit_lands(ctx: Ctx, lay: Dict[str, Any]) -> Tuple[List[str], str]:
+    """(the series in the lead's unit, that unit): a table in several units charts one unit at a time (a percent rate and a dollar
+    amount share no axis and no colour scale); the lead's unit comes first. A table in one unit is all of its series, unit ''."""
+    lands = _series_lands(ctx, lay)
+    unit_of = lay.get("unit_of") or {}
+    if not unit_of or not lands:
+        return lands, ""
+    lead_h = str(lay.get("lead") or ctx.header(lands[0]))
+    u = str(unit_of.get(lead_h) or unit_of.get(ctx.header(lands[0])) or "")
+    return [l for l in lands if str(unit_of.get(ctx.header(l)) or "") == u], u
+
+
 def _avg_by_month(ctx: Ctx, land: str) -> Dict[str, float]:
     """{YYYY-MM: the published value} of one series (one row a month in a long table read one column per series)."""
     v = ctx.nums(land)
@@ -2441,7 +2453,8 @@ def _amount_text(v: float) -> str:
 
 
 def _b_series_change_heatmap(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
-    lands = _series_lands(ctx, lay)
+    lands, unit = _lead_unit_lands(ctx, lay)
+    pp = _is_pct_unit(unit)                       # a rate's year-on-year change is in percentage points
     series = []
     for land in lands:
         bym = _avg_by_month(ctx, land)
@@ -2463,29 +2476,36 @@ def _b_series_change_heatmap(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
             months = [m for m in bym if m.startswith(y) and (prev + m[4:]) in bym]
             a = math.fsum(bym[prev + m[4:]] for m in months)
             b = math.fsum(bym[m] for m in months)
-            if not months or a <= 0:
+            if not months or (a <= 0 and not pp):
                 row.append(_cell(None, 0, ""))
+                continue
+            if pp:
+                pct = (b - a) / len(months)
+                row.append(_cell(pct, len(months), _signed_figure(pct, 2)[:CELL_TEXT_MAX]))
                 continue
             pct = 100.0 * (b / a - 1.0)
             row.append(_cell(pct, len(months), _pct_text(pct)[:CELL_TEXT_MAX]))
         cells.append(row)
         rows.append(_short_label(ctx.header(land)))
     rows = _unique_labels(rows)
-    data, supp = _grid(rows, cols, cells, "diverging", _pct_text, "Series", "Year")
+    data, supp = _grid(rows, cols, cells, "diverging", (lambda v: _signed_figure(v, 2)) if pp else _pct_text, "Series", "Year")
     if _shown(data) == 0:
         raise Refused("no year has 5 or more months published in both it and the year before")
     shown = [(data["values"][i][j], rows[i], cols[j]) for i in range(len(rows)) for j in range(len(cols))
              if data["values"][i][j] is not None]
     hi = max(shown, key=lambda x: x[0])
     lo = min(shown, key=lambda x: x[0])
+    ft = (lambda v: _signed_figure(v, 2) + " percentage points") if pp else _pct_text
     summary = ("The largest rise: %s in %s (%s on the same months of %d); the largest fall: %s in %s (%s). Each cell compares a "
-               "year's published months with the same months a year earlier; the figures are the agency's, not graded."
-               % (hi[1], hi[2], _pct_text(hi[0]), int(hi[2]) - 1, lo[1], lo[2], _pct_text(lo[0])))
+               "year's published months with the same months a year earlier%s; the figures are the agency's, not graded."
+               % (hi[1], hi[2], ft(hi[0]), int(hi[2]) - 1, lo[1], lo[2], ft(lo[0]),
+                  " (the average of the months, in percentage points)" if pp else ""))
     return _record(
-        "change_heatmap", "Year-on-year change of each series",
+        "change_heatmap", "Year-on-year change of each series" + (", in percentage points" if pp else ""),
         "Each series' published months in a year against the same months a year earlier (%s to %s)" % (cols[0], cols[-1]),
         REGISTRY["change_heatmap"]["section"], "How each published series moved, year by year", [], None, None,
-        {"label": "change on the same months a year earlier", "unit": "%", "kind": "change_pct"}, data,
+        ({"label": "change in percentage points on the same months a year earlier", "unit": "pts", "kind": "amount"} if pp else
+         {"label": "change on the same months a year earlier", "unit": "%", "kind": "change_pct"}), data,
         _grid_table("Series", rows, cols, data["text"]), summary,
         (supp, "A year with fewer than 5 months published in both it and the year before is not shown." if supp else ""),
         "The table's published series, one value a month, as the engine read them",
@@ -2607,7 +2627,8 @@ def _b_series_bridge(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _b_series_slope(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
-    lands = _series_lands(ctx, lay)
+    lands, lunit = _lead_unit_lands(ctx, lay)
+    pp = _is_pct_unit(lunit)                      # a rate's change is in percentage points, its figures at their own decimals
     rows, start, stop = [], None, None
     for land in lands:
         bym = _avg_by_month(ctx, land)
@@ -2630,10 +2651,15 @@ def _b_series_slope(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
             continue                                      # one pair of windows for every row of the chart
         a = math.fsum(bym[m] for m in a_ms) / len(a_ms)
         b = math.fsum(bym[m] for m in b_ms) / len(b_ms)
-        if a <= 0:
+        if a <= 0 and not pp:
             continue
-        rows.append({"label": _short_label(ctx.header(land)), "a": _r6(a), "b": _r6(b), "a_text": _amount_text(a),
-                     "b_text": _amount_text(b), "change_text": _pct_text(100.0 * (b / a - 1.0))[:24]})
+        if pp:
+            dp = 2
+            rows.append({"label": _short_label(ctx.header(land)), "a": _r6(a), "b": _r6(b), "a_text": _figure(a, dp), "b_text": _figure(b, dp),
+                         "change_text": (_signed_figure(b - a, dp) + " pts")[:24]})
+        else:
+            rows.append({"label": _short_label(ctx.header(land)), "a": _r6(a), "b": _r6(b), "a_text": _amount_text(a),
+                         "b_text": _amount_text(b), "change_text": _pct_text(100.0 * (b / a - 1.0))[:24]})
         if len(rows) >= SLOPE_ROWS_MAX:
             break
     if len(rows) < 2:
@@ -2646,7 +2672,7 @@ def _b_series_slope(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
     summary = ("%s: %s on average in %s, %s in %s (%s). Averages of each window's published months, the agency's own figures; "
                "the whole-file change is history, not a graded claim." % (top["label"], top["a_text"], al, top["b_text"], bl,
                                                                           top["change_text"]))
-    unit = ", ".join(lay.get("units") or [])[:20]
+    unit = (lunit if lunit else ", ".join(lay.get("units") or []))[:20]
     return _record(
         "slope", "Where each series started and where it is now",
         "The average published month of %s against %s" % (al, bl), REGISTRY["slope"]["section"],
@@ -2781,19 +2807,58 @@ def _skipped(axis: Dict[str, Any], have: List[int], whole: bool) -> Optional[Dic
     return out
 
 
+_PCT_UNIT = re.compile(r"^\s*(percent|percentage|per cent|%)", re.I)
+
+
+def _is_pct_unit(unit: Any) -> bool:
+    """A rate in percent: its change is said in percentage points, never as a percent of a percent."""
+    return bool(unit) and bool(_PCT_UNIT.match(str(unit)))
+
+
 def _series_ranking(facts: List[Dict[str, Any]], mixed_units: bool) -> List[Dict[str, Any]]:
-    """The series after the lead, the biggest movers first: by the size of the change in the table's one unit, or by its
-    percent change when the series come in different units (their amounts are not comparable)."""
-    def key(f: Dict[str, Any]) -> Tuple[float, int]:
-        pct = f["change_pct"]["value"] if f.get("change_pct") else None
-        size = abs(pct) if (mixed_units and pct is not None) else (0.0 if mixed_units else abs(f["change"]["value"]))
-        return (-size, f["order"])
-    return sorted(facts[1:], key=key)
+    """The series after the lead, the biggest movers first, among the series in the lead's own unit (amounts in different units share
+    no axis and are not ranked against each one): by the size of the change in that unit."""
+    lead_unit = facts[0].get("unit", "")
+    same = [f for f in facts[1:] if f.get("unit", "") == lead_unit and f.get("eligible", True)]
+    return sorted(same, key=lambda f: (-abs(f["change"]["value"]), f["order"]))
+
+
+def _fact_for(label: str, fid: str, column: Optional[str], order: int, pts: List[Tuple[Any, float]], dp: int, grain: str,
+              whole_year: bool, unit: str) -> Dict[str, Any]:
+    """One series' whole-period facts from its published (date, value) points, sorted by date."""
+    (t0, v0), (t1, v1) = pts[0], pts[-1]
+    if grain == "day":
+        years = (t1 - t0).days / 365.25
+    else:
+        years = ((t1.year * 12 + t1.month) - (t0.year * 12 + t0.month)) / 12.0
+    change = v1 - v0
+    pp = _is_pct_unit(unit)
+    f: Dict[str, Any] = {
+        "id": fid, "column": column, "label": _short_label(label), "order": order, "unit": unit, "pp": pp, "pts": pts,
+        "first": {"date": _date_text(t0, grain, whole_year), "value": _r6(v0), "text": _figure(v0, dp)},
+        "latest": {"date": _date_text(t1, grain, whole_year), "value": _r6(v1), "text": _figure(v1, dp)},
+        "published": len(pts), "years": round(years, 3), "decimals": dp,
+        "change": {"value": _r6(change), "text": _figure(abs(change), dp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
+        "change_pct": None, "per_year": None, "cagr_pct": None}
+    # a rate's change is in percentage points: the percent change of 6.00 to 2.50 is not the story, and its compounded rate is no rate
+    if not pp and v0 != 0 and (v0 > 0) == (v1 >= 0 if v1 != 0 else v0 > 0):
+        pct = 100.0 * (v1 / v0 - 1.0) if v0 > 0 else 100.0 * (v1 - v0) / abs(v0)
+        f["change_pct"] = {"value": _r6(pct), "text": _pct_text(pct)}
+    if years >= 1.0:
+        py = change / years
+        f["per_year"] = {"value": _r6(py), "text": _signed_figure(py, dp)}
+        if not pp and v0 > 0 and v1 > 0:
+            cagr = 100.0 * ((v1 / v0) ** (1.0 / years) - 1.0)
+            f["cagr_pct"] = {"value": _r6(cagr), "text": _pct_text(cagr)}
+    return f
 
 
 def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """The whole-period facts of a long statistical table's series, computed from the rows the visitor downloads, or None
-    when the table has no usable series or dates. See the block comment above."""
+    when the table has no usable series or dates. See the block comment above. A series the layout set aside that still has 12 or
+    more published figures (lay["own_span"]: one the agency stopped publishing, one that began late) is read over its own span, last
+    in the order and labelled; the table's units are kept apart (lay["unit_of"]): the lead's unit is ranked, the others said."""
+    import pandas as pd
     lands = _series_lands(ctx, lay)
     axis = _period_axis(ctx)
     if not lands or axis is None:
@@ -2802,6 +2867,7 @@ def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     lead_h = str(lay.get("lead") or "")
     lead = next((l for l in lands if ctx.header(l) == lead_h), lands[0])
     lands = [lead] + [l for l in lands if l != lead] if lead_h else lands
+    unit_of = lay.get("unit_of") or {}
     facts: List[Dict[str, Any]] = []
     have: List[int] = []
     whole_year = grain == "year" and all(t.month == ts.dropna().iloc[0].month for t in ts.dropna())
@@ -2811,76 +2877,120 @@ def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if len(pts) < 2:
             continue
         pts.sort(key=lambda p: p[0])
-        (t0, v0), (t1, v1) = pts[0], pts[-1]
         dp = _dec_places(ctx.texts(land)[v.notna()])
-        if grain == "day":
-            years = (t1 - t0).days / 365.25
-        else:
-            years = ((t1.year * 12 + t1.month) - (t0.year * 12 + t0.month)) / 12.0
-        change = v1 - v0
-        f: Dict[str, Any] = {
-            "id": "period." + land, "column": land, "label": _short_label(ctx.header(land)), "order": order,
-            "first": {"date": _date_text(t0, grain, whole_year), "value": _r6(v0), "text": _figure(v0, dp)},
-            "latest": {"date": _date_text(t1, grain, whole_year), "value": _r6(v1), "text": _figure(v1, dp)},
-            "published": len(pts), "years": round(years, 3), "decimals": dp,
-            "change": {"value": _r6(change), "text": _figure(abs(change), dp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
-            "change_pct": None, "per_year": None, "cagr_pct": None}
-        if v0 != 0 and (v0 > 0) == (v1 >= 0 if v1 != 0 else v0 > 0):
-            pct = 100.0 * (v1 / v0 - 1.0) if v0 > 0 else 100.0 * (v1 - v0) / abs(v0)
-            f["change_pct"] = {"value": _r6(pct), "text": _pct_text(pct)}
-        if years >= 1.0:
-            py = change / years
-            f["per_year"] = {"value": _r6(py), "text": _signed_figure(py, dp)}
-            if v0 > 0 and v1 > 0:
-                cagr = 100.0 * ((v1 / v0) ** (1.0 / years) - 1.0)
-                f["cagr_pct"] = {"value": _r6(cagr), "text": _pct_text(cagr)}
+        f = _fact_for(ctx.header(land), "period." + land, land, order, pts, dp, grain, whole_year, str(unit_of.get(ctx.header(land), "")))
         facts.append(f)
         if grain != "day":
             have += [t.year * 12 + t.month - 1 for t, _x in pts]
     if not facts:
         return None
-    mixed = len(lay.get("units") or []) > 1
-    unit = ", ".join(lay.get("units") or [])
+    # the set-aside series with their own spans
+    why_note = {"discontinued": "no longer published after %s", "too recent": "published only from %s", "too sparse": "published too rarely to be "
+                "read beside the others"}
+    for k, e in sorted((lay.get("own_span") or {}).items(), key=lambda kv: str(kv[0])):
+        try:
+            pts = sorted((pd.Timestamp(d), float(t)) for d, t in e["pts"] if t not in ("", None))
+        except (ValueError, TypeError, KeyError):
+            continue
+        pts = [(t, x) for t, x in pts if abs(x) != float("inf") and x == x]
+        if len(pts) < 12:
+            continue
+        dp = _dec_places([t for _d, t in e["pts"]])
+        f = _fact_for(str(k), "period.own_%d" % len(facts), None, len(facts), pts, dp, grain, whole_year, str(unit_of.get(str(k), "")))
+        why = str(e.get("why") or "")
+        f["own"] = {"why": why, "note": (why_note.get(why, "set aside") % (f["latest"]["date"] if why == "discontinued" else f["first"]["date"]))
+                    if "%s" in why_note.get(why, "") else why_note.get(why, "set aside")}
+        facts.append(f)
+    # a series read over its own span competes for the chart and the movers only when it spans most of the table's (3 of every 5 years):
+    # a series of two years' change is not a rival of one of twenty-six, though the table lists it with its span
+    whole = max(f["years"] for f in facts if not f.get("own")) or 1.0
+    for f in facts:
+        f["eligible"] = (not f.get("own")) or f["years"] >= 0.6 * whole
+    mixed = len({f.get("unit", "") for f in facts}) > 1
+    lead_unit = facts[0].get("unit", "")
+    raw_units = lay.get("units") or []
+    unit = ", ".join(raw_units)
     scale = ", ".join(lay.get("scale") or [])
-    span_lo = min(f["first"]["date"] for f in facts)
-    span_hi = max(f["latest"]["date"] for f in facts)
+    if unit_of:
+        unit = lead_unit if not mixed else ""
+    elif unit and scale and not mixed:
+        unit = unit + " (" + scale + ")"
+    elif mixed:
+        unit = ""
+    span_lo = min(f["first"]["date"] for f in facts if not f.get("own"))
+    span_hi = max(f["latest"]["date"] for f in facts if not f.get("own"))
     sk = _skipped(axis, sorted(set(have)), whole_year)
     nunit = {"month": "month", "quarter": "quarter", "year": "year", "day": "day"}.get(grain, "period")
-    return {"axis": axis, "grain": grain, "facts": facts, "lead": facts[0]["id"], "mixed_units": mixed,
-            "unit": (unit + (" (" + scale + ")" if scale and not mixed else "")) if unit and not mixed else "",
-            "first": span_lo, "last": span_hi, "skipped": sk, "period_noun": nunit,
+    return {"axis": axis, "grain": grain, "facts": facts, "lead": facts[0]["id"], "mixed_units": mixed, "unit": unit,
+            "lead_unit": lead_unit, "first": span_lo, "last": span_hi, "skipped": sk, "period_noun": nunit,
             "published_periods": len({t for t in ts.dropna()}), "movers": _series_ranking(facts, mixed)}
 
 
+def _unit_words(f: Dict[str, Any]) -> str:
+    return "percentage points" if f.get("pp") else ""
+
+
 def _fact_sentence(f: Dict[str, Any]) -> str:
-    """One series, whole period, in the engine's words."""
+    """One series, whole period, in the engine's words. A rate (a unit in percent) is said in percentage points."""
     d = f["change"]["direction"]
-    head = "%s went from %s in %s to %s in %s" % (f["label"], f["first"]["text"], f["first"]["date"], f["latest"]["text"],
+    pp = f.get("pp")
+    fx = (lambda t: t + "%") if pp else (lambda t: t)
+    head = "%s went from %s in %s to %s in %s" % (f["label"], fx(f["first"]["text"]), f["first"]["date"], fx(f["latest"]["text"]),
                                                   f["latest"]["date"])
+    note = (" (%s)" % f["own"]["note"]) if f.get("own") else ""
     if d == "unchanged":
-        return head + ": unchanged."
-    tail = ": %s %s" % (d, f["change"]["text"])
+        return head + note + ": unchanged."
+    tail = ": %s %s" % (d, f["change"]["text"] + (" percentage points" if pp else ""))
     if f["change_pct"]:
         tail += " (%s)" % f["change_pct"]["text"]
     if f["per_year"]:
-        tail += ", averaging %s a year" % f["per_year"]["text"]
+        tail += ", averaging %s%s a year" % (f["per_year"]["text"], " points" if pp else "")
         if f["cagr_pct"]:
             tail += " (%s a year compounded)" % f["cagr_pct"]["text"]
-    return head + tail + "."
+    return head + note + tail + "."
+
+
+def _ranked_for_table(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The page's table order. A table in one unit with every series over the whole span keeps the file's order. Otherwise the lead
+    first, then its unit's series by the size of the change, then each other unit's the same: the biggest movers are what a
+    capped table (30 rows, the report writer's 12) must show, and a series read over its own span is labelled as such."""
+    if len({f.get("unit", "") for f in facts}) == 1 and not any(f.get("own") for f in facts):
+        return list(facts)
+    lead_unit = facts[0].get("unit", "")
+    out = [facts[0]]
+    for u in [lead_unit] + sorted({f.get("unit", "") for f in facts} - {lead_unit}):
+        out += sorted((f for f in facts[1:] if f.get("unit", "") == u), key=lambda f: (-abs(f["change"]["value"]), f["order"]))
+    return out
 
 
 def _period_table(facts: List[Dict[str, Any]]) -> Dict[str, Any]:
     cols = ["Series", "First published", "Latest published", "Change", "Change %", "Average a year"]
     rows = []
-    for f in facts[:PERIOD_ROWS_MAX]:
+    mixed = len({f.get("unit", "") for f in facts}) > 1
+    for f in _ranked_for_table(facts)[:PERIOD_ROWS_MAX]:
         sign = {"up": "+", "down": MINUS, "unchanged": ""}[f["change"]["direction"]]
-        rows.append([f["label"], "%s (%s)" % (f["first"]["text"], f["first"]["date"]),
+        pts = " points" if f.get("pp") else ""
+        label = f["label"] + ((" (%s)" % f["own"]["note"]) if f.get("own") else "") + ((" [%s]" % f["unit"]) if mixed and f.get("unit") else "")
+        rows.append([label, "%s (%s)" % (f["first"]["text"], f["first"]["date"]),
                      "%s (%s)" % (f["latest"]["text"], f["latest"]["date"]),
-                     (sign + f["change"]["text"]) if sign else f["change"]["text"],
+                     ((sign + f["change"]["text"]) if sign else f["change"]["text"]) + pts,
                      f["change_pct"]["text"] if f["change_pct"] else "",
-                     (f["per_year"]["text"] + (" (%s compounded)" % f["cagr_pct"]["text"] if f["cagr_pct"] else ""))
+                     (f["per_year"]["text"] + pts + (" (%s compounded)" % f["cagr_pct"]["text"] if f["cagr_pct"] else ""))
                      if f["per_year"] else ""])
     return {"cols": cols, "rows": rows}
+
+
+def _rank_line(facts: List[Dict[str, Any]], sign: int, n: int = 3) -> str:
+    """The series of the lead's unit that rose (sign 1) or fell (sign -1) most, each with its change and, where its span is not the
+    whole table's, the span."""
+    lead_unit = facts[0].get("unit", "")
+    pool = [f for f in facts if f.get("unit", "") == lead_unit and f.get("eligible", True) and (f["change"]["value"] * sign) > 0]
+    pool.sort(key=lambda f: (-abs(f["change"]["value"]), f["order"]))
+    parts = []
+    for f in pool[:n]:
+        span = (" (%s to %s)" % (f["first"]["date"], f["latest"]["date"])) if f.get("own") else ""
+        parts.append("%s %s%s%s" % (f["label"], ("+" if sign > 0 else MINUS) + f["change"]["text"], " points" if f.get("pp") else "", span))
+    return "; ".join(parts)
 
 
 def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -2900,24 +3010,47 @@ def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     else:
         first = "Over the whole file, %s to %s, the table has figures for %s %ss." % (pf["first"], pf["last"], _count(n_pub), noun)
     unit = pf["unit"]
-    lines = [first + ((" Figures are in %s." % unit) if unit else ""),
+    lines = [first + ((" Figures are in %s." % unit) if unit and not lead.get("pp") else (" Figures are percent." if lead.get("pp") and not pf["mixed_units"] else "")),
              "These changes are exact arithmetic on published figures, so none is graded.",
-             _fact_sentence(lead)] + [_fact_sentence(f) for f in pf["movers"][:PERIOD_STORY_MOVERS]]
+             _fact_sentence(lead)]
+    lead_group = [f for f in facts if f.get("unit", "") == pf["lead_unit"]]
+    if pf["mixed_units"]:
+        lines[0] += " The series come in %s units, so each unit is read apart; the changes below are the %s series' own." % (
+            _count(len({f.get("unit", "") for f in facts})), pf["lead_unit"] or "first")
+    risen, fallen = _rank_line(facts, 1), _rank_line(facts, -1)
+    n_grp = len(lead_group)
+    if n_grp > 2 and (risen or fallen):
+        unit_w = (pf["lead_unit"] + " ") if pf["lead_unit"] else ""
+        lines.append(("Of the %s %sseries, those that rose most over their published span: %s." % (_count(n_grp), unit_w, risen)) if risen else
+                     "Of the %s %sseries, none rose over its published span." % (_count(n_grp), unit_w))
+        lines.append(("Those that fell most: %s." % fallen) if fallen else "None fell over its published span.")
+    else:
+        lines += [_fact_sentence(f) for f in pf["movers"][:PERIOD_STORY_MOVERS]]
+    # each other unit: its first series, said in full, so a table with percent rates and dollar amounts answers for both
+    for u in sorted({f.get("unit", "") for f in facts} - {pf["lead_unit"]}):
+        g = [f for f in facts if f.get("unit", "") == u]
+        lines.append("In %s, %s series: %s" % (u or "another unit", _count(len(g)), _fact_sentence(g[0])))
+    own_n = len([f for f in facts if f.get("own")])
+    if own_n:
+        lines.append("%s of the %s series are read over their own, shorter span (the agency stopped publishing some and began others later), each labelled "
+                     "in the table and never cut to the others' span." % (_count(own_n), _count(len(facts))))
     table = _period_table(facts)
+    ordered = _ranked_for_table(facts)
+    shown = ordered[:PERIOD_ROWS_MAX]
     return {"version": PERIOD_VERSION, "basis": PERIOD_BASIS, "grain": pf["grain"], "first": pf["first"], "last": pf["last"],
             "periods_published": n_pub, "unit": unit, "lead": pf["lead"],
             "skipped": ({k: sk[k] for k in ("count", "of", "first", "last", "unit", "ranges", "pattern")} | {"text": _skipped_text(sk, sk["unit"])})
             if sk else None,
             "series": [{k: f[k] for k in ("id", "label", "first", "latest", "published", "years", "change", "change_pct",
-                                          "per_year", "cagr_pct")} | {"text": _fact_sentence(f)} for f in facts],
+                                          "per_year", "cagr_pct")} | {"text": _fact_sentence(f)} for f in shown],
             "movers": [f["id"] for f in pf["movers"][:PERIOD_STORY_MOVERS]],
             "lines": lines, "table": table}
 
 
 def _line_selection(pf: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The lines of the chart: the lead, then the biggest movers (series_facts' ranking), at most 5. A table in several units
-    draws its lead alone: amounts in different units share no axis."""
-    k = 1 if pf["mixed_units"] else min(5, len(pf["facts"]))
+    """The lines of the chart: the lead, then the biggest movers of its unit (series_facts' ranking), at most 5. Amounts in other
+    units share no axis, so they are not drawn here."""
+    k = min(5, len(pf["facts"]))
     return [pf["facts"][0]] + [f for f in pf["movers"] if f["published"] >= 12][:max(0, k - 1)]
 
 
@@ -2950,11 +3083,13 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         m = _idx_month(first_month + slot * step)
         return m[:4] if whole_year else m
     drawn: List[Dict[str, Any]] = []
+    m_last = max(m for m, _i in rows)
     for f in pick:
-        v = ctx.nums(f["column"])
         cell: Dict[int, List[float]] = {}
-        for m, i in rows:
-            x = v.iloc[i]
+        for t, x in f["pts"]:
+            m = t.year * 12 + t.month - 1
+            if m < lo or m > m_last or (m - lo) % step:
+                continue
             slot = (m - lo) // step - skip
             if x == x and abs(x) != float("inf") and slot >= 0:
                 cell.setdefault(slot, []).append(float(x))
@@ -2970,14 +3105,18 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         a, b = pts[min(pts)], pts[max(pts)]
         dp = min(6, f["decimals"] + (1 if grain == "day" else 0))
         drawn.append({"fact": f, "pts": pts, "dp": dp, "line": {
-            "label": f["label"], "runs": runs, "first_text": _figure(a, dp), "last_text": _figure(b, dp),
-            "change_text": _pct_text(100.0 * (b / a - 1.0)) if a > 0 and b >= 0 else ""}})
+            "label": f["label"] + ((" (to %s)" % f["latest"]["date"]) if f.get("own") and f["own"]["why"] == "discontinued"
+                                   else (" (from %s)" % f["first"]["date"]) if f.get("own") else ""),
+            "runs": runs, "first_text": _figure(a, dp), "last_text": _figure(b, dp),
+            "change_text": (_signed_figure(b - a, dp).replace("+0.", "+0.") + " pts") if f.get("pp") and b != a else
+                           ("0 pts" if f.get("pp") else (_pct_text(100.0 * (b / a - 1.0)) if a > 0 and b >= 0 else ""))}})
     if not drawn:
         raise Refused("no series has two published periods")
     labels = _unique_labels([d["line"]["label"] for d in drawn])
     for d, lab in zip(drawn, labels):
         d["line"]["label"] = lab
-    unit = pf["unit"]
+    unit = pf["unit"] or pf["lead_unit"]
+    n_other = len([f for f in pf["facts"] if f.get("unit", "") != pf["lead_unit"]])
     noun = {"month": "Month", "quarter": "Quarter start", "year": "Year"}.get(grain, "Month")
 
     def assemble(use: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -3001,18 +3140,19 @@ def _b_series_lines(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
         l0, l1 = month_text(min(lead["pts"])), month_text(max(lead["pts"]))
         more = [d["line"]["label"] for d in use[1:]]
         what = "the lead series and the %d that changed most" % len(more) if more else "the lead series"
-        if pf["mixed_units"] and len(pf["facts"]) > 1:
-            what += " (the series come in different units, so only the lead is drawn)"
+        if pf["mixed_units"] and n_other:
+            what += " (%s in other units not drawn)" % _count(n_other)
         title = "Each series over the whole period" if more else "%s over the whole period" % lead["line"]["label"]
-        subtitle = "%s to %s: %s, of %s series; periods with no published figure are gaps%s%s" % (
-            month_text(0), month_text(n - 1), what, _count(len(pf["facts"])),
+        n_same = len([f for f in pf["facts"] if f.get("unit", "") == pf["lead_unit"] and f.get("eligible", True)])
+        subtitle = "%s to %s: %s, of %s series; gaps are left as gaps%s%s" % (
+            month_text(0), month_text(n - 1), what, _count(n_same),
             ("; the latest %s of %s periods" % (_count(n), _count(n_all))) if skip else "",
             ("; in %s" % unit) if unit else "")
-        summary = ("%s went from %s in %s to %s in %s%s.%s Each point is a published figure%s, and where the publisher skipped a period the "
-                   "line stops and starts again." % (
+        names = (" Drawn with it: %s." % ", ".join(more)) if more and len(", ".join(more)) <= 110 else \
+            ((" Drawn with it: %s other series." % _count(len(more))) if more else "")
+        summary = ("%s went from %s in %s to %s in %s%s.%s Each point is a published figure; a gap is never filled in%s." % (
                        lead["line"]["label"], lead["line"]["first_text"], l0, lead["line"]["last_text"], l1,
-                       (" (%s)" % lead["line"]["change_text"]) if lead["line"]["change_text"] else "",
-                       (" The lines drawn with it: %s." % ", ".join(more)) if more else "",
+                       (" (%s)" % lead["line"]["change_text"]) if lead["line"]["change_text"] else "", names,
                        " (a day's figures averaged into its month)" if grain == "day" else ""))
         data = {"x": {"first": _idx_month(first_month), "n": n, "step": step, "label": noun}, "series": [d["line"] for d in use],
                 "y_label": _cut(unit, 40)}

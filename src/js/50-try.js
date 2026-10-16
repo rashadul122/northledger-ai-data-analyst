@@ -2574,7 +2574,10 @@
       // the engine's results reach /report with "[your file]" for the file's name (engine/nl_browser.py
       // results_for_ai); the name comes back only here, in this browser (a share link keeps the placeholder)
       AI_FIGS = {};                               // the figures of the report shown before this one are gone
-      var html = aiReportHtml(String(j.report || '').split(FILE_WORD).join(S.name || FILE_WORD));
+      // the report's own title first (its first line), the visitor's question under it, the file's name small after: a report whose
+      // first line is no title (a section heading, a list) starts with its sections, and the placeholder never shows as a heading
+      var rt = aiReportTitle(j.report), rest = rt.title ? rt.rest : String(j.report || '');
+      var html = aiTitleHtml(rt.title, reportGoal(j), S.prevFile || S.name) + aiReportHtml(rest.split(FILE_WORD).join(S.name || FILE_WORD));
       var srcs = j.sources || [];
       // the trust badge (owner's decision, 28 Sep 2026): the guard's repair count, shown not hidden, with the count
       // first. A figure passes only when the engine computed it or a source the same sentence cites prints it (the
@@ -2620,6 +2623,22 @@
       // report it was written from only (a report reopened from the gallery may be another file's)
       if (window.NL2 && window.NL2.aiAudit) window.NL2.aiAudit(j === S.liveAi ? T.removedWords(j) : '');
       goTo(card, true);
+    }
+
+    // the report's title: its first line when that is a line of words ("Canadian rates: ..." or "# Canadian rates: ..."), not a section
+    // heading, a list, a table or a chart marker (insight-proxy/src/share.js reportTitleOf says the same)
+    function aiReportTitle(report) {
+      var lines = String(report || '').replace(/\r/g, '').split('\n'), i = 0;
+      while (i < lines.length && !lines[i].trim()) i++;
+      var first = i < lines.length ? lines[i].trim() : '';
+      if (!first || /^(##|[-*|]\s?|\d+[.)]\s|\[(CHART|TABLE):)/.test(first) || first.length > 220 || !/^##\s/m.test(lines.slice(i + 1).join('\n'))) return { title: '', rest: String(report || '') };
+      return { title: first.replace(/^#\s+/, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/\[(?:your file|value [A-Z]{1,3})\]/g, '').replace(/\s+/g, ' ').trim(), rest: lines.slice(i + 1).join('\n').replace(/^\n+/, '') };
+    }
+    function aiTitleHtml(title, goal, file) {
+      var f = String(file || '').trim(), named = f && f !== FILE_WORD;
+      if (!title && !goal && !named) return '';
+      return '<header class="ai-rep-title">' + (title ? '<h2 class="ai-title" id="try-ai-title">' + esc(title) + '</h2>' : '') +
+        (goal ? '<p class="ai-q">' + esc(goal) + '</p>' : '') + (named ? '<p class="ai-file">File: ' + esc(f) + '</p>' : '') + '</header>';
     }
 
     // markdown-lite, the same rendering the shared viewer uses (headings, bullets, tables)
@@ -3049,7 +3068,7 @@
           results: S.aiResults, charts: S.aiCharts, tables: S.aiTables, kept: rep.kept, name: file, showName: named, date: now,
           goal: reportGoal(rep) });
         bytes = W.build(m, { paper: pdfPaper() });
-        name = W.fileName(now, named ? file : '');
+        name = W.fileName(now, named ? file : '', m.title);
       } catch (e) {
         out.hidden = false; out.textContent = 'The PDF could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
         return;

@@ -2069,10 +2069,13 @@
   }
   function sgnPct(v) { v = Number(v); return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(1) + '%'; }
   // a finding's change as the engine states it: a percent, or a rate's change in percentage points (value_unit, 16 Oct 2026)
+  // a change with no ratio (the core's difference, value_unit "own units", e.g. a series that was zero the year before) in the series'
+  // own units, never as a percent ("+13333.3%" was a dollar difference of 13,333)
   function chgText(f) {
-    var v = Number(f.value), u = f.value_unit;
+    var v = Number(f.value), u = f.value_unit, sg = v > 0 ? '+' : v < 0 ? '\u2212' : '';
+    if (u === 'own units') return sg + fmtVal(Math.abs(v)) + ' (own units)';
     if (u !== 'percentage points' && u !== 'the rate\'s own units') return sgnPct(v);
-    return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Number(Math.abs(v).toPrecision(3)) + (u === 'percentage points' ? ' percentage points' : ' (own units)');
+    return sg + Number(Math.abs(v).toPrecision(3)) + (u === 'percentage points' ? ' percentage points' : ' (own units)');
   }
   function shortClaim(c) {
     var m = String(c || '').match(/^Change in (?:the )?(.*?), latest/);
@@ -2335,9 +2338,12 @@
       p3.push({ type: 'h2', num: '', text: 'Low, base and high cases', id: 'sc-fc', engine: true });
       var fcards = ['low', 'base', 'high'].map(function (part) { var x = f(H, part); return x ? cardOf(x, part === 'base' ? 'Base case' : part === 'low' ? 'Low case' : 'High case', part === 'base') : null; }).filter(Boolean);
       if (fcards.length) p3.push({ type: 'cards', engine: true, items: fcards });
-      var fcT = { title: 'The forecast added up', cols: ['Months ahead', 'Low', 'Base', 'High'],
+      // a rate, a level or a stock is never added up over months (16 Oct 2026): its items are the level in each horizon's month
+      var summed = !!f(H, 'base') && /added up/.test(String(f(H, 'base').label || '')) && !/never added up/.test(String(f(H, 'base').label || ''));
+      var fcT = { title: summed ? 'The forecast added up' : 'The forecast level, months ahead', cols: ['Months ahead', 'Low', 'Base', 'High'],
         rows: hs.map(function (h) { return [String(h), f(h, 'low') ? String(f(h, 'low').text) : '', f(h, 'base') ? String(f(h, 'base').text) : '', f(h, 'high') ? String(f(h, 'high').text) : '']; }) };
-      if (hs.length > 1 && !already(fcT)) p3.push({ type: 'table', engine: true, table: fcT, source: 'Source: NorthLedger engine forecast; the low and high cases add up each month\'s own range.' });
+      if (hs.length > 1 && !already(fcT)) p3.push({ type: 'table', engine: true, table: fcT, source: summed ? 'Source: NorthLedger engine forecast; the low and high cases add up each month\'s own range.'
+        : 'Source: NorthLedger engine forecast; each row is the level forecast for that month with its own range, never a sum of months.' });
     }
     // the historical range of a level (group history_range: engine/nl_scenarios.py _history_range): for a rate, a price
     // or an index the engine does not forecast, how far its monthly average moved in the file's own past 12-month and
@@ -2620,7 +2626,7 @@
     var findings = (Array.isArray(R.findings) ? R.findings : []).filter(function (f) { return f && f.claim; }).slice(0, 20).map(function (f) {
       var o = { claim: str(f.claim, 300), kind: str(f.kind, 20), verdict: str(f.verdict, 20) };
       if (isFinite(f.value) && f.value !== null) o.value = f.value;
-      if (f.value_unit === 'percentage points' || f.value_unit === 'the rate\'s own units') o.value_unit = f.value_unit;
+      if (f.value_unit === 'percentage points' || f.value_unit === 'the rate\'s own units' || f.value_unit === 'own units') o.value_unit = f.value_unit;
       if (f.why) o.why = str(f.why, 240);
       return o;
     });

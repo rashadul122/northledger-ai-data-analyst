@@ -362,11 +362,27 @@ def _fast_cell_readers(_cl: Any) -> Dict[str, Any]:
     other cell is read by the helper itself. On a 50,000-row table of 79 number columns these helpers run four million times."""
     import math as _m
     import numpy as np
-    real_coerce, real_body, real_changed = _cl._coerce_numeric_detail, _cl._numeric_body, _cl._changed_mask
+    real_coerce, real_body, real_changed, real_na = _cl._coerce_numeric_detail, _cl._numeric_body, _cl._changed_mask, _cl._is_na
+
+    def is_na(value: Any) -> bool:
+        # pd.isna of the commonest cells, without the call: None is missing, a text never is, a float when it is NaN
+        if value is None:
+            return True
+        t = type(value)
+        if t is str:
+            return False
+        if t is float:
+            return value != value
+        return real_na(value)
+
     plain = _PLAIN_DECIMAL.fullmatch
 
     def coerce(value: Any, allow_parens: bool, decimal: str = ".", units: Any = ()) -> Any:
-        # a plain decimal under the dot convention, in a column whose units are words: float(value), as the reader returns it
+        # a missing cell, a float, and a plain decimal under the dot convention in a column whose units are words: as the reader returns them
+        if value is None:
+            return np.nan, "", ""
+        if type(value) is float:
+            return (np.nan, "", "") if value != value else (float(value), "", "")
         if type(value) is str and decimal == "." and plain(value) and all(isinstance(u, str) and u.isalpha() for u in units):
             f = float(value)
             if _m.isfinite(f):
@@ -393,7 +409,24 @@ def _fast_cell_readers(_cl: Any) -> Dict[str, Any]:
             out[both] = np.not_equal(ov[both], nv[both]).astype(bool)
         return pd.Series(out, index=old.index)
 
-    return {"_coerce_numeric_detail": coerce, "_numeric_body": body, "_changed_mask": changed}
+    real_row_key = _cl._row_key
+    na_key = "\x00<NA>"
+
+    def row_key(values: Any) -> Any:
+        # a row's duplicate key: a missing cell as the reader marks it, a text, an int or a float as itself; anything else as the reader keys it
+        out: List[Any] = []
+        for v in values:
+            t = type(v)
+            if v is None or (t is float and v != v):
+                out.append(na_key)
+            elif t is str or t is int or t is float:
+                out.append(v)
+            else:
+                out.append(real_row_key((v,))[0])
+        return tuple(out)
+
+    return {"_coerce_numeric_detail": coerce, "_numeric_body": body, "_changed_mask": changed, "_is_na": is_na,
+            "_row_key": row_key}
 
 
 # The profiler's per-column statements on a wide table (score_table: one classifying scan per column, then the
@@ -5401,7 +5434,7 @@ def _profile_facts_of(R: "_Reading", headers: List[str], hidden: Iterable[str] =
         if land is None or land in seen:
             continue
         seen.add(land)
-        txt = R.texts[land].astype(str).str.strip()
+        txt = _ns()._label_texts(R, land)
         fill = R.filled(land)
         f = txt[fill]
         n_f = int(fill.sum())
@@ -5424,7 +5457,7 @@ def _profile_facts_of(R: "_Reading", headers: List[str], hidden: Iterable[str] =
                 if dd is not None and not series:
                     # the series over the rows the engine kept, as the analyses read them (their frame is those rows)
                     series.append(_series_groups(
-                        [(c, np.where(R.filled(c), R.texts[c].astype(str).str.strip().to_numpy(), "")[kept])
+                        [(c, np.where(R.filled(c), _ns()._label_texts(R, c).to_numpy(), "")[kept])
                          for c in dict.fromkeys(R.landed(x) for x in headers)
                          if c is not None and c != day_col and c not in hidden and R.kind(c) == "text"], days[kept]))
                 grp = series[0][ok_n[kept]] if dd is not None and series and series[0] is not None else None
@@ -11441,7 +11474,7 @@ def _date_values(df: Any, exclude: Set[str]) -> Tuple[Optional[str], Optional[An
             continue
         t = df[c].astype(str).str.strip()
         f = t[t != ""]
-        if len(f) < 4 or float(f.map(lambda v: bool(re.match(r"^\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?(?:[ T].*)?$", v))).mean()) < 0.95:
+        if len(f) < 4 or not _share_at_least(f, lambda v: bool(re.match(r"^\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?(?:[ T].*)?$", v)), 0.95):
             continue
         # 2022-03-05, 2022-3-5, 2022/03/05 and 2022-03 (the first of the month): the core reads them all
         dd = t.str.extract(r"^\s*(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?")
@@ -11467,6 +11500,8 @@ def ledger_tidy(data: bytes, keep: Optional[Set[str]] = None, S_probe: Any = Non
     if _publisher_header(df.columns) is not None or len([c for c in df.columns if _pnorm(c) in _PANEL_META]) >= 3:
         return None                                            # a publisher's table: its structure is read by nl_structure
     kept = set(keep or ())
+    if not os.environ.get("NL_BROWSER_STRICT") and _date_values(df, set())[0] is None:
+        return None                     # no column of ISO dates at all, so none outside the personal columns: the scan below is not needed
     aside = {c for c in _raw_personal_columns(df, list(df.columns)) if c not in kept and _engine_slug(c) not in kept}
     date_col, dts = _date_values(df, aside)
     if date_col is None:

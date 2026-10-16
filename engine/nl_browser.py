@@ -12436,8 +12436,12 @@ def _analyst_series_kinds(layout: Dict[str, Any], cols: List[Any]) -> Dict[str, 
     """A long statistical table's series, each as the analyst loop reads a measure (rate, level, stock or flow), decided by
     the structure's own rule (nl_structure._classify on the series' unit and the table's labels), never by the header's
     words alone: "Total Outstanding Guarantees" is a balance at a date, and adding its 12 months printed 6.66 million for
-    a 0.6 million balance (a visitor's StatCan table, 16 Oct 2026); a Percent series changes in points."""
-    import nl_structure as _ns
+    a 0.6 million balance (a visitor's StatCan table, 16 Oct 2026); a Percent series changes in points. With the
+    structure layer unavailable the loop keeps its own reading (nothing here may stop a report)."""
+    try:
+        import nl_structure as _ns
+    except ImportError:
+        return {}
     unit_of = layout.get("unit_of") or {}
     units = [str(u) for u in layout.get("units") or [] if u]
     sole = units[0] if len(units) == 1 else None      # a table in one unit records no unit per series (unit_of)

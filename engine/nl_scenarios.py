@@ -963,11 +963,59 @@ def _forecast_sums(rep: Dict[str, Any]) -> Tuple[bool, str]:
         agg = str(est["measure"].get("aggregation") or "")
         if agg:
             return agg.startswith("sum"), ("a flow" if agg.startswith("sum") else "a %s" % (est["measure"].get("type") or "level"))
+    # a plain file (no layout, no estimand): what the series IS decides (16 Oct 2026), before the core's claim, whose "average month of"
+    # only says the file has one row a month (a monthly sales series too): the plan's semantic type of the column, then the analyst
+    # loop's reading of the measure (nl_analyst._measure_kind: its name's words and its values), then the structure's rule on the name
+    # (nl_structure._classify). A level, a rate, a price, an index, a temperature or a balance is never added up across months
+    got = _series_kind_sums(rep, slug)
+    if got is not None:
+        return got
     claim = next((str(f.get("claim") or "") for f in rep.get("findings") or [] if isinstance(f, dict) and f.get("kind") == "business"
                   and f.get("id") == "measure.%s.change" % slug), "")
     if "average month of" in claim:
         return False, "a level, averaged by month"
     return True, "a flow"
+
+
+_PLAN_SUMS = {"flow_amount": (True, "a flow"), "count": (True, "a count"), "percentage": (False, "a rate"),
+              "level": (False, "a level"), "rating": (False, "a level"), "log_scale": (False, "a level")}
+
+
+def _series_kind_sums(rep: Dict[str, Any], slug: str) -> Optional[Tuple[bool, str]]:
+    """(whether the series' months add up, why) from what the series is (see _forecast_sums), or None when nothing says."""
+    an = rep.get("analyst") if isinstance(rep.get("analyst"), dict) else {}
+    meas = [m for m in ((an.get("shape") or {}).get("measures") or []) if isinstance(m, dict)]
+    col = next((str(m.get("column")) for m in meas if NB._engine_slug(str(m.get("column") or "")) == slug), None)
+    plan = rep.get("ai_plan") if isinstance(rep.get("ai_plan"), dict) else {}
+    for c in plan.get("columns") or []:
+        if isinstance(c, dict) and NB._engine_slug(str(c.get("name") or "")) == slug and c.get("semantic_type") in _PLAN_SUMS:
+            return _PLAN_SUMS[str(c["semantic_type"])]
+    kind = next((str(m.get("kind")) for m in meas if str(m.get("column")) == col), "") if col else ""
+    name = col or slug.replace("_", " ")
+    try:
+        import nl_analyst as NA
+        import pandas as pd
+        if not kind:
+            # the scenarios are built before the analyst block: the analyst's own rule on the measure's name
+            kind = NA._measure_kind(name, pd.Series([], dtype=float))
+        if kind in ("rate", "level", "stock"):
+            return False, "a " + kind
+        if NA._has(name, NA._FLOW_WORDS) or name.endswith(" count"):
+            return True, "a flow"
+    except Exception:  # noqa: BLE001 - the analyst module is an aid here
+        if kind in ("rate", "level", "stock"):
+            return False, "a " + kind
+    try:
+        import nl_structure as NSt
+        t = NSt._classify("", name, name)
+    except Exception:  # noqa: BLE001 - the structure layer is an aid here; the claim decides
+        t = {}
+    ty = str(t.get("type") or "")
+    if t.get("level") or ty in ("rate", "index", "stock", "precision"):
+        return False, {"index": "an index", "precision": "a precision"}.get(ty, "a " + (ty if ty in ("rate", "stock") else "level"))
+    if ty in ("flow", "count"):
+        return True, "a flow"
+    return None
 
 
 def _forecast_items(rep: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:

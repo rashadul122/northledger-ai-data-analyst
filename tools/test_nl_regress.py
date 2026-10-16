@@ -2845,6 +2845,34 @@ def test_s22_which_rates_rose_and_fell_most_is_ranked_fairly_over_one_window_wit
     assert "those that rose most: Real return bonds, long-term +1.00 points" in rk["lines"][0], rk["lines"]
 
 
+def test_s23_a_plain_files_forecast_adds_up_only_a_flow_decided_by_what_the_series_is():
+    """A plain file (no long-table layout, no estimand) forecast its series as a flow, its 12 months added up, whatever the series was
+    (16 Oct 2026): the core's claim "the average month of" only says the file has one row a month, so it cannot tell a balance from
+    sales. What the series is decides now: a price, a temperature or a balance is a level in a month, never added up; sales add up."""
+    import nl_scenarios as SC
+    rng = np.random.default_rng(3)
+    dates = pd.date_range("2020-01-01", periods=69, freq="MS")
+    as_of = (dates[-1] + pd.DateOffset(months=1)).strftime("%Y-%m-%d")
+    for col, base, sums in (("Account balance", 50000.0, False), ("Temperature", 12.0, False), ("Price", 80.0, False),
+                            ("Sales", 1000.0, True)):
+        d = pd.DataFrame({"Month": dates.strftime("%Y-%m-%d"), col: (base + np.cumsum(rng.normal(0, base * 0.02, 69))).round(2)})
+        rep = NB.run(d.to_csv(index=False).encode(), "plain.csv", "", {}, as_of)
+        assert rep["ok"] and rep["forecast"]["available"], (col, rep.get("error"))
+        assert SC._forecast_sums(rep)[0] is sums, (col, SC._forecast_sums(rep))
+        pts = rep["forecast"]["forecast"]
+        it = {x["id"]: x for x in rep["scenarios"]["items"] if x["group"] == "forecast"}
+        assert it, col
+        for h in (3, 6, 12):
+            want = sum(p["value"] for p in pts[:h]) if sums else pts[h - 1]["value"]
+            assert abs(it["forecast.%d.base" % h]["value"] - round(want, 6)) < 1e-6, (col, h, it["forecast.%d.base" % h]["value"], want)
+            assert ("never added up" in it["forecast.%d.base" % h]["label"]) is not sums, it["forecast.%d.base" % h]["label"]
+    # with a plan, the plan's semantic type of the column decides first (a percentage is a rate)
+    d = pd.DataFrame({"Month": dates.strftime("%Y-%m-%d"), "Sales": (1000 + np.cumsum(rng.normal(0, 20, 69))).round(2)})
+    rep = NB.run(d.to_csv(index=False).encode(), "plain.csv", "", {}, as_of)
+    rep["ai_plan"] = {"columns": [{"name": "Sales", "semantic_type": "percentage"}]}
+    assert SC._forecast_sums(rep) == (False, "a rate")
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

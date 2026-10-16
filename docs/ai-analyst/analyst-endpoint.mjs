@@ -1,6 +1,7 @@
 // POST /analyst: the AI planner's rounds of the analyst loop (reference handler for insight-proxy).
 //
-// Paste into insight-proxy (src/analyst.js) next to step-schema.json and route POST /analyst to handleAnalyst.
+// Copied into insight-proxy as src/analyst.js (beside step-schema.json) by deploy/insight-proxy/apply-patch.mjs, which
+// routes /analyst to analystFetch (CORS, the proxy's rate limiters and daily spend counter, then handleAnalyst).
 // The protocol, the limits and the page loop are in docs/ai-analyst/PROTOCOL.md of the site repository.
 //
 // What it does: the page sends the file's shape (column names and kinds, never a row) and the ledger texts of the
@@ -12,8 +13,8 @@
 //
 // Environment (wrangler.toml [vars] / secrets). The model is DeepSeek when DEEPSEEK_API_KEY is set (the site's own
 // worker words /plan and /report with it), else Claude:
-//   DEEPSEEK_API_KEY      secret (npx wrangler secret put DEEPSEEK_API_KEY): DeepSeek's chat API, JSON mode
-//   DEEPSEEK_MODEL        default "deepseek-chat"
+//   DEEPSEEK_API_KEY      secret (npx wrangler secret put DEEPSEEK_API_KEY): DeepSeek's chat API (no JSON mode: the answer is parsed leniently)
+//   DEEPSEEK_MODEL        default "deepseek-flash" (the proxy's own default); DEEPSEEK_BASE_URL as the proxy reads it
 //   ANTHROPIC_API_KEY     secret, used only when DEEPSEEK_API_KEY is not set
 //   ANALYST_MODEL         default "claude-opus-5-5" (the Claude path)
 //   ANALYST_TIMEOUT_MS    default 25000 (the page waits ANALYST_TIMEOUT_MS + 10 s, see PROTOCOL.md "Timeouts")
@@ -334,7 +335,7 @@ function json(body, status = 200) {
   });
 }
 
-export async function handleAnalyst(request, env) {
+export async function handleAnalyst(request, env, opts = {}) {
   if (request.method !== "POST") return json({ error: "method" }, 405);
   const text = await request.text();
   if (text.length > ANALYST_LIMITS.maxBodyBytes)
@@ -382,6 +383,15 @@ export async function handleAnalyst(request, env) {
     })),
   });
 
+  // the proxy's daily spend: one model call reserved before it is made (opts.reserve, from analystFetch)
+  if (typeof opts.reserve === "function") {
+    const rv = await opts.reserve();
+    if (rv !== "ok") {
+      return rv === "busy"
+        ? json({ error: "busy" }, 429)
+        : json({ error: rv === "not_configured" ? "not_configured" : rv === "failed" ? "daily_counter_failed" : "daily_cap_reached" }, 503);
+    }
+  }
   const got = env.DEEPSEEK_API_KEY
     ? await callDeepSeek(env, user, variants)
     : await callClaude(env, user, variants);
@@ -457,26 +467,44 @@ async function post(url, headers, body, env) {
 }
 
 function parseAnswer(text) {
+  // the answer as one JSON object; a model that wraps it in a code fence or a sentence still parses, from the first
+  // "{" to the last "}"
+  const t = String(text || "").trim();
+  for (const cand of [t, t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)]) {
+    try {
+      const a = JSON.parse(cand);
+      if (a && typeof a === "object" && !Array.isArray(a)) return a;
+    } catch (e) {
+      /* try the next reading */
+    }
+  }
+  return null;
+}
+
+function deepseekBase(env) {
+  const raw = String(env.DEEPSEEK_BASE_URL || "").trim();
+  if (!raw) return "https://api.deepseek.com";
   try {
-    const a = JSON.parse(text || "");
-    return a && typeof a === "object" ? a : null;
+    const u = new URL(raw);
+    return u.protocol === "https:" ? u.origin + u.pathname.replace(/\/+$/, "") : "https://api.deepseek.com";
   } catch (e) {
-    return null;
+    return "https://api.deepseek.com";
   }
 }
 
-// DeepSeek (OpenAI-compatible chat API). JSON mode guarantees a JSON object, not the schema, so the answer form is
+// DeepSeek (OpenAI-compatible chat API). Nothing guarantees the schema, so the answer form is
 // spelled out in the system turn and every step is still checked by checkStep before it leaves the worker.
 export async function callDeepSeek(env, user, variants) {
   const form = JSON.stringify(outputSchema(variants.map((v) => v.op)));
+  // the same base and model as the proxy's /plan and /report (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL; "deepseek-chat" was
+  // retired on 2026-07-24). No JSON mode: the proxy reads JSON from plain text, and so does parseAnswer.
   const r = await post(
-    "https://api.deepseek.com/chat/completions",
-    { authorization: "Bearer " + env.DEEPSEEK_API_KEY },
+    deepseekBase(env) + "/chat/completions",
+    { authorization: "Bearer " + String(env.DEEPSEEK_API_KEY).trim() },
     {
-      model: env.DEEPSEEK_MODEL || "deepseek-chat",
+      model: String(env.DEEPSEEK_MODEL || "deepseek-flash").trim(),
       temperature: 0,
       max_tokens: Math.min(Number(env.ANALYST_MAX_TOKENS) || 2000, 8000),
-      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
@@ -547,4 +575,99 @@ export async function callClaude(env, user, variants) {
       ? { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens }
       : undefined,
   };
+}
+
+// ------------------------------------------------------------------------------------------------ the route in the proxy
+// analystFetch(request, env): POST /analyst (and its OPTIONS preflight) behind the same gates as the proxy's /plan
+// and /report, using the proxy's own bindings and vars, so wrangler.toml does not change:
+//   ALLOWED_ORIGIN (comma list) for CORS, RATE_LIMITER (per network), GLOBAL_LIMITER (everyone together), SPEND (the
+//   SpendCounter Durable Object: one DeepSeek call is reserved against DAILY_CAP before the model is asked).
+// In the proxy's entry: `if (new URL(request.url).pathname === "/analyst") return analystFetch(request, env);`
+// before its own routing. A missing binding refuses (503) rather than calling the model unmetered.
+const ANALYST_DAILY_CAP = 300;
+const ANALYST_MINUTE_LIMIT = 10;
+
+function origins(env) {
+  return String(env.ALLOWED_ORIGIN || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s && s !== "null" && s !== "*");
+}
+
+function withCors(res, origin) {
+  const h = new Headers(res.headers);
+  if (origin) {
+    h.set("Access-Control-Allow-Origin", origin);
+    h.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    h.set("Access-Control-Allow-Headers", "Content-Type");
+    h.set("Access-Control-Max-Age", "600");
+  }
+  h.set("Vary", "Origin");
+  h.set("Cache-Control", "no-store");
+  h.set("X-Content-Type-Options", "nosniff");
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+async function limited(binding, key) {
+  if (!binding || typeof binding.limit !== "function") return null; // no binding: the caller decides
+  try {
+    const r = await binding.limit({ key });
+    return !r.success;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function reserveOne(env) {
+  const ns = env.SPEND;
+  if (!ns || typeof ns.idFromName !== "function" || typeof ns.get !== "function") return "not_configured";
+  const posInt = (v, d) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : d);
+  try {
+    const res = await ns.get(ns.idFromName("global")).fetch("https://spend-counter/reserve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        calls: 1,
+        dailyCap: posInt(env.DAILY_CAP, ANALYST_DAILY_CAP),
+        minuteLimit: posInt(env.GLOBAL_LIMIT_PER_MINUTE, ANALYST_MINUTE_LIMIT),
+        kind: "llm",
+      }),
+    });
+    if (!res || !res.ok) return "failed";
+    const data = await res.json();
+    if (data && data.ok === true) return "ok";
+    // the same reading as the proxy's own reserveCalls: only these two refusals are named, anything else failed
+    if (data && data.ok === false && (data.reason === "busy" || data.reason === "daily_cap_reached")) return data.reason;
+    return "failed";
+  } catch (e) {
+    return "failed";
+  }
+}
+
+export async function analystFetch(request, env) {
+  const origin = request.headers.get("Origin");
+  const allowed = origin !== null && origins(env).includes(origin) ? origin : null;
+  if (request.method === "OPTIONS") {
+    return allowed
+      ? withCors(new Response(null, { status: 204 }), allowed)
+      : new Response(null, { status: 403, headers: { Vary: "Origin" } });
+  }
+  if (!allowed) return withCors(json({ error: "origin_not_allowed" }, 403), null);
+  if (request.method !== "POST") return withCors(json({ error: "method" }, 405), allowed);
+  const ctype = (request.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+  if (ctype !== "application/json") return withCors(json({ error: "unsupported_media_type" }, 415), allowed);
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  if ((await limited(env.RATE_LIMITER, "analyst:" + ip)) === true) {
+    return withCors(json({ error: "rate_limited" }, 429), allowed);
+  }
+  if ((await limited(env.GLOBAL_LIMITER, "global")) === true) return withCors(json({ error: "busy" }, 429), allowed);
+  // the body is read (and capped) by handleAnalyst; the spend is reserved only for a request that reaches the model
+  const text = await request.text();
+  if (text.length > ANALYST_LIMITS.maxBodyBytes) return withCors(json({ error: "too_large" }, 413), allowed);
+  const res = await handleAnalyst(
+    new Request(request.url, { method: "POST", headers: { "content-type": "application/json" }, body: text }),
+    env,
+    { reserve: () => reserveOne(env) },
+  );
+  return withCors(res, allowed);
 }

@@ -2232,7 +2232,8 @@ def test_s09_a_statcan_table_states_its_whole_period_and_every_figure_recomputes
         assert any(l.get("kind") == "period" and l["text"] == lead["text"] for l in rep["summary"]["lines"])
         for line in P["lines"]:
             assert len(line) <= 300 and "NOT ENOUGH DATA" not in line and "not enough data" not in line.lower(), line
-            assert "went from" in line or "gaps" in line or "none is graded" in line or line.startswith(("Of the ", "Those that fell", "None fell")) \
+            assert "went from" in line or "gaps" in line or "none is graded" in line or line.startswith(("Of the ", "Those that fell", "None fell",
+                                                                                                      "Read apart, over their own span")) \
                 or "their own, shorter span" in line, line
         # what the report writer receives: the lines inside its first 8, and ONE table of the series with the same figures
         ai = NB.results_for_ai(rep)
@@ -2459,7 +2460,7 @@ def test_s16_a_table_of_rates_and_dollar_amounts_is_read_per_unit_in_percentage_
         assert "forecast" not in head and "auction" not in head.lower() and "percentage points" in head, head
         pb = rep["period"]
         txt = " ".join(pb["lines"])
-        assert "Of the " in txt and "none rose over its published span" in txt and "Those that fell most:" in txt and "In Dollars (millions)" in txt, txt[:600]
+        assert "Of the " in txt and "none rose;" in txt and "Those that fell most:" in txt and "In Dollars (millions)" in txt, txt[:600]
         lead_fact = next(x for x in pb["series"] if x["id"] == pb["lead"])
         assert lead_fact["change_pct"] is None and lead_fact["cagr_pct"] is None and "percentage points" in lead_fact["text"], lead_fact
         assert "compounded" not in lead_fact["text"]
@@ -2647,20 +2648,21 @@ def test_s18_a_rates_change_is_in_percentage_points_and_the_answer_leads_with_or
     assert A["text"] == b["story"]["headline"], (A["text"], b["story"]["headline"])
     assert A["title"] == "Bank rate, last Tuesday or last Thursday: 6.00% in 2000-05 to 2.50% in 2026-09, down 3.50 percentage points", A["title"]
     assert A["key_figures"][0] == "3.50 percentage points", A["key_figures"]
-    # which rose and fell most: the Percent series' own changes over their published span, recomputed from the file
+    # which rose and fell most: the Percent series published over the whole table, over one common window (test_s22 has the rest),
+    # recomputed from the file
     fell = A["ranked"]["fell"]
     assert A["ranked"]["rose"] == [] and len(fell) == 3 and A["ranked"]["unit"] == "Percent", A["ranked"]
-    for x in fell:
-        sub = df[(df["Rates"] == x["label"]) & (df["VALUE"] != "")].sort_values("REF_DATE")
-        ch = float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0])
-        assert x["change_text"] == "\u2212%.2f points" % abs(ch) and x["first"] == sub["REF_DATE"].iloc[0] and x["latest"] == sub["REF_DATE"].iloc[-1], x
-    changes = []
+    last = df.loc[df["VALUE"] != "", "REF_DATE"].max()
+    changes = {}
     for sname in pct_series:
         sub = df[(df["Rates"] == sname) & (df["VALUE"] != "")].sort_values("REF_DATE")
-        if len(sub) < 2:
-            continue
-        changes.append(float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0]))
-    assert [round(x, 2) for x in sorted(changes)[:3]] == sorted(-float(x["change_text"][1:].split()[0]) for x in fell), (sorted(changes)[:3], fell)
+        if len(sub) >= 2 and sub["REF_DATE"].iloc[-1] == last:
+            changes[sname] = float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0])
+    for x in fell:
+        assert x["label"] in changes and x["first"] == "2000-05" and x["latest"] == last, x
+        assert abs(float(x["change_text"].replace("\u2212", "-").split()[0]) - changes[x["label"]]) < 1e-9, (x, changes[x["label"]])
+    assert [round(v, 4) for v in sorted(changes.values())[:3]] == [round(float(x["change_text"].replace("\u2212", "-").split()[0]), 4)
+                                                                   for x in fell], (sorted(changes.values())[:3], fell)
     assert A["latest"]["text"] == b["summary"]["lines"][0]["text"] and A["latest"]["grade"] == "INSUFFICIENT", A["latest"]
     ai = NB.results_for_ai(b)
     assert ai["answer"]["leads"] == "whole_period" and ai["answer"]["text"] == A["text"] and len(ai["answer"]["ranked"]["fell"]) == 3, ai["answer"]
@@ -2795,6 +2797,52 @@ def test_s21_a_panel_with_a_total_row_is_read_by_the_analyst_as_a_panel_with_or_
     rep = run_bytes(fixture("s07_statcan_debt_unpublished_months.csv"))
     assert rep["ok"], rep.get("error")
     assert (rep["analyst"].get("shape") or {}).get("entity") is None, rep["analyst"].get("shape")
+
+
+def test_s22_which_rates_rose_and_fell_most_is_ranked_fairly_over_one_window_with_discontinued_series_apart():
+    """The owner's live interest-rate report (16 Oct 2026): "rose most" was the forward premium and a covered differential (+0.35 points,
+    both stopped in 2017-04) beside rates read to 2026-09, for a question about interest and mortgage rates, and every rate had fallen.
+    Now: the series published over the whole table are ranked over ONE common window; a series the agency stopped publishing is listed
+    apart with its own span and never ranked against them; with every series down the line says "none rose" and names those that fell
+    least, never "rose most"; a question that names some of the series (treasury bills) ranks only those and says so."""
+    raw = fixture("s12_statcan_interest_rates.csv")
+    df = frame("s12_statcan_interest_rates.csv")
+    df = df[df["VALUE"] != ""]
+    last = df["REF_DATE"].max()
+    for rep in (run_bytes(raw, plan=_rates_plan()), NB.run(raw, "table.csv", RATES_GOAL, {}, AS_OF)):
+        assert rep["ok"], rep.get("error")
+        rk = rep["period"]["ranked"]
+        assert rk["window"] == ["2000-05", last] and rk["rose"] == [] and rk["fell"], rk
+        for x in rk["rose"] + rk["fell"]:
+            sub = df[df["Rates"] == x["label"]].sort_values("REF_DATE")
+            assert sub["REF_DATE"].iloc[-1] == last and not x["own_span"], x          # only series published to the end are ranked
+        txt = " ".join(rk["lines"])
+        assert "rose most" not in txt and "none rose; those that fell least:" in txt, txt
+        assert rk["ended"] and "Read apart, over their own span" in txt, rk.get("ended")
+        for x in rk["ended"]:
+            sub = df[df["Rates"] == x["label"]].sort_values("REF_DATE")
+            assert x["own_span"] and x["latest"] == sub["REF_DATE"].iloc[-1] < last and "(%s to %s)" % (x["first"], x["latest"]) in txt, x
+            assert abs(float(x["change_text"].replace("\u2212", "-").split()[0])
+                       - (float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0]))) < 1e-9, x
+        # the question names mortgage rates: a mortgage series leads the series read apart
+        assert "mortgage" in rk["ended"][0]["label"].lower(), rk["ended"]
+        A = rep["answer"]["ranked"]
+        assert A["rose"] == [] and [x["label"] for x in A["fell"]] == [x["label"] for x in rk["fell"]], A
+    # a question that names some series: only those are ranked, and the line says so
+    rep = NB.run(raw, "table.csv", "How have treasury bill rates moved since 2000, and which rose most?", {}, AS_OF)
+    rk = rep["period"]["ranked"]
+    assert rk["question_words"] == ["bill", "treasury"] and all("treasury bill" in x["label"].lower() for x in rk["fell"]), rk
+    assert "whose names carry the question's words (bill, treasury)" in rk["lines"][0] and "every one fell" in rk["lines"][0], rk["lines"]
+    # a series that rose is said to have risen, over the same window
+    up = df.copy()
+    i = up[(up["Rates"] == "Real return bonds, long-term")].sort_values("REF_DATE").index
+    up.loc[i[-1], "VALUE"] = "%.2f" % (float(up.loc[i[0], "VALUE"]) + 1.0)
+    full = frame("s12_statcan_interest_rates.csv")
+    full.loc[i[-1], "VALUE"] = up.loc[i[-1], "VALUE"]
+    rep = NB.run(full.to_csv(index=False).encode(), "table.csv", RATES_GOAL, {}, AS_OF)
+    rk = rep["period"]["ranked"]
+    assert [x["label"] for x in rk["rose"]] == ["Real return bonds, long-term"] and rk["rose"][0]["change_text"] == "+1.00 points", rk["rose"]
+    assert "those that rose most: Real return bonds, long-term +1.00 points" in rk["lines"][0], rk["lines"]
 
 
 # ----------------------------------------------------------------------------- runner

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 import nl_browser as NB
 import nl_scenarios as NS
@@ -3757,6 +3757,7 @@ PERIOD_BASIS = ("The publisher's own figures, one value a period and nothing est
 PERIOD_STORY_MOVERS = 2                    # other series said in the story, after the lead
 PERIOD_TABLE_AI_ROWS = 12                  # rows of the report writer's table (the worker keeps 12)
 PERIOD_ROWS_MAX = 30                       # series in the page's table (TABLE_ROWS_MAX)
+PERIOD_LINE_MAX = 300                      # characters of one ranking line (the report writer's story lines)
 _MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
                 "November", "December")
 
@@ -3980,7 +3981,7 @@ def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     nunit = {"month": "month", "quarter": "quarter", "year": "year", "day": "day"}.get(grain, "period")
     return {"axis": axis, "grain": grain, "facts": facts, "lead": facts[0]["id"], "mixed_units": mixed, "unit": unit,
             "lead_unit": lead_unit, "first": span_lo, "last": span_hi, "skipped": sk, "period_noun": nunit,
-            "published_periods": len({t for t in ts.dropna()}), "movers": _series_ranking(facts, mixed)}
+            "published_periods": len({t for t in ts.dropna()}), "movers": _series_ranking(facts, mixed), "whole_year": whole_year}
 
 
 def _unit_words(f: Dict[str, Any]) -> str:
@@ -4037,28 +4038,142 @@ def _period_table(facts: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"cols": cols, "rows": rows}
 
 
-def _rank_line(facts: List[Dict[str, Any]], sign: int, n: int = 3) -> str:
-    """The series of the lead's unit that rose (sign 1) or fell (sign -1) most, each with its change and, where its span is not the
-    whole table's, the span."""
-    lead_unit = facts[0].get("unit", "")
-    pool = [f for f in facts if f.get("unit", "") == lead_unit and f.get("eligible", True) and (f["change"]["value"] * sign) > 0]
-    pool.sort(key=lambda f: (-abs(f["change"]["value"]), f["order"]))
-    parts = []
-    for f in pool[:n]:
-        span = (" (%s to %s)" % (f["first"]["date"], f["latest"]["date"])) if f.get("own") else ""
-        parts.append("%s %s%s%s" % (f["label"], ("+" if sign > 0 else MINUS) + f["change"]["text"], " points" if f.get("pp") else "", span))
-    return "; ".join(parts)
+# Which series rose and fell most, fairly (the owner's interest-rate report, 16 Oct 2026: "rose most" was the forward premium,
+# +0.35 points to 2017-04, beside rates read to 2026-09, for a question about interest and mortgage rates, and every rate had fallen):
+# the series that run over the whole table are compared over ONE common window; a series the agency stopped publishing (or began
+# later) is listed apart with its own span, never ranked against them; when the question names words the series' names carry
+# (interest, mortgage, rate), only those series are ranked, and the line says so; and when none rose, the line says "none rose"
+# and names the ones that fell least, never a "rose most".
+_Q_STOP = frozenset((
+    "about", "after", "also", "been", "before", "between", "change", "changed", "changes", "data", "does", "doing", "each", "ever",
+    "fall", "fell", "file", "from", "have", "into", "least", "less", "more", "most", "move", "moved", "moves", "over", "rise",
+    "risen", "rose", "show", "shows", "since", "table", "than", "that", "their", "them", "then", "there", "these", "they", "this",
+    "time", "trend", "trends", "what", "when", "where", "which", "while", "with", "would", "year", "years", "series", "value",
+    "values", "figure", "figures", "biggest", "largest", "smallest", "fastest", "slowest", "grew", "grow", "drop", "dropped",
+    "increase", "increased", "decrease", "decreased", "decline", "declined", "went", "come", "came", "whole", "period", "history"))
 
 
-def _rank_items(facts: List[Dict[str, Any]], sign: int, n: int = 3) -> List[Dict[str, Any]]:
-    """_rank_line's series as records (16 Oct 2026: the report's answer to "which rose and fell most", rep.answer.ranked): each with its
-    change as _rank_line writes it and its own span."""
+def _qword(w: str) -> str:
+    w = w.lower()
+    return w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith("ss") else w
+
+
+def _question_words(goal: str) -> Set[str]:
+    """The content words of the visitor's question (4 letters or more, a plural read as its singular), the question's own verbs
+    and connectors left out."""
+    return {_qword(w) for w in re.findall(r"[A-Za-z]{4,}", str(goal or "")) if w.lower() not in _Q_STOP}
+
+
+def _value_on(f: Dict[str, Any], lo: Any, hi: Any) -> Optional[Tuple[Any, float, Any, float]]:
+    """A series' first published figure on or after lo and its last on or before hi: (t0, v0, t1, v1), or None."""
+    pts = [p for p in f["pts"] if lo <= p[0] <= hi]
+    if len(pts) < 2:
+        return None
+    return pts[0][0], pts[0][1], pts[-1][0], pts[-1][1]
+
+
+def _fair_ranking(pf: Dict[str, Any], goal: str, n: int = 3) -> Optional[Dict[str, Any]]:
+    """The lead unit's movers, ranked fairly (see above), or None when fewer than two series run over the whole table."""
+    facts = pf["facts"]
     lead_unit = facts[0].get("unit", "")
-    pool = [f for f in facts if f.get("unit", "") == lead_unit and f.get("eligible", True) and (f["change"]["value"] * sign) > 0]
-    pool.sort(key=lambda f: (-abs(f["change"]["value"]), f["order"]))
-    return [{"id": f["id"], "label": f["label"], "change": f["change"]["value"],
-             "change_text": ("+" if sign > 0 else MINUS) + f["change"]["text"] + (" points" if f.get("pp") else ""),
-             "first": f["first"]["date"], "latest": f["latest"]["date"], "own_span": bool(f.get("own"))} for f in pool[:n]]
+    same = [f for f in facts if f.get("unit", "") == lead_unit]
+    # the layout's kept series are the active ones over the table's span (a figure in its last six periods); the common window below
+    # ends at the last period every one of them has
+    whole = [f for f in same if not f.get("own")]
+    ended = [f for f in same if f not in whole and f.get("eligible", True) and len(f["pts"]) >= 2]
+    qw = _question_words(goal)
+
+    def words_of(f: Dict[str, Any]) -> Set[str]:
+        # a series in percent IS a rate, whatever its name says ("Treasury bills: 3 month")
+        return {_qword(w) for w in re.findall(r"[A-Za-z]{4,}", f["label"])} | ({"rate", "percent"} if f.get("pp") else set())
+
+    def telling(group: List[Dict[str, Any]]) -> Set[str]:
+        # the question's words that pick out SOME of these series, not all (in a table of rates, "rate" picks out none)
+        ws = [words_of(f) for f in group]
+        return {w for w in qw if any(w in x for x in ws) and not all(w in x for x in ws)}
+
+    named = sorted(telling(whole))
+    pool = [f for f in whole if set(named) & words_of(f)]
+    restricted = 2 <= len(pool) < len(whole)
+    if not restricted:
+        pool, named = list(whole), []
+    if len(pool) < 2:
+        return None
+    w0 = max(f["pts"][0][0] for f in pool)
+    w1 = min(f["pts"][-1][0] for f in pool)
+    grain, wy = pf["grain"], bool(pf.get("whole_year"))
+    pp = bool(facts[0].get("pp"))
+    rows = []
+    for f in pool:
+        got = _value_on(f, w0, w1)
+        if got is None:
+            continue
+        rows.append((f, got[3] - got[1]))
+    if len(rows) < 2:
+        return None
+    pts_w = " points" if pp else ""
+
+    def item(f: Dict[str, Any], ch: float, t0: Any = None, t1: Any = None) -> Dict[str, Any]:
+        dp = int(f.get("decimals") or 0)
+        sign = "+" if ch > 0 else MINUS if ch < 0 else ""
+        return {"id": f["id"], "label": f["label"], "change": _r6(ch), "change_text": sign + _figure(abs(ch), dp) + pts_w,
+                "first": _date_text(t0 if t0 is not None else w0, grain, wy), "latest": _date_text(t1 if t1 is not None else w1, grain, wy),
+                "own_span": t0 is not None}
+
+    rose = sorted((r for r in rows if r[1] > 0), key=lambda r: (-r[1], r[0]["order"]))
+    fell = sorted((r for r in rows if r[1] < 0), key=lambda r: (r[1], r[0]["order"]))
+    least = sorted((r for r in rows if r[1] < 0), key=lambda r: (-r[1], r[0]["order"]))
+    win = "from %s to %s" % (_date_text(w0, grain, wy), _date_text(w1, grain, wy))
+    unit_w = (lead_unit + " ") if lead_unit else ""
+    who = ("Of the %s %sseries whose names carry the question's words (%s)" % (_count(len(rows)), unit_w, ", ".join(named))
+           if restricted else "Of the %s %sseries published over the whole table" % (_count(len(rows)), unit_w))
+    fmt = lambda xs: "; ".join("%s %s" % (x["label"], x["change_text"]) for x in xs)  # noqa: E731
+
+    def fit(make: Callable[[List[Dict[str, Any]]], str], xs: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
+        # a line the report writer can carry (PERIOD_LINE_MAX characters): the last items dropped first, never the first
+        while len(xs) > 1 and len(make(xs)) > PERIOD_LINE_MAX:
+            xs = xs[:-1]
+        return make(xs), xs
+
+    lines = []
+    rose_i = [item(f, c) for f, c in rose[:n]]
+    fell_i = [item(f, c) for f, c in fell[:n]]
+    if rose_i:
+        ln, rose_i = fit(lambda xs: "%s, %s, those that rose most: %s." % (who, win, fmt(xs)), rose_i)
+    elif least and len(fell) < 2 * n:
+        # too few to name the least and the most apart: every one fell, the largest fall first, said once
+        ln, fell_i = fit(lambda xs: "%s, %s, none rose; every one fell: %s." % (who, win, fmt(xs)), [item(f, c) for f, c in fell[:n]])
+        lines.append(ln)
+        ln = ""
+    elif least:
+        ln, _ = fit(lambda xs: "%s, %s, none rose; those that fell least: %s." % (who, win, fmt(xs)),
+                    [item(f, c) for f, c in least[:n]])
+    else:
+        ln = "%s, %s, none rose." % (who, win)
+    if ln:
+        lines.append(ln)
+        if fell_i:
+            ln, fell_i = fit(lambda xs: "Those that fell most: %s." % fmt(xs), fell_i)
+            lines.append(ln)
+        else:
+            lines.append("None fell %s." % win)
+    # the series read over their own span: apart, labelled with it, the question's own first when it names some
+    ended_rows = []
+    tell_e = telling(whole + ended)
+    for f in ended:
+        ch = f["pts"][-1][1] - f["pts"][0][1]
+        ended_rows.append((0 if (tell_e & words_of(f)) else 1, -abs(ch), f["order"], f, ch))
+    ended_rows.sort(key=lambda r: r[:3])
+    if restricted:
+        ended_rows = [r for r in ended_rows if r[0] == 0]
+    ended_i = [item(r[3], r[4], r[3]["pts"][0][0], r[3]["pts"][-1][0]) for r in ended_rows[:n]]
+    if ended_i:
+        ln, ended_i = fit(lambda xs: "Read apart, over their own span (no longer published, or begun later): %s." % "; ".join(
+            "%s %s (%s to %s)" % (x["label"], x["change_text"], x["first"], x["latest"]) for x in xs), ended_i)
+        lines.append(ln)
+    return {"unit": lead_unit, "points": pp, "of": len(rows), "rose": rose_i, "fell": fell_i, "lines": lines,
+            "window": [_date_text(w0, grain, wy), _date_text(w1, grain, wy)], "question_words": named if restricted else [],
+            "ended": ended_i}
 
 
 def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -4085,15 +4200,12 @@ def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if pf["mixed_units"]:
         lines[0] += " The series come in %s units, so each unit is read apart; the changes below are the %s series' own." % (
             _count(len({f.get("unit", "") for f in facts})), pf["lead_unit"] or "first")
-    risen, fallen = _rank_line(facts, 1), _rank_line(facts, -1)
     n_grp = len(lead_group)
     rank_lines: List[str] = []
-    if n_grp > 2 and (risen or fallen):
-        unit_w = (pf["lead_unit"] + " ") if pf["lead_unit"] else ""
-        lines.append(("Of the %s %sseries, those that rose most over their published span: %s." % (_count(n_grp), unit_w, risen)) if risen else
-                     "Of the %s %sseries, none rose over its published span." % (_count(n_grp), unit_w))
-        lines.append(("Those that fell most: %s." % fallen) if fallen else "None fell over its published span.")
-        rank_lines = lines[-2:]
+    fair = _fair_ranking(pf, getattr(ctx, "goal", "") or "") if n_grp > 2 else None
+    if fair is not None:
+        lines += fair["lines"]
+        rank_lines = list(fair["lines"])
     else:
         lines += [_fact_sentence(f) for f in pf["movers"][:PERIOD_STORY_MOVERS]]
     # each other unit: its first series, said in full, so a table with percent rates and dollar amounts answers for both
@@ -4116,8 +4228,8 @@ def period_block(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "movers": [f["id"] for f in pf["movers"][:PERIOD_STORY_MOVERS]],
             "lines": lines, "table": table,
             # which series of the lead's unit rose and fell most over their published span (the sentences above, as records)
-            "ranked": {"unit": pf["lead_unit"], "points": bool(lead.get("pp")), "of": n_grp, "rose": _rank_items(facts, 1),
-                       "fell": _rank_items(facts, -1), "lines": rank_lines}}
+            "ranked": fair if fair is not None else {"unit": pf["lead_unit"], "points": bool(lead.get("pp")), "of": n_grp, "rose": [],
+                                                     "fell": [], "lines": rank_lines}}
 
 
 def _line_selection(pf: Dict[str, Any]) -> List[Dict[str, Any]]:

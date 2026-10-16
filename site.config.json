@@ -4,6 +4,8 @@
   "booking_url": "",
   "_ai_proxy_about": "ai_proxy_url: the https address of the owner's own Cloudflare Worker that words the demo's story with DeepSeek. Empty means the page offers no AI option at all. The key lives only in the Worker (npx wrangler secret put DEEPSEEK_API_KEY), never here.",
   "ai_proxy_url": "https://northledger-insight-proxy.r-mdrashad97.workers.dev",
+  "_ask_data_about": "ask_data: true shows the 'Ask your data' box under the analyst's findings when the visitor chose the AI. Turn it on only after the Worker routes POST /analyst (docs/ai-analyst/analyst-endpoint.mjs); until then leave it false.",
+  "ask_data": true,
   "owner": {
     "name": "Rashadul Islam Roman",
     "business": "NorthLedger Insights",

@@ -2503,6 +2503,32 @@ def test_s16_a_table_of_rates_and_dollar_amounts_is_read_per_unit_in_percentage_
         assert "percentage points" in ch["title"], ch["title"]
 
 
+def test_s17_the_analyst_loop_reads_a_published_table_as_the_engine_does_and_draws_one_line_chart():
+    """The cloud-built analyst loop merged with the engine (16 Oct 2026). On the visitor's debt table it guessed each
+    series' kind from header words: "Total Outstanding Guarantees" was a flow, so 12 monthly balances were added and a
+    0.6 million balance printed as "6.66 million in 2025"; the figures, published in millions, printed as "1.32 million"
+    for $1.32 trillion; and on the rates table it led with a dollar auction amount. The engine's lead series leads, each
+    series is read by the structure's own rule (a balance never summed, a Percent series in points), the loop's figures
+    are in whole units, and the grammar's line chart steps aside for the table's own."""
+    for rep in (run_file("s07_statcan_debt_unpublished_months.csv"),
+                run_file("s07_statcan_debt_unpublished_months.csv", plan=PLAN)):
+        a, lay = rep["analyst"], rep["input"]["layout"]
+        assert a["shape"]["primary"] == lay["lead"], (a["shape"]["primary"], lay["lead"])
+        kinds = {m["column"]: m["kind"] for m in a["shape"]["measures"]}
+        assert kinds.get("Total Outstanding Guarantees") == "stock" and kinds.get(lay["lead"]) == "stock", kinds
+        texts = " ".join(i.get("text", "") for i in a["insights"])
+        assert "trillion" in texts and not re.search(r"\b1\.\d+ million\b", texts), texts[:400]
+        charts = [c["chart"] for c in rep["viz"]["charts"]]
+        assert "series_lines" in charts and "line_chart" not in charts, charts
+    rep = run_file("s12_statcan_interest_rates.csv")
+    a, lay = rep["analyst"], rep["input"]["layout"]
+    assert a["shape"]["primary"] == lay["lead"] and "Bank rate" in lay["lead"], (a["shape"]["primary"], lay["lead"])
+    kinds = {m["column"]: m["kind"] for m in a["shape"]["measures"]}
+    assert kinds[lay["lead"]] == "rate", kinds
+    assert "percentage points" in a["insights"][0]["text"] and "Treasury bill" not in a["insights"][0]["text"], a["insights"][0]
+    assert "line_chart" not in [c["chart"] for c in rep["viz"]["charts"]]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

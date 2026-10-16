@@ -1376,6 +1376,61 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 .nl2-period-says { margin: 8px 0 12px; padding-left: 20px; font-size: .92rem; }
 .nl2-period-says li { margin: 4px 0; overflow-wrap: anywhere; }
+/* What the analyst found (src/js/53-analyst.js): insights by kind, each opening to the steps behind it */
+.nla { min-width: 0; overflow-wrap: anywhere; }
+.nla .nla-read { margin: 0 0 4px; font-size: 14px; }
+.nla-group { margin-top: 14px; min-width: 0; }
+.nla-group h4 { margin: 0 0 6px; font-size: 15.5px; }
+.nla-list { margin: 0; padding-left: 20px; }
+.nla-list > li { margin: 6px 0; min-width: 0; }
+.nla-text { margin: 0; }
+/* the story in brief: the lead, the key numbers, the findings, each linking to its proof below */
+.nla-brief { margin: 12px 0 18px; padding: 14px 16px; border-radius: 12px; background: var(--bg); border: 1px solid var(--hairline); min-width: 0; }
+.nla-brief h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.nla-lead { margin: 0 0 12px; font-size: 18px; line-height: 1.45; color: var(--ink); font-weight: 600; }
+.nla-kpis { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.nla-kpi { min-width: 0; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); }
+.nla-kpi-in { display: flex; flex-direction: column; padding: 10px 12px; color: inherit; text-decoration: none; height: 100%; box-sizing: border-box; }
+.nla-kpi a:hover .nla-kpi-v, .nla-kpi a:focus-visible .nla-kpi-v { text-decoration: underline; }
+.nla-kpi-v { font-size: 22px; font-weight: 700; color: var(--accent-ink, var(--ink)); line-height: 1.15; overflow-wrap: anywhere; }
+.nla-kpi-l { font-size: 13.5px; color: var(--ink); margin-top: 2px; overflow-wrap: anywhere; }
+.nla-kpi-n { font-size: 12.5px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.nla-brief-part { margin-top: 10px; }
+.nla-brief-part h5 { margin: 0 0 4px; font-size: 14.5px; }
+.nla-brief-list { margin: 0; padding-left: 20px; }
+.nla-brief-list li { margin: 4px 0; overflow-wrap: anywhere; }
+.nla-see { font-size: 13px; white-space: nowrap; }
+@media (max-width: 480px) { .nla-lead { font-size: 16.5px; } .nla-kpi-v { font-size: 20px; } .nla-kpis { grid-template-columns: 1fr 1fr; } }
+/* a story card: the sentence, then the chart that shows it */
+.nla-list > li.nla-story { list-style: none; margin: 12px 0 16px -20px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--bg); }
+.nla-story .nla-text { font-size: 16px; line-height: 1.5; }
+.nla-fig { margin: 10px 0 0; min-width: 0; }
+.nla-fig figcaption { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+.nla-fig .viz { min-width: 0; }
+/* the chart sits under its own sentence: its summary (the same sentence) stays its accessible name, not a repeat */
+.nla-fig .nlv-sum { display: none; }
+@media (max-width: 480px) { .nla-list > li.nla-story { padding: 10px; } }
+.nla-how { margin-top: 6px; }
+.nla-steps { margin: 6px 0 0; padding-left: 20px; }
+.nla-step { margin: 10px 0; min-width: 0; }
+.nla-step-h, .nla-why { margin: 2px 0; font-size: 14px; }
+.nla-tbl { max-height: 320px; overflow: auto; margin: 6px 0 2px; }
+.nla-tbl table.dt { width: auto; min-width: 100%; }
+/* a table keeps whole words: it scrolls sideways inside its own box instead of breaking a name letter by letter */
+.nla-tbl th, .nla-tbl td { overflow-wrap: normal; word-break: normal; }
+.nla-tbl tbody th { min-width: 9em; }
+/* "Ask your data" (src/js/53-analyst.js askHtml): the question box under the analyst's card, shown when the AI is on */
+.nla-ask { margin: 18px 0 0; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg); }
+.nla-ask label { display: block; margin: 0 0 8px; }
+.nla-ask-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.nla-ask-row input { flex: 1 1 16em; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.nla-ask-row input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.nla-ask-row input:disabled { opacity: 0.6; }
+.nla-ask-note, .nla-asked { margin: 8px 0 0; font-size: 13px; }
+.nla-ask-status { margin: 6px 0 0; font-size: 14px; min-height: 1.2em; }
+.nla-ask[aria-busy="true"] .nla-ask-status::before { content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 6px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; vertical-align: -1px; animation: nla-spin 0.8s linear infinite; }
+@keyframes nla-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nla-ask[aria-busy="true"] .nla-ask-status::before { animation: none; } }
 
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
@@ -1393,7 +1448,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-09 17:08:06 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-16 16:53:39 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

@@ -260,8 +260,10 @@ def _texts(rep):
 
 def _strip(rep):
     """A report without what legitimately differs between two runs: the timings, and each
-    fact's computed_at clock stamp inside the ledger download."""
+    fact's computed_at clock stamp inside the ledger download, and the analyst loop's own run time."""
     out = json.loads(json.dumps({k: v for k, v in rep.items() if k != "timings"}))
+    if isinstance(out.get("analyst"), dict):
+        out["analyst"].pop("seconds", None)
     led = out["downloads"]["ledger_json"]
     if led:
         doc = json.loads(led)
@@ -661,7 +663,10 @@ def test_pack_matches_the_engine_and_holds_every_module_used():
             for m in used}
     missing = need - packed
     assert not missing, "the runs above imported engine modules the pack leaves out: %s" % sorted(missing)
-    assert not any(p.endswith(("report.py", "analyst.py", "tmdl_check.py", "powerbi.py")) for p in packed)
+    # the core's desktop-only modules never ship (northledger/report.py, analyst.py ...); the adapter's own
+    # nl_analyst.py, the page's analyst loop, does
+    assert not any(p.startswith("northledger/") and p.endswith(("report.py", "analyst.py", "tmdl_check.py", "powerbi.py"))
+                   for p in packed), sorted(packed)
 
 
 def test_pack_carries_the_benchmark_receipt_the_packed_gate_reads():
@@ -2968,6 +2973,91 @@ def test_results_for_ai_forecast_reaches_the_proxy_as_the_page_shows_it():
         assert got["ok"] and v["baseline_won"] is True and v["series"] == fc["series"] and v["verdict"] == fc["verdict"], v
         assert [p["date"] for p in v["points"]] == [p["date"] for p in fc["points"]], v["points"][:2]
         assert all(isinstance(p.get("value"), (int, float)) for p in v["points"]), v["points"][:2]
+
+
+def test_the_report_writer_gets_the_analysts_key_numbers_and_its_charts():
+    rep = _run(_fx("run2_replan.csv"), "run2_replan.csv")
+    ai = NB.results_for_ai(rep)
+    figs = [i["figure"] for i in rep["analyst"]["insights"] if i.get("figure")]
+    assert figs, [i["text"] for i in rep["analyst"]["insights"]]
+    ids = [c.get("id") for c in ai["charts"]]
+    assert len(ids) == len(set(ids)) and len(ids) <= 10, ids
+    sent = [c for c in ai["charts"] if int(str(c.get("id", "viz.0.x")).split(".")[1]) >= 50]
+    assert sent and all(c["summary"] in [i["text"][:399] for i in rep["analyst"]["insights"]] or c["summary"].endswith("\u2026")
+                        for c in sent), [c["summary"] for c in sent]
+    tiles = rep["analyst"]["story"]["key_numbers"]
+    assert tiles and ai["analyst_insights"][0].startswith("Key numbers: " + tiles[0]["value"]), ai["analyst_insights"][:1]
+    assert all(k["value"] in ai["analyst_insights"][0] for k in tiles), (tiles, ai["analyst_insights"][0])
+    got = _proxy_validate(ai)
+    if got is not None:
+        assert got["ok"], got
+
+
+def test_the_audit_and_the_analysis_profile_and_clean_the_table_once_and_the_report_is_the_same():
+    # speed (16 Oct 2026): loop.run_loop and loop.run_analyze each ran health.score_table and clean.clean_table on the
+    # same table; inside run() each now runs once and the second caller gets a copy, with the report unchanged
+    import contextlib, re as _re
+    from northledger import clean as _cl, health as _hl
+    data = _fx("run2_replan.csv")
+    calls = {"score": 0, "clean": 0}
+    real_s, real_c = _hl.score_table, _cl.clean_table
+
+    def count_s(*a, **k):
+        calls["score"] += 1
+        return real_s(*a, **k)
+
+    def count_c(*a, **k):
+        calls["clean"] += 1
+        return real_c(*a, **k)
+    _hl.score_table, _cl.clean_table = count_s, count_c
+    try:
+        fast = NB.run(data, "run2_replan.csv", as_of="2026-10-01")
+        once = dict(calls)
+        real = NB._profile_and_clean_once
+        NB._profile_and_clean_once = contextlib.nullcontext
+        try:
+            slow = NB.run(data, "run2_replan.csv", as_of="2026-10-01")
+        finally:
+            NB._profile_and_clean_once = real
+    finally:
+        _hl.score_table, _cl.clean_table = real_s, real_c
+    assert _hl.score_table is real_s and _cl.clean_table is real_c, "the cache left the engine patched"
+    assert once["score"] == 1 and once["clean"] == 1, once
+    assert calls["score"] == 3 and calls["clean"] == 3, calls
+
+    def plain(x):
+        if isinstance(x, dict):
+            return {k: plain(v) for k, v in x.items() if k not in ("timings", "seconds")}
+        return [plain(v) for v in x] if isinstance(x, list) else x
+    stamp = _re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?")
+    a, b = [stamp.sub("T", json.dumps(plain(r), sort_keys=True, default=str)) for r in (fast, slow)]
+    assert a == b, "the cached run's report differs from the uncached one"
+
+
+def test_ask_your_data_runs_the_planners_steps_on_the_last_files_rows():
+    # "Ask your data" (docs/ai-analyst/PROTOCOL.md): the planner sees the steps so far as printed figures, never a row,
+    # and the steps it picks run on the frame of the last run, checked again, their ids after the engine's own
+    rep = _run(_fx("run2_replan.csv"), "run2_replan.csv")
+    b = rep["analyst"]
+    led = json.loads(NB.analyst_ledger_json(json.dumps(b)))
+    assert [s["id"] for s in led] == [s["id"] for s in b["steps"]]
+    assert all(set(s) == {"id", "round", "op", "args", "why", "ok", "refused", "figures"} for s in led), led[0]
+    assert all(isinstance(v, str) for s in led for v in s["figures"].values()), "a figure went out as a raw value"
+    m, dim = b["shape"]["primary"], b["shape"]["dimensions"][-1]
+    steps = [{"op": "breakdown", "args": {"measure": m, "by": dim}, "why": "the visitor asked"},
+             {"op": "breakdown", "args": {"measure": "no_such_column", "by": dim}, "why": "a column the file lacks"}]
+    out = json.loads(NB.analyst_more_json(json.dumps(steps), json.dumps(b["steps"])))
+    n = len(b["steps"])
+    assert [s["id"] for s in out["steps"]] == ["A%d" % (n + 1), "A%d" % (n + 2)], out["steps"]
+    assert out["steps"][0]["ok"] and not out["steps"][1]["ok"] and out["steps"][1]["refused"], out["steps"][1]
+    assert out["round"] > max(s["round"] for s in b["steps"])
+    ins = out["insights"]
+    assert len(ins) == 1 and ins[0]["kind"] == "planned" and ins[0]["steps"] == ["A%d" % (n + 1)], ins
+    assert ins[0]["id"] not in {i["id"] for i in b["insights"]} and ins[0]["figure"]["id"].startswith("viz."), ins[0]
+    assert int(ins[0]["figure"]["id"].split(".")[1]) >= 70, ins[0]["figure"]["id"]
+    # garbage in: nothing runs, and it says why
+    bad = json.loads(NB.analyst_more_json("not json", "[]"))
+    assert bad["steps"] == [] and bad["insights"] == [] and bad["refused"], bad
 
 
 def test_the_profile_tells_the_planner_the_time_span_and_what_the_analyses_need():
@@ -6403,6 +6493,22 @@ def _payload_bytes_of(x) -> int:
     return len(json.dumps(x, default=str))
 
 TESTS =[v for k, v in sorted(globals().items()) if k.startswith("test_")]
+
+def test_amounts_of_every_size_are_kept_by_default_and_fixed_length_numbers_are_not():
+    import random
+    rnd = random.Random(1)
+    rows = ["id,phone,amount"] + ["%d,%d,%d" % (i, 4165550000 + rnd.randint(0, 9999), rnd.randint(1, 10 ** rnd.randint(2, 9)))
+                                   for i in range(200)]
+    rep = _run("\n".join(rows).encode(), "t.csv", "", None, "2026-01-10")
+    dec = {f["column"]: (f["decision"], f["kind"]) for f in rep["privacy"]["flagged"]}
+    assert dec.get("phone", ("", ""))[0] == "withhold", dec
+    if "amount" in dec:
+        assert dec["amount"][0] == "keep" and NB.AMOUNTS_KEPT in dec["amount"][1], dec
+    # a visitor who withholds it is obeyed
+    rep2 = _run("\n".join(rows).encode(), "t.csv", "", {"amount": "withhold"}, "2026-01-10")
+    dec2 = {f["column"]: f["decision"] for f in rep2["privacy"]["flagged"]}
+    assert dec2.get("amount", "withhold") == "withhold", dec2
+
 
 if __name__ == "__main__":
     print("adapter under test: %s" % ("engine/ (the site)" if not os.environ.get("NL_BROWSER_DIR")

@@ -29,3 +29,5 @@ dist/
 
 # wrangler local state (created by `wrangler deploy`)
 .wrangler/
+# the real-dataset corpus tools/run_corpus.py downloads (tools/corpus.json pins each file by sha256); never published
+.corpus/

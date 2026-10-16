@@ -237,6 +237,23 @@ function onResults(m) {
   post({ type: 'results_json', id: m.id, results: results });
 }
 
+// the AI rounds of the analyst loop (docs/ai-analyst/PROTOCOL.md): 'ledger' answers what the planner may see of the
+// block (ledger_for_ai: figures as printed, never a table or a row); 'more' runs the steps the worker's /analyst
+// returned on the frame of the last run (nl_analyst.run_steps), every one checked again, every figure the engine's
+function onLedger(m) {
+  var steps = null;
+  try { if (booted && nl && nl.analyst_ledger_json) steps = JSON.parse(nl.analyst_ledger_json(JSON.stringify(m.block || {}))); }
+  catch (e) { steps = null; }
+  post({ type: 'ledger_json', id: m.id, steps: steps });
+}
+function onMore(m) {
+  var out = null;
+  try {
+    if (booted && nl && nl.analyst_more_json) out = JSON.parse(nl.analyst_more_json(JSON.stringify(m.steps || []), JSON.stringify(m.prior || [])));
+  } catch (e) { out = null; }
+  post({ type: 'more_json', id: m.id, out: out });
+}
+
 var queue = Promise.resolve();
 self.onmessage = function (e) {
   var m = e.data || {};
@@ -245,6 +262,8 @@ self.onmessage = function (e) {
     if (m.type === 'profile') return onProfile(m);
     if (m.type === 'run') return onRun(m);
     if (m.type === 'results') return onResults(m);
+    if (m.type === 'ledger') return onLedger(m);
+    if (m.type === 'more') return onMore(m);
     return null;
   }).catch(function (err) {
     if (err && err.code) fail(m.id, err.code, err.message, err.detail);

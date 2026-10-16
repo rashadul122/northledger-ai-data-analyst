@@ -664,7 +664,11 @@
   // the drawer for a chart record, or null when the page has none for it (a viz record always has one: its table)
   C.drawer = function (ch) {
     var id = String(ch.id || '');
-    if (ch.type === 'viz') return window.NLV && window.NLV.knows(ch.data) ? C.viz : C.vizTable;
+    if (ch.type === 'viz') {
+      C.extendNLV(window.NLV);
+      if (ch.data && C.gKnows(ch.data.kind)) return C.gOk(ch.data) ? C.vizGrammar : C.vizTable;
+      return window.NLV && window.NLV.knows(ch.data) ? C.viz : C.vizTable;
+    }
     if (ch.type === 'heatmap') {
       if (id.indexOf('season.') === 0) return C.season;
       if (id.indexOf('catmonth.') === 0) return C.catmonth;
@@ -675,4 +679,342 @@
     if (ch.type === 'table' && id.indexOf('models.') === 0) return C.table_models;
     return C.TYPES[ch.type] || null;
   };
+
+  /* ------------------------------------------------------------ the chart grammar (Batch 2 of the chart registry)
+     The line (kind 'lines'), the stacked area ('area'), the sorted and the grouped bar ('hbar') and small multiples
+     ('multiples'), drawn from the record alone (tools/fixtures/viz/spec.json draw_kinds): the engine wrote every
+     printed string; a point's text is its table cell (table.rows[i][1 + k] is series k at x[i]). Colours are the
+     site's tokens through CSS variables, so the dark theme follows; a series also has its own dash and its label (at
+     its end, or in a key), so colour is never the only channel. A label that does not fit is clipped with an ellipsis
+     and shown whole in its tooltip and in the table view. Every layout fits the width it is given (288 px on a 320-px
+     phone). C.extendNLV teaches window.NLV (55-nl-viz.js) the same kinds, so the AI report's figures and the share
+     viewer draw them too, with their Table button; a record of these kinds with data it cannot read is its table. */
+  var GPAL = ['var(--series)', 'var(--series-2)', 'var(--series-3)', 'var(--div-neg)', 'var(--band-red)'];
+  var GDASH = ['', '6 3', '2 3', '8 3 2 3', '1 2'];
+  var GOTHER = 'var(--muted)';
+  var GOWN = Object.prototype.hasOwnProperty;
+  function gHas(o, k) { return typeof k === 'string' && GOWN.call(o, k); }
+  function gObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function gArr(v) { return Array.isArray(v); }
+  function gStr(v) { return typeof v === 'string'; }
+  function gNum(v) { return typeof v === 'number' && isFinite(v) && Math.abs(v) <= 1e300; }
+  function gNumN(v) { return v === null || gNum(v); }
+  function gf1(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+  var gctx = null, gfam = null, gmemo = {};
+  // the width of a string as the page sets it (a canvas measures it with the page's own font)
+  function gtw(s, px, wt) {
+    s = String(s === null || s === undefined ? '' : s); px = px || 12; wt = wt || 400;
+    var k = px + '|' + wt + '|' + s;
+    if (gmemo[k] !== undefined) return gmemo[k];
+    var w = null;
+    try {
+      if (gfam === null) gfam = getComputedStyle(document.body).fontFamily || 'sans-serif';
+      if (!gctx) gctx = document.createElement('canvas').getContext('2d');
+      if (gctx) { gctx.font = wt + ' ' + px + 'px ' + gfam; w = gctx.measureText(s).width; }
+    } catch (e) { w = null; }
+    if (w === null || !isFinite(w) || (w === 0 && s.length)) w = s.length * px * 0.6;
+    gmemo[k] = w;
+    return w;
+  }
+  function gchars(s) { return Array.from ? Array.from(s) : s.split(''); }
+  // the longest start of s that fits maxW, with an ellipsis
+  function gfit(s, maxW, px, wt) {
+    s = String(s === null || s === undefined ? '' : s);
+    if (gtw(s, px, wt) <= maxW) return s;
+    var g = gchars(s), lo = 0, hi = g.length - 1;
+    var at = function (n) { return g.slice(0, n).join('').replace(/\s+$/, '') + '…'; };
+    while (lo < hi) { var m = (lo + hi + 1) >> 1; if (gtw(at(m), px, wt) <= maxW) lo = m; else hi = m - 1; }
+    return lo > 0 ? at(lo) : (gtw('…', px, wt) <= maxW ? '…' : '');
+  }
+  var GRTL = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/;
+  // one line of text; o: {anchor, cls, maxW, wt, fill}. A clipped label carries the whole text as its tooltip
+  function gtxt(x, y, s, o) {
+    o = o || {};
+    var full = String(s === null || s === undefined ? '' : s), wt = o.wt || 400;
+    var t = o.maxW !== undefined ? gfit(full, Math.max(0, o.maxW - 1), 12, wt) : full;
+    var a = o.anchor || 'start', r = GRTL.test(full.charAt(0));
+    if (r && a !== 'middle') a = a === 'start' ? 'end' : 'start';
+    return '<text x="' + gf1(x) + '" y="' + gf1(y) + '" class="' + (o.cls || 'lab') + '"' + (a !== 'start' ? ' text-anchor="' + a + '"' : '') +
+      (r ? ' direction="rtl"' : '') + (wt !== 400 ? ' font-weight="' + wt + '"' : '') + (o.fill ? ' style="fill:' + o.fill + '"' : '') +
+      (t !== full ? ' data-tip="' + esc(full) + '" data-full="' + esc(full) + '"' : '') + '>' + esc(t) + '</text>';
+  }
+  function gsvg(W, H, label, body) {
+    return '<svg class="nlv nlg" viewBox="0 0 ' + W + ' ' + Math.ceil(H) + '" width="' + W + '" height="' + Math.ceil(H) + '" role="img" tabindex="0" aria-label="' + esc(label) +
+      '"><title>' + esc(label) + '</title>' + body + '</svg>';
+  }
+  function glabel(rec) {
+    var t = String((rec && rec.title) || 'Chart').replace(/[.\s]+$/, '');
+    return rec && rec.summary ? t + '. ' + rec.summary : t;
+  }
+  // value ticks: 3 to 5, labelled with a thousands unit when large (the only numbers this code formats)
+  function gticks(lo, hi, n) {
+    if (!(hi > lo)) hi = lo + 1;
+    var ts = (U.ticks ? U.ticks(lo, hi, n) : [lo, hi]).filter(function (t) { return t >= lo - 1e-9 && t <= hi + 1e-9; });
+    if (!ts.length) ts = [lo, hi];
+    var m = Math.max.apply(null, ts.map(Math.abs)), d = m >= 1e9 ? 1e9 : m >= 1e6 ? 1e6 : m >= 1e4 ? 1e3 : 1;
+    var u = d === 1e9 ? 'B' : d === 1e6 ? 'M' : d === 1e3 ? 'k' : '', step = ts.length > 1 ? Math.abs(ts[1] - ts[0]) / d : 1;
+    var dp = !(step > 0) || step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log(step) / Math.LN10 - 1e-9));
+    return { ts: ts, lab: ts.map(function (t) {
+      var x = t / d;
+      return Math.abs(x) < 1e-12 ? '0' : (x < 0 ? '−' : '') + Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp }) + u;
+    }) };
+  }
+  // the value range a time chart draws: the values' own, padded, from 0 when they sit on one side of it near 0
+  function gdomain(vals, fromZero) {
+    var v = vals.filter(gNum);
+    if (!v.length) return [0, 1];
+    var lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+    if (fromZero || (lo >= 0 && lo <= hi * 0.35)) lo = Math.min(0, lo);
+    if (hi <= 0 && hi >= lo * 0.35) hi = 0;
+    if (hi === lo) { hi += Math.abs(hi) * 0.1 || 1; lo -= Math.abs(lo) * 0.1 || 1; }
+    var pad = (hi - lo) * 0.06;
+    return [lo < 0 || lo > 0 ? lo - (lo === 0 ? 0 : pad) : lo, hi + pad];
+  }
+  // a period as an axis tick: "Jan 24", "Q1 24", "2024"
+  function gper(p, full) {
+    p = String(p);
+    if (/^\d{4}-Q[1-4]$/.test(p)) return full ? p.slice(0, 4) + ' ' + p.slice(5) : p.slice(5) + ' ' + p.slice(2, 4);
+    if (/^\d{4}-\d{2}$/.test(p)) { var mo = (U.MON || [])[+p.slice(5, 7) - 1] || p.slice(5, 7); return full ? mo + ' ' + p.slice(0, 4) : mo + ' ' + p.slice(2, 4); }
+    return p;
+  }
+  // the period axis under a plot: as many labels as fit without touching, the first and every k-th
+  function gxaxis(X, xs, y, W) {
+    var labs = xs.map(function (p) { return gper(p); }), wmax = Math.max.apply(null, labs.map(function (s) { return gtw(s, 12); }).concat([10]));
+    var span = xs.length > 1 ? Math.abs(X(xs.length - 1) - X(0)) : W, fit = Math.max(1, Math.floor(span / (wmax + 10)) + 1);
+    var every = Math.max(1, Math.ceil(xs.length / fit)), out = '', last = -1e9;
+    for (var i = 0; i < xs.length; i += every) {
+      var w = gtw(labs[i], 12), cx = Math.min(W - w / 2 - 1, Math.max(w / 2 + 1, X(i)));
+      if (cx - w / 2 < last + 8) continue;
+      out += gtxt(cx, y, labs[i], { anchor: 'middle' });
+      last = cx + w / 2;
+    }
+    return out;
+  }
+  // a key: items {mark(x, yMid), w, text}, left to right from x0, a new line when the next would pass maxX
+  function gkey(items, x0, maxX, y0) {
+    var x = x0, y = y0, out = '';
+    items.forEach(function (it) {
+      var w = it.w + 5 + Math.min(gtw(it.text, 12), maxX - x0 - it.w - 5);
+      if (x + w > maxX && x > x0) { x = x0; y += 18; }
+      out += it.mark(x, y + 8) + gtxt(x + it.w + 5, y + 12, it.text, { maxW: maxX - x - it.w - 5 });
+      x += w + 14;
+    });
+    return { svg: out, h: y - y0 + 18 };
+  }
+  function gswatchLine(k) {
+    return function (x, y) { return '<path d="M' + x + ' ' + y + 'h20" style="fill:none;stroke:' + GPAL[k % GPAL.length] + ';stroke-width:2.5' + (GDASH[k] ? ';stroke-dasharray:' + GDASH[k] : '') + '"/>'; };
+  }
+  function gswatchBox(fill, stroke) {
+    return function (x, y) { return '<rect x="' + x + '" y="' + (y - 5) + '" width="14" height="10" rx="2" style="fill:' + fill + (stroke ? ';stroke:' + stroke + ';stroke-width:1.5' : '') + '"/>'; };
+  }
+  // labels at the ends of lines, spread at least gap apart inside [lo, hi]
+  function gspread(ys, lo, hi, gap) {
+    var o = ys.map(function (y, i) { return { y: y, i: i }; }).sort(function (a, b) { return a.y - b.y || a.i - b.i; });
+    for (var k = 0; k < o.length; k++) o[k].p = Math.max(o[k].y, k ? o[k - 1].p + gap : lo);
+    if (o.length && o[o.length - 1].p > hi) {
+      o[o.length - 1].p = hi;
+      for (var k2 = o.length - 2; k2 >= 0; k2--) o[k2].p = Math.min(o[k2].p, o[k2 + 1].p - gap);
+    }
+    var out = []; o.forEach(function (x) { out[x.i] = x.p; });
+    return out;
+  }
+  function gcell(rec, i, k) { var r = rec.table && rec.table.rows && rec.table.rows[i]; return r && r[1 + k] !== undefined ? String(r[1 + k]) : ''; }
+  function gvalues(list, n) { return gArr(list) && list.length === n && list.every(gNumN); }
+  function gtimeOk(d, key, nmin, nmax) {
+    return gObj(d) && gArr(d.x) && d.x.length >= 2 && d.x.length <= 30 && d.x.every(gStr) && gStr(d.x_label) && gArr(d[key]) &&
+      d[key].length >= nmin && d[key].length <= nmax && d[key].every(function (s) { return gObj(s) && gStr(s.label) && gvalues(s.values, d.x.length); });
+  }
+  var GK = {
+    lines: {
+      ok: function (rec) {
+        var d = rec.data, f = d && d.forecast;
+        return gtimeOk(d, 'series', 1, 5) && d.series.some(function (s) { return s.values.some(gNum); }) && (f === null || f === undefined ||
+          (gObj(f) && gArr(f.x) && f.x.length >= 1 && f.x.length <= 24 && ['values', 'lo', 'hi'].every(function (k) { return gArr(f[k]) && f[k].length === f.x.length && f[k].every(gNum); })));
+      },
+      draw: function (rec, W) {
+        var d = rec.data, S = d.series, n = d.x.length, F = d.forecast || null, m = F ? F.x.length : 0, one = S.length === 1;
+        var all = []; S.forEach(function (s) { s.values.forEach(function (v) { if (gNum(v)) all.push(v); }); });
+        if (F) all = all.concat(F.lo, F.hi, F.values);
+        var dom = gdomain(all, false), yt = gticks(dom[0], dom[1], 4), L = Math.max.apply(null, yt.lab.map(function (s) { return gtw(s, 12); })) + 10;
+        // the last point of each series and its words at the right, when they fit in 40% of the width; else a key above
+        var lastI = S.map(function (s) { for (var i = n - 1; i >= 0; i--) if (gNum(s.values[i])) return i; return -1; });
+        var endTxt = S.map(function (s, k) { var t = gcell(rec, lastI[k], k); return one ? t : s.label + ' ' + t; });
+        var endW = Math.max.apply(null, endTxt.map(function (s) { return gtw(s, 12); })) + 12;
+        var ends = !F && W >= 420 && endW <= W * 0.4, R = W - (ends ? endW : 8), b = '', T = 8;
+        if (!one || F) {
+          var items = one ? [] : S.map(function (s, k) { return { w: 20, text: s.label, mark: gswatchLine(k) }; });
+          if (F) items.push({ w: 20, text: 'forecast, ' + F.level + '% range', mark: function (x, y) { return '<rect x="' + x + '" y="' + (y - 5) + '" width="20" height="10" style="fill:var(--fan)"/><path d="M' + x + ' ' + y + 'h20" style="fill:none;stroke:var(--series-2);stroke-width:2;stroke-dasharray:5 4"/>'; } });
+          if (!ends && items.length) { var ky = gkey(items, 0, W, 0); b += ky.svg; T = ky.h + 8; }
+        }
+        var H = T + 190, Bt = H - 26, nn = n + m, X = U.scale(0, Math.max(1, nn - 1), L, R), Y = U.scale(dom[0], dom[1], Bt, T + 6);
+        yt.ts.forEach(function (t, k) {
+          b += '<line class="gridl" x1="' + L + '" x2="' + gf1(R) + '" y1="' + gf1(Y(t)) + '" y2="' + gf1(Y(t)) + '"' + (t === 0 ? ' style="stroke:var(--axis)"' : '') + '/>' + gtxt(L - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' });
+        });
+        var xs = d.x.concat(F ? F.x : []);
+        b += '<line x1="' + L + '" x2="' + gf1(R) + '" y1="' + Bt + '" y2="' + Bt + '" style="stroke:var(--axis)"/>' + gxaxis(X, xs, H - 8, W);
+        if (F) {
+          var li = lastI[0], x0 = X(li), lv = S[0].values[li];
+          var top = [[x0, Y(lv)]].concat(F.hi.map(function (v, j) { return [X(n + j), Y(v)]; })), bot = F.lo.map(function (v, j) { return [X(n + j), Y(v)]; }).reverse();
+          b += '<path d="' + U.path(top) + 'L' + bot.map(function (p) { return gf1(p[0]) + ' ' + gf1(p[1]); }).join('L') + 'Z" style="fill:var(--fan)"/>';
+          b += '<line x1="' + gf1(X(n - 0.5)) + '" x2="' + gf1(X(n - 0.5)) + '" y1="' + (T + 6) + '" y2="' + Bt + '" style="stroke:var(--axis);stroke-dasharray:3 3"/>';
+          b += '<path d="' + U.path([[x0, Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; }))) + '" style="fill:none;stroke:var(--series-2);stroke-width:2;stroke-dasharray:5 4"/>';
+          F.values.forEach(function (v, j) {
+            var r = rec.table.rows[n + j] || [], tip = gper(F.x[j], true) + ': forecast ' + (r[r.length - 2] || '') + ', ' + F.level + '% range ' + (r[r.length - 1] || '');
+            b += '<circle cx="' + gf1(X(n + j)) + '" cy="' + gf1(Y(v)) + '" r="2.5" style="fill:var(--surface);stroke:var(--series-2);stroke-width:1.5" data-tip="' + esc(tip) + '"/>';
+          });
+        }
+        S.forEach(function (s, k) {
+          var c = GPAL[k % GPAL.length];
+          b += '<path d="' + U.path(s.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:' + c + ';stroke-width:2' + (GDASH[k] ? ';stroke-dasharray:' + GDASH[k] : '') + '"/>';
+          s.values.forEach(function (v, i) {
+            if (!gNum(v)) return;
+            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
+          });
+        });
+        if (ends) {
+          var ys = S.map(function (s, k) { return lastI[k] < 0 ? Bt : Y(s.values[lastI[k]]); }), ly = gspread(ys.map(function (y) { return y + 4; }), T + 10, Bt, 14);
+          S.forEach(function (s, k) {
+            if (lastI[k] < 0) return;
+            var xe = X(lastI[k]) + 6;
+            if (Math.abs(ly[k] - 4 - ys[k]) > 1) b += '<path d="M' + gf1(X(lastI[k]) + 3) + ' ' + gf1(ys[k]) + 'L' + gf1(R + 4) + ' ' + gf1(ly[k] - 4) + '" style="fill:none;stroke:var(--axis)"/>';
+            b += gtxt(Math.max(xe, R + 6), ly[k], endTxt[k], { cls: 'nlv-t', maxW: W - Math.max(xe, R + 6), fill: one ? null : GPAL[k % GPAL.length] });
+          });
+        }
+        return { body: b, H: H, layout: (ends ? 'end labels' : 'key') + (F ? ', forecast' : '') };
+      }
+    },
+    area: {
+      ok: function (rec) {
+        var d = rec.data;
+        return gtimeOk(d, 'parts', 2, 6) && d.parts.every(function (p) { return p.values.every(function (v) { return gNum(v) && v >= 0; }); }) && gvalues(d.total, d.x.length);
+      },
+      draw: function (rec, W) {
+        var d = rec.data, P = d.parts, n = d.x.length, b = '';
+        var col = function (k) { return P[k].label === 'other' && k === P.length - 1 ? GOTHER : GPAL[k % GPAL.length]; };
+        var ky = gkey(P.map(function (p, k) { return { w: 14, text: p.label, mark: gswatchBox(col(k)) }; }), 0, W, 0), T = ky.h + 8;
+        b += ky.svg;
+        var top = Math.max.apply(null, d.total.concat([0])), yt = gticks(0, top * 1.06 || 1, 4), L = Math.max.apply(null, yt.lab.map(function (s) { return gtw(s, 12); })) + 10;
+        var H = T + 200, Bt = H - 26, R = W - 8, X = U.scale(0, Math.max(1, n - 1), L, R), Y = U.scale(0, yt.ts[yt.ts.length - 1] > top ? yt.ts[yt.ts.length - 1] : top * 1.06 || 1, Bt, T + 4);
+        yt.ts.forEach(function (t, k) { b += '<line class="gridl" x1="' + L + '" x2="' + R + '" y1="' + gf1(Y(t)) + '" y2="' + gf1(Y(t)) + '"/>' + gtxt(L - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' }); });
+        var cum = d.x.map(function () { return 0; });
+        P.forEach(function (p, k) {
+          var lo = cum.slice(), hi = cum.map(function (c, i) { return c + p.values[i]; });
+          var up = hi.map(function (v, i) { return [X(i), Y(v)]; }), dn = lo.map(function (v, i) { return [X(i), Y(v)]; }).reverse();
+          b += '<path d="' + U.path(up) + 'L' + dn.map(function (q) { return gf1(q[0]) + ' ' + gf1(q[1]); }).join('L') + 'Z" style="fill:' + col(k) + ';fill-opacity:0.85;stroke:var(--surface);stroke-width:1"/>';
+          cum = hi;
+        });
+        b += '<path d="' + U.path(d.total.map(function (v, i) { return [X(i), Y(v)]; })) + '" style="fill:none;stroke:var(--ink);stroke-width:1.5"/>';
+        b += '<line x1="' + L + '" x2="' + R + '" y1="' + Bt + '" y2="' + Bt + '" style="stroke:var(--axis)"/>' + gxaxis(X, d.x, H - 8, W);
+        // a column per period, its whole breakdown as the tooltip (the table view holds the same)
+        var cw = n > 1 ? (X(1) - X(0)) : (R - L);
+        d.x.forEach(function (p, i) {
+          var tip = gper(p, true) + ': total ' + gcell(rec, i, P.length) + '; ' + P.map(function (q, k) { return q.label + ' ' + gcell(rec, i, k); }).join(', ');
+          b += '<rect x="' + gf1(Math.max(L, X(i) - cw / 2)) + '" y="' + (T + 4) + '" width="' + gf1(Math.min(cw, R - L)) + '" height="' + gf1(Bt - T - 4) + '" style="fill:transparent" data-tip="' + esc(tip) + '"/>';
+        });
+        return { body: b, H: H, layout: 'stacked, key above' };
+      }
+    },
+    hbar: {
+      ok: function (rec) {
+        var d = rec.data;
+        return gObj(d) && gArr(d.series) && d.series.length >= 1 && d.series.length <= 2 && d.series.every(gStr) && gArr(d.rows) && d.rows.length >= 1 && d.rows.length <= 12 &&
+          d.rows.every(function (r) { return gObj(r) && gStr(r.label) && gArr(r.values) && r.values.length === d.series.length && r.values.every(gNum) && gArr(r.texts) && r.texts.length === d.series.length && r.texts.every(gStr); });
+      },
+      draw: function (rec, W) {
+        var d = rec.data, rows = d.rows, two = d.series.length === 2, b = '', y = 0;
+        var isOther = function (i) { return d.other === true && i === rows.length - 1; };
+        if (two) {
+          var ky = gkey([{ w: 14, text: d.series[0], mark: gswatchBox('var(--surface)', 'var(--series)') }, { w: 14, text: d.series[1], mark: gswatchBox('var(--series)') }], 0, W, 0);
+          b += ky.svg; y = ky.h + 6;
+        }
+        var all = [0]; rows.forEach(function (r) { all = all.concat(r.values); });
+        var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+        var tW = Math.max.apply(null, rows.map(function (r) { return Math.max.apply(null, r.texts.map(function (t) { return gtw(t, 12, 650); })); })) + 6;
+        var cW = two ? Math.max.apply(null, rows.map(function (r) { return gtw(r.change_text || '', 12, 700); })) + 10 : 0;
+        var labMax = Math.max.apply(null, rows.map(function (r) { return gtw(r.label, 12); })) + 8;
+        var wide = W >= 480 && labMax <= W * 0.4, LW = wide ? labMax + 4 : 0;
+        var x0 = LW + (lo < 0 ? tW : 0), x1 = W - cW - tW, X = U.scale(lo, hi === lo ? lo + 1 : hi, x0, Math.max(x0 + 40, x1)), z = X(0);
+        var bh = two ? 10 : 14, RH = (two ? 2 * bh + 4 : bh) + (wide ? 10 : 26);
+        rows.forEach(function (r, i) {
+          var top = y + (wide ? 5 : 18), oth = isOther(i), tip = r.label + ': ' + d.series.map(function (s, k) { return s + ' ' + r.texts[k]; }).join(', ') + (r.change_text ? ' (' + r.change_text + ')' : '');
+          var g = '<g data-tip="' + esc(tip) + '">';
+          g += wide ? gtxt(LW - 8, top + (two ? bh + 6 : bh - 2), r.label, { anchor: 'end', cls: 'nlv-t', maxW: LW - 8 }) : gtxt(0, y + 13, r.label, { cls: 'nlv-t', maxW: W - cW - 4 });
+          r.values.forEach(function (v, k) {
+            var yy = top + k * (bh + 4), a = Math.min(X(v), z), w = Math.max(1.5, Math.abs(X(v) - z)), hollow = two && k === 0, c = oth ? GOTHER : 'var(--series)';
+            g += '<rect x="' + gf1(a) + '" y="' + gf1(yy) + '" width="' + gf1(w) + '" height="' + bh + '" rx="2" style="fill:' + (hollow ? 'var(--surface)' : c) + (hollow ? ';stroke:' + c + ';stroke-width:1.5' : '') + '"/>';
+            var tx = v < 0 ? a - 4 : a + w + 4;
+            if (r.texts[k]) g += gtxt(tx, yy + bh - 2 + (two ? 0 : 0), r.texts[k], { anchor: v < 0 ? 'end' : 'start', cls: 'vlab' });
+          });
+          if (two && r.change_text) g += gtxt(W, top + bh + 6, r.change_text, { anchor: 'end', cls: 'nlv-t', wt: 700 });
+          b += g + '</g>';
+          y += RH;
+        });
+        if (lo < 0) b += '<line x1="' + gf1(z) + '" x2="' + gf1(z) + '" y1="0" y2="' + y + '" style="stroke:var(--axis)"/>';
+        return { body: b, H: y + 4, layout: (wide ? 'labels left' : 'labels above') + (two ? ', two periods' : '') };
+      }
+    },
+    multiples: {
+      ok: function (rec) { return gtimeOk(rec.data, 'panels', 1, 12) && rec.data.panels.some(function (p) { return p.values.some(gNum); }); },
+      draw: function (rec, W) {
+        var d = rec.data, Ps = d.panels, n = d.x.length, b = '';
+        var all = []; Ps.forEach(function (p) { p.values.forEach(function (v) { if (gNum(v)) all.push(v); }); });
+        var dom = gdomain(all, false), yt = gticks(dom[0], dom[1], 3), tl = Math.max.apply(null, yt.lab.map(function (s) { return gtw(s, 12); })) + 8;
+        var gap = 14, cols = Math.max(1, Math.min(4, Math.floor((W - tl + gap) / (120 + gap)))), pw = (W - tl - gap * (cols - 1)) / cols, ph = 104, plotT = 22, plotB = 80;
+        var fl = gper(d.x[0]), ll = gper(d.x[n - 1]), axisOk = gtw(fl, 12) + gtw(ll, 12) + 10 <= pw;
+        Ps.forEach(function (p, j) {
+          var c = j % cols, r = Math.floor(j / cols), x0 = tl + c * (pw + gap), y0 = r * ph, X = U.scale(0, Math.max(1, n - 1), x0 + 4, x0 + pw - 4), Y = U.scale(dom[0], dom[1], y0 + plotB, y0 + plotT + 4);
+          var li = -1; for (var i = n - 1; i >= 0; i--) if (gNum(p.values[i])) { li = i; break; }
+          var lt = li >= 0 ? gcell(rec, li, j) : '', ltw = gtw(lt, 12, 650);
+          b += gtxt(x0, y0 + 14, p.label, { cls: 'nlv-t', wt: 650, maxW: pw - ltw - 8 }) + (lt ? gtxt(x0 + pw, y0 + 14, lt, { anchor: 'end', cls: 'lab' }) : '');
+          yt.ts.forEach(function (t, k) {
+            b += '<line class="gridl" x1="' + gf1(x0) + '" x2="' + gf1(x0 + pw) + '" y1="' + gf1(Y(t)) + '" y2="' + gf1(Y(t)) + '"/>';
+            if (c === 0) b += gtxt(x0 - 6, Y(t) + 4, yt.lab[k], { anchor: 'end' });
+          });
+          b += '<line x1="' + gf1(x0) + '" x2="' + gf1(x0 + pw) + '" y1="' + (y0 + plotB) + '" y2="' + (y0 + plotB) + '" style="stroke:var(--axis)"/>';
+          if (axisOk) b += gtxt(x0, y0 + plotB + 15, fl) + gtxt(x0 + pw, y0 + plotB + 15, ll, { anchor: 'end' });
+          b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--series);stroke-width:1.8"/>';
+          p.values.forEach(function (v, i) {
+            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--series)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
+          });
+        });
+        var rowsN = Math.ceil(Ps.length / cols);
+        return { body: b, H: rowsN * ph - (axisOk ? 0 : 12), layout: cols + ' columns' };
+      }
+    }
+  };
+  C.gKnows = function (kind) { return gHas(GK, kind); };
+  C.gOk = function (rec) { try { return gObj(rec) && gHas(GK, rec.kind) && gObj(rec.data) && !!GK[rec.kind].ok(rec); } catch (e) { return false; } };
+  function gTableOut(rec, why) {
+    if (window.NLV && window.NLV.tableOut) return window.NLV.tableOut(rec, why);
+    var t = rec && rec.table, ok = t && gArr(t.cols) && gArr(t.rows);
+    return { html: (rec && rec.summary ? '<p class="note">' + esc(rec.summary) + '</p>' : '') + (ok ? U.table(t) : '<p class="note">This chart could not be drawn.</p>'), note: why ? '<p class="note nlv-why">' + esc(why) + '</p>' : '', kind: 'table' };
+  }
+  // one Batch 2 record drawn at width W: {html, svg, table, tnote, note, label, kind, layout} as window.NLV.draw returns
+  C.vizDraw = function (rec, W) {
+    W = Math.max(200, Math.floor(W || 600));
+    if (!C.gOk(rec)) return gTableOut(rec, 'This chart\'s data could not be drawn, so its table is shown.');
+    var o;
+    try { o = GK[rec.kind].draw(rec, W); } catch (e) { if (window.console) console.error(e); return gTableOut(rec, 'This chart could not be drawn here, so its table is shown.'); }
+    var label = glabel(rec), svg = gsvg(W, o.H, label, o.body), S = rec.suppressed, t = rec.table;
+    var note = (rec.summary ? '<p class="note nlv-sum">' + esc(rec.summary) + '</p>' : '') + (gObj(S) && S.cells > 0 && S.why ? '<p class="note nlv-supn">' + esc(S.why) + '</p>' : '');
+    return { html: (rec.subtitle ? '<p class="nlv-sub">' + esc(rec.subtitle) + '</p>' : '') + svg, svg: svg,
+      table: t && gArr(t.cols) && gArr(t.rows) ? t : null, tnote: rec.subtitle ? '<p class="note">' + esc(rec.subtitle) + '</p>' : '',
+      note: note, label: label, kind: rec.kind, layout: o.layout };
+  };
+  C.vizGrammar = function (W, ch) { return C.vizDraw(ch.data, W); };
+  var GNAMES = { line_chart: 'Line chart', area_chart: 'Stacked area chart', bar_chart: 'Bar chart', grouped_bar: 'Grouped bar chart (two periods)', small_multiples: 'Small multiples' };
+  // window.NLV (55-nl-viz.js) learns the Batch 2 kinds: kindOf, knows, draw and chartName answer for them, everything
+  // else is its own (it loads after this file: done at once when it is there, else when the page has loaded)
+  C.extendNLV = function (N) {
+    if (!N || N.__grammar) return;
+    N.__grammar = true;
+    var kindOf = N.kindOf, knows = N.knows, draw = N.draw, chartName = N.chartName;
+    N.kindOf = function (rec) { return rec && gHas(GK, rec.kind) ? (C.gOk(rec) ? rec.kind : 'table') : kindOf(rec); };
+    N.knows = function (rec) { return rec && gHas(GK, rec.kind) ? C.gOk(rec) : knows(rec); };
+    N.draw = function (rec, W) { return gObj(rec) && gHas(GK, rec.kind) ? C.vizDraw(rec, W) : draw(rec, W); };
+    N.chartName = function (c) { return gHas(GNAMES, c) ? GNAMES[c] : chartName(c); };
+    if (gArr(N.kinds)) Object.keys(GK).forEach(function (k) { if (N.kinds.indexOf(k) < 0) N.kinds.push(k); });
+  };
+  if (window.NLV) C.extendNLV(window.NLV);
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { C.extendNLV(window.NLV); });
 })();

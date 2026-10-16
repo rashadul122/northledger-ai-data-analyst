@@ -1,7 +1,7 @@
 {
  "spec": "northledger.viz",
  "version": "2026-09-30.1",
- "status": "frozen: wave 0 of the chart registry (plan/CHART-REGISTRY-DESIGN.md); builders start from this file; extended 9 Oct 2026 (impact6) with the timeseries draw kind and the series_lines menu chart",
+ "status": "frozen: wave 0 of the chart registry (plan/CHART-REGISTRY-DESIGN.md); builders start from this file. Extended 9 Oct 2026 (impact6) with the timeseries draw kind and the series_lines menu chart; Batch 2 (the chart grammar: line, area, bar, grouped bar, small multiples) added 14 October 2026 under the same version, see batch_2",
  "contract": "engine/CONTRACT-v2.md section 5.9",
  "caps": {
   "VIZ_MAX": 8,
@@ -345,6 +345,139 @@
    "reconcile": "the a values add up to headline.prior and the b values to headline.latest, to 1e-6",
    "privacy": "as contribution_waterfall"
   },
+  "line_chart": {
+   "args": [
+    {
+     "role": "measure",
+     "optional": true
+    },
+    {
+     "role": "category",
+     "optional": true
+    }
+   ],
+   "args_text": "[measure?, category?]",
+   "kind": "lines",
+   "section": "headline",
+   "section_if_not_primary": "other",
+   "batch": 2,
+   "what": "the measure over time (the primary series, or up to 5 series of a long table), with the engine's forecast range when it has one",
+   "conditions": [
+    "a date column (profile.time.column), or with none a whole-number year column named like a year (the profile's rule); 6 or more months, or 4 or more years",
+    "the periods: months while the span's months fit 30, else quarters while they fit, else years (the latest 30); the finest such grain where half the points with rows rest on 5 or more rows; a total's part-quarter or part-year at either end is left out",
+    "no columns: the primary claim's own series (its conditions: a kind split, a currency, a status left out), or, in a long table (a category whose every level holds the same few rows in 80% of its periods), a series per level of the engine's first measure; rows only when the headline is a count of rows",
+    "a category: its 5 levels with the most rows, a series each; a series needs 4 or more points resting on 5 or more rows, a line of a category 2 such series",
+    "a point resting on 1 to 4 rows is a gap (its table cell '<5'); a period with no rows is a gap (its cell '')",
+    "the forecast (forecast {x, values, lo, hi, level}) when the engine's fan chart forecasts this very series (its history equals the series in every month they share, 3 or more) and month points pass the 5-row rule: the latest 30 - h months, then the h forecast months",
+    "the section is headline when the series is the primary claim's, else other"
+   ],
+   "limit_needs": "needs a date column over 6 or more months, or a year column over 4 or more years",
+   "source": "the rows the engine kept, by period of the date (or year) column",
+   "reconcile": "each month's total (or average) equals the engine's own trend chart of the same series (trend.<claim>, trend.total:<m>, trend.<m>, trend.volume) where they overlap, to 1e-6, or it is refused; a series the engine charted no trend of is drawn from the rows",
+   "privacy": "the measure and the category are never a flagged column; a level that reads as personal data or a column of people's names refuses the chart; a point on fewer than 5 rows is never printed"
+  },
+  "area_chart": {
+   "args": [
+    {
+     "role": "category"
+    },
+    {
+     "role": "total",
+     "optional": true
+    }
+   ],
+   "args_text": "[category, total?]",
+   "kind": "area",
+   "section": "drove",
+   "section_if_not_primary": "other",
+   "batch": 2,
+   "what": "a total over time split into its largest groups and 'other', stacked",
+   "conditions": [
+    "a date column (profile.time.column), or with none a whole-number year column named like a year (the profile's rule); 4 or more periods",
+    "the periods: months while the span's months fit 30, else quarters while they fit, else years (the latest 30); the finest such grain where half the points with rows rest on 5 or more rows; a total's part-quarter or part-year at either end is left out; a coarser grain is used when it names more of the groups",
+    "a total (a flow or a count column, or rows); a part below zero in a period refuses the chart",
+    "the 5 largest levels (by their total over the periods shown) whose every period has 0 or 5 or more rows are parts; the rest, and the rows with no level, are 'other', which rests on 0 or 5 or more rows in every period (the smallest part joins it until it does); 2 or more parts"
+   ],
+   "limit_needs": "needs a date or year column over 6 or more periods and a category of 2 or more levels",
+   "source": "the rows the engine kept, by period and category",
+   "reconcile": "the parts add up to the whole series in every period, and each month's total equals the engine's trend chart of the same total where they overlap, to 1e-6",
+   "privacy": "as line_chart; a part is a level with 5 or more rows in each period it has rows in"
+  },
+  "bar_chart": {
+   "args": [
+    {
+     "role": "category"
+    },
+    {
+     "role": "measure",
+     "optional": true
+    }
+   ],
+   "args_text": "[category, measure?]",
+   "kind": "hbar",
+   "section": "other",
+   "batch": 2,
+   "what": "each group's total, average or rows as a sorted bar, the largest first",
+   "conditions": [
+    "a category of 2 or more levels; a flow or count is added up, any other measure averaged, rows counted with no measure",
+    "levels with 5 or more rows are bars, the 11 largest; the rest are 'other', which rests on 5 or more rows (the smallest bar joins it until it does); 2 or more bars",
+    "the engine's own pick adds up a total (the primary claim's, else its first flow measure): its ranked chart (#7) counts rows, the group ranges show averages"
+   ],
+   "limit_needs": "needs a category of 2 or more levels",
+   "source": "the rows the engine kept, by category",
+   "reconcile": "the bars and 'other' add up to the whole (rows and totals); counted rows rank as the engine's ranked.<column> chart where it counts the same rows",
+   "privacy": "as line_chart"
+  },
+  "grouped_bar": {
+   "args": [
+    {
+     "role": "category"
+    },
+    {
+     "role": "measure",
+     "optional": true
+    }
+   ],
+   "args_text": "[category, measure?]",
+   "kind": "hbar",
+   "section": "other",
+   "batch": 2,
+   "what": "each group's total, average or rows in two periods side by side: the latest 12 months and the 12 before, or the latest year and the year before",
+   "conditions": [
+    "a date column (profile.time.column), or with none a whole-number year column named like a year (the profile's rule); the latest 12 months and the 12 before (24 or more months), or the latest year and the year before",
+    "levels with 5 or more rows in both periods are bars (the 11 largest by the latest period); the rest are 'other', which rests on 0 or 5 or more rows in each period; 2 or more bars",
+    "change_text: the level's own change (its two figures' difference), 'new' or 'left' for an 'other' with rows in one period"
+   ],
+   "limit_needs": "needs 24 or more months (or 2 or more years) and a category of 2 or more levels",
+   "source": "the rows the engine kept, by category in each period",
+   "reconcile": "the levels add up to the whole series in each period, and each month equals the engine's trend chart of the same series where they overlap, to 1e-6",
+   "privacy": "as line_chart"
+  },
+  "small_multiples": {
+   "args": [
+    {
+     "role": "category"
+    },
+    {
+     "role": "measure",
+     "optional": true
+    }
+   ],
+   "args_text": "[category, measure?]",
+   "kind": "multiples",
+   "section": "other",
+   "batch": 2,
+   "what": "one small line per group (up to 12), all on one scale",
+   "conditions": [
+    "a date column (profile.time.column), or with none a whole-number year column named like a year (the profile's rule); 6 or more months, or 4 or more years",
+    "the periods: months while the span's months fit 24, else quarters while they fit, else years (the latest 24); the finest such grain where half the points with rows rest on 5 or more rows; a total's part-quarter or part-year at either end is left out",
+    "the 12 levels with the most rows (a long table's category with no columns named), a panel each with 3 or more points resting on 5 or more rows; 2 or more panels; every panel on one y scale"
+   ],
+   "limit_needs": "needs a date or year column over 6 or more periods and a category of 2 or more levels",
+   "source": "the rows the engine kept, by period and category",
+   "reconcile": "each month over every level equals the engine's trend chart of the same series where they overlap, to 1e-6",
+   "privacy": "as line_chart"
+  },
   "series_lines": {
    "args": [],
    "args_text": "[]",
@@ -404,6 +537,35 @@
    ],
    "draw": "two vertical axes (a_label, b_label) on one scale; a line per row coloured by b vs a (rise, fall, flat); 'label a_text' at the left end, 'b_text change_text' at the right end, labels at each end spread at least 13 px apart with a leader line"
   },
+  "lines": {
+   "data": "#/$defs/data_lines",
+   "menu": [
+    "line_chart"
+   ],
+   "draw": "a value axis (it includes 0 only when the values are on one side of it near 0) and a period axis; a line per series through its points (a gap at a null), a dot at each point, each series in its own colour and dash (colors.lines), its label at its last point (spread 13 px apart, leader lines) or in a key when they do not fit; the forecast after the last period: a dashed line and its range as a band; texts: table.rows[i][1 + k] is series k at x[i] (the tooltip and the table view)"
+  },
+  "area": {
+   "data": "#/$defs/data_area",
+   "menu": [
+    "area_chart"
+   ],
+   "draw": "the parts stacked from 0 in order (the largest at the bottom, 'other' on top) as filled bands with a surface-coloured edge between them, each part's colour (colors.area) and its label in a key in the same order; the total as the top edge; texts: table.rows[i][1 + k] is part k at x[i], the last cell the total"
+  },
+  "hbar": {
+   "data": "#/$defs/data_hbar",
+   "menu": [
+    "bar_chart",
+    "grouped_bar"
+   ],
+   "draw": "a row per bar, the label left (above it when narrow), the bar from 0 to its value and its text at the end; 'other' in its own colour, last; two series: two bars a row, the first period hollow (outlined) and the latest filled, a key above, and change_text at the right"
+  },
+  "multiples": {
+   "data": "#/$defs/data_multiples",
+   "menu": [
+    "small_multiples"
+   ],
+   "draw": "a grid of small panels (as many columns as fit 140 px, 1 to 4), each a line over the same period axis on ONE value scale shared by every panel, its label above it and its last point's text; ticks on the first panel of each row; texts: table.rows[i][1 + k] is panel k at x[i]"
+  },
   "timeseries": {
    "data": "#/$defs/data_timeseries",
    "menu": [
@@ -426,7 +588,6 @@
   },
   "reserved_batch_2": [
    "fan",
-   "multiples",
    "box"
   ]
  },
@@ -1034,6 +1195,331 @@
      }
     }
    },
+   "data_table": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+   },
+   "period": {
+    "type": "string",
+    "pattern": "^[0-9]{4}(-(0[1-9]|1[0-2])|-Q[1-4])?$"
+   },
+   "data_lines": {
+    "type": "object",
+    "required": [
+     "x",
+     "grain",
+     "x_label",
+     "series",
+     "forecast"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "x": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 30,
+      "items": {
+       "$ref": "#/$defs/period"
+      }
+     },
+     "grain": {
+      "enum": [
+       "month",
+       "quarter",
+       "year"
+      ]
+     },
+     "x_label": {
+      "type": "string",
+      "maxLength": 20,
+      "minLength": 1
+     },
+     "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+       "type": "object",
+       "required": [
+        "label",
+        "values"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 1
+        },
+        "values": {
+         "type": "array",
+         "maxItems": 30,
+         "items": {
+          "type": [
+           "number",
+           "null"
+          ]
+         }
+        }
+       }
+      }
+     },
+     "forecast": {
+      "anyOf": [
+       {
+        "type": "null"
+       },
+       {
+        "type": "object",
+        "required": [
+         "x",
+         "values",
+         "lo",
+         "hi",
+         "level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+         "x": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24,
+          "items": {
+           "type": "string",
+           "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+          }
+         },
+         "values": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+           "type": "number"
+          }
+         },
+         "lo": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+           "type": "number"
+          }
+         },
+         "hi": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+           "type": "number"
+          }
+         },
+         "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+         }
+        }
+       }
+      ]
+     }
+    }
+   },
+   "data_area": {
+    "type": "object",
+    "required": [
+     "x",
+     "grain",
+     "x_label",
+     "parts",
+     "total"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "x": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 30,
+      "items": {
+       "$ref": "#/$defs/period"
+      }
+     },
+     "grain": {
+      "enum": [
+       "month",
+       "quarter",
+       "year"
+      ]
+     },
+     "x_label": {
+      "type": "string",
+      "maxLength": 20,
+      "minLength": 1
+     },
+     "parts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 6,
+      "items": {
+       "type": "object",
+       "required": [
+        "label",
+        "values"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 1
+        },
+        "values": {
+         "type": "array",
+         "maxItems": 30,
+         "items": {
+          "type": "number",
+          "minimum": 0
+         }
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+       "type": "number",
+       "minimum": 0
+      }
+     }
+    }
+   },
+   "data_hbar": {
+    "type": "object",
+    "required": [
+     "series",
+     "rows",
+     "other"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+       "type": "string",
+       "maxLength": 40,
+       "minLength": 1
+      }
+     },
+     "rows": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 12,
+      "items": {
+       "type": "object",
+       "required": [
+        "label",
+        "values",
+        "texts"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 1
+        },
+        "values": {
+         "type": "array",
+         "minItems": 1,
+         "maxItems": 2,
+         "items": {
+          "type": "number"
+         }
+        },
+        "texts": {
+         "type": "array",
+         "minItems": 1,
+         "maxItems": 2,
+         "items": {
+          "type": "string",
+          "maxLength": 24
+         }
+        },
+        "change_text": {
+         "type": "string",
+         "maxLength": 24,
+         "minLength": 1
+        }
+       }
+      }
+     },
+     "other": {
+      "type": "boolean"
+     }
+    }
+   },
+   "data_multiples": {
+    "type": "object",
+    "required": [
+     "x",
+     "grain",
+     "x_label",
+     "panels"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "x": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 24,
+      "items": {
+       "$ref": "#/$defs/period"
+      }
+     },
+     "grain": {
+      "enum": [
+       "month",
+       "quarter",
+       "year"
+      ]
+     },
+     "x_label": {
+      "type": "string",
+      "maxLength": 20,
+      "minLength": 1
+     },
+     "panels": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 12,
+      "items": {
+       "type": "object",
+       "required": [
+        "label",
+        "values"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 1
+        },
+        "values": {
+         "type": "array",
+         "maxItems": 24,
+         "items": {
+          "type": [
+           "number",
+           "null"
+          ]
+         }
+        }
+       }
+      }
+     }
+    }
+   },
    "data_timeseries": {
     "type": "object",
     "required": [
@@ -1143,11 +1629,6 @@
       "maxLength": 40
      }
     }
-   },
-   "data_table": {
-    "type": "object",
-    "properties": {},
-    "additionalProperties": false
    }
   },
   "type": "object",
@@ -1189,6 +1670,10 @@
      "dot_range",
      "pareto",
      "slope",
+     "lines",
+     "area",
+     "hbar",
+     "multiples",
      "timeseries",
      "table"
     ]
@@ -1482,14 +1967,71 @@
      ],
      "properties": {
       "kind": {
-       "const": "timeseries"
+       "const": "lines"
       }
      }
     },
     "then": {
      "properties": {
       "data": {
-       "$ref": "#/$defs/data_timeseries"
+       "$ref": "#/$defs/data_lines"
+      }
+     }
+    }
+   },
+   {
+    "if": {
+     "required": [
+      "kind"
+     ],
+     "properties": {
+      "kind": {
+       "const": "area"
+      }
+     }
+    },
+    "then": {
+     "properties": {
+      "data": {
+       "$ref": "#/$defs/data_area"
+      }
+     }
+    }
+   },
+   {
+    "if": {
+     "required": [
+      "kind"
+     ],
+     "properties": {
+      "kind": {
+       "const": "hbar"
+      }
+     }
+    },
+    "then": {
+     "properties": {
+      "data": {
+       "$ref": "#/$defs/data_hbar"
+      }
+     }
+    }
+   },
+   {
+    "if": {
+     "required": [
+      "kind"
+     ],
+     "properties": {
+      "kind": {
+       "const": "multiples"
+      }
+     }
+    },
+    "then": {
+     "properties": {
+      "data": {
+       "$ref": "#/$defs/data_multiples"
       }
      }
     }
@@ -1509,6 +2051,25 @@
      "properties": {
       "data": {
        "$ref": "#/$defs/data_table"
+      }
+     }
+    }
+   },
+   {
+    "if": {
+     "required": [
+      "kind"
+     ],
+     "properties": {
+      "kind": {
+       "const": "timeseries"
+      }
+     }
+    },
+    "then": {
+     "properties": {
+      "data": {
+       "$ref": "#/$defs/data_timeseries"
       }
      }
     }
@@ -1555,15 +2116,36 @@
   "slope": [
    "at most 12 rows; a and b are the two windows' totals; change_text the level's own change, or 'new' / 'left'"
   ],
+  "lines": [
+   "x is the periods in order (YYYY-MM, YYYY-Qn or YYYY, by grain), at most 30; every series' values has one entry per x",
+   "the table view is one row per x, then one per forecast month: its first cell the period, then one cell per series (its text; '<5' for a point on 1 to 4 rows, '' for none), then 'Forecast' and the range when there is a forecast; suppressed.cells counts the '<5' cells",
+   "a value is null exactly where its cell is '<5' or ''",
+   "a forecast only with one series at grain month; its months follow the last x; lo <= hi; rows of the table <= 30"
+  ],
+  "area": [
+   "2 to 6 parts, each with one value per x, none below 0; 'other' (when present) is the last part",
+   "total[i] is the parts' sum at x[i] (math.fsum) to 1e-6",
+   "the table view is one row per x: the period, a text per part, the total's text"
+  ],
+  "hbar": [
+   "2 to 12 rows; each row's values and texts have one entry per series (1 or 2)",
+   "rows in order of their last value, largest first; 'other' (data.other true) last",
+   "two series: each row has change_text; the table view is label, the two texts and the change",
+   "the table view has one row per bar"
+  ],
+  "multiples": [
+   "2 to 12 panels, each with one value per x (at most 24); every panel on one value scale",
+   "the table view is one row per x: the period and one cell per panel ('<5' for a point on 1 to 4 rows, '' for none); suppressed.cells counts the '<5' cells"
+  ],
+  "table": [
+   "data is {}; the chart is its table: table.cols is not empty"
+  ],
   "timeseries": [
    "x.first is a YYYY-MM month, x.n (2 to 360) the periods and x.step (1 to 12) the months between two; every run lies inside the axis: 0 <= at and at + len(values) <= n",
    "a series' runs are in order and never touch: the next run starts at least one period after the last ended, because a gap is at least one period (a run that continued the last would be one run)",
    "a series has 2 or more points in all; its first_text and last_text are its first and last point's figures as the engine writes them, and change_text is the percent change between them ('' when the first is not above 0)",
    "at most 6 series, in order: the lead, then the biggest movers; no interpolation: a period with no figure is in no run",
    "the table has a column for the periods then one for each series; its rows are the first period drawn, the last period of each calendar year, and the last, then a 'Change, first to last' row"
-  ],
-  "table": [
-   "data is {}; the chart is its table: table.cols is not empty"
   ]
  },
  "tiers": {
@@ -1663,6 +2245,58 @@
     "hairline": "#e2dfd6",
     "focus": "#1f5fbf"
    },
+   "lines": {
+    "series": [
+     "#24425c",
+     "#0b7366",
+     "#945400",
+     "#2a78d6",
+     "#d4502c"
+    ],
+    "dashes": [
+     null,
+     [
+      6,
+      3
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      8,
+      3,
+      2,
+      3
+     ],
+     [
+      1,
+      2
+     ]
+    ],
+    "forecast": "#0b7366",
+    "band": "#cfe5e1"
+   },
+   "area": {
+    "parts": [
+     "#24425c",
+     "#0b7366",
+     "#945400",
+     "#2a78d6",
+     "#d4502c"
+    ],
+    "other": "#56646f",
+    "edge": "#ffffff"
+   },
+   "hbar": {
+    "bar": "#24425c",
+    "prior_fill": "#ffffff",
+    "prior_stroke": "#24425c",
+    "other": "#56646f"
+   },
+   "multiples": {
+    "line": "#24425c"
+   },
    "timeseries": {
     "lines": [
      "#2a78d6",
@@ -1751,6 +2385,58 @@
     "hairline": "#26364a",
     "focus": "#8ab8ff"
    },
+   "lines": {
+    "series": [
+     "#b9cce0",
+     "#2bb5a3",
+     "#e3a33b",
+     "#3987e5",
+     "#e2507a"
+    ],
+    "dashes": [
+     null,
+     [
+      6,
+      3
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      8,
+      3,
+      2,
+      3
+     ],
+     [
+      1,
+      2
+     ]
+    ],
+    "forecast": "#2bb5a3",
+    "band": "#143c3f"
+   },
+   "area": {
+    "parts": [
+     "#b9cce0",
+     "#2bb5a3",
+     "#e3a33b",
+     "#3987e5",
+     "#e2507a"
+    ],
+    "other": "#9aabb8",
+    "edge": "#121d28"
+   },
+   "hbar": {
+    "bar": "#b9cce0",
+    "prior_fill": "#121d28",
+    "prior_stroke": "#b9cce0",
+    "other": "#9aabb8"
+   },
+   "multiples": {
+    "line": "#b9cce0"
+   },
    "timeseries": {
     "lines": [
      "#3987e5",
@@ -1766,14 +2452,15 @@
    "light": {
     "cell_text_on_tiers_min": 7.85,
     "suppressed_text_on_fill": 5.33,
-    "marks_on_surface_min": 5.74
+    "marks_on_surface_min": 4.21
    },
    "dark": {
     "cell_text_on_tiers_min": 6.76,
     "suppressed_text_on_fill": 6.09,
-    "marks_on_surface_min": 6.69
+    "marks_on_surface_min": 4.6
    }
   },
+  "batch_2": "the page draws these from the build's tokens: series, series-2, series-3, div-neg, band-red (dark: their dark values), muted for 'other', fan for the forecast band, surface for the hollow first-period bar; a line's colour is never its only channel (its dash and its end label), an area's part has its label in the key, in stacking order",
   "timeseries_note": "The first five slots of the dataviz skill's categorical palette, stepped for contrast (validated with its validate_palette.js on the white surface and on #121d28: lightness band, chroma floor, adjacent-pair colour-vision separation, normal-vision floor, 3:1 contrast). The adjacent colour-vision separation of the light set is 6.8 (the 6 to 8 band), legal only with secondary encoding: every line also has its own dash, its own end marker and a direct label"
  },
  "accessibility": {
@@ -1825,12 +2512,26 @@
     "wide": "two axes, when both ends' labels fit (360 px and up)",
     "narrow": "a dumbbell list: one row per label (label above), a dot at a and at b on one shared axis, an arrow from a to b, a_text and b_text under the dots, change_text at the right"
    },
-   "timeseries": {
-    "wide": "a plot with the value axis on the left and each line's last_text and label at its right end, spread 15 px apart with a leader",
-    "narrow": "the plot across the whole width and a legend under it: the line's mark, its label, then first_text to last_text and change_text on the next line (below 480 px)"
+   "lines": {
+    "wide": "end labels at the right of each line when they fit (at most 40% of the width), spread 13 px apart with leaders",
+    "narrow": "the plot full width; the series in a key above it (a swatch with its dash, the label); 3 to 5 period ticks, never overlapping"
+   },
+   "area": {
+    "all": "the plot full width, the key above it wrapping onto lines; 3 to 5 period ticks"
+   },
+   "hbar": {
+    "wide": "the label left of its bar (at most 40% of the width), the text at the bar's end",
+    "narrow": "the label on its own line above its bar; two series: two thin bars a row, change_text at the right"
+   },
+   "multiples": {
+    "all": "a grid of 1 to 4 columns of at least 140 px; at 288 px, 2 columns; the label above each panel, clipped with an ellipsis"
    },
    "table": {
     "all": "its own scroller; first column sticky"
+   },
+   "timeseries": {
+    "wide": "a plot with the value axis on the left and each line's last_text and label at its right end, spread 15 px apart with a leader",
+    "narrow": "the plot across the whole width and a legend under it: the line's mark, its label, then first_text to last_text and change_text on the next line (below 480 px)"
    }
   },
   "pdf": "the PDF draws the wide layout within its text column (475 pt on A4, 492 pt on Letter) and the narrow one when the wide does not fit; light colours only; glyphs as vectors; a name in a script WinAnsi lacks is printed as its [name N] placeholder, as everywhere in the PDF"
@@ -1855,7 +2556,8 @@
    "validate_directive() checks each item in order: the menu name, the columns (mapped to landed names by intake.normalise_columns), their roles, privacy, the chart's conditions, then builds and reconciles it",
    "a refusal goes to rep.viz.refused[] with its reason; a refusal never triggers a re-plan (it is not a feedback signal)",
    "at most HEAT_MAX (3) heatmaps and VIZ_MAX (8) charts; beyond them each item is refused with the reason",
-   "when no AI chart is built (none asked for, or every one refused), the engine picks up to VIZ_AUTO (4) by auto_rank, chosen_by 'engine'"
+   "when no AI chart is built (none asked for, or every one refused), the engine picks up to VIZ_AUTO (4) by auto_rank, chosen_by 'engine'",
+   "Batch 2: a line_chart, area_chart, small_multiples or grouped_bar item names its measure as the plan types it (a flow or count is added up, any other measure averaged); a time chart reads the engine's date column, or with none a year column"
   ],
   "refusal_reasons": [
    "not on the chart menu",
@@ -2038,6 +2740,31 @@
     "why": "needs a total over two 12-month windows and a category of 2 to 12 levels; region has 4 levels"
    },
    {
+    "chart": "line_chart",
+    "ok": true,
+    "why": "needs a date column over 6 or more months, or a year column over 4 or more years; the file spans 24 months (2024-01 to 2025-12)"
+   },
+   {
+    "chart": "area_chart",
+    "ok": true,
+    "why": "needs a date or year column over 6 or more periods and a category of 2 or more levels; the file spans 24 months (2024-01 to 2025-12); region has 4 levels"
+   },
+   {
+    "chart": "bar_chart",
+    "ok": true,
+    "why": "needs a category of 2 or more levels; region has 4 levels"
+   },
+   {
+    "chart": "grouped_bar",
+    "ok": true,
+    "why": "needs 24 or more months (or 2 or more years) and a category of 2 or more levels; the file spans 24 months (2024-01 to 2025-12); region has 4 levels"
+   },
+   {
+    "chart": "small_multiples",
+    "ok": true,
+    "why": "needs a date or year column over 6 or more periods and a category of 2 or more levels; the file spans 24 months (2024-01 to 2025-12); region has 4 levels"
+   },
+   {
     "chart": "series_lines",
     "ok": false,
     "why": "needs a long statistical table: one published figure a period for each of its series; the file is not a long table of series"
@@ -2181,6 +2908,66 @@
      5,
      4
     ],
+    "line_chart": [
+     9,
+     7,
+     7,
+     2,
+     1,
+     2,
+     9,
+     3,
+     7,
+     6
+    ],
+    "area_chart": [
+     5,
+     5,
+     6,
+     1,
+     1,
+     1,
+     3,
+     3,
+     6,
+     4
+    ],
+    "bar_chart": [
+     2,
+     4,
+     5,
+     6,
+     7,
+     3,
+     2,
+     7,
+     4,
+     4
+    ],
+    "grouped_bar": [
+     3,
+     3,
+     5,
+     3,
+     3,
+     1,
+     2,
+     5,
+     5,
+     3
+    ],
+    "small_multiples": [
+     8,
+     4,
+     4,
+     2,
+     2,
+     1,
+     6,
+     6,
+     3,
+     4
+    ],
     "series_lines": [
      9,
      4,
@@ -2194,12 +2981,13 @@
      3
     ]
    },
-   "note": "0-9 by plan.kind (a plan without a kind reads 'other'); never theme_rating_heatmap, and a pareto only on a column the plan types category, entity or geography"
+   "note": "0-9 by plan.kind (a plan without a kind reads 'other'); never theme_rating_heatmap, and a pareto only on a column the plan types category, entity or geography. Batch 2: a series over time leads with its line (line_chart outranks calendar_heatmap in every kind but ledger and transactions, where the contribution waterfall leads)"
   },
   "bonus": {
    "primary": "+3 when the chart's total or measure is the plan's primary column",
-   "analysis": "+2 when the plan ran the matching analysis: compare -> group_ranges, themes -> theme_rating_heatmap, relationship -> correlation_heatmap, rank or share -> pareto, trend or extremes -> calendar_heatmap",
-   "goal": "+1 for each goal keyword the plan's goal contains (at most +2)"
+   "analysis": "+2 when the plan ran the matching analysis: compare -> group_ranges and bar_chart, themes -> theme_rating_heatmap, relationship -> correlation_heatmap, rank -> pareto and bar_chart, share -> pareto, trend -> calendar_heatmap and line_chart, extremes -> calendar_heatmap, agreement -> line_chart",
+   "goal": "+1 for each goal keyword the plan's goal contains (at most +2)",
+   "panel": "+2 for line_chart and small_multiples when the file is a long table: a category whose every level holds the same few rows (3 or fewer) in 80% or more of its periods, and appears in half of them"
   },
   "goal_keywords": {
    "contribution_waterfall": [
@@ -2270,6 +3058,42 @@
     "gap",
     "overtook"
    ],
+   "line_chart": [
+    "trend",
+    "over time",
+    "history",
+    "forecast",
+    "line",
+    "since"
+   ],
+   "area_chart": [
+    "composition",
+    "share of",
+    "make up",
+    "stacked",
+    "mix over time"
+   ],
+   "bar_chart": [
+    "rank",
+    "by category",
+    "which",
+    "highest",
+    "lowest"
+   ],
+   "grouped_bar": [
+    "last year",
+    "this year",
+    "versus last",
+    "two periods",
+    "side by side"
+   ],
+   "small_multiples": [
+    "each",
+    "every",
+    "per ",
+    "panel",
+    "across"
+   ],
    "series_lines": [
     "over time",
     "trend",
@@ -2281,7 +3105,7 @@
     "path"
    ]
   },
-  "pick": "only charts whose limit is ok and that build; highest score first, ties in menu order; at most VIZ_AUTO (4) and at most HEAT_MAX (3) heatmaps; why = 'Chosen by the engine: <what>' (at most 200 characters)"
+  "pick": "only charts whose limit is ok and that build; highest score first, ties in menu order; at most VIZ_AUTO (4), at most HEAT_MAX (3) heatmaps and one hbar (bar_chart or grouped_bar); why = 'Chosen by the engine: <what>' (at most 200 characters)"
  },
  "pipeline": {
   "engine": [
@@ -2307,10 +3131,12 @@
    "N.check (52-nl2-report.js) accepts type 'viz' through SHAPE.viz (the record schema); an unknown kind is drawn as its table, never a reason to fall back to the v1 report",
    "50-try.js resolves [CHART:n] and builds shares from /report's returned charts",
    "rep.viz.refused is listed under the charts in the analyst view, in the engine's words (the chart's name in the reader's words, and why)",
+   "src/js/51-nl2-charts.js draws Batch 2's kinds (lines, area, hbar, multiples) from the record alone and teaches window.NLV the same kinds (kindOf, knows, draw, chartName), so the v2 report, the AI report's [CHART:n] figures and the share viewer draw them with their Table button; a malformed record of these kinds is drawn as its table",
    "src/js/55-nl-viz.js also draws the timeseries kind (impact6, 9 Oct 2026)"
   ],
   "pdf": [
    "a VIZ dispatch on kind: waterfall, heatmap, dot_range, pareto, slope; 'table' and any unknown kind as the table; legacy kinds unchanged",
+   "Batch 2: lines (forecast as a dashed line and its band), area (stacked bands, a key), hbar (one or two bars a row), multiples (a grid of panels on one scale); every label cut with an ellipsis when it does not fit",
    "the VIZ dispatch also draws timeseries (impact6, 9 Oct 2026)"
   ],
   "card_example": {
@@ -3348,141 +4174,6 @@
       "2025-12"
      ],
      "op": "revenue added up by region in each 12-month window"
-    }
-   }
-  },
-  "timeseries": {
-   "data_from": "synthetic",
-   "about": "a long statistical table's two series over 14 months, published in two runs (September to December 2024, then June to October 2025): the five skipped months are a gap",
-   "record": {
-    "id": "viz.5.series_lines",
-    "chart": "series_lines",
-    "kind": "timeseries",
-    "title": "Each series over the whole period",
-    "subtitle": "2024-09 to 2025-10: the lead series and the 1 that changed most, of 2 series; periods with no published figure are gaps",
-    "section": "headline",
-    "supports": "The table's published series over its whole period; no claim is graded",
-    "anchors": [],
-    "grade": null,
-    "parent_grade": null,
-    "chosen_by": "engine",
-    "why": "Chosen by the engine: a published series' own chart: a published table's series as lines over time (the lead and the biggest movers), gaps left as gaps",
-    "measure": {
-     "label": "Federal debt",
-     "unit": "Dollars (millions)",
-     "kind": "amount"
-    },
-    "data": {
-     "x": {
-      "first": "2024-09",
-      "n": 14,
-      "step": 1,
-      "label": "Month"
-     },
-     "series": [
-      {
-       "label": "Federal debt",
-       "runs": [
-        {
-         "at": 0,
-         "values": [
-          100,
-          102,
-          104,
-          106
-         ]
-        },
-        {
-         "at": 9,
-         "values": [
-          110,
-          112,
-          113,
-          115,
-          117
-         ]
-        }
-       ],
-       "first_text": "100",
-       "last_text": "117",
-       "change_text": "+17.0%"
-      },
-      {
-       "label": "Gross liabilities",
-       "runs": [
-        {
-         "at": 0,
-         "values": [
-          200,
-          203,
-          206,
-          209
-         ]
-        },
-        {
-         "at": 9,
-         "values": [
-          215,
-          218,
-          222,
-          226,
-          230
-         ]
-        }
-       ],
-       "first_text": "200",
-       "last_text": "230",
-       "change_text": "+15.0%"
-      }
-     ],
-     "y_label": "Dollars (millions)"
-    },
-    "table": {
-     "cols": [
-      "Month",
-      "Federal debt",
-      "Gross liabilities"
-     ],
-     "rows": [
-      [
-       "2024-09",
-       "100",
-       "200"
-      ],
-      [
-       "2024-12",
-       "106",
-       "209"
-      ],
-      [
-       "2025-10",
-       "117",
-       "230"
-      ],
-      [
-       "Change, first to last",
-       "+17.0%",
-       "+15.0%"
-      ]
-     ]
-    },
-    "summary": "Federal debt went from 100 in 2024-09 to 117 in 2025-10 (+17.0%). The lines drawn with it: Gross liabilities. Each point is a published figure, and where the publisher skipped a period the line stops and starts again.",
-    "suppressed": {
-     "cells": 0,
-     "why": ""
-    },
-    "source": "The table's published series, one figure a period, as the engine read them",
-    "inputs": {
-     "columns": [
-      "Federal debt",
-      "Gross liabilities"
-     ],
-     "rows": 14,
-     "months": [
-      "2024-09",
-      "2025-10"
-     ],
-     "op": "each published figure in time order; a period with none is a gap"
     }
    }
   },
@@ -5949,6 +6640,1491 @@
      "op": "sales added up by city in each 12-month window"
     }
    }
+  },
+  "lines": {
+   "data_from": "real",
+   "about": "ship2: total revenue by month, the primary claim's series (it equals the engine's trend.total:revenue chart)",
+   "record": {
+    "id": "viz.1.line_chart",
+    "chart": "line_chart",
+    "kind": "lines",
+    "title": "Total revenue by month, Jan 2024 to Dec 2025",
+    "subtitle": "Total revenue in each month of order_date",
+    "section": "headline",
+    "supports": "Total revenue over time",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "chart:trend.total:revenue"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Revenue month by month.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "x": [
+      "2024-01",
+      "2024-02",
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+      "2024-07",
+      "2024-08",
+      "2024-09",
+      "2024-10",
+      "2024-11",
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12"
+     ],
+     "grain": "month",
+     "x_label": "Month",
+     "series": [
+      {
+       "label": "Total revenue",
+       "values": [
+        8592.2,
+        11224.93,
+        12283.74,
+        9204.65,
+        11998.66,
+        12063.21,
+        11266.59,
+        8893.37,
+        9810.72,
+        9505.65,
+        10934.49,
+        12477.89,
+        10855.04,
+        13659.66,
+        13936.48,
+        13797.86,
+        12292.51,
+        5845.08,
+        12434.69,
+        12638.04,
+        10290.29,
+        15221.66,
+        18722.52,
+        12520.1
+       ]
+      }
+     ],
+     "forecast": null
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "Jan 2024",
+       "8,592"
+      ],
+      [
+       "Feb 2024",
+       "11,225"
+      ],
+      [
+       "Mar 2024",
+       "12,284"
+      ],
+      [
+       "Apr 2024",
+       "9,205"
+      ],
+      [
+       "May 2024",
+       "11,999"
+      ],
+      [
+       "Jun 2024",
+       "12,063"
+      ],
+      [
+       "Jul 2024",
+       "11,267"
+      ],
+      [
+       "Aug 2024",
+       "8,893"
+      ],
+      [
+       "Sep 2024",
+       "9,811"
+      ],
+      [
+       "Oct 2024",
+       "9,506"
+      ],
+      [
+       "Nov 2024",
+       "10,934"
+      ],
+      [
+       "Dec 2024",
+       "12,478"
+      ],
+      [
+       "Jan 2025",
+       "10,855"
+      ],
+      [
+       "Feb 2025",
+       "13,660"
+      ],
+      [
+       "Mar 2025",
+       "13,936"
+      ],
+      [
+       "Apr 2025",
+       "13,798"
+      ],
+      [
+       "May 2025",
+       "12,293"
+      ],
+      [
+       "Jun 2025",
+       "5,845"
+      ],
+      [
+       "Jul 2025",
+       "12,435"
+      ],
+      [
+       "Aug 2025",
+       "12,638"
+      ],
+      [
+       "Sep 2025",
+       "10,290"
+      ],
+      [
+       "Oct 2025",
+       "15,222"
+      ],
+      [
+       "Nov 2025",
+       "18,723"
+      ],
+      [
+       "Dec 2025",
+       "12,520"
+      ]
+     ]
+    },
+    "summary": "Total revenue went from 8,592 in Jan 2024 to 12,520 in Dec 2025; the highest month was Nov 2025 (18,723) and the lowest Jun 2025 (5,845).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The rows the engine kept, by order_date month; each month equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "order_date"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by month"
+    }
+   }
+  },
+  "area": {
+   "data_from": "real",
+   "about": "ship2: total revenue by quarter, stacked by region (two regions have a quarter under 5 rows, so they are in 'other')",
+   "record": {
+    "id": "viz.2.area_chart",
+    "chart": "area_chart",
+    "kind": "area",
+    "title": "Total revenue by quarter and region, 2024 Q1 to 2025 Q4",
+    "subtitle": "Total revenue in each quarter, stacked by region; 'other': 2 more levels; 1 level in 'other' to rest on 5 rows a period",
+    "section": "drove",
+    "supports": "What total revenue is made of over time, by region",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "chart:trend.total:revenue"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "What revenue is made of over time.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "x": [
+      "2024-Q1",
+      "2024-Q2",
+      "2024-Q3",
+      "2024-Q4",
+      "2025-Q1",
+      "2025-Q2",
+      "2025-Q3",
+      "2025-Q4"
+     ],
+     "grain": "quarter",
+     "x_label": "Quarter",
+     "parts": [
+      {
+       "label": "North",
+       "values": [
+        7504.76,
+        12580.29,
+        6576.43,
+        8572.84,
+        8405.06,
+        10190.53,
+        9932.58,
+        13822.28
+       ]
+      },
+      {
+       "label": "South",
+       "values": [
+        9347.45,
+        6526.38,
+        8894.25,
+        7678.47,
+        9742.04,
+        8605.95,
+        5903.45,
+        8486.85
+       ]
+      },
+      {
+       "label": "other",
+       "values": [
+        15248.66,
+        14159.85,
+        14500,
+        16666.72,
+        20304.08,
+        13138.97,
+        19526.99,
+        24155.15
+       ]
+      }
+     ],
+     "total": [
+      32100.87,
+      33266.52,
+      29970.68,
+      32918.03,
+      38451.18,
+      31935.45,
+      35363.02,
+      46464.28
+     ]
+    },
+    "table": {
+     "cols": [
+      "Quarter",
+      "North",
+      "South",
+      "other",
+      "Total"
+     ],
+     "rows": [
+      [
+       "2024 Q1",
+       "7,505",
+       "9,347",
+       "15,249",
+       "32,101"
+      ],
+      [
+       "2024 Q2",
+       "12,580",
+       "6,526",
+       "14,160",
+       "33,267"
+      ],
+      [
+       "2024 Q3",
+       "6,576",
+       "8,894",
+       "14,500",
+       "29,971"
+      ],
+      [
+       "2024 Q4",
+       "8,573",
+       "7,678",
+       "16,667",
+       "32,918"
+      ],
+      [
+       "2025 Q1",
+       "8,405",
+       "9,742",
+       "20,304",
+       "38,451"
+      ],
+      [
+       "2025 Q2",
+       "10,191",
+       "8,606",
+       "13,139",
+       "31,935"
+      ],
+      [
+       "2025 Q3",
+       "9,933",
+       "5,903",
+       "19,527",
+       "35,363"
+      ],
+      [
+       "2025 Q4",
+       "13,822",
+       "8,487",
+       "24,155",
+       "46,464"
+      ]
+     ]
+    },
+    "summary": "In 2025 Q4, total revenue is 46,464, of which other is the largest part (24,155).",
+    "suppressed": {
+     "cells": 2,
+     "why": "levels with fewer than 5 rows in a period are counted only in 'other'"
+    },
+    "source": "The rows the engine kept, by order_date quarter and region; each month's total equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region",
+      "order_date"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by quarter and region, the 5 largest stacked"
+    }
+   }
+  },
+  "hbar": {
+   "data_from": "real",
+   "about": "ship2: total revenue by region, the largest first",
+   "record": {
+    "id": "viz.3.bar_chart",
+    "chart": "bar_chart",
+    "kind": "hbar",
+    "title": "Total revenue by region",
+    "subtitle": "Total revenue for each region, the largest first",
+    "section": "other",
+    "supports": "Total revenue by region",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Revenue by region.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "series": [
+      "Total revenue"
+     ],
+     "rows": [
+      {
+       "label": "North",
+       "values": [
+        77584.77
+       ],
+       "texts": [
+        "77,585"
+       ]
+      },
+      {
+       "label": "East",
+       "values": [
+        73013.13
+       ],
+       "texts": [
+        "73,013"
+       ]
+      },
+      {
+       "label": "South",
+       "values": [
+        65184.84
+       ],
+       "texts": [
+        "65,185"
+       ]
+      },
+      {
+       "label": "West",
+       "values": [
+        64687.29
+       ],
+       "texts": [
+        "64,687"
+       ]
+      }
+     ],
+     "other": false
+    },
+    "table": {
+     "cols": [
+      "region",
+      "Total revenue"
+     ],
+     "rows": [
+      [
+       "North",
+       "77,585"
+      ],
+      [
+       "East",
+       "73,013"
+      ],
+      [
+       "South",
+       "65,185"
+      ],
+      [
+       "West",
+       "64,687"
+      ]
+     ]
+    },
+    "summary": "Total revenue is highest for North (77,585) and lowest for West (64,687) of 4 levels of region shown.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The rows the engine kept, by region",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by region; the largest 4, the rest as other"
+    }
+   }
+  },
+  "multiples": {
+   "data_from": "real",
+   "about": "ship2: total revenue by quarter, a panel per region on one scale, one point under 5 rows",
+   "record": {
+    "id": "viz.5.small_multiples",
+    "chart": "small_multiples",
+    "kind": "multiples",
+    "title": "Total revenue by quarter, one panel per region, 2024 Q1 to 2025 Q4",
+    "subtitle": "Total revenue in each quarter, one panel per region, every panel on the same scale",
+    "section": "other",
+    "supports": "Total revenue by region over time",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "chart:trend.total:revenue"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Each region's own path.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "x": [
+      "2024-Q1",
+      "2024-Q2",
+      "2024-Q3",
+      "2024-Q4",
+      "2025-Q1",
+      "2025-Q2",
+      "2025-Q3",
+      "2025-Q4"
+     ],
+     "grain": "quarter",
+     "x_label": "Quarter",
+     "panels": [
+      {
+       "label": "South",
+       "values": [
+        9347.45,
+        6526.38,
+        8894.25,
+        7678.47,
+        9742.04,
+        8605.95,
+        5903.45,
+        8486.85
+       ]
+      },
+      {
+       "label": "West",
+       "values": [
+        4559.21,
+        11797.8,
+        7507.14,
+        8314.7,
+        12675.11,
+        3546.44,
+        8746.09,
+        7540.8
+       ]
+      },
+      {
+       "label": "North",
+       "values": [
+        7504.76,
+        12580.29,
+        6576.43,
+        8572.84,
+        8405.06,
+        10190.53,
+        9932.58,
+        13822.28
+       ]
+      },
+      {
+       "label": "East",
+       "values": [
+        10689.45,
+        null,
+        6992.86,
+        8352.02,
+        7628.97,
+        9592.53,
+        10780.9,
+        16614.35
+       ]
+      }
+     ]
+    },
+    "table": {
+     "cols": [
+      "Quarter",
+      "South",
+      "West",
+      "North",
+      "East"
+     ],
+     "rows": [
+      [
+       "2024 Q1",
+       "9,347",
+       "4,559",
+       "7,505",
+       "10,689"
+      ],
+      [
+       "2024 Q2",
+       "6,526",
+       "11,798",
+       "12,580",
+       "<5"
+      ],
+      [
+       "2024 Q3",
+       "8,894",
+       "7,507",
+       "6,576",
+       "6,993"
+      ],
+      [
+       "2024 Q4",
+       "7,678",
+       "8,315",
+       "8,573",
+       "8,352"
+      ],
+      [
+       "2025 Q1",
+       "9,742",
+       "12,675",
+       "8,405",
+       "7,629"
+      ],
+      [
+       "2025 Q2",
+       "8,606",
+       "3,546",
+       "10,191",
+       "9,593"
+      ],
+      [
+       "2025 Q3",
+       "5,903",
+       "8,746",
+       "9,933",
+       "10,781"
+      ],
+      [
+       "2025 Q4",
+       "8,487",
+       "7,541",
+       "13,822",
+       "16,614"
+      ]
+     ]
+    },
+    "summary": "In 2025 Q4, East is highest (16,614) and West lowest (7,541) of 4 levels of region shown, all on one scale. 1 point rests on fewer than 5 rows and is not shown.",
+    "suppressed": {
+     "cells": 1,
+     "why": "1 point rests on fewer than 5 rows"
+    },
+    "source": "The rows the engine kept, by order_date quarter and region; each month over every region equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region",
+      "order_date"
+     ],
+     "rows": 298,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by quarter and region"
+    }
+   }
+  },
+  "edge_lines_forecast": {
+   "data_from": "real",
+   "about": "engine/sample-messy.csv (the site's own synthetic ledger): the primary claim's series (total amount where category is 'RENT') and the engine's forecast with its 80% range",
+   "record": {
+    "id": "viz.1.line_chart",
+    "chart": "line_chart",
+    "kind": "lines",
+    "title": "Total Amount where Category is 'RENT' by month, Dec 2024 to Aug 2026, and the engine's forecast",
+    "subtitle": "Total Amount where Category is 'RENT' in each month of Date; then the engine's forecast with its 80% range, dashed",
+    "section": "headline",
+    "supports": "Change in the monthly total of amount where category is 'RENT', latest 12 months against the 12 before",
+    "anchors": [
+     "finding:measure.amount.total.rent.change",
+     "chart:trend.total:amount:rent",
+     "chart:fan.total_amount_rent",
+     "finding:forecast.total_amount_rent.next"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: the measure over time (the primary series, or up to 5 series of a long table), with the engine's forecast range when it has one",
+    "measure": {
+     "label": "Amount",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "x": [
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+      "2026-07",
+      "2026-08"
+     ],
+     "grain": "month",
+     "x_label": "Month",
+     "series": [
+      {
+       "label": "Total Amount where Category is 'RENT'",
+       "values": [
+        49717,
+        47852,
+        38564,
+        79796,
+        86506,
+        88272,
+        86226,
+        82306,
+        84093,
+        84255,
+        84255,
+        84190,
+        86312,
+        86064,
+        79745,
+        88769,
+        80734,
+        84055,
+        84122,
+        88383,
+        82201
+       ]
+      }
+     ],
+     "forecast": {
+      "x": [
+       "2026-09",
+       "2026-10",
+       "2026-11",
+       "2026-12",
+       "2027-01",
+       "2027-02",
+       "2027-03",
+       "2027-04",
+       "2027-05"
+      ],
+      "values": [
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201
+      ],
+      "lo": [
+       74149.91474,
+       74149.91474,
+       72336.444383,
+       72789.882067,
+       64498.730706,
+       64498.730706,
+       64498.730706,
+       76022.530849,
+       74260.453428
+      ],
+      "hi": [
+       94821.216493,
+       100990.488896,
+       98675.140668,
+       102181.129539,
+       117888.303313,
+       116996.260859,
+       116108.582917,
+       115314.262338,
+       117645.899584
+      ],
+      "level": 80
+     }
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "Total Amount where Category is 'RENT'",
+      "Forecast",
+      "80% range"
+     ],
+     "rows": [
+      [
+       "Dec 2024",
+       "49,717",
+       "",
+       ""
+      ],
+      [
+       "Jan 2025",
+       "47,852",
+       "",
+       ""
+      ],
+      [
+       "Feb 2025",
+       "38,564",
+       "",
+       ""
+      ],
+      [
+       "Mar 2025",
+       "79,796",
+       "",
+       ""
+      ],
+      [
+       "Apr 2025",
+       "86,506",
+       "",
+       ""
+      ],
+      [
+       "May 2025",
+       "88,272",
+       "",
+       ""
+      ],
+      [
+       "Jun 2025",
+       "86,226",
+       "",
+       ""
+      ],
+      [
+       "Jul 2025",
+       "82,306",
+       "",
+       ""
+      ],
+      [
+       "Aug 2025",
+       "84,093",
+       "",
+       ""
+      ],
+      [
+       "Sep 2025",
+       "84,255",
+       "",
+       ""
+      ],
+      [
+       "Oct 2025",
+       "84,255",
+       "",
+       ""
+      ],
+      [
+       "Nov 2025",
+       "84,190",
+       "",
+       ""
+      ],
+      [
+       "Dec 2025",
+       "86,312",
+       "",
+       ""
+      ],
+      [
+       "Jan 2026",
+       "86,064",
+       "",
+       ""
+      ],
+      [
+       "Feb 2026",
+       "79,745",
+       "",
+       ""
+      ],
+      [
+       "Mar 2026",
+       "88,769",
+       "",
+       ""
+      ],
+      [
+       "Apr 2026",
+       "80,734",
+       "",
+       ""
+      ],
+      [
+       "May 2026",
+       "84,055",
+       "",
+       ""
+      ],
+      [
+       "Jun 2026",
+       "84,122",
+       "",
+       ""
+      ],
+      [
+       "Jul 2026",
+       "88,383",
+       "",
+       ""
+      ],
+      [
+       "Aug 2026",
+       "82,201",
+       "",
+       ""
+      ],
+      [
+       "Sep 2026",
+       "",
+       "82,201",
+       "74,150 to 94,821"
+      ],
+      [
+       "Oct 2026",
+       "",
+       "82,201",
+       "74,150 to 100,990"
+      ],
+      [
+       "Nov 2026",
+       "",
+       "82,201",
+       "72,336 to 98,675"
+      ],
+      [
+       "Dec 2026",
+       "",
+       "82,201",
+       "72,790 to 102,181"
+      ],
+      [
+       "Jan 2027",
+       "",
+       "82,201",
+       "64,499 to 117,888"
+      ],
+      [
+       "Feb 2027",
+       "",
+       "82,201",
+       "64,499 to 116,996"
+      ],
+      [
+       "Mar 2027",
+       "",
+       "82,201",
+       "64,499 to 116,109"
+      ],
+      [
+       "Apr 2027",
+       "",
+       "82,201",
+       "76,023 to 115,314"
+      ],
+      [
+       "May 2027",
+       "",
+       "82,201",
+       "74,260 to 117,646"
+      ]
+     ]
+    },
+    "summary": "Total Amount where Category is 'RENT' went from 49,717 in Dec 2024 to 82,201 in Aug 2026; the highest month was Mar 2026 (88,769) and the lowest Feb 2025 (38,564). The engine's forecast for May 2027 is 82,201 (80% range 74,260 to 117,646).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The rows the engine kept, by Date month; each month equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "Amount",
+      "Date"
+     ],
+     "rows": 801,
+     "months": [
+      "2024-12",
+      "2026-08"
+     ],
+     "op": "Amount added up by month"
+    }
+   }
+  },
+  "edge_hbar_grouped": {
+   "data_from": "real",
+   "about": "ship2: total revenue by region, 2025 against 2024 (the waterfall's +16,220, +7,116, +330, +292)",
+   "record": {
+    "id": "viz.4.grouped_bar",
+    "chart": "grouped_bar",
+    "kind": "hbar",
+    "title": "Total revenue by region, 2025-01 to 2025-12 against 2024-01 to 2024-12",
+    "subtitle": "Total revenue for each region in the two periods side by side",
+    "section": "other",
+    "supports": "Total revenue by region, the latest period against the one before",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "chart:trend.total:revenue"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "Each region this year against last.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "series": [
+      "2024-01 to 2024-12",
+      "2025-01 to 2025-12"
+     ],
+     "rows": [
+      {
+       "label": "East",
+       "values": [
+        28396.38,
+        44616.75
+       ],
+       "texts": [
+        "28,396",
+        "44,617"
+       ],
+       "change_text": "+16,220"
+      },
+      {
+       "label": "North",
+       "values": [
+        35234.32,
+        42350.45
+       ],
+       "texts": [
+        "35,234",
+        "42,350"
+       ],
+       "change_text": "+7,116"
+      },
+      {
+       "label": "South",
+       "values": [
+        32446.55,
+        32738.29
+       ],
+       "texts": [
+        "32,447",
+        "32,738"
+       ],
+       "change_text": "+292"
+      },
+      {
+       "label": "West",
+       "values": [
+        32178.85,
+        32508.44
+       ],
+       "texts": [
+        "32,179",
+        "32,508"
+       ],
+       "change_text": "+330"
+      }
+     ],
+     "other": false
+    },
+    "table": {
+     "cols": [
+      "region",
+      "2024-01 to 2024-12",
+      "2025-01 to 2025-12",
+      "Change"
+     ],
+     "rows": [
+      [
+       "East",
+       "28,396",
+       "44,617",
+       "+16,220"
+      ],
+      [
+       "North",
+       "35,234",
+       "42,350",
+       "+7,116"
+      ],
+      [
+       "South",
+       "32,447",
+       "32,738",
+       "+292"
+      ],
+      [
+       "West",
+       "32,179",
+       "32,508",
+       "+330"
+      ]
+     ]
+    },
+    "summary": "Total revenue, 2025-01 to 2025-12 against 2024-01 to 2024-12: East is highest in the latest period (44,617, 28,396 before). The largest rise is East (+16,220) and the smallest rise South (+292).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The rows the engine kept, by region and order_date; each month's figure equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region",
+      "order_date"
+     ],
+     "rows": 300,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by region in each period"
+    }
+   }
+  },
+  "edge_lines_series": {
+   "data_from": "real",
+   "about": "ship2: total revenue by quarter and region, one point on fewer than 5 rows ('<5')",
+   "record": {
+    "id": "viz.6.line_chart",
+    "chart": "line_chart",
+    "kind": "lines",
+    "title": "Total revenue by quarter and region, 2024 Q1 to 2025 Q4",
+    "subtitle": "Total revenue in each quarter of order_date",
+    "section": "other",
+    "supports": "Total revenue by region over time",
+    "anchors": [
+     "finding:measure.revenue.total.change",
+     "chart:trend.total:revenue"
+    ],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "ai",
+    "why": "The regions side by side.",
+    "measure": {
+     "label": "revenue",
+     "unit": "",
+     "kind": "amount"
+    },
+    "data": {
+     "x": [
+      "2024-Q1",
+      "2024-Q2",
+      "2024-Q3",
+      "2024-Q4",
+      "2025-Q1",
+      "2025-Q2",
+      "2025-Q3",
+      "2025-Q4"
+     ],
+     "grain": "quarter",
+     "x_label": "Quarter",
+     "series": [
+      {
+       "label": "South",
+       "values": [
+        9347.45,
+        6526.38,
+        8894.25,
+        7678.47,
+        9742.04,
+        8605.95,
+        5903.45,
+        8486.85
+       ]
+      },
+      {
+       "label": "West",
+       "values": [
+        4559.21,
+        11797.8,
+        7507.14,
+        8314.7,
+        12675.11,
+        3546.44,
+        8746.09,
+        7540.8
+       ]
+      },
+      {
+       "label": "North",
+       "values": [
+        7504.76,
+        12580.29,
+        6576.43,
+        8572.84,
+        8405.06,
+        10190.53,
+        9932.58,
+        13822.28
+       ]
+      },
+      {
+       "label": "East",
+       "values": [
+        10689.45,
+        null,
+        6992.86,
+        8352.02,
+        7628.97,
+        9592.53,
+        10780.9,
+        16614.35
+       ]
+      }
+     ],
+     "forecast": null
+    },
+    "table": {
+     "cols": [
+      "Quarter",
+      "South",
+      "West",
+      "North",
+      "East"
+     ],
+     "rows": [
+      [
+       "2024 Q1",
+       "9,347",
+       "4,559",
+       "7,505",
+       "10,689"
+      ],
+      [
+       "2024 Q2",
+       "6,526",
+       "11,798",
+       "12,580",
+       "<5"
+      ],
+      [
+       "2024 Q3",
+       "8,894",
+       "7,507",
+       "6,576",
+       "6,993"
+      ],
+      [
+       "2024 Q4",
+       "7,678",
+       "8,315",
+       "8,573",
+       "8,352"
+      ],
+      [
+       "2025 Q1",
+       "9,742",
+       "12,675",
+       "8,405",
+       "7,629"
+      ],
+      [
+       "2025 Q2",
+       "8,606",
+       "3,546",
+       "10,191",
+       "9,593"
+      ],
+      [
+       "2025 Q3",
+       "5,903",
+       "8,746",
+       "9,933",
+       "10,781"
+      ],
+      [
+       "2025 Q4",
+       "8,487",
+       "7,541",
+       "13,822",
+       "16,614"
+      ]
+     ]
+    },
+    "summary": "In 2025 Q4, East is highest (16,614) and West lowest (7,541) of 4 levels of region shown. 1 point rests on fewer than 5 rows and is not shown.",
+    "suppressed": {
+     "cells": 1,
+     "why": "1 point rests on fewer than 5 rows"
+    },
+    "source": "The rows the engine kept, by order_date quarter; each month equals the engine's own charted series",
+    "inputs": {
+     "columns": [
+      "revenue",
+      "region",
+      "order_date"
+     ],
+     "rows": 298,
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "revenue added up by quarter and region"
+    }
+   }
+  },
+  "timeseries": {
+   "data_from": "synthetic",
+   "about": "a long statistical table's two series over 14 months, published in two runs (September to December 2024, then June to October 2025): the five skipped months are a gap",
+   "record": {
+    "id": "viz.5.series_lines",
+    "chart": "series_lines",
+    "kind": "timeseries",
+    "title": "Each series over the whole period",
+    "subtitle": "2024-09 to 2025-10: the lead series and the 1 that changed most, of 2 series; periods with no published figure are gaps",
+    "section": "headline",
+    "supports": "The table's published series over its whole period; no claim is graded",
+    "anchors": [],
+    "grade": null,
+    "parent_grade": null,
+    "chosen_by": "engine",
+    "why": "Chosen by the engine: a published series' own chart: a published table's series as lines over time (the lead and the biggest movers), gaps left as gaps",
+    "measure": {
+     "label": "Federal debt",
+     "unit": "Dollars (millions)",
+     "kind": "amount"
+    },
+    "data": {
+     "x": {
+      "first": "2024-09",
+      "n": 14,
+      "step": 1,
+      "label": "Month"
+     },
+     "series": [
+      {
+       "label": "Federal debt",
+       "runs": [
+        {
+         "at": 0,
+         "values": [
+          100,
+          102,
+          104,
+          106
+         ]
+        },
+        {
+         "at": 9,
+         "values": [
+          110,
+          112,
+          113,
+          115,
+          117
+         ]
+        }
+       ],
+       "first_text": "100",
+       "last_text": "117",
+       "change_text": "+17.0%"
+      },
+      {
+       "label": "Gross liabilities",
+       "runs": [
+        {
+         "at": 0,
+         "values": [
+          200,
+          203,
+          206,
+          209
+         ]
+        },
+        {
+         "at": 9,
+         "values": [
+          215,
+          218,
+          222,
+          226,
+          230
+         ]
+        }
+       ],
+       "first_text": "200",
+       "last_text": "230",
+       "change_text": "+15.0%"
+      }
+     ],
+     "y_label": "Dollars (millions)"
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "Federal debt",
+      "Gross liabilities"
+     ],
+     "rows": [
+      [
+       "2024-09",
+       "100",
+       "200"
+      ],
+      [
+       "2024-12",
+       "106",
+       "209"
+      ],
+      [
+       "2025-10",
+       "117",
+       "230"
+      ],
+      [
+       "Change, first to last",
+       "+17.0%",
+       "+15.0%"
+      ]
+     ]
+    },
+    "summary": "Federal debt went from 100 in 2024-09 to 117 in 2025-10 (+17.0%). The lines drawn with it: Gross liabilities. Each point is a published figure, and where the publisher skipped a period the line stops and starts again.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "source": "The table's published series, one figure a period, as the engine read them",
+    "inputs": {
+     "columns": [
+      "Federal debt",
+      "Gross liabilities"
+     ],
+     "rows": 14,
+     "months": [
+      "2024-09",
+      "2025-10"
+     ],
+     "op": "each published figure in time order; a period with none is a gap"
+    }
+   }
   }
+ },
+ "batch_2": {
+  "added": "2026-10-14",
+  "charts": [
+   "line_chart",
+   "area_chart",
+   "bar_chart",
+   "grouped_bar",
+   "small_multiples"
+  ],
+  "draw_kinds": [
+   "lines",
+   "area",
+   "hbar",
+   "multiples"
+  ],
+  "why_no_version_bump": "the version is also pinned in engine/nl_browser.py (VIZ_VERSION, blank_report's viz block), which this change does not own; bump both together (and the worker's menu) when the worker and 55-nl-viz.js learn the new kinds",
+  "readers": "until a reader knows these kinds it draws their table (the universal fallback): the worker's sanitizeChart degrades them to kind 'table' at the same index, and 55-nl-viz.js reads them as tables unless src/js/51-nl2-charts.js has taught it the kinds (it does, on the page and in the share viewer)",
+  "never_legacy_names": "a Batch 2 draw kind never takes an analyses' chart name (line, bars, scatter): 50-try.js and the PDF read those as the analyses' own charts"
  }
 }

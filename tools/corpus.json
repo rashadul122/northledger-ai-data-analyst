@@ -348,7 +348,7 @@
       "kind": "official_stats",
       "url": "https://raw.githubusercontent.com/datasets/exchange-rates/main/data/daily.csv",
       "about": "Daily exchange rates against the US dollar by country, Federal Reserve via datasets/exchange-rates.",
-      "sha256": "60178da035ddb8e7bedd365c21ff18544a92854203b6a8010633cba0acbe44ad",
+      "sha256": "68349ef41ecc0cf35fa00ba0d9d63ec93b45a5182c37d2bb9a368fcd654bfeaa",
       "expect": [
         {
           "error_contains": "200,000",
@@ -362,7 +362,8 @@
           "max_seconds": 5,
           "why": "a refusal is quick"
         }
-      ]
+      ],
+      "repinned": "2026-10-16: upstream's automated daily commits appended rates to 2026-10-09 (273,701 rows); the expectations (a refusal at the 200,000-row cap) still hold, checked with pandas on the new file"
     },
     {
       "id": "seattle_weather",
@@ -804,7 +805,7 @@
       "kind": "cross_section",
       "url": "https://raw.githubusercontent.com/datasets/s-and-p-500-companies-financials/main/data/constituents-financials.csv",
       "about": "S&P 500 constituents with price, P/E, dividend yield, EPS, market cap and EBITDA, one row per company, 'Sector' holding the GICS sub-industry (datasets/s-and-p-500-companies-financials, ODC-PDDL); 17 rows without any financials.",
-      "sha256": "928b20aa4c2992f74f2d51249194eaba38783c2e09ba69c5c220fa27f8bf47bb",
+      "sha256": "ebf6cff6d9158ae33187692a6ac618631556bfb243e79f646503315ab31455c7",
       "expect": [
         {
           "shape.kind": "cross_section"
@@ -815,13 +816,13 @@
             "Apple",
             "Alphabet"
           ],
-          "why": "market cap 5.52T, 4.98T, 4.33T"
+          "why": "market cap 5.25T, 4.99T, 4.27T (Alphabet Class A; Class C 4.22T)"
         },
         {
           "insight_mentions_any": [
             "Semiconductors"
           ],
-          "why": "the largest share of market cap by Sector (14.9%)"
+          "why": "by Sector, Semiconductors holds 14.3% of market cap, a close second to Interactive Media & Services (14.5%, Alphabet's two share classes counted twice): the sector story names it"
         },
         {
           "no_text_matches": "values of \\(judged",
@@ -834,7 +835,8 @@
           ],
           "why": "a link column is not data"
         }
-      ]
+      ],
+      "repinned": "2026-10-16: upstream's automated commits refreshed prices and market caps (same 503 rows, same 17 without financials); every figure below recomputed with pandas from the new file"
     },
     {
       "id": "flying_survey",

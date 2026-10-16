@@ -5,7 +5,7 @@
    loop ran it, what it read, the numbers it recorded and its table. Descriptive, never tested by the
    engine's gate, and the card says so in the block's own note. Everything shown here comes from a
    visitor's file, so every text is escaped. window.NLA.html(report) returns the card, or '' when the
-   report has no analyst block (src/js/50-try.js calls it). */
+   report has no analyst block (src/js/50-try.js calls it); window.NLA.mount(root) then draws each insight's chart. */
 (function () {
   'use strict';
   var A = {};
@@ -97,9 +97,35 @@
       stepTable(st) + '</li>';
   }
 
+  // the chart behind an insight (ins.figure, a chart registry record the engine built from the step's own numbers):
+  // a figure drawn by window.NLV at the width it has, with its Table button, once the card is on the page (A.mount)
+  var FIGS = {}, figN = 0;
+  function figureHtml(rec) {
+    if (!obj(rec) || typeof rec.kind !== 'string' || !obj(rec.data)) return '';
+    var id = 'nla-fig-' + (++figN);
+    FIGS[id] = rec;
+    return '<figure class="visual nla-fig" data-table="1" data-kind="' + esc(rec.kind) + '"><figcaption>' + esc(rec.title || 'Chart') + '</figcaption>' +
+      '<div class="viz" id="' + id + '"></div><div class="nla-fig-note"></div></figure>';
+  }
+  A.mount = function (root) {
+    var U = window.NLU;
+    if (!root || !U || !U.visual || !window.NLV) return;
+    if (window.NLC && window.NLC.extendNLV) window.NLC.extendNLV(window.NLV);
+    Array.prototype.forEach.call(root.querySelectorAll('.nla-fig .viz[id^="nla-fig-"]'), function (v) {
+      var rec = FIGS[v.id], note = v.parentNode.querySelector('.nla-fig-note');
+      if (!rec) return;
+      U.visual(v.id, function (W) {
+        if (v.clientWidth) W = Math.min(W, Math.floor(v.clientWidth));
+        var o = window.NLV.draw(rec, W);
+        if (note) note.innerHTML = o.note || '';
+        return o;
+      });
+    });
+  };
+
   function insightHtml(ins, byId) {
     var ids = arr(ins.steps).map(String), steps = ids.map(function (id) { return byId[id]; }).filter(obj);
-    return '<li class="nla-ins"><p class="nla-text">' + esc(ins.text) + '</p>' +
+    return '<li class="nla-ins' + (obj(ins.figure) ? ' nla-story' : '') + '"><p class="nla-text">' + esc(ins.text) + '</p>' + figureHtml(ins.figure) +
       (steps.length ? '<details class="more nla-how"><summary>How this was found: ' + (ids.length === 1 ? 'step ' : 'steps ') + esc(ids.join(', ')) + '</summary>' +
         '<ol class="nla-steps">' + steps.map(stepHtml).join('') + '</ol></details>' : '') + '</li>';
   }
@@ -118,6 +144,7 @@
   A.html = function (r) {
     var b = r && obj(r.analyst) ? r.analyst : null;
     if (!b) return '';
+    FIGS = {};
     var ins = arr(b.insights).filter(function (i) { return obj(i) && typeof i.text === 'string' && i.text.trim(); });
     var refused = arr(b.refused).filter(obj);
     if (!ins.length && !refused.length) return '';

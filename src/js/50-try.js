@@ -3144,6 +3144,7 @@
           ai: CFG.ai_proxy_url ? '<article class="tr-card nl2-aicard" id="try-ai-m" aria-label="AI summaries"></article>' : '' }) + tailHtml(r);
       drawStory();
       window.NL2.mount(el.report.querySelector('.nl2'), r);
+      if (window.NLA && window.NLA.mount) window.NLA.mount(el.report);
     }
     function drawReport() {
       var r = S.report, c = r.cleaning, F = r.forecast, gated = T.gateTripped(r);
@@ -3213,6 +3214,7 @@
       h += tailHtml(r);
       el.report.innerHTML = h;
       drawStory();
+      if (window.NLA && window.NLA.mount) window.NLA.mount(el.report);
     }
 
     function drawFc() {

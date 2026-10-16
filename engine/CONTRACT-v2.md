@@ -783,6 +783,14 @@ robustness. Descriptive: computed from the kept rows, never tested by the engine
 - **`insights[]`** `{id, kind: headline|trend|driver|drill|mix|relationship|robustness|distribution, template, text,
   steps[]}`. `text` is `template` with each `{A3.key}` slot filled from that step's ledger (`fill`); a template naming a
   slot no step computed makes no sentence. tools/test_nl_analyst.py checks every number in every `text` is a ledger value.
+  An insight may carry **`figure`**: the chart that shows it, a chart registry record (tools/fixtures/viz/spec.json:
+  `line_chart` drawn as `lines`, `bar_chart` or `grouped_bar` drawn as `hbar`, section `other`, `chosen_by: "engine"`)
+  built from the numbers its step computed (a trend's series, at a coarser grain past 30 periods; a breakdown's, a
+  change's or a concentration's groups, the largest first; the most common values). A point or bar on fewer than 5 rows
+  is never drawn (a null point whose table cell reads `<5`; a bar left out); fewer than two left means no figure. One
+  step's chart goes beside the first sentence it backs only. src/js/53-analyst.js draws it under its sentence through
+  window.NLV, with its Table button; tools/test_nl_analyst.py checks every figure against the registry's schema, its
+  invariants and its byte cap.
 - **Ops**: `change` (latest complete window against the one before: 12 months to 12 months, a complete year, or for a
   monthly level or rate the same month a year earlier; `by` splits the change and scores the dimension by how differently
   the change is split from the groups' size before), `panel_change` (each entry's own change; never an average across

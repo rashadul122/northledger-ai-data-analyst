@@ -903,6 +903,41 @@ def test_a_crash_names_its_monthly_record_and_a_season_does_not():
     assert not any("record high" in i["text"] for i in blk2["insights"]), [i["text"] for i in blk2["insights"]]
 
 
+def test_an_insight_carries_the_chart_that_shows_it_and_the_chart_registry_accepts_it():
+    sys.path.insert(0, os.path.join(SITE, "tools", "fixtures", "viz"))
+    import validate_spec as V
+
+    spec = json.load(open(os.path.join(SITE, "tools", "fixtures", "viz", "spec.json")))
+    blk = _explore(_orders())
+    figs = [i["figure"] for i in blk["insights"] if i.get("figure")]
+    kinds = {f["kind"] for f in figs}
+    assert "lines" in kinds and "hbar" in kinds, kinds
+    ids = [f["id"] for f in figs]
+    assert len(ids) == len(set(ids)), ids
+    for f in figs:
+        errs = V.validate(f, spec["schema"], spec["schema"]) + V.check_record(f, spec)
+        assert not errs, (f["id"], errs[:3])
+        assert V.js_bytes(f) <= spec["caps"]["CHART_BYTES"], (f["id"], V.js_bytes(f))
+        assert "email" not in json.dumps(f), f["id"]  # a withheld column never reaches a chart
+
+
+def test_a_bar_resting_on_fewer_than_five_rows_is_never_drawn():
+    blk = _explore(_orders())
+    for i in blk["insights"]:
+        f = i.get("figure")
+        if f and f["kind"] == "lines":
+            for row, v in zip(f["table"]["rows"], f["data"]["series"][0]["values"]):
+                assert (v is None) == (row[1] in ("<5", "")), row
+    # a group of three rows: its bar is left out of the chart
+    df = _orders()
+    tiny = df.head(3).assign(region="Tiny")
+    blk2 = _explore(pd.concat([df, tiny], ignore_index=True))
+    for i in blk2["insights"]:
+        f = i.get("figure")
+        if f and f["kind"] == "hbar":
+            assert all(r["label"] != "Tiny" for r in f["data"]["rows"]), f["id"]
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

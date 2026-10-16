@@ -358,6 +358,8 @@ class Step:
         self.ok, self.refused = True, ""
         self.numbers: Dict[str, Dict[str, Any]] = {}
         self.table: Dict[str, Any] = {"columns": [], "rows": []}
+        # the data of the chart behind the step (never serialised as is): _figure builds the registry record from it
+        self.chart: Optional[Dict[str, Any]] = None
 
     def num(
         self, key: str, value: Any, kind: str = "plain", signed: bool = False
@@ -1436,6 +1438,13 @@ def op_change(
                 "text": "",
                 "kind": "score",
             }
+            _chart_bars(
+                st,
+                [(k, [float(r.mean_p), float(r.mean_c)], int(min(r.size_p, r.size_c)),
+                  fmt_num(float(r.delta), "plain", signed=True)) for k, r in t.iterrows()],
+                [lp, lc], measure, "average", "plain", "Average %s by %s, %s against %s" % (measure, by, lc, lp),
+                [measure, by, sh.date], by,
+            )
             return st
         if agg == "stock":
             per = (
@@ -1468,6 +1477,14 @@ def op_change(
         st.num("groups", len(per), "int")
         k3 = per["part"].head(3).sum()
         st.num("top3_share", k3, "share")
+        rows_in = f.groupby(["g", "w"]).size().unstack("w").reindex(columns=["prev", "cur"]).fillna(0)
+        _chart_bars(
+            st,
+            [(k, [float(r.prev), float(r.cur)], int(min([c for c in rows_in.loc[k] if c > 0] or [0])) if k in rows_in.index else 0,
+              fmt_num(float(r.delta), "plain", signed=True)) for k, r in per.iterrows()],
+            [lp, lc], measure, "amount", "plain", "%s by %s, %s against %s" % (measure, by, lc, lp),
+            [measure, by, sh.date], by,
+        )
         if sh.dates is not None:
             # a group that only started partway through (a building bought, a store opened) carries a change that
             # is an addition, not growth of what was already there: say when it first appears
@@ -1525,6 +1542,119 @@ def _r(v, d: int = 6):
     if f != f or abs(f) == float("inf"):
         return None
     return round(f, d)
+
+
+# ---------------------------------------------------------------- the chart behind a finding
+# Each insight carries the chart that shows it: a record of the chart registry (tools/fixtures/viz/spec.json, the
+# line_chart and bar_chart kinds), built from the numbers its step computed, so the page draws it with the same code,
+# colours and table view as every other chart. A point or bar resting on fewer than SMALL_CELL rows is never drawn
+# (a gap whose table cell reads '<5'); a chart that would hold fewer than two points or bars is not made.
+SMALL_CELL = 5
+_MKIND = {"sum": "amount", "stock": "amount", "mean": "average", "count": "count", "share": "share_pct"}
+_GRAIN_X = {"year": "Year", "quarter": "Quarter", "month": "Month"}
+
+
+def _x_key(k, grain: str) -> str:
+    k = int(k)
+    if grain == "year":
+        return str(k)
+    if grain == "quarter":
+        return "%d-Q%d" % (k // 10, k % 10)
+    return "%d-%02d" % (k // 100, k % 100)
+
+
+def _chart_line(st: "Step", keys, values, counts, grain: str, measure: str, agg: str, title: str, columns) -> None:
+    keys, values, counts = list(keys)[-30:], list(values)[-30:], list(counts)[-30:]
+    if len(keys) < 2:
+        return
+    st.chart = {
+        "type": "line", "x": [_x_key(k, grain) for k in keys], "grain": grain,
+        "values": [float(v) for v in values], "counts": [int(c) for c in counts],
+        "measure": measure, "mkind": _MKIND.get(agg, "amount"), "fmt": "plain",
+        "title": _words(title), "columns": columns,
+    }
+
+
+def _chart_bars(st: "Step", rows, series, measure: str, mkind: str, fmt: str, title: str, columns, by: str) -> None:
+    """rows: (label, [values per series], rows under the smallest value, change text or None), any order."""
+    keep = [r for r in rows if r[2] >= SMALL_CELL and all(v == v for v in r[1])][:40]
+    keep.sort(key=lambda r: -r[1][-1])
+    keep = keep[:12]
+    if len(keep) < 2:
+        return
+    st.chart = {
+        "type": "bars", "series": list(series), "rows": keep, "measure": measure, "mkind": mkind, "fmt": fmt,
+        "title": _words(title), "columns": columns, "by": by,
+    }
+
+
+def _words(s: str) -> str:
+    """A column name as a title reads it: underscores as spaces, the first letter capital (view_count: View count)."""
+    t = " ".join(str(s).replace("_", " ").split())
+    return t[:1].upper() + t[1:] if t else t
+
+
+def _clip(s: str, n: int) -> str:
+    s = " ".join(str(s).split())
+    return s if len(s) <= n else s[: n - 1].rstrip() + "\u2026"
+
+
+def _figure(st: "Step", n: int, about: str) -> Optional[Dict[str, Any]]:
+    """The registry record of a step's chart (numbered n, 1 to 99), or None when the step stashed none."""
+    c = st.chart
+    if not c or not st.ok:
+        return None
+    vals_all = c["values"] if c["type"] == "line" else [v for r in c["rows"] for v in r[1]]
+    fmt = "int" if c["fmt"] == "plain" and vals_all and all(float(v).is_integer() for v in vals_all) else c["fmt"]
+    cols = [_clip(x, 120) for x in c["columns"] if x][:12]
+    common = {
+        "section": "other", "supports": _clip(about, 200), "anchors": [], "grade": None, "parent_grade": None,
+        "chosen_by": "engine", "why": "Chosen by the engine: the chart behind this finding.",
+        "measure": {"label": _clip(c["measure"], 80), "unit": "", "kind": c["mkind"]},
+        "summary": _clip(about, 399), "source": "The rows the engine kept",
+        "inputs": {"columns": cols, "rows": None, "months": None, "op": _clip(st.op.replace("_", " "), 120)},
+    }
+    if c["type"] == "line":
+        vals, texts, supp = [], [], 0
+        for v, k in zip(c["values"], c["counts"]):
+            if k < SMALL_CELL:
+                vals.append(None)
+                texts.append("<5" if k else "")
+                supp += 1 if k else 0
+            else:
+                vals.append(v)
+                texts.append(fmt_num(v, fmt)[:80])
+        if sum(v is not None for v in vals) < 2:
+            return None
+        lab = _clip(c["measure"], 80)
+        rec = dict(
+            id="viz.%d.line_chart" % n, chart="line_chart", kind="lines", title=_clip(c["title"], 120),
+            subtitle=_clip("%s to %s, one point a %s" % (c["x"][0], c["x"][-1], c["grain"]), 160),
+            data={"x": c["x"], "grain": c["grain"], "x_label": _GRAIN_X[c["grain"]],
+                  "series": [{"label": lab, "values": vals}], "forecast": None},
+            table={"cols": [_GRAIN_X[c["grain"]], lab], "rows": [[x, t] for x, t in zip(c["x"], texts)]},
+            suppressed={"cells": supp, "why": "a point on fewer than %d rows is not shown" % SMALL_CELL if supp else ""},
+            **common,
+        )
+        return rec
+    rows, ns = [], len(c["series"])
+    scale = 100.0 if c["mkind"] == "share_pct" else 1.0  # a share is drawn in percent, printed from its fraction
+    for label, values, _k, change in c["rows"]:
+        r = {"label": _clip(label, 80), "values": [round(float(v) * scale, 6) for v in values],
+             "texts": [fmt_num(v, fmt)[:24] for v in values]}
+        if ns == 2:
+            r["change_text"] = (fmt_num(values[1] - values[0], fmt, signed=True) if fmt == "int" else change
+                                or fmt_num(values[1] - values[0], fmt, signed=True))[:24] or "0"
+        rows.append(r)
+    tcols = [_clip(c["by"], 80)] + [_clip(x, 80) for x in c["series"]] + (["change"] if ns == 2 else [])
+    trows = [[r["label"]] + r["texts"] + ([r["change_text"]] if ns == 2 else []) for r in rows]
+    return dict(
+        id="viz.%d.%s" % (n, "grouped_bar" if ns == 2 else "bar_chart"),
+        chart="grouped_bar" if ns == 2 else "bar_chart", kind="hbar", title=_clip(c["title"], 120),
+        subtitle=_clip("%s for each %s, the largest first" % (c["series"][-1], c["by"]), 160),
+        data={"series": [_clip(x, 40) for x in c["series"]], "rows": rows, "other": False},
+        table={"cols": tcols, "rows": trows}, suppressed={"cells": 0, "why": ""}, **common,
+    )
 
 
 def op_breakdown(
@@ -1586,6 +1716,8 @@ def op_breakdown(
             "text": "",
             "kind": "score",
         }
+        _chart_bars(st, [(k, [float(r["sum"])], int(r["size"]), None) for k, r in g.iterrows()], ["total"],
+                    measure, "amount", "plain", "%s by %s" % (measure, by), [measure, by], by)
         return st
     g = g.sort_values("mean", ascending=False)
     grand = f["v"].mean()
@@ -1618,6 +1750,8 @@ def op_breakdown(
         "rows": [[k, _r(r["mean"]), int(r["size"])] for k, r in g.head(12).iterrows()],
     }
     st.numbers["explained"] = {"value": float(eta), "text": "", "kind": "score"}
+    _chart_bars(st, [(k, [float(r["mean"])], int(r["size"]), None) for k, r in g.iterrows()], ["average"],
+                measure, "average", "plain", "Average %s by %s" % (measure, by), [measure, by], by)
     return st
 
 
@@ -1735,6 +1869,25 @@ def op_trend(ctx: Ctx, st: Step, measure: str) -> Step:
         "columns": [unit, measure],
         "rows": [[_period_label(k, grain), _r(v)] for k, v in s.items()],
     }
+    # the chart: the same series, at a coarser grain when it has more periods than a line chart holds (30)
+    cs, cc, cg = s, cnt, grain
+    for g2 in ("quarter", "year"):
+        if len(cs) <= 30 or cg == "year" or (cg == "quarter" and g2 == "quarter"):
+            continue
+        f2 = pd.DataFrame({"v": _num(ctx.df[measure]), "p": _period_key(sh.dates, g2)})[ctx.base]
+        if sh.entity:
+            f2["e"] = _text(ctx.df[sh.entity])[ctx.base]
+        f2 = f2.dropna(subset=["v", "p"])
+        c2 = f2.groupby("p").size()
+        k2 = list(c2.index)
+        if len(k2) > 2 and c2.iloc[-1] < 0.9 * c2.iloc[:-1].tail(12).median():
+            k2 = k2[:-1]
+        if len(k2) > 2 and c2.loc[k2[0]] < 0.9 * c2.loc[k2[1:]].head(12).median():
+            k2 = k2[1:]
+        cs = _aggregate(f2[f2["p"].isin(k2)], "v", agg, ["p"], "e" if sh.entity else None).dropna().sort_index()
+        cc, cg = c2, g2
+    _chart_line(st, cs.index, cs.to_numpy(dtype=float), [int(cc.get(k, 0)) for k in cs.index], cg, measure, agg,
+                "%s by %s" % (measure, cg), [measure, sh.date])
     return st
 
 
@@ -1875,6 +2028,8 @@ def op_frequency(ctx: Ctx, st: Step) -> Step:
         if tot <= 0:
             continue
         share = float(g.iloc[0]) / tot
+        if share < 1.25 / k:
+            continue  # every value about as common as the next (a month column, a balanced design): no "most common"
         readable = float(t.head(500).str.contains(r"[a-z]").mean())
         if k <= 20:
             coarse.append((share, c, g, tot))
@@ -1898,6 +2053,15 @@ def op_frequency(ctx: Ctx, st: Step) -> Step:
         st.table.setdefault("columns", [])
         st.table[key] = {"columns": [c, unit], "rows": [[i, _r(v)] for i, v in g.head(10).items()]}
     st.table["columns"], st.table["rows"] = [], []
+    pool = coarse or fine
+    if pool:
+        _s, c, g, _t = max(pool, key=lambda x: (x[0], -list(df.columns).index(x[1])))
+        t = _group_texts(df, c)[ctx.base]
+        n_rows = t[t != ""].value_counts()
+        _chart_bars(
+            st, [(k, [float(v)], int(n_rows.get(k, 0)), None) for k, v in g.head(40).items()], [unit],
+            unit, "count", "int", "%s by %s" % (unit.capitalize(), c), [c], c,
+        )
     return st
 
 
@@ -2998,6 +3162,7 @@ def op_concentration(
             return st.refuse("fewer than two complete periods")
         unit, prev, cur, lp, lc = w
         now = shares(f[_in(ctx, cur, unit).loc[f.index]])
+        now_rows = f[_in(ctx, cur, unit).loc[f.index]].groupby("g").size()
         then_keys, then_lab = prev, lp
         if (
             sh.kind == "panel"
@@ -3009,6 +3174,7 @@ def op_concentration(
     else:
         lc = ""
         now, then = shares(f), None
+        now_rows = f.groupby("g").size()
     if now is None or len(now) < 3:
         return st.refuse("fewer than three groups with a positive total")
     hhi = float((now**2).sum())
@@ -3023,6 +3189,11 @@ def op_concentration(
         st.num("top5_share", now.head(5).sum(), "share")
     st.num("hhi", hhi * 10000, "int")
     st.num("effective", 1 / hhi if hhi else float("nan"))
+    _chart_bars(
+        st, [(k, [float(v)], int(now_rows.get(k, 0)), None) for k, v in now.head(40).items()], ["share"],
+        "share of " + measure, "share_pct", "share",
+        "Share of %s by %s%s" % (measure, g, ", " + lc if lc else ""), [measure, g], g,
+    )
     # the index can never fall below 1 / groups (four equal groups score 2,500), so the words read the index
     # normalised to that floor: 0 for equal groups, 1 for one group holding everything
     n_g = len(now)
@@ -4160,18 +4331,29 @@ def explore(
         )
         return out
 
+    drawn: set = set()
+
     def say(kind, tmpl, sids):
         text = fill(tmpl, ctx.steps)
         if text:
-            ins.append(
-                {
-                    "id": "I%d" % (len(ins) + 1),
-                    "kind": kind,
-                    "template": tmpl,
-                    "text": text,
-                    "steps": sids,
-                }
-            )
+            it = {
+                "id": "I%d" % (len(ins) + 1),
+                "kind": kind,
+                "template": tmpl,
+                "text": text,
+                "steps": sids,
+            }
+            # the chart that shows it: the first of its steps with one not drawn already (one chart, one finding)
+            for sid in sids:
+                st = ctx.steps.get(sid)
+                if st is None or sid in drawn or len(ins) >= 99:
+                    continue
+                fig = _figure(st, len(ins) + 1, text)
+                if fig is not None:
+                    drawn.add(sid)
+                    it["figure"] = fig
+                    break
+            ins.append(it)
 
     def over():
         """True once the step cap is reached (deterministic) or, as a safety net only, the time budget runs out;

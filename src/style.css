@@ -1189,6 +1189,15 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nla-list { margin: 0; padding-left: 20px; }
 .nla-list > li { margin: 6px 0; min-width: 0; }
 .nla-text { margin: 0; }
+/* a story card: the sentence, then the chart that shows it */
+.nla-list > li.nla-story { list-style: none; margin: 12px 0 16px -20px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--bg); }
+.nla-story .nla-text { font-size: 16px; line-height: 1.5; }
+.nla-fig { margin: 10px 0 0; min-width: 0; }
+.nla-fig figcaption { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+.nla-fig .viz { min-width: 0; }
+/* the chart sits under its own sentence: its summary (the same sentence) stays its accessible name, not a repeat */
+.nla-fig .nlv-sum { display: none; }
+@media (max-width: 480px) { .nla-list > li.nla-story { padding: 10px; } }
 .nla-how { margin-top: 6px; }
 .nla-steps { margin: 6px 0 0; padding-left: 20px; }
 .nla-step { margin: 10px 0; min-width: 0; }

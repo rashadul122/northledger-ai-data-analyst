@@ -125,9 +125,40 @@
 
   function insightHtml(ins, byId) {
     var ids = arr(ins.steps).map(String), steps = ids.map(function (id) { return byId[id]; }).filter(obj);
-    return '<li class="nla-ins' + (obj(ins.figure) ? ' nla-story' : '') + '"><p class="nla-text">' + esc(ins.text) + '</p>' + figureHtml(ins.figure) +
+    return '<li class="nla-ins' + (obj(ins.figure) ? ' nla-story' : '') + '"' + (ins.id ? ' id="' + esc(anchor(ins.id)) + '"' : '') + '><p class="nla-text">' + esc(ins.text) + '</p>' + figureHtml(ins.figure) +
       (steps.length ? '<details class="more nla-how"><summary>How this was found: ' + (ids.length === 1 ? 'step ' : 'steps ') + esc(ids.join(', ')) + '</summary>' +
         '<ol class="nla-steps">' + steps.map(stepHtml).join('') + '</ol></details>' : '') + '</li>';
+  }
+
+  // the story in brief (rep.analyst.story, built by the engine from the insights alone): the headline as a lead, the
+  // key numbers as tiles, then the findings, what drove them, what to check next and what to keep in mind. Every line
+  // links down to the insight that proves it, where its chart and its steps are.
+  function anchor(id) { return 'nla-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''); }
+  function proofLink(line, ids) {
+    var to = arr(line && line.insights).filter(function (i) { return ids[String(i)]; })[0] || (line && ids[String(line.insight)] ? line.insight : null);
+    return to ? ' <a class="nla-see" href="#' + esc(anchor(to)) + '">' + (ids[String(to)] === 'chart' ? 'see the chart' : 'see how') + '</a>' : '';
+  }
+  function storyLines(title, lines, ids, ordered) {
+    lines = arr(lines).filter(function (l) { return obj(l) && typeof l.text === 'string' && l.text.trim(); });
+    if (!lines.length) return '';
+    var tag = ordered ? 'ol' : 'ul';
+    return '<div class="nla-brief-part"><h5>' + esc(title) + '</h5><' + tag + ' class="nla-brief-list">' +
+      lines.map(function (l) { return '<li>' + esc(l.text) + proofLink(l, ids) + '</li>'; }).join('') + '</' + tag + '></div>';
+  }
+  function briefHtml(st, ids) {
+    if (!obj(st) || !obj(st.headline) || !st.headline.text) return '';
+    var tiles = arr(st.key_numbers).filter(function (k) { return obj(k) && k.value; }).slice(0, 4);
+    return '<div class="nla-brief" role="group" aria-labelledby="nla-brief-h"><h4 id="nla-brief-h">The story in brief</h4>' +
+      '<p class="nla-lead">' + esc(st.headline.text) + proofLink(st.headline, ids) + '</p>' +
+      (tiles.length ? '<ul class="nla-kpis" aria-label="Key numbers">' + tiles.map(function (k) {
+        var inner = '<span class="nla-kpi-v">' + esc(k.value) + '</span><span class="nla-kpi-l">' + esc(k.label || '') + '</span>' +
+          (k.note ? '<span class="nla-kpi-n">' + esc(k.note) + '</span>' : '');
+        return '<li class="nla-kpi">' + (ids[String(k.insight)] ? '<a class="nla-kpi-in" href="#' + esc(anchor(k.insight)) + '">' + inner + '</a>' : '<div class="nla-kpi-in">' + inner + '</div>') + '</li>';
+      }).join('') + '</ul>' : '') +
+      storyLines('What stands out', st.findings, ids, true) +
+      storyLines('What drove it', st.drivers, ids, false) +
+      storyLines('What to check next', st.actions, ids, false) +
+      storyLines('Keep in mind', st.caveats, ids, false) + '</div>';
   }
 
   // one line on what the loop read: the file's shape, the rows, the rounds and steps it ran
@@ -161,6 +192,9 @@
     var h = '<section class="tr-card nla" aria-labelledby="nla-h"><p class="kicker">Descriptive, not tested</p><h3 id="nla-h">What the analyst found</h3>' +
       '<p class="note">' + esc(note) + ' Each sentence is filled from the numbers its steps recorded; open one to see them.</p>';
     if (ins.length) {
+      var ids = {};
+      ins.forEach(function (i) { if (i.id) ids[String(i.id)] = obj(i.figure) ? 'chart' : 'text'; });
+      h += briefHtml(b.story, ids);
       h += '<p class="nla-read muted">' + esc(readLine(b)) + '</p>';
       groups.filter(function (g) { return g.items.length; }).forEach(function (g, gi) {
         h += '<div class="nla-group" role="group" aria-labelledby="nla-g-' + gi + '"><h4 id="nla-g-' + gi + '">' + esc(g.title) + '</h4><ul class="nla-list">' +

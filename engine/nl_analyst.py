@@ -3728,6 +3728,85 @@ STORY_TEMPLATES = {
 _DESCRIPTIVE = "Descriptive: computed from the rows the engine kept and not tested by the engine's gate."
 
 
+def _key_numbers(ins: List[Dict[str, Any]], steps: Dict[str, "Step"], cap: int = 4) -> List[Dict[str, Any]]:
+    """The few numbers a reader takes away, as tiles {value, label, note, insight, step}: each value is a step's
+    printed ledger text and each label is built from the step's own words, so a tile states nothing its step did not
+    compute. One tile per step, in the insights' order (the headline first); a step of a kind with no tile is skipped."""
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    split_shown = False  # one "of the change came from" tile: a drill inside the top group repeats it
+    head_shown = False  # one "latest against before" tile: a scoped re-run of the change repeats it
+
+    def val(st, k):
+        v = (st.numbers.get(k) or {}).get("value")
+        return float(v) if isinstance(v, (int, float)) and v == v else 0.0
+
+    def t(st, k):
+        v = st.numbers.get(k)
+        return v["text"] if v and v.get("text") not in (None, "", "not computable") else None
+
+    for i in ins:
+        for sid in i["steps"]:
+            st = steps.get(sid)
+            if st is None or not st.ok or sid in seen:
+                continue
+            tile = None
+            if st.op == "change" and not st.args.get("by") and t(st, "cur") and t(st, "measure") and not head_shown:
+                head_shown = True
+                tile = (t(st, "cur"), "%s, %s" % (_words(t(st, "measure")), t(st, "cur_label")),
+                        "%s against %s" % (t(st, "change"), t(st, "prev_label")) if t(st, "change") else "")
+            elif st.op == "change" and t(st, "top") and t(st, "top_share") and not split_shown:
+                split_shown = True
+                tile = (t(st, "top_share"), "of the change came from %s" % t(st, "top"),
+                        "%s, by %s" % (t(st, "top_delta"), _words(t(st, "by") or "")) if t(st, "top_delta") else "")
+            elif st.op == "trend" and t(st, "rec_hi") and t(st, "rec_lo"):
+                tile = (t(st, "rec_hi"), "Record high, %s" % t(st, "rec_hi_at"),
+                        "low %s in %s" % (t(st, "rec_lo"), t(st, "rec_lo_at")))
+            elif st.op == "trend" and t(st, "peak") and abs(val(st, "from_peak")) > 1e-9:  # a peak that is the last
+                # value says no more than the headline
+                tile = (t(st, "peak"), "Peak, %s" % t(st, "peak_at"),
+                        "the last value is %s from it" % t(st, "from_peak") if t(st, "from_peak") else "")
+            elif st.op == "concentration" and t(st, "top1_share"):
+                tile = (t(st, "top1_share"), "%s share of %s" % (_poss(t(st, "top1")), _words(t(st, "measure") or "the total").lower()),
+                        ("%s %s groups" % (t(st, "groups"), _words(t(st, "by") or "").lower())) if t(st, "groups") else "")
+            elif st.op == "breakdown" and t(st, "top_share"):
+                tile = (t(st, "top_share"), "%s share of %s" % (_poss(t(st, "top")), _words(t(st, "measure")).lower()), "")
+            elif st.op == "breakdown" and t(st, "top_value") and t(st, "top"):
+                tile = (t(st, "top_value"), "Highest average %s: %s" % (_words(t(st, "measure")).lower(), t(st, "top")),
+                        "lowest %s (%s)" % (t(st, "bottom"), t(st, "bottom_value")) if t(st, "bottom") else "")
+            elif st.op == "frequency" and max(val(st, "b_share"), val(st, "a_share")) >= 0.1:  # a top value under a
+                # tenth of the rows is not a number to take away
+                k = "b" if val(st, "b_share") >= 0.1 else "a"
+                tile = (t(st, k + "_share"), "of %s: %s" % (unit_word(t(st, "unit")), t(st, k + "_top")),
+                        "the most common %s" % _words(t(st, k + "_col")).lower())
+            elif st.op == "panel_change" and t(st, "up") and t(st, "n"):
+                tile = ("%s of %s" % (t(st, "up"), t(st, "n")),
+                        "%s entries rose in %s" % (t(st, "entity") or "the", _words(t(st, "measure") or "").lower()),
+                        "median change %s" % t(st, "median") if t(st, "median") else "")
+            elif st.op == "answers" and t(st, "q1_share") and t(st, "q1_top"):
+                tile = (t(st, "q1_share"), "Answered %s to \u201c%s\u201d" % (t(st, "q1_top"), _clip(t(st, "q1"), 48)),
+                        "of %s who answered" % t(st, "q1_n") if t(st, "q1_n") else "")
+            elif st.op == "yoy" and t(st, "cur") and t(st, "measure"):
+                tile = (t(st, "cur"), "%s, %s" % (_words(t(st, "measure")), t(st, "cur_label")),
+                        "%s on %s" % (t(st, "change"), t(st, "prev_label")) if t(st, "change") else "")
+            if tile and tile[0]:
+                seen.add(sid)
+                out.append({"value": tile[0], "label": _clip(tile[1], 80), "note": _clip(tile[2] or "", 80),
+                            "insight": i["id"], "step": sid})
+            if len(out) >= cap:
+                return out
+    return out
+
+
+def _poss(x: Optional[str]) -> str:
+    x = str(x or "")
+    return x + ("'" if x.endswith("s") else "'s")
+
+
+def unit_word(u: Optional[str]) -> str:
+    return u or "rows"
+
+
 def build_story(
     sh: Shape, ins: List[Dict[str, Any]], steps: Dict[str, Step]
 ) -> Optional[Dict[str, Any]]:
@@ -4284,6 +4363,7 @@ def build_story(
         "drivers": drivers[:3],
         "actions": actions[:4],
         "caveats": caveats[:4],
+        "key_numbers": _key_numbers(ins, steps),
     }
 
 

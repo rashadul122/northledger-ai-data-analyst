@@ -791,6 +791,12 @@ robustness. Descriptive: computed from the kept rows, never tested by the engine
   step's chart goes beside the first sentence it backs only. src/js/53-analyst.js draws it under its sentence through
   window.NLV, with its Table button; tools/test_nl_analyst.py checks every figure against the registry's schema, its
   invariants and its byte cap.
+- **`story`** `{kind, template, headline, findings[], drivers[], actions[], caveats[], key_numbers[]}`: each line
+  `{text, template, insights[], steps[]}`, built from the insights and the ledgers alone. `key_numbers` (at most 4) are
+  the tiles a reader takes away, `{value, label, note, insight, step}`: `value` is a printed ledger text of `step`
+  (a panel's "up of n" joins two), `label` and `note` are built from that step's own words; one tile per step, one
+  headline tile and one change-split tile at most, the headline first. src/js/53-analyst.js shows the story at the top
+  of the card ("The story in brief"), each line and tile linking to the insight that proves it.
 - **Ops**: `change` (latest complete window against the one before: 12 months to 12 months, a complete year, or for a
   monthly level or rate the same month a year earlier; `by` splits the change and scores the dimension by how differently
   the change is split from the groups' size before), `panel_change` (each entry's own change; never an average across

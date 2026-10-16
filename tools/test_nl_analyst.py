@@ -938,6 +938,26 @@ def test_a_bar_resting_on_fewer_than_five_rows_is_never_drawn():
             assert all(r["label"] != "Tiny" for r in f["data"]["rows"]), f["id"]
 
 
+def test_the_story_leads_with_key_numbers_each_a_printed_ledger_value_of_its_own_step():
+    blk = _explore(_orders())
+    st = blk["story"]
+    assert st and st["headline"]["text"], st
+    tiles = st["key_numbers"]
+    assert 2 <= len(tiles) <= 4, tiles
+    steps = {s["id"]: s for s in blk["steps"]}
+    ins_ids = {i["id"] for i in blk["insights"]}
+    for k in tiles:
+        assert k["insight"] in ins_ids, k
+        printed = {v["text"] for v in steps[k["step"]]["numbers"].values()}
+        # the value is the step's own printed text (a panel's "up of n" is two of them)
+        assert k["value"] in printed or all(p in printed for p in k["value"].split(" of ")), (k, printed)
+        assert k["label"] and len(k["label"]) <= 80 and len(k["note"]) <= 80, k
+    assert tiles[0]["insight"] == st["headline"]["insights"][0], (tiles[0], st["headline"])
+    assert len({k["step"] for k in tiles}) == len(tiles), tiles
+    # one "of the change came from" tile, however deep the drill goes
+    assert sum("of the change came from" in k["label"] for k in tiles) <= 1, tiles
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

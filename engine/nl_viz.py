@@ -3768,6 +3768,7 @@ PERIOD_BASIS = ("The publisher's own figures, one value a period and nothing est
 PERIOD_STORY_MOVERS = 2                    # other series said in the story, after the lead
 PERIOD_TABLE_AI_ROWS = 12                  # rows of the report writer's table (the worker keeps 12)
 PERIOD_ROWS_MAX = 30                       # series in the page's table (TABLE_ROWS_MAX)
+PP_DECIMALS = 2                            # a change in percentage points, in every list and sentence
 PERIOD_LINE_MAX = 300                      # characters of one ranking line (the report writer's story lines)
 _MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
                 "November", "December")
@@ -3884,12 +3885,111 @@ def _is_pct_unit(unit: Any) -> bool:
     return bool(unit) and bool(_PCT_UNIT.match(str(unit)))
 
 
+# Twin series (the owner's interest-rate report, 16 Oct 2026: "those that fell most were Bank rate, last Tuesday or last Thursday
+# −3.50 points, Bank rate −3.50 points and ..."): two series that publish the same figures are one mover, not two. Twins are found by
+# LEVEL equality, never by correlation alone (the overnight rate moves with the bank rate, correlation 0.9998, but sits a quarter
+# point below it and is a different rate): over 12 or more common periods, the two agree at the coarser published precision in 95%
+# of them, and their mean gap is under 1% of their level. A ranking names a set of twins once ("Bank rate (and its 'last Tuesday or
+# last Thursday' variant)"); the page's table keeps every series.
+TWIN_MIN_COMMON = 12
+TWIN_AGREE_SHARE = 0.95
+TWIN_LEVEL_GAP = 0.01
+
+
+def series_twins(series: Sequence[Tuple[Any, str, Sequence[Tuple[Any, float]], int]]) -> Dict[Any, Any]:
+    """series: (key, label, [(date, value)], decimals) in the file's order. Returns {key: the key of its set's kept series} for each
+    series in a set of twins (the kept one maps to itself); a series with no twin is absent. The kept series of a set is the one
+    whose name the others extend ("Bank rate" of "Bank rate, last Tuesday or last Thursday"), else the shortest name, else the first."""
+    vals = []
+    for key, label, pts, dp in series:
+        d: Dict[Any, float] = {}
+        for t, x in pts:
+            if x == x and abs(x) != float("inf"):
+                d[t] = float(x)
+        vals.append((key, str(label), d, int(dp or 0)))
+    parent = {v[0]: v[0] for v in vals}
+
+    def root(k: Any) -> Any:
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+    for i in range(len(vals)):
+        ka, _la, da, pa = vals[i]
+        for j in range(i + 1, len(vals)):
+            kb, _lb, db, pb = vals[j]
+            common = [t for t in da if t in db]
+            if len(common) < TWIN_MIN_COMMON:
+                continue
+            tol = 0.5 * 10.0 ** (-min(pa, pb)) + 1e-9
+            gaps = [abs(da[t] - db[t]) for t in common]
+            agree = sum(1 for g in gaps if g <= tol) / float(len(gaps))
+            level = math.fsum(abs(da[t]) + abs(db[t]) for t in common) / (2.0 * len(common))
+            if agree >= TWIN_AGREE_SHARE and math.fsum(gaps) / len(gaps) <= TWIN_LEVEL_GAP * max(level, 1e-12):
+                parent[root(kb)] = root(ka)
+    groups: Dict[Any, List[Tuple[int, Any, str]]] = {}
+    for n, (k, lab, _d, _p) in enumerate(vals):
+        groups.setdefault(root(k), []).append((n, k, lab))
+    out: Dict[Any, Any] = {}
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        labs = [x[2] for x in g]
+        keep = min(g, key=lambda x: (0 if all(l == x[2] or l.startswith(x[2]) for l in labs) else 1, len(x[2]), x[0]))
+        for _n, k, _l in g:
+            out[k] = keep[1]
+    return out
+
+
+def twin_label(kept: str, others: Sequence[str]) -> str:
+    """A set of twins named once: "Bank rate (and its 'last Tuesday or last Thursday' variant)", or, when a twin's name does not
+    extend the kept one's, "X (and 'Y', the same figures)"."""
+    kept = str(kept)
+    variants, apart = [], []
+    for o in others:
+        o = str(o)
+        rest = o[len(kept):].strip(" ,;:-") if o.startswith(kept) else ""
+        (variants if rest else apart).append(rest or o)
+    bits = []
+    if variants:
+        bits.append("its %s variant%s" % (" and ".join("'%s'" % v for v in variants), "s" if len(variants) > 1 else ""))
+    if apart:
+        bits.append("%s, the same figures" % " and ".join("'%s'" % a for a in apart))
+    return "%s (and %s)" % (kept, "; and ".join(bits)) if bits else kept
+
+
+def collapse_twins(items: Sequence[Any], key: Callable[[Any], Any], twins: Dict[Any, Any]) -> List[Tuple[Any, List[Any]]]:
+    """items in their order, each set of twins kept once: [(item, [its twins among items])]. The set's kept series stands for it when
+    it is among the items, else the first of the set that is."""
+    present: Dict[Any, List[Any]] = {}
+    for it in items:
+        k = key(it)
+        if k in twins:
+            present.setdefault(twins[k], []).append(it)
+    out: List[Tuple[Any, List[Any]]] = []
+    for it in items:
+        k = key(it)
+        if k not in twins:
+            out.append((it, []))
+            continue
+        grp = present[twins[k]]
+        head = next((x for x in grp if key(x) == twins[k]), grp[0])
+        if it is head:
+            out.append((it, [x for x in grp if x is not head]))
+    return out
+
+
 def _series_ranking(facts: List[Dict[str, Any]], mixed_units: bool) -> List[Dict[str, Any]]:
     """The series after the lead, the biggest movers first, among the series in the lead's own unit (amounts in different units share
-    no axis and are not ranked against each one): by the size of the change in that unit."""
+    no axis and are not ranked against each one): by the size of the change in that unit. A twin of the lead (the same figures) is no
+    other mover, and a set of twins is one mover (series_twins)."""
     lead_unit = facts[0].get("unit", "")
-    same = [f for f in facts[1:] if f.get("unit", "") == lead_unit and f.get("eligible", True)]
-    return sorted(same, key=lambda f: (-abs(f["change"]["value"]), f["order"]))
+    lead_set = facts[0].get("twin_set")
+    same = [f for f in facts[1:] if f.get("unit", "") == lead_unit and f.get("eligible", True)
+            and (lead_set is None or f.get("twin_set") != lead_set)]
+    ranked = sorted(same, key=lambda f: (-abs(f["change"]["value"]), f["order"]))
+    tw = {f["id"]: f["twin_set"] for f in ranked if f.get("twin_set") is not None}
+    return [f for f, _o in collapse_twins(ranked, lambda f: f["id"], tw)]
 
 
 def _fact_for(label: str, fid: str, column: Optional[str], order: int, pts: List[Tuple[Any, float]], dp: int, grain: str,
@@ -3902,12 +4002,14 @@ def _fact_for(label: str, fid: str, column: Optional[str], order: int, pts: List
         years = ((t1.year * 12 + t1.month) - (t0.year * 12 + t0.month)) / 12.0
     change = v1 - v0
     pp = _is_pct_unit(unit)
+    # a change in percentage points is said to 2 decimals whatever the series' own (one list never mixes "−3.50" and "−3.4740")
+    cdp = PP_DECIMALS if pp and (round(abs(change), PP_DECIMALS) > 0 or change == 0) else dp
     f: Dict[str, Any] = {
         "id": fid, "column": column, "label": _short_label(label), "order": order, "unit": unit, "pp": pp, "pts": pts,
         "first": {"date": _date_text(t0, grain, whole_year), "value": _r6(v0), "text": _figure(v0, dp)},
         "latest": {"date": _date_text(t1, grain, whole_year), "value": _r6(v1), "text": _figure(v1, dp)},
         "published": len(pts), "years": round(years, 3), "decimals": dp,
-        "change": {"value": _r6(change), "text": _figure(abs(change), dp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
+        "change": {"value": _r6(change), "text": _figure(abs(change), cdp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
         "change_pct": None, "per_year": None, "cagr_pct": None}
     # a rate's change is in percentage points: the percent change of 6.00 to 2.50 is not the story, and its compounded rate is no rate
     if not pp and v0 != 0 and (v0 > 0) == (v1 >= 0 if v1 != 0 else v0 > 0):
@@ -3915,7 +4017,7 @@ def _fact_for(label: str, fid: str, column: Optional[str], order: int, pts: List
         f["change_pct"] = {"value": _r6(pct), "text": _pct_text(pct)}
     if years >= 1.0:
         py = change / years
-        f["per_year"] = {"value": _r6(py), "text": _signed_figure(py, dp)}
+        f["per_year"] = {"value": _r6(py), "text": _signed_figure(py, cdp)}
         if not pp and v0 > 0 and v1 > 0:
             cagr = 100.0 * ((v1 / v0) ** (1.0 / years) - 1.0)
             f["cagr_pct"] = {"value": _r6(cagr), "text": _pct_text(cagr)}
@@ -3970,6 +4072,12 @@ def series_facts(ctx: Ctx, lay: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         f["own"] = {"why": why, "note": (why_note.get(why, "set aside") % (f["latest"]["date"] if why == "discontinued" else f["first"]["date"]))
                     if "%s" in why_note.get(why, "") else why_note.get(why, "set aside")}
         facts.append(f)
+    # twins (the same figures under two names) are one series in every ranking: each knows its set's kept series (series_twins)
+    tw = series_twins([(f["id"], f["label"], f["pts"], f["decimals"]) for f in facts])
+    by_id = {f["id"]: f for f in facts}
+    for f in facts:
+        if f["id"] in tw and by_id[tw[f["id"]]].get("unit", "") == f.get("unit", ""):
+            f["twin_set"] = tw[f["id"]]
     # a series read over its own span competes for the chart and the movers only when it spans most of the table's (3 of every 5 years):
     # a series of two years' change is not a rival of one of twenty-six, though the table lists it with its span
     whole = max(f["years"] for f in facts if not f.get("own")) or 1.0
@@ -4036,10 +4144,13 @@ def _period_table(facts: List[Dict[str, Any]]) -> Dict[str, Any]:
     cols = ["Series", "First published", "Latest published", "Change", "Change %", "Average a year"]
     rows = []
     mixed = len({f.get("unit", "") for f in facts}) > 1
+    by_id = {f["id"]: f for f in facts}
     for f in _ranked_for_table(facts)[:PERIOD_ROWS_MAX]:
         sign = {"up": "+", "down": MINUS, "unchanged": ""}[f["change"]["direction"]]
         pts = " points" if f.get("pp") else ""
-        label = f["label"] + ((" (%s)" % f["own"]["note"]) if f.get("own") else "") + ((" [%s]" % f["unit"]) if mixed and f.get("unit") else "")
+        twin = by_id.get(f.get("twin_set")) if f.get("twin_set") not in (None, f["id"]) else None
+        label = f["label"] + ((" (%s)" % f["own"]["note"]) if f.get("own") else "") + ((" [%s]" % f["unit"]) if mixed and f.get("unit") else "") + \
+            ((" (the same figures as %s)" % twin["label"]) if twin else "")
         rows.append([label, "%s (%s)" % (f["first"]["text"], f["first"]["date"]),
                      "%s (%s)" % (f["latest"]["text"], f["latest"]["date"]),
                      ((sign + f["change"]["text"]) if sign else f["change"]["text"]) + pts,
@@ -4120,24 +4231,51 @@ def _fair_ranking(pf: Dict[str, Any], goal: str, n: int = 3) -> Optional[Dict[st
         if got is None:
             continue
         rows.append((f, got[3] - got[1]))
+    # a set of twins (the same figures under two names, series_twins) is one entry, named once with its variants
+    n_series = len(rows)
+    tw = {f["id"]: f["twin_set"] for f, _c in rows if f.get("twin_set") is not None}
+    twin_of: Dict[str, List[Tuple[Dict[str, Any], float]]] = {}
+    kept_rows = []
+    for (f, c), others in collapse_twins(rows, lambda r: r[0]["id"], tw):
+        kept_rows.append((f, c))
+        if others:
+            twin_of[f["id"]] = others
+    rows = kept_rows
     if len(rows) < 2:
         return None
     pts_w = " points" if pp else ""
+    # one precision for every change in these lines: 2 decimals for percentage points, else the most any listed series publishes
+    ldp = PP_DECIMALS if pp else max([int(f.get("decimals") or 0) for f, _c in rows] +
+                                     [int(f.get("decimals") or 0) for f in ended] or [0])
 
-    def item(f: Dict[str, Any], ch: float, t0: Any = None, t1: Any = None) -> Dict[str, Any]:
-        dp = int(f.get("decimals") or 0)
-        sign = "+" if ch > 0 else MINUS if ch < 0 else ""
-        return {"id": f["id"], "label": f["label"], "change": _r6(ch), "change_text": sign + _figure(abs(ch), dp) + pts_w,
-                "first": _date_text(t0 if t0 is not None else w0, grain, wy), "latest": _date_text(t1 if t1 is not None else w1, grain, wy),
-                "own_span": t0 is not None}
+    def item(f: Dict[str, Any], ch: float, t0: Any = None, t1: Any = None, twins: Sequence[Tuple[Dict[str, Any], float]] = ()) -> Dict[str, Any]:
+        sign = lambda x: "+" if x > 0 else MINUS if x < 0 else ""  # noqa: E731
+        txt = sign(ch) + _figure(abs(ch), ldp) + pts_w
+        label = f["label"]
+        if twins:
+            label = twin_label(f["label"], [o["label"] for o, _c in twins])
+            # a twin whose change over the window differs (its figures part on a date at an end) says its own
+            odd = ["%s %s" % (o["label"], sign(c) + _figure(abs(c), ldp) + pts_w) for o, c in twins
+                   if sign(c) + _figure(abs(c), ldp) != sign(ch) + _figure(abs(ch), ldp)]
+            if odd:
+                label = label[:-1] + "; %s)" % "; ".join(odd)
+        out = {"id": f["id"], "label": label, "change": _r6(ch), "change_text": txt,
+               "first": _date_text(t0 if t0 is not None else w0, grain, wy), "latest": _date_text(t1 if t1 is not None else w1, grain, wy),
+               "own_span": t0 is not None}
+        if twins:
+            out["twins"] = [o["id"] for o, _c in twins]
+        return out
 
     rose = sorted((r for r in rows if r[1] > 0), key=lambda r: (-r[1], r[0]["order"]))
     fell = sorted((r for r in rows if r[1] < 0), key=lambda r: (r[1], r[0]["order"]))
     least = sorted((r for r in rows if r[1] < 0), key=lambda r: (-r[1], r[0]["order"]))
     win = "from %s to %s" % (_date_text(w0, grain, wy), _date_text(w1, grain, wy))
     unit_w = (lead_unit + " ") if lead_unit else ""
-    who = ("Of the %s %sseries whose names carry the question's words (%s)" % (_count(len(rows)), unit_w, ", ".join(named))
-           if restricted else "Of the %s %sseries published over the whole table" % (_count(len(rows)), unit_w))
+    n_tw = sum(len(v) + 1 for v in twin_of.values())
+    one = ("" if not twin_of else " (%s with the same figures read as one)" % _count(n_tw) if len(twin_of) == 1 else
+           " (%s in %s sets with the same figures, each read as one)" % (_count(n_tw), _count(len(twin_of))))
+    who = ("Of the %s %sseries whose names carry the question's words (%s)%s" % (_count(n_series), unit_w, ", ".join(named), one)
+           if restricted else "Of the %s %sseries published over the whole table%s" % (_count(n_series), unit_w, one))
     fmt = lambda xs: "; ".join("%s %s" % (x["label"], x["change_text"]) for x in xs)  # noqa: E731
 
     def fit(make: Callable[[List[Dict[str, Any]]], str], xs: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
@@ -4147,18 +4285,19 @@ def _fair_ranking(pf: Dict[str, Any], goal: str, n: int = 3) -> Optional[Dict[st
         return make(xs), xs
 
     lines = []
-    rose_i = [item(f, c) for f, c in rose[:n]]
-    fell_i = [item(f, c) for f, c in fell[:n]]
+    rose_i = [item(f, c, twins=twin_of.get(f["id"], ())) for f, c in rose[:n]]
+    fell_i = [item(f, c, twins=twin_of.get(f["id"], ())) for f, c in fell[:n]]
     if rose_i:
         ln, rose_i = fit(lambda xs: "%s, %s, those that rose most: %s." % (who, win, fmt(xs)), rose_i)
     elif least and len(fell) < 2 * n:
         # too few to name the least and the most apart: every one fell, the largest fall first, said once
-        ln, fell_i = fit(lambda xs: "%s, %s, none rose; every one fell: %s." % (who, win, fmt(xs)), [item(f, c) for f, c in fell[:n]])
+        ln, fell_i = fit(lambda xs: "%s, %s, none rose; every one fell: %s." % (who, win, fmt(xs)),
+                        [item(f, c, twins=twin_of.get(f["id"], ())) for f, c in fell[:n]])
         lines.append(ln)
         ln = ""
     elif least:
         ln, _ = fit(lambda xs: "%s, %s, none rose; those that fell least: %s." % (who, win, fmt(xs)),
-                    [item(f, c) for f, c in least[:n]])
+                    [item(f, c, twins=twin_of.get(f["id"], ())) for f, c in least[:n]])
     else:
         ln = "%s, %s, none rose." % (who, win)
     if ln:
@@ -4177,12 +4316,14 @@ def _fair_ranking(pf: Dict[str, Any], goal: str, n: int = 3) -> Optional[Dict[st
     ended_rows.sort(key=lambda r: r[:3])
     if restricted:
         ended_rows = [r for r in ended_rows if r[0] == 0]
-    ended_i = [item(r[3], r[4], r[3]["pts"][0][0], r[3]["pts"][-1][0]) for r in ended_rows[:n]]
+    tw_e = {r[3]["id"]: r[3]["twin_set"] for r in ended_rows if r[3].get("twin_set") is not None}
+    ended_i = [item(r[3], r[4], r[3]["pts"][0][0], r[3]["pts"][-1][0], twins=[(o[3], o[4]) for o in others])
+               for r, others in collapse_twins(ended_rows, lambda r: r[3]["id"], tw_e)[:n]]
     if ended_i:
         ln, ended_i = fit(lambda xs: "Read apart, over their own span (no longer published, or begun later): %s." % "; ".join(
             "%s %s (%s to %s)" % (x["label"], x["change_text"], x["first"], x["latest"]) for x in xs), ended_i)
         lines.append(ln)
-    return {"unit": lead_unit, "points": pp, "of": len(rows), "rose": rose_i, "fell": fell_i, "lines": lines,
+    return {"unit": lead_unit, "points": pp, "of": n_series, "read_as_one": n_tw, "rose": rose_i, "fell": fell_i, "lines": lines,
             "window": [_date_text(w0, grain, wy), _date_text(w1, grain, wy)], "question_words": named if restricted else [],
             "ended": ended_i}
 

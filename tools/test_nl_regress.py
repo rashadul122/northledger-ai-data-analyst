@@ -2658,10 +2658,14 @@ def test_s18_a_rates_change_is_in_percentage_points_and_the_answer_leads_with_or
         sub = df[(df["Rates"] == sname) & (df["VALUE"] != "")].sort_values("REF_DATE")
         if len(sub) >= 2 and sub["REF_DATE"].iloc[-1] == last:
             changes[sname] = float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0])
+    # twins (the same figures under two names, test_s30) are one entry, named by the kept series with its variant; a change in points
+    # is said to 2 decimals (test_s32)
+    base = lambda lab: lab.split(" (and ")[0]  # noqa: E731
+    changes.pop("Bank rate, last Tuesday or last Thursday", None)
     for x in fell:
-        assert x["label"] in changes and x["first"] == "2000-05" and x["latest"] == last, x
-        assert abs(float(x["change_text"].replace("\u2212", "-").split()[0]) - changes[x["label"]]) < 1e-9, (x, changes[x["label"]])
-    assert [round(v, 4) for v in sorted(changes.values())[:3]] == [round(float(x["change_text"].replace("\u2212", "-").split()[0]), 4)
+        assert base(x["label"]) in changes and x["first"] == "2000-05" and x["latest"] == last, x
+        assert abs(float(x["change_text"].replace("\u2212", "-").split()[0]) - changes[base(x["label"])]) <= 0.005 + 1e-9, (x, changes[base(x["label"])])
+    assert [round(v, 2) for v in sorted(changes.values())[:3]] == [round(float(x["change_text"].replace("\u2212", "-").split()[0]), 2)
                                                                    for x in fell], (sorted(changes.values())[:3], fell)
     assert A["latest"]["text"] == b["summary"]["lines"][0]["text"] and A["latest"]["grade"] == "INSUFFICIENT", A["latest"]
     ai = NB.results_for_ai(b)
@@ -2814,7 +2818,7 @@ def test_s22_which_rates_rose_and_fell_most_is_ranked_fairly_over_one_window_wit
         rk = rep["period"]["ranked"]
         assert rk["window"] == ["2000-05", last] and rk["rose"] == [] and rk["fell"], rk
         for x in rk["rose"] + rk["fell"]:
-            sub = df[df["Rates"] == x["label"]].sort_values("REF_DATE")
+            sub = df[df["Rates"] == x["label"].split(" (and ")[0]].sort_values("REF_DATE")
             assert sub["REF_DATE"].iloc[-1] == last and not x["own_span"], x          # only series published to the end are ranked
         txt = " ".join(rk["lines"])
         assert "rose most" not in txt and "none rose; those that fell least:" in txt, txt
@@ -2871,6 +2875,84 @@ def test_s23_a_plain_files_forecast_adds_up_only_a_flow_decided_by_what_the_seri
     rep = NB.run(d.to_csv(index=False).encode(), "plain.csv", "", {}, as_of)
     rep["ai_plan"] = {"columns": [{"name": "Sales", "semantic_type": "percentage"}]}
     assert SC._forecast_sums(rep) == (False, "a rate")
+
+
+def test_s30_twin_series_are_one_mover_in_every_ranking_and_a_series_that_merely_moves_with_another_is_not_a_twin():
+    """The owner's rates file, 16 Oct 2026: "those that fell most were Bank rate, last Tuesday or last Thursday −3.50 points, Bank rate
+    −3.50 points and Overnight money market financing, 7 day average −3.4740 points". The two bank rates publish the same figure in 312 of
+    314 shared months (checked here with pandas); they are one entry, named once with the variant, in the whole-period ranking, the
+    answer's ranked list, the line chart's movers and the AI plan's rank analysis. The overnight rate moves with the bank rate
+    (correlation above 0.999) but sits a quarter point below it: level equality, not correlation, makes a twin, so it stays apart."""
+    df = frame("s12_statcan_interest_rates.csv")
+    p = df[df["VALUE"] != ""].assign(v=lambda d: pd.to_numeric(d["VALUE"])).pivot_table(index="REF_DATE", columns="Rates", values="v")
+    br, bt, ov = "Bank rate", "Bank rate, last Tuesday or last Thursday", "Overnight money market financing, 7 day average"
+    j = p[[br, bt]].dropna()
+    assert (j[br] == j[bt]).mean() >= 0.99, (j[br] == j[bt]).mean()
+    k = p[[br, ov]].dropna()
+    assert k[br].corr(k[ov]) > 0.999 and (abs(k[br] - k[ov]) < 0.005).mean() < 0.1
+    variant = "Bank rate (and its 'last Tuesday or last Thursday' variant)"
+    for rep in (run_file("s12_statcan_interest_rates.csv"), run_file("s12_statcan_interest_rates.csv", plan=_rates_plan())):
+        rk = rep["period"]["ranked"]
+        labels = [x["label"] for x in rk["rose"] + rk["fell"]]
+        assert variant in labels, labels
+        assert bt not in labels and br not in labels, labels
+        assert ov in labels, labels
+        assert rk["of"] == 8 and rk["read_as_one"] == 2, (rk["of"], rk.get("read_as_one"))
+        text = " ".join(rk["lines"])
+        assert text.count("Bank rate") == 1, text
+        # the overnight rate's own change, from the file: its first and last published figures
+        o = df[(df["Rates"] == ov) & (df["VALUE"] != "")].sort_values("REF_DATE")
+        ch = float(o["VALUE"].iloc[-1]) - float(o["VALUE"].iloc[0])
+        assert ("%s %s points" % (ov, ("−" if ch < 0 else "+") + "%.2f" % abs(ch))) in text, (ch, text)
+        lines = [c for c in rep["viz"]["charts"] if c["chart"] == "series_lines"]
+        drawn = [s_["label"] for c in lines for s_ in c["data"]["series"]]
+        assert not (any(x.startswith(br + ",") for x in drawn) and br in drawn), drawn
+        an = rep.get("answer") or {}
+        if an.get("ranked"):
+            al = [x["label"] for x in an["ranked"]["rose"] + an["ranked"]["fell"]]
+            assert variant in al and bt not in al, al
+    b = run_file("s12_statcan_interest_rates.csv", plan=_rates_plan())
+    rk_ai = [x for x in (b.get("ai_analyses") or {}).get("items") or [] if x.get("type") == "rank"]
+    assert rk_ai, [x.get("type") for x in (b.get("ai_analyses") or {}).get("items") or []]
+    sent = rk_ai[0]["sentence"]
+    assert variant in json.dumps(rk_ai[0], ensure_ascii=False) and "rose most" not in sent.split(". The other")[0], sent
+    names = [r[0] for r in rk_ai[0]["table"]["rows"]]
+    assert bt not in names and br not in names, names
+
+
+def test_s31_series_twins_need_equal_levels_not_only_moves_in_step():
+    """nl_viz.series_twins on made-up series: a copy with two differing months is a twin; the same series a quarter point lower
+    (correlation 1) is not, nor is one twice as large, nor two series with fewer than 12 shared periods."""
+    t = list(pd.date_range("2010-01-01", periods=60, freq="MS"))
+    rng = np.random.default_rng(7)
+    a = list(np.round(3 + np.cumsum(rng.normal(0, 0.25, 60)), 2))
+    b = list(a)
+    b[10] += 0.5
+    b[40] -= 0.25
+    ser = [("a", "Bank rate", list(zip(t, a)), 2), ("b", "Bank rate, last Tuesday", list(zip(t, b)), 2),
+           ("c", "Overnight", list(zip(t, [x - 0.25 for x in a])), 2), ("d", "Double", list(zip(t, [x * 2 for x in a])), 2),
+           ("e", "Short copy", list(zip(t[:11], a[:11])), 2)]
+    tw = NV.series_twins(ser)
+    assert tw == {"a": "a", "b": "a"}, tw
+    assert NV.twin_label("Bank rate", ["Bank rate, last Tuesday"]) == "Bank rate (and its 'last Tuesday' variant)"
+    assert NV.twin_label("Rate A", ["Rate B"]) == "Rate A (and 'Rate B', the same figures)"
+
+
+def test_s32_changes_in_one_list_share_one_precision():
+    """One list never mixes "−3.50 points" and "−3.4740 points" (the overnight rate publishes 4 decimals, the others 2): every change in
+    percentage points in the whole-period lines, the ranked lists, the answer, the period table and the rank analysis has 2 decimals."""
+    for rep in (run_file("s12_statcan_interest_rates.csv"), run_file("s12_statcan_interest_rates.csv", plan=_rates_plan())):
+        P = rep["period"]
+        texts = list(P["lines"]) + [x["change_text"] for x in P["ranked"]["rose"] + P["ranked"]["fell"] + P["ranked"].get("ended", [])]
+        texts += [r[3] + " " + r[5] for r in P["table"]["rows"] if "points" in r[3]]
+        an = rep.get("answer") or {}
+        texts += [an.get("text") or "" if an.get("leads") == "whole_period" else "", ((an.get("ranked") or {}).get("text") or "")]
+        for it in (rep.get("ai_analyses") or {}).get("items") or []:
+            if it.get("type") == "rank":
+                texts += [it["sentence"]] + [r[5] for r in it["table"]["rows"]]
+        for tx in texts:
+            for m in re.findall(r"[−+-]?\d[\d,]*(?:\.(\d+))? (?:percentage )?points", tx):
+                assert len(m) == 2, (m, tx)
 
 
 # ----------------------------------------------------------------------------- runner

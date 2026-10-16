@@ -8894,6 +8894,14 @@ def _short_labels(names: List[str]) -> Dict[str, str]:
     return out
 
 
+def _signed_pp(v: float) -> str:
+    """A change in percentage points as every list says it: 2 decimals, a sign, a true minus."""
+    t = format(abs(float(v)), ",.2f")
+    if float(t.replace(",", "")) == 0:
+        return t
+    return ("+" if v > 0 else "\u2212") + t
+
+
 def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
     """Series side by side (currencies after long_to_wide): each one's change from its first complete
     year to its last, as a percentage of the first year's average (a level) or total (an amount). A rate in percent
@@ -8912,6 +8920,35 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
         elif a:
             rows.append((col, int(y.index[0]), int(y.index[-1]), a, b, 100.0 * (b / a - 1.0) if a > 0 else None, "pct"))
     rows = [r for r in rows if r[5] is not None]
+    # twins (the same figures under two names: nl_viz.series_twins) are one series here, named once with their variants (16 Oct 2026:
+    # "Bank rate, last Tuesday or last Thursday rose most (+0.417 percentage points)" beside "Bank rate" -1.38, the same rate whose
+    # one unpublished month cut its last complete year to 2024)
+    twins_n = 0
+    if len(rows) > 2:
+        import nl_viz as _nv
+        import pandas as pd
+        d = pd.to_datetime(df[date], errors="coerce")
+        tw = {}
+        try:
+            tw = _nv.series_twins([(r[0], r[0], [(t, x) for t, x in zip(d, _col_nums(df, r[0])) if t == t and x == x],
+                                    _nv._dec_places(df[r[0]].astype(str))) for r in rows])
+        except Exception:  # noqa: BLE001 - a twin search that fails leaves every series apart, never the analysis refused
+            tw = {}
+        if tw:
+            # the kept series is the one with the most complete years when its twin's were cut short
+            span = {r[0]: r[2] - r[1] for r in rows}
+            sets: Dict[Any, List[Any]] = {}
+            for k, v in tw.items():
+                sets.setdefault(v, []).append(k)
+            tw = {k: max(ks, key=lambda c: (span.get(c, -1), c == v, -len(str(c)))) for v, ks in sets.items() for k in ks}
+            kept = []
+            for r, others in _nv.collapse_twins(rows, lambda r: r[0], tw):
+                if others:
+                    twins_n += len(others) + 1
+                    lab = _nv.twin_label(r[0], [o[0] for o in others])
+                    r = (lab,) + tuple(r[1:])
+                kept.append(r)
+            rows = kept
     if len(rows) < 2:
         return {"refused": "rank: fewer than two series with two complete years"}
     y0 = min(r[1] for r in rows)
@@ -8920,14 +8957,19 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
     pc = sorted([r for r in rows if r[6] == "pct"], key=lambda r: -r[5])
 
     def amt(r: Tuple[Any, ...], words: str = " percentage points") -> str:
-        return (("+" if r[5] > 0 else "") + _fmt(r[5]) + words) if r[6] == "pp" else _fmt(r[5]) + "%"
+        # a change in percentage points to 2 decimals, every rate alike (16 Oct 2026: "+0.417" beside "-2.24")
+        return (_signed_pp(r[5]) + words) if r[6] == "pp" else _fmt(r[5]) + "%"
 
     def said(grp: List[Tuple[Any, ...]], what: str) -> str:
         if len(grp) == 1:
             return "%s %s" % (grp[0][0], amt(grp[0]))
         up = [r for r in grp if r[5] > 0]
+        every = "every series" if what == "series" else "all %d %s" % (len(grp), what)
         if grp[-1][5] > 0:
-            return "every %s rose: most %s (%s), least %s (%s)" % (what, grp[0][0], amt(grp[0]), grp[-1][0], amt(grp[-1]))
+            return "%s rose: most %s (%s), least %s (%s)" % (every, grp[0][0], amt(grp[0]), grp[-1][0], amt(grp[-1]))
+        if grp[0][5] < 0:
+            # none rose: never a "rose most" for the smallest fall
+            return "%s fell: most %s (%s), least %s (%s)" % (every, grp[-1][0], amt(grp[-1]), grp[0][0], amt(grp[0]))
         return "%s rose most (%s) and %s fell most (%s); %d of %d %s rose" % (
             grp[0][0], amt(grp[0]), grp[-1][0], amt(grp[-1]), len(up), len(grp), what if len(grp) != 1 else what)
     if pp and pc:

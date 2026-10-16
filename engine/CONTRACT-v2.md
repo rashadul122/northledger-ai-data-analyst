@@ -764,7 +764,7 @@ Rounds of small, typed analysis steps over the rows the engine kept, each round 
 the way an analyst works: the headline, which dimension carries it, the drill into the top group, rate or mix, then
 robustness. Descriptive: computed from the kept rows, never tested by the engine's gate; the block's `note` says so.
 
-`{version, chosen_by: "engine"|"none", shape, steps[], insights[], refused[], rounds, rows {kept, set_aside}, seconds, note}`
+`{version, chosen_by: "engine"|"engine+ai"|"none", shape, steps[], insights[], refused[], rounds, rows {kept, set_aside}, seconds, note}`
 
 - **Why typed steps, not model-written code.** A code string from a model would run in the visitor's tab with every
   column in reach and could print any number; Pyodide is not a sandbox. A step is data, `{op, args, why}`; the executor
@@ -808,6 +808,15 @@ robustness. Descriptive: computed from the kept rows, never tested by the engine
   answers under 5 respondents left out).
 - Budget: at most 14 steps and 6 s natively; a round never starts after that. The report stands without the block:
   any failure leaves it empty with one `refused` line.
+- **No grouping by people's words or flagged columns.** A column the AI plan calls `free_text` (review titles,
+  comments) and every column the privacy scan flagged, kept ones too, is never a dimension, an entity or a label, and
+  any step naming it (in `by`, `where` or a measure) is refused: such a column's values can name people, so no step
+  lists them, no figure draws them and the AI planner never sees them.
+- **AI rounds ("Ask your data", docs/ai-analyst/PROTOCOL.md).** The page may append the steps of up to 3 AI rounds:
+  `steps[]` continuing the ids, `insights[]` of kind `planned` (each with its figure, ids 70 and up), their refusals,
+  `asked[]` (the visitor's questions, page-side only) and `chosen_by: "engine+ai"`. `story` is the engine's and does not
+  change. In `results_for_ai`, the insights' figures follow `rep.viz`'s charts and are the first thing the byte budget
+  drops.
 
 ## 6. What this contract does not carry yet (R1)
 

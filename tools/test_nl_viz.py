@@ -860,13 +860,21 @@ def test_results_for_ai_carries_the_records_whole_after_the_analyses_charts_with
         first_viz = next((i for i, c in enumerate(ch) if nv.is_record(c)), len(ch))
         assert all(not nv.is_record(c) for c in ch[:first_viz]) and all(nv.is_record(c) for c in ch[first_viz:]), kinds
         assert first_viz <= 6
-        want = _viz(rep)["charts"][:nv.AI_CHARTS_MAX - first_viz]
+        # rep.viz's records, then the analyst loop's figures (CONTRACT §5.10), each id once
+        recs, seen = [], set()
+        for r in _viz(rep)["charts"] + [i.get("figure") for i in (rep.get("analyst") or {}).get("insights") or [] if i.get("figure")]:
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                recs.append(r)
+        want = recs[:nv.AI_CHARTS_MAX - first_viz]
         # as the record leaves the adapter (nl_viz.for_sending): with a suppressed cell, inputs.rows is null
         sent = [json.loads(json.dumps(r).replace(rep["input"]["name"], NB.FILE_WORD)) for r in want]
         for r in sent:
             if r["suppressed"]["cells"] > 0:
                 r["inputs"]["rows"] = None
-        assert ch[first_viz:] == sent, name
+        # the byte budget drops the analyst loop's figures first (nl_browser._within_budget), from the last
+        kept = ch[first_viz:]
+        assert kept == sent[:len(kept)] and all(NB._analyst_figure(r) for r in sent[len(kept):]), name
     # the model's card, which the worker makes from each record: never the data, a table of at most 12 rows
     rep = _case("reviews_ai")
     cards = nv.cards_for_ai(_viz(rep))
@@ -1550,7 +1558,9 @@ def test_a_withheld_columns_name_in_a_record_is_replaced_not_the_record_dropped(
     rec = _rec(rep, "theme_rating_heatmap")
     assert not [w for w in rec["data"]["rows"] if "phone" in w.split()] and "screen" in rec["data"]["rows"], rec["data"]["rows"]
     sent = [c for c in NB.results_for_ai(rep)["charts"] if _nv().is_record(c)]
-    assert [c["id"] for c in sent] == [rec["id"]], sent
+    # the analyst loop's own figures (ids 50 and up) follow rep.viz's, and none of them reads the subject texts
+    assert [c["id"] for c in sent if not NB._analyst_figure(c)] == [rec["id"]], sent
+    assert not [c["id"] for c in sent if NB._analyst_figure(c) and "subject" in c["inputs"]["columns"]], sent
     # a string that still names it reads "[withheld column]"
     scrub = NB._NameScrub(["phone"])
     r2 = copy.deepcopy(rec)

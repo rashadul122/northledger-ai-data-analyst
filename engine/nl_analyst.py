@@ -713,6 +713,7 @@ class Shape:
         self.measures: List[str] = []
         self.mkind: Dict[str, str] = {}
         self.dims: List[str] = []
+        self.free: List[str] = []          # free-text columns no step reads (shape_of)
         self.primary: Optional[str] = None
         self.aggregates: List[str] = []
         self.agg_how = ""
@@ -788,9 +789,13 @@ def _rating_histograms(df, kinds: Dict[str, str]) -> None:
 
 def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -> Shape:
     """What the file is: its time axis, measures, dimensions, entity and kind. hint: {"date", "primary",
-    "entity"} from an AI plan (each used only when it names a column of the frame)."""
+    "entity", "free_text"} from an AI plan (each used only when it names a column of the frame). A free-text column
+    (review titles, comments) is never a dimension, an entity or a label: its values are people's own words, which
+    can name people, so no step lists them, and the AI planner never sees them."""
     hint = hint or {}
+    free = {str(c) for c in hint.get("free_text") or [] if isinstance(c, str)}
     sh = Shape()
+    sh.free = sorted(free & set(map(str, df.columns)))
     n = len(df)
     sh.date, sh.dates, sh.grain, sh.date_how = None, None, "", ""
     if hint.get("date") in df.columns:
@@ -807,7 +812,7 @@ def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -
     if sh.date_how.startswith(str(sh.date) + " with the month in "):
         month_col = sh.date_how.split(" with the month in ", 1)[1]
     for c in df.columns:
-        if c in (sh.date, month_col):
+        if c in (sh.date, month_col) or c in free:
             continue
         k = kinds.get(c)
         if k == "number":
@@ -860,7 +865,7 @@ def shape_of(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]] = None) -
             return (not unique, -round(words, 1), label_cands.index(c))
 
         sh.label = sorted(label_cands, key=readable)[0]
-    if hint.get("entity") in df.columns and kinds.get(hint["entity"]) == "text":
+    if hint.get("entity") in df.columns and kinds.get(hint["entity"]) == "text" and hint["entity"] not in free:
         sh.entity = hint["entity"]
         if sh.entity in sh.dims:
             sh.dims.remove(sh.entity)
@@ -1150,8 +1155,8 @@ class Ctx:
             if name in self.df.columns
             else next((c for c in self.df.columns if c.lower() == name.lower()), None)
         )
-        if hit is None:
-            return None
+        if hit is None or hit in getattr(self.sh, "free", ()):
+            return None                          # a free-text column is read by no step (shape_of)
         if want == "measure" and hit not in self.sh.measures:
             return None
         if want == "dim" and hit not in self.sh.dims + (
@@ -4426,9 +4431,9 @@ def explore(
             # the chart that shows it: the first of its steps with one not drawn already (one chart, one finding)
             for sid in sids:
                 st = ctx.steps.get(sid)
-                if st is None or sid in drawn or len(ins) >= 99:
+                if st is None or sid in drawn or len(ins) >= 49:
                     continue
-                fig = _figure(st, len(ins) + 1, text)
+                fig = _figure(st, 50 + len(ins), text)  # 50 to 98: never the id of a chart rep.viz chose (1 to 49)
                 if fig is not None:
                     drawn.add(sid)
                     it["figure"] = fig
@@ -5315,15 +5320,20 @@ def run_steps(
         done.append(st)
         s = _sentence(st, ctx.steps)
         if s:
-            ins.append(
-                {
-                    "id": "P%d.%d" % (rnd, len(ins) + 1),
-                    "kind": "planned",
-                    "template": s[0],
-                    "text": s[1],
-                    "steps": [st.id],
-                }
-            )
+            it = {
+                "id": "P%d.%d" % (rnd, len(ins) + 1),
+                "kind": "planned",
+                "template": s[0],
+                "text": s[1],
+                "steps": [st.id],
+            }
+            # its chart, numbered 70 and up by round (4 a round): never an id the engine's own insights (50 on) or
+            # rep.viz (1 to 49) hold, while the engine's rounds stay under 20 insights
+            n = 70 + 4 * max(0, rnd - 6) + len(ins)
+            fig = _figure(st, n, s[1]) if n <= 98 else None
+            if fig is not None:
+                it["figure"] = fig
+            ins.append(it)
     return {
         "shape": sh.to_dict(),
         "steps": [s.to_dict() for s in done],

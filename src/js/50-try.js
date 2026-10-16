@@ -1694,6 +1694,12 @@
       } else if (m.type === 'results_json') {
         // the engine's distilled results (results_for_ai), asked for by askAiReport
         if (S.onResults) S.onResults(m.results || null);
+      } else if (m.type === 'ledger_json') {
+        // what the AI planner may see of the analyst's steps (ledger_for_ai), asked for by askData
+        if (S.onLedger) S.onLedger(m.id, Array.isArray(m.steps) ? m.steps : null);
+      } else if (m.type === 'more_json') {
+        // the planner's steps, run by the engine on the file's rows (nl_analyst.run_steps), asked for by askData
+        if (S.onMore) S.onMore(m.id, m.out && typeof m.out === 'object' ? m.out : null);
       } else if (m.type === 'error') {
         var e = ERR[m.code] || ERR.engine;
         refuse('engine', { title: e[0], body: (m.message ? m.message + ' ' : '') + e[1],
@@ -2510,6 +2516,82 @@
       worker().postMessage({ type: 'results', id: seq, report: rep });
     }
 
+    // "Ask your data" (docs/ai-analyst/PROTOCOL.md): one AI round a question, at most ASK_ROUNDS a file. The worker
+    // tells what the planner may see (ledger_for_ai: the steps so far with their printed figures, never a row); the
+    // worker's /analyst picks up to four typed steps; the engine runs them on the file's rows, checking each again;
+    // their insights join the analyst's card. On any failure the card stays as it was and the box says why.
+    var ASK_ROUNDS = 3, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
+    function askData(question, say) {
+      var rep = S.report, b = rep && rep.analyst;
+      if (!b || !planOn()) { say('The AI is off for this file, so questions cannot be asked.', false); return; }
+      var done = (b.asked || []).length;
+      if (done >= ASK_ROUNDS) { say('That is the ' + ASK_ROUNDS + ' questions a file can take. Run the file again to ask more.', false); return; }
+      // the worker echoes the run's id (onMsg drops any other); the box is disabled while a question is out, so one at a time
+      var seq = S.seq, id = seq, w = worker();
+      say('Asking the AI which checks answer this\u2026', true);
+      function fail(why) {
+        S.onLedger = null; S.onMore = null;
+        if (seq === S.seq) say(why, false);
+      }
+      S.onLedger = function (gotId, steps) {
+        if (gotId !== id) return;
+        S.onLedger = null;
+        if (seq !== S.seq) return;
+        if (!steps) return fail('The engine could not list its steps, so the question was not sent.');
+        var ctrl = window.AbortController ? new AbortController() : null;
+        var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, ASK_ABORT_MS);
+        fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: done + 1 }),
+          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (res) {
+            return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; });
+          })
+          .then(function (x) {
+            clearTimeout(timer);
+            if (seq !== S.seq) return;
+            var j = x.j || {};
+            if (x.status !== 200 || !Array.isArray(j.steps)) {
+              return fail(x.status === 404 ? 'Questions are not switched on for this site yet.'
+                : x.status === 429 ? 'Too many questions just now. Wait a minute and ask again.'
+                : 'The AI could not pick the checks this time' + (j.error ? ' (' + String(j.error).slice(0, 80) + ')' : '') + '. The analysis above stands as it is.');
+            }
+            if (!j.steps.length) {
+              b.asked = (b.asked || []).concat([question]);
+              return fail('The AI found no check the engine can run for this question' +
+                (Array.isArray(j.dropped) && j.dropped.length ? ' (it asked for ' + j.dropped.length + ' the engine does not allow)' : '') + '. Try asking about one of your columns.');
+            }
+            say('Running ' + j.steps.length + (j.steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
+            w.postMessage({ type: 'more', id: id, steps: j.steps, prior: b.steps || [] });
+          })
+          .catch(function (e) {
+            clearTimeout(timer);
+            fail(e && e.name === 'AbortError' ? 'The AI took too long to answer. Try again.' : 'The question could not reach the AI. Check your connection and try again.');
+          });
+      };
+      S.onMore = function (gotId, out) {
+        if (gotId !== id) return;
+        S.onMore = null;
+        if (seq !== S.seq) return;
+        if (!out || !Array.isArray(out.steps)) return fail('The engine could not run the checks the AI picked.');
+        var ins = (out.insights || []).filter(function (i) { return i && typeof i.text === 'string' && i.text.trim(); });
+        b.steps = (b.steps || []).concat(out.steps);
+        b.insights = (b.insights || []).concat(ins);
+        b.refused = (b.refused || []).concat(out.refused || []);
+        if (typeof out.round === 'number') b.rounds = Math.max(b.rounds || 0, out.round);
+        b.asked = (b.asked || []).concat([question]);
+        b.chosen_by = 'engine+ai';
+        if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, ins.length ? ins[0].id : null);
+        // a step the engine would not run says why in the step itself (ok false, refused), or in out.refused
+        var why = out.steps.filter(function (x) { return x && !x.ok && x.refused; }).map(function (x) { return x.refused; })
+          .concat((out.refused || []).map(function (x) { return x && x.why; }).filter(Boolean));
+        var f = el.report.querySelector('form.nla-ask .nla-ask-status');
+        if (f) f.textContent = ins.length ? 'Answered with ' + ins.length + (ins.length === 1 ? ' new finding' : ' new findings') + ', under \u201cWhat you asked\u201d.'
+          : 'The checks ran but none gave a finding the engine can state' + (why.length ? ': ' + String(why[0]).slice(0, 160).replace(/[.\s]+$/, '') + '.' : '.');
+      };
+      w.postMessage({ type: 'ledger', id: id, block: b });
+    }
+
     // the AI-written report card: the storytelling text, its sources, the share and PDF actions,
     // and the NorthLedger watermark, mirroring the shared-link viewer
     function drawAiReport(j) {
@@ -3088,7 +3170,9 @@
       return h;
     }
     function tailHtml(r) {
-      // what the analyst loop found (rep.analyst; src/js/53-analyst.js), in both layouts, before the downloads
+      // what the analyst loop found (rep.analyst; src/js/53-analyst.js), in both layouts, before the downloads; with
+      // the AI chosen, its "Ask your data" box (askData)
+      if (window.NLA) window.NLA.onAsk = CFG.ask_data === true && planOn() && r.ok && r.analyst ? askData : null;
       var h = window.NLA ? window.NLA.html(r) : '';
       var hasLine = /^source_line,/.test(r.downloads.clean_csv) || /^source_line,/.test(r.downloads.quarantine_csv);
       var held = r.privacy.flagged.filter(function (f) { return f.decision === 'withhold'; }).map(function (f) { return f.column; });

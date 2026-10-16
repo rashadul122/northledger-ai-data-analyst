@@ -132,20 +132,26 @@ stops the AI rounds; the engine's block stands as it is.
 | Worker wait for the model | 25 s | `ANALYST_TIMEOUT_MS` |
 | page wait for the Worker | Worker wait + 10 s (35 s) | the timeout invariant of `src/js/50-try.js` |
 
-## The page loop (to build)
+## The page loop: "Ask your data"
 
-1. The engine run returns the report with `analyst` (rounds 1 to 5 by the engine, the story built from them).
-2. If the AI is on (`planOn()`), the page asks the engine worker for `ledger_for_ai(rep.analyst)` and posts
-   `{objective, shape: rep.analyst.shape, steps_so_far, round: 1}` to `/analyst`.
-3. The returned steps go back to the engine worker, which runs
-   `nl_analyst.run_steps(df, kinds, steps, hint, prior=analyst.steps)` on the same analysis frame (`_analysis_frame`
-   of the last run, kept in the worker: a new hook such as `nl_browser.analyst_more(steps_json)` is needed, since
-   `run()` does not keep the frame). Step ids and the round continue after the engine's; refused steps keep their
-   reason. The page appends `steps`, `insights` (kind `planned`, each a template filled from its own ledger) and
-   `refused` to `rep.analyst` and sets `chosen_by` to `"engine+ai"`.
-4. Repeat with `round` + 1 and the longer `steps_so_far` until `done`, round 3, a Worker error, or the visitor
-   leaves. Each round runs in the engine worker with its own 3 s budget.
-5. `/report` then gets the block as it does today; its template guard is unchanged: the report cites the engine's
+Built in `src/js/50-try.js` (`askData`) and `src/js/53-analyst.js` (the box, `NLA.onAsk`, `NLA.refresh`). The box
+shows under the analyst's card only when `site.config.json` has `"ask_data": true` (set it after the Worker routes
+`POST /analyst`) and the visitor chose the AI for this file (`planOn()`).
+
+1. The engine run returns the report with `analyst` (rounds 1 to 5 by the engine, the story built from them). The
+   engine worker keeps that run's analysis frame (`nl_browser._LAST_ANALYST`).
+2. The visitor types a question. The page asks the engine worker for `ledger_for_ai(rep.analyst)` (message
+   `ledger`, answered `ledger_json`) and posts `{objective: the question, shape: rep.analyst.shape, steps_so_far,
+   round}` to `/analyst`, one AI round a question, at most 3 questions a file (`round` 1 to 3).
+3. The returned steps go back to the engine worker (message `more`, answered `more_json`), which runs
+   `nl_browser.analyst_more_json` = `nl_analyst.run_steps(df, kinds, steps, hint, prior=analyst.steps)` on the
+   kept frame. Step ids and the round continue after the steps so far; a refused step keeps its reason (`ok`
+   false, `refused`). The page appends `steps`, `insights` (kind `planned`, each a template filled from its own
+   ledger, with its chart) and `refused` to `rep.analyst`, records the question in `asked`, sets `chosen_by` to
+   `"engine+ai"`, redraws the card in place under "What you asked" and moves focus to the first new insight.
+4. Any Worker error (404 when the route is not deployed, 429, 503, a timeout of 35 s) leaves the card as it was
+   and the box says why in one line.
+5. A later `/report` gets the block as it then is; its template guard is unchanged: the report cites the engine's
    figures, never the model's.
 
 The story (`analyst.story`) is built by the engine from its own rounds; the planned insights do not change it (a

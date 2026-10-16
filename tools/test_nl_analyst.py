@@ -147,6 +147,23 @@ def test_a_withheld_column_never_reaches_a_step_and_a_planner_naming_it_is_refus
         assert not s["numbers"] and not s["table"]["rows"], s
 
 
+def test_a_free_text_or_personal_column_is_never_a_grouping_and_a_planner_naming_it_is_refused():
+    # people's own words (review titles) and flagged columns (a kept guest name) can name people: no step lists them
+    df = _orders()
+    df["date"] = pd.to_datetime(df["date"])
+    kinds = {c: ("number" if pd.api.types.is_numeric_dtype(df[c]) else "text") for c in df.columns}
+    kinds["date"] = "date"
+    assert "region" in na.shape_of(df, kinds).dims
+    sh = na.shape_of(df, kinds, {"free_text": ["region", "not_a_column"]})
+    assert "region" not in sh.dims and sh.entity != "region" and sh.free == ["region"], (sh.dims, sh.free)
+    out = na.explore(df, kinds, {"free_text": ["region"]})
+    assert "region" not in json.dumps([s["args"] for s in out["steps"]]), [s["args"] for s in out["steps"]]
+    got = na.run_steps(df, kinds, [{"op": "breakdown", "args": {"measure": "revenue", "by": "region"}},
+                                   {"op": "change", "args": {"measure": "revenue", "where": {"region": "East"}}}],
+                       {"free_text": ["region"]})
+    assert all(not s["ok"] for s in got["steps"]) and not got["insights"], got["steps"]
+
+
 def test_unknown_ops_and_columns_are_refused_with_a_reason():
     df = _orders()
     df["date"] = pd.to_datetime(df["date"])

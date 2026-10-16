@@ -19,7 +19,7 @@
   function obj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
 
   // the insight kinds, in the order an analyst reads them, with the heading each group gets
-  var KINDS = [['headline', 'The headline'], ['trend', 'The long run'], ['driver', 'What carried the change'],
+  var KINDS = [['headline', 'The headline'], ['planned', 'What you asked'], ['trend', 'The long run'], ['driver', 'What carried the change'],
     ['drill', 'Inside the top group'], ['mix', 'Rate or mix'], ['relationship', 'Measures that move together'],
     ['yoy', 'Against a year earlier'], ['seasonality', 'The seasonal pattern'], ['concentration', 'How concentrated'],
     ['distribution', 'How the values spread'], ['robustness', 'Does it hold up']];
@@ -108,6 +108,7 @@
       '<div class="viz" id="' + id + '"></div><div class="nla-fig-note"></div></figure>';
   }
   A.mount = function (root) {
+    if (root) bindAsk(root);
     var U = window.NLU;
     if (!root || !U || !U.visual || !window.NLV) return;
     if (window.NLC && window.NLC.extendNLV) window.NLC.extendNLV(window.NLV);
@@ -172,6 +173,58 @@
     return bits.join(' ');
   }
 
+  // "Ask your data" (docs/ai-analyst/PROTOCOL.md): shown only when src/js/50-try.js sets A.onAsk, which it does when
+  // the visitor chose the AI. The question and the steps so far (their printed figures, never a row) go to the AI
+  // planner; the steps it asks for run here, in the engine, checked again, and every figure in an answer is the
+  // engine's. A.onAsk(question, say) calls say(text, busy) as it goes.
+  A.onAsk = null;
+  function askHtml(b) {
+    if (typeof A.onAsk !== 'function') return '';
+    var asked = arr(b.asked).filter(function (q) { return typeof q === 'string' && q; });
+    return '<form class="nla-ask" novalidate><label for="nla-q"><strong>Ask your data</strong> a question the analysis above does not answer</label>' +
+      (asked.length ? '<p class="nla-asked muted">You asked: ' + asked.map(function (q) { return '\u201c' + esc(q) + '\u201d'; }).join(', ') + '</p>' : '') +
+      '<div class="nla-ask-row"><input id="nla-q" name="q" type="text" maxlength="300" autocomplete="off" placeholder="e.g. Which group grew fastest?" required>' +
+      '<button type="submit" class="btn btn-primary">Ask</button></div>' +
+      '<p class="nla-ask-note muted">The AI only picks which checks to run: it sees your column names and the figures above, never a row. ' +
+      'The checks run here, in your browser, and every number in the answer is computed by the engine.</p>' +
+      '<p class="nla-ask-status" role="status" aria-live="polite"></p></form>';
+  }
+  function bindAsk(root) {
+    var f = root.querySelector('form.nla-ask');
+    if (!f || f.getAttribute('data-bound')) return;
+    f.setAttribute('data-bound', '1');
+    var input = f.querySelector('input'), btn = f.querySelector('button'), out = f.querySelector('.nla-ask-status');
+    function say(text, busy) {
+      if (out) out.textContent = text || '';
+      if (input) input.disabled = !!busy;
+      if (btn) btn.disabled = !!busy;
+      f.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var q = input ? String(input.value || '').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+      if (q.length < 3) { say('Type a question first.', false); if (input) input.focus(); return; }
+      if (typeof A.onAsk === 'function') A.onAsk(q, say);
+    });
+  }
+  // the card again, in place, after an AI round added to the block; the page scrolls to the first new insight
+  A.refresh = function (root, r, focusId) {
+    var old = root && root.querySelector('section.nla');
+    if (!old) return;
+    var box = document.createElement('div');
+    box.innerHTML = A.html(r);
+    var sec = box.querySelector('section.nla');
+    if (!sec) return;
+    old.parentNode.replaceChild(sec, old);
+    A.mount(sec);
+    var to = focusId ? document.getElementById(anchor(focusId)) : null;
+    if (to) {
+      to.setAttribute('tabindex', '-1');
+      if (to.scrollIntoView) to.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      try { to.focus({ preventScroll: true }); } catch (e) { /* an old browser */ }
+    }
+  };
+
   A.html = function (r) {
     var b = r && obj(r.analyst) ? r.analyst : null;
     if (!b) return '';
@@ -207,6 +260,6 @@
       h += '<details class="more nla-refused"><summary>' + (ins.length ? 'Steps it did not run (' + count(refused.length) + ')' : 'Why it did not run') + '</summary><ul class="nla-list">' +
         refused.map(function (x) { return '<li>' + (x.op && x.op !== 'all' ? '<code>' + esc(x.op) + '</code>: ' : '') + esc(x.why || '') + '</li>'; }).join('') + '</ul></details>';
     }
-    return h + '</section>';
+    return h + askHtml(b) + '</section>';
   };
 }());

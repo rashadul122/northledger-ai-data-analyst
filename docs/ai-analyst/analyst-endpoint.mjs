@@ -10,9 +10,12 @@
 // steps, the engine computes them in the visitor's tab (nl_analyst.run_steps) and every number on screen comes from
 // the engine's ledger. A `why` holding a digit is blanked, so not even the reason can carry a number.
 //
-// Environment (wrangler.toml [vars] / secrets):
-//   ANTHROPIC_API_KEY     secret
-//   ANALYST_MODEL         default "claude-opus-5-5"
+// Environment (wrangler.toml [vars] / secrets). The model is DeepSeek when DEEPSEEK_API_KEY is set (the site's own
+// worker words /plan and /report with it), else Claude:
+//   DEEPSEEK_API_KEY      secret (npx wrangler secret put DEEPSEEK_API_KEY): DeepSeek's chat API, JSON mode
+//   DEEPSEEK_MODEL        default "deepseek-chat"
+//   ANTHROPIC_API_KEY     secret, used only when DEEPSEEK_API_KEY is not set
+//   ANALYST_MODEL         default "claude-opus-5-5" (the Claude path)
 //   ANALYST_TIMEOUT_MS    default 25000 (the page waits ANALYST_TIMEOUT_MS + 10 s, see PROTOCOL.md "Timeouts")
 //   ANALYST_MAX_TOKENS    default 4000 (thinking is always on for this model and counts against it)
 //   ANALYST_EFFORT        default "low"
@@ -353,7 +356,8 @@ export async function handleAnalyst(request, env) {
   if (!prior) return json({ error: "bad_steps_so_far" }, 400);
   if (!Number.isInteger(round) || round < 1 || round > ANALYST_LIMITS.maxRounds)
     return json({ error: "bad_round" }, 400);
-  if (!env.ANTHROPIC_API_KEY) return json({ error: "not_configured" }, 503);
+  if (!env.DEEPSEEK_API_KEY && !env.ANTHROPIC_API_KEY)
+    return json({ error: "not_configured" }, 503);
 
   const variants = narrowSchema(shape);
   if (!variants.length) return json({ steps: [], done: true, dropped: [] });
@@ -378,69 +382,14 @@ export async function handleAnalyst(request, env) {
     })),
   });
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(
-    () => ctrl.abort(),
-    Number(env.ANALYST_TIMEOUT_MS) || 25000,
-  );
-  let res;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        // a declined request is re-run server-side on Anthropic's recommended fallback model
-        "anthropic-beta": "server-side-fallback-2026-07-01",
-      },
-      body: JSON.stringify({
-        model: env.ANALYST_MODEL || "claude-opus-5-5",
-        max_tokens: Number(env.ANALYST_MAX_TOKENS) || 4000,
-        fallbacks: "default",
-        output_config: {
-          effort: env.ANALYST_EFFORT || "low",
-          format: {
-            type: "json_schema",
-            schema: outputSchema(variants.map((v) => v.op)),
-          },
-        },
-        system: [
-          {
-            type: "text",
-            text: SYSTEM_PROMPT,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        messages: [{ role: "user", content: user }],
-      }),
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    return json(
-      { error: ctrl.signal.aborted ? "timeout" : "upstream" },
-      ctrl.signal.aborted ? 504 : 502,
-    );
-  }
-  clearTimeout(timer);
-  if (!res.ok)
-    return json(
-      { error: res.status === 429 ? "busy" : "upstream" },
-      res.status === 429 ? 429 : 502,
-    );
-  const msg = await res.json();
-  if (msg.stop_reason === "refusal")
+  const got = env.DEEPSEEK_API_KEY
+    ? await callDeepSeek(env, user, variants)
+    : await callClaude(env, user, variants);
+  if (got.error) return json({ error: got.error }, got.status);
+  if (got.refused)
     return json({ steps: [], done: true, dropped: [], note: "refused" });
-  if (msg.stop_reason === "max_tokens")
-    return json({ error: "truncated" }, 502);
-  const block = (msg.content || []).find((b) => b.type === "text");
-  let answer;
-  try {
-    answer = JSON.parse(block ? block.text : "");
-  } catch (e) {
-    return json({ error: "bad_answer" }, 502);
-  }
+  const answer = got.answer;
+  const msg = { model: got.model, usage: got.usage };
 
   const steps = [],
     dropped = [];
@@ -473,11 +422,129 @@ export async function handleAnalyst(request, env) {
     done,
     dropped,
     model: msg.model,
-    usage: msg.usage
-      ? {
-          input_tokens: msg.usage.input_tokens,
-          output_tokens: msg.usage.output_tokens,
-        }
-      : undefined,
+    usage: msg.usage,
   });
+}
+
+// ------------------------------------------------------------------------------------------------ the model calls
+// Each returns {answer, model, usage} with the parsed answer form, {refused: true}, or {error, status} as the
+// protocol names them (504 timeout, 429 busy, 502 upstream | bad_answer | truncated).
+async function post(url, headers, body, env) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(
+    () => ctrl.abort(),
+    Number(env.ANALYST_TIMEOUT_MS) || 25000,
+  );
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: Object.assign({ "content-type": "application/json" }, headers),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok)
+      return res.status === 429
+        ? { error: "busy", status: 429 }
+        : { error: "upstream", status: 502 };
+    return { res: await res.json() };
+  } catch (e) {
+    return ctrl.signal.aborted
+      ? { error: "timeout", status: 504 }
+      : { error: "upstream", status: 502 };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseAnswer(text) {
+  try {
+    const a = JSON.parse(text || "");
+    return a && typeof a === "object" ? a : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// DeepSeek (OpenAI-compatible chat API). JSON mode guarantees a JSON object, not the schema, so the answer form is
+// spelled out in the system turn and every step is still checked by checkStep before it leaves the worker.
+export async function callDeepSeek(env, user, variants) {
+  const form = JSON.stringify(outputSchema(variants.map((v) => v.op)));
+  const r = await post(
+    "https://api.deepseek.com/chat/completions",
+    { authorization: "Bearer " + env.DEEPSEEK_API_KEY },
+    {
+      model: env.DEEPSEEK_MODEL || "deepseek-chat",
+      temperature: 0,
+      max_tokens: Math.min(Number(env.ANALYST_MAX_TOKENS) || 2000, 8000),
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            SYSTEM_PROMPT +
+            "\n\nAnswer with one JSON object of this JSON schema, every field present:\n" +
+            form,
+        },
+        { role: "user", content: user },
+      ],
+    },
+    env,
+  );
+  if (r.error) return r;
+  const choice = (r.res.choices || [])[0] || {};
+  if (choice.finish_reason === "length")
+    return { error: "truncated", status: 502 };
+  if (choice.finish_reason === "content_filter") return { refused: true };
+  const answer = parseAnswer(choice.message && choice.message.content);
+  if (!answer) return { error: "bad_answer", status: 502 };
+  const u = r.res.usage || {};
+  return {
+    answer,
+    model: r.res.model,
+    usage: { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens },
+  };
+}
+
+// Claude (Messages API), structured output against the flat answer form.
+export async function callClaude(env, user, variants) {
+  const r = await post(
+    "https://api.anthropic.com/v1/messages",
+    {
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      // a declined request is re-run server-side on Anthropic's recommended fallback model
+      "anthropic-beta": "server-side-fallback-2026-07-01",
+    },
+    {
+      model: env.ANALYST_MODEL || "claude-opus-5-5",
+      max_tokens: Number(env.ANALYST_MAX_TOKENS) || 4000,
+      fallbacks: "default",
+      output_config: {
+        effort: env.ANALYST_EFFORT || "low",
+        format: {
+          type: "json_schema",
+          schema: outputSchema(variants.map((v) => v.op)),
+        },
+      },
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+      ],
+      messages: [{ role: "user", content: user }],
+    },
+    env,
+  );
+  if (r.error) return r;
+  const msg = r.res;
+  if (msg.stop_reason === "refusal") return { refused: true };
+  if (msg.stop_reason === "max_tokens") return { error: "truncated", status: 502 };
+  const block = (msg.content || []).find((b) => b.type === "text");
+  const answer = parseAnswer(block && block.text);
+  if (!answer) return { error: "bad_answer", status: 502 };
+  return {
+    answer,
+    model: msg.model,
+    usage: msg.usage
+      ? { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens }
+      : undefined,
+  };
 }

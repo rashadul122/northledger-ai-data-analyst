@@ -1483,6 +1483,8 @@ def try_payload(I):
     return {"max_bytes": TRY_MAX_BYTES, "max_rows": TRY_MAX_ROWS, "max_label": lab["try_max_mb"], "rows_label": lab["try_max_rows"],
             "worker": TRY_WORKER, "sample": TRY_SAMPLE, "sample_as_of": str(sample.get("as_of") or ""),
             "ai_proxy_url": try_proxy(cfg)[0],
+            # "Ask your data" (docs/ai-analyst/PROTOCOL.md): on only when the owner's Worker answers POST /analyst
+            "ask_data": bool(try_proxy(cfg)[0]) and cfg.get("ask_data") is True,
             "contact_email": (cfg.get("contact_email") or nested.get("email") or "").strip(),
             "booking_url": (cfg.get("booking_url") or nested.get("booking_url") or "").strip(),
             "badges": BADGE_ICON}

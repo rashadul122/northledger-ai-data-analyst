@@ -1224,3 +1224,15 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 /* a table keeps whole words: it scrolls sideways inside its own box instead of breaking a name letter by letter */
 .nla-tbl th, .nla-tbl td { overflow-wrap: normal; word-break: normal; }
 .nla-tbl tbody th { min-width: 9em; }
+/* "Ask your data" (src/js/53-analyst.js askHtml): the question box under the analyst's card, shown when the AI is on */
+.nla-ask { margin: 18px 0 0; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg); }
+.nla-ask label { display: block; margin: 0 0 8px; }
+.nla-ask-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.nla-ask-row input { flex: 1 1 16em; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.nla-ask-row input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.nla-ask-row input:disabled { opacity: 0.6; }
+.nla-ask-note, .nla-asked { margin: 8px 0 0; font-size: 13px; }
+.nla-ask-status { margin: 6px 0 0; font-size: 14px; min-height: 1.2em; }
+.nla-ask[aria-busy="true"] .nla-ask-status::before { content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 6px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; vertical-align: -1px; animation: nla-spin 0.8s linear infinite; }
+@keyframes nla-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nla-ask[aria-busy="true"] .nla-ask-status::before { animation: none; } }

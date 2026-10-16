@@ -2951,6 +2951,50 @@ def test_results_for_ai_forecast_reaches_the_proxy_as_the_page_shows_it():
         assert all(isinstance(p.get("value"), (int, float)) for p in v["points"]), v["points"][:2]
 
 
+def test_the_report_writer_gets_the_analysts_key_numbers_and_its_charts():
+    rep = _run(_fx("run2_replan.csv"), "run2_replan.csv")
+    ai = NB.results_for_ai(rep)
+    figs = [i["figure"] for i in rep["analyst"]["insights"] if i.get("figure")]
+    assert figs, [i["text"] for i in rep["analyst"]["insights"]]
+    ids = [c.get("id") for c in ai["charts"]]
+    assert len(ids) == len(set(ids)) and len(ids) <= 10, ids
+    sent = [c for c in ai["charts"] if int(str(c.get("id", "viz.0.x")).split(".")[1]) >= 50]
+    assert sent and all(c["summary"] in [i["text"][:399] for i in rep["analyst"]["insights"]] or c["summary"].endswith("\u2026")
+                        for c in sent), [c["summary"] for c in sent]
+    tiles = rep["analyst"]["story"]["key_numbers"]
+    assert tiles and ai["analyst_insights"][0].startswith("Key numbers: " + tiles[0]["value"]), ai["analyst_insights"][:1]
+    assert all(k["value"] in ai["analyst_insights"][0] for k in tiles), (tiles, ai["analyst_insights"][0])
+    got = _proxy_validate(ai)
+    if got is not None:
+        assert got["ok"], got
+
+
+def test_ask_your_data_runs_the_planners_steps_on_the_last_files_rows():
+    # "Ask your data" (docs/ai-analyst/PROTOCOL.md): the planner sees the steps so far as printed figures, never a row,
+    # and the steps it picks run on the frame of the last run, checked again, their ids after the engine's own
+    rep = _run(_fx("run2_replan.csv"), "run2_replan.csv")
+    b = rep["analyst"]
+    led = json.loads(NB.analyst_ledger_json(json.dumps(b)))
+    assert [s["id"] for s in led] == [s["id"] for s in b["steps"]]
+    assert all(set(s) == {"id", "round", "op", "args", "why", "ok", "refused", "figures"} for s in led), led[0]
+    assert all(isinstance(v, str) for s in led for v in s["figures"].values()), "a figure went out as a raw value"
+    m, dim = b["shape"]["primary"], b["shape"]["dimensions"][-1]
+    steps = [{"op": "breakdown", "args": {"measure": m, "by": dim}, "why": "the visitor asked"},
+             {"op": "breakdown", "args": {"measure": "no_such_column", "by": dim}, "why": "a column the file lacks"}]
+    out = json.loads(NB.analyst_more_json(json.dumps(steps), json.dumps(b["steps"])))
+    n = len(b["steps"])
+    assert [s["id"] for s in out["steps"]] == ["A%d" % (n + 1), "A%d" % (n + 2)], out["steps"]
+    assert out["steps"][0]["ok"] and not out["steps"][1]["ok"] and out["steps"][1]["refused"], out["steps"][1]
+    assert out["round"] > max(s["round"] for s in b["steps"])
+    ins = out["insights"]
+    assert len(ins) == 1 and ins[0]["kind"] == "planned" and ins[0]["steps"] == ["A%d" % (n + 1)], ins
+    assert ins[0]["id"] not in {i["id"] for i in b["insights"]} and ins[0]["figure"]["id"].startswith("viz."), ins[0]
+    assert int(ins[0]["figure"]["id"].split(".")[1]) >= 70, ins[0]["figure"]["id"]
+    # garbage in: nothing runs, and it says why
+    bad = json.loads(NB.analyst_more_json("not json", "[]"))
+    assert bad["steps"] == [] and bad["insights"] == [] and bad["refused"], bad
+
+
 def test_the_profile_tells_the_planner_the_time_span_and_what_the_analyses_need():
     prof = NB.profile_for_ai(_fx("run2_replan.csv"), "run2_replan.csv")
     assert prof["time"] == {"column": "order_date", "first": "2024-01", "last": "2025-11", "months": 23, "distinct_years": 2}, prof["time"]

@@ -4446,13 +4446,18 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         charts_max = _nv.AI_CHARTS_MAX
     except ImportError:
         _nv, charts_max = None, 10
-    for rec in ((rep.get("viz") or {}).get("charts") or []) if _nv is not None else []:
+    # then the analyst loop's charts (each the chart of one insight, rep.analyst.insights[].figure; CONTRACT §5.10), in
+    # the loop's order: its title and summary (the insight's own sentence) tell the writer which finding it shows
+    ana_figs = [i.get("figure") for i in ((rep.get("analyst") or {}).get("insights") or []) if isinstance(i, dict)]
+    seen_ids = set()
+    for rec in (((rep.get("viz") or {}).get("charts") or []) + [f for f in ana_figs if f]) if _nv is not None else []:
         if len(charts) >= charts_max:
             break
-        if not _nv.is_record(rec):
+        if not _nv.is_record(rec) or rec.get("id") in seen_ids:
             continue
         sent = _nv.for_sending(rec, scrub)
         if sent is not None:
+            seen_ids.add(rec.get("id"))
             charts.append(sent)
 
     # the scenario and contribution block (engine/nl_scenarios.py), 1:1: every key, every figure and every text as
@@ -4641,8 +4646,19 @@ ANALYST_INSIGHT_MAX = 400
 
 def _analyst_insights_for_ai(block: Any, safe: Any, scrub: Any) -> List[str]:
     """The texts of rep.analyst's insights for the report writer: as the report holds them, made safe as every other
-    text in results_for_ai; an insight whose text names a withheld column is left out, never reworded."""
+    text in results_for_ai; an insight whose text names a withheld column is left out, never reworded. First, when the
+    story has them, one line of its key numbers (story.key_numbers: each a printed ledger value with its label), the
+    figures the writer should lead with."""
     out: List[str] = []
+    st = block.get("story") if isinstance(block, dict) else None
+    tiles = [k for k in ((st or {}).get("key_numbers") or []) if isinstance(k, dict) and k.get("value")]
+    parts = []
+    for k in tiles:
+        bit = "%s (%s%s)" % (k["value"], k.get("label") or "", "; " + k["note"] if k.get("note") else "")
+        if not scrub.names(bit):
+            parts.append(bit)
+    if parts:
+        out.append(_cut_words(safe("Key numbers: " + "; ".join(parts) + ".", 4000), ANALYST_INSIGHT_MAX))
     for ins in (block.get("insights") if isinstance(block, dict) else None) or []:
         if len(out) >= ANALYST_INSIGHTS_MAX:
             break
@@ -4711,6 +4727,12 @@ def _budget_drop_order(items: List[Dict[str, Any]]) -> List[int]:
     return facts + beyond + core_seg + rest
 
 
+def _analyst_figure(rec: Any) -> bool:
+    """Whether a chart record is one the analyst loop drew (id "viz.<n>.<kind>" with n of 50 or more)."""
+    parts = str(rec.get("id") if isinstance(rec, dict) else "").split(".")
+    return len(parts) >= 3 and parts[0] == "viz" and parts[1].isdigit() and int(parts[1]) >= 50
+
+
 def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int,
                    links: Optional[List[Tuple[Optional[int], Optional[int]]]] = None) -> Dict[str, Any]:
     """final(out), at most RESULTS_MAX_BYTES: scenario items dropped (_budget_drop_order) until it fits, the "Where the
@@ -4722,6 +4744,14 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
     from the end. Never returns a payload over the budget."""
     done = final(out)
     size = _payload_bytes(done)
+    if size <= RESULTS_MAX_BYTES:
+        return done
+    # first the analyst loop's charts (figure ids 50 and up, CONTRACT §5.10), from the last: each only draws an
+    # insight whose sentence is still sent, so it goes before any computed item does
+    while size > RESULTS_MAX_BYTES and out.get("charts") and _analyst_figure(list(out["charts"])[-1]):
+        out = dict(out, charts=list(out["charts"])[:-1])
+        done = final(out)
+        size = _payload_bytes(done)
     if size <= RESULTS_MAX_BYTES:
         return done
     sc = out.get("scenarios") if isinstance(out.get("scenarios"), dict) else None
@@ -4830,6 +4860,40 @@ def _swap_text(x: Any, old: str, new: str) -> Any:
     if isinstance(x, dict):
         return {k: _swap_text(v, old, new) for k, v in x.items()}
     return x
+
+
+# The analysis frame of the last run (see _analyst_block): read only by analyst_more_json, replaced by every run.
+_LAST_ANALYST: Dict[str, Any] = {}
+
+
+def analyst_ledger_json(block_json: str) -> str:
+    """What the AI planner may see of the analyst block (nl_analyst.ledger_for_ai): each step's op, args, why and printed
+    figures, never a table or a row; the page posts it to the worker's /analyst as steps_so_far."""
+    import nl_analyst as _na
+    try:
+        block = json.loads(block_json)
+    except (TypeError, ValueError):
+        block = {}
+    return json.dumps(_na.ledger_for_ai(block if isinstance(block, dict) else {}), allow_nan=False, default=str)
+
+
+def analyst_more_json(steps_json: str, prior_json: str) -> str:
+    """One AI round (docs/ai-analyst/PROTOCOL.md): the steps the worker's /analyst returned, run by
+    nl_analyst.run_steps on the frame of the last run, after the block's steps so far (prior). Every step is checked
+    again here (an op, an argument or a column outside the schema is refused with its reason); every figure comes from
+    the engine. Returns {shape, steps, insights, refused, round, seconds} as JSON; with no run yet, nothing runs."""
+    import nl_analyst as _na
+    if not _LAST_ANALYST:
+        return json.dumps({"steps": [], "insights": [], "refused": [{"op": "all", "why": "no file has been analysed"}],
+                           "round": 0, "seconds": 0})
+    try:
+        steps = json.loads(steps_json)
+        prior = json.loads(prior_json)
+    except (TypeError, ValueError):
+        steps, prior = None, []
+    out = _na.run_steps(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"], steps, _LAST_ANALYST["hint"],
+                        prior=prior if isinstance(prior, list) else [])
+    return json.dumps(out, allow_nan=False, default=str)
 
 
 def results_json(rep: Any) -> str:
@@ -8002,7 +8066,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
-        rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal))
+        rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal),
+                                  personal=[str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("column")])
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8186,7 +8251,7 @@ def _topic_words(name: Any, goal: Any) -> List[str]:
 
 
 def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any,
-             topic: Optional[List[str]] = None) -> Dict[str, Any]:
+             topic: Optional[List[str]] = None, personal: Optional[List[str]] = None) -> Dict[str, Any]:
     """rep["analyst"] (engine/nl_analyst.py, CONTRACT §5.10): the analyst loop over the rows the engine kept, read as the
     AI's analyses read them (_analysis_frame: no withheld or coded column is in the frame, so no step can read one). The
     plan's date and primary column steer it when there is a plan; with none, the loop reads the file's shape itself.
@@ -8202,9 +8267,17 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
         df, date, _ent, _why, info = _analysis_frame({"reading": reading, "clean": cr.clean, "hide": hide}, p, layout)
         roles = {str(c.get("role")): c.get("name") for c in p.get("columns") or [] if isinstance(c, dict)}
         hint = {"date": date, "primary": p.get("primary") or roles.get("measure"), "entity": roles.get("entity"),
-                "topic": list(topic or [])}
+                "topic": list(topic or []),
+                # never a grouping: the plan's free-text columns, and every column the privacy scan flagged, kept ones
+                # too (a kept name column is for the analyses the visitor chose, not for "the most common guest")
+                "free_text": [c.get("name") for c in p.get("columns") or []
+                              if isinstance(c, dict) and c.get("semantic_type") == "free_text"] + list(personal or [])}
         out = _na.explore(df, info.get("kinds") or {}, hint)
         out["rows"] = {"kept": info.get("kept"), "set_aside": info.get("aside")}
+        # the frame the loop read, kept for the AI rounds the page may ask for next (analyst_more_json): the same rows,
+        # kinds and hint, so a planned step runs on exactly what the engine's own steps ran on, never on raw rows
+        _LAST_ANALYST.clear()
+        _LAST_ANALYST.update(df=df, kinds=info.get("kinds") or {}, hint=hint)
         return out
     except Exception as exc:  # noqa: BLE001 - the report stands without the loop, and says so
         if os.environ.get("NL_BROWSER_STRICT"):

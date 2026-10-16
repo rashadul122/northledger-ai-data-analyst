@@ -236,6 +236,74 @@ def engine_info() -> Dict[str, str]:
 
 
 @contextlib.contextmanager
+def _profile_and_clean_once():
+    """The audit (loop.run_loop) and the analysis (loop.run_analyze) each start with the same two steps on the same
+    table: health.score_table(con, table), then clean.clean_table(con, table, health=th, as_of=...). On a 50,000-row
+    file those two steps are most of the run, and the second pass computes exactly what the first did (nothing writes
+    the database between them). Inside this block each step runs once per (database file, table, arguments); a later
+    call gets a deep copy of the first call's result, taken before the caller touched it (loop.py then mutates the
+    health object with reflect_cleaning). The engine's own code is unchanged; outside the block nothing is cached."""
+    import copy
+    from northledger import clean as _cl
+    from northledger import health as _hl
+    real_score, real_clean = _hl.score_table, _cl.clean_table
+    memo: Dict[Any, Any] = {}
+
+    def db_of(con: Any) -> Any:
+        # the main database file of the connection, as (path, size, mtime): a different or changed file never matches
+        try:
+            path = next((r[2] for r in con.execute("PRAGMA database_list") if r[1] == "main"), "")
+            st = os.stat(path) if path else None
+            return (path, st.st_size, st.st_mtime_ns) if st else None
+        except Exception:  # noqa: BLE001 - a connection that cannot say where it reads is never cached
+            return None
+
+    def score_table(con: Any, table: str, *args: Any, **kw: Any) -> Any:
+        db = db_of(con)
+        if db is None or args or kw:
+            return real_score(con, table, *args, **kw)
+        key = ("score", db, table)
+        if key not in memo:
+            th = real_score(con, table)
+            memo[key] = (copy.deepcopy(th), th)
+            return th
+        pristine, _first = memo[key]
+        th = copy.deepcopy(pristine)
+        memo[("th", id(th))] = key                 # which profile this copy is, for clean_table's key below
+        return th
+
+    def clean_table(con: Any, table: str, *args: Any, **kw: Any) -> Any:
+        db = db_of(con)
+        th = kw.get("health")
+        src = None
+        if th is not None:
+            src = memo.get(("th", id(th))) or next((k for k, v in memo.items() if k[0] == "score" and v[1] is th), None)
+        # every other argument of clean_table defaults to None: an explicit None and an omitted one are the same call
+        rest = tuple(sorted((k, v) for k, v in kw.items() if k != "health" and v is not None))
+        try:
+            hash(rest)
+        except TypeError:
+            rest = None
+        if db is None or args or src is None or rest is None or not hasattr(th, "__dict__"):
+            return real_clean(con, table, *args, **kw)
+        key = ("clean", db, table, src, rest)
+        if key not in memo:
+            cr = real_clean(con, table, **kw)
+            # the result, and the profile as cleaning left it (clean_table may note things on it)
+            memo[key] = (copy.deepcopy(cr), copy.deepcopy(th.__dict__))
+            return cr
+        cr, after = memo[key]
+        th.__dict__.update(copy.deepcopy(after))
+        return copy.deepcopy(cr)
+
+    _hl.score_table, _cl.clean_table = score_table, clean_table
+    try:
+        yield
+    finally:
+        _hl.score_table, _cl.clean_table = real_score, real_clean
+
+
+@contextlib.contextmanager
 def _pinned_clock(as_of: Optional[str]):
     """Run the profiler as if today were `as_of` (the sample's fixed analysis date).
 
@@ -7765,7 +7833,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         pol = None
         colmap = dict(getattr(res, "column_map", {}) or {})
         prim_head = ""                            # the column the report leads with, named as the engine read it
-        with _pinned_clock(as_of):
+        with _pinned_clock(as_of), _profile_and_clean_once():
             # -- the Data Health Audit: the engine's data-quality findings
             t0 = time.perf_counter()
             audit = _loop.run_loop(eng.db_path, table, objective, out_dir=os.path.join(tmp, "audit"),
@@ -8067,7 +8135,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
         rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal),
-                                  personal=[str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("column")])
+                                  personal=[f for f in flagged if isinstance(f, dict) and f.get("column")])
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8250,8 +8318,25 @@ def _topic_words(name: Any, goal: Any) -> List[str]:
     return out[:12]
 
 
+def _people_words(flag: Dict[str, Any], df: Any) -> bool:
+    """Whether a flagged column holds people's own words or names: its flag says free text or a person's name, or
+    its values read as names (_looks_like_names). Such a column is never an analyst grouping (_analyst)."""
+    kind = str(flag.get("kind") or "")
+    if any(lab in kind for lab in (_REASON_LABEL["free_text"], _REASON_LABEL["people"], _KIND_LABEL["person_name"])):
+        return True
+    col = str(flag.get("column"))
+    if df is None or col not in getattr(df, "columns", ()):
+        return False
+    try:
+        # the header counts (guest, staff_member), but not the bare word "name" (peak_name, a company's name)
+        header = re.sub(r"(?<![a-z])names?(?![a-z])", " ", col.lower())
+        return _looks_like_names(df[col].dropna().astype(str).head(500), header)
+    except Exception:  # noqa: BLE001 - a column that cannot be read is not called names
+        return False
+
+
 def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any,
-             topic: Optional[List[str]] = None, personal: Optional[List[str]] = None) -> Dict[str, Any]:
+             topic: Optional[List[str]] = None, personal: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """rep["analyst"] (engine/nl_analyst.py, CONTRACT §5.10): the analyst loop over the rows the engine kept, read as the
     AI's analyses read them (_analysis_frame: no withheld or coded column is in the frame, so no step can read one). The
     plan's date and primary column steer it when there is a plan; with none, the loop reads the file's shape itself.
@@ -8268,10 +8353,13 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
         roles = {str(c.get("role")): c.get("name") for c in p.get("columns") or [] if isinstance(c, dict)}
         hint = {"date": date, "primary": p.get("primary") or roles.get("measure"), "entity": roles.get("entity"),
                 "topic": list(topic or []),
-                # never a grouping: the plan's free-text columns, and every column the privacy scan flagged, kept ones
-                # too (a kept name column is for the analyses the visitor chose, not for "the most common guest")
+                # never a grouping: the plan's free-text columns, and a flagged column the visitor kept whose flag is
+                # free text or a person's name, or whose values read as people's names (a kept guest column is for the
+                # analyses the visitor chose, not for "the most common guest"); a kept gender or company name column
+                # the scan flagged by its header alone stays a grouping
                 "free_text": [c.get("name") for c in p.get("columns") or []
-                              if isinstance(c, dict) and c.get("semantic_type") == "free_text"] + list(personal or [])}
+                              if isinstance(c, dict) and c.get("semantic_type") == "free_text"]
+                             + [str(f["column"]) for f in personal or [] if _people_words(f, df)]}
         out = _na.explore(df, info.get("kinds") or {}, hint)
         out["rows"] = {"kept": info.get("kept"), "set_aside": info.get("aside")}
         # the frame the loop read, kept for the AI rounds the page may ask for next (analyst_more_json): the same rows,

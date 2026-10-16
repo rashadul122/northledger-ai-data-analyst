@@ -2969,6 +2969,47 @@ def test_the_report_writer_gets_the_analysts_key_numbers_and_its_charts():
         assert got["ok"], got
 
 
+def test_the_audit_and_the_analysis_profile_and_clean_the_table_once_and_the_report_is_the_same():
+    # speed (16 Oct 2026): loop.run_loop and loop.run_analyze each ran health.score_table and clean.clean_table on the
+    # same table; inside run() each now runs once and the second caller gets a copy, with the report unchanged
+    import contextlib, re as _re
+    from northledger import clean as _cl, health as _hl
+    data = _fx("run2_replan.csv")
+    calls = {"score": 0, "clean": 0}
+    real_s, real_c = _hl.score_table, _cl.clean_table
+
+    def count_s(*a, **k):
+        calls["score"] += 1
+        return real_s(*a, **k)
+
+    def count_c(*a, **k):
+        calls["clean"] += 1
+        return real_c(*a, **k)
+    _hl.score_table, _cl.clean_table = count_s, count_c
+    try:
+        fast = NB.run(data, "run2_replan.csv", as_of="2026-10-01")
+        once = dict(calls)
+        real = NB._profile_and_clean_once
+        NB._profile_and_clean_once = contextlib.nullcontext
+        try:
+            slow = NB.run(data, "run2_replan.csv", as_of="2026-10-01")
+        finally:
+            NB._profile_and_clean_once = real
+    finally:
+        _hl.score_table, _cl.clean_table = real_s, real_c
+    assert _hl.score_table is real_s and _cl.clean_table is real_c, "the cache left the engine patched"
+    assert once["score"] == 1 and once["clean"] == 1, once
+    assert calls["score"] == 3 and calls["clean"] == 3, calls
+
+    def plain(x):
+        if isinstance(x, dict):
+            return {k: plain(v) for k, v in x.items() if k not in ("timings", "seconds")}
+        return [plain(v) for v in x] if isinstance(x, list) else x
+    stamp = _re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?")
+    a, b = [stamp.sub("T", json.dumps(plain(r), sort_keys=True, default=str)) for r in (fast, slow)]
+    assert a == b, "the cached run's report differs from the uncached one"
+
+
 def test_ask_your_data_runs_the_planners_steps_on_the_last_files_rows():
     # "Ask your data" (docs/ai-analyst/PROTOCOL.md): the planner sees the steps so far as printed figures, never a row,
     # and the steps it picks run on the frame of the last run, checked again, their ids after the engine's own

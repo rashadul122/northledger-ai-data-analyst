@@ -3055,7 +3055,11 @@ async function managerMatches(p, rep) {
   });
   ok(d.mShown && d.aHidden && /Manager/.test(d.tab || ''), 'the manager view is not the default view (' + JSON.stringify([d.mShown, d.aHidden, d.tab]) + ')');
   // the bottom line: the report's summary sentences when it has them (fixer round, 24 Sep 2026), else the engine headline
-  const SL = (rep.summary && rep.summary.lines) || [];
+  // a question about the whole period (rep.answer leads "whole_period", 16 Oct 2026): the engine's answer opens the bottom line, the summary's
+  // sentences follow it (the same sentence once)
+  const AN = rep.answer && rep.answer.leads === 'whole_period' && rep.answer.text ? rep.answer : null;
+  const SL = ((rep.summary && rep.summary.lines) || []).filter((l) => !AN || l.text !== AN.text);
+  if (AN) SL.unshift({ text: AN.text });
   if (SL.length) ok(JSON.stringify(d.bl) === JSON.stringify(SL.map((l) => squash(l.text))), 'the bottom line is not the report\'s summary: ' + JSON.stringify(d.bl));
   else ok(d.head === squash(rep.story.headline), 'the bottom line is not the engine headline: ' + d.head);
   const pm = rep.primary_metric, F = {};

@@ -251,7 +251,10 @@
     if ((e.estimate === null || e.estimate === undefined) && e.note) return e.note;
     return fm().val(e.estimate, e.scale) + (e.scale === 'difference' && e.unit ? ' ' + e.unit : '');
   }
-  function ciText(f) { var e = f.effect || {}; return fm().ci(e.ci, e.scale); }
+  // a rate's change is in percentage points (the adapter's _rate_points, 16 Oct 2026): the core's interval is a ratio of the two years'
+  // levels, said as one, never in points or percent
+  function ratioText(r) { return r && r[0] !== null && r[1] !== null && r[0] !== undefined && r[1] !== undefined ? fm().num(r[0], 3) + ' to ' + fm().num(r[1], 3) + ' times the year before\'s level' : null; }
+  function ciText(f) { var e = f.effect || {}; return fm().ci(e.ci, e.scale) || ratioText(e.ci_ratio); }
   function fcrText(f) {
     var e = f.effect || {}, c = e.ci_fcr;
     if (!c || (c[0] === null && c[1] === null)) return '';
@@ -376,9 +379,11 @@
       var pw = f.grade === 'WATCH' && powerText(f, r) ? ' <span class="nl2-power">' + esc(powerText(f, r)) + '</span>' : '';
       var er = f.error_rate && f.error_rate.sentence ? '<span class="nl2-er">' + esc(f.error_rate.sentence) + '</span>' : '';
       var V = isOfficial(f) ? estimandOf(r) : null, Fg = V && r.estimand.figures || {};
-      if (V && Fg.change_pct && Fg.change_pct.text) {
+      // a rate's estimand has no percent change: its change in percentage points is the figure (16 Oct 2026)
+      var Fc = Fg.change_pct && Fg.change_pct.text ? Fg.change_pct : Fg.change && /percentage points?$/.test(String(Fg.change.text || '')) ? Fg.change : null;
+      if (V && Fc) {
         // the described change is the figure; the engine's grade is secondary and says what it is a grade of
-        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published ' + (averaged(r) ? 'figures (average level ' : 'totals (') +
+        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fc.text) + '</b> in the published ' + (averaged(r) ? 'figures (average level ' : 'totals (') +
           esc((Fg.prior && Fg.prior.text || '') + ' to ' + (Fg.latest && Fg.latest.text || '')) + ').' + ' <span class="nl2-proc">process grade: ' + esc(V.process ? V.process.note : 'the month-to-month noise of the monthly figures; not a test of the published total') + '.</span>' + held + '</li>';
       }
       // a stepped claim's as-filed interval spans the step, so it says nothing about the business: not printed
@@ -389,9 +394,9 @@
   function tiles(r, K) {
     var F = byId(r);
     return K.data.tiles.map(function (t) {
-      var v = fm().val(t.value, t.scale, t.unit), ci = fm().ci(t.ci, t.scale), f = F[t.finding_id];
+      var v = fm().val(t.value, t.scale, t.unit), ci = fm().ci(t.ci, t.scale) || ratioText(t.ci_ratio), f = F[t.finding_id];
       var word = f && f.kind === 'forecast' ? 'range' : 'interval';
-      var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit || '') + ' (own units)' : '';
+      var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit === 'percentage points' ? t.unit : (t.unit || '') + ' (own units)') : '';
       var off = isOfficial(f), au = auditFor(r, f);
       return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published ' + (averaged(r) ? 'figures: ' : 'totals: ') + t.claim : t.claim) + '</p>' +
         '<p class="nl2-tile-num"><span class="nl2-tile-v">' + esc(v) + '</span>' + (unit ? ' <span class="nl2-tile-u">' + esc(unit) + '</span>' : '') + '</p>' +
@@ -507,6 +512,10 @@
     // the bottom line: at most three sentences from the engine's facts (summary.lines: what moved and why, what
     // to act on, the planning number); the engine's full clause list sits in the analyst view
     var SL = (r.summary && r.summary.lines) || [];
+    // what answers the visitor's question (rep.answer, the engine's decision, 16 Oct 2026): a question about the whole period is answered
+    // first, by the engine's whole-period sentence, and the bottom line's lines follow it (the period line once, never twice)
+    var AN = r.answer && r.answer.leads === 'whole_period' && r.answer.text ? r.answer : null;
+    if (AN) SL = [{ kind: 'answer', text: AN.text, finding_ids: [] }].concat(SL.filter(function (l) { return l.text !== AN.text; }));
     var bl = SL.length ? '<div class="nl2-bottom" data-summary="1">' + SL.map(function (l, i) {
       return (i === 0 ? '<h3 class="nl2-bl" ' : '<p class="nl2-bl" ') + 'data-kind="' + esc(l.kind) + '" data-findings="' + esc((l.finding_ids || []).join(' ')) + '">' + esc(l.text) + (i === 0 ? '</h3>' : '</p>');
     }).join('') + '</div>' : '<h3 class="nl2-bottom">' + esc(r.story.headline) + '</h3>';

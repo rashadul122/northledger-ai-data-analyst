@@ -132,6 +132,10 @@
     var hasCi = !!(ef.ci && ef.ci[0] !== null && ef.ci[1] !== null && ef.ci[0] !== undefined && ef.ci[1] !== undefined);
     var lvlPct = Math.round((ef.level || 0.95) * 100);
     var vf = vfmt(d.scale);
+    // a rate's change is in percentage points (the adapter's _rate_points, 16 Oct 2026): the strip's axis is in points, with no size bar
+    // (the bar is a relative change) and no interval in points (the core's is a ratio of levels, said in the findings)
+    var PTS = ef.scale === 'difference';
+    var fval = function (v) { return PTS ? sgnD(v) + (ef.unit ? ' ' + ef.unit : '') : val(v, 'fraction'); };
     // the like-for-like line (the same series on the levels present throughout) and the months where
     // the file's coverage changed, when the engine recorded them (contract v2 §3, #2)
     var LF = d.like_for_like && Array.isArray(d.like_for_like.values) && d.like_for_like.values.length === M.length ? d.like_for_like : null;
@@ -199,21 +203,22 @@
     if (ef.estimate !== null && ef.estimate !== undefined && isFinite(ef.estimate)) {
       var SL = lfEst ? (W < 480 ? 86 : 104) : L, s0 = H0 + 16, sy = s0 + 30, sy2 = sy + 24, yEnd = lfEst ? sy2 : sy;
       var lo = hasCi ? ef.ci[0] : ef.estimate, hi = hasCi ? ef.ci[1] : ef.estimate;
-      var ext = [lo, hi, 0].concat(bar === null ? [] : [bar, -bar], lfEst ? [LF.estimate] : [], lfCi ? LF.ci : []), a0 = Math.min.apply(null, ext), a1 = Math.max.apply(null, ext), pad = (a1 - a0) * 0.08 || 0.05;
+      var ext = [lo, hi, 0].concat(bar === null || PTS ? [] : [bar, -bar], lfEst ? [LF.estimate] : [], lfCi ? LF.ci : []), a0 = Math.min.apply(null, ext), a1 = Math.max.apply(null, ext), pad = (a1 - a0) * 0.08 || 0.05;
       var sx = U.scale(a0 - pad, a1 + pad, SL + 8, Rr - 8);
-      b += U.txt(4, s0, U.clip('Change, latest 12 months against the 12 before' + (hasCi ? ', with its ' + lvlPct + '% interval' : ''), Rr - 8), 'lab nl2-ytitle');
-      // as many ticks as fit (about 64 px a label), whole percents printed without a decimal
-      var tickPct = function (t) { var v = t * 100, r = Math.round(v); return Math.abs(v - r) < 1e-9 ? (r > 0 ? '+' : r < 0 ? '-' : '') + Math.abs(r) + '%' : sgn1(v) + '%'; };
+      b += U.txt(4, s0, U.clip('Change, latest 12 months against the 12 before' + (PTS ? ', in ' + (ef.unit || 'its own units') : '') + (hasCi ? ', with its ' + lvlPct + '% interval' : ''), Rr - 8), 'lab nl2-ytitle');
+      // as many ticks as fit (about 64 px a label), whole percents printed without a decimal; a rate's points as points
+      var tickPct = PTS ? function (t) { return sgnD(t) + (ef.unit === 'percentage points' ? ' pts' : ''); }
+        : function (t) { var v = t * 100, r = Math.round(v); return Math.abs(v - r) < 1e-9 ? (r > 0 ? '+' : r < 0 ? '-' : '') + Math.abs(r) + '%' : sgn1(v) + '%'; };
       U.ticks(a0 - pad, a1 + pad, Math.max(2, Math.min(5, Math.floor((Rr - SL) / 64)))).forEach(function (t) {
         b += '<line class="gridl" x1="' + sx(t).toFixed(1) + '" x2="' + sx(t).toFixed(1) + '" y1="' + (sy - 12) + '" y2="' + (yEnd + 8) + '"/>' + U.txt(sx(t), yEnd + 24, tickPct(t), 'lab', 'middle');
       });
       b += '<line class="nl2-ref" x1="' + sx(0).toFixed(1) + '" x2="' + sx(0).toFixed(1) + '" y1="' + (sy - 14) + '" y2="' + (yEnd + 10) + '"/>';
-      if (bar !== null) [bar, -bar].forEach(function (bb) {
+      if (bar !== null && !PTS) [bar, -bar].forEach(function (bb) {
         b += '<line class="nl2-bar-l" x1="' + sx(bb).toFixed(1) + '" x2="' + sx(bb).toFixed(1) + '" y1="' + (sy - 12) + '" y2="' + (yEnd + 8) + '" stroke="var(--axis)" stroke-dasharray="3 3"' + tip('The size bar: a change must be shown to be at least ' + sgn1(Math.abs(bb) * 100).replace('+', '') + '% to be CONFIRMED') + '/>';
       });
       if (lfEst) b += U.txt(SL - 2, sy + 4, 'as filed', 'lab', 'end') + U.txt(SL - 2, sy2 + 4, 'like for like', 'lab', 'end');
       if (hasCi) b += '<line class="nl2-cil" x1="' + sx(lo).toFixed(1) + '" x2="' + sx(hi).toFixed(1) + '" y1="' + sy + '" y2="' + sy + '"' + tip(lvlPct + '% interval of the change: ' + ci(ef.ci, 'fraction')) + '/>';
-      b += '<circle class="dot-a" cx="' + sx(ef.estimate).toFixed(1) + '" cy="' + sy + '" r="4.5"' + tip('Change: ' + val(ef.estimate, 'fraction')) + '/>';
+      b += '<circle class="dot-a" cx="' + sx(ef.estimate).toFixed(1) + '" cy="' + sy + '" r="4.5"' + tip('Change: ' + fval(ef.estimate)) + '/>';
       if (lfEst) {
         var lfT = 'Like for like: ' + val(LF.estimate, 'fraction') + (lfCi ? ' (' + Math.round((LF.level || 0.95) * 100) + '% interval ' + ci(LF.ci, 'fraction') + ')' : ' (descriptive, not tested)');
         if (lfCi) b += '<line class="nl2-cil" x1="' + sx(LF.ci[0]).toFixed(1) + '" x2="' + sx(LF.ci[1]).toFixed(1) + '" y1="' + sy2 + '" y2="' + sy2 + '"' + tip(lfT) + '/>';
@@ -224,7 +229,7 @@
     var lfCol = String(LF && LF.column || '').replace(/_/g, ' ').trim().toLowerCase();
     var lfPl = !lfCol ? 'values' : /(s|x|z|ch|sh)$/.test(lfCol) ? (/s$/.test(lfCol) ? lfCol : lfCol + 'es') : /[^aeiou]y$/.test(lfCol) ? lfCol.slice(0, -1) + 'ies' : lfCol + 's';
     var lfWords = LF ? LF.levels_kept + ' ' + lfPl + ' present in every modelled month' : '';
-    var label = ch.title + ': ' + M.length + ' months from ' + mon(M[0]) + ' to ' + mon(M[M.length - 1]) + '; average ' + vf(wm.prior) + ' in the prior 12 months and ' + vf(wm.latest) + ' in the latest 12, a change of ' + val(ef.estimate, 'fraction') +
+    var label = ch.title + ': ' + M.length + ' months from ' + mon(M[0]) + ' to ' + mon(M[M.length - 1]) + '; average ' + vf(wm.prior) + ' in the prior 12 months and ' + vf(wm.latest) + ' in the latest 12, a change of ' + fval(ef.estimate) +
       (ci(ef.ci, 'fraction') ? ' (' + lvlPct + '% interval ' + ci(ef.ci, 'fraction') + ')' : '') +
       (lfEst ? '; like for like (' + lfWords + ') ' + val(LF.estimate, 'fraction') : '') +
       (ST.length ? '; numbered lines mark ' + stWhat + ': ' + ST.map(function (s) { return mon(s.month); }).join(', ') : '');
@@ -242,7 +247,7 @@
       }) },
       tnote: '<p class="note">Averages: ' + vf(wm.prior) + ' in the prior 12 months, ' + vf(wm.latest) + ' in the latest 12. ' + (bandLo === null ? '' : 'The interval of the change, ' + ci(ef.ci, 'fraction') + ', applied to the prior average, is consistent with a latest average between ' + vf(bandLo) + ' and ' + vf(bandHi) + '.') +
         (LF && LF.window_means ? ' Like for like: ' + vf(LF.window_means.prior) + ' and ' + vf(LF.window_means.latest) + '.' : '') + (d.month_floor ? ' Months under ' + num(d.month_floor, 0) + ' rows show n/a.' : '') + '</p>',
-      note: 'Latest 12 months against the 12 before: <b>' + esc(val(ef.estimate, 'fraction')) + '</b>' + (hasCi ? ' (' + lvlPct + '% interval ' + esc(ci(ef.ci, 'fraction')) + ')' : '') +
+      note: 'Latest 12 months against the 12 before: <b>' + esc(fval(ef.estimate)) + '</b>' + (hasCi ? ' (' + lvlPct + '% interval ' + esc(ci(ef.ci, 'fraction')) + ')' : '') +
         '. The dots are every month, so the spread behind the two averages stays visible. The strip underneath puts the change and its interval on a percent scale' + (bar !== null ? ', with the ' + esc(sgn1(bar * 100).replace('+', '')) + '% size bar dashed either side of zero' : '') + '.' + lfNote + stNote + (d.month_floor && V.some(function (v) { return v === null; }) ? ' A month with fewer than ' + esc(num(d.month_floor, 0)) + ' rows is left out (×).' : '')
     };
   };

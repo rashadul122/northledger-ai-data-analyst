@@ -313,7 +313,8 @@
     var pn = function (x) { return x === 1 ? P.noun : P.nouns; };
     if (F.prior && F.prior.text) figs.push({ label: (F.prior.months && F.prior.months !== W ? 'The ' + F.prior.months + ' matched ' + pn(F.prior.months) + ' before' : W > 1 ? periodSpan(P) + ' before' : 'The ' + P.noun + ' before'), value: String(F.prior.text) });
     if (F.latest && F.latest.text) figs.push({ label: (F.latest.months && F.latest.months !== W ? 'The ' + F.latest.months + ' matched ' + pn(F.latest.months) + ', latest' : W > 1 ? 'Latest ' + periodSpan(P) : 'Latest ' + P.noun), value: String(F.latest.text) });
-    if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text) });
+    // a rate's estimand has no percent change (16 Oct 2026): its change in percentage points leads
+    if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text), lead: !(F.change_pct && F.change_pct.text) && /percentage points?$/.test(String(F.change.text)) });
     if (F.change_pct && F.change_pct.text) figs.push({ label: 'Change, %', value: String(F.change_pct.text), lead: true });
     var inf = e.inference || null, st = R.structure || null;
     return { title: semi < 0 ? String(e.text) : String(e.text).slice(0, semi), what: semi < 0 ? '' : String(e.text).slice(semi + 1).trim(), figures: figs,
@@ -2067,6 +2068,12 @@
     return m ? m[1] + ' to ' + m[2] : '';
   }
   function sgnPct(v) { v = Number(v); return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(1) + '%'; }
+  // a finding's change as the engine states it: a percent, or a rate's change in percentage points (value_unit, 16 Oct 2026)
+  function chgText(f) {
+    var v = Number(f.value), u = f.value_unit;
+    if (u !== 'percentage points' && u !== 'the rate\'s own units') return sgnPct(v);
+    return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Number(Math.abs(v).toPrecision(3)) + (u === 'percentage points' ? ' percentage points' : ' (own units)');
+  }
   function shortClaim(c) {
     var m = String(c || '').match(/^Change in (?:the )?(.*?), latest/);
     return m ? cap1(m[1]) : String(c || '');
@@ -2218,7 +2225,7 @@
     };
     var tileOf = function (f, label) {
       var ch = /^change in /i.test(f.claim) && isFinite(f.value) && f.value !== null;
-      return { label: label || (ch ? 'Change: ' + shortClaim(f.claim) : words(f.claim, 60)), value: ch ? sgnPct(f.value) : (isFinite(f.value) && f.value !== null ? fmtVal(f.value) : ''),
+      return { label: label || (ch ? 'Change: ' + shortClaim(f.claim) : words(f.claim, 60)), value: ch ? chgText(f) : (isFinite(f.value) && f.value !== null ? fmtVal(f.value) : ''),
         sub: interval(f.why) ? '95% interval ' + interval(f.why) : '', grade: f.verdict };
     };
     // a shared copy's own key figures (the worker keeps {label, value, text, unit, grade}, at most 8): its tiles when the
@@ -2490,7 +2497,7 @@
           // a row-count forecast the table's layout fixes: one line in the forecast block says why; here no number and no grade
           if (x.layout_artifact === true) return { claim: x.claim, value: 'not shown', grade: '' };
           var big = U && isFinite(x.value) && x.value !== null && x.kind === 'forecast' && Math.abs(x.value) >= 1e6;
-          return { claim: x.claim, value: ch ? sgnPct(x.value) : big ? U(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict,
+          return { claim: x.claim, value: ch ? chgText(x) : big ? U(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict,
             process: !!(EV && EV.process && R.primary && x.claim === (R.primary.claim || R.primary)), untrusted: !!(AV && AV.untrusted && x.kind === 'forecast') };
         }) });
       }
@@ -2613,6 +2620,7 @@
     var findings = (Array.isArray(R.findings) ? R.findings : []).filter(function (f) { return f && f.claim; }).slice(0, 20).map(function (f) {
       var o = { claim: str(f.claim, 300), kind: str(f.kind, 20), verdict: str(f.verdict, 20) };
       if (isFinite(f.value) && f.value !== null) o.value = f.value;
+      if (f.value_unit === 'percentage points' || f.value_unit === 'the rate\'s own units') o.value_unit = f.value_unit;
       if (f.why) o.why = str(f.why, 240);
       return o;
     });

@@ -3716,7 +3716,7 @@ check('try-v2-falls-back-to-the-checked-v1-report-when-the-v2-blocks-are-empty-o
    v2 records (type "viz", rule V) inside a real adapter report, and as the AI report's [CHART:n] figures. */
 const VIZ_DIR = path.join(SITE_DIR, 'tools', 'fixtures', 'viz');
 const VIZ_SPEC = JSON.parse(fs.readFileSync(path.join(VIZ_DIR, 'spec.json'), 'utf8'));
-const VIZ_DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'timeseries'];
+const VIZ_DRAWN = ['waterfall', 'heatmap', 'dot_range', 'pareto', 'slope', 'timeseries', 'lines', 'area', 'hbar', 'multiples'];
 const VIZ_GLYPH = { 1: '○', 2: '◐', 3: '●' };
 const vizCopy = (x) => JSON.parse(JSON.stringify(x));
 // the engine's own records (tools/test_nl_viz.py --write): {engine_pick: {viz}, ai_pick: {viz}}, each viz as rep.viz holds it;

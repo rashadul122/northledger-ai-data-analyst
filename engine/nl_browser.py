@@ -5434,7 +5434,7 @@ def _profile_facts_of(R: "_Reading", headers: List[str], hidden: Iterable[str] =
         if land is None or land in seen:
             continue
         seen.add(land)
-        txt = _ns()._label_texts(R, land)
+        txt = _stripped_texts(R, land)
         fill = R.filled(land)
         f = txt[fill]
         n_f = int(fill.sum())
@@ -5457,7 +5457,7 @@ def _profile_facts_of(R: "_Reading", headers: List[str], hidden: Iterable[str] =
                 if dd is not None and not series:
                     # the series over the rows the engine kept, as the analyses read them (their frame is those rows)
                     series.append(_series_groups(
-                        [(c, np.where(R.filled(c), _ns()._label_texts(R, c).to_numpy(), "")[kept])
+                        [(c, np.where(R.filled(c), _stripped_texts(R, c).to_numpy(), "")[kept])
                          for c in dict.fromkeys(R.landed(x) for x in headers)
                          if c is not None and c != day_col and c not in hidden and R.kind(c) == "text"], days[kept]))
                 grp = series[0][ok_n[kept]] if dd is not None and series and series[0] is not None else None
@@ -7386,6 +7386,16 @@ def _null_tokens() -> Set[str]:
         return set(str(t).strip().lower() for t in DEFAULT_NULL_TOKENS)
     except Exception:  # noqa: BLE001 - the engine is always importable where this runs; a safe floor
         return {"", "n/a", "na", "null", "none", "nan", "-"}
+
+
+def _stripped_texts(R: Any, landed: str) -> Any:
+    """R.texts[landed].astype(str).str.strip(), worked out once per reading and column (the memo nl_structure._label_texts keeps
+    too: the same text, so either fills it); the caller gets its own copy."""
+    memo = getattr(R, "__dict__", {}).setdefault("_label_texts_memo", {})
+    key = (landed, id(R.texts))
+    if key not in memo:
+        memo[key] = R.texts[landed].astype(str).str.strip()
+    return memo[key].copy()
 
 
 def _filled_text(s: Any) -> Any:

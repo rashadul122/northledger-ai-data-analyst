@@ -645,10 +645,21 @@ class Ctx:
 
     def rating_levels(self, land: str) -> Optional[List[float]]:
         """The whole-number levels of a rating column (2 to 10 of them), in their order, or None."""
+        memo = self.__dict__.setdefault("_rating_memo", {})
+        if land not in memo:
+            memo[land] = self._rating_levels(land)
+        lv = memo[land]
+        return None if lv is None else list(lv)
+
+    def _rating_levels(self, land: str) -> Optional[List[float]]:
         if not self.numeric(land):
             return None
         v = self.nums(land).dropna()
-        if not len(v) or not bool((v % 1 == 0).all()):
+        if not len(v):
+            return None
+        if not RATING_LEVELS[0] <= int(v.nunique()) <= RATING_LEVELS[1]:
+            return None                    # the number of levels rules it out, whole numbers or not
+        if not bool((v % 1 == 0).all()):
             return None
         lv = sorted(set(float(x) for x in v.tolist()))
         return lv if RATING_LEVELS[0] <= len(lv) <= RATING_LEVELS[1] else None

@@ -19,8 +19,11 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MENU_NAMES = ["contribution_waterfall", "pvm_waterfall", "calendar_heatmap", "change_heatmap", "crosstab_heatmap",
-              "theme_rating_heatmap", "correlation_heatmap", "group_ranges", "pareto", "slope"]
-DRAW = ["waterfall", "heatmap", "dot_range", "pareto", "slope", "table"]
+              "theme_rating_heatmap", "correlation_heatmap", "group_ranges", "pareto", "slope",
+              # Batch 2, the chart grammar (14 October 2026)
+              "line_chart", "area_chart", "bar_chart", "grouped_bar", "small_multiples"]
+DRAW = ["waterfall", "heatmap", "dot_range", "pareto", "slope", "lines", "area", "hbar", "multiples", "table"]
+LEGACY = ["line", "bars", "scatter"]          # the analyses' own charts: never a draw kind's name
 CAPS = {"VIZ_MAX": 8, "VIZ_AUTO": 4, "HEAT_MAX": 3, "SMALL_CELL": 5, "AI_CHARTS_MAX": 10, "CHART_BYTES": 6000,
         "HEATMAP_BYTES": 12000}
 # the breaks only the schema catches, so the jsonschema cross-check must catch them too (a byte cap is not a schema rule)
@@ -260,6 +263,70 @@ def check_record(r, spec):
             E.append("pareto: k80.k lies beyond the bars only when the bars stay under 80%")
     elif kind == "slope" and not d["rows"]:
         E.append("slope: no rows")
+    elif kind in ("lines", "multiples"):
+        E += check_time(r, d, "series" if kind == "lines" else "panels")
+    elif kind == "area":
+        n, parts = len(d["x"]), d["parts"]
+        if any(len(p["values"]) != n for p in parts) or len(d["total"]) != n:
+            E.append("area: every part and the total have one value per x")
+            return E
+        if any(p["label"] == "other" for p in parts[:-1]):
+            E.append("area: 'other' is the last part")
+        for i in range(n):
+            vals = [p["values"][i] for p in parts]
+            if min(vals) < 0 or not close(math.fsum(vals), d["total"][i], tol_rel * max(1.0, abs(d["total"][i])) + 1e-6 * len(vals)):
+                E.append("area: the parts are not >= 0 or do not add up to the total at %s" % d["x"][i])
+        if not increasing(d["x"]):
+            E.append("area: x is not in order")
+        if len(r["table"]["rows"]) != n or len(r["table"]["cols"]) != len(parts) + 2:
+            E.append("area: the table view is a row per x: the period, a cell per part and the total")
+    elif kind == "hbar":
+        ns, rows = len(d["series"]), d["rows"]
+        if any(len(x["values"]) != ns or len(x["texts"]) != ns for x in rows):
+            E.append("hbar: each row has a value and a text per series")
+            return E
+        if d["other"] and rows[-1]["label"] != "other":
+            E.append("hbar: 'other' is the last row")
+        bars = rows[:-1] if d["other"] else rows
+        if any(a["values"][-1] < b["values"][-1] for a, b in zip(bars, bars[1:])):
+            E.append("hbar: the bars are not largest first (by the latest period)")
+        if ns == 2 and any(not x.get("change_text") for x in rows):
+            E.append("hbar: two periods, so every row has its change_text")
+        if len(r["table"]["rows"]) != len(rows) or len(r["table"]["cols"]) != 1 + ns + (1 if ns == 2 else 0):
+            E.append("hbar: the table view is a row per bar: the label, a text per series (and the change)")
+    return E
+
+
+def increasing(xs):
+    return all(a < b for a, b in zip(xs, xs[1:]))
+
+
+def check_time(r, d, key):
+    """lines and multiples: a value per x; the table a row per x (then per forecast month), its cell '<5' or '' where
+    the value is null, and suppressed.cells the '<5' cells."""
+    E, n, ss = [], len(d["x"]), d[key]
+    if any(len(s["values"]) != n for s in ss):
+        return ["%s: every %s has one value per x" % (r["kind"], key[:-1])]
+    if not increasing(d["x"]):
+        E.append("%s: x is not in order" % r["kind"])
+    fc = d.get("forecast")
+    rows, cols = r["table"]["rows"], r["table"]["cols"]
+    if len(rows) != n + (len(fc["x"]) if fc else 0) or len(cols) != 1 + len(ss) + (2 if fc else 0):
+        return E + ["%s: the table view is a row per x (and per forecast month), a cell per %s" % (r["kind"], key[:-1])]
+    supp = 0
+    for i in range(n):
+        for k, s in enumerate(ss):
+            c, v = rows[i][1 + k], s["values"][i]
+            supp += c == "<5"
+            if (v is None) != (c in ("", "<5")):
+                E.append("%s: %s at %s is null exactly when its cell is '<5' or ''" % (r["kind"], s["label"], d["x"][i]))
+    if supp != r["suppressed"]["cells"]:
+        E.append("%s: suppressed.cells is %d, the table has %d '<5' cells" % (r["kind"], r["suppressed"]["cells"], supp))
+    if fc:
+        m = len(fc["x"])
+        if len(ss) != 1 or d["grain"] != "month" or any(len(fc[k]) != m for k in ("values", "lo", "hi")) \
+                or not increasing([d["x"][-1]] + fc["x"]) or any(a > b for a, b in zip(fc["lo"], fc["hi"])):
+            E.append("lines: a forecast is one series' monthly months after the last x, each with lo <= hi")
     return E
 
 
@@ -292,7 +359,12 @@ def check_spec(spec):
         if len(m["limit_needs"]) > 100:
             E.append("menu %s: limit_needs leaves under 60 of the 160 characters for what the file has" % name)
     if [k for k in spec["draw_kinds"] if k in DRAW] != DRAW or any(len(k) > spec["caps"]["KIND_MAX_CHARS"] for k in DRAW):
-        E.append("draw_kinds: waterfall, heatmap, dot_range, pareto, slope, table, each at most 10 characters")
+        E.append("draw_kinds: waterfall, heatmap, dot_range, pareto, slope, lines, area, hbar, multiples, table, each at "
+                 "most 10 characters")
+    if set(DRAW) & set(LEGACY) or set(spec["draw_kinds"]["legacy"]["kinds"]) != set(LEGACY):
+        E.append("draw_kinds: a draw kind never takes a legacy chart's name (line, bars, scatter)")
+    if spec["schema"]["properties"]["kind"]["enum"] != DRAW:
+        E.append("schema: kind's enum is the draw kinds")
     for mode in ("light", "dark"):
         p = spec["colors"][mode]
         hexes = re.findall(r"#[0-9a-fA-F]{6}\b", json.dumps(p))
@@ -305,6 +377,8 @@ def check_spec(spec):
             E.append("colors.%s: suppressed text under 4.5:1" % mode)
         marks = [p["waterfall"][k] for k in ("total", "rise", "fall")] + [p["slope"]["rise"], p["slope"]["fall"],
                                                                          p["pareto"]["cumulative"], p["dot_range"]["dot"]]
+        marks += list(p["lines"]["series"]) + [p["lines"]["forecast"], p["area"]["other"], p["hbar"]["bar"],
+                                               p["hbar"]["prior_stroke"], p["multiples"]["line"]]
         if min(contrast(c, p["frame"]["surface"]) for c in marks) < 3:
             E.append("colors.%s: a mark under 3:1 on the surface" % mode)
     light = spec["colors"]["light"]
@@ -390,6 +464,17 @@ def breaks(spec):
         ("an unknown key", mut("table", lambda r: r.update(colour="red"))),
         ("a record over CHART_BYTES", mut("edge_waterfall_12_long_labels", over_chart_bytes)),
         ("a heatmap over HEATMAP_BYTES", mut("edge_heatmap_diverging", over_heatmap_bytes)),
+        # Batch 2
+        ("a line's series one value short", mut("lines", lambda r: r["data"]["series"][0]["values"].pop())),
+        ("a line's point printed where it is null", mut("lines", lambda r: r["data"]["series"][0]["values"].__setitem__(0, None))),
+        ("a line's x out of order", mut("lines", lambda r: r["data"]["x"].reverse())),
+        ("a forecast with lo over hi", mut("edge_lines_forecast", lambda r: r["data"]["forecast"]["lo"].__setitem__(0, 1e12))),
+        ("an area part below zero", mut("area", lambda r: r["data"]["parts"][0]["values"].__setitem__(0, -1))),
+        ("an area total that is not the parts' sum", mut("area", lambda r: r["data"]["total"].__setitem__(0, r["data"]["total"][0] + 1))),
+        ("bars out of order", mut("hbar", lambda r: r["data"]["rows"].reverse())),
+        ("a grouped bar without its change", mut("edge_hbar_grouped", lambda r: r["data"]["rows"][0].pop("change_text"))),
+        ("multiples with one panel", mut("multiples", lambda r: r["data"].update(panels=r["data"]["panels"][:1]))),
+        ("a legacy name as a draw kind", mut("lines", lambda r: r.update(kind="line"))),
     ]
     return out
 

@@ -236,6 +236,74 @@ def engine_info() -> Dict[str, str]:
 
 
 @contextlib.contextmanager
+def _profile_and_clean_once():
+    """The audit (loop.run_loop) and the analysis (loop.run_analyze) each start with the same two steps on the same
+    table: health.score_table(con, table), then clean.clean_table(con, table, health=th, as_of=...). On a 50,000-row
+    file those two steps are most of the run, and the second pass computes exactly what the first did (nothing writes
+    the database between them). Inside this block each step runs once per (database file, table, arguments); a later
+    call gets a deep copy of the first call's result, taken before the caller touched it (loop.py then mutates the
+    health object with reflect_cleaning). The engine's own code is unchanged; outside the block nothing is cached."""
+    import copy
+    from northledger import clean as _cl
+    from northledger import health as _hl
+    real_score, real_clean = _hl.score_table, _cl.clean_table
+    memo: Dict[Any, Any] = {}
+
+    def db_of(con: Any) -> Any:
+        # the main database file of the connection, as (path, size, mtime): a different or changed file never matches
+        try:
+            path = next((r[2] for r in con.execute("PRAGMA database_list") if r[1] == "main"), "")
+            st = os.stat(path) if path else None
+            return (path, st.st_size, st.st_mtime_ns) if st else None
+        except Exception:  # noqa: BLE001 - a connection that cannot say where it reads is never cached
+            return None
+
+    def score_table(con: Any, table: str, *args: Any, **kw: Any) -> Any:
+        db = db_of(con)
+        if db is None or args or kw:
+            return real_score(con, table, *args, **kw)
+        key = ("score", db, table)
+        if key not in memo:
+            th = real_score(con, table)
+            memo[key] = (copy.deepcopy(th), th)
+            return th
+        pristine, _first = memo[key]
+        th = copy.deepcopy(pristine)
+        memo[("th", id(th))] = key                 # which profile this copy is, for clean_table's key below
+        return th
+
+    def clean_table(con: Any, table: str, *args: Any, **kw: Any) -> Any:
+        db = db_of(con)
+        th = kw.get("health")
+        src = None
+        if th is not None:
+            src = memo.get(("th", id(th))) or next((k for k, v in memo.items() if k[0] == "score" and v[1] is th), None)
+        # every other argument of clean_table defaults to None: an explicit None and an omitted one are the same call
+        rest = tuple(sorted((k, v) for k, v in kw.items() if k != "health" and v is not None))
+        try:
+            hash(rest)
+        except TypeError:
+            rest = None
+        if db is None or args or src is None or rest is None or not hasattr(th, "__dict__"):
+            return real_clean(con, table, *args, **kw)
+        key = ("clean", db, table, src, rest)
+        if key not in memo:
+            cr = real_clean(con, table, **kw)
+            # the result, and the profile as cleaning left it (clean_table may note things on it)
+            memo[key] = (copy.deepcopy(cr), copy.deepcopy(th.__dict__))
+            return cr
+        cr, after = memo[key]
+        th.__dict__.update(copy.deepcopy(after))
+        return copy.deepcopy(cr)
+
+    _hl.score_table, _cl.clean_table = score_table, clean_table
+    try:
+        yield
+    finally:
+        _hl.score_table, _cl.clean_table = real_score, real_clean
+
+
+@contextlib.contextmanager
 def _pinned_clock(as_of: Optional[str]):
     """Run the profiler as if today were `as_of` (the sample's fixed analysis date).
 
@@ -468,6 +536,10 @@ def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
         "scenarios": {"basis": None, "items": [], "refused": [], "note": ""},
         # the charts chosen from the data (the chart registry, engine/nl_viz.py; CONTRACT §5.9): nothing built yet
         "viz": {"version": VIZ_VERSION, "charts": [], "refused": [], "chosen_by": "none"},
+        # the analyst loop (engine/nl_analyst.py; CONTRACT §5.10): rounds of typed steps over the kept rows, each
+        # chosen from what the last found, every number in a step's ledger and every sentence filled from it
+        "analyst": {"version": 1, "chosen_by": "none", "shape": None, "steps": [], "insights": [], "refused": [],
+                    "rounds": 0, "cut_short": None, "note": ""},
     }
 
 
@@ -1014,6 +1086,47 @@ def _kind_of(col: str, kinds: str, res: Any) -> str:
     return ", ".join(labels) or "possible personal data"
 
 
+AMOUNTS_KEPT = "kept by default: plain numbers of every size, read as amounts, not identifiers"
+
+
+def _weak_reason(res: Any, col: str) -> bool:
+    """The scan's reason for the column is a weak or unconfirmed value match (never a name-like header, free text,
+    people's names or a coded kind)."""
+    global _REASON_KIND
+    if _REASON_KIND is None:
+        from northledger import intake as _intake
+        _REASON_KIND = {v: k for k, v in getattr(_intake, "_REVIEW_REASONS", {}).items()}
+    key = _REASON_KIND.get((getattr(res, "review_reasons", None) or {}).get(col, ""), "")
+    return key in ("weak", "unconfirmed")
+
+
+def _amount_like(eng: Any, res: Any, col: str) -> bool:
+    """Every value a plain number, and their digit counts spread over three or more lengths (a phone, card or SIN
+    number keeps one length; GDP runs from millions to trillions)."""
+    import sqlite3
+    try:
+        con = sqlite3.connect(eng.db_path)
+        try:
+            vals = [r[0] for r in con.execute('SELECT "%s" FROM "%s" LIMIT 5000'
+                                              % (col.replace('"', '""'), res.table.replace('"', '""')))]
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001 - any doubt keeps the column withheld
+        return False
+    nums = []
+    for v in vals:
+        t = str(v).strip() if v is not None else ""
+        if not t:
+            continue
+        if not re.fullmatch(r"-?\d+(\.\d+)?([eE][+-]?\d+)?", t):
+            return False
+        nums.append(t)
+    if len(nums) < 20:
+        return False
+    lengths = {len(t.lstrip("-").split(".")[0].split("e")[0].split("E")[0]) for t in nums}
+    return len(lengths) >= 3 and max(lengths) - min(lengths) >= 3
+
+
 def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, Any]]
                      ) -> List[Dict[str, str]]:
     """Every flagged column gets a decision: the visitor's, else withhold. A column the
@@ -1042,6 +1155,11 @@ def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, A
             continue
         seen.add(col)
         want = wanted.get(col, "withhold")
+        amounts = False
+        if col not in wanted and current != "coded" and _weak_reason(res, col) and _amount_like(eng, res, col):
+            # a weak match on a column of plain numbers whose length varies by orders of magnitude (GDP, market
+            # cap, seat-km): amounts, not identifiers; kept by default and said so, the visitor can still withhold
+            want, amounts = "keep", True
         if current == "coded":
             if want == "withhold":
                 E.decide(eng, col, "withhold", table=res.table, note="withheld by the visitor")
@@ -1050,9 +1168,12 @@ def _apply_decisions(E: Any, eng: Any, res: Any, decisions: Optional[Dict[str, A
                 effective = "code"
         else:
             E.decide(eng, col, want, table=res.table,
-                     note="decided by the visitor" if col in wanted else "withheld by default")
+                     note="decided by the visitor" if col in wanted else
+                     AMOUNTS_KEPT if amounts else "withheld by default")
             effective = want
         kind = _kind_of(col, kinds or "", res)
+        if amounts:
+            kind += "; " + AMOUNTS_KEPT
         if current == "coded":
             kind += "; " + CODED_ON_ARRIVAL
         out.append({"column": col, "kind": kind, "decision": effective})
@@ -1073,7 +1194,9 @@ def _effective_decisions(flagged: List[Dict[str, str]], colmap: Dict[str, str], 
             wanted[colmap[str(k)]] = d
     out: Dict[str, str] = {}
     for f in flagged:
-        want = wanted.get(f["column"], "withhold")
+        # an amount column the scan kept by default stays kept unless the visitor says otherwise
+        default = "keep" if AMOUNTS_KEPT in str(f.get("kind") or "") else "withhold"
+        want = wanted.get(f["column"], default)
         if CODED_ON_ARRIVAL in str(f.get("kind") or ""):
             want = "withhold" if want == "withhold" else "code"
         out[f["column"]] = want
@@ -4391,13 +4514,18 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         charts_max = _nv.AI_CHARTS_MAX
     except ImportError:
         _nv, charts_max = None, 10
-    for rec in ((rep.get("viz") or {}).get("charts") or []) if _nv is not None else []:
+    # then the analyst loop's charts (each the chart of one insight, rep.analyst.insights[].figure; CONTRACT §5.10), in
+    # the loop's order: its title and summary (the insight's own sentence) tell the writer which finding it shows
+    ana_figs = [i.get("figure") for i in ((rep.get("analyst") or {}).get("insights") or []) if isinstance(i, dict)]
+    seen_ids = set()
+    for rec in (((rep.get("viz") or {}).get("charts") or []) + [f for f in ana_figs if f]) if _nv is not None else []:
         if len(charts) >= charts_max:
             break
-        if not _nv.is_record(rec):
+        if not _nv.is_record(rec) or rec.get("id") in seen_ids:
             continue
         sent = _nv.for_sending(rec, scrub)
         if sent is not None:
+            seen_ids.add(rec.get("id"))
             charts.append(sent)
 
     # the scenario and contribution block (engine/nl_scenarios.py), 1:1: every key, every figure and every text as
@@ -4536,6 +4664,10 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         "scenarios": scenarios,
         # the claim the report leads with ({id, claim, grade} or null): the PDF's key figures read it exactly
         "primary": _primary_for_ai(rep, safe, scrub),
+        # the analyst loop's insights (rep.analyst, engine/nl_analyst.py; CONTRACT §5.10): their texts only, as the
+        # report holds them (every figure in one is a figure a step recorded), in the loop's order, at most
+        # ANALYST_INSIGHTS_MAX; descriptive, never graded. One that names a withheld column is never sent.
+        "analyst_insights": _analyst_insights_for_ai(rep.get("analyst"), safe, scrub),
     }
     # never the file's name (final review, 29 Sep 2026: the engine's sentences name it, "22 values in the amount
     # column of private_mix.csv could not be read", and every one went to /report): FILE_WORD stands in, as in
@@ -4547,7 +4679,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         # a name shorter than the placeholder makes a text longer: each analysis's sentence and method are cut again
         ana = [dict(a, **{k: _cut_words(a[k], n) for k, n in ANALYSIS_TEXT_MAX.items() if isinstance(a.get(k), str)})
                for a in o.get("analyses") or []]
-        return dict(o, analyses=ana, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []])
+        return dict(o, analyses=ana, limitations=[_cut_text(x, LIMITATION_MAX) for x in o.get("limitations") or []],
+                    analyst_insights=[_cut_words(x, ANALYST_INSIGHT_MAX) for x in o.get("analyst_insights") or []])
     return _within_budget(out, final, drove_of, n_tables, links)
 
 
@@ -4571,6 +4704,37 @@ def _cut_text(s: str, n: int) -> str:
 # word with an ellipsis (_cut_words), so the worker never has to cut one (review of the live run, 30 Sep 2026: a
 # method note reached the report as "...each of the last 4 predicted by a model trained only on the blocks befor").
 ANALYSIS_TEXT_MAX = {"sentence": 700, "method": 300}
+
+# The analyst loop's insights results_for_ai sends (rep.analyst, CONTRACT §5.10): at most ANALYST_INSIGHTS_MAX, in the
+# loop's order, each at most ANALYST_INSIGHT_MAX characters (whole, or cut at a word by _cut_words). Under the byte
+# budget they go from the last, after the scenario items and the charts chosen from the data, before any analysis.
+ANALYST_INSIGHTS_MAX = 10
+ANALYST_INSIGHT_MAX = 400
+
+
+def _analyst_insights_for_ai(block: Any, safe: Any, scrub: Any) -> List[str]:
+    """The texts of rep.analyst's insights for the report writer: as the report holds them, made safe as every other
+    text in results_for_ai; an insight whose text names a withheld column is left out, never reworded. First, when the
+    story has them, one line of its key numbers (story.key_numbers: each a printed ledger value with its label), the
+    figures the writer should lead with."""
+    out: List[str] = []
+    st = block.get("story") if isinstance(block, dict) else None
+    tiles = [k for k in ((st or {}).get("key_numbers") or []) if isinstance(k, dict) and k.get("value")]
+    parts = []
+    for k in tiles:
+        bit = "%s (%s%s)" % (k["value"], k.get("label") or "", "; " + k["note"] if k.get("note") else "")
+        if not scrub.names(bit):
+            parts.append(bit)
+    if parts:
+        out.append(_cut_words(safe("Key numbers: " + "; ".join(parts) + ".", 4000), ANALYST_INSIGHT_MAX))
+    for ins in (block.get("insights") if isinstance(block, dict) else None) or []:
+        if len(out) >= ANALYST_INSIGHTS_MAX:
+            break
+        text = ins.get("text") if isinstance(ins, dict) else None
+        if not isinstance(text, str) or not text.strip() or scrub.names(text):
+            continue
+        out.append(_cut_words(safe(text, 4000), ANALYST_INSIGHT_MAX))
+    return out
 
 
 def _cut_words(s: str, n: int) -> str:
@@ -4631,16 +4795,31 @@ def _budget_drop_order(items: List[Dict[str, Any]]) -> List[int]:
     return facts + beyond + core_seg + rest
 
 
+def _analyst_figure(rec: Any) -> bool:
+    """Whether a chart record is one the analyst loop drew (id "viz.<n>.<kind>" with n of 50 or more)."""
+    parts = str(rec.get("id") if isinstance(rec, dict) else "").split(".")
+    return len(parts) >= 3 and parts[0] == "viz" and parts[1].isdigit() and int(parts[1]) >= 50
+
+
 def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int,
                    links: Optional[List[Tuple[Optional[int], Optional[int]]]] = None) -> Dict[str, Any]:
     """final(out), at most RESULTS_MAX_BYTES: scenario items dropped (_budget_drop_order) until it fits, the "Where the
     change came from" table rebuilt from the items kept and scenarios.refused saying first how many were left out;
-    then, if it is still over, the charts chosen from the data (rep.viz records) from the last; then the analyses
+    then, if it is still over, the charts chosen from the data (rep.viz records) from the last; then the analyst
+    loop's insights (analyst_insights) from the last; then the analyses
     from the last (with the chart and table each one has: links, their
     indices in charts and tables) and analyses_refused saying so first; then the charts, the tables and the findings
     from the end. Never returns a payload over the budget."""
     done = final(out)
     size = _payload_bytes(done)
+    if size <= RESULTS_MAX_BYTES:
+        return done
+    # first the analyst loop's charts (figure ids 50 and up, CONTRACT §5.10), from the last: each only draws an
+    # insight whose sentence is still sent, so it goes before any computed item does
+    while size > RESULTS_MAX_BYTES and out.get("charts") and _analyst_figure(list(out["charts"])[-1]):
+        out = dict(out, charts=list(out["charts"])[:-1])
+        done = final(out)
+        size = _payload_bytes(done)
     if size <= RESULTS_MAX_BYTES:
         return done
     sc = out.get("scenarios") if isinstance(out.get("scenarios"), dict) else None
@@ -4686,6 +4865,13 @@ def _within_budget(out: Dict[str, Any], final: Any, drove_of: Any, n_tables: int
         is_viz = None
     while is_viz is not None and size > RESULTS_MAX_BYTES and out.get("charts") and is_viz(list(out["charts"])[-1]):
         out = dict(out, charts=list(out["charts"])[:-1])
+        done = final(out)
+        size = _payload_bytes(done)
+    if size <= RESULTS_MAX_BYTES:
+        return done
+    # still over: the analyst loop's insights, from the last
+    while size > RESULTS_MAX_BYTES and out.get("analyst_insights"):
+        out = dict(out, analyst_insights=list(out["analyst_insights"])[:-1])
         done = final(out)
         size = _payload_bytes(done)
     if size <= RESULTS_MAX_BYTES:
@@ -4742,6 +4928,40 @@ def _swap_text(x: Any, old: str, new: str) -> Any:
     if isinstance(x, dict):
         return {k: _swap_text(v, old, new) for k, v in x.items()}
     return x
+
+
+# The analysis frame of the last run (see _analyst_block): read only by analyst_more_json, replaced by every run.
+_LAST_ANALYST: Dict[str, Any] = {}
+
+
+def analyst_ledger_json(block_json: str) -> str:
+    """What the AI planner may see of the analyst block (nl_analyst.ledger_for_ai): each step's op, args, why and printed
+    figures, never a table or a row; the page posts it to the worker's /analyst as steps_so_far."""
+    import nl_analyst as _na
+    try:
+        block = json.loads(block_json)
+    except (TypeError, ValueError):
+        block = {}
+    return json.dumps(_na.ledger_for_ai(block if isinstance(block, dict) else {}), allow_nan=False, default=str)
+
+
+def analyst_more_json(steps_json: str, prior_json: str) -> str:
+    """One AI round (docs/ai-analyst/PROTOCOL.md): the steps the worker's /analyst returned, run by
+    nl_analyst.run_steps on the frame of the last run, after the block's steps so far (prior). Every step is checked
+    again here (an op, an argument or a column outside the schema is refused with its reason); every figure comes from
+    the engine. Returns {shape, steps, insights, refused, round, seconds} as JSON; with no run yet, nothing runs."""
+    import nl_analyst as _na
+    if not _LAST_ANALYST:
+        return json.dumps({"steps": [], "insights": [], "refused": [{"op": "all", "why": "no file has been analysed"}],
+                           "round": 0, "seconds": 0})
+    try:
+        steps = json.loads(steps_json)
+        prior = json.loads(prior_json)
+    except (TypeError, ValueError):
+        steps, prior = None, []
+    out = _na.run_steps(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"], steps, _LAST_ANALYST["hint"],
+                        prior=prior if isinstance(prior, list) else [])
+    return json.dumps(out, allow_nan=False, default=str)
 
 
 def results_json(rep: Any) -> str:
@@ -7613,7 +7833,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         pol = None
         colmap = dict(getattr(res, "column_map", {}) or {})
         prim_head = ""                            # the column the report leads with, named as the engine read it
-        with _pinned_clock(as_of):
+        with _pinned_clock(as_of), _profile_and_clean_once():
             # -- the Data Health Audit: the engine's data-quality findings
             t0 = time.perf_counter()
             audit = _loop.run_loop(eng.db_path, table, objective, out_dir=os.path.join(tmp, "audit"),
@@ -7914,6 +8134,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the charts chosen from the data (engine/nl_viz.py), after the scenarios they read; each is also a rule "V"
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens)
+        rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal),
+                                  personal=[f for f in flagged if isinstance(f, dict) and f.get("column")])
         _mend_cannot_answer(rep)
         rep["ok"] = True
     except Refusal as exc:
@@ -8078,6 +8300,78 @@ def _scenarios(rep: Dict[str, Any], r: Any, cr: Any, hidden: Dict[str, str], rea
         return {"basis": None, "items": [], "refused": ["the scenarios could not be computed for this file (%s)"
                                                         % type(exc).__name__],
                 "note": "No scenario or contribution figures for this file; the reasons are listed."}
+
+
+def _topic_words(name: Any, goal: Any) -> List[str]:
+    """The words of the file's name and the visitor's question that can name a subject (4 letters or more, not a
+    generic file word), lower case: the analyst loop reads them only to order what it already found, never as data
+    and never into a sentence, so no word of the name reaches the report or the AI."""
+    generic = {"data", "dataset", "file", "files", "table", "export", "final", "copy", "sheet", "report", "survey",
+               "results", "what", "does", "this", "that", "with", "from", "about", "should", "done", "csv", "xlsx",
+               "monthly", "daily", "weekly", "annual", "yearly", "quarterly", "clean", "cleaned", "messy", "sample",
+               "test", "latest", "full", "new", "old", "raw", "input", "output", "download", "dump", "main"}
+    words = re.findall(r"[a-z]{4,}", (str(name or "") + " " + str(goal or "")).lower())
+    out: List[str] = []
+    for w in words:
+        if w not in generic and w not in out:
+            out.append(w)
+    return out[:12]
+
+
+def _people_words(flag: Dict[str, Any], df: Any) -> bool:
+    """Whether a flagged column holds people's own words or names: its flag says free text or a person's name, or
+    its values read as names (_looks_like_names). Such a column is never an analyst grouping (_analyst)."""
+    kind = str(flag.get("kind") or "")
+    if any(lab in kind for lab in (_REASON_LABEL["free_text"], _REASON_LABEL["people"], _KIND_LABEL["person_name"])):
+        return True
+    col = str(flag.get("column"))
+    if df is None or col not in getattr(df, "columns", ()):
+        return False
+    try:
+        # the header counts (guest, staff_member), but not the bare word "name" (peak_name, a company's name)
+        header = re.sub(r"(?<![a-z])names?(?![a-z])", " ", col.lower())
+        return _looks_like_names(df[col].dropna().astype(str).head(500), header)
+    except Exception:  # noqa: BLE001 - a column that cannot be read is not called names
+        return False
+
+
+def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any,
+             topic: Optional[List[str]] = None, personal: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """rep["analyst"] (engine/nl_analyst.py, CONTRACT §5.10): the analyst loop over the rows the engine kept, read as the
+    AI's analyses read them (_analysis_frame: no withheld or coded column is in the frame, so no step can read one). The
+    plan's date and primary column steer it when there is a plan; with none, the loop reads the file's shape itself.
+    The report stands without it, and says so."""
+    blank = {"version": 1, "chosen_by": "none", "shape": None, "steps": [], "insights": [], "refused": [], "rounds": 0,
+             "cut_short": None, "note": ""}
+    if reading is None:
+        blank["refused"] = [{"op": "all", "why": "the engine's table could not be read"}]
+        return blank
+    try:
+        import nl_analyst as _na
+        p = plan if isinstance(plan, dict) else {}
+        df, date, _ent, _why, info = _analysis_frame({"reading": reading, "clean": cr.clean, "hide": hide}, p, layout)
+        roles = {str(c.get("role")): c.get("name") for c in p.get("columns") or [] if isinstance(c, dict)}
+        hint = {"date": date, "primary": p.get("primary") or roles.get("measure"), "entity": roles.get("entity"),
+                "topic": list(topic or []),
+                # never a grouping: the plan's free-text columns, and a flagged column the visitor kept whose flag is
+                # free text or a person's name, or whose values read as people's names (a kept guest column is for the
+                # analyses the visitor chose, not for "the most common guest"); a kept gender or company name column
+                # the scan flagged by its header alone stays a grouping
+                "free_text": [c.get("name") for c in p.get("columns") or []
+                              if isinstance(c, dict) and c.get("semantic_type") == "free_text"]
+                             + [str(f["column"]) for f in personal or [] if _people_words(f, df)]}
+        out = _na.explore(df, info.get("kinds") or {}, hint)
+        out["rows"] = {"kept": info.get("kept"), "set_aside": info.get("aside")}
+        # the frame the loop read, kept for the AI rounds the page may ask for next (analyst_more_json): the same rows,
+        # kinds and hint, so a planned step runs on exactly what the engine's own steps ran on, never on raw rows
+        _LAST_ANALYST.clear()
+        _LAST_ANALYST.update(df=df, kinds=info.get("kinds") or {}, hint=hint)
+        return out
+    except Exception as exc:  # noqa: BLE001 - the report stands without the loop, and says so
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        blank["refused"] = [{"op": "all", "why": "the analyst loop could not run on this file (%s)" % type(exc).__name__}]
+        return blank
 
 
 def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",

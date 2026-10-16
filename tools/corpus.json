@@ -1,0 +1,919 @@
+{
+  "_about": "The real-dataset corpus the engine and the analyst loop are tested on (tools/run_corpus.py). Each remote file is downloaded on demand into .corpus/ (gitignored: nothing here is published with the site) and checked against its sha256; a file whose bytes changed upstream fails loudly instead of silently testing something else. 'kind' is the data shape the file stands for, which the story templates and the benchmark group by. 'expect' holds what a good analyst must find, scored by tools/run_corpus.py --score.",
+  "datasets": [
+    {
+      "id": "ledger_rentals",
+      "kind": "ledger",
+      "path": "engine/sample-messy.csv",
+      "about": "The site's own messy rental ledger (synthetic, made by tools/make_sample_messy.py).",
+      "expect": [
+        {
+          "ledger_value": 0.322,
+          "op": "change",
+          "tol": 0.005,
+          "why": "total Amount, 12 months to 2026-08 against the 12 before, after exact duplicates, day-first slash dates, the 2027 typos and negative amounts are handled: +32.2% (918,969 to 1,215,139)"
+        },
+        {
+          "insight_kind": "driver",
+          "contains": [
+            "East York Low-Rise"
+          ],
+          "why": "East York Low-Rise carried 78.7% of the change (+233,150)"
+        },
+        {
+          "ledger_word": "Rent",
+          "why": "inside East York the change is rent (+211,611 of +233,150, 91%), not a vendor"
+        },
+        {
+          "insight_mentions_any": [
+            "2025-03",
+            "2025-04",
+            "new property",
+            "acquired",
+            "added in"
+          ],
+          "why": "every East York unit first appears in 2025-03/04: the jump is a building added, not like-for-like growth"
+        },
+        {
+          "ledger_value": 0.0912,
+          "tol": 0.003,
+          "why": "without East York the total still rose +9.1%"
+        },
+        {
+          "no_text_matches": "2027",
+          "why": "the planted 2027 dates are typos and must not reach a sentence"
+        }
+      ]
+    },
+    {
+      "id": "ledger_orders",
+      "kind": "ledger",
+      "path": "tools/fixtures/scenarios/ship2_privacy_orders.csv",
+      "about": "Orders ledger with store, region, product and customer columns (synthetic fixture).",
+      "expect": [
+        {
+          "ledger_value": 0.187,
+          "op": "change",
+          "tol": 0.003,
+          "why": "revenue 2025 against 2024: 128,256 to 152,214 (+18.7%)"
+        },
+        {
+          "insight_kind": "driver",
+          "contains": [
+            "East"
+          ],
+          "why": "East carried 67.7% of the revenue change (+16,220)"
+        },
+        {
+          "ledger_value": 0.976,
+          "op": "correlate",
+          "tol": 0.01,
+          "why": "revenue and units, Spearman 0.976"
+        },
+        {
+          "insight_mentions_none": [
+            "customer_name",
+            "@mailbox.test"
+          ],
+          "why": "names and emails are identifiers, never a breakdown"
+        }
+      ]
+    },
+    {
+      "id": "cpi_us",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/datasets/cpi-us/main/data/cpiai.csv",
+      "about": "US CPI-U all items, monthly index and inflation, BLS via datasets/cpi-us (ODC-PDDL).",
+      "sha256": "f124bd596ebebc15bcdeb0a6445af0e2c48120325852f9b6a87744ea92acfe86",
+      "expect": [
+        {
+          "shape.kind": "time_series"
+        },
+        {
+          "ledger_value": 0.034,
+          "tol": 0.001,
+          "why": "CPI-U 2026-08 against 2025-08: 334.98 / 323.98, +3.4%"
+        },
+        {
+          "insight_mentions_any": [
+            "2026-08"
+          ],
+          "why": "the latest month must be named"
+        },
+        {
+          "ledger_value": 0.0316,
+          "op": "trend",
+          "tol": 0.001,
+          "why": "annual average index 1913 to 2025 compounds at +3.2% a year"
+        },
+        {
+          "no_text_matches": "total of (Index|Inflation)",
+          "why": "an index and an inflation rate are levels, never summed"
+        }
+      ]
+    },
+    {
+      "id": "global_temp",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/datasets/global-temp/main/data/monthly.csv",
+      "about": "Global temperature anomalies, monthly, two sources stacked long (GISTEMP, GCAG).",
+      "sha256": "d61b268c8f4d1934c0a20297d4036a68f93a06f15442164637d3994c18a15186",
+      "expect": [
+        {
+          "no_percent_change_for_zero_crossing": [
+            "Mean"
+          ],
+          "why": "anomalies run from -1.04 to +1.48: a change is a difference, never a percent"
+        },
+        {
+          "ledger_value": -0.0925,
+          "tol": 0.0015,
+          "why": "GISTEMP ends 2025-12: its own latest 12 months (1.193) against the 12 before (1.286) is -0.0925; a window to 2026-07 holds only 5 GISTEMP months (-0.0603)"
+        },
+        {
+          "insight_mentions_any": [
+            "2024"
+          ],
+          "why": "2024 is the warmest year in both sources (GCAG 1.169, GISTEMP 1.286)"
+        },
+        {
+          "insight_kind": "trend",
+          "why": "the warming trend (about +0.21 C a decade since 1975) is the story"
+        }
+      ]
+    },
+    {
+      "id": "brent_monthly",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/datasets/oil-prices/main/data/brent-monthly.csv",
+      "about": "Brent crude price, monthly, US EIA via datasets/oil-prices.",
+      "sha256": "3db91f6f219d87cbef9ae8ac2cc1a6bffb05e69b030ac0d70c355fedda7b8a64",
+      "expect": [
+        {
+          "shape.kind": "time_series"
+        },
+        {
+          "ledger_value": 0.679,
+          "tol": 0.003,
+          "why": "2026-09 (114.16) against 2025-09 (67.99): +67.9%"
+        },
+        {
+          "insight_mentions_any": [
+            "2008"
+          ],
+          "why": "the monthly record is 132.72 in 2008-07"
+        },
+        {
+          "insight_kind": "trend"
+        },
+        {
+          "no_text_matches": "\\d price for",
+          "why": "a unit word misused as a noun ('114.2 price for 2026-10')"
+        }
+      ]
+    },
+    {
+      "id": "gdp_panel",
+      "kind": "panel",
+      "url": "https://raw.githubusercontent.com/datasets/gdp/main/data/gdp.csv",
+      "about": "GDP by country and year, World Bank via datasets/gdp; mixes countries with World and regional totals.",
+      "sha256": "8d84ef6bcaccf740c01c5ed7566aae8f7b149d0e2c20001e441efd3cb5b2fa86",
+      "expect": [
+        {
+          "shape.kind": "panel"
+        },
+        {
+          "shape.entity": [
+            "Country Name",
+            "Country Code"
+          ]
+        },
+        {
+          "aggregates_excluded": [
+            "World",
+            "High income",
+            "OECD members",
+            "Euro area",
+            "European Union",
+            "Middle income",
+            "IDA & IBRD total",
+            "Low & middle income",
+            "East Asia & Pacific",
+            "South Asia"
+          ],
+          "why": "World Bank aggregates are not countries"
+        },
+        {
+          "insight_order": [
+            "United States",
+            "China",
+            "Germany"
+          ],
+          "why": "2023 is the latest year and holds all large economies: US 27.4T, China 17.8T, Germany 4.46T passed Japan 4.21T"
+        },
+        {
+          "insight_mentions_any": [
+            "2023"
+          ],
+          "why": "the latest year with data is 2023"
+        },
+        {
+          "ledger_word": "Guyana",
+          "why": "fastest growth over the last decade among countries (2013-2023 +303%, 2012-2022 +262%)"
+        }
+      ]
+    },
+    {
+      "id": "population_panel",
+      "kind": "panel",
+      "url": "https://raw.githubusercontent.com/datasets/population/main/data/population.csv",
+      "about": "Population by country and year, World Bank via datasets/population; mixes countries with aggregates.",
+      "sha256": "2c697c3e668c8cb06ee467cd0d475b37b52844fdc48cb7725b79b58f18bf0b02",
+      "expect": [
+        {
+          "shape.kind": "panel"
+        },
+        {
+          "aggregates_excluded": [
+            "World",
+            "High income",
+            "OECD members",
+            "Euro area",
+            "European Union",
+            "Middle income",
+            "IDA & IBRD total",
+            "Low & middle income",
+            "East Asia & Pacific",
+            "South Asia"
+          ]
+        },
+        {
+          "insight_order": [
+            "India",
+            "China",
+            "United States"
+          ],
+          "why": "2025: India 1.464bn, China 1.407bn, US 342m"
+        },
+        {
+          "ledger_value": 0.0092,
+          "tol": 0.0015,
+          "why": "world population 2024 to 2025 +0.92%"
+        },
+        {
+          "ledger_word": "Chad",
+          "why": "fastest growth 2015-2025 among countries (+43.4%)"
+        }
+      ]
+    },
+    {
+      "id": "co2_panel",
+      "kind": "panel",
+      "url": "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv",
+      "about": "Our World in Data CO2 panel (CC BY 4.0): 79 columns, countries with World and continents.",
+      "sha256": "7f78e2b218ce4bb8c538bbec04fdc9a7982e8d40bff972e650df603899edd5f6",
+      "expect": [
+        {
+          "shape.kind": "panel"
+        },
+        {
+          "aggregates_excluded": [
+            "World",
+            "Asia",
+            "Europe",
+            "Africa",
+            "North America",
+            "High-income countries",
+            "European Union (27)",
+            "International shipping",
+            "International aviation",
+            "Non-OECD (GCP)"
+          ]
+        },
+        {
+          "insight_order": [
+            "China",
+            "United States",
+            "India"
+          ],
+          "contains_any": [
+            "co2"
+          ],
+          "why": "2024 CO2: China 12,289 Mt, US 4,904, India 3,193"
+        },
+        {
+          "insight_mentions_any": [
+            "2024"
+          ],
+          "why": "the latest year"
+        },
+        {
+          "ledger_value": 0.0132,
+          "tol": 0.004,
+          "why": "world CO2 2023 to 2024 +1.3% (World row 38,094 to 38,599 Mt)"
+        }
+      ]
+    },
+    {
+      "id": "stocks_long",
+      "kind": "panel",
+      "url": "https://raw.githubusercontent.com/vega/vega-datasets/main/data/stocks.csv",
+      "about": "Five stock prices, monthly, stacked long (symbol, date, price), vega-datasets.",
+      "sha256": "f9953ac6693e587476b4ebf2f0b00d9bb95371ca8c39da4cc6155077b3e417cd",
+      "expect": [
+        {
+          "shape.kind": "panel"
+        },
+        {
+          "shape.entity": "symbol"
+        },
+        {
+          "ledger_word": "AAPL",
+          "key": "riser",
+          "why": "AAPL rose most: 2000-01 25.94 to 2010-03 223.0 (+760%)"
+        },
+        {
+          "ledger_word": "MSFT",
+          "key": "faller",
+          "why": "MSFT is the only one lower than in 2000-01 (-27.7%)"
+        },
+        {
+          "no_text_matches": "(average|total) of price",
+          "why": "five different stocks' prices are never averaged or added"
+        }
+      ]
+    },
+    {
+      "id": "fx_daily",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/datasets/exchange-rates/main/data/daily.csv",
+      "about": "Daily exchange rates against the US dollar by country, Federal Reserve via datasets/exchange-rates.",
+      "sha256": "60178da035ddb8e7bedd365c21ff18544a92854203b6a8010633cba0acbe44ad",
+      "expect": [
+        {
+          "error_contains": "200,000",
+          "why": "the demo's row cap must be stated plainly"
+        },
+        {
+          "error_contains": "smaller",
+          "why": "and say what to do instead"
+        },
+        {
+          "max_seconds": 5,
+          "why": "a refusal is quick"
+        }
+      ]
+    },
+    {
+      "id": "seattle_weather",
+      "kind": "sensor",
+      "url": "https://raw.githubusercontent.com/vega/vega-datasets/main/data/seattle-weather.csv",
+      "about": "Daily Seattle weather 2012-2015: precipitation, temperatures, wind, a weather category.",
+      "sha256": "0845078a290b48e3149ab8639966824110a251db4e06fc144c06ebb534af23be",
+      "expect": [
+        {
+          "ledger_value": 0.432,
+          "tol": 0.01,
+          "why": "average temp_max 2015 (17.43 C) against 2014 (17.00 C): +0.43 degrees, a difference since Celsius crosses zero"
+        },
+        {
+          "ledger_value": 0.886,
+          "op": "correlate",
+          "tol": 0.01,
+          "why": "temp_max and temp_min, Spearman 0.886"
+        },
+        {
+          "no_percent_change_for_zero_crossing": [
+            "temp_max",
+            "temp_min"
+          ],
+          "why": "Celsius readings cross zero (temp_max -1.6, temp_min -7.1): '-70.2% from that peak' is meaningless"
+        },
+        {
+          "insight_mentions_any": [
+            "rain",
+            "sun"
+          ],
+          "why": "rain (43.9%) and sun (43.8%) are the common weather; fog is 6.9%"
+        }
+      ]
+    },
+    {
+      "id": "flights_monthly",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/flights.csv",
+      "about": "Monthly airline passengers 1949-1960 with year and month name in separate columns (seaborn).",
+      "sha256": "237d834127d9c6355630d8f443a7a2377b5925923010009b59809ba0b67f4fac",
+      "expect": [
+        {
+          "shape.grain": "month",
+          "why": "year and month name in two columns make a monthly series"
+        },
+        {
+          "ledger_value": 0.1117,
+          "tol": 0.002,
+          "why": "1960 against 1959: 5,140 to 5,714 (+11.2%)"
+        },
+        {
+          "ledger_value": 0.128,
+          "tol": 0.002,
+          "op": "trend",
+          "why": "1949 to 1960 compounds at +12.8% a year"
+        },
+        {
+          "insight_mentions_any": [
+            "July",
+            "summer",
+            "season"
+          ],
+          "case": true,
+          "why": "a strongly seasonal series: July is the peak month"
+        }
+      ]
+    },
+    {
+      "id": "steak_survey",
+      "kind": "survey",
+      "url": "https://raw.githubusercontent.com/fivethirtyeight/data/master/steak-survey/steak-risk-survey.csv",
+      "about": "FiveThirtyEight steak and risk survey (CC BY 4.0): answers per respondent, a second header row of 'Response'.",
+      "sha256": "cc25080bf53209ba5034d738e857bd6106314f8e49ac7c203dbca9ff35474a1a",
+      "expect": [
+        {
+          "shape.kind": "survey"
+        },
+        {
+          "insight_mentions_any": [
+            "Medium rare"
+          ],
+          "why": "the most common steak preparation (38.4% of 432)"
+        },
+        {
+          "insight_mentions_none": [
+            "RespondentID"
+          ],
+          "why": "an ID is not an answer"
+        },
+        {
+          "min_insights": 3,
+          "why": "a 15-question survey deserves more than the strongest pair"
+        }
+      ]
+    },
+    {
+      "id": "candy_ranking",
+      "kind": "cross_section",
+      "url": "https://raw.githubusercontent.com/fivethirtyeight/data/master/candy-power-ranking/candy-data.csv",
+      "about": "FiveThirtyEight candy power ranking (CC BY 4.0): 85 candies, binary attributes and a win percentage.",
+      "sha256": "46c17cdb8c0212bc3e0cee2a9617a75d1ce642cd1559c332b1d9a2c4ed19b8cb",
+      "expect": [
+        {
+          "shape.kind": "cross_section"
+        },
+        {
+          "insight_order": [
+            "Reese's Peanut Butter cup",
+            "Reese's Miniatures",
+            "Twix"
+          ],
+          "why": "winpercent 84.18, 81.87, 81.64"
+        },
+        {
+          "ledger_value": 60.92,
+          "tol": 0.01,
+          "why": "chocolate candies average 60.92 against 42.14"
+        },
+        {
+          "insight_mentions_any": [
+            "chocolate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "diamonds",
+      "kind": "cross_section",
+      "url": "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/diamonds.csv",
+      "about": "54k diamonds: carat, cut, colour, clarity and price (seaborn).",
+      "sha256": "9574730b03aba241d899c4a97511c5061b19358fab89510774fb6c24168345c4",
+      "expect": [
+        {
+          "shape.kind": "cross_section"
+        },
+        {
+          "insight_mentions_any": [
+            "carat"
+          ],
+          "why": "carat drives price (Spearman 0.963); x/y/z are its dimensions"
+        },
+        {
+          "ledger_value": 0.963,
+          "op": "correlate",
+          "tol": 0.01
+        },
+        {
+          "insight_mentions_any": [
+            "Ideal",
+            "per carat",
+            "smaller"
+          ],
+          "why": "the cut paradox: Ideal is cheapest on average (3,458) because its stones are smallest (0.70 ct)"
+        }
+      ]
+    },
+    {
+      "id": "reviews",
+      "kind": "reviews",
+      "path": "tools/fixtures/eval/brand_ratings_2022.csv",
+      "about": "Brand star ratings, 2022 (fixture, star counts only).",
+      "expect": [
+        {
+          "ledger_value": 3.837,
+          "tol": 0.01,
+          "why": "overall average 3.837 stars over 5,581 answers"
+        },
+        {
+          "insight_mentions_any": [
+            "KIWI design",
+            "G-STORY",
+            "Elgato"
+          ],
+          "why": "leaders once small samples are shrunk with a prior of 5 to 20 answers; 8 five-star answers is not a lead"
+        },
+        {
+          "insight_mentions_any": [
+            "Nintendo"
+          ],
+          "why": "the most-reviewed brand (251 answers, 4.19)"
+        }
+      ]
+    },
+    {
+      "id": "car_sales",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/jbrownlee/Datasets/master/monthly-car-sales.csv",
+      "about": "Monthly car sales in Quebec, 1960-1968, two columns (Month as 1960-01, Sales); a classic seasonal series from Abraham and Ledolter via the Time Series Data Library, redistributed by jbrownlee/Datasets (no licence stated; public teaching data).",
+      "sha256": "a4194226eb1d0eba5fd503e829b1279f1a10683d8009f2871aca05e7fb648f70",
+      "expect": [
+        {
+          "shape.kind": "time_series"
+        },
+        {
+          "ledger_value": 0.0993,
+          "tol": 0.002,
+          "why": "1968 against 1967: 198,976 to 218,738 (+9.9%)"
+        },
+        {
+          "ledger_value": 0.075,
+          "tol": 0.002,
+          "op": "trend",
+          "why": "1960 to 1968 compounds at +7.5% a year"
+        },
+        {
+          "insight_mentions_any": [
+            "May",
+            "spring",
+            "season"
+          ],
+          "case": true,
+          "why": "sales peak in April-June (May averages 20,884) and bottom in September (10,140)"
+        }
+      ]
+    },
+    {
+      "id": "drug_sales",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/selva86/datasets/master/a10.csv",
+      "about": "Monthly anti-diabetic drug sales in Australia (A10, $ million), 1991-07 to 2008-06, from Hyndman's fpp2 package (GPL-3) via selva86/datasets; strongly seasonal with a January spike, and the last year is half a year.",
+      "sha256": "4baa700091ba43f59d762ed7112e203134467ecde3f7bc88da3b153040d384cb",
+      "expect": [
+        {
+          "shape.kind": "time_series"
+        },
+        {
+          "ledger_value": 0.143,
+          "tol": 0.002,
+          "why": "12 months to 2008-06 against the 12 before: 243.3 to 278.1 (+14.3%)"
+        },
+        {
+          "ledger_value": 0.1245,
+          "tol": 0.002,
+          "op": "trend",
+          "why": "1992 to 2007 (complete years) compounds at +12.5% a year"
+        },
+        {
+          "insight_mentions_any": [
+            "January",
+            "season"
+          ],
+          "case": true,
+          "why": "the January spike and February drop are seasonal, not 26 outliers"
+        },
+        {
+          "no_text_matches": "2008 is the highest",
+          "why": "2008 holds six months"
+        }
+      ]
+    },
+    {
+      "id": "disasters_panel",
+      "kind": "panel",
+      "url": "https://raw.githubusercontent.com/vega/vega-datasets/main/data/disasters.csv",
+      "about": "Deaths from natural disasters by type and year, 1900-2017, Our World in Data / EM-DAT via vega-datasets (BSD-3 package; OWID data CC BY 4.0). One entity, 'All natural disasters', is the sum of the others.",
+      "sha256": "36d151b50da0aeb82e86b152f91b8cf912a0e4cb50fe32744cf33f22463847d9",
+      "expect": [
+        {
+          "shape.entity": "Entity"
+        },
+        {
+          "aggregates_excluded": [
+            "All natural disasters"
+          ],
+          "why": "it is the sum of the other types"
+        },
+        {
+          "insight_mentions_any": [
+            "Drought"
+          ],
+          "why": "the deadliest type over 1900-2017 (11.7 million deaths)"
+        },
+        {
+          "insight_mentions_any": [
+            "1931"
+          ],
+          "why": "the deadliest year (3.71 million, the China floods)"
+        },
+        {
+          "insight_kind": "trend",
+          "contains": [
+            "-"
+          ],
+          "why": "deaths fell by about 5,650 a year on a straight line 1900-2016"
+        }
+      ]
+    },
+    {
+      "id": "sp500_monthly",
+      "kind": "official_stats",
+      "url": "https://raw.githubusercontent.com/vega/vega-datasets/main/data/sp500.csv",
+      "about": "S&P 500 index, monthly, 2000-01 to 2010-03, dates written 'Jan 1 2000' (vega-datasets, BSD-3).",
+      "sha256": "8d1a3310b741565fd2aaf7b9d34030c92b1fbedbc9ba839f4a50dab8b2dd5c3d",
+      "expect": [
+        {
+          "shape.kind": "time_series"
+        },
+        {
+          "ledger_value": 0.4294,
+          "tol": 0.003,
+          "why": "2010-03 (1,140) against 2009-03 (797.9): +42.9%"
+        },
+        {
+          "insight_mentions_any": [
+            "2007"
+          ],
+          "why": "the peak, 1,549 in 2007-10"
+        },
+        {
+          "insight_mentions_any": [
+            "2009-02",
+            "735"
+          ],
+          "why": "the trough, 735 in 2009-02"
+        },
+        {
+          "no_text_matches": "total of price"
+        }
+      ]
+    },
+    {
+      "id": "airline_safety",
+      "kind": "cross_section",
+      "url": "https://raw.githubusercontent.com/fivethirtyeight/data/master/airline-safety/airline-safety.csv",
+      "about": "FiveThirtyEight airline safety (CC BY 4.0): 56 airlines, seat-km per week, incidents, fatal accidents and fatalities for 1985-99 and 2000-14.",
+      "sha256": "064300a3542fe4c3ee61aac54f55e95208a862eb11182c6ab48cc2618cbd58b3",
+      "expect": [
+        {
+          "shape.kind": "cross_section"
+        },
+        {
+          "ledger_value": -0.506,
+          "tol": 0.01,
+          "why": "fatalities fell from 6,295 (1985-99) to 3,109 (2000-14), -50.6%"
+        },
+        {
+          "insight_mentions_any": [
+            "Malaysia Airlines"
+          ],
+          "why": "the most fatalities in 2000-14 (537)"
+        },
+        {
+          "insight_mentions_any": [
+            "Aeroflot"
+          ],
+          "why": "the most incidents in 1985-99 (76)"
+        },
+        {
+          "insight_mentions_any": [
+            "per seat",
+            "seat-km",
+            "seat km",
+            "per billion"
+          ],
+          "why": "airlines differ 100-fold in size: counts must be read against seat-km flown"
+        }
+      ]
+    },
+    {
+      "id": "himalaya_expeditions",
+      "kind": "ledger",
+      "url": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-22/expeditions.csv",
+      "about": "Himalayan Database expeditions 1905-2019 via TidyTuesday 2020-09-22 (CC0 repo; Himalayan Database data, free for research use): one row per expedition with peak, season, three date columns with gaps, termination reason, members, deaths, oxygen; messy ledger with categories, 2019 is a partial year.",
+      "sha256": "659707e69944c8f1f0687135cc9c99778b9b13a75e35e9ba6123364aab35ef78",
+      "expect": [
+        {
+          "shape.kind": "ledger",
+          "why": "one row per expedition with dates and categories"
+        },
+        {
+          "no_text_matches": "total of year",
+          "why": "year is the calendar, not a measure"
+        },
+        {
+          "insight_mentions_any": [
+            "Everest"
+          ],
+          "why": "the most expeditions (2,149) and deaths (306)"
+        },
+        {
+          "ledger_value": 0.795,
+          "tol": 0.01,
+          "why": "success rate with oxygen 79.5% against 45.8% without"
+        },
+        {
+          "insight_mentions_any": [
+            "Autumn",
+            "Spring"
+          ],
+          "why": "Autumn and Spring hold 96% of expeditions"
+        },
+        {
+          "no_text_matches": "2019-05",
+          "why": "2019 is a partial year (172 expeditions against 354 in 2018)"
+        }
+      ]
+    },
+    {
+      "id": "superbowl_ads",
+      "kind": "cross_section",
+      "url": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-02/youtube.csv",
+      "about": "Super Bowl ads 2000-2020 with FiveThirtyEight's content flags (funny, patriotic, celebrity, ...) and YouTube counts, via TidyTuesday 2021-03-02 (CC0 repo; FiveThirtyEight data CC BY 4.0); long free-text columns, heavy-tailed view counts, some missing.",
+      "sha256": "d5c19cd73d78edb534bd8a9fe6e303135f6cd54238e6644f8df7a1e292a25caf",
+      "expect": [
+        {
+          "shape.date": "year",
+          "why": "the time axis is the Super Bowl year, not the YouTube upload date"
+        },
+        {
+          "insight_mentions_any": [
+            "Doritos"
+          ],
+          "why": "the most-viewed ad, Doritos 'Sling Baby' (2012, 176 million views)"
+        },
+        {
+          "insight_mentions_any": [
+            "Bud Light",
+            "Budweiser"
+          ],
+          "why": "the most ads (63 and 43 of 247)"
+        },
+        {
+          "ledger_value": 0.936,
+          "op": "correlate",
+          "tol": 0.01,
+          "why": "views and likes, Spearman 0.936"
+        },
+        {
+          "insight_mentions_any": [
+            "funny"
+          ],
+          "why": "funny ads fell from 84% (2000-09) to 56% (2010-20)"
+        }
+      ]
+    },
+    {
+      "id": "sp500_financials",
+      "kind": "cross_section",
+      "url": "https://raw.githubusercontent.com/datasets/s-and-p-500-companies-financials/main/data/constituents-financials.csv",
+      "about": "S&P 500 constituents with price, P/E, dividend yield, EPS, market cap and EBITDA, one row per company, 'Sector' holding the GICS sub-industry (datasets/s-and-p-500-companies-financials, ODC-PDDL); 17 rows without any financials.",
+      "sha256": "928b20aa4c2992f74f2d51249194eaba38783c2e09ba69c5c220fa27f8bf47bb",
+      "expect": [
+        {
+          "shape.kind": "cross_section"
+        },
+        {
+          "insight_order": [
+            "Nvidia",
+            "Apple",
+            "Alphabet"
+          ],
+          "why": "market cap 5.52T, 4.98T, 4.33T"
+        },
+        {
+          "insight_mentions_any": [
+            "Semiconductors"
+          ],
+          "why": "the largest share of market cap by Sector (14.9%)"
+        },
+        {
+          "no_text_matches": "values of \\(judged",
+          "why": "garbled wording"
+        },
+        {
+          "insight_mentions_none": [
+            "SEC Filings",
+            "sec.gov"
+          ],
+          "why": "a link column is not data"
+        }
+      ]
+    },
+    {
+      "id": "flying_survey",
+      "kind": "survey",
+      "url": "https://raw.githubusercontent.com/fivethirtyeight/data/master/flying-etiquette-survey/flying-etiquette.csv",
+      "about": "FiveThirtyEight flying etiquette survey (CC BY 4.0): 1,040 respondents, 22 questions on reclining, arm rests, babies, with skip logic (those who never fly answer nothing after question one) and demographics.",
+      "sha256": "d65ad4105666732c9cb93780f6ac28617f916c2450ac48618f89ac0145d670f2",
+      "expect": [
+        {
+          "shape.kind": "survey"
+        },
+        {
+          "insight_mentions_any": [
+            "recline"
+          ],
+          "why": "reclining is the survey's subject"
+        },
+        {
+          "ledger_value": 0.588,
+          "tol": 0.01,
+          "why": "58.8% of 854 say reclining is not rude at all"
+        },
+        {
+          "insight_mentions_none": [
+            "RespondentID"
+          ]
+        },
+        {
+          "min_insights": 3
+        }
+      ]
+    },
+    {
+      "id": "energy_panel",
+      "kind": "panel",
+      "url": "https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv",
+      "about": "Our World in Data energy panel (CC BY 4.0): 130 columns by country and year, countries mixed with World, continents, income groups and Ember/EI regions; 9 MB, ragged latest years.",
+      "sha256": "266f2e2baad7975351bc9bb4aa061d22b1da9fe4c47d51d2ac6071e01e171f76",
+      "expect": [
+        {
+          "shape.kind": "panel"
+        },
+        {
+          "shape.entity": "country"
+        },
+        {
+          "insight_mentions_any": [
+            "energy",
+            "electricity"
+          ],
+          "why": "an energy panel: the primary measure is energy or electricity, not the gdp column beside it"
+        },
+        {
+          "aggregates_excluded": [
+            "World",
+            "Asia",
+            "Europe",
+            "Africa",
+            "High-income countries",
+            "Non-OECD (EI)",
+            "OECD (EI)",
+            "ASEAN (Ember)",
+            "European Union (27)",
+            "North America"
+          ]
+        },
+        {
+          "insight_order": [
+            "China",
+            "United States",
+            "India"
+          ],
+          "contains_any": [
+            "energy",
+            "electricity"
+          ],
+          "why": "primary energy 2024 and electricity 2025: China, US, India"
+        }
+      ]
+    }
+  ]
+}

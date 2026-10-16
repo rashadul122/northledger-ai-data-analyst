@@ -758,6 +758,66 @@ drawing, no sideways page scroll; the narrow layouts are in the spec's `phone_fi
   estimate leaves out the "Where the change came from" table's rows, so once it fits, the items dropped last come back
   while the payload still fits (it drops no more than it needs).
 
+### 5.10 `analyst`: the analyst loop (engine/nl_analyst.py, 14 October 2026)
+
+Rounds of small, typed analysis steps over the rows the engine kept, each round chosen from what the last one found,
+the way an analyst works: the headline, which dimension carries it, the drill into the top group, rate or mix, then
+robustness. Descriptive: computed from the kept rows, never tested by the engine's gate; the block's `note` says so.
+
+`{version, chosen_by: "engine"|"engine+ai"|"none", shape, steps[], insights[], refused[], rounds, rows {kept, set_aside}, seconds, note}`
+
+- **Why typed steps, not model-written code.** A code string from a model would run in the visitor's tab with every
+  column in reach and could print any number; Pyodide is not a sandbox. A step is data, `{op, args, why}`; the executor
+  resolves every column against the analysis frame (`_analysis_frame`: no withheld or coded column is in it), computes
+  with fixed code and records each number it produces in the step's ledger. A planner (`run_steps`) may ask for the same
+  ops; a step naming an op not in `OPS`, or a column the frame does not hold, is refused with its reason and never run.
+- **`shape`** `{kind: ledger|time_series|panel|survey|cross_section, date, date_read_as, grain, entity, measures[{column,
+  kind: flow|stock|level|rate}], dimensions[], primary, label, aggregates}`. The time axis is the engine's dates, else a
+  whole-year column (with a month column beside it when there is one), else unambiguous text dates (ISO, or a month's
+  name); never a dd/mm guess. A panel's **aggregates** (World, regions, income groups, by name, by an ISO code column's
+  group codes, or a value that adds up the others) are left out of every total and ranking, and the headline says how many.
+  Columns counting answers on a scale (`stars_1`..`stars_5`) become `<prefix> average` and `<prefix> count`.
+- **`steps[]`** `{id: "A<n>", round, op, args, why, ok, refused, numbers{key: {value, text, kind}}, table{columns, rows}}`.
+  `kind` is `plain|pct|pp|share|int|r|word`: how the value prints (`fmt_num`), a rate's change in percentage points,
+  a measure that crosses zero changes as a difference, never a percent.
+- **`insights[]`** `{id, kind: headline|trend|driver|drill|mix|relationship|robustness|distribution, template, text,
+  steps[]}`. `text` is `template` with each `{A3.key}` slot filled from that step's ledger (`fill`); a template naming a
+  slot no step computed makes no sentence. tools/test_nl_analyst.py checks every number in every `text` is a ledger value.
+  An insight may carry **`figure`**: the chart that shows it, a chart registry record (tools/fixtures/viz/spec.json:
+  `line_chart` drawn as `lines`, `bar_chart` or `grouped_bar` drawn as `hbar`, section `other`, `chosen_by: "engine"`)
+  built from the numbers its step computed (a trend's series, at a coarser grain past 30 periods; a breakdown's, a
+  change's or a concentration's groups, the largest first; the most common values). A point or bar on fewer than 5 rows
+  is never drawn (a null point whose table cell reads `<5`; a bar left out); fewer than two left means no figure. One
+  step's chart goes beside the first sentence it backs only. src/js/53-analyst.js draws it under its sentence through
+  window.NLV, with its Table button; tools/test_nl_analyst.py checks every figure against the registry's schema, its
+  invariants and its byte cap.
+- **`story`** `{kind, template, headline, findings[], drivers[], actions[], caveats[], key_numbers[]}`: each line
+  `{text, template, insights[], steps[]}`, built from the insights and the ledgers alone. `key_numbers` (at most 4) are
+  the tiles a reader takes away, `{value, label, note, insight, step}`: `value` is a printed ledger text of `step`
+  (a panel's "up of n" joins two), `label` and `note` are built from that step's own words; one tile per step, one
+  headline tile and one change-split tile at most, the headline first. src/js/53-analyst.js shows the story at the top
+  of the card ("The story in brief"), each line and tile linking to the insight that proves it.
+- **Ops**: `change` (latest complete window against the one before: 12 months to 12 months, a complete year, or for a
+  monthly level or rate the same month a year earlier; `by` splits the change and scores the dimension by how differently
+  the change is split from the groups' size before), `panel_change` (each entry's own change; never an average across
+  entries), `breakdown` (total, or average with eta squared and a Welch range for the gap), `trend` (OLS slope with a 95%
+  range, peak, compound growth), `mix` (an average's change split exactly into within-group and between-group parts),
+  `correlate` (Spearman with a Fisher range; a measure and its own variant are skipped), `outliers` (robust z beyond 3.5,
+  on changes for dated data and on the log for skewed positive values), `rank_entities`, `rank_labels` (a weighted
+  average pulled toward the overall by the median weight), `crosstab` (bias-corrected Cramer's V; skip-logic pairs and
+  answers under 5 respondents left out).
+- Budget: at most 14 steps and 6 s natively; a round never starts after that. The report stands without the block:
+  any failure leaves it empty with one `refused` line.
+- **No grouping by people's words or flagged columns.** A column the AI plan calls `free_text` (review titles,
+  comments) and every column the privacy scan flagged, kept ones too, is never a dimension, an entity or a label, and
+  any step naming it (in `by`, `where` or a measure) is refused: such a column's values can name people, so no step
+  lists them, no figure draws them and the AI planner never sees them.
+- **AI rounds ("Ask your data", docs/ai-analyst/PROTOCOL.md).** The page may append the steps of up to 3 AI rounds:
+  `steps[]` continuing the ids, `insights[]` of kind `planned` (each with its figure, ids 70 and up), their refusals,
+  `asked[]` (the visitor's questions, page-side only) and `chosen_by: "engine+ai"`. `story` is the engine's and does not
+  change. In `results_for_ai`, the insights' figures follow `rep.viz`'s charts and are the first thing the byte budget
+  drops.
+
 ## 6. What this contract does not carry yet (R1)
 
 Tipping points (S1/M10), drivers and reversals (S2), per-claim power, posterior probabilities (C8), the real-data placebo and the cross-environment receipt, Little's MCAR test, restatement lists and the structural-break screen are `null`/`[]` with their reason. The page must show them as "not measured", never as zero.

@@ -1039,6 +1039,221 @@
       }
     }
   };
+  /* ---- Batch 2 of the chart registry (the chart grammar, 14 October 2026): lines, area, hbar, multiples ----
+     Drawn from the record alone in the spec's light colours (colors.light.lines/area/hbar/multiples): a line per series
+     in its colour and dash, the forecast dashed with its range as a band; the area's parts stacked with a key; one or
+     two bars a row (the first period hollow); a grid of small panels on ONE value scale. A point's text is its table
+     cell (table.rows[i][1 + k]); labels are cut with an ellipsis when they do not fit, and the table view follows. */
+  var GPAL = ['#24425c', '#0b7366', '#945400', '#2a78d6', '#d4502c'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
+  var GOTHER = '#56646f', GBAND = '#cfe5e1', GMON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function gNumN(v) { return v === null || pos(v); }
+  function gTimeOk(d, key, nmin, nmax) {
+    return isObj(d) && Array.isArray(d.x) && d.x.length >= 2 && d.x.length <= 30 && d.x.every(isStr) && Array.isArray(d[key]) && d[key].length >= nmin &&
+      d[key].length <= nmax && d[key].every(function (s) { return isObj(s) && isStr(s.label) && Array.isArray(s.values) && s.values.length === d.x.length && s.values.every(gNumN); }) &&
+      d[key].some(function (s) { return s.values.some(pos); });
+  }
+  function gCell(r, i, k) { var row = r.table && Array.isArray(r.table.rows) ? r.table.rows[i] : null; return row && row[1 + k] !== undefined && row[1 + k] !== null ? String(row[1 + k]) : ''; }
+  function gPer(p) {
+    p = String(p);
+    if (/^\d{4}-Q[1-4]$/.test(p)) return p.slice(5) + ' ' + p.slice(2, 4);
+    if (/^\d{4}-\d{2}$/.test(p)) return (GMON[+p.slice(5, 7) - 1] || p.slice(5, 7)) + ' ' + p.slice(2, 4);
+    return p;
+  }
+  // the value range of a time chart: its values, from 0 when they sit on one side of it near 0
+  function gDomain(vals) {
+    var v = vals.filter(pos), lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+    if (lo >= 0 && lo <= hi * 0.35) lo = 0;
+    if (hi <= 0 && hi >= lo * 0.35) hi = 0;
+    if (hi === lo) { hi += Math.abs(hi) * 0.1 || 1; lo -= Math.abs(lo) * 0.1 || 1; }
+    return axis(lo, hi, 4);
+  }
+  // a polyline through points (a null point is a gap), in a colour, width and dash
+  Doc.prototype.gPath = function (pts, hex, lw, dash) {
+    var s = '', pen = false;
+    pts.forEach(function (p) { if (!p) { pen = false; return; } s += f2(p[0]) + ' ' + f2(p[1]) + (pen ? ' l ' : ' m '); pen = true; });
+    if (s) this.op('q ' + rgb(hex) + ' RG ' + (lw || 1) + ' w 1 j 1 J ' + (dash ? '[' + dash + '] 0 d ' : '') + s + 'S Q');
+  };
+  Doc.prototype.gFill = function (pts, hex) {
+    this.op('q ' + rgb(hex) + ' rg ' + pts.map(function (p, i) { return f2(p[0]) + ' ' + f2(p[1]) + (i ? ' l ' : ' m '); }).join('') + 'h f Q');
+  };
+  // value gridlines and their labels left of x0
+  Doc.prototype.gGrid = function (nt, Y, x0, x1) {
+    var self = this;
+    nt.ticks.forEach(function (t, k) { self.line(x0, Y(t), x1, Y(t), t === 0 ? VC.axis : VC.grid, t === 0 ? 0.8 : 0.5); self.text(nt.lab[k], x0 - 4 - nt.w[k], Y(t) - 2.5, 7, 'R', VC.muted); });
+  };
+  // period labels under a plot: the first and every k-th, never touching, inside [x0 - 4, xMax]
+  Doc.prototype.gPeriods = function (xs, X, y, xMax) {
+    var self = this, labs = xs.map(function (p) { return enc(gPer(p)); }), wm = Math.max.apply(null, labs.map(function (b) { return tw(b, 7, 'R'); }));
+    var span = Math.abs(X(xs.length - 1) - X(0)), every = Math.max(1, Math.ceil(xs.length / Math.max(1, Math.floor(span / (wm + 8)) + 1))), last = -Infinity;
+    for (var i = 0; i < xs.length; i += every) {
+      var w = tw(labs[i], 7, 'R'), x = Math.min(xMax - w, Math.max(this.L, X(i) - w / 2));
+      if (x < last + 4) continue;
+      self.text(labs[i], x, y, 7, 'R', VC.muted);
+      last = x + w;
+    }
+  };
+  // a key: items {mark(x, yMid), text}; lines of at most width; returns the lines it needs (11 pt each)
+  function gKeyLay(items, width) {
+    var x = 0, line = 0, out = [];
+    items.forEach(function (it) {
+      var b = fitB(enc(it.text), 7, 'R', width - 22), w = 22 + tw(b, 7, 'R') + 10;
+      if (x + w > width && x > 0) { x = 0; line += 1; }
+      out.push({ it: it, b: b, x: x, line: line });
+      x += w;
+    });
+    return { items: out, lines: out.length ? line + 1 : 0 };
+  }
+  Doc.prototype.gKey = function (k, top) {
+    var self = this;
+    k.items.forEach(function (e) { var y = top - 7 - e.line * 11; e.it.mark(self.L + e.x, y + 2.5); self.text(e.b, self.L + e.x + 22, y, 7, 'R', VC.body); });
+  };
+  function gLineMark(doc, k) { return function (x, y) { doc.line(x, y, x + 18, y, GPAL[k % GPAL.length], 1.4, GDASH[k]); }; }
+  function gBoxMark(doc, fill, stroke) { return function (x, y) { doc.rect(x + 4, y - 3.5, 10, 7, fill, stroke, 0.8); }; }
+  VIZ.lines = {
+    ok: function (d) {
+      var f = d.forecast;
+      return gTimeOk(d, 'series', 1, 5) && (f === null || f === undefined || (isObj(f) && Array.isArray(f.x) && f.x.length >= 1 && f.x.length <= 24 &&
+        ['values', 'lo', 'hi'].every(function (k) { return Array.isArray(f[k]) && f[k].length === f.x.length && f[k].every(pos); })));
+    },
+    lay: function (r, CW) {
+      var d = r.data, S = d.series, F = d.forecast || null, o = {}, n = d.x.length, all = [];
+      S.forEach(function (s) { s.values.forEach(function (v) { if (pos(v)) all.push(v); }); });
+      if (F) all = all.concat(F.values, F.lo, F.hi);
+      o.nt = gDomain(all);
+      o.last = S.map(function (s) { for (var i = n - 1; i >= 0; i--) if (pos(s.values[i])) return i; return -1; });
+      o.end = S.length === 1 && !F && o.last[0] >= 0 ? enc(gCell(r, o.last[0], 0)) : '';
+      var items = S.length > 1 ? S.map(function (s, k) { return { text: s.label, k: k }; }) : [];
+      if (F) items.push({ text: 'forecast, ' + F.level + '% range', k: -1 });
+      o.items = items;
+      o.key = gKeyLay(items, CW);
+      o.h = o.key.lines * 11 + (o.key.lines ? 6 : 0) + 160;
+      return o;
+    },
+    draw: function (r, top, bottom) {
+      var o = this.lay(r), d = r.data, S = d.series, F = d.forecast || null, n = d.x.length, m = F ? F.x.length : 0, self = this, L = this.L, R = L + this.CW, nt = o.nt;
+      o.key.items.forEach(function (e) {
+        e.it.mark = e.it.k >= 0 ? gLineMark(self, e.it.k) : function (x, y) { self.rect(x, y - 3.5, 18, 7, GBAND); self.line(x, y, x + 18, y, GPAL[1], 1.2, '3 2'); };
+      });
+      this.gKey(o.key, top);
+      var pt = top - o.key.lines * 11 - (o.key.lines ? 6 : 0) - 4, pb = bottom + 14, x0 = L + nt.max + 6, x1 = R - (o.end ? tw(o.end, 7, 'R') + 6 : 2);
+      var Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); }, X = function (i) { return x0 + i / Math.max(1, n + m - 1) * (x1 - x0); };
+      this.gGrid(nt, Y, x0, x1);
+      this.gPeriods(d.x.concat(F ? F.x : []), X, pb - 10, R);
+      if (F && o.last[0] >= 0) {
+        var li = o.last[0], lv = S[0].values[li];
+        this.gFill([[X(li), Y(lv)]].concat(F.hi.map(function (v, j) { return [X(n + j), Y(v)]; })).concat(F.lo.map(function (v, j) { return [X(n + j), Y(v)]; }).reverse()), GBAND);
+        this.line(X(n - 0.5), pt, X(n - 0.5), pb, VC.axis, 0.5, '2 2');
+        this.gPath([[X(li), Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; })), GPAL[1], 1.2, '3 2');
+      }
+      S.forEach(function (s, k) {
+        var c = GPAL[k % GPAL.length];
+        self.gPath(s.values.map(function (v, i) { return pos(v) ? [X(i), Y(v)] : null; }), c, 1.3, GDASH[k]);
+        s.values.forEach(function (v, i) { if (pos(v)) self.circle(X(i), Y(v), n > 40 ? 0.8 : 1.3, c); });
+      });
+      if (o.end) this.text(o.end, X(o.last[0]) + 4, Y(S[0].values[o.last[0]]) - 2.5, 7, 'R', VC.ink);
+    }
+  };
+  VIZ.area = {
+    ok: function (d) {
+      return gTimeOk(d, 'parts', 2, 6) && d.parts.every(function (p) { return p.values.every(function (v) { return pos(v) && v >= 0; }); }) &&
+        Array.isArray(d.total) && d.total.length === d.x.length && d.total.every(pos);
+    },
+    lay: function (r, CW) {
+      var o = {};
+      o.key = gKeyLay(r.data.parts.map(function (p, k) { return { text: p.label, k: k }; }), CW);
+      o.nt = axis(0, Math.max.apply(null, r.data.total.concat([1e-9])), 4);
+      o.h = o.key.lines * 11 + 6 + 160;
+      return o;
+    },
+    draw: function (r, top, bottom) {
+      var o = this.lay(r), d = r.data, P = d.parts, n = d.x.length, self = this, L = this.L, R = L + this.CW, nt = o.nt;
+      var col = function (k) { return P[k].label === 'other' && k === P.length - 1 ? GOTHER : GPAL[k % GPAL.length]; };
+      o.key.items.forEach(function (e) { e.it.mark = gBoxMark(self, col(e.it.k)); });
+      this.gKey(o.key, top);
+      var pt = top - o.key.lines * 11 - 10, pb = bottom + 14, x0 = L + nt.max + 6, x1 = R - 2;
+      var Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); }, X = function (i) { return x0 + i / Math.max(1, n - 1) * (x1 - x0); };
+      this.gGrid(nt, Y, x0, x1);
+      var cum = d.x.map(function () { return 0; });
+      P.forEach(function (p, k) {
+        var hi = cum.map(function (c, i) { return c + p.values[i]; });
+        self.gFill(hi.map(function (v, i) { return [X(i), Y(v)]; }).concat(cum.map(function (v, i) { return [X(i), Y(v)]; }).reverse()), col(k));
+        self.gPath(hi.map(function (v, i) { return [X(i), Y(v)]; }), VC.white, 0.6);
+        cum = hi;
+      });
+      this.gPath(d.total.map(function (v, i) { return [X(i), Y(v)]; }), VC.ink, 0.9);
+      this.line(x0, pb, x1, pb, VC.axis, 0.8);
+      this.gPeriods(d.x, X, pb - 10, R);
+    }
+  };
+  VIZ.hbar = {
+    ok: function (d) {
+      return Array.isArray(d.series) && d.series.length >= 1 && d.series.length <= 2 && d.series.every(isStr) && Array.isArray(d.rows) && d.rows.length >= 1 && d.rows.length <= 12 &&
+        d.rows.every(function (q) { return isObj(q) && isStr(q.label) && Array.isArray(q.values) && q.values.length === d.series.length && q.values.every(pos) && Array.isArray(q.texts) && q.texts.length === d.series.length && q.texts.every(isStr); });
+    },
+    lay: function (r, CW) {
+      var d = r.data, two = d.series.length === 2, o = { two: two };
+      o.key = two ? gKeyLay(d.series.map(function (s, k) { return { text: s, k: k }; }), CW) : { items: [], lines: 0 };
+      o.tb = d.rows.map(function (q) { return q.texts.map(function (t) { return enc(t); }); });
+      o.tw = Math.max.apply(null, o.tb.map(function (a) { return Math.max.apply(null, a.map(function (b) { return tw(b, 7, 'R'); })); })) + 4;
+      o.cb = d.rows.map(function (q) { return two && q.change_text ? enc(q.change_text) : ''; });
+      o.cw = two ? Math.max.apply(null, o.cb.map(function (b) { return tw(b, 7, 'B'); })) + 8 : 0;
+      o.labW = Math.min(CW * 0.36, Math.max.apply(null, d.rows.map(function (q) { return tw(enc(q.label), 7, 'R'); })) + 8);
+      o.labels = d.rows.map(function (q) { return fitB(enc(q.label), 7, 'R', o.labW - 6); });
+      o.rh = two ? 19 : 13;
+      o.h = (o.key.lines ? o.key.lines * 11 + 6 : 0) + d.rows.length * o.rh + 4;
+      return o;
+    },
+    draw: function (r, top, bottom) {
+      var o = this.lay(r), d = r.data, rows = d.rows, self = this, L = this.L, R = L + this.CW;
+      if (o.two) { o.key.items.forEach(function (e) { e.it.mark = e.it.k === 0 ? gBoxMark(self, VC.white, VC.bar) : gBoxMark(self, VC.bar); }); this.gKey(o.key, top); }
+      var all = [0]; rows.forEach(function (q) { all = all.concat(q.values); });
+      var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), xa = L + o.labW + (lo < 0 ? o.tw : 0), xb = R - o.cw - o.tw;
+      var X = function (v) { return xa + (v - lo) / ((hi - lo) || 1) * (xb - xa); }, z = X(0), y = top - (o.key.lines ? o.key.lines * 11 + 6 : 0);
+      rows.forEach(function (q, i) {
+        var oth = d.other === true && i === rows.length - 1, c = oth ? VC.other : VC.bar, mid = y - o.rh / 2;
+        self.text(o.labels[i], L, mid - 2.5, 7, 'R', VC.body);
+        q.values.forEach(function (v, k) {
+          var bh = o.two ? 6.5 : 8, yy = o.two ? (k ? mid - bh - 0.5 : mid + 0.5) : mid - bh / 2, a = Math.min(X(v), z), w = Math.max(0.8, Math.abs(X(v) - z));
+          if (o.two && k === 0) self.rect(a, yy, w, bh, VC.white, c, 0.8); else self.rect(a, yy, w, bh, c);
+          var b = o.tb[i][k], tx = v < 0 ? a - 3 - tw(b, 7, 'R') : a + w + 3;
+          if (b) self.text(b, tx, yy + bh / 2 - 2.5, 7, 'R', VC.ink);
+        });
+        if (o.cb[i]) self.text(o.cb[i], R - tw(o.cb[i], 7, 'B'), mid - 2.5, 7, 'B', VC.ink);
+        y -= o.rh;
+      });
+      if (lo < 0) this.line(z, top - (o.key.lines ? o.key.lines * 11 + 6 : 0), z, y, VC.axis, 0.6);
+    }
+  };
+  VIZ.multiples = {
+    ok: function (d) { return gTimeOk(d, 'panels', 1, 12); },
+    lay: function (r, CW) {
+      var d = r.data, all = [], o = {};
+      d.panels.forEach(function (p) { p.values.forEach(function (v) { if (pos(v)) all.push(v); }); });
+      o.nt = gDomain(all); o.nt = axis(o.nt.lo, o.nt.hi, 3);
+      o.cols = Math.max(1, Math.min(4, Math.floor((CW - o.nt.max - 6 + 10) / 110)));
+      o.pw = (CW - o.nt.max - 6 - 10 * (o.cols - 1)) / o.cols;
+      o.ph = 74;
+      o.h = Math.ceil(d.panels.length / o.cols) * o.ph;
+      return o;
+    },
+    draw: function (r, top, bottom) {
+      var o = this.lay(r), d = r.data, n = d.x.length, self = this, L = this.L, nt = o.nt;
+      var fl = enc(gPer(d.x[0])), ll = enc(gPer(d.x[n - 1])), axisOk = tw(fl, 7, 'R') + tw(ll, 7, 'R') + 6 <= o.pw;
+      d.panels.forEach(function (p, j) {
+        var c = j % o.cols, rr = Math.floor(j / o.cols), x0 = L + nt.max + 6 + c * (o.pw + 10), yt = top - rr * o.ph, pt = yt - 14, pb = yt - o.ph + 16;
+        var Y = function (v) { return pb + (v - nt.lo) / (nt.hi - nt.lo) * (pt - pb); }, X = function (i) { return x0 + 2 + i / Math.max(1, n - 1) * (o.pw - 4); };
+        var li = -1; for (var i = n - 1; i >= 0; i--) if (pos(p.values[i])) { li = i; break; }
+        var lt = li >= 0 ? enc(gCell(r, li, j)) : '', ltw = lt ? tw(lt, 7, 'R') : 0;
+        self.text(fitB(enc(p.label), 7, 'B', o.pw - ltw - 6), x0, yt - 8, 7, 'B', VC.ink);
+        if (lt) self.text(lt, x0 + o.pw - ltw, yt - 8, 7, 'R', VC.muted);
+        nt.ticks.forEach(function (t, k) { self.line(x0, Y(t), x0 + o.pw, Y(t), VC.grid, 0.5); if (c === 0) self.text(nt.lab[k], x0 - 4 - nt.w[k], Y(t) - 2.5, 7, 'R', VC.muted); });
+        self.line(x0, pb, x0 + o.pw, pb, VC.axis, 0.6);
+        if (axisOk) { self.text(fl, x0, pb - 9, 7, 'R', VC.muted); self.text(ll, x0 + o.pw - tw(ll, 7, 'R'), pb - 9, 7, 'R', VC.muted); }
+        self.gPath(p.values.map(function (v, i) { return pos(v) ? [X(i), Y(v)] : null; }), GPAL[0], 1.1);
+        if (li >= 0) self.circle(X(li), Y(p.values[li]), 1.5, GPAL[0]);
+      });
+    }
+  };
   // the figure around a record's drawing, measured first so it stays whole on its page: "Figure n." and the title (2
   // lines at most), the subtitle (2), the drawing, the summary (the second half of its accessible name: spec
   // accessibility) and the source note; a record drawn as its table is measured as its summary and the table's start

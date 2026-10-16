@@ -2040,3 +2040,50 @@ never reach the report. A series with no published figure at all is named under 
 aside by a status whose every row has no value (`exclude_rows` on STATUS "..") is retired as the reshape's own work, so it is no "rows the plan
 set aside". The timeseries chart spans up to 360 periods (30 years of months). When the question is not about the future, a forecast headline of
 such a table is replaced by the lead series' whole-period sentence.
+
+### 5.13 A rate's change in percentage points, and what answers the question (16 October 2026)
+
+**`rep.rates` and the restatement (`nl_browser._rate_points`).** A rate's change is in percentage points: the later level minus the earlier
+("−0.729 percentage points"), never a percent of the rate ("−22.4%", which reads as a relative change nobody means). A rate is a series whose
+unit is Percent (`input.layout.unit_of`, a long statistical table) or the measure `nl_structure` reads as type `rate` (`estimand.measure.type`;
+a rate in another unit, per 1,000 say, changes "in the rate's own units"). One step at the end of the run (and again as a structure slice's
+report leaves `_run_slice`), before the page, the PDF, `results_for_ai` or the worker's figure index read the report, restates every business
+change claim of a rate:
+
+- `findings[].value` is the change in points and `findings[].value_unit` says so ("percentage points" | "the rate's own units");
+  `effect` is `{estimate: points, scale: "difference", unit: "percentage points", ci: null, ci_fcr: null, ci_ratio: [lo, hi], relative:
+  {estimate, ci, ci_fcr, scale: "fraction"}}`; `inference.describe` holds `change_points` in place of `change_pct`; a percent equal to the
+  claim's relative change in its `why`, `watch` and `needed_to_upgrade`, and the "model's estimate (..%)" of a test not run, are restated.
+- The interval is **not** restated in points: `northledger.stats.trend_test` inverts a bootstrap test of a level shift in a model of the LOG
+  monthly values (seasonal terms, AR(1) momentum, REML) and reports `expm1` of its bounds, while the point estimate beside it is the plain
+  ratio of the two windows' arithmetic means. Multiplying the bounds by the prior average would treat the model's geometric, seasonally
+  adjusted level as the arithmetic one, so the interval is said exactly as what it is: `ci_ratio`, "0.59 to 1.11 times the year before's level".
+- `story` (the core's "Average X (the average month) moved from A in the year before to B in the latest year, a change of C%" sentence and
+  its interval), `summary.lines` ("X is down 0.775 percentage points on the year before"; the peak's relative fall, a percent of the rate,
+  goes), the KPI tiles, the findings table and the change chart (`trend_windows.data.effect`) follow. A rate's estimand loses
+  `figures.change_pct` (kept as `relative_change_pct`) and `inference.describe.change_pct`; its scenarios lose `headline.change_pct`.
+  The core's grades are kept as they are.
+- `rep.rates = {version: 1, series: [{finding_id, label, claim_label, unit, points, text, relative_pct, ci_ratio?}], note}`.
+- The plan's `rank` analysis ranks the rates in percent apart, in points; the analyst loop of a structure slice reads its measure as the
+  structure reads it (a rate is never added over 12 months).
+
+**`rep.answer` (`nl_browser._answer`): what answers the visitor's question.** The engine decides it, and the AI report words it:
+`{version: 1, leads: "whole_period" | "latest_change", why, source: "period" | "analyst" | "graded_claim", text, title?, key_figures[],
+span?, ranked?, latest?}`. A question about the whole period (its words: "since 2000", "over time", "history", "long run", "decades", "how
+has X moved / changed / evolved", "over the past N years"; or a year more than two before the file's last) is answered by the whole period:
+a long statistical table's lead series sentence (`period.series[lead].text`, with `title` built from its figures and `key_figures` [the
+change, the first, the latest]), and, when it asks which rose or fell most, `ranked` = `{unit, of, rose[], fell[], text}` from
+`period.ranked` (each `{label, change_text, first, latest}`: the lead's unit, at most 3 each way); another file whose dates span 3 years or
+more is answered by the analyst loop's long-run line. Any other question (and a run with no question) is answered by the graded claim (the
+bottom line's line of the primary claim): `leads: "latest_change"`. Beside a whole-period answer, `latest` = `{text, finding_id, grade,
+label: "the latest 12 months against the 12 before (the graded test)"}`. Absent when the report has nothing to lead with. The page's
+bottom line opens with a whole-period answer (src/js/52-nl2-report.js); `summary.lines` are unchanged.
+
+**`results_for_ai`** gains `answer` (`{leads, why, text, key_figures[], title?, span?, ranked?, latest? {text, grade, label}}`, texts
+made safe, never one naming a withheld column), `rate_series` (`[{label, unit, text, points, relative_pct}]`, at most 20) and
+`findings[].value_unit`. The worker (insight-proxy src/report.js `validAnswer`, `validRateSeries`) keeps exactly these keys; the model reads
+`answer` first and `rate_series` without `relative_pct` (`modelResults`); the guard indexes the answer's texts and each rate's points, never
+a relative change (src/figures.js `buildIndex`). After every parse and repair, `leadWithAnswer` checks that the title, the first executive-
+summary bullet and the headline section carry the answer's key figure, and puts the engine's own words there when they do not (counted as
+`removed_reasons.answer_led`); G26 (`rate_change_percent`) repairs a percent of a rate the model writes into the rate's points
+(`rate_series[].text`, when the percent is one of the rates' relative changes) or drops the sentence.

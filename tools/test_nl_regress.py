@@ -2529,6 +2529,203 @@ def test_s17_the_analyst_loop_reads_a_published_table_as_the_engine_does_and_dra
     assert "line_chart" not in [c["chart"] for c in rep["viz"]["charts"]]
 
 
+RATES_GOAL = "How have Canadian interest rates and mortgage rates moved since 2000, and which rates rose and fell most?"
+
+
+def _rates_plan(goal=RATES_GOAL):
+    """The visitor's AI plan for the rates table (16 Oct 2026), as test_s16 builds it."""
+    c = lambda n, t, r="dimension", **kw: dict({"name": n, "semantic_type": t, "role": r}, **kw)
+    cols = [c("REF_DATE", "date", "date"), c("GEO", "geography"), c("DGUID", "code"), c("Rates", "category"), c("UOM", "category"),
+            c("UOM_ID", "code"), c("SCALAR_FACTOR", "category"), c("SCALAR_ID", "code"), c("VECTOR", "identifier", "key"), c("COORDINATE", "code"),
+            c("VALUE", "flow_amount", "target", label="rate or amount"), c("STATUS", "category"), c("SYMBOL", "category"),
+            c("TERMINATED", "category"), c("DECIMALS", "count")]
+    return {"goal": goal, "columns": cols, "operations": [{"op": "exclude_rows", "column": "STATUS", "values": [".."]}], "primary": "VALUE",
+            "analyses": [{"type": "trend", "columns": ["VALUE"]}, {"type": "extremes", "columns": ["VALUE"]}, {"type": "rank", "columns": ["VALUE", "Rates"]}]}
+
+
+def _window_means(df, label, last="2026-09"):
+    """(prior, latest) mean of a series' published monthly values in the 12 months to `last` and the 12 before (a gap is no month)."""
+    sub = df[(df["Rates"] == label) & (df["VALUE"] != "")].copy()
+    sub["v"] = pd.to_numeric(sub["VALUE"])
+    y, m = int(last[:4]), int(last[5:7])
+    ym = lambda k: "%04d-%02d" % ((y * 12 + m - 1 + k) // 12, (y * 12 + m - 1 + k) % 12 + 1)
+    lat = sub[(sub["REF_DATE"] >= ym(-11)) & (sub["REF_DATE"] <= last)]["v"]
+    pri = sub[(sub["REF_DATE"] >= ym(-23)) & (sub["REF_DATE"] <= ym(-12))]["v"]
+    return float(pri.mean()), float(lat.mean())
+
+
+def _all_text(o):
+    if isinstance(o, dict):
+        return "\n".join(_all_text(v) for k, v in o.items() if k not in ("downloads", "relative", "relative_change_pct", "relative_pct"))
+    if isinstance(o, list):
+        return "\n".join(_all_text(v) for v in o)
+    return o if isinstance(o, str) else ""
+
+
+def test_s18_a_rates_change_is_in_percentage_points_and_the_answer_leads_with_or_without_a_plan():
+    """The visitor's rates table, 16 Oct 2026 (StatCan 10-10-0122-01, trimmed: s12). The primary finding said "Change in the average month
+    of bank_rate ... value -22.4359" and its story "moved from 3.250 in the year before to 2.521 in the latest year, a change of -22.4%.
+    The same test's interval for the change runs from -41.0% to +11.2%", and the AI report printed "(−22.4% in the engine's read)". A
+    rate's change is in percentage points: every claim of a Percent series is restated (value, effect, story, bottom line, KPI tile,
+    findings table, change chart), recomputed here from the file; the core's interval, a ratio of the two years' levels (stats.trend_test
+    inverts a test of a shift in the LOG monthly values), is said as that ratio, never in points; the grades are the core's. The
+    dollar series keep their percent. And the AI report led with the 12-month claim while the engine's own headline answered the
+    question: the engine now says what answers it (rep.answer, results_for_ai "answer"): the whole period for a question about it (the
+    lead series' sentence, the ranked fallers for "which rose and fell most", the 12-month claim beside it as the latest year's test),
+    the graded claim for any other."""
+    raw = fixture("s12_statcan_interest_rates.csv")
+    df = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+    pct_series = sorted(set(df.loc[df["UOM"] == "Percent", "Rates"]))
+    a, b = run_bytes(raw), run_bytes(raw, plan=_rates_plan())
+    for rep in (a, b):
+        assert rep["ok"], rep.get("error")
+        lay = rep["input"]["layout"]
+        rated = {x["finding_id"]: x for x in rep["rates"]["series"]}
+        assert rated, rep.get("rates")
+        n_checked = 0
+        for f in rep["findings"]:
+            if f.get("kind") != "business" or not f["id"].endswith(".change"):
+                continue
+            slug = f["id"][len("measure."):-len(".change")]
+            series = next((s for s in pct_series if NB._engine_slug(s) == slug), None)
+            if series is None:
+                # a dollar series: still a percent of its own level, never restated
+                assert f["id"] not in rated and "percentage points" not in json.dumps(f.get("effect")), f["id"]
+                continue
+            assert f["id"] in rated, (f["id"], sorted(rated))
+            prior, latest = _window_means(df, series)
+            assert abs(f["value"] - (latest - prior)) < 1e-6, (series, f["value"], latest - prior)
+            e = f["effect"]
+            assert e["scale"] == "difference" and e["unit"] == "percentage points" and e["ci"] is None and e["estimate"] == f["value"], e
+            assert f["grade"] in ("NOT_ENOUGH_DATA", "WATCH", "CONFIRMED") and f["verdict"] in ("INSUFFICIENT", "WATCH", "CONFIRMED")
+            rel = e["relative"]
+            assert abs(rel["estimate"] - (latest / prior - 1.0)) < 1e-9, (series, rel)
+            if rel["ci"]:
+                assert e["ci_ratio"] == [1.0 + rel["ci"][0], 1.0 + rel["ci"][1]], e
+            assert "change_pct" not in ((f.get("inference") or {}).get("describe") or {}), f["inference"]
+            n_checked += 1
+        assert n_checked >= 6, n_checked
+        # the story: each rate's sentence in points with its interval as a ratio, and no percent change of a rate anywhere
+        wh = rep["story"]["what_happened"]
+        lead_line = next(x for x in wh if x.startswith("Average Bank rate, last Tuesday or last Thursday (the average month)"))
+        assert "moved from 3.295 in the year before to 2.521 in the latest year, a change of \u22120.775 percentage points." in lead_line, lead_line
+        assert "as a ratio of the latest year's level to the year before's, runs from 0.549 to 1.11 times" in lead_line, lead_line
+        bank = next(x for x in wh if x.startswith("Average Bank rate (the average month)"))
+        assert "a change of \u22120.729 percentage points" in bank and "0.59 to 1.11 times" in bank and "%" not in bank.split("It is")[0], bank
+        assert "NOT ENOUGH DATA" in bank, bank          # the core's grade, kept
+        for bad in ("-22.4%", "\u221222.4%", "-41.0%", "+11.2%", "-23.5%", "-24.2%", "-45.1%"):
+            assert bad not in _all_text(rep), bad
+        # the dollar series keeps its percent
+        assert any(x.startswith("Average Treasury bill auction - amount auctioned: 3 month") and "a change of -1.6%" in x for x in wh)
+        # the bottom line, the KPI tile, the findings table and the change chart
+        moved = rep["summary"]["lines"][0]
+        assert moved["text"] == "Average Bank rate, last Tuesday or last Thursday is down 0.775 percentage points on the year before (too little data to judge).", moved
+        charts = {c["id"]: c for c in rep["charts"]}
+        tile = next(t for t in charts["kpi"]["data"]["tiles"] if t["finding_id"] == rep["primary_metric"]["finding_id"])
+        assert tile["scale"] == "difference" and tile["unit"] == "percentage points" and tile["ci"] is None and abs(tile["value"] + 0.7746) < 1e-3, tile
+        tw = charts["trend.bank_rate_last_tuesday_or_last_thursday"]["data"]["effect"]
+        assert tw["scale"] == "difference" and tw["ci"] is None and abs(tw["estimate"] + 0.7746) < 1e-3, tw
+        # the rank analysis of the plan: the rates in points, apart from the dollar series
+        for it in (rep.get("ai_analyses") or {}).get("items") or []:
+            if it["type"] == "rank":
+                assert "The rates in percent, in percentage points:" in it["sentence"] and it["chart"]["unit"] == "percentage points", it["sentence"]
+                assert all(r[5].endswith(" points") for r in it["table"]["rows"] if r[0] in pct_series), it["table"]["rows"]
+        # what the report writer reads: points, the rates listed, never a relative change of a rate
+        ai = NB.results_for_ai(rep)
+        blob = json.dumps({k: v for k, v in ai.items() if k != "rate_series"}, ensure_ascii=False)
+        for bad in ("-22.4", "\u221222.4", "22.43", "-41.0%", "+11.2%"):
+            assert bad not in blob, bad
+        rs = {x["label"]: x for x in ai["rate_series"]}
+        assert rs["Bank rate"]["text"] == "\u22120.729 percentage points" and abs(rs["Bank rate"]["relative_pct"] + 22.4359) < 1e-3, rs.get("Bank rate")
+        fai = next(f for f in ai["findings"] if f["claim"].startswith("Change in the average month of bank_rate,"))
+        assert fai["value_unit"] == "percentage points" and abs(fai["value"] + 0.72917) < 1e-4, fai
+    # the answer: the rules-only run has no question, so the graded claim answers it; the plan's question is about the whole period
+    assert a["answer"]["leads"] == "latest_change" and a["answer"]["text"] == a["summary"]["lines"][0]["text"], a["answer"]
+    A = b["answer"]
+    lead = next(x for x in b["period"]["series"] if x["id"] == b["period"]["lead"])
+    assert A["leads"] == "whole_period" and A["why"] == "the question asks about the whole period" and A["text"] == lead["text"], A
+    assert A["text"] == b["story"]["headline"], (A["text"], b["story"]["headline"])
+    assert A["title"] == "Bank rate, last Tuesday or last Thursday: 6.00% in 2000-05 to 2.50% in 2026-09, down 3.50 percentage points", A["title"]
+    assert A["key_figures"][0] == "3.50 percentage points", A["key_figures"]
+    # which rose and fell most: the Percent series' own changes over their published span, recomputed from the file
+    fell = A["ranked"]["fell"]
+    assert A["ranked"]["rose"] == [] and len(fell) == 3 and A["ranked"]["unit"] == "Percent", A["ranked"]
+    for x in fell:
+        sub = df[(df["Rates"] == x["label"]) & (df["VALUE"] != "")].sort_values("REF_DATE")
+        ch = float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0])
+        assert x["change_text"] == "\u2212%.2f points" % abs(ch) and x["first"] == sub["REF_DATE"].iloc[0] and x["latest"] == sub["REF_DATE"].iloc[-1], x
+    changes = []
+    for sname in pct_series:
+        sub = df[(df["Rates"] == sname) & (df["VALUE"] != "")].sort_values("REF_DATE")
+        if len(sub) < 2:
+            continue
+        changes.append(float(sub["VALUE"].iloc[-1]) - float(sub["VALUE"].iloc[0]))
+    assert [round(x, 2) for x in sorted(changes)[:3]] == sorted(-float(x["change_text"][1:].split()[0]) for x in fell), (sorted(changes)[:3], fell)
+    assert A["latest"]["text"] == b["summary"]["lines"][0]["text"] and A["latest"]["grade"] == "INSUFFICIENT", A["latest"]
+    ai = NB.results_for_ai(b)
+    assert ai["answer"]["leads"] == "whole_period" and ai["answer"]["text"] == A["text"] and len(ai["answer"]["ranked"]["fell"]) == 3, ai["answer"]
+    assert ai["answer"]["latest"]["text"] == A["latest"]["text"]
+
+
+def test_s19_the_answer_follows_the_question_on_the_debt_table_and_a_plain_file():
+    """The same decision on the federal debt table (s07: Dollars, millions; no rates, so nothing is restated) and on a plain monthly ledger:
+    a question about the whole period ("since 2009", "how has X moved", "over the years", a year more than two before the file's last)
+    is answered by the whole-period figures; a question about the latest year by the graded claim; a long ledger's whole period by the
+    analyst loop's long-run line."""
+    raw = fixture("s07_statcan_debt_unpublished_months.csv")
+    plan = lambda goal: {"goal": goal, "columns": [{"name": "REF_DATE", "role": "date", "semantic_type": "date"},
+                                                   {"name": "Central government debt", "role": "dimension", "semantic_type": "category"},
+                                                   {"name": "VALUE", "role": "target", "semantic_type": "level"}],
+                         "operations": [{"op": "exclude_blank", "column": "VALUE"}], "primary": "VALUE", "analyses": []}
+    for goal, leads in (("How has Canada's federal government debt evolved since 2009?", "whole_period"),
+                        ("How has the value of these series moved?", "whole_period"),
+                        ("What happened to federal debt over the years?", "whole_period"),
+                        ("Was federal debt in 2015 higher than now?", "whole_period"),
+                        ("What changed in the latest year?", "latest_change"),
+                        ("Is federal debt higher than a year ago?", "latest_change")):
+        rep = run_bytes(raw, plan=plan(goal))
+        assert rep["ok"], rep.get("error")
+        assert "rates" not in rep, rep.get("rates")
+        A = rep["answer"]
+        assert A["leads"] == leads, (goal, A["leads"])
+        if leads == "whole_period":
+            assert A["text"].startswith("A. Federal debt (accumulated deficit), (B - E) went from 492,352 in 2009-09 to 1,322,004 in 2026-03: up 829,652 (+168.5%)"), A["text"]
+            assert A["key_figures"][0] == "829,652" and "ranked" not in A, A
+            assert A["latest"]["text"].startswith("Average A. Federal debt"), A["latest"]
+        else:
+            assert A["text"] == rep["summary"]["lines"][0]["text"] and A["text"].startswith("Average A. Federal debt"), A
+        # the bottom line is the engine's as before (the page puts the answer first, src/js/52-nl2-report.js)
+        assert rep["summary"]["lines"][0]["text"].startswith("Average A. Federal debt"), rep["summary"]["lines"][0]
+    # a plain ledger over 12 years, asked how it changed since 2015: the analyst loop's long-run line answers
+    rows = ["month,region,sales"] + ["%d-%02d-01,%s,%d" % (y, m, r, 1000 + 30 * (y - 2014) + 5 * m + (7 if r == "North" else 0))
+                                      for y in range(2014, 2026) for m in range(1, 13) for r in ("North", "South")]
+    data = ("\n".join(rows) + "\n").encode()
+    NB._PROFILE_CACHE.clear()
+    rep = NB.run(data, "sales.csv", "How have sales changed since 2015?", {}, AS_OF)
+    assert rep["ok"], rep.get("error")
+    A = rep.get("answer") or {}
+    assert A.get("leads") == "whole_period" and A.get("source") == "analyst" and A["text"].startswith("Over 12 years (2014 to 2025) sales"), A
+    assert "rates" not in rep
+    NB._PROFILE_CACHE.clear()
+    rep = NB.run(data, "sales.csv", "What changed in the latest 12 months?", {}, AS_OF)
+    assert (rep.get("answer") or {}).get("leads") != "whole_period", rep.get("answer")
+    # a table of series read by its structure whose headline is a rate (Percent): the estimand's change is the points it already
+    # held, its percent goes from the estimand, the scenarios, the claim and the story; the slice's answer is its final headline
+    rep = run_file("pyodide_rate_with_aggregate.csv")
+    E = rep["estimand"]
+    assert E["measure"]["type"] == "rate" and "change_pct" not in E["figures"] and E["figures"]["change"]["text"] == "\u22120.883 percentage points", E["figures"]
+    assert "change_pct" not in E["inference"]["describe"] and abs(E["relative_change_pct"]["value"] + 12.412178) < 1e-6, E.get("relative_change_pct")
+    assert not any(i["id"] == "headline.change_pct" for i in rep["scenarios"]["items"]), [i["id"] for i in rep["scenarios"]["items"]]
+    f = next(x for x in rep["findings"] if x["id"] == "measure.value.change")
+    assert abs(f["value"] - (E["figures"]["latest"]["value"] - E["figures"]["prior"]["value"])) < 1e-5 and f["effect"]["unit"] == "percentage points", f["value"]
+    assert "The 0.883-percentage-point difference is real in this sample" in f["why"] and "12%" not in f["why"], f["why"]
+    assert "a change of \u22120.883 percentage points" in rep["story"]["what_happened"][0] and "0.668 to 1.36 times" in rep["story"]["what_happened"][0]
+    assert rep["answer"]["leads"] == "latest_change" and rep["answer"]["text"] == rep["story"]["headline"] == rep["summary"]["lines"][0]["text"], rep["answer"]
+    ai = NB.results_for_ai(rep)
+    assert "change_pct" not in ai["estimand"]["figures"] and "12.4%" not in json.dumps(ai, ensure_ascii=False), ai["estimand"]["figures"]
+    assert [x["label"] for x in ai["rate_series"]] == ["Unemployment rate"], ai["rate_series"]
+
+
 # ----------------------------------------------------------------------------- runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

@@ -1456,7 +1456,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-16 17:26:17 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-16 18:34:14 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2169,7 +2169,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-16 17:26:17 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-16 18:34:14 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -4065,7 +4065,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var pn = function (x) { return x === 1 ? P.noun : P.nouns; };
     if (F.prior && F.prior.text) figs.push({ label: (F.prior.months && F.prior.months !== W ? 'The ' + F.prior.months + ' matched ' + pn(F.prior.months) + ' before' : W > 1 ? periodSpan(P) + ' before' : 'The ' + P.noun + ' before'), value: String(F.prior.text) });
     if (F.latest && F.latest.text) figs.push({ label: (F.latest.months && F.latest.months !== W ? 'The ' + F.latest.months + ' matched ' + pn(F.latest.months) + ', latest' : W > 1 ? 'Latest ' + periodSpan(P) : 'Latest ' + P.noun), value: String(F.latest.text) });
-    if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text) });
+    // a rate's estimand has no percent change (16 Oct 2026): its change in percentage points leads
+    if (F.change && F.change.text) figs.push({ label: 'Change', value: String(F.change.text), lead: !(F.change_pct && F.change_pct.text) && /percentage points?$/.test(String(F.change.text)) });
     if (F.change_pct && F.change_pct.text) figs.push({ label: 'Change, %', value: String(F.change_pct.text), lead: true });
     var inf = e.inference || null, st = R.structure || null;
     return { title: semi < 0 ? String(e.text) : String(e.text).slice(0, semi), what: semi < 0 ? '' : String(e.text).slice(semi + 1).trim(), figures: figs,
@@ -5819,6 +5820,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return m ? m[1] + ' to ' + m[2] : '';
   }
   function sgnPct(v) { v = Number(v); return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(1) + '%'; }
+  // a finding's change as the engine states it: a percent, or a rate's change in percentage points (value_unit, 16 Oct 2026)
+  function chgText(f) {
+    var v = Number(f.value), u = f.value_unit;
+    if (u !== 'percentage points' && u !== 'the rate\'s own units') return sgnPct(v);
+    return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Number(Math.abs(v).toPrecision(3)) + (u === 'percentage points' ? ' percentage points' : ' (own units)');
+  }
   function shortClaim(c) {
     var m = String(c || '').match(/^Change in (?:the )?(.*?), latest/);
     return m ? cap1(m[1]) : String(c || '');
@@ -5970,7 +5977,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     };
     var tileOf = function (f, label) {
       var ch = /^change in /i.test(f.claim) && isFinite(f.value) && f.value !== null;
-      return { label: label || (ch ? 'Change: ' + shortClaim(f.claim) : words(f.claim, 60)), value: ch ? sgnPct(f.value) : (isFinite(f.value) && f.value !== null ? fmtVal(f.value) : ''),
+      return { label: label || (ch ? 'Change: ' + shortClaim(f.claim) : words(f.claim, 60)), value: ch ? chgText(f) : (isFinite(f.value) && f.value !== null ? fmtVal(f.value) : ''),
         sub: interval(f.why) ? '95% interval ' + interval(f.why) : '', grade: f.verdict };
     };
     // a shared copy's own key figures (the worker keeps {label, value, text, unit, grade}, at most 8): its tiles when the
@@ -6242,7 +6249,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           // a row-count forecast the table's layout fixes: one line in the forecast block says why; here no number and no grade
           if (x.layout_artifact === true) return { claim: x.claim, value: 'not shown', grade: '' };
           var big = U && isFinite(x.value) && x.value !== null && x.kind === 'forecast' && Math.abs(x.value) >= 1e6;
-          return { claim: x.claim, value: ch ? sgnPct(x.value) : big ? U(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict,
+          return { claim: x.claim, value: ch ? chgText(x) : big ? U(x.value) : isFinite(x.value) && x.value !== null ? fmtVal(x.value) : '', grade: x.verdict,
             process: !!(EV && EV.process && R.primary && x.claim === (R.primary.claim || R.primary)), untrusted: !!(AV && AV.untrusted && x.kind === 'forecast') };
         }) });
       }
@@ -6365,6 +6372,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var findings = (Array.isArray(R.findings) ? R.findings : []).filter(function (f) { return f && f.claim; }).slice(0, 20).map(function (f) {
       var o = { claim: str(f.claim, 300), kind: str(f.kind, 20), verdict: str(f.verdict, 20) };
       if (isFinite(f.value) && f.value !== null) o.value = f.value;
+      if (f.value_unit === 'percentage points' || f.value_unit === 'the rate\'s own units') o.value_unit = f.value_unit;
       if (f.why) o.why = str(f.why, 240);
       return o;
     });
@@ -10226,6 +10234,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var hasCi = !!(ef.ci && ef.ci[0] !== null && ef.ci[1] !== null && ef.ci[0] !== undefined && ef.ci[1] !== undefined);
     var lvlPct = Math.round((ef.level || 0.95) * 100);
     var vf = vfmt(d.scale);
+    // a rate's change is in percentage points (the adapter's _rate_points, 16 Oct 2026): the strip's axis is in points, with no size bar
+    // (the bar is a relative change) and no interval in points (the core's is a ratio of levels, said in the findings)
+    var PTS = ef.scale === 'difference';
+    var fval = function (v) { return PTS ? sgnD(v) + (ef.unit ? ' ' + ef.unit : '') : val(v, 'fraction'); };
     // the like-for-like line (the same series on the levels present throughout) and the months where
     // the file's coverage changed, when the engine recorded them (contract v2 §3, #2)
     var LF = d.like_for_like && Array.isArray(d.like_for_like.values) && d.like_for_like.values.length === M.length ? d.like_for_like : null;
@@ -10293,21 +10305,22 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (ef.estimate !== null && ef.estimate !== undefined && isFinite(ef.estimate)) {
       var SL = lfEst ? (W < 480 ? 86 : 104) : L, s0 = H0 + 16, sy = s0 + 30, sy2 = sy + 24, yEnd = lfEst ? sy2 : sy;
       var lo = hasCi ? ef.ci[0] : ef.estimate, hi = hasCi ? ef.ci[1] : ef.estimate;
-      var ext = [lo, hi, 0].concat(bar === null ? [] : [bar, -bar], lfEst ? [LF.estimate] : [], lfCi ? LF.ci : []), a0 = Math.min.apply(null, ext), a1 = Math.max.apply(null, ext), pad = (a1 - a0) * 0.08 || 0.05;
+      var ext = [lo, hi, 0].concat(bar === null || PTS ? [] : [bar, -bar], lfEst ? [LF.estimate] : [], lfCi ? LF.ci : []), a0 = Math.min.apply(null, ext), a1 = Math.max.apply(null, ext), pad = (a1 - a0) * 0.08 || 0.05;
       var sx = U.scale(a0 - pad, a1 + pad, SL + 8, Rr - 8);
-      b += U.txt(4, s0, U.clip('Change, latest 12 months against the 12 before' + (hasCi ? ', with its ' + lvlPct + '% interval' : ''), Rr - 8), 'lab nl2-ytitle');
-      // as many ticks as fit (about 64 px a label), whole percents printed without a decimal
-      var tickPct = function (t) { var v = t * 100, r = Math.round(v); return Math.abs(v - r) < 1e-9 ? (r > 0 ? '+' : r < 0 ? '-' : '') + Math.abs(r) + '%' : sgn1(v) + '%'; };
+      b += U.txt(4, s0, U.clip('Change, latest 12 months against the 12 before' + (PTS ? ', in ' + (ef.unit || 'its own units') : '') + (hasCi ? ', with its ' + lvlPct + '% interval' : ''), Rr - 8), 'lab nl2-ytitle');
+      // as many ticks as fit (about 64 px a label), whole percents printed without a decimal; a rate's points as points
+      var tickPct = PTS ? function (t) { return sgnD(t) + (ef.unit === 'percentage points' ? ' pts' : ''); }
+        : function (t) { var v = t * 100, r = Math.round(v); return Math.abs(v - r) < 1e-9 ? (r > 0 ? '+' : r < 0 ? '-' : '') + Math.abs(r) + '%' : sgn1(v) + '%'; };
       U.ticks(a0 - pad, a1 + pad, Math.max(2, Math.min(5, Math.floor((Rr - SL) / 64)))).forEach(function (t) {
         b += '<line class="gridl" x1="' + sx(t).toFixed(1) + '" x2="' + sx(t).toFixed(1) + '" y1="' + (sy - 12) + '" y2="' + (yEnd + 8) + '"/>' + U.txt(sx(t), yEnd + 24, tickPct(t), 'lab', 'middle');
       });
       b += '<line class="nl2-ref" x1="' + sx(0).toFixed(1) + '" x2="' + sx(0).toFixed(1) + '" y1="' + (sy - 14) + '" y2="' + (yEnd + 10) + '"/>';
-      if (bar !== null) [bar, -bar].forEach(function (bb) {
+      if (bar !== null && !PTS) [bar, -bar].forEach(function (bb) {
         b += '<line class="nl2-bar-l" x1="' + sx(bb).toFixed(1) + '" x2="' + sx(bb).toFixed(1) + '" y1="' + (sy - 12) + '" y2="' + (yEnd + 8) + '" stroke="var(--axis)" stroke-dasharray="3 3"' + tip('The size bar: a change must be shown to be at least ' + sgn1(Math.abs(bb) * 100).replace('+', '') + '% to be CONFIRMED') + '/>';
       });
       if (lfEst) b += U.txt(SL - 2, sy + 4, 'as filed', 'lab', 'end') + U.txt(SL - 2, sy2 + 4, 'like for like', 'lab', 'end');
       if (hasCi) b += '<line class="nl2-cil" x1="' + sx(lo).toFixed(1) + '" x2="' + sx(hi).toFixed(1) + '" y1="' + sy + '" y2="' + sy + '"' + tip(lvlPct + '% interval of the change: ' + ci(ef.ci, 'fraction')) + '/>';
-      b += '<circle class="dot-a" cx="' + sx(ef.estimate).toFixed(1) + '" cy="' + sy + '" r="4.5"' + tip('Change: ' + val(ef.estimate, 'fraction')) + '/>';
+      b += '<circle class="dot-a" cx="' + sx(ef.estimate).toFixed(1) + '" cy="' + sy + '" r="4.5"' + tip('Change: ' + fval(ef.estimate)) + '/>';
       if (lfEst) {
         var lfT = 'Like for like: ' + val(LF.estimate, 'fraction') + (lfCi ? ' (' + Math.round((LF.level || 0.95) * 100) + '% interval ' + ci(LF.ci, 'fraction') + ')' : ' (descriptive, not tested)');
         if (lfCi) b += '<line class="nl2-cil" x1="' + sx(LF.ci[0]).toFixed(1) + '" x2="' + sx(LF.ci[1]).toFixed(1) + '" y1="' + sy2 + '" y2="' + sy2 + '"' + tip(lfT) + '/>';
@@ -10318,7 +10331,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var lfCol = String(LF && LF.column || '').replace(/_/g, ' ').trim().toLowerCase();
     var lfPl = !lfCol ? 'values' : /(s|x|z|ch|sh)$/.test(lfCol) ? (/s$/.test(lfCol) ? lfCol : lfCol + 'es') : /[^aeiou]y$/.test(lfCol) ? lfCol.slice(0, -1) + 'ies' : lfCol + 's';
     var lfWords = LF ? LF.levels_kept + ' ' + lfPl + ' present in every modelled month' : '';
-    var label = ch.title + ': ' + M.length + ' months from ' + mon(M[0]) + ' to ' + mon(M[M.length - 1]) + '; average ' + vf(wm.prior) + ' in the prior 12 months and ' + vf(wm.latest) + ' in the latest 12, a change of ' + val(ef.estimate, 'fraction') +
+    var label = ch.title + ': ' + M.length + ' months from ' + mon(M[0]) + ' to ' + mon(M[M.length - 1]) + '; average ' + vf(wm.prior) + ' in the prior 12 months and ' + vf(wm.latest) + ' in the latest 12, a change of ' + fval(ef.estimate) +
       (ci(ef.ci, 'fraction') ? ' (' + lvlPct + '% interval ' + ci(ef.ci, 'fraction') + ')' : '') +
       (lfEst ? '; like for like (' + lfWords + ') ' + val(LF.estimate, 'fraction') : '') +
       (ST.length ? '; numbered lines mark ' + stWhat + ': ' + ST.map(function (s) { return mon(s.month); }).join(', ') : '');
@@ -10336,7 +10349,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       }) },
       tnote: '<p class="note">Averages: ' + vf(wm.prior) + ' in the prior 12 months, ' + vf(wm.latest) + ' in the latest 12. ' + (bandLo === null ? '' : 'The interval of the change, ' + ci(ef.ci, 'fraction') + ', applied to the prior average, is consistent with a latest average between ' + vf(bandLo) + ' and ' + vf(bandHi) + '.') +
         (LF && LF.window_means ? ' Like for like: ' + vf(LF.window_means.prior) + ' and ' + vf(LF.window_means.latest) + '.' : '') + (d.month_floor ? ' Months under ' + num(d.month_floor, 0) + ' rows show n/a.' : '') + '</p>',
-      note: 'Latest 12 months against the 12 before: <b>' + esc(val(ef.estimate, 'fraction')) + '</b>' + (hasCi ? ' (' + lvlPct + '% interval ' + esc(ci(ef.ci, 'fraction')) + ')' : '') +
+      note: 'Latest 12 months against the 12 before: <b>' + esc(fval(ef.estimate)) + '</b>' + (hasCi ? ' (' + lvlPct + '% interval ' + esc(ci(ef.ci, 'fraction')) + ')' : '') +
         '. The dots are every month, so the spread behind the two averages stays visible. The strip underneath puts the change and its interval on a percent scale' + (bar !== null ? ', with the ' + esc(sgn1(bar * 100).replace('+', '')) + '% size bar dashed either side of zero' : '') + '.' + lfNote + stNote + (d.month_floor && V.some(function (v) { return v === null; }) ? ' A month with fewer than ' + esc(num(d.month_floor, 0)) + ' rows is left out (×).' : '')
     };
   };
@@ -11366,7 +11379,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if ((e.estimate === null || e.estimate === undefined) && e.note) return e.note;
     return fm().val(e.estimate, e.scale) + (e.scale === 'difference' && e.unit ? ' ' + e.unit : '');
   }
-  function ciText(f) { var e = f.effect || {}; return fm().ci(e.ci, e.scale); }
+  // a rate's change is in percentage points (the adapter's _rate_points, 16 Oct 2026): the core's interval is a ratio of the two years'
+  // levels, said as one, never in points or percent
+  function ratioText(r) { return r && r[0] !== null && r[1] !== null && r[0] !== undefined && r[1] !== undefined ? fm().num(r[0], 3) + ' to ' + fm().num(r[1], 3) + ' times the year before\'s level' : null; }
+  function ciText(f) { var e = f.effect || {}; return fm().ci(e.ci, e.scale) || ratioText(e.ci_ratio); }
   function fcrText(f) {
     var e = f.effect || {}, c = e.ci_fcr;
     if (!c || (c[0] === null && c[1] === null)) return '';
@@ -11491,9 +11507,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var pw = f.grade === 'WATCH' && powerText(f, r) ? ' <span class="nl2-power">' + esc(powerText(f, r)) + '</span>' : '';
       var er = f.error_rate && f.error_rate.sentence ? '<span class="nl2-er">' + esc(f.error_rate.sentence) + '</span>' : '';
       var V = isOfficial(f) ? estimandOf(r) : null, Fg = V && r.estimand.figures || {};
-      if (V && Fg.change_pct && Fg.change_pct.text) {
+      // a rate's estimand has no percent change: its change in percentage points is the figure (16 Oct 2026)
+      var Fc = Fg.change_pct && Fg.change_pct.text ? Fg.change_pct : Fg.change && /percentage points?$/.test(String(Fg.change.text || '')) ? Fg.change : null;
+      if (V && Fc) {
         // the described change is the figure; the engine's grade is secondary and says what it is a grade of
-        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fg.change_pct.text) + '</b> in the published ' + (averaged(r) ? 'figures (average level ' : 'totals (') +
+        return '<li data-fid="' + esc(f.id) + '" data-official="1">' + grade(f.grade, f.kind, true) + ' <span class="nl2-dl-claim">' + esc(labelOf(r, f)) + ':</span> <b>' + esc(Fc.text) + '</b> in the published ' + (averaged(r) ? 'figures (average level ' : 'totals (') +
           esc((Fg.prior && Fg.prior.text || '') + ' to ' + (Fg.latest && Fg.latest.text || '')) + ').' + ' <span class="nl2-proc">process grade: ' + esc(V.process ? V.process.note : 'the month-to-month noise of the monthly figures; not a test of the published total') + '.</span>' + held + '</li>';
       }
       // a stepped claim's as-filed interval spans the step, so it says nothing about the business: not printed
@@ -11504,9 +11522,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   function tiles(r, K) {
     var F = byId(r);
     return K.data.tiles.map(function (t) {
-      var v = fm().val(t.value, t.scale, t.unit), ci = fm().ci(t.ci, t.scale), f = F[t.finding_id];
+      var v = fm().val(t.value, t.scale, t.unit), ci = fm().ci(t.ci, t.scale) || ratioText(t.ci_ratio), f = F[t.finding_id];
       var word = f && f.kind === 'forecast' ? 'range' : 'interval';
-      var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit || '') + ' (own units)' : '';
+      var unit = ['rows', 'months'].indexOf(t.unit) >= 0 ? t.unit : t.scale === 'difference' ? (t.unit === 'percentage points' ? t.unit : (t.unit || '') + ' (own units)') : '';
       var off = isOfficial(f), au = auditFor(r, f);
       return '<div class="nl2-tile" data-fid="' + esc(t.finding_id) + '"' + (off ? ' data-official="1"' : '') + '><p class="nl2-tile-lab">' + esc(off ? 'Described change in the published ' + (averaged(r) ? 'figures: ' : 'totals: ') + t.claim : t.claim) + '</p>' +
         '<p class="nl2-tile-num"><span class="nl2-tile-v">' + esc(v) + '</span>' + (unit ? ' <span class="nl2-tile-u">' + esc(unit) + '</span>' : '') + '</p>' +
@@ -11622,6 +11640,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // the bottom line: at most three sentences from the engine's facts (summary.lines: what moved and why, what
     // to act on, the planning number); the engine's full clause list sits in the analyst view
     var SL = (r.summary && r.summary.lines) || [];
+    // what answers the visitor's question (rep.answer, the engine's decision, 16 Oct 2026): a question about the whole period is answered
+    // first, by the engine's whole-period sentence, and the bottom line's lines follow it (the period line once, never twice)
+    var AN = r.answer && r.answer.leads === 'whole_period' && r.answer.text ? r.answer : null;
+    if (AN) SL = [{ kind: 'answer', text: AN.text, finding_ids: [] }].concat(SL.filter(function (l) { return l.text !== AN.text; }));
     var bl = SL.length ? '<div class="nl2-bottom" data-summary="1">' + SL.map(function (l, i) {
       return (i === 0 ? '<h3 class="nl2-bl" ' : '<p class="nl2-bl" ') + 'data-kind="' + esc(l.kind) + '" data-findings="' + esc((l.finding_ids || []).join(' ')) + '">' + esc(l.text) + (i === 0 ? '</h3>' : '</p>');
     }).join('') + '</div>' : '<h3 class="nl2-bottom">' + esc(r.story.headline) + '</h3>';

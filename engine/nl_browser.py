@@ -5944,6 +5944,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 d[k] = v
         if f.get("value_unit") in ("percentage points", "the rate's own units"):
             d["value_unit"] = f["value_unit"]          # a rate's change, in points (_rate_points): the PDF prints it so
+        elif str(f.get("id") or "").endswith(".change") and ((f.get("effect") or {}).get("scale") == "difference"):
+            d["value_unit"] = "own units"              # a change with no ratio is a difference in the series' own units, never a percent
         if f.get("why"):
             d["why"] = safe(f["why"], 240)
         if f.get("layout_artifact") is True:

@@ -936,9 +936,44 @@ def _units_column(rep: Dict[str, Any], frame: Any, measure: Optional[str], plan_
     return pool[0], ""
 
 
+def _forecast_sums(rep: Dict[str, Any]) -> Tuple[bool, str]:
+    """(whether the forecast series' months add up, why). Only a flow's months do (its 12-month total); a rate, a level or a stock is
+    never added across months (16 Oct 2026: the visitor's rates table printed "the next 12 months added up" of the monthly Bank rate,
+    29.9). Decided by what the report already says of the series: a long table's unit (a Percent series is a rate) and the structure's
+    rule for its other series; a table read by its structure, its measure's aggregation; else the engine's own claim on the series ("the
+    monthly total of" a flow, "the average month of" a level); a forecast of row counts adds up; with nothing to go on, a flow, as before."""
+    fc = rep.get("forecast") or {}
+    fid = next((f.get("id") for f in rep.get("findings") or [] if isinstance(f, dict) and f.get("kind") == "forecast"
+                and str(f.get("id") or "").endswith(".next")), None)
+    slug = fid[len("forecast."):-len(".next")] if fid else NB._engine_slug(re.sub(r"^monthly\s+", "", str(fc.get("label") or "")))
+    if slug in ("monthly_rows", "rows"):
+        return True, "a count of rows"
+    lay = (rep.get("input") or {}).get("layout")
+    if isinstance(lay, dict) and lay.get("layout") == "long statistical table":
+        names = [str(x) for x in (lay.get("order") or []) + list((lay.get("unit_of") or {}).keys())]
+        series = next((x for x in names if NB._engine_slug(x) == slug), None)
+        if series is not None:
+            if NB._series_is_percent(lay, series):
+                return False, "a rate"
+            kind = NB._analyst_series_kinds(lay, [series]).get(series)
+            if kind:
+                return kind == "flow", "a " + kind
+    est = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
+    if est is not None and isinstance(est.get("measure"), dict):
+        agg = str(est["measure"].get("aggregation") or "")
+        if agg:
+            return agg.startswith("sum"), ("a flow" if agg.startswith("sum") else "a %s" % (est["measure"].get("type") or "level"))
+    claim = next((str(f.get("claim") or "") for f in rep.get("findings") or [] if isinstance(f, dict) and f.get("kind") == "business"
+                  and f.get("id") == "measure.%s.change" % slug), "")
+    if "average month of" in claim:
+        return False, "a level, averaged by month"
+    return True, "a flow"
+
+
 def _forecast_items(rep: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """The forecast added up over 3, 6 and 12 months, only when the engine's forecast is usable for planning:
-    base (the points), low and high (their own 80% ranges, month by month, added up)."""
+    """The forecast over 3, 6 and 12 months, only when the engine's forecast is usable for planning. A flow's months add up: base
+    (the points), low and high (their own 80% ranges, month by month, added up). A rate, a level or a stock never adds up across
+    months (_forecast_sums): each horizon is the forecast level in its last month, with that month's own range (16 Oct 2026)."""
     fc = rep.get("forecast") or {}
     if not fc.get("available"):
         return [], []
@@ -953,6 +988,7 @@ def _forecast_items(rep: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str
         return [], ["the forecast carries no range level, so it is not added up"]
     lvl_pct = NB._fmt(100.0 * lvl if lvl <= 1 else lvl) + "%"
     series = str(fc.get("label") or "the forecast series")
+    sums, kind = _forecast_sums(rep)
     out: List[Dict[str, Any]] = []
     for h in HORIZONS:
         if len(pts) < h:
@@ -964,6 +1000,20 @@ def _forecast_items(rep: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str
         if any(v is None for v in vals + los + his):
             continue
         span = "%s to %s" % (NB._mon(head[0].get("month")), NB._mon(head[-1].get("month")))
+        if not sums:
+            # a level in a month, never a sum of months: the horizon's own point and its own range
+            at = NB._mon(head[-1].get("month"))
+            for part, x, words, assumes in (
+                    ("base", vals[-1], "Base: the forecast level", "the engine's forecast for %s" % at),
+                    ("low", los[-1], "Low: the low end of that month's own %s range" % lvl_pct, "%s at the low end of its own %s range" % (at, lvl_pct)),
+                    ("high", his[-1], "High: the high end of that month's own %s range" % lvl_pct, "%s at the high end of its own %s range" % (at, lvl_pct))):
+                it = _item("forecast.%d.%s" % (h, part), "forecast", "%s in %s, %d months ahead (%s, %s: a level, never added up over months)"
+                           % (words, at, h, series, kind), x, "amount", "", grade, [], None,
+                           "the forecast %s for %s, %d months ahead" % ({"base": "level", "low": "range's low end", "high": "range's high end"}[part], at, h),
+                           None, assumes)
+                if it is not None:
+                    out.append(it)
+            continue
         ranges = ("the months' own %s ranges added up, at least as wide as an %s range for the total"
                   % (lvl_pct, lvl_pct))
         # the words that say what the sum is come first, the series and its months last (a reader that cuts a

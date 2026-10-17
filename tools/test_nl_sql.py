@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for engine/nl_sql.py, Ask with SQL (Track B; CONTRACT §5.13).
+"""Tests for engine/nl_sql.py, Ask with SQL (Track B; CONTRACT §5.14).
 
     NL_ENGINE_ROOT=<copy of northledger-core> python tools/test_nl_sql.py
 

@@ -158,6 +158,9 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the analyst loop (typed analysis steps and the insights filled from their numbers,
                  # CONTRACT §5.10), imported by nl_browser.run()
                  "nl_analyst.py": "nl_analyst.py",
+                 # Ask your data with SQL (CONTRACT §5.14): the SQL fence and the engine's own plan, imported by
+                 # nl_analyst's sql step and nl_browser.analyst_plan_json
+                 "nl_sql.py": "nl_sql.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",

@@ -3743,7 +3743,7 @@ _OP_FN = {
     "periods": op_periods,
     "confound": op_confound,
     "frequency": op_frequency,
-    # Ask your data, with SQL (Track B, CONTRACT §5.13): planner-only steps, never run in the engine's own rounds
+    # Ask your data, with SQL (Track B, CONTRACT §5.14): planner-only steps, never run in the engine's own rounds
     "sql": op_sql,
     "rate_mix": op_rate_mix,
 }

@@ -1,4 +1,4 @@
-"""Ask your data, with SQL (Track B, plan/DASHBOARD-DESIGN.md; CONTRACT §5.13): the SQL fence and the engine's own plan
+"""Ask your data, with SQL (Track B, plan/DASHBOARD-DESIGN.md; CONTRACT §5.14): the SQL fence and the engine's own plan
 for a question. It extends the analyst loop's "Ask your data" (engine/nl_analyst.py; docs/ai-analyst/PROTOCOL.md): the
 SQL and the driver split are typed steps of that loop (`sql`, `rate_mix`), so their numbers live in its ledger and its
 insight, story and figure machinery apply.

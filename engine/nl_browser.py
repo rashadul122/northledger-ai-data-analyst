@@ -13525,7 +13525,7 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
         # kinds and hint, so a planned step runs on exactly what the engine's own steps ran on, never on raw rows
         _LAST_ANALYST.clear()
         _LAST_ANALYST.update(df=df, kinds=info.get("kinds") or {}, hint=hint,
-                             # Ask with SQL (engine/nl_sql.py, CONTRACT §5.13): the loop's reading of the file, and the
+                             # Ask with SQL (engine/nl_sql.py, CONTRACT §5.14): the loop's reading of the file, and the
                              # headers of the columns withheld or coded (never in the frame; named so SQL is told why)
                              shape=out.get("shape"), hidden=[str(reading.header(c)) for c in hide])
         return out

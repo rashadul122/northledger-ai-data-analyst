@@ -98,7 +98,7 @@ export const SYSTEM_PROMPT = [
 ].join("\n");
 
 // ------------------------------------------------------------------------------------------ the sql step's check
-// A planner's `sql` step (Ask your data with SQL, the site's CONTRACT §5.13) holds one query over the table the engine
+// A planner's `sql` step (Ask your data with SQL, the site's CONTRACT §5.14) holds one query over the table the engine
 // keeps in the visitor's browser, kept_rows, whose columns are the shape's. checkSql refuses anything but ONE read-only
 // SELECT/WITH over that table and those columns: no PRAGMA/ATTACH/DETACH/INSERT/UPDATE/DELETE/CREATE/DROP/ALTER/
 // REPLACE/VACUUM/load_extension, no second statement, no parameter, no other table (sqlite_master), no function off the

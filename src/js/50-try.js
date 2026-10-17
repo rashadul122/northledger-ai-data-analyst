@@ -1548,7 +1548,7 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report'),
       qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
@@ -1660,7 +1660,7 @@
       if (S.tick) { clearInterval(S.tick); S.tick = null; }
       S.t0 = {}; S.busy = false; if (el.q) el.q.disabled = false;
       el.run.hidden = true; el.pd.hidden = true;
-      el.sample.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; el.pick.disabled = false;
     }
 
     /* ---- the worker ---- */
@@ -1711,6 +1711,8 @@
       } else if (m.type === 'ledger_json') {
         // what the AI planner may see of the analyst's steps (ledger_for_ai), asked for by askData
         if (S.onLedger) S.onLedger(m.id, Array.isArray(m.steps) ? m.steps : null);
+      } else if (m.type === 'plan_json') {
+        if (S.onPlan) S.onPlan(m.id, Array.isArray(m.steps) ? m.steps : null);
       } else if (m.type === 'more_json') {
         // the planner's steps, run by the engine on the file's rows (nl_analyst.run_steps), asked for by askData
         if (S.onMore) S.onMore(m.id, m.out && typeof m.out === 'object' ? m.out : null);
@@ -2045,7 +2047,7 @@
     // the visitor's optional edit after the run: the engine runs the edited plan (no second AI correction)
     function rerun(d) {
       S.seq += 1; S.replanned = true; S.replan = null; S.replanFail = null; S.firstRep = null; S.busy = true; S.aiReport = null;
-      el.sample.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       var ar = document.getElementById('try-ai-report'); if (ar) ar.hidden = true;
       el.report.hidden = true; el.run.hidden = false;
       drawStages(); setStage('load', 'skip', null, 'already loaded'); setStage('plan', 'done', null, 'the plan that ran, as you changed it'); setStage('replan', 'skip', null, 'you edited the plan');
@@ -2370,7 +2372,7 @@
       if (!LIM.max_bytes || !LIM.max_rows) return refuse('engine', { title: 'The demo is not set up on this page', body: 'Its limits are missing from the page data.' });
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
-      S.busy = true; el.sample.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       // the question box: typed before the run, sent as the objective the AI plans around
       S.question = (el.q && el.q.value || '').trim().slice(0, 300);
       S.objective = S.question;
@@ -2438,8 +2440,8 @@
       var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
       if (f) start(f.name, f.size, function () { return f.arrayBuffer(); });
     });
-    el.sample.addEventListener('click', function () {
-      var url = CFG.sample || 'engine/sample-messy.csv', name = url.split('/').pop();
+    function startSample(url, asOf) {
+      var name = url.split('/').pop();
       if (location.protocol === 'file:') return refuse('file');
       start(name, 0, function () {
         return fetch(url, { cache: 'no-cache' }).then(function (r) {
@@ -2449,8 +2451,12 @@
           if (b.byteLength > LIM.max_bytes) throw new Error('larger than the limit');
           return b;
         });
-      }, CFG.sample_as_of || null);   // the sample's fixed analysis date, so its report does not age
-    });
+      }, asOf || null);   // the sample's fixed analysis date, so its report does not age
+    }
+    el.sample.addEventListener('click', function () { startSample(CFG.sample || 'engine/sample-messy.csv', CFG.sample_as_of); });
+    // the SYNTHETIC sales sample (tools/make_sample_sales.py): Ask your data's SQL demo, "Why is gross margin down in EMEA
+    // this quarter?" (CONTRACT §5.14)
+    if (el.sample2) el.sample2.addEventListener('click', function () { startSample(CFG.sample_sales || 'engine/sample-sales-synthetic.csv', CFG.sample_sales_as_of); });
     el.cancel.addEventListener('click', function () {
       killWorker();
       S.seq += 1;
@@ -2493,7 +2499,7 @@
       (rep.timings || []).forEach(function (t) { var li = stageEl(t.stage); if (li && li.className !== 'st-done') setStage(t.stage, 'done', t.seconds); });
       STAGES.forEach(function (s) { var li = stageEl(s); if (li && li.className !== 'st-done') setStage(s, 'skip'); });
       S.report = rep; S.busy = false; if (el.q) el.q.disabled = false;
-      el.sample.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; el.pick.disabled = false;
       drawPlan(rep);
       drawReport();
       el.report.hidden = false;
@@ -2579,16 +2585,37 @@
     var ASK_ROUNDS = 3, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
     function askData(question, say) {
       var rep = S.report, b = rep && rep.analyst;
-      if (!b || !planOn()) { say('The AI is off for this file, so questions cannot be asked.', false); return; }
+      if (!b) { say('This file has no analysis to ask about.', false); return; }
       var done = (b.asked || []).length;
       if (done >= ASK_ROUNDS) { say('That is the ' + ASK_ROUNDS + ' questions a file can take. Run the file again to ask more.', false); return; }
       // the worker echoes the run's id (onMsg drops any other); the box is disabled while a question is out, so one at a time
-      var seq = S.seq, id = seq, w = worker();
-      say('Asking the AI which checks answer this\u2026', true);
+      var seq = S.seq, id = seq, w = worker(), planned = 'ai';
       function fail(why) {
-        S.onLedger = null; S.onMore = null;
+        S.onLedger = null; S.onMore = null; S.onPlan = null;
         if (seq === S.seq) say(why, false);
       }
+      // without an AI planner (the AI is off, or its round failed or chose nothing) the engine plans the checks itself
+      // (nl_browser.analyst_plan_json: a read-only SQL query, then the move split by group); the same loop runs them
+      function enginePlan(why) {
+        S.onLedger = null;
+        planned = 'engine';
+        say((why ? why + ' ' : '') + 'The engine is planning the checks itself\u2026', true);
+        S.onPlan = function (gotId, steps) {
+          if (gotId !== id) return;
+          S.onPlan = null;
+          if (seq !== S.seq) return;
+          if (!steps || !steps.length) {
+            b.asked = (b.asked || []).concat([question]);
+            return fail((why ? why + ' ' : '') + 'The engine found no check it can run for this question. Try naming a measure and a group, as in \u201cWhy is revenue down in a region this quarter?\u201d');
+          }
+          say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
+          S.onMore = gotMore;
+          w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+        };
+        w.postMessage({ type: 'plan', id: id, question: question });
+      }
+      if (!(CFG.ask_data === true && planOn())) return enginePlan('');
+      say('Asking the AI which checks answer this\u2026', true);
       S.onLedger = function (gotId, steps) {
         if (gotId !== id) return;
         S.onLedger = null;
@@ -2608,35 +2635,37 @@
             if (seq !== S.seq) return;
             var j = x.j || {};
             if (x.status !== 200 || !Array.isArray(j.steps)) {
-              return fail(x.status === 404 ? 'Questions are not switched on for this site yet.'
-                : x.status === 429 ? 'Too many questions just now. Wait a minute and ask again.'
-                : 'The AI could not pick the checks this time' + (j.error ? ' (' + String(j.error).slice(0, 80) + ')' : '') + '. The analysis above stands as it is.');
+              return enginePlan(x.status === 404 ? 'Questions to the AI are not switched on for this site yet.'
+                : x.status === 429 ? 'The AI is busy just now.'
+                : 'The AI could not pick the checks this time' + (j.error ? ' (' + String(j.error).slice(0, 80) + ')' : '') + '.');
             }
             if (!j.steps.length) {
-              b.asked = (b.asked || []).concat([question]);
-              return fail('The AI found no check the engine can run for this question' +
-                (Array.isArray(j.dropped) && j.dropped.length ? ' (it asked for ' + j.dropped.length + ' the engine does not allow)' : '') + '. Try asking about one of your columns.');
+              return enginePlan('The AI found no check the engine can run for this question' +
+                (Array.isArray(j.dropped) && j.dropped.length ? ' (it asked for ' + j.dropped.length + ' the engine does not allow)' : '') + '.');
             }
             say('Running ' + j.steps.length + (j.steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
             w.postMessage({ type: 'more', id: id, steps: j.steps, prior: b.steps || [] });
           })
           .catch(function (e) {
             clearTimeout(timer);
-            fail(e && e.name === 'AbortError' ? 'The AI took too long to answer. Try again.' : 'The question could not reach the AI. Check your connection and try again.');
+            if (seq !== S.seq) return;
+            enginePlan(e && e.name === 'AbortError' ? 'The AI took too long to answer.' : 'The question could not reach the AI.');
           });
       };
-      S.onMore = function (gotId, out) {
+      S.onMore = gotMore;
+      function gotMore(gotId, out) {
         if (gotId !== id) return;
         S.onMore = null;
         if (seq !== S.seq) return;
-        if (!out || !Array.isArray(out.steps)) return fail('The engine could not run the checks the AI picked.');
+        if (!out || !Array.isArray(out.steps)) return fail(planned === 'ai' ? 'The engine could not run the checks the AI picked.' : 'The engine could not run the checks it planned.');
         var ins = (out.insights || []).filter(function (i) { return i && typeof i.text === 'string' && i.text.trim(); });
         b.steps = (b.steps || []).concat(out.steps);
         b.insights = (b.insights || []).concat(ins);
         b.refused = (b.refused || []).concat(out.refused || []);
         if (typeof out.round === 'number') b.rounds = Math.max(b.rounds || 0, out.round);
         b.asked = (b.asked || []).concat([question]);
-        b.chosen_by = 'engine+ai';
+        if (planned === 'ai') b.chosen_by = 'engine+ai';
+        else b.engine_planned = (b.engine_planned || []).concat([question]);
         if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, ins.length ? ins[0].id : null);
         // a step the engine would not run says why in the step itself (ok false, refused), or in out.refused
         var why = out.steps.filter(function (x) { return x && !x.ok && x.refused; }).map(function (x) { return x.refused; })
@@ -2644,7 +2673,7 @@
         var f = el.report.querySelector('form.nla-ask .nla-ask-status');
         if (f) f.textContent = ins.length ? 'Answered with ' + ins.length + (ins.length === 1 ? ' new finding' : ' new findings') + ', under \u201cWhat you asked\u201d.'
           : 'The checks ran but none gave a finding the engine can state' + (why.length ? ': ' + String(why[0]).slice(0, 160).replace(/[.\s]+$/, '') + '.' : '.');
-      };
+      }
       w.postMessage({ type: 'ledger', id: id, block: b });
     }
 
@@ -3258,7 +3287,12 @@
     function tailHtml(r) {
       // what the analyst loop found (rep.analyst; src/js/53-analyst.js), in both layouts, before the downloads; with
       // the AI chosen, its "Ask your data" box (askData)
-      if (window.NLA) window.NLA.onAsk = CFG.ask_data === true && planOn() && r.ok && r.analyst ? askData : null;
+      // with the AI chosen the AI plans each question's checks; without it the engine plans them (askData's enginePlan)
+      if (window.NLA) {
+        window.NLA.onAsk = r.ok && r.analyst ? askData : null;
+        window.NLA.aiOn = CFG.ask_data === true && planOn();
+        window.NLA.example = /sample-sales-synthetic\.csv$/.test(String((r.input && r.input.name) || '')) ? String(CFG.sales_example || '') : '';
+      }
       var h = window.NLA ? window.NLA.html(r) : '';
       var hasLine = /^source_line,/.test(r.downloads.clean_csv) || /^source_line,/.test(r.downloads.quarantine_csv);
       var held = r.privacy.flagged.filter(function (f) { return f.decision === 'withhold'; }).map(function (f) { return f.column; });

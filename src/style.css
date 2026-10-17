@@ -1279,6 +1279,17 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nla-ask label { display: block; margin: 0 0 8px; }
 .nla-ask-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .nla-ask-row input { flex: 1 1 16em; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); color: var(--ink); }
+/* Ask your data with SQL (CONTRACT §5.14): the read-only query, its copy button, an answer's pin, the example question */
+.nla-sql { margin: 8px 0; }
+.nla-sql-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; font-size: .92em; }
+.nla-sql-h .nla-copy { margin-left: auto; }
+.nla-ro { display: inline-block; padding: 1px 8px; border: 1px solid var(--hairline); border-radius: 999px; font-size: .85em; font-weight: 600; color: var(--muted); }
+.nla-sql-q { margin: 0; padding: 10px 12px; max-height: 18em; overflow: auto; white-space: pre; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); color: var(--ink); font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.nla-sql-q code { background: none; border: 0; padding: 0; font: inherit; color: inherit; }
+.nla-ins > .nla-tbl { max-height: none; }     /* an answer's result table shows every row it lists (the latest last) */
+.nla-pin-row { margin: 8px 0 0; }
+.nla-ask-ex { margin: 8px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.nla-ask-ex .btn { white-space: normal; text-align: left; }
 .nla-ask-row input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .nla-ask-row input:disabled { opacity: 0.6; }
 .nla-ask-note, .nla-asked { margin: 8px 0 0; font-size: 13px; }

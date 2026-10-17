@@ -254,6 +254,15 @@ function onMore(m) {
   post({ type: 'more_json', id: m.id, out: out });
 }
 
+// Ask your data without an AI planner (the AI is off, or its round failed or chose nothing): the steps the engine plans
+// for the question itself (nl_browser.analyst_plan_json: a read-only sql step, then rate_mix or change by group)
+function onPlan(m) {
+  var steps = null;
+  try { if (booted && nl && nl.analyst_plan_json) steps = JSON.parse(nl.analyst_plan_json(String(m.question || ''))); }
+  catch (e) { steps = null; }
+  post({ type: 'plan_json', id: m.id, steps: steps });
+}
+
 var queue = Promise.resolve();
 self.onmessage = function (e) {
   var m = e.data || {};
@@ -264,6 +273,7 @@ self.onmessage = function (e) {
     if (m.type === 'results') return onResults(m);
     if (m.type === 'ledger') return onLedger(m);
     if (m.type === 'more') return onMore(m);
+    if (m.type === 'plan') return onPlan(m);
     return null;
   }).catch(function (err) {
     if (err && err.code) fail(m.id, err.code, err.message, err.detail);

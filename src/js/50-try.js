@@ -1557,6 +1557,15 @@
     var S = { worker: null, seq: 0, busy: false, name: '', objective: '', t0: {}, tick: null, report: null, ai: null, aiNote: '', aiRaw: false, aiRed: [],
       aiCharts: [], aiTables: [], aiResults: null, shareUrl: '', delToken: '', question: '', prevFile: '',
       kept: [], sendKey: '' };                       // the flagged columns the visitor agreed to send (option B), and the list the box names
+    // clean my file (src/js/59-cleanfile.js, engine/nl_cleanfile.py): this run's cleaning as a cleaned copy and a log,
+    // from the worker that ran it (the engine's own cleaner and record); `rules` are the visitor's edits (null: the
+    // engine's), cb(out) gets the answer, or null when no worker holds the run any more. Nothing is sent anywhere.
+    T.cleanFile = function (rules, cb) {
+      if (!S.worker || !S.report) { cb(null); return; }
+      S.onCleaned = function (out) { S.onCleaned = null; cb(out); };
+      S.worker.postMessage({ type: 'cleanfile', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, rules: rules || null,
+        plan_columns: S.plan && Array.isArray(S.plan.columns) ? S.plan.columns : null } });
+    };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
       forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
@@ -1711,6 +1720,9 @@
       } else if (m.type === 'ledger_json') {
         // what the AI planner may see of the analyst's steps (ledger_for_ai), asked for by askData
         if (S.onLedger) S.onLedger(m.id, Array.isArray(m.steps) ? m.steps : null);
+      } else if (m.type === 'cleaned') {
+        // clean my file (engine/nl_cleanfile.py), asked for by T.cleanFile (src/js/59-cleanfile.js)
+        if (S.onCleaned) S.onCleaned(m.out && typeof m.out === 'object' ? m.out : null);
       } else if (m.type === 'more_json') {
         // the planner's steps, run by the engine on the file's rows (nl_analyst.run_steps), asked for by askData
         if (S.onMore) S.onMore(m.id, m.out && typeof m.out === 'object' ? m.out : null);
@@ -3223,6 +3235,9 @@
           tbl('Set-aside rows by reason', [{ t: 'Reason' }, { t: 'Rows', num: true }], c.quarantine_reasons.map(function (q) { return [esc(q.reason), num(q.count, 0)]; })) +
           (dupFinding && dupReason ? '<p class="note">The duplicate count in the findings and the one here can differ: the finding counts rows repeated exactly as delivered; this table counts what the duplicate rule set aside after the other fixes, which can join rows that differed only in spaces or capitals, and skips rows already set aside for another reason.</p>' : '')
         : '<p>No row had to be set aside.</p>') + '</article></div>';
+      // clean my file (track C, workflow step 2): the same cleaning as a cleaned copy of the file, its log and its
+      // editable rules, filled by src/js/59-cleanfile.js once mounted
+      if (window.NLClean && r.ok) h += window.NLClean.html(r);
       return h;
     }
     function privRolesHtml(r, gated) {
@@ -3272,6 +3287,7 @@
         '<p class="note">The files are made in your browser from the engine\'s output.' +
         (hasLine ? ' Each row starts with source_line, its line in your file, so you can find it there.' : '') +
         (held.length ? ' Withheld columns (' + held.map(esc).join(', ') + ') are left out of both CSV files.' : '') +
+        (window.NLClean ? ' The cleaned CSV is the table the analysis read; "Clean my file" above gives your whole file cleaned, every row kept and flagged, with a cleaning log.' : '') +
         ' The evidence ledger is the engine\'s own record of the facts behind the findings and how each was worked out.</p></article>';
       var email = CFG.contact_email, cta;
       if (email) {
@@ -3315,6 +3331,7 @@
       drawStory();
       window.NL2.mount(el.report.querySelector('.nl2'), r);
       if (window.NLA && window.NLA.mount) window.NLA.mount(el.report);
+      if (window.NLClean && window.NLClean.mount) window.NLClean.mount(el.report, r);
     }
     function drawReport() {
       var r = S.report, c = r.cleaning, F = r.forecast, gated = T.gateTripped(r);
@@ -3387,6 +3404,7 @@
       el.report.innerHTML = h;
       drawStory();
       if (window.NLA && window.NLA.mount) window.NLA.mount(el.report);
+      if (window.NLClean && window.NLClean.mount) window.NLClean.mount(el.report, r);
     }
 
     function drawFc() {

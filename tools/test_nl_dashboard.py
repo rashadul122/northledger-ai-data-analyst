@@ -323,6 +323,40 @@ def test_deterministic():
         assert all(isinstance(x, (int, float)) and math.isfinite(x) for x in c), c
 
 
+def test_static_record_definition():
+    """An engine chart record on the dashboard is defined by its own measure and aggregation (17 Oct 2026: a crosstab of
+    dollar totals read "The number of ledger lines.")."""
+    block = {"kpis": [{"id": "s", "measure": "sales", "agg": "sum", "label": "Sales"}],
+             "charts": [{"id": "wf", "chart": "contribution_waterfall", "args": ["store", "sales"], "title": "Where the change came from"},
+                        {"id": "cal", "chart": "calendar_heatmap", "args": ["sales"], "title": "Sales by month and year"}]}
+    d = synth_rep(block)["dashboard"]
+    st = {c["id"]: c for c in d["charts"] if c.get("draw") == "static"}
+    assert set(st) == {"wf", "cal"}, (list(st), d["refused"])
+    for c in st.values():
+        df = c["definition"]
+        assert df.startswith("The total of sales") and "in CAD" in df and "number of" not in df, df
+        assert "filters do not change it" in df and "static" not in c, (df, sorted(c))
+    assert "by store" in st["wf"]["definition"] and "by month" in st["cal"]["definition"], st
+
+
+def test_one_unit_word_per_measure():
+    """One unit word per measure everywhere (17 Oct 2026: tiles in "$", chart definitions "in CAD" for one Amount): the
+    plan's unit over a different word the design gave one element, which the notes record; the file's own sign over
+    the plan's."""
+    block = {"kpis": [{"id": "s", "measure": "sales", "agg": "sum", "label": "Sales", "unit_word": "$"}],
+             "charts": [{"id": "line", "chart": "line_chart", "args": ["sales"], "title": "Sales by month"}]}
+    d = synth_rep(block)["dashboard"]
+    units = {x["id"]: x["unit_word"] for x in d["kpis"] + d["charts"]}
+    assert units == {"s": "CAD", "line": "CAD"}, units
+    assert [m["unit"] for m in d["cube"]["measures"]] == ["CAD"], d["cube"]["measures"]
+    assert any("one unit word for sales" in r["why"] for r in d["refused"]), d["refused"]
+    # the sample ledger writes its own sign ("$2,150.00"): every Amount figure is in "$", the cube's unit too
+    s = sample_rep()["dashboard"]
+    assert {x["unit_word"] for x in s["kpis"] + s["charts"] if x.get("measure")} == {"$"}, s["kpis"]
+    assert all(" CAD" not in (x.get("definition") or "") for x in s["kpis"] + s["charts"])
+    assert [m["unit"] for m in s["cube"]["measures"]] == ["$"], s["cube"]["measures"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

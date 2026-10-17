@@ -2075,7 +2075,9 @@
     var v = Number(f.value), u = f.value_unit, sg = v > 0 ? '+' : v < 0 ? '\u2212' : '';
     if (u === 'own units') return sg + fmtVal(Math.abs(v)) + ' (own units)';
     if (u !== 'percentage points' && u !== 'the rate\'s own units') return sgnPct(v);
-    return sg + Number(Math.abs(v).toPrecision(3)) + (u === 'percentage points' ? ' percentage points' : ' (own units)');
+    // percentage points at 2 decimals, as the engine writes them (3 only when 2 would show a nonzero change as 0.00)
+    var a = Math.abs(v), pp = a.toFixed(2) === '0.00' && a > 0 ? a.toFixed(3) : a.toFixed(2);
+    return sg + (u === 'percentage points' ? pp + ' percentage points' : Number(a.toPrecision(3)) + ' (own units)');
   }
   function shortClaim(c) {
     var m = String(c || '').match(/^Change in (?:the )?(.*?), latest/);

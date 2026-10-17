@@ -13832,6 +13832,316 @@ def _context_queries(raw: Any) -> Tuple[List[str], List[str], List[Dict[str, Any
     return queries, dropped, kept
 
 
+# ----------------------------------------------------------------------------- several files in one run (Track E)
+# Step 1 takes several files (plan/DASHBOARD-DESIGN.md "Batch 2 shared interface", CONTRACT §5.18). The FIRST (main)
+# file runs the whole flow; every other file is a companion, read by the SAME run() (profile, cleaning, the personal-data
+# default: every flagged column withheld) and kept here, inside the worker, as the rows the engine kept. rep.inputs
+# lists them all (the main one first); a report type of step 6 (DELIVER_MODULES) reads the ones it needs by role. Rows
+# never leave the worker: the page gets each file's summary, and a report type's own record.
+# DELIVER_MODULES: a report type's engine module (build(inputs, settings) -> dict); a module not in the pack answers
+# {ok: false, error: "not built"}. Tracks F and G only add their file (named here already).
+DELIVER_MODULES = {"monthly-pack": "nl_pack", "sales-report": "nl_sales", "tracker": "nl_tracker"}
+INPUTS_MAX = 6                       # companion files read at most (the main file is not counted)
+_INPUTS: List[Dict[str, Any]] = []   # companions: {summary, csv (the rows kept, as the engine cleaned them), name}
+_PRIMARY: Dict[str, Any] = {}        # the main file's: the same, from the last run_json
+
+# a scenario's words (a column's values, or a token of a measure's header): what the pack reads as actual or plan
+SCENARIO_WORDS = {
+    "actual": ("actual", "actuals", "act", "outturn", "real", "ty"),
+    "plan": ("budget", "budgets", "bud", "budgeted", "plan", "planned", "target", "targets", "tgt", "goal", "objective"),
+    "forecast": ("forecast", "forecasts", "fcst", "fc", "reforecast", "rf", "outlook", "projection", "projected"),
+}
+_SCEN_OF = {w: k for k, ws in SCENARIO_WORDS.items() for w in ws}
+# a header token that names a scenario only beside another word (a column called "act" alone is not read as one)
+_SCEN_WEAK = frozenset(("ty", "fc", "rf", "real", "goal", "objective"))
+_ROLE_WORDS = {
+    "kpi": ("kpi", "kpis", "metric", "metrics", "indicator", "indicators", "scorecard"),
+    "trial_balance": ("debit", "debits", "credit", "credits", "dr", "cr", "trial", "tb", "ledger_account", "gl"),
+    "deals": ("deal", "deals", "opportunity", "opportunities", "stage", "won", "lost", "pipeline", "probability"),
+    "tasks": ("status", "opened", "closed", "due", "assignee", "assigned", "priority", "ticket", "resolved"),
+}
+
+
+def _tokens_of(name: Any) -> List[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", str(name or "").lower()) if t]
+
+
+def header_scenario(header: Any) -> Tuple[str, Optional[str]]:
+    """(stem, scenario) of a measure's header: "revenue_budget" -> ("revenue", "plan"), "active_customers_target" ->
+    ("active_customers", "plan"), "revenue" -> ("revenue", None). A weak word ("fc", "ty") counts only beside others."""
+    toks = _tokens_of(header)
+    scen = None
+    keep = []
+    for t in toks:
+        s = _SCEN_OF.get(t)
+        if s and scen is None and (t not in _SCEN_WEAK or len(toks) > 1):
+            scen = s
+            continue
+        keep.append(t)
+    return "_".join(keep), scen
+
+
+def scenario_of_value(v: Any) -> Optional[str]:
+    """A scenario column's value as the pack reads it ("Budget" -> plan, "Actuals" -> actual), or None."""
+    toks = _tokens_of(v)
+    found = {_SCEN_OF[t] for t in toks if t in _SCEN_OF}
+    return found.pop() if len(found) == 1 else None
+
+
+def frame_kinds(df: Any) -> Dict[str, str]:
+    """Each column of a cleaned frame as date, number or text (the cleaner wrote dates as ISO dates and numbers plain)."""
+    import pandas as pd
+    out: Dict[str, str] = {}
+    for c in df.columns:
+        s = df[c]
+        v = s[s.astype(str).str.strip() != ""] if s.dtype == object else s.dropna()
+        if not len(v):
+            out[str(c)] = "text"
+            continue
+        if s.dtype != object:
+            out[str(c)] = "date" if str(s.dtype).startswith("datetime") else "number"
+            continue
+        t = v.astype(str).str.strip()
+        if t.str.match(r"^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2}(:\d{2})?)?$").mean() >= 0.95:
+            out[str(c)] = "date"
+        elif pd.to_numeric(t.str.replace(",", "", regex=False), errors="coerce").notna().mean() >= 0.95:
+            out[str(c)] = "number"
+        else:
+            out[str(c)] = "text"
+    return out
+
+
+def frame_of_csv(text: str) -> Tuple[Any, Dict[str, str]]:
+    """The rows the engine kept (its clean CSV download: withheld columns already absent) as a typed frame."""
+    import pandas as pd
+    df = pd.read_csv(io.StringIO(text or ""), dtype=str, keep_default_na=False)
+    if "source_line" in df.columns:
+        df = df.drop(columns=["source_line"])
+    kinds = frame_kinds(df)
+    for c, k in kinds.items():
+        if k == "number":
+            df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", "", regex=False).str.strip(), errors="coerce")
+        elif k == "date":
+            df[c] = pd.to_datetime(df[c].astype(str).str.strip().str[:10], errors="coerce", format="mixed")
+    return df, kinds
+
+
+def scenario_column(df: Any, kinds: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """A text column whose every value names a scenario (Actual, Budget, Plan, Forecast ...), else None."""
+    for c, k in kinds.items():
+        if k != "text":
+            continue
+        vals = [str(v).strip() for v in df[c].dropna().unique() if str(v).strip()]
+        if not 1 <= len(vals) <= 12:
+            continue
+        reads = [(v, scenario_of_value(v)) for v in vals]
+        if all(r for _v, r in reads):
+            return {"column": c, "members": [{"value": v, "reads_as": r} for v, r in sorted(reads)]}
+    return None
+
+
+def paired_columns(kinds: Dict[str, str]) -> List[Dict[str, str]]:
+    """Measures named as a pair: {stem, actual, plan} ("revenue" + "revenue_budget", "nps" + "nps_target")."""
+    by: Dict[str, Dict[str, str]] = {}
+    for c, k in kinds.items():
+        if k != "number":
+            continue
+        stem, scen = header_scenario(c)
+        if not stem:
+            continue
+        by.setdefault(stem, {})[scen or "actual"] = c
+    return [{"stem": s, "actual": d["actual"], "plan": d.get("plan") or d.get("forecast")}
+            for s, d in sorted(by.items()) if "actual" in d and (d.get("plan") or d.get("forecast"))]
+
+
+def input_role(name: Any, df: Any, kinds: Dict[str, str], scen: Optional[Dict[str, Any]], pairs: List[Dict[str, str]]
+               ) -> Tuple[str, str]:
+    """The engine's guess at what a file is (the page lets the visitor change it): (role, why in plain words)."""
+    heads = [t for c in kinds for t in _tokens_of(c)]
+    ntoks = _tokens_of(re.sub(r"\.[A-Za-z0-9]+$", "", str(name or "")))
+    nums = [c for c, k in kinds.items() if k == "number"]
+    if scen:
+        r = {m["reads_as"] for m in scen["members"]}
+        if "actual" in r and r - {"actual"}:
+            return "actuals_vs_plan", "its column %s holds actual and plan figures side by side" % scen["column"]
+        if "actual" not in r:
+            return "plan", "its column %s names only plans (%s)" % (
+                scen["column"], ", ".join(m["value"] for m in scen["members"]))
+    if pairs:
+        return "actuals_vs_plan", "it pairs %s with %s" % (pairs[0]["actual"], pairs[0]["plan"])
+    plan_heads = [c for c in nums if header_scenario(c)[1] in ("plan", "forecast")]
+    if nums and len(plan_heads) == len(nums):
+        return "plan", "every measure in it is named as a plan (%s)" % plan_heads[0]
+    if any(_SCEN_OF.get(t) in ("plan", "forecast") for t in ntoks):
+        return "plan", "its file name says it is a plan"
+    for role in ("kpi", "trial_balance", "deals", "tasks"):
+        hit = [t for t in heads + ntoks if t in _ROLE_WORDS[role]]
+        if hit and (role != "kpi" or "kpi" in ntoks or any(t in _ROLE_WORDS["kpi"] for t in heads)):
+            return role, "it has %s" % ("a column named like %s" % hit[0] if hit[0] in heads else "%s in its name" % hit[0])
+    if "date" in kinds.values() and nums:
+        return "actuals", "it has dates and measures, and names no plan"
+    if nums:
+        return "list", "it has measures but no dates"
+    return "other", "it has no measures"
+
+
+def _input_summary(rep: Dict[str, Any], df: Any, kinds: Dict[str, str], ident: str, primary: bool,
+                   role: Optional[str] = None) -> Dict[str, Any]:
+    inp = rep.get("input") or {}
+    cl = rep.get("cleaning") or {}
+    held = [str(f.get("column")) for f in (rep.get("privacy") or {}).get("flagged") or []
+            if isinstance(f, dict) and f.get("decision") in ("withhold", "code")]
+    s: Dict[str, Any] = {"id": ident, "name": str(inp.get("name") or ""), "primary": bool(primary),
+                         "sha256": inp.get("sha256"), "ok": bool(rep.get("ok")), "error": str(rep.get("error") or ""),
+                         "rows": int(inp.get("rows") or 0), "rows_kept": int(cl.get("rows_clean") or 0),
+                         "rows_set_aside": int(cl.get("rows_quarantined") or 0),
+                         "columns": [], "withheld": held, "months": None, "scenario": None, "pairs": [],
+                         "role": "other", "role_why": "", "role_by": "engine"}
+    if df is None:
+        s["role_why"] = "the engine could not read it"
+        return s
+    s["columns"] = [{"name": str(c), "kind": kinds.get(str(c), "text"), "withheld": False} for c in df.columns] + \
+        [{"name": h, "kind": "text", "withheld": True} for h in held if h not in df.columns]
+    dates = [c for c, k in kinds.items() if k == "date"]
+    if dates:
+        d = df[dates[0]].dropna()
+        if len(d):
+            u = d.drop_duplicates().sort_values()
+            step = u.diff().dropna().dt.days.median() if len(u) > 2 else None
+            grain = ("year" if step >= 300 else "quarter" if step >= 80 else "month" if step >= 25 else
+                     "week" if step >= 6 else "day") if step is not None and step == step else "month"
+            s["months"] = {"column": dates[0], "first": d.min().strftime("%Y-%m"), "last": d.max().strftime("%Y-%m"),
+                           "last_date": d.max().strftime("%Y-%m-%d"), "grain": grain}
+    sc = scenario_column(df, kinds)
+    pairs = paired_columns(kinds)
+    s["scenario"], s["pairs"] = sc, pairs
+    r, why = input_role(s["name"], df, kinds, sc, pairs)
+    s["role"], s["role_why"] = (role, "you chose it") if role else (r, why)
+    if role:
+        s["role_by"] = "visitor"
+    return s
+
+
+def _input_store(rep: Dict[str, Any], ident: str, primary: bool, role: Optional[str] = None) -> Dict[str, Any]:
+    text = str(((rep.get("downloads") or {}).get("clean_csv")) or "") if rep.get("ok") else ""
+    df, kinds = (None, {})
+    if text.strip():
+        try:
+            df, kinds = frame_of_csv(text)
+        except Exception:  # noqa: BLE001 - an unreadable copy: the file is listed, unread
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
+            df, kinds = None, {}
+    return {"summary": _input_summary(rep, df, kinds, ident, primary, role), "csv": text}
+
+
+def _remember_primary(rep: Dict[str, Any]) -> Dict[str, Any]:
+    _PRIMARY.clear()
+    try:
+        _PRIMARY.update(_input_store(rep, "in1", True))
+        _PRIMARY["analyst"] = dict(_LAST_ANALYST) if rep.get("ok") else {}
+    except Exception:  # noqa: BLE001 - the report stands without its input record
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        _PRIMARY.clear()
+        return {}
+    return _PRIMARY["summary"]
+
+
+def inputs_reset() -> None:
+    """A new main file: every companion goes (the page clears its list too)."""
+    del _INPUTS[:]
+
+
+def input_json(csv_bytes: Any, name: str, as_of: Optional[str] = None, role: Optional[str] = None) -> str:
+    """A companion file (step 1, several files): the same run() as the main file (its profile, its cleaning, every
+    flagged column withheld), kept here as the rows the engine kept. The main file's state (the analyst frame Ask your
+    data reads, the cleaning Clean my file reads) is put back afterwards, so a companion never changes the main run.
+    Returns the file's summary (rep.inputs[]) as JSON; the page appends it."""
+    if len(_INPUTS) >= INPUTS_MAX:
+        return json.dumps({"id": "in%d" % (len(_INPUTS) + 2), "name": _clean_name(name), "primary": False, "ok": False,
+                           "error": "at most %d extra files are read in one run" % INPUTS_MAX, "role": "other"})
+    keep_a, keep_c = dict(_LAST_ANALYST), dict(_LAST_CLEAN)
+    try:
+        rep = run(csv_bytes, name, "", {}, as_of)
+        frame = dict(_LAST_ANALYST) if rep.get("ok") else {}
+    finally:
+        _LAST_ANALYST.clear()
+        _LAST_ANALYST.update(keep_a)
+        _LAST_CLEAN.clear()
+        _LAST_CLEAN.update(keep_c)
+    if role is not None and hasattr(role, "to_py"):
+        role = role.to_py()
+    st = _input_store(rep, "in%d" % (len(_INPUTS) + 2), False, str(role) if role else None)
+    st["analyst"] = frame
+    sha = st["summary"].get("sha256")
+    for i, old in enumerate(_INPUTS):         # the same file twice: read once, in its first place
+        if sha and old["summary"].get("sha256") == sha:
+            return json.dumps(dict(old["summary"], duplicate=True), allow_nan=False, default=str)
+    _INPUTS.append(st)
+    return json.dumps(st["summary"], allow_nan=False, default=str)
+
+
+def inputs_json() -> str:
+    """rep.inputs as the worker holds it: the main file first, then each companion."""
+    out = ([_PRIMARY["summary"]] if _PRIMARY.get("summary") else []) + [x["summary"] for x in _INPUTS]
+    return json.dumps(out, allow_nan=False, default=str)
+
+
+def input_frames(roles: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    """Every input as a report type reads it: {id, name, primary, role, df (the rows kept, as cleaned; no withheld or
+    coded column), kinds, analyst (the analyst loop's frame when the run made one), summary}. roles: {id: role} the
+    visitor set on the page (else the engine's guess)."""
+    out = []
+    for st in ([_PRIMARY] if _PRIMARY.get("summary") else []) + list(_INPUTS):
+        s = dict(st["summary"])
+        if roles and s.get("id") in roles and roles[s["id"]]:
+            s["role"], s["role_by"] = str(roles[s["id"]]), "visitor"
+        df, kinds = (None, {})
+        if s.get("ok") and st.get("csv"):
+            try:
+                df, kinds = frame_of_csv(st["csv"])
+            except Exception:  # noqa: BLE001
+                if os.environ.get("NL_BROWSER_STRICT"):
+                    raise
+        out.append({"id": s["id"], "name": s["name"], "primary": s["primary"], "role": s["role"], "df": df,
+                    "kinds": kinds, "analyst": st.get("analyst") or {}, "summary": s})
+    return out
+
+
+def deliver_json(kind: Any, settings_json: Any = None) -> str:
+    """A step-6 report type's record (DELIVER_MODULES[kind].build(input_frames(), settings)), as JSON. settings may
+    carry `roles` {input id: role} the visitor set. Never raises: an error is {ok: false, error}."""
+    kind = str(kind or "")
+    settings: Any = settings_json
+    if hasattr(settings, "to_py"):
+        settings = settings.to_py()
+    if isinstance(settings, str):
+        try:
+            settings = json.loads(settings) if settings.strip() else {}
+        except ValueError:
+            settings = {}
+    settings = dict(settings) if isinstance(settings, dict) else {}
+    mod = DELIVER_MODULES.get(kind)
+    if not mod:
+        return json.dumps({"ok": False, "error": "no such report type: %s" % kind[:40]})
+    try:
+        import importlib
+        m = importlib.import_module(mod)
+    except ImportError:
+        return json.dumps({"ok": False, "error": "not built"})
+    if not _PRIMARY.get("summary"):
+        return json.dumps({"ok": False, "error": "no file has been read yet"})
+    try:
+        roles = settings.get("roles") if isinstance(settings.get("roles"), dict) else None
+        out = m.build(input_frames(roles), settings)
+    except Exception as exc:  # noqa: BLE001 - the page says the report type could not be made
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        out = {"ok": False, "error": "the engine stopped while making it (%s)" % type(exc).__name__}
+    return json.dumps(out, allow_nan=False, default=str)
+
+
 def run_json(csv_bytes: Any, name: str, objective: str = "", decisions: Any = None,
              as_of: Optional[str] = None) -> str:
     """run(), as JSON text (what the page reads across the Python/JavaScript boundary).
@@ -13843,7 +14153,11 @@ def run_json(csv_bytes: Any, name: str, objective: str = "", decisions: Any = No
             decisions = None
     elif decisions is not None and hasattr(decisions, "to_py"):
         decisions = decisions.to_py()
-    return json.dumps(run(csv_bytes, name, objective, decisions, as_of), allow_nan=False)
+    out = run(csv_bytes, name, objective, decisions, as_of)
+    # the main file's record (rep.inputs, CONTRACT §5.18): the companions the page reads next are appended by the page
+    summary = _remember_primary(out)
+    out["inputs"] = [summary] if summary else []
+    return json.dumps(out, allow_nan=False)
 
 
 if __name__ == "__main__":

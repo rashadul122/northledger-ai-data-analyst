@@ -2400,3 +2400,54 @@ at an average of 37,195 (25,097): deal size +1,076,744, number of deals −426,6
 bigger deals (average 92,922 to 137,044); SMB win rate 38.0% to 22.0%; median cycle 34 to 50 days; 20 of 85 open deals
 stalled (24.4% of the open value). Tests: `tools/test_nl_sales.py` (pandas), `tools/check_report_docx.mjs` (the Word
 file, LibreOffice), `tools/check_ui.js` sales-report-desktop / -phone / -dark.
+### 5.20 Build a tracker (Track G, 16-17 October 2026: `engine/nl_tracker.py`; step 6 option `tracker`)
+
+(5.18 and 5.19 are Track E's and Track F's, per plan/DASHBOARD-DESIGN.md "Batch 2 shared interface AS BUILT".)
+No key is added to THE REPORT CONTRACT. The tracker is a reader of the clean-my-file view (5.15): ONE cleaner.
+
+**Engine.** `nl_cleanfile.view(last, edits, plan_columns, recount, detail=True)` adds `detail` to the view (the CSV and
+the log are unchanged): `{heads, kinds[date|number|code|text], rows[{line, values, flags, missing, doubtful, written}],
+changes[{line, column, before, after, rule}], merged[{line, into, values, rule}], duplicate_rule}`. `line` is the line
+in the visitor's file; `written` / `before` are the visitor's own text (`nl_browser._written_grid`: the bytes before the
+H/E rewrite of dates and numbers, when the records line up; else the landed text); a withheld column is absent, a coded
+column is "(coded)" and never a `before`. `nl_browser._CLEANS` keeps each run's cleaner record by SHA-256 (the last 8
+files run in the tab; never sent), so several files can be combined: `nl_browser.clean_view(sha, rules, plan_columns)`.
+`nl_tracker.build(inputs, settings)` (the `DELIVER_MODULES['tracker']` signature of Track E's `deliver_json`) takes
+`{name, view}`, `{sha256, primary}` or Track E's input frames (`summary.sha256`), and settings `{kind ("" = suggested),
+questions (one per line, or separated by ";" / after "?"), today, plan_columns, rules (the clean-card edits, main file
+only), dup_key ("exact" | "id" | [column names])}`. It returns `{ok, error, kind, kind_label, suggest{kind, why,
+scores}, kinds, mapping[{column, role, sources[{file, header}]}], questions[{question, cell|null, text, how}],
+summary{rows, files[{name, rows_in, merged_within, placed, merged_across, unplaced, withheld_left_out}], changes,
+merged_within, merged_across, unplaced, flags, flagged_rows, columns, unmapped, formula_columns, unknown_status},
+workbook (a spec for `window.NLX.workbook`), today, dup_key}`. `nl_browser.tracker_json(options)` is the page's entry
+(worker message `{type:'tracker', id, options{sha256, inputs[sha256...], kind, questions, dup_key, rules,
+plan_columns}}` -> `{type:'tracked', id, out}`; out adds `available[{sha256, name, rows}]` and `inputs`).
+
+**Rules.** Kinds: tasks, requests, inventory, shifts, vendors, other (columns, header words, status words, formula
+columns). Columns: the template's core columns always (a column no file has stays empty and says so), others when a
+file maps them; every unmapped source column kept under its own name after the formula columns; then `Source file`,
+`Line in source`, `Check`. Status words mapped to the template's (rule `tracker_status_words`); an unknown word kept as
+written, flagged, added to the dropdown list; categories in one spelling across files (`tracker_one_spelling`).
+Rows that are not records go to Unplaced (the header written again; a row with one filled cell; an empty row; a file
+that could not be cleaned). Across files, a row equal in every column both files hold (once cleaned), and with nothing
+in a column only it holds, is merged into the first file's copy (files in run order); the same ID with any difference is
+flagged `possible duplicate`, never merged (unless `dup_key` says ID: then merged, `Differed in` listed). Checks flagged,
+never fixed: a blank (except Closed while open), Done without a closed date, closed before opened, due before opened.
+Nothing is filled and no row invented.
+
+**Workbook** (`NLX.workbook`, with `tables[].calc` = calculated columns, added for this): Data (Excel table `Tracker`,
+typed cells, Status/Category dropdowns from Lists to 1,000 rows below, formula columns as structured references:
+`Days open =IF(ISNUMBER(Opened),IF(ISNUMBER(Closed),Closed-Opened,IF(Closed="",TODAY()-Opened,"")),"")`, `Is open`
+(status not in Lists' "Statuses that count as closed"), `Overdue`, `Oldest-open sort key`; `Stock value = Qty*Unit
+cost`, `Reorder`; `Hours =ROUND(MOD(End-Start,1)*24,2)`; `Vendor total` (SUMIFS)); Summary (COUNTIFS/SUMIFS/AVERAGEIFS/
+LARGE over whole Data columns, each with its cached value, the visitor's questions first, each answered by a formula
+cell or "Not answered ..."); Lists; Instructions; Changes (file, line, Data row, column, before, after, rule); Merged
+duplicates (rule, kept file+line and Data row, merged file+line, merged row as written, differed in); Unplaced; Flags.
+
+**Page.** `src/js/63-tracker.js` registers `{id:'tracker', order:30, settings: kind, questions, dup_key}` with
+`window.NLDeliver` (a guarded stand-in when 60-deliver.js is absent); `window.NLTry.tracker(options, cb)`,
+`NLTry.startSample`, `NLTry.trackerDemo`, `NLTry.offerFile`; `NLClean.rules()` (the clean card's edited rules); events
+`nl:tracker-demo` (the step-1 demo button), `nl:tracker {out}`. Demo: `tools/make_sample_tracker.py` (two SYNTHETIC
+task lists, as of 2026-04-15). Tests: `tools/test_nl_tracker.py` (pandas, the workbook through NLX + openpyxl, and
+LibreOffice's recalculation), `tools/test_nl_cleanfile.py` (detail), `node tools/test_xlsx.mjs` (calc), check_ui
+`tracker-{desktop,phone,dark}`.

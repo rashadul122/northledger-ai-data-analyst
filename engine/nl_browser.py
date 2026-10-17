@@ -6970,11 +6970,15 @@ def _cleaning_block(cr: Any, reasons: Dict[str, int], rules: List[Any], pub: Any
 # The last run's cleaner record, for "Clean my file" (engine/nl_cleanfile.py): the landed table the cleaner read, its
 # result, its rules, the column names and the run's privacy choices. One entry; replaced by every run, never sent.
 _LAST_CLEAN: Dict[str, Any] = {}
+# The same record for each of the last few files run in this tab, by the file's SHA-256: what "Build a tracker"
+# (engine/nl_tracker.py) combines when several files are run (each file is its own run). Never sent; the tab's memory.
+_CLEANS: Dict[str, Dict[str, Any]] = {}
+_CLEANS_MAX = 8                       # Track E: the main file and up to 6 companions, and one more
 
 
 def _remember_clean(db_path: str, table: str, cr: Any, rules: List[Any], colmap: Dict[str, str], flagged: Any,
                     lines: Optional[List[int]], pub: Any, reason_fix: Any, name: str, as_of: str, rep: Dict[str, Any],
-                    planned: bool) -> None:
+                    planned: bool, as_written: Optional[bytes] = None) -> None:
     import copy
     import sqlite3
     import pandas as pd
@@ -6994,11 +6998,37 @@ def _remember_clean(db_path: str, table: str, cr: Any, rules: List[Any], colmap:
                             "header_of": header_of, "private": private, "lines": lines, "pub": pub,
                             "reason_fix": reason_fix, "name": name, "as_of": as_of, "planned": bool(planned),
                             "cleaning": copy.deepcopy(rep.get("cleaning")),
-                            "sha256": (rep.get("input") or {}).get("sha256")})
+                            "sha256": (rep.get("input") or {}).get("sha256"),
+                            "written": _written_grid(as_written, list(raw.columns), len(raw))})
+        sha = _LAST_CLEAN.get("sha256")
+        if sha:
+            _CLEANS.pop(sha, None)
+            _CLEANS[sha] = dict(_LAST_CLEAN)
+            while len(_CLEANS) > _CLEANS_MAX:
+                _CLEANS.pop(next(iter(_CLEANS)))
     except Exception:  # noqa: BLE001 - the report never depends on the clean-file view
         _LAST_CLEAN.clear()
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
+
+
+def _written_grid(data: Optional[bytes], cols: List[str], n: int) -> Optional[List[List[str]]]:
+    """Each row of the file as the visitor wrote it (before the H/E rewrite of dates and numbers), one text per landed
+    column, or None when the file's records and columns do not line up one to one with the landed table."""
+    if not data:
+        return None
+    try:
+        text = data.decode("utf-8-sig", errors="replace")
+        first = text.split("\n", 1)[0]
+        for d in (",", "\t", ";", "|"):
+            recs = [r for r in csv.reader(io.StringIO(text, newline=""), delimiter=d) if r and (len(r) > 1 or r[0].strip())]
+            if recs and len(recs[0]) == len(cols) and d in first:
+                body = recs[1:]
+                if len(body) == n and all(len(r) == len(cols) for r in body):
+                    return body
+        return None
+    except Exception:  # noqa: BLE001 - without it the landed text stands in
+        return None
 
 
 def _clean_quote(table: str) -> str:
@@ -7029,6 +7059,59 @@ def cleanfile_json(options_json: Any = None) -> str:
     def recount(cr2: Any, rules2: List[Any]) -> Dict[str, Any]:
         return _cleaning_block(cr2, _ambiguous_dates(cr2, rules2), rules2, L["pub"])
     out = nl_cleanfile.view(L, opts.get("rules"), opts.get("plan_columns"), recount)
+    return json.dumps(out, allow_nan=False, default=str)
+
+
+def clean_view(sha: str, rules: Any = None, plan_columns: Any = None) -> Optional[Dict[str, Any]]:
+    """One file run in this tab, as its "Clean my file" view with records (nl_cleanfile.view(detail=True)): the
+    tracker's reader (engine/nl_tracker.py). None when this tab no longer holds that file. rules: the visitor's edits
+    to the cleaning rules (the same cleaner runs again)."""
+    import nl_cleanfile
+    rec = _CLEANS.get(str(sha or ""))
+    if rec is None:
+        return None
+
+    def recount(cr2: Any, rules2: List[Any]) -> Dict[str, Any]:
+        return _cleaning_block(cr2, _ambiguous_dates(cr2, rules2), rules2, rec["pub"])
+    v = nl_cleanfile.view(rec, rules, plan_columns, recount, detail=True)
+    v["as_of"] = rec.get("as_of")
+    v["name"] = rec.get("name")
+    return v
+
+
+def tracker_json(options_json: Any = None) -> str:
+    """Build a tracker (engine/nl_tracker.py, CONTRACT-v2 section 5.20) from the files run in this tab, each as its
+    clean-my-file view (clean_view; one cleaner), as a workbook spec for the page's .xlsx writer (src/js/56-xlsx.js).
+    options_json: {sha256 (the run on the page), inputs: [sha256, ...] (the files to combine, in order; default: the
+    run on the page), kind, questions, today, plan_columns, rules (the "Clean my file" edits, for the run on the
+    page), dup_key}; with Track E's several-file intake the page asks deliver_json('tracker', settings) instead, which
+    calls the same nl_tracker.build. Also lists `available`: every file this tab still holds. Nothing is sent."""
+    import nl_tracker
+    opts: Any = options_json
+    if hasattr(opts, "to_py"):
+        opts = opts.to_py()
+    if isinstance(opts, str):
+        try:
+            opts = json.loads(opts) if opts.strip() else {}
+        except ValueError:
+            opts = {}
+    opts = dict(opts) if isinstance(opts, dict) else {}
+    cur = opts.get("sha256") or _LAST_CLEAN.get("sha256")
+    available = [{"sha256": k, "name": v.get("name"), "rows": int(len(v["raw"])) if v.get("raw") is not None else 0}
+                 for k, v in _CLEANS.items()]
+    if not cur or cur not in _CLEANS:
+        return json.dumps({"ok": False, "error": "The engine no longer holds this file; run it again.",
+                           "workbook": None, "available": available})
+    seen: List[str] = []
+    for x in [str(x) for x in (opts.get("inputs") or []) if isinstance(x, str)] or [cur]:
+        if x not in seen:
+            seen.append(x)
+    inputs = [{"sha256": sha, "primary": sha == cur} for sha in seen[:_CLEANS_MAX]]
+    settings = {k: opts.get(k) for k in ("kind", "questions", "today", "plan_columns", "rules", "dup_key")}
+    settings["today"] = settings.get("today") or _CLEANS[cur].get("as_of")
+    out = nl_tracker.build(inputs, settings)
+    out["available"] = available
+    out["inputs"] = [{"sha256": sha, "name": (_CLEANS.get(sha) or {}).get("name")} for sha in seen[:_CLEANS_MAX]]
     return json.dumps(out, allow_nan=False, default=str)
 
 
@@ -12113,6 +12196,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "the column names (and any blank row under them), save as CSV and try "
                           "again. Nothing was read.")
         # wave 5f (H): dates written in a format the core does not read are rewritten as ISO dates before anything reads the file
+        as_written = data                         # the visitor's text before H/E rewrote any date or number (the tracker's "before")
         data, date_notes, number_notes = normalize_file(data)
         tidy_info: Optional[Dict[str, Any]] = None
 
@@ -12683,7 +12767,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         }
         # -- clean my file (CONTRACT 5.14): this cleaner's record kept for the page's "Clean my file" view
         _remember_clean(eng.db_path, table, cr, rules, colmap, flagged, lines, pub, reason_fix, name, as_of_eff,
-                        rep, sent_rows is not None)
+                        rep, sent_rows is not None, as_written if sent_rows is None and lines is not None else None)
         # -- the engine's reading of every cell of the table it landed (ONE parser: see _engine_reading)
         reading = early_reading
         try:

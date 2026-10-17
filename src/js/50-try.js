@@ -1548,7 +1548,7 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'), sample3: $('try-sample-pack'), sample4: $('try-sample-crm'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'), sample3: $('try-sample-pack'), sample4: $('try-sample-crm'), sample5: $('try-sample-tracker'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report'),
       qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
@@ -1586,6 +1586,18 @@
       S.onSales = function (out) { S.onSales = null; cb(out); };
       S.worker.postMessage({ type: 'sales', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, settings: settings || {} } });
     };
+    // build a tracker (src/js/63-tracker.js, engine/nl_tracker.py, CONTRACT §5.20) from the files run in this tab: the
+    // worker that ran them holds each one's cleaning; options {inputs: [sha256 ...], kind, questions, dup_key, rules,
+    // plan_columns}; cb(out) gets {ok, error, workbook (a spec for NLX.workbook), summary ...}, or null without a run
+    T.tracker = function (options, cb) {
+      if (!S.worker || !S.report) { cb(null); return; }
+      var o = {}; Object.keys(options || {}).forEach(function (k) { o[k] = options[k]; });
+      o.sha256 = (S.report.input || {}).sha256 || null;
+      if (o.plan_columns === undefined) o.plan_columns = S.plan && Array.isArray(S.plan.columns) ? S.plan.columns : null;
+      S.onTracked = function (out) { S.onTracked = null; cb(out); };
+      S.worker.postMessage({ type: 'tracker', id: S.seq, options: o });
+    };
+    T.offerFile = T.offerFile || function (out, bytes, name, type, what) { return offerFile(out, bytes, name, type, what); };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
       forecast: 'Backtest a forecast', story: 'Write the story', plan: 'The AI reads the column summary and plans (about half a minute)',
@@ -1690,7 +1702,7 @@
       if (S.tick) { clearInterval(S.tick); S.tick = null; }
       S.t0 = {}; S.busy = false; if (el.q) el.q.disabled = false;
       el.run.hidden = true; el.pd.hidden = true;
-      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; if (el.sample4) el.sample4.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; if (el.sample4) el.sample4.disabled = false; if (el.sample5) el.sample5.disabled = false; el.pick.disabled = false;
     }
 
     /* ---- the worker ---- */
@@ -1754,6 +1766,9 @@
       } else if (m.type === 'sales') {
         // the quarterly sales report with the visitor's settings (engine/nl_sales.py), asked for by T.salesReport
         if (S.onSales) S.onSales(m.out && typeof m.out === 'object' ? m.out : null);
+      } else if (m.type === 'tracked') {
+        // build a tracker (engine/nl_tracker.py), asked for by T.tracker (src/js/63-tracker.js)
+        if (S.onTracked) S.onTracked(m.out && typeof m.out === 'object' ? m.out : null);
       } else if (m.type === 'plan_json') {
         if (S.onPlan) S.onPlan(m.id, Array.isArray(m.steps) ? m.steps : null);
       } else if (m.type === 'more_json') {
@@ -2090,7 +2105,7 @@
     // the visitor's optional edit after the run: the engine runs the edited plan (no second AI correction)
     function rerun(d) {
       S.seq += 1; S.replanned = true; S.replan = null; S.replanFail = null; S.firstRep = null; S.busy = true; S.aiReport = null;
-      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; if (el.sample4) el.sample4.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; if (el.sample4) el.sample4.disabled = true; if (el.sample5) el.sample5.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       var ar = document.getElementById('try-ai-report'); if (ar) ar.hidden = true;
       el.report.hidden = true; el.run.hidden = false;
       drawStages(); setStage('load', 'skip', null, 'already loaded'); setStage('plan', 'done', null, 'the plan that ran, as you changed it'); setStage('replan', 'skip', null, 'you edited the plan');
@@ -2416,7 +2431,7 @@
       if (!LIM.max_bytes || !LIM.max_rows) return refuse('engine', { title: 'The demo is not set up on this page', body: 'Its limits are missing from the page data.' });
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
-      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; if (el.sample4) el.sample4.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; if (el.sample4) el.sample4.disabled = true; if (el.sample5) el.sample5.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       // the question box: typed before the run, sent as the objective the AI plans around
       S.question = (el.q && el.q.value || '').trim().slice(0, 300);
       S.objective = S.question;
@@ -2570,6 +2585,17 @@
       if (D && (D.choose || D.pick)) { try { (D.choose || D.pick)('sales-report'); } catch (e) { /* the registry draws its own choice */ } }
       startSample(CFG.sample_crm || 'engine/sample-crm-deals-synthetic.csv', CFG.sample_crm_as_of);
     });
+    // the tracker demo (tools/make_sample_tracker.py, SYNTHETIC): two task lists for "Build a tracker" (step 6,
+    // src/js/63-tracker.js, CONTRACT §5.20). The first runs as the file; the tracker card then reads the second
+    // (T.startSample also serves its "Add the demo's second file" when the several-file intake is not on the page)
+    var trackerFiles = function () { return Array.isArray(CFG.sample_tracker) && CFG.sample_tracker.length ? CFG.sample_tracker
+      : ['engine/sample-tracker-tasks-a-synthetic.csv', 'engine/sample-tracker-tasks-b-synthetic.csv']; };
+    T.startSample = function (url, asOf) { startSample(url, asOf); };
+    T.trackerDemo = function () { return { files: trackerFiles(), as_of: CFG.sample_tracker_as_of || null }; };
+    if (el.sample5) el.sample5.addEventListener('click', function () {
+      try { document.dispatchEvent(new CustomEvent('nl:tracker-demo', { detail: T.trackerDemo() })); } catch (e) { /* no CustomEvent: no card note */ }
+      startSample(trackerFiles()[0], CFG.sample_tracker_as_of);
+    });
     el.cancel.addEventListener('click', function () {
       killWorker();
       S.seq += 1;
@@ -2627,7 +2653,7 @@
       S.report = rep; S.busy = false; if (el.q) el.q.disabled = false;
       // the run's files (CONTRACT §5.18): the engine's record of the main file, then every companion read so far
       rep.inputs = (Array.isArray(rep.inputs) ? rep.inputs.filter(function (x) { return x && x.primary; }) : []).concat(S.companions);
-      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; if (el.sample4) el.sample4.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; if (el.sample4) el.sample4.disabled = false; if (el.sample5) el.sample5.disabled = false; el.pick.disabled = false;
       drawPlan(rep);
       drawReport();
       el.report.hidden = false;

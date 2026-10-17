@@ -30,7 +30,10 @@
     date_plausible: 'Placeholder dates (1900-01-01 ...)', series_end: 'Rows after the series ends', allowed: 'Allowed values', not_null: 'Required' };
   var CASES = [['dominant', 'The most common spelling'], ['upper', 'CAPITALS'], ['title', 'Title Case'], ['lower', 'lower case']];
   var ORDERS = [['auto', 'Decide from the values'], ['dmy', 'Day first (31/12/2025)'], ['mdy', 'Month first (12/31/2025)']];
-  var st = { out: null, name: '', busy: false, root: null };
+  var st = { out: null, name: '', busy: false, root: null, rules: null };
+  // the visitor's edited rules, as last applied here (null: the engine's): Build a tracker (src/js/63-tracker.js) reads
+  // them so its rows are this cleaner's under the same rules
+  K.rules = function () { return st.out && st.out.ok && st.out.edited ? st.rules : null; };
 
   K.html = function () {
     return '<article class="tr-card tr-clean" id="try-clean" aria-labelledby="try-clean-h" data-step="2" data-step-home="2">' +
@@ -174,7 +177,7 @@
   K.mount = function (root, rep) {
     var card = root && root.querySelector('#try-clean');
     if (!card) return;
-    st.out = null; st.root = card; st.name = (rep && rep.input && rep.input.name) || 'file';
+    st.out = null; st.rules = null; st.root = card; st.name = (rep && rep.input && rep.input.name) || 'file';
     card.addEventListener('click', function (e) {
       var t = e.target && e.target.closest ? e.target.closest('[data-clean-dl], [data-clean-act]') : null;
       if (!t || st.busy) return;
@@ -185,7 +188,8 @@
         return;
       }
       if (t.getAttribute('data-clean-act') === 'again') {
-        ask(card, readRules(card), function (out) {
+        st.rules = readRules(card);
+        ask(card, st.rules, function (out) {
           var S = out.summary || {};
           return (out.edited ? 'Cleaned again with your rules: ' : 'Cleaned again (no rule changed): ') + num(S.rows_out) + ' rows, ' + num(S.flagged_rows) + ' flagged. No AI was asked.';
         });

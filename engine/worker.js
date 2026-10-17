@@ -28,6 +28,10 @@
      {type: 'sales', id, options}               the quarterly sales report again with the visitor's settings
                                                 (nl_browser.sales_json): options {sha256, settings} -> {type: 'sales', id,
                                                 out: the report's sales block, CONTRACT §5.19}
+     {type: 'tracker', id, options}             build a tracker from the files run in this tab (nl_browser.tracker_json,
+                                                engine/nl_tracker.py): options {sha256, inputs, kind, questions, today,
+                                                plan_columns, rules, dup_key} -> {type: 'tracked', id, out: {ok, error,
+                                                workbook (a spec for NLX.workbook), summary, ...}}
      {type: 'run',  id, options}                the visitor's decisions: the same report if every
                                                 flagged column stays withheld, else a new run
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
@@ -286,6 +290,16 @@ function onSales(m) {
   } catch (e) { out = { ok: false, why: lastLine(e) || 'The sales report stopped.' }; }
   post({ type: 'sales', id: m.id, out: out });
 }
+
+// Build a tracker (engine/nl_tracker.py through nl_browser.tracker_json, CONTRACT §5.20): the files run in this tab,
+// each as its clean-my-file view, combined into a workbook spec the page writes with NLX. Nothing leaves this worker.
+function onTracker(m) {
+  var out = null;
+  try {
+    if (booted && nl && nl.tracker_json) out = JSON.parse(String(nl.tracker_json(JSON.stringify(m.options || {}))));
+  } catch (e) { out = { ok: false, error: lastLine(e) || 'The tracker could not be built.' }; }
+  post({ type: 'tracked', id: m.id, out: out });
+}
 // Ask your data without an AI planner (the AI is off, or its round failed or chose nothing): the steps the engine plans
 // for the question itself (nl_browser.analyst_plan_json: a read-only sql step, then rate_mix or change by group)
 function onPlan(m) {
@@ -334,6 +348,7 @@ self.onmessage = function (e) {
     if (m.type === 'ledger') return onLedger(m);
     if (m.type === 'more') return onMore(m);
     if (m.type === 'cleanfile') return onClean(m);
+    if (m.type === 'tracker') return onTracker(m);
     if (m.type === 'plan') return onPlan(m);
     if (m.type === 'input') return onInput(m);
     if (m.type === 'deliver') return onDeliver(m);

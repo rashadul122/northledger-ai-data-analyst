@@ -8,8 +8,10 @@ ONE cleaner. The report's cleaning (northledger.clean, the rules clean.standard_
 same result (owner, 16 Oct 2026: extend the existing feature, never a second cleaner):
 
   * the engine's analysis copy (`downloads.clean_csv`) drops the rows it set aside and empties a cell it could not
-    read; this view KEEPS every such row and cell exactly as the file wrote it and says why in `nl_flag` (the
-    engine's own reason), so an uncertain value is never changed and a missing one never filled
+    read; this view KEEPS every such row, cleans its safe cells by the same rules as every row (the cleaner's reading
+    rules replayed, _read_work), keeps ONLY the doubtful cell (the column the engine's reason names, or the value it
+    could not read) byte for byte as the file wrote it, and names that column and why in `nl_flag` (owner, 16 Oct
+    2026); an uncertain value is never changed and a missing one never filled
   * exact duplicates (the engine's `exact_duplicates` rule) are merged into the first copy, and the log lists them
   * every other value is the engine's cleaned value: its trim, placeholder, case, yes/no, number and date rules
     (dates ISO under the column's one day/month order, vocab.day_month_order; numbers plain)
@@ -50,6 +52,8 @@ CASES = ("dominant", "upper", "lower", "title")
 _DUP_RE = re.compile(r"^exact duplicate of the row kept at input position (\d+)")
 _DM_RE = re.compile(C._DAY_MONTH_RE)
 _TRIED_RE = re.compile(r" \(tried [^)]*\)")
+_COL_RE = re.compile(r"^column '((?:[^'\\]|\\.)*)':")
+_READ_KINDS = ("null_like", "trim", "case", "numeric", "date", "boolean")
 
 AI_WORDS = {"date": "a date", "year": "a year", "flow_amount": "an amount (a flow)", "level": "a level",
             "percentage": "a percentage", "log_scale": "a number on a log scale", "count": "a count",
@@ -395,6 +399,20 @@ def apply_edits(last: Dict[str, Any], edits: Any) -> Tuple[List[Any], List[str],
     return rules, notes, changed
 
 
+def _read_work(raw: pd.DataFrame, rules: List[Any]) -> pd.DataFrame:
+    """The cleaner's reading rules, in its order, on every row, nothing set aside: a rule that would set a row aside
+    for an unreadable value only flags it here (the value is then empty, and the view keeps the file's text)."""
+    rr = []
+    for r in rules:
+        if r.kind not in _READ_KINDS:
+            continue
+        r2 = copy.deepcopy(r)
+        if r2.kind in ("numeric", "date", "boolean") and r2.severity == "quarantine":
+            r2.severity = "flag"
+        rr.append(r2)
+    return C.clean_frame(raw.copy(), rr).clean
+
+
 # ------------------------------------------------------------------ the view
 def view(last: Dict[str, Any], edits: Any = None, plan_columns: Any = None,
          recount: Optional[Callable[[Any, List[Any]], Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -433,7 +451,7 @@ def _view(last: Dict[str, Any], edits: Any, plan_columns: Any, recount: Any) -> 
             reader_of[r.column] = r
 
     merged_into: Dict[int, int] = {}
-    kept_aside: Dict[int, str] = {}
+    kept_aside: Dict[int, Tuple[Optional[str], str]] = {}     # row -> (the column the reason names, the reason)
     if len(quar):
         for pos, msg in zip(quar.index.tolist(), quar[C.QUARANTINE_COL].tolist()):
             m = _DUP_RE.match(str(msg))
@@ -442,34 +460,50 @@ def _view(last: Dict[str, Any], edits: Any, plan_columns: Any, recount: Any) -> 
             else:
                 # the engine's words, without the list of formats it tried (that list follows the order the formats
                 # were seen in, so the same value would carry a different flag in a file cleaned twice)
-                kept_aside[int(pos)] = _TRIED_RE.sub("", str(reason_fix(msg)))
+                text = _TRIED_RE.sub("", str(reason_fix(msg)))
+                mc = _COL_RE.match(text)
+                kept_aside[int(pos)] = (mc.group(1), text[mc.end():].strip()) if mc and mc.group(1) in cols else (None, text)
     clean_pos = set(int(i) for i in clean.index)
+    # a set-aside row's other cells: the cleaner's reading rules (trim, placeholders, case, numbers, dates, yes/no)
+    # replayed on the same landed table, every row kept (the values the cleaner held for that row before a rejection
+    # rule set it aside); the report's own clean rows are taken from its result, never from this replay
+    work = _read_work(raw, rules) if kept_aside else None
 
     rows_out: List[Tuple[int, List[str], List[str]]] = []
     restored: Dict[str, int] = {}
+    doubtful: Dict[str, int] = {}
     for i in range(n):
         if i in merged_into:
             continue
         flags: List[str] = []
         vals: List[str] = []
-        if i in kept_aside:
-            # set aside by the engine's analysis: kept exactly as the file wrote it (no rule applied), with its reason
-            vals = [_raw(raw.at[i, c]) for c in out_cols]
-            flags.append("set aside by the engine's analysis, kept as written: %s" % kept_aside[i])
-        elif i in clean_pos:
-            for c in out_cols:
-                v = _cell(clean.at[i, c])
-                rv = _raw(raw.at[i, c])
-                if v == "" and rv.strip() and not V.is_null_like(rv) and private.get(c) is None:
-                    # the engine emptied a value it could not read (in a column that is not the row's key): kept
-                    rule = reader_of.get(c)
-                    v = " ".join(rv.split())
-                    restored[c] = restored.get(c, 0) + 1
-                    flags.append("%s: %s could not be read%s; the engine leaves it empty in its analysis, kept as written"
-                                 % (header_of.get(c, c), _quote(v), " by rule %s" % rule.name if rule is not None else ""))
-                vals.append(v)
-        else:
+        aside = kept_aside.get(i)
+        if aside is None and i not in clean_pos:
             continue
+        frame = work if aside is not None else clean
+        for c in out_cols:
+            rv = _raw(raw.at[i, c])
+            if private.get(c) == "code":
+                vals.append(_cell(clean.at[i, c]) if aside is None else rv)
+                continue
+            if aside is not None and aside[0] == c:
+                # the cell the engine's reason names: exactly as the file wrote it
+                vals.append(rv)
+                doubtful[c] = doubtful.get(c, 0) + 1
+                flags.append("%s: %s; the analysis sets this row aside, the value kept as written"
+                             % (header_of.get(c, c), aside[1]))
+                continue
+            v = _cell(frame.at[i, c])
+            if v == "" and rv.strip() and not V.is_null_like(rv):
+                # a value the cleaner could not read (it empties it, in a column that is not the row's key): kept
+                rule = reader_of.get(c)
+                v = rv
+                restored[c] = restored.get(c, 0) + 1
+                flags.append("%s: %s could not be read%s, kept as written"
+                             % (header_of.get(c, c), _quote(rv), " (rule %s)" % rule.name if rule is not None else ""))
+            vals.append(v)
+        if aside is not None and aside[0] is None:
+            flags.append("the analysis sets this row aside: %s" % aside[1])
         rows_out.append((i, vals, flags))
 
     # a duplicate key: a kept row whose merged copies differed elsewhere says so
@@ -529,7 +563,8 @@ def _view(last: Dict[str, Any], edits: Any, plan_columns: Any, recount: Any) -> 
         w.writerow(vals + [SEP.join(flags), MISS_SEP.join(miss)])
 
     summary = {"rows_in": n, "rows_out": len(rows_out), "merged": len(merged_into), "kept_set_aside": len(kept_aside),
-               "cells_restored": {header_of.get(c, c) if private.get(c) is None else c: k for c, k in restored.items()},
+               "cells_restored": {header_of.get(c, c): k for c, k in restored.items()},
+               "cells_doubtful": {header_of.get(c, c): k for c, k in doubtful.items()},
                "possible_duplicates": possible, "flagged_rows": flagged,
                "columns_in": len(cols), "columns_out": len(out_cols) + 2,
                "withheld_left_out": sum(1 for c in cols if private.get(c) == "withhold"),
@@ -566,7 +601,8 @@ def _log(last: Dict[str, Any], S: Dict[str, Any], cleaning: Optional[Dict[str, A
     L.append("Made in your browser by NorthLedger's cleaner, the same one behind the report on the page. **The original "
              "file was not changed**: the cleaned CSV and this log are new files. Missing values were never filled in. "
              "Where the engine's analysis sets a row aside or empties a value it could not read, this cleaned copy keeps "
-             "the row and the value exactly as written and says why in `nl_flag`.")
+             "the row, cleans its other cells by the same rules as every row, keeps the doubtful value exactly as "
+             "written, and names that column and why in `nl_flag`.")
     if S.get("edited"):
         L.append("")
         L.append("**You edited the cleaning rules**: the counts here are the cleaner's under your rules; the report on "
@@ -589,7 +625,7 @@ def _log(last: Dict[str, Any], S: Dict[str, Any], cleaning: Optional[Dict[str, A
     if S["coded"]:
         bits.append("%s coded column%s written as codes" % (_n(S["coded"]), "" if S["coded"] == 1 else "s"))
     L.append("Columns: %s. Rows: %s duplicate%s merged into the first copy; %s row%s the engine's analysis sets "
-             "aside kept here and flagged." % ("; ".join(bits), _n(S["merged"]), "" if S["merged"] == 1 else "s",
+             "aside kept here (doubtful value as written, flagged)." % ("; ".join(bits), _n(S["merged"]), "" if S["merged"] == 1 else "s",
                                                 _n(S["kept_set_aside"]), "" if S["kept_set_aside"] == 1 else "s"))
     L.append("")
     L.append("## Rules applied, and the cells or rows each affected")
@@ -612,7 +648,7 @@ def _log(last: Dict[str, Any], S: Dict[str, Any], cleaning: Optional[Dict[str, A
             for q in cleaning["quarantine_reasons"]:
                 dup = str(q["reason"]).startswith("exact_duplicates")
                 L.append("| %s | %s | %s |" % (_md(q["reason"]), _n(q["count"]),
-                                              "merged into the first copy" if dup else "kept as written, flagged"))
+                                              "merged into the first copy" if dup else "row kept and cleaned; the named value kept as written, flagged"))
     L.append("")
     L.append("## Duplicates")
     L.append("")
@@ -638,14 +674,16 @@ def _log(last: Dict[str, Any], S: Dict[str, Any], cleaning: Optional[Dict[str, A
     L.append("")
     L.append("## Flagged rows")
     L.append("")
-    L.append("**%s** row%s carry a flag in `nl_flag`. A flagged value was not changed." % (
+    L.append("**%s** row%s carry a flag in `nl_flag`. Only the cell a flag names was left as written; the row's other cells were cleaned like every row." % (
         _n(S["flagged_rows"]), "" if S["flagged_rows"] == 1 else "s"))
     L.append("")
     L.append("| Why | Count |")
     L.append("|---|---:|")
-    L.append("| set aside by the engine's analysis, kept as written | %s rows |" % _n(S["kept_set_aside"]))
+    L.append("| rows the analysis sets aside: kept, every other cell cleaned | %s rows |" % _n(S["kept_set_aside"]))
+    for c, k in sorted(S.get("cells_doubtful", {}).items()):
+        L.append("| `%s`: the value a set-aside row's reason names, kept as written | %s cells |" % (_md(c), _n(k)))
     for c, k in sorted(S["cells_restored"].items()):
-        L.append("| `%s`: could not be read, emptied in the analysis, kept as written here | %s cells |" % (_md(c), _n(k)))
+        L.append("| `%s`: could not be read (emptied in the analysis), kept as written | %s cells |" % (_md(c), _n(k)))
     if S["possible_duplicates"]:
         L.append("| possible duplicate under the looser rule, not merged | %s rows |" % _n(S["possible_duplicates"]))
     L.append("")

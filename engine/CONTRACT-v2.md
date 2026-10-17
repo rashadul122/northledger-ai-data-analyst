@@ -2116,17 +2116,21 @@ notes, edited, cleaning}`.
 - `csv`: the visitor's columns in their order (a withheld column left out, as from every download, CONTRACT 5.6 and the page's
   Withhold promise; a coded column as its codes), then `nl_flag` (reasons, " | ") and `nl_missing` (blank columns, "; "). One row per
   row of the file in its order, except exact duplicates (the engine's `exact_duplicates` rule), merged into the first copy. A row
-  the cleaner set aside for any other reason is KEPT exactly as written with `set aside by the engine's analysis, kept as written:
-  <the engine's reason>` (withheld values replaced as in `quarantine_csv`; the list of tried date formats dropped so the words are
-  stable). A cell the cleaner emptied because it could not read it (a non-key measure, e.g. `TBD`) is kept as written (spaces
-  collapsed) and flagged with its rule. Every other cell is the cleaner's value: dates ISO (time kept when present), numbers plain.
+  the cleaner set aside for any other reason is KEPT and cleaned like every row (its cells from the cleaner's reading rules -
+  null_like, trim, case, numeric, date, boolean - replayed on the same landed table with nothing set aside, `_read_work`; on every
+  row the cleaner kept, that replay equals its result, a test), except the ONE cell the engine's reason names (`column 'x': ...`),
+  kept byte for byte as written; `nl_flag` says `<Column>: <the engine's reason>; the analysis sets this row aside, the value kept
+  as written` (withheld values replaced as in `quarantine_csv`; the list of tried date formats dropped so the words are stable; a
+  reason that names no column flags the row and keeps nothing raw). A cell the cleaner emptied because it could not read it (a
+  non-key measure, e.g. `TBD`) is kept byte for byte and flagged `<Column>: '<value>' could not be read (rule r), kept as written`
+  (owner, 16 Oct 2026: only the doubtful cell stays as written). Every other cell is the cleaner's value: dates ISO (time kept when present), numbers plain.
   A placeholder (vocab's list) is blank; nothing is filled. Under the exact-duplicate rule a looser check (every shown column equal,
   case and spacing ignored) flags, never merges. Under a key rule a kept row whose merged copies differed elsewhere is flagged.
 - `log` (Markdown): the original file was not changed; before/after rows and columns; the report's rule table (rule, column, cells
   or rows, what it did) and set-aside reasons with what this copy did with each; duplicates (rule, rows merged, line -> line);
   flagged rows by why; blank cells per column; what each column should contain (the cleaner's rules in words, and the AI plan's
   reading); edits not applied. A withheld or coded column is never named: "a withheld column" / "a coded column".
-- `summary`: `{rows_in, rows_out, merged, kept_set_aside, cells_restored{column: n}, possible_duplicates, flagged_rows, columns_in,
+- `summary`: `{rows_in, rows_out, merged, kept_set_aside, cells_doubtful{header: n}, cells_restored{header: n}, possible_duplicates, flagged_rows, columns_in,
   columns_out, withheld_left_out, coded, missing_cells{header: n}, merged_lines[[line, into]], edited, engine_rows_clean,
   engine_rows_set_aside}`.
 - `card`: `{columns[{column (landed), header, private: "withhold"|"code"|null, contains (words), found (day/month evidence), ai_type,

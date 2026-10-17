@@ -95,7 +95,7 @@ def test_sample_against_pandas():
     flagged = [r for r in rows if r[-2]]
     assert len(flagged) == tbd + neg + later + impossible == out["summary"]["flagged_rows"], len(flagged)
     assert sum(1 for r in flagged if "'TBD' could not be read" in r[-2] and r[4] == "TBD") == tbd
-    assert sum(1 for r in flagged if "outside the possible range" in r[-2]) == neg
+    assert sum(1 for r in flagged if "outside the possible range" in r[-2] and "sets this row aside" in r[-2]) == neg
     assert sum(1 for r in flagged if "in the future" in r[-2]) == later
     assert sum(1 for r in flagged if "2025-02-30" in r[-2] and r[0] == "2025-02-30") == impossible
     # dates: every unflagged row's date is ISO and is the file's date read day-first (the column's proved order)
@@ -135,10 +135,51 @@ def test_nothing_filled_and_flagged_unchanged():
                 assert v != "", ("emptied", c, rv)            # a value is never dropped
         miss = [c for j, c in enumerate(cols) if r[j] == ""]
         assert r[-1] == "; ".join(miss), (r[-1], miss)
-        if "kept as written: " in r[-2] and r[-2].startswith("set aside"):
-            assert r[:len(cols)] == [src[c] for c in cols], (r, list(src))    # the whole row as the file wrote it
-        if "could not be read" in r[-2]:
-            assert r[cols.index("Amount")] == src["Amount"].strip()
+        # a doubtful cell (named in nl_flag) is byte for byte the file's
+        for fl in [x for x in r[-2].split(" | ") if x]:
+            col = fl.split(":", 1)[0]
+            if col in cols and "kept as written" in fl:
+                assert r[cols.index(col)] == src[col], (col, r[cols.index(col)], src[col])
+
+
+def test_flagged_row_other_cells_standardised():
+    """In a row the analysis sets aside, every cell but the doubtful one is cleaned like any row; the doubtful cell is
+    the file's text byte for byte."""
+    rep, out = _clean(_sample(), "sample-messy.csv")
+    df = _raw_frame()
+    head, rows = _rows(out["csv"])
+    lines = NB._record_lines(_sample())
+    merged = set(a for a, _b in out["summary"]["merged_lines"])
+    src_of = [i for i in range(len(df)) if lines[i] not in merged]
+    aside = [(r, df.iloc[i]) for r, i in zip(rows, src_of) if "sets this row aside" in r[-2]]
+    assert len(aside) == 10, len(aside)
+    cat_vocab = set(r[head.index("Category")] for r in rows if not r[-2])
+    for r, src in aside:
+        bad = r[-2].split(":", 1)[0]
+        assert r[head.index(bad)] == src[bad]                                    # byte-identical
+        for c in ("Date", "Amount"):
+            if c != bad:
+                v = r[head.index(c)]
+                assert re.match(r"^\d{4}-\d{2}-\d{2}$" if c == "Date" else r"^-?\d+(\.\d+)?$", v), (c, v)
+        assert r[head.index("Category")] in cat_vocab, r                       # the same spelling as every row
+        assert r[head.index("Paid?")] in ("Y", "N")
+        assert r[head.index("Property")] == r[head.index("Property")].strip()
+    # one of them was written ' Leslieville Fourplex ' / '17/10/2025' in the file and is cleaned now
+    assert any(src["Date"].strip() != r[0] for r, src in aside)
+
+
+def test_replay_matches_the_cleaner():
+    """The reading rules replayed for set-aside rows give, on every row the cleaner kept, exactly its values."""
+    from nl_cleanfile import _read_work, _cell
+    _clean(_sample(), "sample-messy.csv")
+    rep = NB.run(_sample(), "sample-messy.csv", "", None, AS_OF)
+    L = NB._LAST_CLEAN
+    work, clean = _read_work(L["raw"], L["rules"]), L["cr"].clean
+    for c in clean.columns:
+        a = [_cell(v) for v in work.loc[clean.index, c]]
+        b = [_cell(v) for v in clean[c]]
+        assert a == b, (c, next((x, y) for x, y in zip(a, b) if x != y))
+    assert rep["ok"]
 
 
 def test_log_counts_equal_report_and_diffs():
@@ -167,8 +208,13 @@ def test_log_counts_equal_report_and_diffs():
     for j, h in enumerate(head[:-2]):
         assert miss[h] == sum(1 for r in rows if r[j] == ""), h
     fl = {t[0]: t[1] for t in _log_table(log, "Flagged rows")}
-    kept = next(v for k, v in fl.items() if k.startswith("set aside"))
-    assert _int(kept) == sum(1 for r in rows if r[-2].startswith("set aside"))
+    kept = next(v for k, v in fl.items() if k.startswith("rows the analysis sets aside"))
+    assert _int(kept) == sum(1 for r in rows if "sets this row aside" in r[-2])
+    for k, v in fl.items():
+        m = re.match(r"`(.+)`: (the value a set-aside|could not be read)", k)
+        if m:
+            what = "sets this row aside" if m.group(2).startswith("the value") else "could not be read"
+            assert _int(v) == sum(1 for r in rows for x in r[-2].split(" | ") if x.startswith(m.group(1) + ":") and what in x), k
     assert "The original file was not changed" in log
 
 

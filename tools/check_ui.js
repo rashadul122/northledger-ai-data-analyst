@@ -1115,6 +1115,10 @@ self.onmessage = function (e) {
     var P = REPORT.__profile ? (typeof REPORT.__profile === 'object' ? REPORT.__profile : DEFAULT_PROFILE) : null;
     if (P && REPORT.__profileDecisions && sorted(m.decisions) !== sorted(REPORT.__profileDecisions)) P = null;
     self.postMessage({ type: 'profiled', id: m.id, profile: P, landed: P ? (REPORT.__landed || null) : null });
+  } else if (m.type === 'cleanfile') {   // clean my file: the cleaner's real answers, made by the adapter (cleanReport)
+    var C = (m.options && m.options.rules) ? REPORT.__cleanEdited : REPORT.__clean;
+    if (C) { C = JSON.parse(JSON.stringify(C)); C.__echo = m.options || null; self.__lastClean = m.options; }
+    self.postMessage({ type: 'cleaned', id: m.id, out: C || null });
   } else if (m.type === 'results') {
     if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: REPORT.__resultsJson || { charts: [], tables: [] } });
   } else if (m.type === 'run') {
@@ -2890,6 +2894,15 @@ check('try-sample-through-the-real-engine', DESK, async (ctx) => {
       ok(!/(^|,)notes(,|$)/i.test(lines[0]), 'the withheld notes column is in ' + k);
     }
   }
+  // clean my file through the real engine in Pyodide (nl_browser.cleanfile_json): the cleaned copy keeps every row but
+  // the exact duplicates the report set aside
+  if (await p.$('.nl2-views [data-view="analyst"]')) await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForSelector('#try-clean-out:not([hidden])', { timeout: 120000 });
+  const [cd] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="csv"]')]);
+  const clines = fs.readFileSync(await cd.path(), 'utf8').split('\n').filter((l) => l);
+  const dupN = rep.cleaning.quarantine_reasons.filter((q) => /^exact_duplicates/.test(q.reason)).reduce((a, q) => a + q.count, 0);
+  ok(clines[0] === 'Date,Property,Unit,Category,Amount,Paid?,Vendor,nl_flag,nl_missing' && clines.length - 1 === rep.cleaning.rows_in - dupN,
+    'the real cleaned copy: ' + clines[0] + ', ' + (clines.length - 1) + ' rows');
   const other = ctx.__reqs.filter((r) => !/^(blob|data):/.test(r.url) && ['nl-site.test', 'cdn.jsdelivr.net'].indexOf(new URL(r.url).host) < 0);
   ok(!other.length, 'a request went to ' + (other[0] || {}).url);
   ok(!ctx.__reqs.some((r) => r.body), 'a request carried a body');
@@ -4813,6 +4826,101 @@ check('step-rail-orders-the-workflow-and-exposes-its-hooks', DESK, async (ctx) =
   ok(kept && kept.d0 && kept.d0[0] === 'Danforth Triplex', 'the dashboard\'s filter did not survive the Update: ' + JSON.stringify(kept));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
+/* ------------------------------------------------------------ clean my file (track C, workflow step 2)
+   The sample's real report and the cleaner's real answers (nl_browser.cleanfile_json: the engine's rules, and an edited
+   set), made by the native adapter and handed to the page through the stand-in worker: the card sits in the report's
+   cleaning section, both downloads are the cleaner's files with the expected headers, an edit asks the worker again
+   (no request leaves the page) and announces that later steps are out of date, on a phone and in the dark theme. */
+let CLEAN_REP = null;
+const CLEAN_EDIT = { rules: [{ name: 'amount_range', on: false }], allowed: {}, duplicates: { on: true, key: [] } };
+function cleanReport() {
+  if (CLEAN_REP) return CLEAN_REP;
+  const code = 'import sys,os,json\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'd=open(site+"/engine/sample-messy.csv","rb").read()\nrep=NB.run(d,"sample-messy.csv","",{},"2026-09-15")\n' +
+    'rep["__clean"]=json.loads(NB.cleanfile_json(json.dumps({"sha256":rep["input"]["sha256"]})))\n' +
+    'rep["__cleanEdited"]=json.loads(NB.cleanfile_json(json.dumps({"sha256":rep["input"]["sha256"],"rules":json.loads(sys.argv[2])})))\nprint(json.dumps(rep))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR, JSON.stringify(CLEAN_EDIT)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Error('the sample\'s cleaning could not be made: ' + String(r.stderr || r.error || '').trim().split('\n').pop());
+  CLEAN_REP = JSON.parse(r.stdout);
+  return CLEAN_REP;
+}
+async function cleanPage(ctx) {
+  const rep = cleanReport();
+  ok(rep.__clean && rep.__clean.ok && rep.__cleanEdited && rep.__cleanEdited.ok, 'the cleaner gave no answer for the sample');
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  await p.evaluate(() => { window.__steps = []; document.addEventListener('nl:step-status', (e) => window.__steps.push(e.detail)); });
+  await runReport(p);
+  // the report's cleaning section is in the Analyst view (until the step rail puts it in step 2)
+  if (await p.$('.nl2-views [data-view="analyst"]')) await p.click('.nl2-views [data-view="analyst"]');
+  await p.evaluate(() => { const c = document.getElementById('try-clean'); let e = c && c.parentElement; while (e) { if (e.tagName === 'DETAILS') e.open = true; e = e.parentElement; } });
+  try { await p.waitForSelector('#try-clean-out:not([hidden])', { timeout: 20000 }); } catch (e) {
+    throw new Error('the cleaned copy never appeared: ' + JSON.stringify(await p.evaluate(() => { const s = document.getElementById('try-clean-status'); return s ? s.textContent : 'no card'; })) + ' ' + (p.__errs[0] || ''));
+  }
+  return { p, rep };
+}
+async function cleanChecks(ctx, tag) {
+  const { p, rep } = await cleanPage(ctx);
+  if (/dark/.test(tag)) await p.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  const C = rep.__clean;
+  const d = await p.evaluate(() => {
+    const card = document.getElementById('try-clean'), sec = card && card.previousElementSibling;
+    const t = (s) => { const e = card.querySelector(s); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    return { inCleaning: !!(sec && sec.querySelector('.tr-fixes') && sec.querySelector('.tr-quar')), visible: !!(card && card.offsetHeight),
+      kpis: Array.from(card.querySelectorAll('.tr-clean-kpis b')).map((b) => b.textContent.trim()), status: t('#try-clean-status'),
+      cols: Array.from(card.querySelectorAll('.cf-col .cf-name')).map((b) => b.textContent.trim()),
+      sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
+  });
+  ok(d.visible && d.inCleaning, 'the Clean my file card is not shown right after the report\'s cleaning section: ' + JSON.stringify(d));
+  const S = C.summary, miss = Object.keys(S.missing_cells).reduce((a, k) => a + S.missing_cells[k], 0);
+  ok(JSON.stringify(d.kpis) === JSON.stringify([fmt(S.rows_in, 0) + ' → ' + fmt(S.rows_out, 0), fmt(S.merged, 0), fmt(S.flagged_rows, 0), fmt(miss, 0)]), 'the card\'s numbers are not the cleaner\'s: ' + JSON.stringify(d.kpis));
+  ok(S.merged === rep.cleaning.quarantine_reasons.find((q) => /^exact_duplicates/.test(q.reason)).count, 'duplicates merged differ from the report\'s exact-duplicate count');
+  ok(d.cols.indexOf('Date') >= 0 && d.cols.indexOf('Notes') >= 0, 'the rules card does not list the columns: ' + JSON.stringify(d.cols));
+  ok(d.sw <= d.cw + 1, 'the page scrolls sideways (' + d.sw + ' > ' + d.cw + ')');
+  // both downloads: the cleaner's own files, with the expected headers
+  const [dl1] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="csv"]')]);
+  const csvText = fs.readFileSync(await dl1.path(), 'utf8');
+  ok(csvText === C.csv && dl1.suggestedFilename() === 'sample-messy-cleaned.csv', 'the cleaned CSV download is not the cleaner\'s file: ' + dl1.suggestedFilename());
+  ok(csvText.split('\n')[0] === 'Date,Property,Unit,Category,Amount,Paid?,Vendor,nl_flag,nl_missing', 'the cleaned CSV header: ' + csvText.split('\n')[0]);
+  // a row the analysis sets aside: kept, its other cells cleaned like every row, only the named cell as written
+  const aside = csvText.split('\n').filter((l) => /sets this row aside/.test(l));
+  ok(aside.length === C.summary.kept_set_aside && aside.every((l) => /^Amount: /.test(l.split(',').slice(7).join(',').replace(/^"/, '')) ? /^\d{4}-\d{2}-\d{2},/.test(l) : true),
+    'a set-aside row is not cleaned apart from its doubtful cell: ' + aside[0]);
+  const [dl2] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="log"]')]);
+  const md = fs.readFileSync(await dl2.path(), 'utf8');
+  ok(md === C.log && /^# Cleaning log: sample-messy\.csv/.test(md) && /## Before and after/.test(md) && /## Rules applied/.test(md) && /## Duplicates/.test(md) && /## Flagged rows/.test(md) && /## Missing values/.test(md),
+    'the cleaning log download is not the cleaner\'s log, or lacks its sections');
+  ok(!/\bnotes\b/i.test(md) && csvText.split('\n')[0].indexOf('Notes') < 0, 'the withheld column is named in the log or copied into the CSV');
+  // the log's rule table is the report's own
+  rep.cleaning.fixes.forEach((f) => ok(md.indexOf('| `' + f.rule + '` |') >= 0 && md.indexOf(fmt(f.count, 0)) >= 0, 'the log lacks the report\'s rule ' + f.rule));
+  await shot(p, 'clean-' + tag + '-card', '#try-clean');
+  // an edit: the same worker asked again with the visitor's rules, the later steps told they are out of date
+  await p.click('#try-clean-rules > summary');
+  await p.uncheck('#try-clean .cf-rule[data-rule="amount_range"] input[data-k="on"]');
+  await p.click('#try-clean [data-clean-act="again"]');
+  await p.waitForFunction(() => /No AI was asked/.test(document.getElementById('try-clean-status').textContent), null, { timeout: 20000 });
+  const e = await p.evaluate(() => ({ steps: window.__steps, note: document.querySelector('#try-clean .tr-clean-out .note').textContent, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  ok(e.steps.some((s) => s.step === 2 && s.edited && JSON.stringify(s.outOfDate) === '[3,4,5,6]'), 'no nl:step-status marking steps 3-6 out of date: ' + JSON.stringify(e.steps));
+  ok(/Your edited rules/.test(e.note), 'the card does not say the rules are the visitor\'s: ' + e.note);
+  ok(e.sw <= e.cw + 1, 'with the rules open the page scrolls sideways (' + e.sw + ' > ' + e.cw + ')');
+  const [dl3] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="csv"]')]);
+  ok(fs.readFileSync(await dl3.path(), 'utf8') === rep.__cleanEdited.csv, 'after the edit the download is not the edited cleaning');
+  ok(!ctx.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'cleaning sent a request to the AI proxy');
+  if (/dark/.test(tag)) {
+    const lum = await p.evaluate(() => {
+      const L = (c) => { const m = c.match(/[\d.]+/g).map(Number); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]); };
+      const cs = (s, k) => getComputedStyle(document.querySelector(s))[k];
+      return { card: L(cs('#try-clean', 'backgroundColor')), col: L(cs('#try-clean .cf-col', 'backgroundColor')), name: L(cs('#try-clean .cf-name', 'color')), sel: L(cs('#try-clean .cf-fields select', 'backgroundColor')) };
+    });
+    ok(lum.card < 0.1 && lum.col < 0.1 && lum.sel < 0.1 && lum.name > 0.5, 'the card is not drawn in the dark theme: ' + JSON.stringify(lum));
+  }
+  await shot(p, 'clean-' + tag + '-rules', '#try-clean');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}
+check('clean-my-file-desktop', DESK, async (ctx) => { await cleanChecks(ctx, 'desktop-light'); }, { acceptDownloads: true });
+check('clean-my-file-phone', PHONE, async (ctx) => { await cleanChecks(ctx, 'phone-light'); }, { acceptDownloads: true, mobile: true });
+check('clean-my-file-dark', DESK, async (ctx) => {
+  await cleanChecks(ctx, 'desktop-dark');
+}, { acceptDownloads: true, colorScheme: 'dark' });
 
 /* ------------------------------------------------------------ runner */
 (async () => {

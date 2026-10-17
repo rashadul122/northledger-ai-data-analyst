@@ -2142,3 +2142,50 @@ gaps, thin months and the groups hidden for privacy; `rule` names the cleaning r
 the cleaning rules (`fixed`) and the raw health lines (`detail`), folded. `results_for_ai.dashboard` carries the design (ids, labels, titles, counts), never the cube.
 The cube holds sums of the visitor's own kept rows, small cells included (it never leaves the browser; the HTML
 export carries it, as the cleaned CSV download carries the rows).
+### 5.15 Clean my file: the engine's cleaning as a cleaned copy and a log (track C, 16 October 2026)
+
+`nl_browser.cleanfile_json(options_json)` (engine/worker.js `{type: 'cleanfile', id, options}` -> `{type: 'cleaned', id, out}`;
+`engine/nl_cleanfile.py`; page: `src/js/59-cleanfile.js`, the "Clean my file" card at the end of the report's cleaning section,
+workflow step 2). **One cleaner** (owner, 16 Oct 2026: extend the existing feature): the view is made from the run's own cleaner
+result, kept by `run()` in `nl_browser._LAST_CLEAN` (the landed table the cleaner read, the `CleanResult`, the rules
+`clean.standard_rules` derived, the column map, the privacy choices, each row's line in the file, the scrubber and the report's
+`cleaning` block). The report's `cleaning` block and the log's rule table come from one function, `nl_browser._cleaning_block`, so
+they can never word or count it apart. Nothing is sent anywhere; no AI is called.
+
+options: `{sha256 (the report's input.sha256; another file's request is refused: "run the file again"), rules (the visitor's edits
+or null), plan_columns (the AI plan's columns, for "the AI plan read it as")}`. out: `{ok, error, version, csv, log, summary, card,
+notes, edited, cleaning}`.
+
+- `csv`: the visitor's columns in their order (a withheld column left out, as from every download, CONTRACT 5.6 and the page's
+  Withhold promise; a coded column as its codes), then `nl_flag` (reasons, " | ") and `nl_missing` (blank columns, "; "). One row per
+  row of the file in its order, except exact duplicates (the engine's `exact_duplicates` rule), merged into the first copy. A row
+  the cleaner set aside for any other reason is KEPT and cleaned like every row (its cells from the cleaner's reading rules -
+  null_like, trim, case, numeric, date, boolean - replayed on the same landed table with nothing set aside, `_read_work`; on every
+  row the cleaner kept, that replay equals its result, a test), except the ONE cell the engine's reason names (`column 'x': ...`),
+  kept byte for byte as written; `nl_flag` says `<Column>: <the engine's reason>; the analysis sets this row aside, the value kept
+  as written` (withheld values replaced as in `quarantine_csv`; the list of tried date formats dropped so the words are stable; a
+  reason that names no column flags the row and keeps nothing raw). A cell the cleaner emptied because it could not read it (a
+  non-key measure, e.g. `TBD`) is kept byte for byte and flagged `<Column>: '<value>' could not be read (rule r), kept as written`
+  (owner, 16 Oct 2026: only the doubtful cell stays as written). Every other cell is the cleaner's value: dates ISO (time kept when present), numbers plain.
+  A placeholder (vocab's list) is blank; nothing is filled. Under the exact-duplicate rule a looser check (every shown column equal,
+  case and spacing ignored) flags, never merges. Under a key rule a kept row whose merged copies differed elsewhere is flagged.
+- `log` (Markdown): the original file was not changed; before/after rows and columns; the report's rule table (rule, column, cells
+  or rows, what it did) and set-aside reasons with what this copy did with each; duplicates (rule, rows merged, line -> line);
+  flagged rows by why; blank cells per column; what each column should contain (the cleaner's rules in words, and the AI plan's
+  reading); edits not applied. A withheld or coded column is never named: "a withheld column" / "a coded column".
+- `summary`: `{rows_in, rows_out, merged, kept_set_aside, cells_doubtful{header: n}, cells_restored{header: n}, possible_duplicates, flagged_rows, columns_in,
+  columns_out, withheld_left_out, coded, missing_cells{header: n}, merged_lines[[line, into]], edited, engine_rows_clean,
+  engine_rows_set_aside}`.
+- `card`: `{columns[{column (landed), header, private: "withhold"|"code"|null, contains (words), found (day/month evidence), ai_type,
+  ai_words, rules[{name, kind, severity, on, order|min,max|mode|as_of|values}]}], general[the null_like and trim rules], duplicates{on,
+  key[landed], words}}`.
+- Edits (`rules`): `{rules: [{name, on, order: auto|dmy|mdy, min, max, mode: dominant|upper|lower|title, as_of}], allowed: {landed:
+  [values]} (the engine's own `allowed` rule, before the duplicate check), duplicates: {on, key: [landed]}}`. An edit equal to the
+  engine's rule is no edit. With any edit the same cleaner (`clean.clean_frame`) runs again on the same landed table; the log says the
+  rules were edited and the report keeps the engine's own. A withheld or coded column takes no rule and is never a duplicate key
+  (refused with a note). The page then dispatches `nl:step-status {step: 2, status: "done", edited: true, outOfDate: [3, 4, 5, 6]}`.
+- Not available (`ok: false` with the reason) for a file read reshaped (a long statistical table, a structure slice, a wide table):
+  it has no line-for-line copy.
+
+Tests: `tools/test_nl_cleanfile.py` (the sample against pandas, nothing filled, flagged values unchanged, the log's counts equal the
+report and the copy, idempotence, privacy, edits); `tools/check_ui.js` clean-my-file-desktop / -phone / -dark.

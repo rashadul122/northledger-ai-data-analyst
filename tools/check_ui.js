@@ -4865,12 +4865,14 @@ async function cleanChecks(ctx, tag) {
   const d = await p.evaluate(() => {
     const card = document.getElementById('try-clean'), sec = card && card.previousElementSibling;
     const t = (s) => { const e = card.querySelector(s); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; };
-    return { inCleaning: !!(sec && sec.querySelector('.tr-fixes') && sec.querySelector('.tr-quar')), visible: !!(card && card.offsetHeight),
+    // workflow order (plan/DASHBOARD-DESIGN.md): the card lives in step 2, "Clean", moved there by the step rail (data-step-home)
+    const slot = document.getElementById('try-step-2-slot');
+    return { inCleaning: !!(slot && card && slot.contains(card)) || !!(sec && sec.querySelector('.tr-fixes') && sec.querySelector('.tr-quar')), visible: !!(card && card.offsetHeight),
       kpis: Array.from(card.querySelectorAll('.tr-clean-kpis b')).map((b) => b.textContent.trim()), status: t('#try-clean-status'),
       cols: Array.from(card.querySelectorAll('.cf-col .cf-name')).map((b) => b.textContent.trim()),
       sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
   });
-  ok(d.visible && d.inCleaning, 'the Clean my file card is not shown right after the report\'s cleaning section: ' + JSON.stringify(d));
+  ok(d.visible && d.inCleaning, 'the Clean my file card is not in step 2 (Clean) nor right after the report\'s cleaning section: ' + JSON.stringify(d));
   const S = C.summary, miss = Object.keys(S.missing_cells).reduce((a, k) => a + S.missing_cells[k], 0);
   ok(JSON.stringify(d.kpis) === JSON.stringify([fmt(S.rows_in, 0) + ' → ' + fmt(S.rows_out, 0), fmt(S.merged, 0), fmt(S.flagged_rows, 0), fmt(miss, 0)]), 'the card\'s numbers are not the cleaner\'s: ' + JSON.stringify(d.kpis));
   ok(S.merged === rep.cleaning.quarantine_reasons.find((q) => /^exact_duplicates/.test(q.reason)).count, 'duplicates merged differ from the report\'s exact-duplicate count');

@@ -241,8 +241,10 @@
       return { ok: true, why: '' };
     },
     render: function (slot, rep, settings) {
-      var D = window.NLDeliver, fit = option.fits(rep);
+      var D = window.NLDeliver, fit = option.fits(rep), T = window.NLTry, wait = T && T.pendingFiles ? T.pendingFiles().length : 0;
       if (!fit.ok) { slot.innerHTML = ''; return; }
+      // the run's other files are still being read: the pack waits for them (it is made again when each arrives)
+      if (wait) { slot.innerHTML = '<p class="note" role="status" id="pk-status">Reading ' + wait + ' more file' + (wait === 1 ? '' : 's') + ' of this run first\u2026</p>'; return; }
       var roles = {};
       arr(rep.inputs).forEach(function (f) { if (f.role_by === 'visitor') roles[f.id] = f.role; });
       var s = {}; Object.keys(settings).forEach(function (k) { s[k] = settings[k]; });

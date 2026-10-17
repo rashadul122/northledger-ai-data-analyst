@@ -5327,7 +5327,8 @@ check('pack-through-the-real-engine', DESK, async (ctx) => {
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
   if (await p.isVisible('#try-pd')) { await p.click('#try-pd-noai'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
   ok(await p.isVisible('#try-report'), 'no report from the real engine: ' + (await p.textContent('#try-msg')));
-  await p.waitForFunction(() => window.NLPack && window.NLPack.lastPack && document.querySelector('#pk-out .pk-dl'), null, { timeout: 120000 });
+  await p.waitForFunction(() => window.NLPack && window.NLPack.lastPack && window.NLPack.lastPack.inputs_used && window.NLPack.lastPack.inputs_used.length === 3 && document.querySelector('#pk-out .pk-dl'), null, { timeout: 120000 });
+  ok(await p.evaluate(() => window.NLDeliver.inputs().length) === 3, 'the pack was made before every file was read');
   const r = await p.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), pack: window.NLPack.lastPack, ins: window.NLDeliver.inputs().map((f) => [f.name, f.role, f.rows_kept]) }));
   console.log('UI INFO pack-through-the-real-engine: three files and the pack took ' + r.ms + ' ms in the browser (Pyodide load included)');
   ok(JSON.stringify(r.pack.watch) === JSON.stringify(native.watch) && r.pack.month === native.month, 'the watch list differs from the native engine\'s: ' + JSON.stringify([r.pack.watch, native.watch]));

@@ -37,6 +37,7 @@
   --ts-3: #12875c;
   --ts-4: #9a6a00;
   --ts-5: #c8457f;
+  --ts-band: #d9e7f8;
   --heat-green-1: #cfe9e4;
   --heat-green-2: #add9d2;
   --heat-green-3: #87c7bc;
@@ -82,6 +83,7 @@
   --ts-3: #199e70;
   --ts-4: #c98500;
   --ts-5: #d55181;
+  --ts-band: #1c3959;
   --heat-green-1: #143c3f;
   --heat-green-2: #154b4a;
   --heat-green-3: #155b55;
@@ -127,6 +129,7 @@
   --ts-3: #199e70;
   --ts-4: #c98500;
   --ts-5: #d55181;
+  --ts-band: #1c3959;
   --heat-green-1: #143c3f;
   --heat-green-2: #154b4a;
   --heat-green-3: #155b55;
@@ -1011,12 +1014,17 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .nl2-fallback { margin: 0; border: 1.5px solid var(--series-3); font-size: 14.5px; }
 .nl2-footer .visual { background: var(--bg); }
 /* chart marks */
-.nl2-win-p { fill: color-mix(in srgb, var(--axis) 16%, transparent); }
-.nl2-win-l { fill: color-mix(in srgb, var(--accent) 10%, transparent); }
-.nl2-mean-p { stroke: var(--series); stroke-width: 2.5; stroke-dasharray: 6 4; }
-.nl2-mean-l { stroke: var(--accent); stroke-width: 3; }
+/* two periods (17 Oct 2026): the latest in ts-1 (blue), the one before in ts-2 (orange), both solid; each month's
+   value is neutral so the two averages carry the comparison */
+.nl2-win-p { fill: color-mix(in srgb, var(--ts-2) 8%, transparent); }
+.nl2-win-l { fill: color-mix(in srgb, var(--ts-1) 9%, transparent); }
+.nl2-mean-p { stroke: var(--ts-2); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.nl2-mean-l { stroke: var(--ts-1); stroke-width: 3; }
+.dot-s.nl2-mon { fill: var(--muted); }
+.bar-prior { fill: var(--ts-2); } .bar-latest { fill: var(--ts-1); }
+.dot-prior { fill: var(--ts-2); } .dot-latest { fill: var(--ts-1); }
 .nl2-ci-box { fill: color-mix(in srgb, var(--accent) 16%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
-.nl2-thin { stroke: var(--series); stroke-width: 1.2; opacity: 0.45; }
+.nl2-thin { stroke: var(--muted); stroke-width: 1.2; opacity: 0.45; }
 .nl2-gap { fill: var(--series-3); font-weight: 800; }
 .nl2-rbar { fill: var(--fan); stroke: color-mix(in srgb, var(--accent) 45%, transparent); }
 .nl2-tick { stroke: var(--accent); stroke-width: 2.5; }
@@ -1300,7 +1308,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 }
 
 /* ---------- the chart registry's charts (src/js/55-nl-viz.js, tools/fixtures/viz/spec.json colors): every fill is a build
-   token, so the dark theme follows. The one new token is the suppressed cell's fill: mix(surface, muted, 0.10). ---------- */
+   token, so the dark theme follows. The forecast range of a line chart: --ts-band. The one new token is the suppressed cell's fill: mix(surface, muted, 0.10). ---------- */
 :root { --viz-supp: #eef0f1; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --viz-supp: #202b36; } }
 :root[data-theme="dark"] { --viz-supp: #202b36; }
@@ -1312,34 +1320,34 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nlv .nlv-zero { stroke: var(--axis); }
 .nlv .nlv-con { stroke: var(--axis); stroke-dasharray: 3 3; }
 .nlv .nlv-lead { stroke: var(--axis); fill: none; }
-.nlv .w-tot { fill: var(--series); }
-.nlv .w-rise { fill: var(--series-2); }
-.nlv .w-fall { fill: var(--series-3); }
-.nlv .d-rng { stroke: var(--series); stroke-width: 2; }
-.nlv .d-dot { fill: var(--series); }
-.nlv .d-med { stroke: var(--series-3); stroke-width: 2.5; }
-.nlv .p-bar { fill: var(--series); }
+/* marks wear the categorical palette ts-1..ts-5 (build.py TOKENS): ts-1 the primary mark, a rise ts-3, a fall ts-2;
+   text never wears a series colour */
+.nlv .w-tot { fill: var(--ts-1); }
+.nlv .w-rise { fill: var(--ts-3); }
+.nlv .w-fall { fill: var(--ts-2); }
+.nlv .d-rng { stroke: var(--ts-1); stroke-width: 2; }
+.nlv .d-dot { fill: var(--ts-1); }
+.nlv .d-med { stroke: var(--ink); stroke-width: 2.5; }
+.nlv .p-bar { fill: var(--ts-1); }
 .nlv .p-oth { fill: var(--muted); }
-.nlv .p-k80 { stroke: var(--series-2); stroke-width: 2.5; }
-.nlv .p-cum { fill: none; stroke: var(--series-3); stroke-width: 2; }
-.nlv .p-cumd { fill: var(--series-3); }
+.nlv .p-k80 { stroke: var(--ink); stroke-width: 2.5; }
+.nlv .p-cum { fill: none; stroke: var(--ts-2); stroke-width: 2; }
+.nlv .p-cumd { fill: var(--ts-2); }
 .nlv .p-80 { stroke: var(--ink); stroke-dasharray: 5 4; }
-.nlv .nlv-k80t { fill: var(--series-2); font-size: 12px; font-weight: 700; }
+.nlv .nlv-k80t { fill: var(--ink); font-size: 12px; font-weight: 700; }
 .nlv .ts { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .nlv .ts-1 { stroke: var(--ts-1); } .nlv .ts-2 { stroke: var(--ts-2); } .nlv .ts-3 { stroke: var(--ts-3); } .nlv .ts-4 { stroke: var(--ts-4); } .nlv .ts-5 { stroke: var(--ts-5); }
 .nlv .tsd-1 { fill: var(--ts-1); } .nlv .tsd-2 { fill: var(--ts-2); } .nlv .tsd-3 { fill: var(--ts-3); } .nlv .tsd-4 { fill: var(--ts-4); } .nlv .tsd-5 { fill: var(--ts-5); }
 .nlv .ts-x { fill: none; stroke: var(--ts-5); stroke-width: 2; }
 .nlv .nlv-gap { fill: var(--hairline); opacity: 0.6; }
-.nlv .s-rise { stroke: var(--series-2); stroke-width: 2; }
-.nlv .s-fall { stroke: var(--series-3); stroke-width: 2; }
+.nlv .s-rise { stroke: var(--ts-3); stroke-width: 2; }
+.nlv .s-fall { stroke: var(--ts-2); stroke-width: 2; }
 .nlv .s-flat { stroke: var(--muted); stroke-width: 2; }
-.nlv .s-rise-d { fill: var(--series-2); }
-.nlv .s-fall-d { fill: var(--series-3); }
+.nlv .s-rise-d { fill: var(--ts-3); }
+.nlv .s-fall-d { fill: var(--ts-2); }
 .nlv .s-flat-d { fill: var(--muted); }
 .nlv .s-a { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
-.nlv .s-rise-t { fill: var(--series-2); }
-.nlv .s-fall-t { fill: var(--series-3); }
-.nlv .s-flat-t { fill: var(--muted); }
+.nlv .s-rise-t, .nlv .s-fall-t, .nlv .s-flat-t { fill: var(--ink); }
 /* heatmap cells share the report's cell style (.hc2): a suppressed cell reads "<5" on its own fill, dashed; a neutral one
    (exactly 0 on a diverging scale, the correlation diagonal) has no fill and a solid edge */
 .hc2 .nlv-cell { font-size: 11px; pointer-events: none; }
@@ -1698,7 +1706,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:05:37 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:21:05 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2450,7 +2458,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:05:37 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:21:05 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -4070,7 +4078,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   var LETTER_REGIONS = ['US', 'CA', 'MX'];
   var COL = { ink: '#16232e', body: '#2b3843', muted: '#56646f', hair: '#d9d5cb', accent: '#0b7366', accentInk: '#0a5c52',
     panel: '#f4f2ec', zebra: '#faf9f6', grid: '#e6e3da', axis: '#8f8a7e', white: '#ffffff',
-    series: ['#24425c', '#0b7366', '#945400', '#6b5b95'],
+    series: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00'],
     grade: { CONFIRMED: '#0a5c52', WATCH: '#945400', INSUFFICIENT: '#56646f' } };
   var GRADE_LABEL = { CONFIRMED: 'CONFIRMED', WATCH: 'WATCH', INSUFFICIENT: 'NOT ENOUGH DATA' };
   var FILE_WORD = '[your file]';   // the placeholder the engine's results and the AI's report use for the file's name
@@ -4954,8 +4962,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
      bottom), called on the Doc: every mark and word within [L, L + CW] and [bottom, top]. */
   var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#d9e7f8', '#b7d1f1', '#94bcea'], rises: ['#f1e2d1', '#e5c8a8', '#d9ae80'],
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
-    total: '#24425c', rise: '#0b7366', fall: '#945400', conn: '#b9b5aa', dot: '#24425c', median: '#945400', bar: '#24425c',
-    other: '#56646f', cum: '#945400', ref: '#16232e', k80: '#0b7366', flat: '#56646f', ink: '#16232e', body: '#33424e',
+    total: '#2a78d6', rise: '#12875c', fall: '#d45a26', conn: '#b9b5aa', dot: '#2a78d6', median: '#16232e', bar: '#2a78d6',
+    prior: '#d45a26', otherPrior: '#abb2b7',
+    other: '#56646f', cum: '#d45a26', ref: '#16232e', k80: '#16232e', flat: '#56646f', ink: '#16232e', body: '#33424e',
     muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa', ts: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'] };
   var LEGACY = { line: 1, bars: 1, scatter: 1 };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -5357,7 +5366,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           self.text(o.at[i], xa - 8 - w2, la[i] - 2.5, 7, 'R', VC.muted);
           if (Math.abs(lb[i] - yb) > 1) self.line(xb + 3, yb, xb + 7, lb[i], VC.axis, 0.5);
           self.text(o.bt[i], xb + 8, lb[i] - 2.5, 7, 'R', VC.ink);
-          self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', dir(q));
+          self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', VC.ink);
         });
       }
     },
@@ -5450,10 +5459,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   /* ---- Batch 2 of the chart registry (the chart grammar, 14 October 2026): lines, area, hbar, multiples ----
      Drawn from the record alone in the spec's light colours (colors.light.lines/area/hbar/multiples): a line per series
      in its colour and dash, the forecast dashed with its range as a band; the area's parts stacked with a key; one or
-     two bars a row (the first period hollow); a grid of small panels on ONE value scale. A point's text is its table
+     two bars a row (the period before in orange, the latest in blue, both solid); a grid of small panels on ONE value scale. A point's text is its table
      cell (table.rows[i][1 + k]); labels are cut with an ellipsis when they do not fit, and the table view follows. */
-  var GPAL = ['#24425c', '#0b7366', '#945400', '#2a78d6', '#d4502c'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
-  var GOTHER = '#56646f', GBAND = '#cfe5e1', GMON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var GPAL = ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
+  var GOTHER = '#56646f', GBAND = '#d9e7f8', GMON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function gNumN(v) { return v === null || pos(v); }
   function gTimeOk(d, key, nmin, nmax) {
     return isObj(d) && Array.isArray(d.x) && d.x.length >= 2 && d.x.length <= 30 && d.x.every(isStr) && Array.isArray(d[key]) && d[key].length >= nmin &&
@@ -5540,7 +5549,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     draw: function (r, top, bottom) {
       var o = this.lay(r), d = r.data, S = d.series, F = d.forecast || null, n = d.x.length, m = F ? F.x.length : 0, self = this, L = this.L, R = L + this.CW, nt = o.nt;
       o.key.items.forEach(function (e) {
-        e.it.mark = e.it.k >= 0 ? gLineMark(self, e.it.k) : function (x, y) { self.rect(x, y - 3.5, 18, 7, GBAND); self.line(x, y, x + 18, y, GPAL[1], 1.2, '3 2'); };
+        e.it.mark = e.it.k >= 0 ? gLineMark(self, e.it.k) : function (x, y) { self.rect(x, y - 3.5, 18, 7, GBAND); self.line(x, y, x + 18, y, GPAL[0], 1.2, '3 2'); };
       });
       this.gKey(o.key, top);
       var pt = top - o.key.lines * 11 - (o.key.lines ? 6 : 0) - 4, pb = bottom + 14, x0 = L + nt.max + 6, x1 = R - (o.end ? tw(o.end, 7, 'R') + 6 : 2);
@@ -5551,7 +5560,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var li = o.last[0], lv = S[0].values[li];
         this.gFill([[X(li), Y(lv)]].concat(F.hi.map(function (v, j) { return [X(n + j), Y(v)]; })).concat(F.lo.map(function (v, j) { return [X(n + j), Y(v)]; }).reverse()), GBAND);
         this.line(X(n - 0.5), pt, X(n - 0.5), pb, VC.axis, 0.5, '2 2');
-        this.gPath([[X(li), Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; })), GPAL[1], 1.2, '3 2');
+        this.gPath([[X(li), Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; })), GPAL[0], 1.2, '3 2');
       }
       S.forEach(function (s, k) {
         var c = GPAL[k % GPAL.length];
@@ -5613,7 +5622,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     },
     draw: function (r, top, bottom) {
       var o = this.lay(r), d = r.data, rows = d.rows, self = this, L = this.L, R = L + this.CW;
-      if (o.two) { o.key.items.forEach(function (e) { e.it.mark = e.it.k === 0 ? gBoxMark(self, VC.white, VC.bar) : gBoxMark(self, VC.bar); }); this.gKey(o.key, top); }
+      if (o.two) { o.key.items.forEach(function (e) { e.it.mark = e.it.k === 0 ? gBoxMark(self, VC.prior) : gBoxMark(self, VC.bar); }); this.gKey(o.key, top); }
       var all = [0]; rows.forEach(function (q) { all = all.concat(q.values); });
       var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), xa = L + o.labW + (lo < 0 ? o.tw : 0), xb = R - o.cw - o.tw;
       var X = function (v) { return xa + (v - lo) / ((hi - lo) || 1) * (xb - xa); }, z = X(0), y = top - (o.key.lines ? o.key.lines * 11 + 6 : 0);
@@ -5622,7 +5631,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         self.text(o.labels[i], L, mid - 2.5, 7, 'R', VC.body);
         q.values.forEach(function (v, k) {
           var bh = o.two ? 6.5 : 8, yy = o.two ? (k ? mid - bh - 0.5 : mid + 0.5) : mid - bh / 2, a = Math.min(X(v), z), w = Math.max(0.8, Math.abs(X(v) - z));
-          if (o.two && k === 0) self.rect(a, yy, w, bh, VC.white, c, 0.8); else self.rect(a, yy, w, bh, c);
+          if (o.two && k === 0) self.rect(a, yy, w, bh, oth ? VC.otherPrior : VC.prior); else self.rect(a, yy, w, bh, c);
           var b = o.tb[i][k], tx = v < 0 ? a - 3 - tw(b, 7, 'R') : a + w + 3;
           if (b) self.text(b, tx, yy + bh / 2 - 2.5, 7, 'R', VC.ink);
         });
@@ -11594,7 +11603,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // the series panel holds the data and the two window means only; its axis says what a value is
     var yTitle = d.unit === 'rows' ? 'rows a month' : /^mean of /.test(d.unit || '') ? 'average ' + String(d.unit).slice(8) + ' a month' : (d.unit || '');
     var L = 56, Rr = W - 12;
-    var lgItems = [{ mark: MK.dot('dot-s'), label: 'each month' }, { mark: MK.line('ln nl2-mean-p'), label: 'prior 12-month average' },
+    var lgItems = [{ mark: MK.dot('dot-s nl2-mon'), label: 'each month' }, { mark: MK.line('ln nl2-mean-p'), label: 'prior 12-month average' },
       { mark: MK.line('ln nl2-mean-l'), label: 'latest 12-month average' }];
     if (LF) lgItems.push({ mark: MK.line('ln nl2-lfl'), label: 'like for like' });
     // what the numbered lines mark: a change in what the file covers, a step the engine's screen found, or both
@@ -11641,7 +11650,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var rad = Math.max(2.2, Math.min(3.6, step / 2.6));
     V.forEach(function (v, i) {
       if (v === null) { b += '<text class="lab nl2-gap" x="' + x(i).toFixed(1) + '" y="' + (Bt - 4) + '" text-anchor="middle"' + tip(mon(M[i]) + ': under the engine\'s rows-a-month floor, left out') + '>×</text>'; return; }
-      b += '<circle class="dot-s" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="' + rad.toFixed(1) + '"' + tip(mon(M[i]) + ': ' + vf(v) + (d.rows ? ' (' + num(d.rows[i], 0) + ' rows)' : '')) + '/>';
+      b += '<circle class="dot-s nl2-mon" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="' + rad.toFixed(1) + '"' + tip(mon(M[i]) + ': ' + vf(v) + (d.rows ? ' (' + num(d.rows[i], 0) + ' rows)' : '')) + '/>';
     });
     b += '<line x1="' + L + '" x2="' + Rr + '" y1="' + Bt + '" y2="' + Bt + '" stroke="var(--axis)"/>' + xMonths(M, x, H0 - 8) + lg.svg;
     // the change strip: the effect and its interval on their own percent axis, zero and the bar marked;
@@ -12012,14 +12021,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   C.histogram_windows = function (W, ch) {
     var d = ch.data, E = d.edges || [], P = d.prior || { values: [], counts: [] }, Q = d.latest || { values: [], counts: [] }, vf = vfmt(d.scale);
     var L = 44, R = W - 12;
-    var lg = legend([{ mark: MK.box('bar-s'), label: 'prior 12 months' }, { mark: MK.box('bar-a'), label: 'latest 12 months' }], L, R, 10);
+    // two periods: the latest in ts-1 (blue), the one before in ts-2 (orange), both solid (style.css .bar-prior/.bar-latest)
+    var lg = legend([{ mark: MK.box('bar-s bar-prior'), label: 'prior 12 months' }, { mark: MK.box('bar-a bar-latest'), label: 'latest 12 months' }], L, R, 10);
     var T0 = lg.h + 14, plotH = Math.max(130, Math.min(200, Math.round(W * 0.26))), Bt = T0 + plotH, H = Bt + 70;
     var k = Math.max(1, E.length - 1), mx = Math.max.apply(null, P.counts.concat(Q.counts, [1]));
     var x = U.scale(E[0], E[E.length - 1], L + 6, R - 6), y = U.scale(0, mx * 1.15, Bt, T0), b = '';
     U.ticks(0, mx * 1.15, Math.min(4, mx)).forEach(function (t) { if (Math.floor(t) === t) b += '<line class="gridl" x1="' + L + '" x2="' + R + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"/>' + U.txt(L - 6, y(t) + 4, num(t, 0), 'lab', 'end'); });
     for (var i = 0; i < k; i++) {
       var x0 = x(E[i]), x1 = x(E[i + 1]), w = (x1 - x0) * 0.4, rng = vf(E[i]) + ' to ' + vf(E[i + 1]);
-      [[P.counts[i], 'bar-s', x0 + (x1 - x0) * 0.1, 'prior'], [Q.counts[i], 'bar-a', x0 + (x1 - x0) * 0.5, 'latest']].forEach(function (s) {
+      [[P.counts[i], 'bar-s bar-prior', x0 + (x1 - x0) * 0.1, 'prior'], [Q.counts[i], 'bar-a bar-latest', x0 + (x1 - x0) * 0.5, 'latest']].forEach(function (s) {
         var c = s[0] || 0;
         b += '<g' + tip(rng + ': ' + num(c, 0) + ' of the ' + s[3] + ' months') + '><rect class="' + s[1] + '" x="' + s[2].toFixed(1) + '" y="' + y(c).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(0, Bt - y(c)).toFixed(1) + '"/>' +
           (c ? '<text class="vlab" x="' + (s[2] + w / 2).toFixed(1) + '" y="' + (y(c) - 4).toFixed(1) + '" text-anchor="middle">' + c + '</text>' : '') + '</g>';
@@ -12032,7 +12042,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var edge = function (e) { return Math.abs(e) >= 1e4 ? axis(e) : num(e, edp); };
     E.forEach(function (e, i) { if (i % every === 0 || i === E.length - 1) b += U.txt(x(e), Bt + 15, edge(e), 'lab', 'middle'); });
     // every monthly value, as a rug under the bars: the months behind each bar
-    [[P.values, 'dot-s', Bt + 34, 'prior'], [Q.values, 'dot-a', Bt + 52, 'latest']].forEach(function (s) {
+    [[P.values, 'dot-s dot-prior', Bt + 34, 'prior'], [Q.values, 'dot-a dot-latest', Bt + 52, 'latest']].forEach(function (s) {
       b += U.txt(L - 6, s[2] + 4, s[3], 'lab', 'end');
       (s[0] || []).forEach(function (v) { b += '<circle class="' + s[1] + ' nl2-rug" cx="' + x(v).toFixed(1) + '" cy="' + s[2] + '" r="3"' + tip(s[3] + ' month: ' + vf(v)) + '/>'; });
     });
@@ -12142,7 +12152,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
      and shown whole in its tooltip and in the table view. Every layout fits the width it is given (288 px on a 320-px
      phone). C.extendNLV teaches window.NLV (55-nl-viz.js) the same kinds, so the AI report's figures and the share
      viewer draw them too, with their Table button; a record of these kinds with data it cannot read is its table. */
-  var GPAL = ['var(--series)', 'var(--series-2)', 'var(--series-3)', 'var(--div-neg)', 'var(--band-red)'];
+  // the categorical palette (build.py TOKENS ts-1..ts-5, validated with the dataviz skill's validate_palette.js in both
+  // themes): slot order fixed, colour follows the series, never its rank; a series' text stays ink
+  var GPAL = ['var(--ts-1)', 'var(--ts-2)', 'var(--ts-3)', 'var(--ts-4)', 'var(--ts-5)'];
+  var GLATEST = 'var(--ts-1)', GPRIOR = 'var(--ts-2)';
   var GDASH = ['', '6 3', '2 3', '8 3 2 3', '1 2'];
   var GOTHER = 'var(--muted)';
   var GOWN = Object.prototype.hasOwnProperty;
@@ -12296,7 +12309,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var ends = !F && W >= 420 && endW <= W * 0.4, R = W - (ends ? endW : 8), b = '', T = 8;
         if (!one || F) {
           var items = one ? [] : S.map(function (s, k) { return { w: 20, text: s.label, mark: gswatchLine(k) }; });
-          if (F) items.push({ w: 20, text: 'forecast, ' + F.level + '% range', mark: function (x, y) { return '<rect x="' + x + '" y="' + (y - 5) + '" width="20" height="10" style="fill:var(--fan)"/><path d="M' + x + ' ' + y + 'h20" style="fill:none;stroke:var(--series-2);stroke-width:2;stroke-dasharray:5 4"/>'; } });
+          if (F) items.push({ w: 20, text: 'forecast, ' + F.level + '% range', mark: function (x, y) { return '<rect x="' + x + '" y="' + (y - 5) + '" width="20" height="10" style="fill:var(--ts-band)"/><path d="M' + x + ' ' + y + 'h20" style="fill:none;stroke:var(--ts-1);stroke-width:2;stroke-dasharray:5 4"/>'; } });
           if (!ends && items.length) { var ky = gkey(items, 0, W, 0); b += ky.svg; T = ky.h + 8; }
         }
         var H = T + 190, Bt = H - 26, nn = n + m, X = U.scale(0, Math.max(1, nn - 1), L, R), Y = U.scale(dom[0], dom[1], Bt, T + 6);
@@ -12308,12 +12321,12 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         if (F) {
           var li = lastI[0], x0 = X(li), lv = S[0].values[li];
           var top = [[x0, Y(lv)]].concat(F.hi.map(function (v, j) { return [X(n + j), Y(v)]; })), bot = F.lo.map(function (v, j) { return [X(n + j), Y(v)]; }).reverse();
-          b += '<path d="' + U.path(top) + 'L' + bot.map(function (p) { return gf1(p[0]) + ' ' + gf1(p[1]); }).join('L') + 'Z" style="fill:var(--fan)"/>';
+          b += '<path d="' + U.path(top) + 'L' + bot.map(function (p) { return gf1(p[0]) + ' ' + gf1(p[1]); }).join('L') + 'Z" style="fill:var(--ts-band)"/>';
           b += '<line x1="' + gf1(X(n - 0.5)) + '" x2="' + gf1(X(n - 0.5)) + '" y1="' + (T + 6) + '" y2="' + Bt + '" style="stroke:var(--axis);stroke-dasharray:3 3"/>';
-          b += '<path d="' + U.path([[x0, Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; }))) + '" style="fill:none;stroke:var(--series-2);stroke-width:2;stroke-dasharray:5 4"/>';
+          b += '<path d="' + U.path([[x0, Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; }))) + '" style="fill:none;stroke:var(--ts-1);stroke-width:2;stroke-dasharray:5 4"/>';
           F.values.forEach(function (v, j) {
             var r = rec.table.rows[n + j] || [], tip = gper(F.x[j], true) + ': forecast ' + (r[r.length - 2] || '') + ', ' + F.level + '% range ' + (r[r.length - 1] || '');
-            b += '<circle cx="' + gf1(X(n + j)) + '" cy="' + gf1(Y(v)) + '" r="2.5" style="fill:var(--surface);stroke:var(--series-2);stroke-width:1.5" data-tip="' + esc(tip) + '"/>';
+            b += '<circle cx="' + gf1(X(n + j)) + '" cy="' + gf1(Y(v)) + '" r="2.5" style="fill:var(--surface);stroke:var(--ts-1);stroke-width:1.5" data-tip="' + esc(tip) + '"/>';
           });
         }
         S.forEach(function (s, k) {
@@ -12330,7 +12343,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             if (lastI[k] < 0) return;
             var xe = X(lastI[k]) + 6;
             if (Math.abs(ly[k] - 4 - ys[k]) > 1) b += '<path d="M' + gf1(X(lastI[k]) + 3) + ' ' + gf1(ys[k]) + 'L' + gf1(R + 4) + ' ' + gf1(ly[k] - 4) + '" style="fill:none;stroke:var(--axis)"/>';
-            b += gtxt(Math.max(xe, R + 6), ly[k], endTxt[k], { cls: 'nlv-t', maxW: W - Math.max(xe, R + 6), fill: one ? null : GPAL[k % GPAL.length] });
+            b += gtxt(Math.max(xe, R + 6), ly[k], endTxt[k], { cls: 'nlv-t', maxW: W - Math.max(xe, R + 6) });
           });
         }
         return { body: b, H: H, layout: (ends ? 'end labels' : 'key') + (F ? ', forecast' : '') };
@@ -12377,7 +12390,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var d = rec.data, rows = d.rows, two = d.series.length === 2, b = '', y = 0;
         var isOther = function (i) { return d.other === true && i === rows.length - 1; };
         if (two) {
-          var ky = gkey([{ w: 14, text: d.series[0], mark: gswatchBox('var(--surface)', 'var(--series)') }, { w: 14, text: d.series[1], mark: gswatchBox('var(--series)') }], 0, W, 0);
+          var ky = gkey([{ w: 14, text: d.series[0], mark: gswatchBox(GPRIOR) }, { w: 14, text: d.series[1], mark: gswatchBox(GLATEST) }], 0, W, 0);
           b += ky.svg; y = ky.h + 6;
         }
         var all = [0]; rows.forEach(function (r) { all = all.concat(r.values); });
@@ -12393,8 +12406,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           var g = '<g data-tip="' + esc(tip) + '">';
           g += wide ? gtxt(LW - 8, top + (two ? bh + 6 : bh - 2), r.label, { anchor: 'end', cls: 'nlv-t', maxW: LW - 8 }) : gtxt(0, y + 13, r.label, { cls: 'nlv-t', maxW: W - cW - 4 });
           r.values.forEach(function (v, k) {
-            var yy = top + k * (bh + 4), a = Math.min(X(v), z), w = Math.max(1.5, Math.abs(X(v) - z)), hollow = two && k === 0, c = oth ? GOTHER : 'var(--series)';
-            g += '<rect x="' + gf1(a) + '" y="' + gf1(yy) + '" width="' + gf1(w) + '" height="' + bh + '" rx="2" style="fill:' + (hollow ? 'var(--surface)' : c) + (hollow ? ';stroke:' + c + ';stroke-width:1.5' : '') + '"/>';
+            var yy = top + k * (bh + 4), a = Math.min(X(v), z), w = Math.max(1.5, Math.abs(X(v) - z)), prior = two && k === 0, c = oth ? GOTHER : prior ? GPRIOR : GLATEST;
+            // two periods: both solid, the one before in orange, the latest in blue; "other" stays muted, its earlier bar lighter
+            g += '<rect x="' + gf1(a) + '" y="' + gf1(yy) + '" width="' + gf1(w) + '" height="' + bh + '" rx="2" style="fill:' + c + (oth && prior ? ';fill-opacity:0.5' : '') + '"/>';
             var tx = v < 0 ? a - 4 : a + w + 4;
             if (r.texts[k]) g += gtxt(tx, yy + bh - 2 + (two ? 0 : 0), r.texts[k], { anchor: v < 0 ? 'end' : 'start', cls: 'vlab' });
           });
@@ -12425,9 +12439,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           });
           b += '<line x1="' + gf1(x0) + '" x2="' + gf1(x0 + pw) + '" y1="' + (y0 + plotB) + '" y2="' + (y0 + plotB) + '" style="stroke:var(--axis)"/>';
           if (axisOk) b += gtxt(x0, y0 + plotB + 15, fl) + gtxt(x0 + pw, y0 + plotB + 15, ll, { anchor: 'end' });
-          b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--series);stroke-width:1.8"/>';
+          b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--ts-1);stroke-width:1.8"/>';
           p.values.forEach(function (v, i) {
-            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--series)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
+            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--ts-1)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
           });
         });
         var rowsN = Math.ceil(Ps.length / cols);
@@ -14596,11 +14610,13 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   // a chart part: line, stacked area, clustered column or bar, its series referencing cell ranges
   function chartXml(spec, nm) {
     var ns = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
-    var PAL = ['24425C', '0B7366', '945400', '2A78D6', 'D4502C', '56646F'], DASH = ['dash', 'sysDot', 'lgDashDot', 'sysDash'];
+    // the site's categorical palette (build.py TOKENS ts-1..ts-5, light): slot order fixed; a series may name its own colour
+    // (a comparison of two periods: the one before in ts-2 orange, the latest in ts-1 blue)
+    var PAL = ['2A78D6', 'D45A26', '12875C', '9A6A00', 'C8457F', '56646F'], DASH = ['dash', 'sysDot', 'lgDashDot', 'sysDash'];
     var ref = function (r) { return q(nm(r.sheet)) + '!$' + col(r.col) + '$' + r.r0 + ':$' + col(r.col) + '$' + r.r1; };
     var line = spec.type === 'line';
     var sers = (spec.series || []).map(function (s, k) {
-      var color = PAL[k % PAL.length];
+      var color = /^[0-9A-F]{6}$/i.test(s.color || '') ? String(s.color).toUpperCase() : PAL[k % PAL.length];
       var sp = line ? '<c:spPr><a:ln w="22225"><a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill>' + (k ? '<a:prstDash val="' + DASH[(k - 1) % 4] + '"/>' : '') + '</a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="4"/></c:marker>'
         : '<c:spPr><a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill></c:spPr>';
       var tx = s.name ? '<c:tx><c:strRef><c:f>' + q(nm(s.name.sheet)) + '!$' + col(s.name.col) + '$' + s.name.row + '</c:f></c:strRef></c:tx>' : '';
@@ -15071,9 +15087,18 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (lab) { if (X.draw) X.title = lab; else X.label = lab; }
       X.unit_word = card.querySelector('#nld-e-unit').value.replace(/\s+/g, ' ').trim().slice(0, 20);
       X.definition = defWords(X) + ' Edited here by you.';
+      D.__edits = D.__edits || {};
+      // one unit word per measure on the whole dashboard (nl_dashboard._unit): every tile and chart of this measure takes it
+      if (X.mkey) D.kpis.concat(D.charts).forEach(function (Y) {
+        if (Y === X || Y.mkey !== X.mkey || Y.unit_word === X.unit_word) return;
+        Y.unit_word = X.unit_word;
+        if (Y.definition) Y.definition = Y.definition.replace(/; in [^;]*?\.(?=( |$))/, X.unit_word ? '; in ' + X.unit_word + '.' : '.');
+        D.__edits[Y.id] = Object.assign(D.__edits[Y.id] || {}, { unit_word: Y.unit_word, definition: Y.definition });
+      });
+      var j0 = X.mkey ? measIdx(D, X.mkey) : -1;
+      if (j0 >= 0) D.cube.measures[j0].unit = X.unit_word;
       var g = card.querySelector('#nld-e-grain').value.replace(/\s+/g, ' ').trim().slice(0, 200);
       if (g) D.grain.text = g;
-      D.__edits = D.__edits || {};
       D.__edits[X.id] = { agg: X.agg, label: X.label, title: X.title, unit_word: X.unit_word, definition: X.definition };
       if (g) D.__edits.__grain = g;
       var root2 = box.parentNode;
@@ -15274,7 +15299,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         r1 = rows.length;
         (rec.table.rows || []).filter(function (r) { return r[1] === '<5'; }).forEach(function (r) { put([r[0]].concat(d.series.map(function () { return null; })).concat(two ? [null] : []).concat(['<5: fewer than 5 rows'])); });
         if (r1 >= r0) charts.push({ type: X.draw === 'bar' ? 'bar' : 'column', title: X.title + (unit ? ' (' + unit + ')' : ''), cat: { sheet: DATA, col: 0, r0: r0, r1: r1 },
-          series: d.series.map(function (s, k) { return { name: { sheet: DATA, col: 1 + k, row: head }, sheet: DATA, col: 1 + k, r0: r0, r1: r1 }; }) });
+          series: d.series.map(function (s, k) { return { name: { sheet: DATA, col: 1 + k, row: head }, sheet: DATA, col: 1 + k, r0: r0, r1: r1, color: two ? (k ? '2A78D6' : 'D45A26') : '2A78D6' }; }) });
       } else {
         S = d.series || d.parts || d.panels;
         head = put([B(d.x_label)].concat(S.map(function (s) { return B(s.label); })).concat([B('Note')]));

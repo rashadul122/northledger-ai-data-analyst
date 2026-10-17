@@ -1,7 +1,7 @@
 {
  "schema": "site_build/1",
  "what": "Figures the page shows that are derived from other files (a share turned into a percentage, a count of sessions, a file size). Written by build.py; each key names its source.",
- "built_at": "2026-10-17T05:05:37Z",
+ "built_at": "2026-10-17T05:21:05Z",
  "display": {
   "fixture_lost": "0",
   "fixture_quarantine_pct": "4.0%",
@@ -308,8 +308,8 @@
   "try_fc_months": "45",
   "try_fc_replay": "12",
   "try_rec_rows": "1,000",
-  "build_checks_passed": "47",
-  "built_at_label": "2026-10-17 05:05:37 UTC"
+  "build_checks_passed": "48",
+  "built_at_label": "2026-10-17 05:21:05 UTC"
  },
  "derived_from": {
   "fixture_lost": "engine_scorecard fixture.rows - after.clean - after.quarantined",
@@ -790,6 +790,11 @@
    "check": "no NYC 311 measure names in the RentSafeTO export",
    "ok": true,
    "detail": ""
+  },
+  {
+   "check": "every chart mark colour (ts-1..ts-5) reaches 3:1 on the surface in both themes",
+   "ok": true,
+   "detail": "worst 3.97"
   },
   {
    "check": "every text colour reaches 4.5:1 on its surface in both themes",

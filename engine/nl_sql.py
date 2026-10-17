@@ -548,7 +548,7 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
         grain = "Q"
     elif re.search(r"\bmonth|monthly\b", q):
         grain = "M"
-    elif (re.search(r"\byear\b|annual|yearly", q) and not re.search(r"(last|a) year (ago|earlier)", q)) or \
+    elif (re.search(r"\byears?\b|annual|yearly", q) and not re.search(r"(last|a) year (ago|earlier)", q)) or \
             re.search(r"\b(?:in|for|during)\s+(?:19|20)\d\d\b", q):
         grain = "Y"
     else:
@@ -583,10 +583,17 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
         pool += [c for c in _cols(state) if kinds.get(c) == "text" and c != date]
         named_dim = [c for c in dict.fromkeys(pool) if c in df.columns and c not in sl and _mentions_dim(q, c)]
         by = named_dim[0] if named_dim else next((c for c in dict.fromkeys(pool) if c in df.columns and c not in sl), None)
-        if by is not None:
-            rank = {"by": by, "desc": not _LOW.search(q),
-                    "n": int(next((m.group(1) for m in [re.search(r"\b(?:top|bottom|first|last)\s+(\d{1,2})\b", q)] if m), 10))}
-    return {"measure": measure, "grain": grain, "slice": sl, "notes": notes, "period": _read_period(q, grain), "rank": rank}
+        # no members: a ranking of the dates of one series (one reading a date), else none (the period table answers)
+        rank = None if (by is None and not _one_row_each(state, [], "D")) else {"by": by, "desc": not _LOW.search(q),
+                "n": int(next((m.group(1) for m in [re.search(r"\b(?:top|bottom|first|last)\s+(\d{1,2})\b", q)] if m), 10))}
+    elif re.search(r"\bwhen\b.*\b(high|low|peak|bottom|most|least|max|min)", q) or re.search(r"\b(peak|peaked|record high|record low)\b", q):
+        rank = {"by": None, "desc": not re.search(r"\b(low|lowest|least|min|minimum|bottom|record low|trough)\b", q), "n": 10}
+    # "compared with 2019", "2019 vs 2025": the years named, beside the latest one
+    years = sorted(set(re.findall(r"\b((?:19|20)\d\d)\b", q)))
+    compare = years if years and re.search(r"\b(compare[sd]?|comparison|versus|vs\.?|than|against|since|before|now|today|latest)\b", q) \
+        and not re.search(r"\bsince\s+(?:19|20)\d\d\b", q) else []
+    return {"measure": measure, "grain": grain, "slice": sl, "notes": notes, "period": _read_period(q, grain), "rank": rank,
+            "compare": compare}
 
 
 _RANK = re.compile(r"\bwhich\s+[a-z ]{0,30}?\b(has|had|have|is|was|were|are|grew|rose|fell|leads?|led)\b|\b(largest|biggest|"
@@ -618,6 +625,8 @@ def _natural_grain(state: Dict[str, Any]) -> str:
         return "Q"
     if bool(((d.dt.month == 1) & (d.dt.day == 1)).all()):
         return "Y"
+    if bool((d.dt.day == 1).all()) and not d.duplicated().any():
+        return "M"                                       # one reading a month (a FRED series): its months, never quarters of three
     return "Q"
 
 
@@ -678,9 +687,34 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
         sel.append("%s AS %s" % (num, _q(name)))
     sel.append("COUNT(*) AS row_count")
     conds = ["%s = %s" % (_q(c), _lit(v)) for c, v in rq["slice"].items()]
+    single = len(m["num"]) == 1 and m["den"] in (None, "__rows__")
+    v = _q(m["num"][0])
+    if single and rq.get("compare"):
+        # the years the question names beside the latest: each year's average (a level, a rate) or total (a flow), one row a year
+        latest = _latest_period(state, "Y")
+        ys = sorted(set(rq["compare"]) | ({latest} if latest else set()))
+        agg = "ROUND(AVG(%s), 4)" % v if m["den"] == "__rows__" else "SUM(%s)" % v
+        name_y = ("average_" if m["den"] == "__rows__" else "total_") + re.sub(r"[^a-z0-9]+", "_", _words(m["num"][0])).strip("_")
+        return ("SELECT strftime('%%Y', %s) AS period,\n       %s AS %s,\n       COUNT(*) AS row_count\nFROM %s\nWHERE %s\n"
+                "GROUP BY period\nORDER BY period" % (d, agg, _q(name_y), TABLE, " AND ".join(conds + [
+                    "strftime('%%Y', %s) IN (%s)" % (d, ", ".join(_lit(y) for y in ys))])))
+    if single and not rq["slice"] and _one_row_each(state, [], "D"):
+        # one series, one reading a date (a FRED download): its own rows, never sums of three months hidden as small cells
+        fmt_d = {"Y": "%Y", "M": "%Y-%m"}.get(_natural_grain(state), "%Y-%m-%d")
+        per = _period_cond(d, rq.get("period"))
+        rk = rq.get("rank")
+        sel_s = "SELECT strftime('%s', %s) AS period,\n       %s\nFROM %s%s" % (fmt_d, d, v, TABLE,
+                                                                             ("\nWHERE " + per) if per else "")
+        if rk and rk.get("by") is None:
+            return sel_s + "\nORDER BY %s %s\nLIMIT %d" % (v, "DESC" if rk["desc"] else "ASC", max(1, min(20, int(rk["n"]))))
+        if rq["grain"] == "Y" and not per:
+            agg = "ROUND(AVG(%s), 4)" % v if m["den"] == "__rows__" else "SUM(%s)" % v
+            return ("SELECT strftime('%%Y', %s) AS period,\n       %s AS %s,\n       COUNT(*) AS row_count\nFROM %s\nGROUP BY period\n"
+                    "ORDER BY period" % (d, agg, v, TABLE))
+        return sel_s + "\nORDER BY period"
     per = _period_cond(d, rq.get("period"))
     rk = rq.get("rank")
-    if rk:
+    if rk and rk.get("by") is not None:
         # one period, the members ranked: the named period, else the latest one in the file
         if per is None or str(rq.get("period") or "").startswith("since:"):
             latest = _latest_period(state, rq["grain"])
@@ -731,9 +765,10 @@ def _one_row_each(state: Dict[str, Any], keys: List[str], grain: str, where: Opt
         if not len(f):
             return False
         d = pd.to_datetime(f[date], errors="coerce")
-        per = d.dt.year.astype(str) if grain == "Y" else (d.dt.to_period("Q").astype(str) if grain == "Q" else d.dt.to_period("M").astype(str))
+        per = d.dt.year.astype(str) if grain == "Y" else (d.dt.to_period("Q").astype(str) if grain == "Q" else
+                                                           d.dt.to_period("M").astype(str) if grain == "M" else d.astype(str))
         g = pd.DataFrame({**{k: f[k].astype(str) for k in keys}, "_p": per})
-        return int(g.groupby(list(keys) + ["_p"]).size().max()) <= 1
+        return int(g.groupby(list(keys) + ["_p"]).size().max()) <= 1 if keys else not per.duplicated().any()
     except Exception:  # noqa: BLE001
         return False
 
@@ -786,7 +821,7 @@ def plan_steps(state: Dict[str, Any], question: str, dims: Optional[List[str]] =
     sql = engine_sql(state, question)
     if sql:
         out.append({"op": "sql", "args": {"sql": sql}, "why": "the asked measure by period in the asked slice, as SQL"})
-    if not m or rq.get("rank"):
+    if not m or rq.get("rank") or rq.get("compare"):
         return out                      # a ranking is answered by its query: the members in order
     where = {c: v for c, v in list(rq["slice"].items())[:2]}
     when = {"grain": GRAIN_OF[rq["grain"]]}

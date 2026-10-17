@@ -501,6 +501,20 @@ def test_a_ranking_by_a_ratio_is_said_by_the_ratio_and_a_period_question_is_no_r
     assert out["answer"]["text"].startswith("gross margin pct: "), out["answer"]["text"]
 
 
+def test_one_series_is_asked_about_by_its_own_rows_never_quarters_hidden_as_small_cells():
+    rows = "observation_date,RATEX\n" + "\n".join("%04d-%02d-01,%.3f" % (2000 + i // 12, i % 12 + 1, 3 + (i % 37) / 10.0) for i in range(240))
+    nb.run(rows.encode(), "RATEX.csv", "", None, "2021-01-10")
+    st = nb._LAST_ANALYST
+    def ask(q):
+        out = json.loads(nb.analyst_more_json(nb.analyst_plan_json(q), "[]", q))
+        return out.get("answer") or {}
+    a = ask("When was it highest?")
+    assert ", highest: 6.6 in " in a["text"] and "No rows" not in a["text"], a
+    a = ask("How does the rate now compare with 2005?")
+    assert "2005" in a["text"] and "2019" in a["text"], a
+    assert ns._natural_grain(st) == "M"
+
+
 def main() -> int:
     tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)]
     bad = 0

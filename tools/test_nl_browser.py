@@ -6589,6 +6589,31 @@ def test_world_bank_groups_are_told_from_countries_by_their_codes():
     assert g == {"World", "Sub-Saharan Africa", "High income"}, g
 
 
+
+def test_a_question_about_a_withheld_column_says_so_and_ask_falls_back_to_the_reports_sentence():
+    rows = ["Gender,Age,Rating"] + ["%s,%s,%s" % ("Female" if i % 2 else "Male", ("18-29", "30-44", "45-60", "> 60")[i % 4],
+                                                    ("Very favorably", "Somewhat favorably", "Unfavorably")[i % 3]) for i in range(240)]
+    rep = NB.run("\n".join(rows).encode(), "s.csv", "", {"Gender": "withhold"}, "2026-01-10")
+    steps = NB.analyst_plan_json("Do men and women rate it differently?")
+    assert json.loads(steps), "no step: the page would never ask the engine, and the visitor would never hear why"
+    out = json.loads(NB.analyst_more_json(steps, "[]", "Do men and women rate it differently?"))
+    assert "Gender was withheld as personal data" in out["answer"]["text"], out.get("answer")
+    NB._LAST_SENTENCES[:] = ["How you view the following characters: Luke Skywalker gets the most positive answers (93% very favorably) and Boba Fett the fewest (36%)."]
+    assert "Luke Skywalker" in NB._report_sentence_for("Which character is liked most?"), NB._report_sentence_for("Which character is liked most?")
+    assert NB._report_sentence_for("What is the weather like?") == ""
+
+
+def test_a_world_bank_panel_replaces_the_one_members_story_everywhere_the_writer_reads():
+    path = os.path.join(SITE, "..", "corpus", "universal", "worldbank-population-wide-by-year.csv")
+    if not os.path.exists(path):
+        return
+    rep = NB.run(open(path, "rb").read(), "wb.csv", "", None, None)
+    assert rep["summary"]["lines"][0]["text"].startswith("World population went from"), rep["summary"]["lines"][:1]
+    assert rep["title"]["title"].startswith("Population by country"), rep["title"]
+    blob = json.dumps({k: v for k, v in NB.results_for_ai(rep).items() if k != "structure"}, default=str)
+    assert "IDA & IBRD total" not in blob, re.search(r".{80}IDA & IBRD total.{40}", blob).group(0)
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

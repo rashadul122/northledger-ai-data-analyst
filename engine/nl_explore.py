@@ -1741,6 +1741,14 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             text = "%s: %s." % (_short(str(subject), 120) if subject else "The answer",
                                 "; ".join("%s %s" % (cols[i], fmt(rows[0][i]) if i not in per_i else rows[0][i])
                                           for i in range(len(cols)) if rows[0][i] is not None and cols[i] != "row_count"))
+        elif per_i and figs and set(lab_i) <= per_i and re.search(r"ORDER BY\s+\"(?:[^\"]|\"\")+\"\s+(?:DESC|ASC)\s+LIMIT\s+\d+\s*$",
+                                                                  str((st.get("args") or {}).get("sql") or ""), re.I):
+            # the dates of one series ranked (when was it highest): the top readings and when
+            pi, vi = sorted(per_i)[0], figs[0]
+            top = ["%s in %s" % (fmt(r[vi]), r[pi]) for r in rows[:3] if _num_or_none(r[vi]) is not None]
+            low = bool(re.search(r"\bASC\s+LIMIT", str((st.get("args") or {}).get("sql") or ""), re.I))
+            text = "%s, %s: %s%s." % (_short(str(subject), 120), "lowest" if low else "highest", top[0],
+                                      (", then " + " and ".join(top[1:])) if len(top) > 1 else "") if top else "%s rows; see the table." % len(rows)
         elif per_i and figs and set(lab_i) <= per_i:
             # a figure by period: where it started, where it ended, its peak
             pi, vi = sorted(per_i)[0], figs[0]
@@ -1748,7 +1756,8 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             if len(pts) >= 2:
                 (p0, v0), (p1, v1) = pts[0], pts[-1]
                 hi = max(pts, key=lambda x: x[1])
-                if cols[vi] in (rate_cols or set()):
+                base_c = re.sub(r"^(?:average|total)_", "", cols[vi].lower())
+                if any(re.sub(r"[^a-z0-9]", "", base_c) == re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in (rate_cols or set())):
                     ch = " (%+.1f percentage points)" % (v1 - v0)          # a rate's change, never a percent of a percent
                 else:
                     ch = (" (%+.0f%%)" % (100.0 * (v1 - v0) / abs(v0))) if v0 else ""
@@ -1773,7 +1782,11 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             vals = [(r[li], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
             tot = (ix or {}).get("total")
             members = [(lb, v) for lb, v in vals if str(lb) != str(tot)]
-            if members:
+            if len(members) == 1:
+                tv = next((v for lb, v in vals if str(lb) == str(tot)), None)
+                text = "%s: %s %s%s." % (_short(str(subject), 120), members[0][0], fmt(members[0][1]),
+                                          ("; %s as a whole: %s" % (tot, fmt(tv))) if tv is not None else "")
+            elif members:
                 hi = max(members, key=lambda x: x[1])
                 lo = min(members, key=lambda x: x[1])
                 text = "%s: highest in %s (%s), lowest in %s (%s)" % (

@@ -1134,6 +1134,8 @@ self.onmessage = function (e) {
     var n = (m.options && m.options.inputs || []).length, Tk = n > 1 ? REPORT.__tracker2 : REPORT.__tracker;
     if (Tk) { Tk = JSON.parse(JSON.stringify(Tk)); Tk.__echo = m.options || null; }
     self.postMessage({ type: 'tracked', id: m.id, out: Tk || null });
+  } else if (m.type === 'ledger') {         // what the AI planner may see of the analyst block: the stub has none (the investigation is skipped)
+    self.postMessage({ type: 'ledger_json', id: m.id, steps: REPORT.__ledger || null });
   } else if (m.type === 'plan') {           // Ask your data without an AI planner: the engine's own plan (CONTRACT §5.16)
     self.postMessage({ type: 'plan_json', id: m.id, steps: REPORT.__plan || [] });
   } else if (m.type === 'more') {

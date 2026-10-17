@@ -7223,16 +7223,61 @@ def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> s
                         prior=prior if isinstance(prior, list) else [])
     try:
         import nl_explore as _nx
+        held = _withheld_asked(str(question or ""), list(_LAST_ANALYST.get("hidden") or []))
+        if _ASK_FROM_REPORT.get("text") or (held and not any(isinstance(x, dict) and x.get("op") == "sql" and "GROUP BY" in
+                                                                 str((x.get("args") or {}).get("sql") or "") for x in out.get("steps") or [])):
+            said = ("From the report: " + _ASK_FROM_REPORT.pop("text")) if _ASK_FROM_REPORT.get("text") else ""
+            out["answer"] = {"question": str(question or "")[:300], "text": " ".join(x for x in (held, said) if x), "columns": [],
+                             "rows": [], "bars": None, "rows_total": 0, "sql": "", "step": ""}
+            return json.dumps(out, allow_nan=False, default=str)
+        if held:
+            out["withheld_note"] = held
         mk = (_LAST_ANALYST.get("hint") or {}).get("mkind") or {}
         ans = _nx.answer_of(str(question or ""), out.get("steps") or [],
                             _LAST_EXPLORE if _LAST_EXPLORE.get("kind") == "indicator_table" else None,
                             rate_cols={str(c) for c, k in mk.items() if k == "rate"})
         if ans is not None:
+            if _LAST_NAMES:
+                # a series named by a code is named in the answer as in the report ("average_corestickm159sfrbatl" reads "average US core
+                # sticky-price inflation (12-month %)"); the query keeps the columns' real names
+                ans["text"] = _rename_text(re.sub(r"\b(average|total)_", r"\1 ", str(ans.get("text") or "")), _LAST_NAMES)
+                ans["columns"] = [_rename_text(re.sub(r"^(average|total)_", r"\1 ", str(c)), _LAST_NAMES) for c in ans.get("columns") or []]
+            if held:
+                ans["text"] = held + " " + str(ans.get("text") or "")
             out["answer"] = json.loads(json.dumps(ans, allow_nan=False, default=str))
+        elif held:
+            out["answer"] = {"question": str(question or "")[:300], "text": held, "columns": [], "rows": [], "bars": None, "rows_total": 0,
+                             "sql": "", "step": ""}
     except Exception:  # noqa: BLE001 - the steps stand without the answer sentence
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
     return json.dumps(out, allow_nan=False, default=str)
+
+
+_ASKED_SYNONYMS = ((r"\b(men|women|male|female|gender|sex|boys|girls)\b", r"(?i)gender|\bsex\b"),
+                   (r"\b(income|earn|salary|wage)", r"(?i)income|salary|wage"),
+                   (r"\b(age|old|young|older|younger)\b", r"(?i)\bage\b"))
+
+
+def _withheld_asked(question: str, hidden: List[str]) -> str:
+    """A sentence for a question that asks about a column withheld as personal data at step 1 ("Do men and women rank the films
+    differently?" with Gender withheld): the answer cannot split by it, and the visitor learns why and how to change it."""
+    q = question.lower()
+    hit = []
+    for h in hidden:
+        hl = str(h).lower()
+        if hl and re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(hl), q):
+            hit.append(str(h))
+            continue
+        for ask_rx, col_rx in _ASKED_SYNONYMS:
+            if re.search(ask_rx, q) and re.search(col_rx, str(h)):
+                hit.append(str(h))
+                break
+    if not hit:
+        return ""
+    names = ", ".join(dict.fromkeys(hit))
+    return ("The column %s was withheld as personal data when the file was read (step 1), so this answer cannot split by it; choose Keep "
+            "for it there and run the file again to compare by it." % names)
 
 
 def analyst_plan_json(question: str) -> str:
@@ -7243,10 +7288,56 @@ def analyst_plan_json(question: str) -> str:
     import nl_sql as _ns_sql
     if not _LAST_ANALYST:
         return "[]"
+    _ASK_FROM_REPORT.clear()
     if _LAST_EXPLORE.get("kind") == "indicator_table":
         import nl_explore as _nx
         return json.dumps(_nx.ask_steps(_LAST_EXPLORE, str(question or "")[:300]), allow_nan=False, default=str)
-    return json.dumps(_ns_sql.plan_steps(_LAST_ANALYST, str(question or "")[:300]), allow_nan=False, default=str)
+    steps = _ns_sql.plan_steps(_LAST_ANALYST, str(question or "")[:300])
+    if not steps:
+        # no query the engine can plan (a survey's question about its answers): the report's own sentence that answers it, when one does;
+        # one count query runs so the answer still shows the rows it rests on
+        hit = _report_sentence_for(str(question or ""))
+        if hit:
+            _ASK_FROM_REPORT["text"] = hit
+        if hit or _withheld_asked(str(question or ""), list(_LAST_ANALYST.get("hidden") or [])):
+            steps = [{"op": "sql", "args": {"sql": "SELECT COUNT(*) AS row_count FROM %s" % _ns_sql.TABLE},
+                      "why": "the rows the report's sentence rests on"}]
+    return json.dumps(steps, allow_nan=False, default=str)
+
+
+_ASK_FROM_REPORT: Dict[str, str] = {}
+_LAST_SENTENCES: List[str] = []
+_ASK_STOP = frozenset("the a an of in on to for and or is are was were be by with what which who how do does did most least more less "
+                      "than this that these those it its their there any all about from at as".split())
+
+
+def _remember_sentences(rep: Dict[str, Any]) -> None:
+    """The report's own sentences (the story, the bottom line, the reading of the table), for Ask's fallback."""
+    out: List[str] = []
+    st = rep.get("story") if isinstance(rep.get("story"), dict) else {}
+    out += [str(x) for x in st.get("what_happened") or [] if isinstance(x, str)]
+    out += [str(x.get("text")) for x in (rep.get("summary") or {}).get("lines") or [] if isinstance(x, dict) and x.get("text")]
+    ex = rep.get("explore") if isinstance(rep.get("explore"), dict) else {}
+    out += [str(x) for x in ex.get("sentences") or [] if isinstance(x, str)]
+    _LAST_SENTENCES[:] = list(dict.fromkeys(x for x in out if 20 < len(x) < 700))
+
+
+def _report_sentence_for(question: str) -> str:
+    """The report sentence sharing the most content words with the question (two at least), else ""."""
+    syn = {"like": "favor", "liked": "favor", "love": "favor", "popul": "favor", "favou": "favor", "disli": "unfav", "hated": "unfav"}
+
+    def words(t: str) -> set:
+        # five-letter stems ("favorite", "favorably": favor), a few everyday words read as the survey's ("liked": favor)
+        return {syn.get(w[:5], w[:5]) for w in re.findall(r"[a-z0-9]+", t.lower()) if len(w) > 2 and w not in _ASK_STOP}
+    q = words(question)
+    if not q:
+        return ""
+    best, score = "", 0
+    for snt in _LAST_SENTENCES:
+        sc = len(q & words(snt))
+        if sc > score:
+            best, score = snt, sc
+    return best if score >= 2 else ""
 
 
 def results_json(rep: Any) -> str:
@@ -12593,6 +12684,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _set_looked_up(decisions.pop("__names__"))
     elif not (isinstance(decisions, dict) and "__structure_inner__" in decisions):
         _LOOKED_UP.clear()
+    if not (isinstance(decisions, dict) and "__structure_inner__" in decisions):
+        _LAST_NAMES.clear()                        # the last file's names never name this one's answers
     try:
         data = _as_bytes(csv_bytes)
     except Refusal as exc:
@@ -13453,8 +13546,10 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # export, else only what it would need (step 6's report menu reads rep.sales.fit)
         rep["sales"] = _sales(rep, reading, ai_plan, as_of)
         _series_names(rep, ai_plan)
-        _latest_headline(rep, ai_plan)
+        if structure_inner is None:
+            _latest_headline(rep, ai_plan, goal)   # a table read by its structure leads with its estimand, never this
         _data_note(rep, rowno_note)
+        _remember_sentences(rep)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -13563,14 +13658,17 @@ def _rename_text(s: Any, subs: List[Tuple[Any, str]]) -> Any:
     if not isinstance(s, str) or not s:
         return s
     for rx, lab in subs:
-        s = rx.sub(lab, s)
+        # a text renamed already (a chart is held by rep.viz and rep.charts both) keeps its name: never "X (X (CODE))"
+        keep = "\x00%d\x00" % (abs(hash(lab)) % 10 ** 8)
+        s = rx.sub(lab, s.replace(lab, keep)).replace(keep, lab)
         s = s.replace(lab + " (%)", lab).replace(lab + " (" + lab + ")", lab)
     return s
 
 
 _NAMED_KEYS = frozenset(("headline", "text", "title", "subtitle", "summary", "sentence", "claim", "why", "why_shown", "supports",
                          "label", "what_happened", "why_", "what_to_do", "whats_next", "cannot_answer", "lines", "cols", "series",
-                         "x_label", "about", "note", "needed_to_upgrade", "reason", "settle", "first_text", "last_text", "unit"))
+                         "x_label", "about", "note", "needed_to_upgrade", "reason", "settle", "first_text", "last_text", "unit",
+                         "claim_label", "legend", "name_text"))
 
 
 def _rename_tree(obj: Any, subs: List[Tuple[Any, str]], key: str = "") -> Any:
@@ -13591,6 +13689,9 @@ def _rename_tree(obj: Any, subs: List[Tuple[Any, str]], key: str = "") -> Any:
     return obj
 
 
+_LAST_NAMES: List[Tuple[Any, str]] = []
+
+
 def _series_names(rep: Dict[str, Any], plan: Any) -> None:
     """Prints each code-like column by its name (see above) and sets rep.title. The report stands without it."""
     try:
@@ -13600,9 +13701,10 @@ def _series_names(rep: Dict[str, Any], plan: Any) -> None:
             alts = {re.escape(h), re.escape(_engine_slug(h))}
             subs.append((re.compile(r"(?<![A-Za-z0-9_])(?:%s)(?![A-Za-z0-9_])" % "|".join(sorted(alts, key=len, reverse=True)), re.I),
                          lab))
+        _LAST_NAMES[:] = subs                     # Ask's answers (analyst_more_json) print the same names
         if subs:
             for k in ("story", "summary", "answer", "ai_analyses", "charts", "findings", "limitations", "explore", "forecast",
-                      "analyst", "estimand", "scenarios", "methods"):
+                      "analyst", "estimand", "scenarios", "methods", "viz", "period"):
                 if rep.get(k) is not None:
                     rep[k] = _rename_tree(rep[k], subs)
         p = plan if isinstance(plan, dict) else {}
@@ -13639,7 +13741,7 @@ _FORECAST_HEAD = re.compile(r"^(?:(?:Monthly|Quarterly|Weekly|Daily|Annual|Yearl
 _CALENDAR_MONTHS = ("January February March April May June July August September October November December").split()
 
 
-def _latest_headline(rep: Dict[str, Any], plan: Any = None) -> None:
+def _latest_headline(rep: Dict[str, Any], plan: Any = None, goal: str = "") -> None:
     """The headline of one series a date (a FRED download, an index, a price) whose story led with its forecast ("Monthly US core
     sticky-price inflation (12-month %) forecast at 2.759 for 2026-10.") or with what its change test did not settle ("420 months of
     history (...): ... settled no change strong enough to act on"): what a reader asks first, where the series is now. Its latest
@@ -13650,6 +13752,8 @@ def _latest_headline(rep: Dict[str, Any], plan: Any = None) -> None:
         st = rep.get("story")
         if not isinstance(st, dict) or not _FORECAST_HEAD.match(str(st.get("headline") or "")):
             return
+        if rep.get("estimand") or (goal and (rep.get("answer") or {}).get("leads") == "latest_change"):
+            return                                    # the estimand, or the graded answer to a question asked about the latest change, leads
         roles = rep.get("roles") or {}
         d, ms = roles.get("date"), list(roles.get("measures") or [])
         text = str((rep.get("downloads") or {}).get("clean_csv") or "")
@@ -13721,6 +13825,10 @@ def _latest_headline(rep: Dict[str, Any], plan: Any = None) -> None:
         if since and daily:
             since = re.sub(r"since ([A-Z][a-z]+) (\d{4})$", lambda m: "since %s %s" % (m.group(1), m.group(2)), since)
         st["headline"] = "%s was %s %s, %s%s." % (label, lv(v1), when, how, since)
+        # the page's bottom line reads summary.lines: where the series stands leads them (after the answer to a whole-period question)
+        sm = rep.setdefault("summary", {"lines": [], "labels": {}, "monitoring": []})
+        sm["lines"] = [{"kind": "latest", "text": st["headline"], "finding_ids": []}] + \
+            [x for x in sm.get("lines") or [] if not (isinstance(x, dict) and x.get("kind") == "latest")]
     except Exception:  # noqa: BLE001 - the engine's headline stands
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
@@ -14775,6 +14883,14 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
                        "rankings. No change is tested for chance and nothing here says what caused it."),
                        "finding_ids": []})
         rep["limitations"] = lim
+        if lay is not None and not ((rep.get("title") or {}).get("title") if isinstance(rep.get("title"), dict) else ""):
+            # an indicator table with no title from the plan: what it is, in the reading's own words
+            ab = str(out.get("about") or "")
+            first = re.split(r"(?<=[.;])\s", ab, maxsplit=1)[0].rstrip(".;")
+            t0 = rep.get("title") if isinstance(rep.get("title"), dict) else {}
+            rep["title"] = {"title": ("%s by %s" % (_nx._plural_of(str(out.get("indicator") or "measure")).capitalize(),
+                                                     str(out.get("entity") or "place"))).strip()[:160],
+                            "subtitle": first[:200], "summary": str(t0.get("summary") or ""), "by": "file", "source": ""}
         return {k: v for k, v in out.items() if k != "records"}
     except Exception:  # noqa: BLE001 - the report stands without the indicator reading
         if os.environ.get("NL_BROWSER_STRICT"):
@@ -14815,6 +14931,35 @@ def _wide_year_panel(inner: Dict[str, Any], long_csv: bytes, wide_info: Optional
         got = _explore(inner, None, None, None, plan, panel_src=(f, header_of), panel=pan)
         if got:
             inner["explore"] = got
+            # the whole table's reading is the report: its sentences lead the bottom line, and the one member's own whole-period answer,
+            # period block and estimand (the slice the structure read) leave it, so neither the page nor the AI writer tells the story of
+            # "IDA & IBRD total" (17 Oct 2026, a visitor's run with the AI)
+            sents = [x for x in got.get("sentences") or [] if isinstance(x, str)]
+            if sents:
+                inner["summary"] = dict(inner.get("summary") or {}, lines=[{"kind": "panel", "text": x, "finding_ids": []} for x in sents[:3]])
+            inner.pop("answer", None)
+            inner["period"] = None
+            inner["estimand"] = None
+            one = str((S.get("default") or ((S.get("slice") or {}).get("where")) or {}).get(pan["entity"]) or "")
+            if one:
+                # the structure's notes about reading that one member are not this report's
+                inner["limitations"] = [x for x in inner.get("limitations") or []
+                                        if not (isinstance(x, dict) and one in str(x.get("text") or ""))]
+            inner["scenarios"] = {"basis": None, "items": [], "refused": [], "note": "The what-if scenarios read one series; this table is read "
+                                  "as all its members by year, so none is offered."}
+            years = sorted({int(y) for y in _pd.to_numeric(f[pan["year"]], errors="coerce").dropna()})
+            span = ("%d to %d" % (years[0], years[-1])) if len(years) > 1 else ""
+            pub = "the World Bank's World Development Indicators" if S.get("publisher") == "worldbank" else ""
+            n_g = len(pan.get("aggregates") or ())
+            n_m = int(f[pan["entity"]].nunique()) - n_g
+            t0 = inner.get("title") if isinstance(inner.get("title"), dict) else {}
+            if not t0.get("title"):
+                ent_1 = humane_entity(header_of.get(pan["entity"], pan["entity"]))
+                ent_w = _nx._plural_of(ent_1)
+                inner["title"] = {"title": ("%s by %s, %s" % (label, ent_1, span)).strip(", ")[:160],
+                                  "subtitle": ("%d %s%s%s" % (n_m, ent_w, (" and %d groups of them (regions, income groups, the world)" % n_g) if n_g else "",
+                                                              (", from " + pub) if pub else ""))[:200],
+                                  "summary": str(t0.get("summary") or ""), "by": "file", "source": ""}
             # step 4 (Ask) and the analyst block read the countries by year, groups left out (the countries add up to the World row,
             # so a question's SUM over them is the world's figure, never the world counted twice), never the one member alone
             import nl_analyst as _na
@@ -14843,6 +14988,12 @@ def _wide_year_panel(inner: Dict[str, Any], long_csv: bytes, wide_info: Optional
     except Exception:  # noqa: BLE001 - the slice's reading stands
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
+
+
+def humane_entity(h: Any) -> str:
+    """The entity column's header as a noun: "Country Name" is "country"."""
+    t = re.sub(r"(?i)\b(name|code|label)\b", "", str(h or "")).strip().lower()
+    return t or "member"
 
 
 def _short_indicator(name: str) -> str:

@@ -528,6 +528,7 @@
       (T.subtitle ? '<p class="nl2-subtitle">' + esc(T.subtitle) + '</p>' : '') + (T.summary ? '<p class="nl2-reading">' + esc(T.summary) + '</p>' : '') +
       (T.source || T.by ? '<p class="note nl2-titleby">' + esc([T.source, T.by === 'ai' ? 'named by the AI from the column names and ranges'
         : T.by === 'lookup' ? 'named from FRED\'s page for the series, looked up when you asked'
+        : T.by === 'file' ? 'named from the file\'s own headings'
         : T.lookup ? '' : 'named from the site\'s list of published series'].filter(Boolean).join('; ')) + '</p>' : '') +
       // a series known only by its code (or only by its family): its public name is one click away, the code alone sent (50-try.js)
       (T.lookup && T.lookup.id && window.NL && window.NL.try && window.NL.try.ai_proxy_url ? '<p class="nl2-lookup"><button type="button" class="btn btn-ghost" ' +

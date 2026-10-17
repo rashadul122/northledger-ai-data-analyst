@@ -2894,6 +2894,15 @@ check('try-sample-through-the-real-engine', DESK, async (ctx) => {
       ok(!/(^|,)notes(,|$)/i.test(lines[0]), 'the withheld notes column is in ' + k);
     }
   }
+  // clean my file through the real engine in Pyodide (nl_browser.cleanfile_json): the cleaned copy keeps every row but
+  // the exact duplicates the report set aside
+  if (await p.$('.nl2-views [data-view="analyst"]')) await p.click('.nl2-views [data-view="analyst"]');
+  await p.waitForSelector('#try-clean-out:not([hidden])', { timeout: 120000 });
+  const [cd] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="csv"]')]);
+  const clines = fs.readFileSync(await cd.path(), 'utf8').split('\n').filter((l) => l);
+  const dupN = rep.cleaning.quarantine_reasons.filter((q) => /^exact_duplicates/.test(q.reason)).reduce((a, q) => a + q.count, 0);
+  ok(clines[0] === 'Date,Property,Unit,Category,Amount,Paid?,Vendor,nl_flag,nl_missing' && clines.length - 1 === rep.cleaning.rows_in - dupN,
+    'the real cleaned copy: ' + clines[0] + ', ' + (clines.length - 1) + ' rows');
   const other = ctx.__reqs.filter((r) => !/^(blob|data):/.test(r.url) && ['nl-site.test', 'cdn.jsdelivr.net'].indexOf(new URL(r.url).host) < 0);
   ok(!other.length, 'a request went to ' + (other[0] || {}).url);
   ok(!ctx.__reqs.some((r) => r.body), 'a request carried a body');

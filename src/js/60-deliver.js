@@ -139,6 +139,48 @@
       el.addEventListener('change', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); if (after) after(); });
     });
   }
+  // A settings field's change fires when it loses focus, often because the visitor pressed a button in the same card
+  // ("Download ..."): the card redraws under the pointer and that press would be lost. The change is applied first (the
+  // download must use the new settings); then the press is given back to the redrawn button with the same identity (its
+  // id and data-* attributes, or its text), as soon as it is on the page again (an option that asks the engine first
+  // draws it a moment later). Only for presses inside the step-1 checklist or a step-6 card; never twice.
+  var press = null;
+  function pressSig(el) {
+    var sel = el.tagName.toLowerCase(), any = false;
+    if (el.id) { sel += '#' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id); any = true; }
+    Array.prototype.forEach.call(el.attributes, function (a) {
+      if (/^data-/.test(a.name)) { sel += '[' + a.name + '="' + String(a.value).replace(/["\\]/g, '\\$&') + '"]'; any = true; }
+    });
+    return { sel: sel, any: any, text: (el.textContent || '').trim() };
+  }
+  function findPressed(sig) {
+    var roots = [$('try-type-card'), $('try-need')].filter(Boolean), hit = null;
+    roots.some(function (r) {
+      var c = sig.any ? r.querySelectorAll(sig.sel) : Array.prototype.filter.call(r.querySelectorAll(sig.sel), function (x) { return (x.textContent || '').trim() === sig.text; });
+      hit = c.length === 1 ? c[0] : null;
+      return !!hit;
+    });
+    return hit;
+  }
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target && e.target.closest ? e.target.closest('button, a[href], [data-key], label') : null;
+    var scope = t && t.closest ? t.closest('#try-type-card, #try-need') : null;
+    press = t && scope && !t.closest('fieldset.dl-set') ? { el: t, sig: pressSig(t), clicked: false } : null;
+  }, true);
+  document.addEventListener('click', function (e) { if (press && e.target && (press.el === e.target || press.el.contains(e.target))) press.clicked = true; }, true);
+  document.addEventListener('pointerup', function () {
+    var p = press;
+    if (!p) return;
+    setTimeout(function () {
+      if (press === p) press = null;
+      if (p.clicked || document.contains(p.el)) return;         // the click happened, or nothing was redrawn
+      var again = findPressed(p.sig);
+      if (again) { again.click(); return; }
+      var mo = new MutationObserver(function () { var x = findPressed(p.sig); if (x) { mo.disconnect(); clearTimeout(stop); x.click(); } });
+      var stop = setTimeout(function () { mo.disconnect(); }, 15000);
+      mo.observe(document.body, { childList: true, subtree: true });
+    }, 0);
+  }, true);
 
   /* ---- step 1: "What do you need?", its checklist, the files of this run, a recipe ---- */
   function needRoot() {

@@ -1807,7 +1807,7 @@
     // first and last month, and for a text or date column of at most 300 distinct short values its commonest
     // values and every value; never the file's name (T.planProfile)
     var AI_CONSENT = ['Nothing goes to an AI unless you choose "Continue with the AI".',
-      'Then a summary of your columns goes to DeepSeek through this site\'s proxy to plan the analysis: each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values.',
+      'Then a summary of your columns goes to DeepSeek through this site\'s proxy to plan the analysis: each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values. For a table whose rows each measure something different (a census profile: a measure in each row, for each place), also the names of up to 60 of its measures, so the AI can choose which to compare.',
       'Never rows.',
       'A column you withhold is left out and never named; for a coded column the AI is told only its name, type and counts, never its values or range.',
       'A flagged column you keep is sent like any other column, values included, but only after you tick the box that names it.',

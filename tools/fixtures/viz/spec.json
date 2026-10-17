@@ -902,7 +902,7 @@
      "rows": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 12,
+      "maxItems": 20,
       "items": {
        "type": "object",
        "required": [
@@ -975,6 +975,33 @@
           }
          }
         }
+       }
+      }
+     },
+     "interval": {
+      "type": "boolean"
+     },
+     "ref": {
+      "type": "object",
+      "required": [
+       "label",
+       "value",
+       "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+       },
+       "value": {
+        "type": "number"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 24
        }
       }
      }
@@ -1413,7 +1440,7 @@
      "rows": {
       "type": "array",
       "minItems": 2,
-      "maxItems": 12,
+      "maxItems": 20,
       "items": {
        "type": "object",
        "required": [
@@ -1455,6 +1482,36 @@
      },
      "other": {
       "type": "boolean"
+     },
+     "ref": {
+      "type": "object",
+      "required": [
+       "label",
+       "value",
+       "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+       },
+       "value": {
+        "type": "number"
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 24
+       }
+      }
+     },
+     "order": {
+      "enum": [
+       "largest",
+       "given"
+      ]
      }
     }
    },

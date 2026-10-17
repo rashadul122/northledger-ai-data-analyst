@@ -926,7 +926,7 @@
     hbar: {
       ok: function (rec) {
         var d = rec.data;
-        return gObj(d) && gArr(d.series) && d.series.length >= 1 && d.series.length <= 2 && d.series.every(gStr) && gArr(d.rows) && d.rows.length >= 1 && d.rows.length <= 12 &&
+        return gObj(d) && gArr(d.series) && d.series.length >= 1 && d.series.length <= 2 && d.series.every(gStr) && gArr(d.rows) && d.rows.length >= 1 && d.rows.length <= 20 &&
           d.rows.every(function (r) { return gObj(r) && gStr(r.label) && gArr(r.values) && r.values.length === d.series.length && r.values.every(gNum) && gArr(r.texts) && r.texts.length === d.series.length && r.texts.every(gStr); });
       },
       draw: function (rec, W) {

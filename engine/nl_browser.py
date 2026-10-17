@@ -179,7 +179,65 @@ def _import_engine():
     if HERE not in sys.path:
         sys.path.append(HERE)
     import northledger
+    _guard_case_rule()
     return northledger
+
+
+_SMALL_WORDS = frozenset("a an and as at but by for from in into of on or the to with de du la le et von van".split())
+
+
+def _smart_title(v: str) -> str:
+    """Title case for a label: each word capitalised but the small ones inside it ("District of Columbia"), letters after an
+    apostrophe kept small ("Alzheimer's"), a word with a digit as written."""
+    words = str(v).split(" ")
+    out = []
+    for i, w in enumerate(words):
+        lw = w.lower()
+        if not w or any(ch.isdigit() for ch in w):
+            out.append(w)
+        elif i > 0 and lw in _SMALL_WORDS:
+            out.append(lw)
+        else:
+            out.append("-".join(p[:1].upper() + p[1:].lower() for p in w.split("-")))
+    return " ".join(out)
+
+
+def _guard_case_rule() -> None:
+    """The engine names a column "code-like" by its header (state, country, region: a two-letter code is a state) and writes every
+    value of it in capitals; a column of full names ("Alabama", "District of Columbia") came out as ALABAMA (the universal check,
+    17 Oct 2026). Here an upper or title rule writes capitals only on codes (a median of 4 characters or fewer, no spaces); on words
+    a value written all in small letters or all in capitals takes title case and a value that mixes cases is left as written, so
+    "maintenance", "MAINTENANCE" and "Maintenance" are one category and "United States" stays itself. The dominant mode is the
+    engine's own. Installed once, in the adapter only; the engine's file is unchanged."""
+    from northledger import clean as _cl
+    real = _cl._DISPATCH.get("case")
+    if real is None or getattr(real, "_nl_guarded", False):
+        return
+
+    def guarded(state: Any, rule: Any) -> None:
+        mode = str((rule.params or {}).get("mode", "upper")).lower()
+        if mode in ("upper", "title"):
+            for col in _cl._resolve_columns(rule, state.work):
+                vals = [v for v in state.work[col].tolist() if isinstance(v, str) and v.strip()]
+                if not vals:
+                    continue
+                lens = sorted(len(v.strip()) for v in vals)
+                coded = lens[len(lens) // 2] <= 4 and not any(" " in v.strip() for v in vals)
+                if coded:
+                    real(state, rule)                 # codes (CA, NY, A1): the engine's capitals
+                    return
+                # words (Alabama, United States, Maintenance): a value written all in small letters or all in capitals is
+                # written in title case ("maintenance" and "MAINTENANCE" become "Maintenance", the variants the rule exists to
+                # merge, also across two files); a value that already mixes cases ("District of Columbia") is left as written
+                new = state.work[col].map(lambda v: _smart_title(v) if isinstance(v, str) and v.strip() and
+                                          (v == v.lower() or v == v.upper()) else v)
+                if not new.equals(state.work[col]):
+                    _cl._apply_fix(state, rule, col, new)
+            return
+        real(state, rule)
+
+    guarded._nl_guarded = True                        # type: ignore[attr-defined]
+    _cl._DISPATCH["case"] = guarded
 
 
 _COVERAGE_SEEDED = False
@@ -2410,6 +2468,204 @@ def _release_categories(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict
     return out
 
 
+# universal (17 Oct 2026, a visitor's Census Profile): a column the scan flagged ONLY because its header says "name" ("GEO_NAME",
+# "CHARACTERISTIC_NAME") is read by its VALUES before it is withheld: Ontario, Nova Scotia and Prince Edward Island are two-word capitalised
+# texts, and "Average total income in 2020 among recipients ($)" is a label. Withheld, the two columns that say WHERE and WHAT every number is
+# left the table with numbers nobody could read, and the report came back blank. A column is released when its values are, all but a few,
+# places from the site's list of regions (engine/context_terms.json) or descriptive labels no person's name looks like; one value shaped
+# like a person's name (_looks_like_names, a given name first) keeps the flag. A value shape the scan matched (an email ...) is never released.
+RELEASED_PLACE_WORDS = "Read as places, not personal data: %s (%s places)"
+RELEASED_LABEL_WORDS = "Read as labels of what is measured, not personal data: %s (%s labels)"
+RELEASED_CODE_WORDS = "Read as footnote or code numbers, not personal data: %s (%s codes)"
+NOT_PEOPLE_SHARE = 0.90                   # of the column's distinct values AND of its filled cells
+_LABEL_WORDS = frozenset("of and in for by with the to from per among on at or than over under aged total average median number "
+                         "percent rate share income households population persons people".split())
+_PLACES: Optional[frozenset] = None
+
+
+def _places() -> frozenset:
+    global _PLACES
+    if _PLACES is None:
+        try:
+            with open(os.path.join(HERE, "context_terms.json"), encoding="utf-8") as fh:
+                regs = json.load(fh).get("regions") or []
+        except Exception:  # noqa: BLE001 - no list, no place release; the flag stands
+            regs = []
+        _PLACES = frozenset(_place_key(x) for x in regs if str(x).strip())
+    return _PLACES
+
+
+def _place_key(v: Any) -> str:
+    import unicodedata
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", str(v)) if not unicodedata.combining(ch)).casefold()
+    s = re.sub(r"\s*\([^)]*\)\s*$", "", s)            # "Quebec (Province)" is Quebec
+    return " ".join(re.sub(r"[^\w\s&'-]", " ", s).split())
+
+
+def _label_value(v: str) -> bool:
+    """A text that labels what is counted, not who: five or more words, or a digit, a bracket, a sign ($ % / : =), or a small word
+    (of, in, for, among) between words. "Maria de la Cruz" is none of these; "Average total income in 2020 among recipients ($)" is all."""
+    s = " ".join(str(v).split())
+    if not s:
+        return False
+    words = s.split(" ")
+    if len(words) >= 5 or re.search(r"[\d()\[\]$%/:=+<>]", s):
+        return True
+    return len(words) >= 2 and any(w.casefold() in _LABEL_WORDS for w in words[1:])
+
+
+def _rows_are_places(db_path: str, table: str, places: frozenset) -> str:
+    """The column whose values name one place per row (90% of them on the site's list of regions, each on one row), or ''."""
+    import sqlite3
+    con = sqlite3.connect(db_path)
+    try:
+        qt = '"%s"' % str(table).replace('"', '""')
+        n = int(con.execute("SELECT COUNT(*) FROM %s" % qt).fetchone()[0] or 0)
+        cols = [r[1] for r in con.execute("PRAGMA table_info(%s)" % qt)]
+        for c in cols:
+            qc = '"%s"' % str(c).replace('"', '""')
+            vals = [str(r[0]) for r in con.execute("SELECT %s FROM %s WHERE %s IS NOT NULL" % (qc, qt, qc)) if str(r[0]).strip()]
+            if len(vals) < 5 or len(vals) < 0.9 * n or len(set(vals)) < 0.9 * len(vals):
+                continue
+            if sum(1 for v in vals if _place_key(v) in places) >= 0.9 * len(vals):
+                return str(c)
+    finally:
+        con.close()
+    return ""
+
+
+def _place_measure(db_path: str, table: str, col: str) -> Optional[Tuple[int, int]]:
+    """(distinct values, filled cells) when the column is numbers (95%) with more than 25 different values, else None."""
+    import sqlite3
+    con = sqlite3.connect(db_path)
+    try:
+        qc, qt = '"%s"' % col.replace('"', '""'), '"%s"' % str(table).replace('"', '""')
+        vals = [str(r[0]).strip() for r in con.execute("SELECT %s FROM %s WHERE %s IS NOT NULL" % (qc, qt, qc)) if str(r[0]).strip()]
+    finally:
+        con.close()
+    nums = []
+    for v in vals:
+        try:
+            nums.append(float(v.replace(",", "")))
+        except ValueError:
+            pass
+    if not vals or len(nums) < 0.95 * len(vals) or len(set(nums)) <= SENSITIVE_MEASURE_DISTINCT:
+        return None
+    return len(set(nums)), len(vals)
+
+
+def _labelish(v: str) -> bool:
+    """A category written as a label, not a name: figures or brackets, or a lower-case word after the first that is not a name
+    particle ("Heart disease" yes, "Maria de la Cruz" no)."""
+    s = " ".join(str(v).split())
+    if re.search(r"[\d()\[\]&/%:]", s):
+        return True
+    words = s.split(" ")
+    return any(w[:1].islower() and w.casefold() not in _PARTICLES for w in words[1:])
+
+
+def _release_not_people(E: Any, eng: Any, res: Any, decisions: Any) -> List[Dict[str, Any]]:
+    """The header-only flags lifted because the values are places or labels (see above), as privacy.released entries."""
+    import sqlite3
+    colmap = dict(getattr(res, "column_map", {}) or {})
+    head = {str(v): str(k) for k, v in colmap.items()}
+    chosen = {str(k): str(v or "").strip().lower() for k, v in dict(decisions or {}).items() if not str(k).startswith("__")}
+    con = sqlite3.connect(eng.db_path)
+    try:
+        rows = con.execute("SELECT column_name, kinds FROM %s WHERE table_name = ? ORDER BY rowid" % E.COLUMNS_TABLE,
+                           (res.table,)).fetchall()
+    finally:
+        con.close()
+    nulls = _null_tokens()
+    places = _places()
+    out: List[Dict[str, Any]] = []
+    place_rows = _rows_are_places(eng.db_path, res.table, places)
+    for col, kinds in rows:
+        col = str(col)
+        header = head.get(col, col)
+        ks = [k.strip() for k in str(kinds or "").split(",") if k.strip()]
+        if place_rows and ks and all(k.startswith("named_") for k in ks) and \
+                chosen.get(col) not in ("withhold", "code") and chosen.get(header) not in ("withhold", "code") and \
+                not SENSITIVE_HEADER.search(_MONEY_WORDS.sub(" ", header)):
+            # one row per place (a state, a country): a number column named like a person's money ("median_household_income") is a
+            # statistic of the place, released when it is a measure (numbers, more than 25 different values), never a code or an id
+            m = _place_measure(eng.db_path, res.table, col)
+            if m is not None:
+                con = sqlite3.connect(eng.db_path)
+                try:
+                    con.execute("DELETE FROM %s WHERE table_name = ? AND column_name = ?" % E.COLUMNS_TABLE, (res.table, col))
+                    con.commit()
+                finally:
+                    con.close()
+                out.append({"column": col, "header": header, "kind": "measure", "distinct": m[0], "rows": m[1], "min_repeat": 1,
+                            "text": RELEASED_MEASURE_WORDS % header,
+                            "why": "each row of the file is a place (%s), so this number column is a statistic of the place, not of a "
+                                   "person: %s different values" % (place_rows, format(m[0], ","))})
+                continue
+        if not ks or any(k not in ("named_name", "named_note") for k in ks):
+            continue                                  # flagged for a value shape or another hint: never released here
+        if chosen.get(col) in ("withhold", "code") or chosen.get(header) in ("withhold", "code"):
+            continue
+        if SENSITIVE_HEADER.search(header):
+            continue
+        con = sqlite3.connect(eng.db_path)
+        try:
+            qc = '"%s"' % col.replace('"', '""')
+            vc = con.execute("SELECT %s, COUNT(*) FROM %s WHERE %s IS NOT NULL GROUP BY %s" % (
+                qc, '"%s"' % str(res.table).replace('"', '""'), qc, qc)).fetchall()
+        finally:
+            con.close()
+        counts: Dict[str, int] = {}
+        for v, n in vc:
+            s = " ".join(str(v).split())
+            if s and s.lower() not in nulls:
+                counts[s] = counts.get(s, 0) + int(n)
+        if len(counts) < 2:
+            continue
+        filled = float(sum(counts.values()))
+        distinct = list(counts)
+        kind = ""
+        hit: List[str] = []
+        # 1. places: all but a few values on the site's list of regions (a name column of people is almost never that)
+        hit = [x for x in distinct if _place_key(x) in places]
+        if len(hit) >= NOT_PEOPLE_SHARE * len(distinct) and sum(counts[x] for x in hit) >= NOT_PEOPLE_SHARE * filled:
+            kind = "place"
+        # 2. footnote or code numbers under a "note"/"name" header: short whole numbers only
+        elif all(re.fullmatch(r"\d{1,4}", x) for x in distinct):
+            kind, hit = "code", distinct
+        else:
+            # 3. a vocabulary of labels: a real list of what is measured holds single words too ("Afghan", "Anglican"), so it is enough that
+            # a third of its values are clearly labels, it has at least 30 of them, and almost none (1% or fewer) open with a given name
+            given = [x for x in distinct if _given_name_value(x)]
+            hit = [x for x in distinct if _label_value(x)]
+            if "named_name" in ks and len(distinct) >= 30 and len(hit) >= 0.30 * len(distinct) and \
+                    len(given) <= 0.01 * len(distinct) and not _looks_like_names(distinct, header):
+                kind = "label"
+            # 4. a short list of categories ("Heart disease", "Unintentional injuries"): each on 3 or more rows, most written as
+            # labels (a lower-case word after the first that is not a name particle, or figures and brackets), none a given name
+            elif "named_name" in ks and 3 <= len(distinct) < 30 and min(counts.values()) >= 3 and not given and \
+                    not _looks_like_names(distinct, header):
+                hit = [x for x in distinct if _labelish(x)]
+                if len(hit) >= 0.6 * len(distinct):
+                    kind = "label"
+        if not kind:
+            continue
+        con = sqlite3.connect(eng.db_path)
+        try:
+            con.execute("DELETE FROM %s WHERE table_name = ? AND column_name = ?" % E.COLUMNS_TABLE, (res.table, col))
+            con.commit()
+        finally:
+            con.close()
+        words = {"place": RELEASED_PLACE_WORDS, "label": RELEASED_LABEL_WORDS, "code": RELEASED_CODE_WORDS}[kind]
+        why = {"place": "its name says \"name\", and %d of its %d values are places on the site's list of regions" % (len(hit), len(distinct)),
+               "label": ("its name says \"name\", and it is a list of %s labels of what is measured: %s of them are descriptive (several words, "
+                         "figures or units) and not one in a hundred opens with a given name" % (format(len(distinct), ","), format(len(hit), ","))),
+               "code": "its name says \"%s\", and every value is a short number (a footnote or code)" % header}[kind]
+        out.append({"column": col, "header": header, "kind": kind, "distinct": len(distinct), "rows": int(filled),
+                    "min_repeat": min(counts.values()), "text": words % (header, format(len(distinct), ",")), "why": why})
+    return out
+
+
 def _raw_column_values(raw: Any, headers: Iterable[str]) -> Dict[str, List[str]]:
     """{header: the distinct values of that column of the file as the visitor sent it} (for the scrubber: never printed)."""
     import pandas as pd
@@ -2458,6 +2714,7 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     if slice_measure:
         _release_slice_measure(E, eng, res, slice_measure)
     released = _release_categories(E, eng, res, decisions)
+    released += _release_not_people(E, eng, res, decisions)
     _release_value_column(E, eng, res, decisions, released, series)
     colmap = dict(getattr(res, "column_map", {}) or {})
     con = sqlite3.connect(eng.db_path)
@@ -2466,7 +2723,8 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
                                                  (res.table,))}
     finally:
         con.close()
-    added = _personal_columns(eng.db_path, res.table, colmap, known)
+    # a column released above was read on its values already; this check must not flag it again on its header
+    added = _personal_columns(eng.db_path, res.table, colmap, known | {str(r.get("column")) for r in released})
     if added:
         con = sqlite3.connect(eng.db_path)
         try:
@@ -5501,6 +5759,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         if not data or not data.strip():
             return {"ok": False, "error": "empty"}
         data, _title_lines = _strip_title_block(data)
+        data, _sub = merge_two_row_header(data)
         if _looks_like_title(data):
             return {"ok": False, "error": "the first row looks like a title"}
         _install_stubs()
@@ -5760,6 +6019,23 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
         out["chart_limits"] = []
     if structure_block is not None:
         out["structure"] = structure_block
+    # universal track (17 Oct 2026): a table whose rows measure different things (an indicator table) shows the planner its best
+    # indicators by name, so the plan chooses which to compare (plan.indicators); a withheld column is never read for it
+    if not out.get("time") and structure_block is None:
+        try:
+            import nl_explore as _nx
+            raw = _raw_frame(data)
+            if raw is not None:
+                hidden = {h for h, v in priv.items() if v[0] != "keep"}
+                fr = raw[[c for c in raw.columns if c not in hidden]].copy()
+                for c in fr.columns:
+                    fr[c] = fr[c].astype(str).str.strip().replace("", None)
+                lay = _nx.detect(fr, {c: c for c in fr.columns}, raw)
+                if lay is not None:
+                    out["indicators"] = _nx.profile_block(lay)
+        except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
     return out
 
 
@@ -5787,6 +6063,10 @@ def _time_and_limits(facts: List[Dict[str, Any]], priv: Dict[str, Tuple[str, str
     time = None
     complete: List[int] = []
     dates_n = 0
+    if best is not None and best["time"].get("year_column") and len(best["time"].get("years") or ()) < 2:
+        # one year (a census's CENSUS_YEAR = 2021 on every row) is a label, not a time axis: it was read as "12 months, 2021-01 to
+        # 2021-12" and the planner was told a trend needed more of them (a visitor's Census Profile, 17 Oct 2026)
+        best = None
     if best is not None:
         tm = best["time"]
         complete, dates_n = list(tm["complete"]), int(tm["dates"])
@@ -6947,6 +7227,9 @@ def analyst_plan_json(question: str) -> str:
     import nl_sql as _ns_sql
     if not _LAST_ANALYST:
         return "[]"
+    if _LAST_EXPLORE.get("kind") == "indicator_table":
+        import nl_explore as _nx
+        return json.dumps(_nx.ask_steps(_LAST_EXPLORE, str(question or "")[:300]), allow_nan=False, default=str)
     return json.dumps(_ns_sql.plan_steps(_LAST_ANALYST, str(question or "")[:300]), allow_nan=False, default=str)
 
 
@@ -7141,6 +7424,11 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
     out["kind"] = str(plan.get("kind") or "")[:600]
     out["goal_candidates"] = [str(x)[:200] for x in (plan.get("goal_candidates") or [])[:3] if str(x).strip()]
     out["quality_risks"] = [str(x)[:240] for x in (plan.get("quality_risks") or [])[:6]]
+    # an indicator table's measures, as the worker kept them ("label||topic", engine/nl_explore.py label_key): matched back to the
+    # table by _explore; one that matches nothing is skipped there
+    inds = [str(x)[:210] for x in (plan.get("indicators") or [])[:6] if isinstance(x, str) and "||" in x]
+    if inds:
+        out["indicators"] = inds
     out["columns"] = []
     for c in (plan.get("columns") or [])[:200]:
         if isinstance(c, dict) and c.get("name") in have:
@@ -11765,6 +12053,74 @@ def _numbers_in_place(df: Any) -> List[Dict[str, Any]]:
     return notes
 
 
+# universal track (17 Oct 2026): a survey export writes each question over two header rows (the question once, above its first
+# column, and under it each option: "Which films have you seen?" / "Episode IV"; "Response" under a one-column question). Read as
+# one header row, the options were columns named "Unnamed: 4" and the first respondent was a row of option names. The two rows are
+# merged into one ("Which films have you seen? | Episode IV") and the second is dropped, before anything reads the file.
+SUBHEADER_MIN = 3
+
+
+def merge_two_row_header(data: bytes) -> Tuple[bytes, Optional[str]]:
+    """(the file with its two header rows merged into one, a note) or (data, None) when the second row is not a sub-header: it
+    holds "Response" in two or more cells, or names an option under three or more blank header cells, and none of its cells is a
+    number."""
+    import csv
+    text = None
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        return data, None
+    head_end = text.find("\n")
+    if head_end < 0:
+        return data, None
+    try:
+        sniff = csv.Sniffer().sniff(text[:head_end], delimiters=",;\t|")
+        delim = sniff.delimiter
+    except csv.Error:
+        delim = ","
+    rd = csv.reader(io.StringIO(text), delimiter=delim)
+    try:
+        h = next(rd)
+        r1 = next(rd)
+    except StopIteration:
+        return data, None
+    if len(r1) != len(h) or len(h) < 4:
+        return data, None
+    blank_named = sum(1 for a, b in zip(h, r1) if not a.strip() and b.strip())
+    responses = sum(1 for b in r1 if b.strip().lower() == "response")
+    numeric = sum(1 for b in r1 if re.fullmatch(r"\s*-?[\d.,]+\s*", b or ""))
+    if numeric or not (responses >= 2 or blank_named >= SUBHEADER_MIN):
+        return data, None
+    merged, parent, seen = [], "", {}
+    for a, b in zip(h, r1):
+        a, b = " ".join(a.split()), " ".join(b.split())
+        if a:
+            parent = a
+        if not b or b.lower() == "response":
+            name = a or parent or "column"
+        else:
+            name = "%s | %s" % (a or parent, b) if (a or parent) else b
+        k = name
+        i = 2
+        while k in seen:
+            k = "%s (%d)" % (name, i)
+            i += 1
+        seen[k] = 1
+        merged.append(k)
+    out = io.StringIO()
+    w = csv.writer(out, delimiter=delim, lineterminator="\n")
+    w.writerow(merged)
+    for row in rd:
+        w.writerow(row)
+    note = "The file's two header rows (a question, then its options under it) were read as one: %d columns named from both" % (
+        sum(1 for a, b in zip(h, r1) if b.strip() and b.strip().lower() != "response"))
+    return out.getvalue().encode("utf-8"), note
+
+
 def normalize_file(data: bytes) -> Tuple[bytes, List[Dict[str, Any]], List[Dict[str, Any]]]:
     """(the file, date notes, number notes): dates and numbers written in a format the core does not read, rewritten as ISO dates and plain numbers
     before anything reads the file (H, E). The same bytes when no column needs it (a head of the file is looked at first, so an ordinary file is
@@ -12190,6 +12546,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "about the full audit.")
         objective = " ".join(str(objective or "").split())[:300] or DEFAULT_OBJECTIVE
         data, title_lines = _strip_title_block(data)
+        data, subheader_note = merge_two_row_header(data)
+        if subheader_note:
+            title_lines += 1                              # the second header row is gone: each row's line in the file is one further
         if _looks_like_title(data):
             raise Refusal("The first row of this file looks like a title, not column names: it has "
                           "one or two cells and the rows below it have many. Delete the rows above "
@@ -12966,6 +13325,16 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # record in rep["charts"]
         rep["viz"] = _viz(rep, r if not date_withheld else None, reading, ai_plan, pub, goal, scrub.flag_tokens,
                           scrub.flag_tokens_by, structure_inner)
+        # universal track (17 Oct 2026): a table whose rows measure different things (an indicator table: a Census Profile, the World
+        # Bank's long format) is compared one indicator at a time across its places (engine/nl_explore.py); the registry's charts, which
+        # add or average a value column across rows, are replaced
+        rep["explore"] = _explore(rep, reading, as_written, flagged, ai_plan)
+        if subheader_note:
+            if isinstance(rep.get("explore"), dict):
+                rep["explore"]["about"] = str(rep["explore"].get("about") or "") + " " + subheader_note + "."
+            st_s = rep.get("story") if isinstance(rep.get("story"), dict) else None
+            if st_s is not None:
+                st_s["what_happened"] = [subheader_note + "."] + [x for x in st_s.get("what_happened") or []]
         lay_o = (rep.get("input") or {}).get("layout")
         if isinstance(lay_o, dict):
             lay_o.pop("own_span", None)           # the figures of the series read over their own span: used by the charts, never in the report
@@ -12973,6 +13342,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal),
                                   personal=[f for f in flagged if isinstance(f, dict) and f.get("column")],
                                   structure=structure_inner)
+        if (rep.get("explore") or {}).get("kind") == "indicator_table" and isinstance(rep.get("analyst"), dict):
+            # an indicator table: the loop's own steps total or correlate a value column across rows that measure different things;
+            # its frame stays for Ask (step 4), where a question names the measure it is about
+            an = rep["analyst"]
+            an["refused"] = list(an.get("refused") or []) + [{"op": "all", "why": R_INDICATOR % rep["explore"].get("indicator", "measure")}]
+            an["steps"], an["insights"] = [], []
+            an["note"] = ("Each row of this table is a different %s, so the analyst's automatic steps (totals, shares, correlations of a "
+                          "value column) are not run on it; the charts above compare one %s at a time. Ask a question in step 4 and "
+                          "name the %s it is about." % (((rep["explore"].get("indicator") or "measure"),) * 3))
         _mend_cannot_answer(rep)
         _mend_unit_nouns(rep)
         # a rate's change in percentage points, everywhere the report states it, before anything reads the report (_rate_points)
@@ -13774,6 +14152,192 @@ def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: s
              "chosen_by": "engine"}], "chosen_by": "none"}
 
 
+EXPLORE_WHY = "Chosen by the engine: one measure compared across the %s, as the file states it"
+VIZ_TABLE_MAX = 8                 # the chart registry's own cap (spec.json caps.VIZ_MAX)
+R_INDICATOR = ("each row measures a different thing (%s), in different units: adding or averaging a value column across rows "
+               "would mix them, so each measure is compared on its own")
+NO_DATE_HEAD = "The monthly change test did not run"
+
+
+def _raw_frame(raw: Any) -> Any:
+    """The file as the visitor wrote it, every cell text (labels keep their leading spaces), or None."""
+    import pandas as pd
+    if not raw:
+        return None
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            return pd.read_csv(io.BytesIO(raw), dtype=str, encoding=enc, keep_default_na=False, skipinitialspace=False)
+        except UnicodeDecodeError:
+            continue
+        except Exception:  # noqa: BLE001 - no raw text, no indentation: the layout is read without it
+            return None
+    return None
+
+
+# The last run's indicator table, for Ask (analyst_plan_json): its columns by the file's headers and its measures. Replaced by
+# every run; empty for any other table.
+_LAST_EXPLORE: Dict[str, Any] = {}
+
+
+def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: Any = None) -> Optional[Dict[str, Any]]:
+    """rep["explore"]: the indicator-table reading (engine/nl_explore.py) and its charts in rep.viz, or None for any other table.
+    The report stands without it."""
+    _LAST_EXPLORE.clear()
+    try:
+        import nl_explore as _nx
+        import nl_viz as _nv
+        if (rep.get("roles") or {}).get("date"):
+            return None                                   # a dated table keeps the engine's time analysis
+        st0 = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
+        if st0 is not None and st0.get("kind") in ("cube", "cube_incomplete", "error", "refused"):
+            return None                                   # a table of series the structure layer reads (or refused): never row by row
+        if any(isinstance(r, dict) and r.get("chart") == "all" for r in ((rep.get("viz") or {}).get("refused") or [])):
+            return None                                   # the registry refused to read these rows at all, with its reason
+        csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
+        if not csv_text:
+            return None
+        private = {str(f["column"]) for f in flagged or [] if isinstance(f, dict) and f.get("column")
+                   and str(f.get("decision") or "withhold") != "keep"}
+        frame = _download_frame(csv_text, private)
+        if frame is None or not len(frame):
+            return None
+        header_of = {c: (reading.header(c) if reading is not None else c) for c in frame.columns}
+        lay = _nx.detect(frame, header_of, _raw_frame(raw))
+        viz = rep.get("viz") if isinstance(rep.get("viz"), dict) else {"version": VIZ_VERSION, "charts": [], "refused": []}
+        before = [c for c in viz.get("charts") or [] if isinstance(c, dict)]
+        if lay is not None:
+            try:
+                _LAST_EXPLORE.clear()
+                _LAST_EXPLORE.update(_nx.ask_index(lay))       # Ask (step 4) on this table names a measure, never sums across them
+            except Exception:  # noqa: BLE001 - Ask falls back to the engine's own planner
+                _LAST_EXPLORE.clear()
+            want = [str(x) for x in ((plan or {}).get("indicators") or []) if isinstance(x, str)] if isinstance(plan, dict) else []
+            out = _nx.build(lay, prefer=want)
+            if not out.get("records"):
+                return None
+            # the registry's charts add or average a value column across rows that measure different things: replaced
+            for c in before:
+                viz.setdefault("refused", []).append({"chart": str(c.get("chart") or "")[:40],
+                                                      "columns": list((c.get("inputs") or {}).get("columns") or [])[:4],
+                                                      "why": R_INDICATOR % out["indicator"], "chosen_by": str(c.get("chosen_by") or "engine")})
+            before = []
+            why_new = EXPLORE_WHY % _nx._plural_of(out["entity"])
+        else:
+            land_of = {str(h): c for c, h in header_of.items()}
+            prim = land_of.get(str((plan or {}).get("primary") or "")) if isinstance(plan, dict) else None
+            # a panel (a country or a state a row per year, a Year column and no date): the whole and the leaders over the years
+            pan = _nx.detect_panel(frame, header_of, str((rep.get("input") or {}).get("name") or ""))
+            sv = _nx.detect_survey(frame, header_of) if pan is None else None
+            if pan is not None:
+                out = _nx.build_panel(pan, primary=prim, limit=VIZ_TABLE_MAX)
+                why_new = "Chosen by the engine: a table of members by year, read over the years and in the latest year"
+            elif sv is not None:
+                out = _nx.build_survey(sv, limit=VIZ_TABLE_MAX)
+                why_new = "Chosen by the engine: a survey's answers, each scale in its own order"
+            else:
+                # a table of things (a state, a major, a penguin a row): ranked, compared by category, its measures' links, a spread
+                tbl = _nx.detect_table(frame, header_of)
+                if tbl is None:
+                    return None
+                out = _nx.build_table(tbl, primary=prim, limit=max(2, VIZ_TABLE_MAX))
+                why_new = "Chosen by the engine: what an analyst looks at first in a table with no dates"
+            if not out.get("records"):
+                return None
+        viz["charts"] = []
+        # the AI plan's own charts first: the engine's reading of the table comes after what the visitor's plan chose
+        ai_first = [c for c in before if str(c.get("chosen_by") or "") == "ai"]
+        before = [c for c in before if c not in ai_first]
+        for c in ai_first:
+            c = dict(c)
+            _nv._place(viz, c, "ai", str(c.get("why") or ""))
+        for rec in out["records"]:
+            if len(viz["charts"]) >= VIZ_TABLE_MAX:
+                break
+            _nv._place(viz, rec, "engine", why_new)
+        def same(c: Dict[str, Any]) -> Tuple[str, Tuple[str, ...]]:
+            cols = (c.get("inputs") or {}).get("columns") or []
+            return (str(c.get("kind") or ""), tuple(sorted(re.sub(r"[^a-z0-9]", "", str(x).lower()) for x in cols)))
+        have = {same(c) for c in viz["charts"]}
+        for c in before:                              # the registry's own picks, after, while the page's limit allows
+            if len(viz["charts"]) >= VIZ_TABLE_MAX:
+                break
+            if same(c) in have:
+                continue                              # the same chart of the same columns, already drawn above
+            c = dict(c)
+            _nv._place(viz, c, str(c.get("chosen_by") or "engine"), str(c.get("why") or ""))
+        viz["chosen_by"] = "engine"
+        rep["viz"] = viz
+        rep["charts"] = [c for c in rep.get("charts") or [] if not (isinstance(c, dict) and c.get("rule") == "V")] + \
+            _nv.v2_records(viz)
+        # the flag columns (SYMBOL beside a value) are the publisher's marks, and a label's leading spaces are the table's outline (a
+        # measure indented under its total): neither is a data-quality headline
+        flags = {str(v) for v in ((lay or {}).get("flags") or {}).values()}
+        outline = lay is not None and any(int(d) > 0 for d in (lay.get("depth") or {}).values())
+        drop_ids = {str(f.get("id")) for f in rep.get("findings") or [] if isinstance(f, dict) and (
+            any(str(f.get("id") or "").startswith("health.col.%s." % c) for c in flags) or
+            (outline and str(f.get("id") or "") in ("health.col.%s.padded_values" % (lay or {}).get("label"),
+                                                     "health.col.%s.placeholder_values" % (lay or {}).get("label"))))}
+        if drop_ids:
+            rep["findings"] = [f for f in rep.get("findings") or [] if str((f or {}).get("id")) not in drop_ids]
+            keep = []
+            for c in rep.get("charts") or []:
+                if isinstance(c, dict) and c.get("type") in ("kpi_tiles", "table") and c.get("source") == "findings":
+                    d = c.get("data") or {}
+                    for k in ("tiles", "rows"):
+                        if isinstance(d.get(k), list):
+                            d[k] = [x for x in d[k] if str((x or {}).get("finding_id")) not in drop_ids]
+                    c["finding_ids"] = [x for x in c.get("finding_ids") or [] if str(x) not in drop_ids]
+                    if not (d.get("tiles") or d.get("rows")) and c.get("id") not in ("kpi", "findings_table"):
+                        continue                  # the page reads the KPI chart and the findings table always, empty or not
+                keep.append(c)
+            rep["charts"] = keep
+        if outline:
+            out["about"] += (" The leading spaces in %s are the table's outline (a measure indented under the total it is part of), "
+                             "read as such, not as a formatting error." % out["indicator_column"])
+        if flags:
+            out["about"] += (" The %s columns beside the values are the publisher's flags: a value whose flag is filled is left "
+                             "out." % _join_words(sorted({_flag_header(reading, f).split(".")[0] for f in flags})))
+        st = rep.get("story") if isinstance(rep.get("story"), dict) else None
+        if st is not None:
+            ind = [s for s in out["sentences"]]
+            if str(st.get("headline") or "").startswith(NO_DATE_HEAD) or not st.get("headline"):
+                st["headline"] = out["headline"]
+            wh = [s for s in st.get("what_happened") or [] if not str(s).startswith(NO_DATE_HEAD)]
+            st["what_happened"] = [out["about"]] + ind + wh
+            st["what_to_do"] = [s for s in st.get("what_to_do") or []
+                                if not any(f.lower() + " column" in str(s).lower() for f in
+                                           flags | {_flag_header(reading, f) for f in flags})]
+        lim = [x for x in rep.get("limitations") or []
+               if not (isinstance(x, dict) and str(x.get("text") or "").startswith("This run produced no gated facts at all"))]
+        at = 0
+        while at < len(lim) and isinstance(lim[at], dict) and lim[at].get("kind") == "data":
+            at += 1                                   # after the notes that say what the table is (its columns are years, ...)
+        lim.insert(at, {"kind": "data", "text": ("The comparisons are descriptive: each value as the file states it, with the "
+                       "publisher's 95% interval where the file gives one. A value the publisher marked (its flag column filled) is "
+                       "left out. Nothing here tests a change over time.") if lay is not None else (
+                       "The comparisons are descriptive: values, averages with bootstrap ranges, and correlations, which show what "
+                       "goes together, never what causes what. With no date, nothing here follows a change over time."),
+                       "finding_ids": []})
+        rep["limitations"] = lim
+        return {k: v for k, v in out.items() if k != "records"}
+    except Exception:  # noqa: BLE001 - the report stands without the indicator reading
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return None
+
+
+def _join_words(xs: List[str]) -> str:
+    xs = [str(x) for x in xs]
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1] if xs else ""
+
+
+def _flag_header(reading: Any, col: str) -> str:
+    try:
+        return str(reading.header(col)) if reading is not None else str(col)
+    except Exception:  # noqa: BLE001
+        return str(col)
+
+
 def _dashboard(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",
                names: Any = frozenset(), names_by: Any = None, pins: Any = None) -> Dict[str, Any]:
     """rep["dashboard"] (engine/nl_dashboard.py, CONTRACT §5.14): the Dashboard tab's design, aggregate cube and notes.
@@ -14182,6 +14746,7 @@ def own_shape_rows(data: Any, name: str, as_of: Optional[str] = None) -> str:
     try:
         data = _as_bytes(data)
         data, _t = _strip_title_block(data)
+        data, _sub = merge_two_row_header(data)
         data, _d, _n = normalize_file(data)
         _install_stubs()
         _import_engine()

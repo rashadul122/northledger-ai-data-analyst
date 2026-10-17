@@ -10,7 +10,7 @@
       <nav class="try-rail" id="try-rail" aria-label="The six steps, in order" data-fact-exempt="the step numbers of this workflow"><ol class="try-rail-list"><li><a href="#try-step-1">1 Bring your data</a></li><li><a href="#try-step-2">2 Clean</a></li><li><a href="#try-step-3">3 Analyse</a></li><li><a href="#try-step-4">4 Ask</a></li><li><a href="#try-step-5">5 Dashboard</a></li><li><a href="#try-step-6">6 Deliver</a></li></ol></nav>
       <section class="try-step" id="try-step-1" data-step="1" aria-labelledby="try-step-1-h">
         <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-1-h"><span class="try-step-n" aria-hidden="true">1</span> Bring your data <span class="try-step-st"></span></h3>
-        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Your file, your question and what may leave the browser; then what each column means and what one row is.</p>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Your file and what may leave the browser; the engine then works out what each column means and what one row is. Questions come after the analysis, in step 4.</p>
       <div class="try-start" id="try-start">
         <div class="try-drop" id="try-drop">
           <svg class="try-drop-ic" aria-hidden="true" viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M25 36V22m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -35,11 +35,6 @@
         </div>
       </div>
       <div class="try-need" id="try-need" hidden></div>
-      <div class="try-q-wrap" id="try-q-wrap" data-needs-ai>
-        <label class="try-q-label" for="try-q"><strong>Ask your question about the data (optional)</strong></label>
-        <input type="text" id="try-q" class="try-q" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. What drives the rent the most, and what does the regression table say about each driver?">
-        <p class="note">Type it before you drop the file. If you then choose "Continue with the AI", the AI reads a summary of your columns (never rows, and never a column you withhold), plans the analyses around your question, and the engine computes every number in your browser. Leave it empty and the AI proposes the goal itself; the plan also offers other questions this data can answer, one click each.</p>
-      </div>
       <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.{{r try_ai_note}}</span></p>
       <div class="try-msg" id="try-msg" role="alert" hidden data-fact-exempt="written in your browser from your own file and the engine's answer"></div>
       <div class="try-pd" id="try-pd" hidden data-fact-exempt="column names from your own file"></div>

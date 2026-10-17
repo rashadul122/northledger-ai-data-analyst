@@ -1180,6 +1180,8 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nlv .d-rng { stroke: var(--ts-1); stroke-width: 2; }
 .nlv .d-dot { fill: var(--ts-1); }
 .nlv .d-med { stroke: var(--ink); stroke-width: 2.5; }
+.nlv .nlv-ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.nlv .nlv-reft { fill: var(--muted); font-size: 12px; }
 .nlv .p-bar { fill: var(--ts-1); }
 .nlv .p-oth { fill: var(--muted); }
 .nlv .p-k80 { stroke: var(--ink); stroke-width: 2.5; }

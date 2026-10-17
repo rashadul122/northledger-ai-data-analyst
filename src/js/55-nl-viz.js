@@ -18,7 +18,7 @@
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 5, slots: 360 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, irows: 20, lines: 5, slots: 360 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }
@@ -156,6 +156,14 @@
   }
 
   /* ------------------------------------------------------------ the data a kind needs, checked before drawing */
+  // a reference line (the total member, Canada beside its provinces): {label, value, text}, or nothing
+  function refOk(r) { return r === undefined || r === null || (obj(r) && str(r.label) && fin(r.value) && str(r.text)); }
+  function refLine(r, sx, y0, y1, W) {
+    if (!obj(r)) return '';
+    var x = sx(r.value), s = r.label + ': ' + r.text, w = tw(s, 12);
+    return '<line class="nlv-ref" x1="' + f1(x) + '" x2="' + f1(x) + '" y1="' + f1(y0) + '" y2="' + f1(y1) + '"/>' +
+      txt(Math.min(W - w / 2 - 1, Math.max(w / 2 + 1, x)), y0 - 4, s, { anchor: 'middle', cls: 'nlv-reft' });
+  }
   function tableOk(t) { return obj(t) && arr(t.cols) && t.cols.length > 0 && arr(t.rows) && t.rows.every(function (r) { return arr(r); }); }
   function grid(d, k) { return arr(d[k]) && d[k].length === d.rows.length && d[k].every(function (r) { return arr(r) && r.length === d.cols.length; }); }
   var VALID = {
@@ -172,7 +180,8 @@
         d.tier.every(function (r) { return r.every(function (t) { return t === 0 || (t === Math.round(t) && Math.abs(t) <= 3); }); });
     },
     dot_range: function (d) {
-      return obj(d) && arr(d.rows) && d.rows.length >= 1 && d.rows.length <= CAP.rows && d.rows.every(function (r) {
+      // a published interval (data.interval: the publisher's 95% bounds beside each value, no median, no n) may hold up to 20 rows
+      return obj(d) && arr(d.rows) && d.rows.length >= 1 && d.rows.length <= (d.interval === true ? CAP.irows : CAP.rows) && refOk(d.ref) && d.rows.every(function (r) {
         return obj(r) && str(r.label) && pos(r.center) && pos(r.lo) && pos(r.hi) && pos(r.median) && obj(r.texts) &&
           str(r.texts.center) && str(r.texts.lo) && str(r.texts.hi) && str(r.texts.n);
       });
@@ -370,8 +379,10 @@
 
   /* ------------------------------------------------------------ dot range */
   function dotRange(rec, W) {
-    var rows = rec.data.rows, n = rows.length, all = [];
+    var rows = rec.data.rows, n = rows.length, all = [], iv = rec.data.interval === true, ref = obj(rec.data.ref) ? rec.data.ref : null;
     rows.forEach(function (r) { all.push(r.lo, r.hi, r.center, r.median); });
+    if (ref) all.push(ref.value);
+    if (iv) return intervalDots(rec, W, rows, all, ref);
     var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), pad = (hi - lo) * 0.04 || Math.abs(hi) * 0.05 || 1;
     lo -= pad; hi += pad;
     var cName = rec.measure && rec.measure.kind === 'average' ? 'average' : 'value', b = '';
@@ -415,6 +426,32 @@
         txt(Math.min(W - rw2 / 2, Math.max(rw2 / 2, mid)), ym + 17, rt, { anchor: 'middle', cls: 'nlv-t' }) + '</g>';
     });
     return { body: b, H: bot2 + 22, layout: 'narrow' };
+  }
+
+  // the publisher's own values with their 95% intervals: no median tick, no n, and the total member as a reference line
+  function intervalDots(rec, W, rows, all, ref) {
+    var n = rows.length, lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), pad = (hi - lo) * 0.04 || Math.abs(hi) * 0.05 || 1, b = '';
+    lo -= pad; hi += pad;
+    var rng = function (r) { return r.texts.lo + ' to ' + r.texts.hi; };
+    var key = function (x0, maxX) {
+      return keyRow([{ w: 10, text: 'value', mark: function (x, y) { return '<circle class="d-dot" cx="' + (x + 5) + '" cy="' + y + '" r="4"/>'; } },
+        { w: 20, text: '95% confidence interval', mark: function (x, y) { return '<line class="d-rng" x1="' + x + '" x2="' + (x + 20) + '" y1="' + y + '" y2="' + y + '"/>'; } }], x0, maxX);
+    };
+    var wide = W >= 480, RH = wide ? 28 : 46;
+    var lw = wide ? Math.min(Math.max(80, W * 0.28), 190, mx(rows.map(function (r) { return tw(r.label, 12); })) + 10) : 0;
+    var vw = wide ? mx(rows.map(function (r) { return tw(r.texts.center, 12, 650); })) + 12 : 0;
+    var L = wide ? lw + 10 : 6, R = W - (wide ? vw : 6) - 4;
+    var k = key(L, W), T = k.h + (ref ? 22 : 8), x = scale(lo, hi, L, R), bot = T + n * RH;
+    b += k.svg + xAxis(x, lo, hi, L, R, T, bot, W) + refLine(ref, x, T, bot, W);
+    rows.forEach(function (r, i) {
+      var y = T + i * RH, ym = wide ? y + RH / 2 + 2 : y + 32, cx = x(r.center);
+      var tip = r.label + ': ' + r.texts.center + ' (95% interval ' + rng(r) + ')';
+      b += '<g data-tip="' + esc(tip) + '">' + (wide ? txt(0, ym + 4, r.label, { cls: 'nlv-t', maxW: lw }) : txt(0, y + 13, r.label + ': ' + r.texts.center, { cls: 'nlv-t', maxW: W })) +
+        '<line class="d-rng" x1="' + f1(x(r.lo)) + '" x2="' + f1(x(r.hi)) + '" y1="' + ym + '" y2="' + ym + '"/>' +
+        '<circle class="d-dot" cx="' + f1(cx) + '" cy="' + ym + '" r="4.5"/>' +
+        (wide ? txt(W, ym + 4, r.texts.center, { anchor: 'end', cls: 'vlab' }) : '') + '</g>';
+    });
+    return { body: b, H: bot + 22, layout: wide ? 'interval, wide' : 'interval, narrow' };
   }
 
   /* ------------------------------------------------------------ pareto */

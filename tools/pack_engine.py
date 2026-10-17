@@ -150,6 +150,9 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the charts chosen from the data (the chart registry, CONTRACT §5.9), imported by nl_browser.run(),
                  # _validate_plan, profile_for_ai and results_for_ai
                  "nl_viz.py": "nl_viz.py",
+                 # a table that is not a time series (universal track, 17 Oct 2026): an indicator table compared one measure at a
+                 # time across its places, imported by nl_browser._explore
+                 "nl_explore.py": "nl_explore.py",
                  # the semantic layer of a statistical table (WAVE 4, track A1: CONTRACT §5.10), imported by nl_browser.run(),
                  # profile_for_ai, _validate_plan, nl_scenarios.build_structure and nl_viz
                  "nl_structure.py": "nl_structure.py",

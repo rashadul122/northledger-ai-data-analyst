@@ -1328,6 +1328,8 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nlv .d-rng { stroke: var(--ts-1); stroke-width: 2; }
 .nlv .d-dot { fill: var(--ts-1); }
 .nlv .d-med { stroke: var(--ink); stroke-width: 2.5; }
+.nlv .nlv-ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.nlv .nlv-reft { fill: var(--muted); font-size: 12px; }
 .nlv .p-bar { fill: var(--ts-1); }
 .nlv .p-oth { fill: var(--muted); }
 .nlv .p-k80 { stroke: var(--ink); stroke-width: 2.5; }
@@ -1706,7 +1708,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 07:08:21 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 10:23:56 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2116,7 +2118,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
       <nav class="try-rail" id="try-rail" aria-label="The six steps, in order" data-fact-exempt="the step numbers of this workflow"><ol class="try-rail-list"><li><a href="#try-step-1">1 Bring your data</a></li><li><a href="#try-step-2">2 Clean</a></li><li><a href="#try-step-3">3 Analyse</a></li><li><a href="#try-step-4">4 Ask</a></li><li><a href="#try-step-5">5 Dashboard</a></li><li><a href="#try-step-6">6 Deliver</a></li></ol></nav>
       <section class="try-step" id="try-step-1" data-step="1" aria-labelledby="try-step-1-h">
         <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-1-h"><span class="try-step-n" aria-hidden="true">1</span> Bring your data <span class="try-step-st"></span></h3>
-        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Your file, your question and what may leave the browser; then what each column means and what one row is.</p>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Your file and what may leave the browser; the engine then works out what each column means and what one row is. Questions come after the analysis, in step 4.</p>
       <div class="try-start" id="try-start">
         <div class="try-drop" id="try-drop">
           <svg class="try-drop-ic" aria-hidden="true" viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M25 36V22m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -2141,11 +2143,6 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
         </div>
       </div>
       <div class="try-need" id="try-need" hidden></div>
-      <div class="try-q-wrap" id="try-q-wrap" data-needs-ai>
-        <label class="try-q-label" for="try-q"><strong>Ask your question about the data (optional)</strong></label>
-        <input type="text" id="try-q" class="try-q" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. What drives the rent the most, and what does the regression table say about each driver?">
-        <p class="note">Type it before you drop the file. If you then choose "Continue with the AI", the AI reads a summary of your columns (never rows, and never a column you withhold), plans the analyses around your question, and the engine computes every number in your browser. Leave it empty and the AI proposes the goal itself; the plan also offers other questions this data can answer, one click each.</p>
-      </div>
       <p class="try-privacy"><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span><strong>Runs in your browser. Your file is not uploaded anywhere.</strong> The first run fetches the engine's Python runtime (Pyodide) from cdn.jsdelivr.net, the only other address this demo contacts, and your file never goes with it.<span class="try-ai-note" data-needs-ai> The AI is used only if you choose "Continue with the AI". It plans from a summary of your columns, never rows; a column you withhold is never sent or named, and a personal column you keep is sent only if you tick the box that names it. The engine runs the plan and computes every figure; the AI corrects its plan once if the engine finds a problem, then writes the report from the engine's results.</span></span></p>
       <div class="try-msg" id="try-msg" role="alert" hidden data-fact-exempt="written in your browser from your own file and the engine's answer"></div>
       <div class="try-pd" id="try-pd" hidden data-fact-exempt="column names from your own file"></div>
@@ -2458,7 +2455,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 07:08:21 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 10:23:56 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -9341,7 +9338,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // first and last month, and for a text or date column of at most 300 distinct short values its commonest
     // values and every value; never the file's name (T.planProfile)
     var AI_CONSENT = ['Nothing goes to an AI unless you choose "Continue with the AI".',
-      'Then a summary of your columns goes to DeepSeek through this site\'s proxy to plan the analysis: each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values.',
+      'Then a summary of your columns goes to DeepSeek through this site\'s proxy to plan the analysis: each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values. For a table whose rows each measure something different (a census profile: a measure in each row, for each place), also the names of up to 60 of its measures, so the AI can choose which to compare.',
       'Never rows.',
       'A column you withhold is left out and never named; for a coded column the AI is told only its name, type and counts, never its values or range.',
       'A flagged column you keep is sent like any other column, values included, but only after you tick the box that names it.',
@@ -12380,7 +12377,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     hbar: {
       ok: function (rec) {
         var d = rec.data;
-        return gObj(d) && gArr(d.series) && d.series.length >= 1 && d.series.length <= 2 && d.series.every(gStr) && gArr(d.rows) && d.rows.length >= 1 && d.rows.length <= 12 &&
+        return gObj(d) && gArr(d.series) && d.series.length >= 1 && d.series.length <= 2 && d.series.every(gStr) && gArr(d.rows) && d.rows.length >= 1 && d.rows.length <= 20 &&
           d.rows.every(function (r) { return gObj(r) && gStr(r.label) && gArr(r.values) && r.values.length === d.series.length && r.values.every(gNum) && gArr(r.texts) && r.texts.length === d.series.length && r.texts.every(gStr); });
       },
       draw: function (rec, W) {
@@ -13717,7 +13714,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   NLV.kinds = KINDS.slice();
   var GLYPH = { 1: '○', 2: '◐', 3: '●' };
   // the display caps of spec.json (caps): a record over them is not drawn as a chart, its table is shown
-  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, lines: 5, slots: 360 };
+  var CAP = { heatRows: 12, heatCols: 24, steps: 14, bars: 20, rows: 12, irows: 20, lines: 5, slots: 360 };
 
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function arr(v) { return Array.isArray(v); }
@@ -13855,6 +13852,14 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   }
 
   /* ------------------------------------------------------------ the data a kind needs, checked before drawing */
+  // a reference line (the total member, Canada beside its provinces): {label, value, text}, or nothing
+  function refOk(r) { return r === undefined || r === null || (obj(r) && str(r.label) && fin(r.value) && str(r.text)); }
+  function refLine(r, sx, y0, y1, W) {
+    if (!obj(r)) return '';
+    var x = sx(r.value), s = r.label + ': ' + r.text, w = tw(s, 12);
+    return '<line class="nlv-ref" x1="' + f1(x) + '" x2="' + f1(x) + '" y1="' + f1(y0) + '" y2="' + f1(y1) + '"/>' +
+      txt(Math.min(W - w / 2 - 1, Math.max(w / 2 + 1, x)), y0 - 4, s, { anchor: 'middle', cls: 'nlv-reft' });
+  }
   function tableOk(t) { return obj(t) && arr(t.cols) && t.cols.length > 0 && arr(t.rows) && t.rows.every(function (r) { return arr(r); }); }
   function grid(d, k) { return arr(d[k]) && d[k].length === d.rows.length && d[k].every(function (r) { return arr(r) && r.length === d.cols.length; }); }
   var VALID = {
@@ -13871,7 +13876,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         d.tier.every(function (r) { return r.every(function (t) { return t === 0 || (t === Math.round(t) && Math.abs(t) <= 3); }); });
     },
     dot_range: function (d) {
-      return obj(d) && arr(d.rows) && d.rows.length >= 1 && d.rows.length <= CAP.rows && d.rows.every(function (r) {
+      // a published interval (data.interval: the publisher's 95% bounds beside each value, no median, no n) may hold up to 20 rows
+      return obj(d) && arr(d.rows) && d.rows.length >= 1 && d.rows.length <= (d.interval === true ? CAP.irows : CAP.rows) && refOk(d.ref) && d.rows.every(function (r) {
         return obj(r) && str(r.label) && pos(r.center) && pos(r.lo) && pos(r.hi) && pos(r.median) && obj(r.texts) &&
           str(r.texts.center) && str(r.texts.lo) && str(r.texts.hi) && str(r.texts.n);
       });
@@ -14069,8 +14075,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
 
   /* ------------------------------------------------------------ dot range */
   function dotRange(rec, W) {
-    var rows = rec.data.rows, n = rows.length, all = [];
+    var rows = rec.data.rows, n = rows.length, all = [], iv = rec.data.interval === true, ref = obj(rec.data.ref) ? rec.data.ref : null;
     rows.forEach(function (r) { all.push(r.lo, r.hi, r.center, r.median); });
+    if (ref) all.push(ref.value);
+    if (iv) return intervalDots(rec, W, rows, all, ref);
     var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), pad = (hi - lo) * 0.04 || Math.abs(hi) * 0.05 || 1;
     lo -= pad; hi += pad;
     var cName = rec.measure && rec.measure.kind === 'average' ? 'average' : 'value', b = '';
@@ -14114,6 +14122,32 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         txt(Math.min(W - rw2 / 2, Math.max(rw2 / 2, mid)), ym + 17, rt, { anchor: 'middle', cls: 'nlv-t' }) + '</g>';
     });
     return { body: b, H: bot2 + 22, layout: 'narrow' };
+  }
+
+  // the publisher's own values with their 95% intervals: no median tick, no n, and the total member as a reference line
+  function intervalDots(rec, W, rows, all, ref) {
+    var n = rows.length, lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), pad = (hi - lo) * 0.04 || Math.abs(hi) * 0.05 || 1, b = '';
+    lo -= pad; hi += pad;
+    var rng = function (r) { return r.texts.lo + ' to ' + r.texts.hi; };
+    var key = function (x0, maxX) {
+      return keyRow([{ w: 10, text: 'value', mark: function (x, y) { return '<circle class="d-dot" cx="' + (x + 5) + '" cy="' + y + '" r="4"/>'; } },
+        { w: 20, text: '95% confidence interval', mark: function (x, y) { return '<line class="d-rng" x1="' + x + '" x2="' + (x + 20) + '" y1="' + y + '" y2="' + y + '"/>'; } }], x0, maxX);
+    };
+    var wide = W >= 480, RH = wide ? 28 : 46;
+    var lw = wide ? Math.min(Math.max(80, W * 0.28), 190, mx(rows.map(function (r) { return tw(r.label, 12); })) + 10) : 0;
+    var vw = wide ? mx(rows.map(function (r) { return tw(r.texts.center, 12, 650); })) + 12 : 0;
+    var L = wide ? lw + 10 : 6, R = W - (wide ? vw : 6) - 4;
+    var k = key(L, W), T = k.h + (ref ? 22 : 8), x = scale(lo, hi, L, R), bot = T + n * RH;
+    b += k.svg + xAxis(x, lo, hi, L, R, T, bot, W) + refLine(ref, x, T, bot, W);
+    rows.forEach(function (r, i) {
+      var y = T + i * RH, ym = wide ? y + RH / 2 + 2 : y + 32, cx = x(r.center);
+      var tip = r.label + ': ' + r.texts.center + ' (95% interval ' + rng(r) + ')';
+      b += '<g data-tip="' + esc(tip) + '">' + (wide ? txt(0, ym + 4, r.label, { cls: 'nlv-t', maxW: lw }) : txt(0, y + 13, r.label + ': ' + r.texts.center, { cls: 'nlv-t', maxW: W })) +
+        '<line class="d-rng" x1="' + f1(x(r.lo)) + '" x2="' + f1(x(r.hi)) + '" y1="' + ym + '" y2="' + ym + '"/>' +
+        '<circle class="d-dot" cx="' + f1(cx) + '" cy="' + ym + '" r="4.5"/>' +
+        (wide ? txt(W, ym + 4, r.texts.center, { anchor: 'end', cls: 'vlab' }) : '') + '</g>';
+    });
+    return { body: b, H: bot + 22, layout: wide ? 'interval, wide' : 'interval, narrow' };
   }
 
   /* ------------------------------------------------------------ pareto */

@@ -1367,7 +1367,6 @@ check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
   const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
   try {
     p = await openTry(c2, { stubReport: rep, proxy: 'set', proxyReply: reply });
-    await p.fill('#try-q', 'Which units pay late?');
     await p.click('#try-sample');
     await tryUntil(p, '#try-pd:not([hidden])');
     ok(!proxyReqs(c2).length, 'the proxy was contacted before the click');
@@ -1377,7 +1376,7 @@ check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
     const plans = posts(c2, 'plan');
     ok(plans.length === 1, plans.length + ' /plan calls after one click');
     const pb = JSON.parse(plans[0].body);
-    ok(Object.keys(pb).every((k) => ['objective', 'profile', 'profile_hash'].indexOf(k) >= 0) && pb.objective === 'Which units pay late?', 'the /plan body carries more than {objective, profile, profile_hash}: ' + Object.keys(pb));
+    ok(Object.keys(pb).every((k) => ['objective', 'profile', 'profile_hash'].indexOf(k) >= 0) && !pb.objective, 'the /plan body carries more than {objective, profile, profile_hash}, or a question asked before the analysis: ' + Object.keys(pb) + ' ' + pb.objective);
     ok(!/customer_email/.test(plans[0].body) && pb.profile.columns.length === 3 && pb.profile.time && pb.profile.time.column === 'order_date' && pb.profile.analysis_limits.length === 2,
       'the /plan profile names the withheld customer_email, or lost the other columns, the time block or the limits: ' + plans[0].body.slice(0, 400));
     await p.click('#try-plan-edit');
@@ -1477,27 +1476,20 @@ check('try-a-tripped-gate-leads-with-what-to-do-and-says-it-once', DESK, async (
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
-check('try-question-box-only-with-ai-and-locked-during-a-run', DESK, async (ctx) => {
+check('try-no-question-before-the-analysis-ask-comes-after', DESK, async (ctx) => {
+  // owner, 17 Oct 2026: nothing is asked before the file is analysed; questions belong to step 4 (Ask), after the report
   const rep = stubReport();
-  let p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
-  ok(await p.isHidden('#try-q-wrap'), 'the question box shows although no AI is offered');
-  await runStub(p);
-  ok(!(await p.$('#try-report .tr-q')), 'the report echoes a question that nothing used');
-  await p.close();
-  const ctx2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
-  try {
-    p = await openTry(ctx2, { stubReport: rep, proxy: 'set' });
-    ok(await p.isVisible('#try-q-wrap'), 'with the AI offered, the question box is hidden');
-    const qText = await p.textContent('#try-q-wrap');
-    ok(/Continue with the AI/.test(qText) && /plans the analyses around your question/.test(qText), 'the question box does not say what it is used for: ' + qText.slice(0, 200));
-    await p.fill('#try-q', 'Which units pay late?');
-    await p.click('#try-sample');
-    await tryUntil(p, '#try-pd:not([hidden])');
-    ok(await p.isDisabled('#try-q'), 'the question box can be edited while the engine runs');
-    await p.click('#try-pd-noai');
-    await tryUntil(p, '#try-report:not([hidden])');
-    ok(!(await p.isDisabled('#try-q')), 'the question box stays locked after the report');
-  } finally { await ctx2.close(); }
+  for (const proxy of ['unset', 'set']) {
+    const c = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
+    try {
+      const p = await openTry(c, { stubReport: rep, proxy });
+      ok(!(await p.$('#try-q')) && !(await p.$('#try-q-wrap')), 'a question box is still offered before the file (' + proxy + ')');
+      const intro = (await p.textContent('#try')).replace(/\s+/g, ' ');
+      ok(!/Ask your question about the data/.test(intro), 'the page still asks for a question before the analysis (' + proxy + ')');
+      await runStub(p);
+      ok(!(await p.$('#try-report .tr-q')), 'the report echoes a question nobody asked');
+    } finally { await c.close(); }
+  }
 });
 
 check('try-the-visitor-may-change-the-ai-plan-after-the-engine-ran-it', DESK, async (ctx) => {
@@ -1796,6 +1788,7 @@ check('try-a-replan-that-keeps-the-plan-says-so', DESK, async (ctx) => {
 const PRIVACY_PROMISE = [
   'Nothing goes to an AI unless you choose "Continue with the AI".',
   'each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values.',
+  'For a table whose rows each measure something different (a census profile: a measure in each row, for each place), also the names of up to 60 of its measures, so the AI can choose which to compare.',
   'Never rows.',
   'A column you withhold is left out and never named; for a coded column the AI is told only its name, type and counts, never its values or range.',
   'A flagged column you keep is sent like any other column, values included, but only after you tick the box that names it.',
@@ -1809,8 +1802,6 @@ check('try-consent-text-states-the-privacy-promise', DESK, async (ctx) => {
     const rep = stubReport(); rep.__profile = true;
     if (!flagged) rep.privacy.flagged = [];
     const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: () => ({ status: 503, json: { error: 'x' } }) });
-    const q = (await p.textContent('#try-q-wrap')).replace(/\s+/g, ' ');
-    ok(/reads a summary of your columns \(never rows, and never a column you withhold\)/.test(q), 'the question box does not state what the AI reads: ' + q.slice(0, 300));
     await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])');
     const note = (await p.textContent('#try-pd .pd-ai-note')).replace(/\s+/g, ' ');
     const missing = PRIVACY_PROMISE.filter((x) => note.indexOf(x) < 0);

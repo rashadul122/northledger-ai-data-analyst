@@ -2772,8 +2772,10 @@ def _b_line(ctx: Ctx, cols: Optional[List[str]]) -> Dict[str, Any]:
         rows_t = [[_show_p(p)] + [txt[j][i] for j in range(len(ser))] for i, p in enumerate(P)]
         cols_t = [GRAIN_LABEL[gw]] + ([s["label"] for s in ser] if seg is not None else
                                       [NB._cap(words) + (" (%s)" % unit if unit and unit != "%" else "")])
-        if fan:
-            fw = fan[1]["forward"]
+        # the forecast's months after the last month drawn (the universal check, 17 Oct 2026: a forecast that began ON the last month, a
+        # month still in progress, failed the shared report's check and the chart went to the share link as its table)
+        fw = [p for p in (fan[1]["forward"] if fan else []) if P and str(p["month"]) > str(P[-1])]
+        if fw:
             lvl = int(round(100 * float(fan[1].get("level") or 0.8)))
             fc = {"x": [str(p["month"]) for p in fw], "values": [_r6(float(p["value"])) for p in fw],
                   "lo": [_r6(float(p["lo"])) for p in fw], "hi": [_r6(float(p["hi"])) for p in fw], "level": lvl}

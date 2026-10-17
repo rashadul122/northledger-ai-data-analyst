@@ -21,7 +21,7 @@
                                                 -> {type: 'cleaned', id, out: {ok, error, csv, log, summary, card}}
      {type: 'sales', id, options}               the quarterly sales report again with the visitor's settings
                                                 (nl_browser.sales_json): options {sha256, settings} -> {type: 'sales', id,
-                                                out: the report's sales block, CONTRACT §5.18}
+                                                out: the report's sales block, CONTRACT §5.19}
      {type: 'run',  id, options}                the visitor's decisions: the same report if every
                                                 flagged column stays withheld, else a new run
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
@@ -270,7 +270,7 @@ function onClean(m) {
   } catch (e) { out = { ok: false, error: lastLine(e) || 'The cleaner stopped.' }; }
   post({ type: 'cleaned', id: m.id, out: out });
 }
-// The quarterly sales report (engine/nl_sales.py through nl_browser.sales_json, CONTRACT §5.18): the last run's kept rows
+// The quarterly sales report (engine/nl_sales.py through nl_browser.sales_json, CONTRACT §5.19): the last run's kept rows
 // again with the visitor's settings (fiscal year start, quarter, target, columns). Nothing leaves this worker.
 function onSales(m) {
   var out = null;

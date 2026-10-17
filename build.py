@@ -76,7 +76,7 @@ TRY_SAMPLE = "engine/sample-messy.csv"
 TRY_SAMPLE_SALES = "engine/sample-sales-synthetic.csv"
 TRY_SAMPLE_SALES_AS_OF = "2026-10-01"
 # the same invented company's SYNTHETIC CRM deals export (tools/make_sample_sales.py; the quarterly sales report, CONTRACT
-# §5.18), analysed as of its export date so 2025 Q4 against Q3 stays the report it shows
+# §5.19), analysed as of its export date so 2025 Q4 against Q3 stays the report it shows
 TRY_SAMPLE_CRM = "engine/sample-crm-deals-synthetic.csv"
 TRY_SAMPLE_CRM_AS_OF = "2026-01-05"
 PACK_ENGINE = os.path.join(ROOT, "tools", "pack_engine.py")

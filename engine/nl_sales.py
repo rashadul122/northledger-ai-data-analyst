@@ -1,4 +1,4 @@
-"""The quarterly sales report from a CRM deals export (Track F of plan/DASHBOARD-DESIGN.md; CONTRACT-v2 section 5.18).
+"""The quarterly sales report from a CRM deals export (Track F of plan/DASHBOARD-DESIGN.md; CONTRACT-v2 section 5.19).
 
 The visitor uploads the deals (opportunities) their CRM exports: Salesforce (Reports > Opportunities > Export), HubSpot
 (Deals > Export), Pipedrive or Zoho (the deals list's export). The engine has already read, cleaned and checked the file;
@@ -486,12 +486,25 @@ def _cell(v: Optional[float], n: int, fmt: Any) -> str:
     return "n/a" if v is None else fmt(v)
 
 
-def build(frame: Any, header_of: Dict[str, str], as_of: Any, settings: Optional[Dict[str, Any]] = None,
+def build(frame: Any, header_of: Any = None, as_of: Any = None, settings: Optional[Dict[str, Any]] = None,
           plan_by: Optional[Dict[str, Dict[str, Any]]] = None, private: Optional[Dict[str, str]] = None,
           viz: Any = None) -> Dict[str, Any]:
-    """The quarterly sales report (CONTRACT-v2 5.18). frame: the kept rows (text cells, landed names), with the
+    """The quarterly sales report (CONTRACT-v2 5.19). frame: the kept rows (text cells, landed names), with the
     owner column only when the visitor kept or coded it; private: {landed: "keep" | "code" | "withhold"} of the
-    flagged columns. Never raises."""
+    flagged columns. Never raises.
+
+    Also called as build(inputs, settings) by the step-6 registry's engine call (Track E's nl_browser.deliver_json,
+    DELIVER_MODULES["sales-report"]): inputs = nl_browser.input_frames() ([{role, primary, df, ...}]); the input whose
+    role is "deals" is read, else the main one; settings may carry as_of."""
+    if isinstance(frame, list):
+        inputs, settings = frame, (header_of if isinstance(header_of, dict) else settings) or {}
+        pick = next((i for i in inputs if isinstance(i, dict) and i.get("role") == "deals"), None) or \
+            next((i for i in inputs if isinstance(i, dict) and i.get("primary")), None)
+        if pick is None or pick.get("df") is None:
+            return blank("no deals export among the files")
+        df = pick["df"].astype(str)
+        frame, header_of = df, {c: c for c in df.columns}
+        as_of = settings.get("as_of") or as_of or dt.date.today().isoformat()
     try:
         return _build(frame, header_of, as_of, settings or {}, plan_by or {}, private or {}, viz)
     except Exception as exc:  # noqa: BLE001 - a plain refusal, never a traceback

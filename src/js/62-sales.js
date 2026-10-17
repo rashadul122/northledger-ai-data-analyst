@@ -1,4 +1,4 @@
-/* The quarterly sales report (Track F of plan/DASHBOARD-DESIGN.md; CONTRACT-v2 section 5.18): one option of step 6's
+/* The quarterly sales report (Track F of plan/DASHBOARD-DESIGN.md; CONTRACT-v2 section 5.19): one option of step 6's
    report menu, window.NLDeliver.register({id: 'sales-report', ...}). The engine (engine/nl_sales.py) computed the report
    in the run, from the rows it kept (rep.sales); this file only places the engine's figures and words:
 
@@ -17,9 +17,12 @@
    AI call, nothing sent. Downloads: Word (.docx, the business style: serif, dense, the charts as PNG in the text column)
    and HTML (print it to PDF). Every figure is the engine's; nothing here computes one.
 
-   The step-6 registry (window.NLDeliver) is Track E's; until it is on the page this file brings a minimal one of the same
-   shape (register / list / pick, the "Report types" menu in step 6, the "What do you need?" checklist in step 1), made only
-   when none exists. This file is ASCII only. */
+   The step-6 registry (window.NLDeliver) is Track E's (src/js/60-deliver.js, plan/DASHBOARD-DESIGN.md "Batch 2 shared
+   interface AS BUILT"): this option registers on it when it is on the page, or queues itself in window.NLDeliverQueue
+   (which 60-deliver.js reads on boot); only when no registry has appeared by DOMContentLoaded does this file bring a
+   minimal one of the same shape (register / list / choose, the "Report types" menu in step 6, the "What do you need?"
+   checklist in step 1). With Track E's registry, the registry draws the settings form and calls render again with the
+   visitor's settings; with the minimal one, the card draws its own. This file is ASCII only. */
 (function (root) {
   'use strict';
   var NLSales = {};
@@ -223,8 +226,9 @@
       drawPick(); if (last) drawMenu(last);
     };
     D.list = function () { return opts.slice(); };
-    D.pick = function (id) { picked = id || ''; drawPick(); if (last) drawMenu(last); };
-    D.picked = function () { return picked; };
+    D.choose = D.pick = function (id) { picked = id || ''; drawPick(); if (last) drawMenu(last); };
+    D.chosen = function () { return picked; };
+    D.get = function (id) { return opts.filter(function (x) { return x.id === id; })[0] || null; };
     function drawPick() {
       var slot = $('try-step-1-slot');
       if (!slot) return;
@@ -258,7 +262,6 @@
     }
     D._drawMenu = drawMenu;
     doc.addEventListener('nl:report', function (e) { drawMenu(e.detail && e.detail.report); });
-    doc.addEventListener('nl:pick-report', function (e) { if (e.detail && e.detail.id) D.pick(e.detail.id); });
     root.NLDeliver = D;
     return D;
   }
@@ -281,7 +284,13 @@
   function render(slot, rep, settings) {
     if (!slot) return;
     var sha = (rep && rep.input && rep.input.sha256) || '';
-    if (sha !== state.sha) { state.sha = sha; state.rec = rep && rep.sales; state.settings = Object.assign({}, settings || {}); }
+    if (sha !== state.sha) { state.sha = sha; state.rec = rep && rep.sales; state.settings = {}; state.asked = ''; }
+    // Track E's registry calls render again with the visitor's settings (its own form): ask the engine once per change
+    var own = !root.NLDeliver || root.NLDeliver._shim, key = JSON.stringify(settings || {});
+    if (!own && settings && Object.keys(settings).length && key !== state.asked && !state.busy) {
+      state.asked = key;
+      ask(slot, rep, settings);
+    }
     var rec = state.rec || {};
     var h = '<section class="sr-card" id="try-sales" aria-labelledby="try-sales-h"><h4 class="sr-card-h" id="try-sales-h">Quarterly sales report</h4>';
     if (!rec.ok) {
@@ -289,7 +298,7 @@
     } else {
       h += '<p class="sr-status" id="try-sales-status" role="status">' + esc(rec.quarter.label) + ' against ' + esc(rec.quarter.prev_label) + ', from the deals the engine kept; every figure is the engine\'s. Nothing is sent anywhere.</p>';
     }
-    h += colsHtml(rec) + setHtml(rec);
+    h += colsHtml(rec) + (!root.NLDeliver || root.NLDeliver._shim ? setHtml(rec) : '');
     if (rec.ok) {
       h += '<div class="ai-rep-actions sr-actions"><button type="button" class="btn btn-primary" data-sales-dl="docx">Download Word (.docx)</button>' +
         '<button type="button" class="btn btn-ghost" data-sales-dl="html">Download HTML (print to PDF)</button><span class="try-share-out" id="try-sales-out" hidden></span></div>' +
@@ -342,24 +351,25 @@
     return { fiscal_start: +v('sr-fs') || 1, quarter: v('sr-q'), target: v('sr-target'), stall_days: +v('sr-stall') || 30, currency: v('sr-cur'),
       rep_names: nm ? (nm.disabled ? true : nm.checked) : true, columns: cols };
   }
+  // the report again with these settings, from the run's own worker (no AI call, nothing sent)
+  function ask(slot, rep, set) {
+    var st = $('try-sales-status');
+    state.busy = true;
+    if (st) st.textContent = 'Updating the report in this browser\u2026';
+    var T = root.NLTry;
+    if (!T || !T.salesReport) { state.busy = false; if (st) st.textContent = 'The engine is not on this page any more: run the file again.'; return; }
+    T.salesReport(set, function (out) {
+      state.busy = false;
+      if (!out) { var s2 = $('try-sales-status'); if (s2) s2.textContent = 'The engine no longer holds this file: run it again.'; return; }
+      state.rec = out; state.settings = set; out.chosen = { quarter: set.quarter };
+      render(slot, rep, set);
+      var s3 = $('try-sales-status');
+      if (s3) s3.textContent = (out.ok ? out.quarter.label + ' against ' + out.quarter.prev_label + ', with your settings. ' : str(out.why) + ' ') + 'No AI was asked and nothing was sent.';
+    });
+  }
   function bind(slot, rep) {
     var up = slot.querySelector('[data-sales-act="update"]');
-    if (up) up.addEventListener('click', function () {
-      if (state.busy) return;
-      var set = collect(slot), st = $('try-sales-status');
-      state.busy = true;
-      if (st) st.textContent = 'Updating the report in this browser…';
-      var T = root.NLTry;
-      if (!T || !T.salesReport) { state.busy = false; if (st) st.textContent = 'The engine is not on this page any more: run the file again.'; return; }
-      T.salesReport(set, function (out) {
-        state.busy = false;
-        if (!out) { var s2 = $('try-sales-status'); if (s2) s2.textContent = 'The engine no longer holds this file: run it again.'; return; }
-        state.rec = out; state.settings = set; out.chosen = { quarter: set.quarter };
-        render(slot, rep, set);
-        var s3 = $('try-sales-status');
-        if (s3) s3.textContent = (out.ok ? out.quarter.label + ' against ' + out.quarter.prev_label + ', with your settings. ' : str(out.why) + ' ') + 'No AI was asked and nothing was sent.';
-      });
-    });
+    if (up) up.addEventListener('click', function () { if (!state.busy) ask(slot, rep, collect(slot)); });
     Array.prototype.forEach.call(slot.querySelectorAll('[data-sales-dl]'), function (b) {
       b.addEventListener('click', function () { download(b.getAttribute('data-sales-dl')); });
     });
@@ -409,12 +419,25 @@
   var howHtml = '<details class="sr-how"><summary>How to export the deals from your CRM</summary><dl>' +
     NLSales.HOW.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
     '</dl><p class="note">Export every deal of the two quarters you want to compare, won and lost, and the deals open today. A CSV or an Excel file works; it stays in your browser.</p></details>';
-  NLSales.option = { id: 'sales-report', title: 'Quarterly sales report', blurb: 'The quarter against the one before from a CRM deals export: revenue, deals and deal size, segments, cycle, pipeline, top reps.',
+  NLSales.option = { id: 'sales-report', order: 20, roles: ['deals'], title: 'Quarterly sales report', blurb: 'The quarter against the one before from a CRM deals export: revenue, deals and deal size, segments, cycle, pipeline, top reps.',
     needs: NLSales.needs(), how: howHtml, fits: fits,
-    settings: [{ key: 'fiscal_start', label: 'Fiscal year starts (month)', kind: 'choice', default: 1 }, { key: 'quarter', label: 'Quarter', kind: 'choice', default: '' },
-      { key: 'target', label: 'Target for the next quarter', kind: 'number', default: '' }, { key: 'stall_days', label: 'Stalled after (days)', kind: 'number', default: 30 },
-      { key: 'currency', label: 'Currency', kind: 'choice', default: '' }, { key: 'columns', label: 'The columns the report reads', kind: 'columns', default: {} }],
+    settings: [{ key: 'fiscal_start', label: 'Fiscal year starts (month)', kind: 'choice', default: 1, options: MONTHS.map(function (m, i) { return { value: i + 1, label: m }; }) },
+      { key: 'quarter', label: 'Quarter (blank: the latest complete one)', kind: 'text', default: '', help: 'e.g. 2025 Q4, or FY2026 Q3 with a fiscal year' },
+      { key: 'target', label: 'Target for the next quarter', kind: 'number', default: '', min: 0, help: 'optional: the pipeline\'s coverage of it' },
+      { key: 'stall_days', label: 'Stalled after (days without a stage change)', kind: 'number', default: 30, min: 7, max: 365, step: 1 },
+      { key: 'currency', label: 'Currency', kind: 'choice', default: '', options: CURS.map(function (c) { return { value: c, label: c || 'none (plain numbers)' }; }) },
+      { key: 'columns', label: 'The columns the report reads', kind: 'columns', default: {} }],
     render: render };
-  function boot() { registry().register(NLSales.option); }
-  if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', boot); else boot();
+  // Track E's registry when it is there; else the queue it reads on boot; else, once the page is loaded, the minimal one
+  if (root.NLDeliver && root.NLDeliver.register) root.NLDeliver.register(NLSales.option);
+  else {
+    (root.NLDeliverQueue = root.NLDeliverQueue || []).push(NLSales.option);
+    var boot = function () {
+      if (root.NLDeliver && root.NLDeliver.list && root.NLDeliver.list().some(function (o) { return o.id === 'sales-report'; })) return;
+      var D = registry();
+      arr(root.NLDeliverQueue).forEach(function (o) { D.register(o); });
+      root.NLDeliverQueue = [];
+    };
+    if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+  }
 })(typeof window !== 'undefined' ? window : typeof globalThis !== 'undefined' ? globalThis : this);

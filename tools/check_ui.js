@@ -1119,7 +1119,7 @@ self.onmessage = function (e) {
     var C = (m.options && m.options.rules) ? REPORT.__cleanEdited : REPORT.__clean;
     if (C) { C = JSON.parse(JSON.stringify(C)); C.__echo = m.options || null; self.__lastClean = m.options; }
     self.postMessage({ type: 'cleaned', id: m.id, out: C || null });
-  } else if (m.type === 'sales') {          // the quarterly sales report with the visitor's settings (CONTRACT §5.18)
+  } else if (m.type === 'sales') {          // the quarterly sales report with the visitor's settings (CONTRACT §5.19)
     self.__lastSales = m.options || null;
     self.postMessage({ type: 'sales', id: m.id, out: REPORT.__salesNext || REPORT.sales || null });
   } else if (m.type === 'plan') {           // Ask your data without an AI planner: the engine's own plan (CONTRACT §5.16)
@@ -5053,7 +5053,7 @@ check('clean-my-file-dark', DESK, async (ctx) => {
   await cleanChecks(ctx, 'desktop-dark');
 }, { acceptDownloads: true, colorScheme: 'dark' });
 
-/* ------------------------------------------------------------ the quarterly sales report (Track F, CONTRACT §5.18)
+/* ------------------------------------------------------------ the quarterly sales report (Track F, CONTRACT §5.19)
    The SYNTHETIC CRM deals export's real report (tools/make_sample_sales.py, run natively with the owner column kept) and
    its report again with the visitor's settings (nl_browser.sales_json: fiscal year from April, a target), handed to the
    stand-in worker. Step 1 offers the report type with its checklist; step 6's report menu (window.NLDeliver, the registry)

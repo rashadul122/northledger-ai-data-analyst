@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for engine/nl_sales.py, the quarterly sales report from a CRM deals export (Track F; CONTRACT-v2 §5.18).
+"""Tests for engine/nl_sales.py, the quarterly sales report from a CRM deals export (Track F; CONTRACT-v2 §5.19).
 
     NL_ENGINE_ROOT=<copy of northledger-core> python tools/test_nl_sales.py
 
@@ -422,6 +422,18 @@ def record_is_json_safe_and_charts_are_registry_records():
         assert nv.record_bytes(c) <= nv.bytes_cap(c["kind"]), (c["id"], nv.record_bytes(c))
         assert c["table"]["rows"] and c["summary"] and c["title"]
     assert [c["chart"] for c in s["charts"]] == ["pvm_waterfall", "grouped_bar", "grouped_bar", "grouped_bar", "bar_chart"]
+
+
+@test
+def the_registry_engine_call_form():
+    """build(inputs, settings): Track E's deliver_json hands every input's kept rows; the deals one is read."""
+    d = pd.read_csv(SAMPLE, dtype=str, keep_default_na=False).drop(columns=["Opportunity Owner"])
+    other = pd.DataFrame({"x": ["1"]})
+    s = nsl.build([{"role": "other", "primary": True, "df": other}, {"role": "deals", "primary": False, "df": d}],
+                  {"as_of": AS_OF})
+    _rep, base = run()
+    assert s["ok"] and close(s["growth"]["cur"], base["growth"]["cur"]) and s["quarter"]["label"] == "2025 Q4", s.get("why")
+    assert not nsl.build([], {})["ok"]
 
 
 if __name__ == "__main__":

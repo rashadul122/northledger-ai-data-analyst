@@ -31,7 +31,7 @@ const require = createRequire(import.meta.url);
 const SITE = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const PDF = require(path.join(SITE, 'src/js/45-report-pdf.js'));
 const D = require(path.join(SITE, 'src/js/46-report-docx.js'));
-const SALES = require(path.join(SITE, 'src/js/60-sales.js'));
+const SALES = require(path.join(SITE, 'src/js/62-sales.js'));
 D.pdf = PDF;
 const FX = (f) => JSON.parse(readFileSync(path.join(SITE, 'tools/fixtures', f), 'utf8'));
 const keepAt = process.argv.indexOf('--keep') > 0 ? process.argv[process.argv.indexOf('--keep') + 1] : '';
@@ -275,7 +275,7 @@ const cases = [
 ];
 cases.forEach(runCase);
 
-/* ------------------------------------------------------------ the quarterly sales report (Track F, src/js/60-sales.js)
+/* ------------------------------------------------------------ the quarterly sales report (Track F, src/js/62-sales.js)
    NLSales.doc(rep.sales) through the same writer in the business style: the parts, the serif, the one-page executive
    summary first (a page break after it), the sections in order, one picture per chart at its aspect, every number in the
    text one the engine wrote in its record (or a figure / section number or the date), no rep code, and LibreOffice opens it.

@@ -12903,7 +12903,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                       scrub.flag_tokens, scrub.flag_tokens_by, dash_pins)
         if isinstance(ai_plan, dict):
             ai_plan.pop("dashboard", None)
-        # the quarterly sales report (engine/nl_sales.py, CONTRACT 5.18): computed when the file reads as a CRM deals
+        # the quarterly sales report (engine/nl_sales.py, CONTRACT 5.19): computed when the file reads as a CRM deals
         # export, else only what it would need (step 6's report menu reads rep.sales.fit)
         rep["sales"] = _sales(rep, reading, ai_plan, as_of)
         rep["ok"] = True
@@ -13734,7 +13734,7 @@ def _sales_inputs(rep: Dict[str, Any], reading: Any, plan: Any) -> Optional[Dict
 
 
 def _sales(rep: Dict[str, Any], reading: Any, plan: Any, as_of: Any) -> Dict[str, Any]:
-    """rep["sales"] (engine/nl_sales.py, CONTRACT 5.18) with the default settings. The report stands without it."""
+    """rep["sales"] (engine/nl_sales.py, CONTRACT 5.19) with the default settings. The report stands without it."""
     _LAST_SALES.clear()
     try:
         import nl_sales as _nsl

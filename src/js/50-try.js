@@ -1566,7 +1566,7 @@
       S.worker.postMessage({ type: 'cleanfile', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, rules: rules || null,
         plan_columns: S.plan && Array.isArray(S.plan.columns) ? S.plan.columns : null } });
     };
-    // the quarterly sales report (src/js/60-sales.js, engine/nl_sales.py): this run's kept rows again with the visitor's
+    // the quarterly sales report (src/js/62-sales.js, engine/nl_sales.py): this run's kept rows again with the visitor's
     // settings, from the worker that ran it; cb(out) gets the report's sales block, or null when no worker holds the run
     T.salesReport = function (settings, cb) {
       if (!S.worker || !S.report) { cb(null); return; }
@@ -2481,10 +2481,11 @@
     // the SYNTHETIC sales sample (tools/make_sample_sales.py): Ask your data's SQL demo, "Why is gross margin down in EMEA
     // this quarter?" (CONTRACT §5.16)
     if (el.sample2) el.sample2.addEventListener('click', function () { startSample(CFG.sample_sales || 'engine/sample-sales-synthetic.csv', CFG.sample_sales_as_of); });
-    // the SYNTHETIC CRM deals export (tools/make_sample_sales.py): the quarterly sales report in step 6 (src/js/60-sales.js,
-    // CONTRACT §5.18); picking it also picks that report type in step 1's "What do you need?"
+    // the SYNTHETIC CRM deals export (tools/make_sample_sales.py): the quarterly sales report in step 6 (src/js/62-sales.js,
+    // CONTRACT §5.19); picking it also picks that report type in step 1's "What do you need?"
     if (el.sample3) el.sample3.addEventListener('click', function () {
-      try { document.dispatchEvent(new CustomEvent('nl:pick-report', { detail: { id: 'sales-report', source: 'sample' } })); } catch (e) { /* no event */ }
+      var D = window.NLDeliver;
+      if (D && (D.choose || D.pick)) { try { (D.choose || D.pick)('sales-report'); } catch (e) { /* the registry draws its own choice */ } }
       startSample(CFG.sample_crm || 'engine/sample-crm-deals-synthetic.csv', CFG.sample_crm_as_of);
     });
     el.cancel.addEventListener('click', function () {

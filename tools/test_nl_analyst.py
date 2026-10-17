@@ -1094,6 +1094,12 @@ def test_a_breakdown_by_type_says_which_type_holds_the_most_of_the_whole_record(
     blk = na.explore(pd.DataFrame(rows), {"Country": "text", "Year": "number", "co2": "number"})
     rk = next(s_ for s_ in blk["steps"] if s_["op"] == "rank_entities")
     assert "whole_top1" not in rk["numbers"], rk["numbers"].keys()
+    # a flow that runs below zero (a net flow) has no share of a whole-record total to state
+    rows = [{"Entity": t, "Year": y, "Deaths": float(v if y % 7 else -v)} for t, v in (("A", 50), ("B", 30), ("C", 20), ("D", 10))
+            for y in range(1990, 2021)]
+    blk = na.explore(pd.DataFrame(rows), {"Entity": "text", "Year": "number", "Deaths": "number"})
+    rk = next((s_ for s_ in blk["steps"] if s_["op"] == "rank_entities"), None)
+    assert rk is None or "whole_top1" not in rk["numbers"], rk["numbers"].keys()
 
 
 def test_the_corpus_checks_on_drought_and_world_co2_pass_only_on_the_fact_itself():

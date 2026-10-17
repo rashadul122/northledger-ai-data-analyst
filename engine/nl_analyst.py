@@ -2563,7 +2563,9 @@ def op_rank_entities(ctx: Ctx, st: Step, measure: str, years: int = 10) -> Step:
     # question), over WHOLE_MIN_PERIODS periods or more, says which type holds the most of the whole record and its share
     if sh.mkind.get(measure, "flow") == "flow":
         tot = f.groupby("e")["v"].sum().sort_values(ascending=False)
-        if 3 <= len(tot) <= WHOLE_TYPES_MAX and f["y"].nunique() >= WHOLE_MIN_PERIODS and tot.sum() > 0 and tot.iloc[0] > 0:
+        # never negative (a net flow's "share of the total" could pass 100%)
+        if (3 <= len(tot) <= WHOLE_TYPES_MAX and f["y"].nunique() >= WHOLE_MIN_PERIODS and bool((f["v"] >= 0).all())
+                and tot.iloc[0] > 0):
             st.word("whole_first", str(int(f["y"].min())))
             st.word("whole_last", str(int(f["y"].max())))
             st.word("whole_top1", tot.index[0])

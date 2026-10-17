@@ -3918,14 +3918,26 @@ def series_twins(series: Sequence[Tuple[Any, str, Sequence[Tuple[Any, float]], i
         ka, _la, da, pa = vals[i]
         for j in range(i + 1, len(vals)):
             kb, _lb, db, pb = vals[j]
-            common = [t for t in da if t in db]
-            if len(common) < TWIN_MIN_COMMON:
-                continue
             tol = 0.5 * 10.0 ** (-min(pa, pb)) + 1e-9
-            gaps = [abs(da[t] - db[t]) for t in common]
-            agree = sum(1 for g in gaps if g <= tol) / float(len(gaps))
-            level = math.fsum(abs(da[t]) + abs(db[t]) for t in common) / (2.0 * len(common))
-            if agree >= TWIN_AGREE_SHARE and math.fsum(gaps) / len(gaps) <= TWIN_LEVEL_GAP * max(level, 1e-12):
+            # at most 5% of the shared periods may disagree, and there are no more shared periods than the shorter series has: a
+            # pair that is no twin is given up after a few dates (a table of 200 series is 20,000 pairs, read in the browser)
+            room = (1.0 - TWIN_AGREE_SHARE) * min(len(da), len(db))
+            n_common, n_off, gap_sum, lev_sum = 0, 0, 0.0, 0.0
+            for t, xa in da.items():
+                xb = db.get(t)
+                if xb is None:
+                    continue
+                n_common += 1
+                g = abs(xa - xb)
+                gap_sum += g
+                lev_sum += abs(xa) + abs(xb)
+                if g > tol:
+                    n_off += 1
+                    if n_off > room:
+                        break
+            if n_off > room or n_common < TWIN_MIN_COMMON:
+                continue
+            if (n_common - n_off) >= TWIN_AGREE_SHARE * n_common and gap_sum / n_common <= TWIN_LEVEL_GAP * max(lev_sum / (2.0 * n_common), 1e-12):
                 parent[root(kb)] = root(ka)
     groups: Dict[Any, List[Tuple[int, Any, str]]] = {}
     for n, (k, lab, _d, _p) in enumerate(vals):

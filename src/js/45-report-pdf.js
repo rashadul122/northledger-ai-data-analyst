@@ -913,7 +913,7 @@
      its axis ticks. A heatmap's tier glyphs (a circle outlined, half filled, filled) are vectors: WinAnsi has none.
      VIZ[kind]: ok(data); lay(record, CW), the geometry measured once (lay.h: the drawing's height); draw(record, top,
      bottom), called on the Doc: every mark and word within [L, L + CW] and [bottom, top]. */
-  var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#d9e7f8', '#b7d1f1', '#94bcea'], rises: ['#f1e2d1', '#e5c8a8', '#d9ae80'],
+  var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#f1e2d1', '#e5c8a8', '#d9ae80'], rises: ['#d9e7f8', '#b7d1f1', '#94bcea'],
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
     total: '#2a78d6', rise: '#12875c', fall: '#d45a26', conn: '#b9b5aa', dot: '#2a78d6', median: '#16232e', bar: '#2a78d6',
     prior: '#d45a26', otherPrior: '#abb2b7',

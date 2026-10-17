@@ -898,7 +898,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .hc2 .cv2, .hc2 .gl2 { fill: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .hc2 .cv2 { font-weight: 650; }
 .hc2 rect.q1 { fill: var(--heat-green-1); } .hc2 rect.q2 { fill: var(--heat-green-2); } .hc2 rect.q3 { fill: var(--heat-green-3); }
-.hc2 rect.m1 { fill: var(--div-pos-1); } .hc2 rect.m2 { fill: var(--div-pos-2); } .hc2 rect.m3 { fill: var(--div-pos-3); }
+.hc2 rect.m1 { fill: var(--div-neg-1); } .hc2 rect.m2 { fill: var(--div-neg-2); } .hc2 rect.m3 { fill: var(--div-neg-3); }
 .hc2 rect.cn1 { fill: var(--div-neg-1); } .hc2 rect.cn2 { fill: var(--div-neg-2); } .hc2 rect.cn3 { fill: var(--div-neg-3); }
 .hc2 rect.cp1 { fill: var(--div-pos-1); } .hc2 rect.cp2 { fill: var(--div-pos-2); } .hc2 rect.cp3 { fill: var(--div-pos-3); }
 .hc2-null rect { fill: none; stroke: var(--hairline); stroke-dasharray: 2 2; }

@@ -429,8 +429,8 @@ def check_spec(spec):
         if len(ts) != 5 or min(contrast(c, p["frame"]["surface"]) for c in ts) < 3:
             E.append("colors.%s: a timeseries line under 3:1 on the surface" % mode)
     light = spec["colors"]["light"]
-    design = {"sequential": ["#cfe9e4", "#add9d2", "#87c7bc"], "falls": ["#d9e7f8", "#b7d1f1", "#94bcea"],
-              "rises": ["#f1e2d1", "#e5c8a8", "#d9ae80"]}
+    design = {"sequential": ["#cfe9e4", "#add9d2", "#87c7bc"], "falls": ["#f1e2d1", "#e5c8a8", "#d9ae80"],
+              "rises": ["#d9e7f8", "#b7d1f1", "#94bcea"]}
     for g, want in design.items():
         if [light[g][t] for t in ("1", "2", "3")] != want:
             E.append("colors.light.%s is not the design's %s" % (g, want))

@@ -1,7 +1,7 @@
 {
  "schema": "site_build/1",
  "what": "Figures the page shows that are derived from other files (a share turned into a percentage, a count of sessions, a file size). Written by build.py; each key names its source.",
- "built_at": "2026-10-17T05:48:33Z",
+ "built_at": "2026-10-17T05:53:08Z",
  "display": {
   "fixture_lost": "0",
   "fixture_quarantine_pct": "4.0%",
@@ -309,7 +309,7 @@
   "try_fc_replay": "12",
   "try_rec_rows": "1,000",
   "build_checks_passed": "48",
-  "built_at_label": "2026-10-17 05:48:33 UTC"
+  "built_at_label": "2026-10-17 05:53:08 UTC"
  },
  "derived_from": {
   "fixture_lost": "engine_scorecard fixture.rows - after.clean - after.quarantined",
@@ -1053,73 +1053,73 @@
    "mode": "light",
    "text": "ink",
    "on": "div-neg-1",
-   "ratio": 12.74
-  },
-  {
-   "mode": "light",
-   "text": "body",
-   "on": "div-neg-1",
-   "ratio": 8.24
-  },
-  {
-   "mode": "light",
-   "text": "ink",
-   "on": "div-pos-1",
    "ratio": 12.59
   },
   {
    "mode": "light",
    "text": "body",
-   "on": "div-pos-1",
+   "on": "div-neg-1",
    "ratio": 8.15
   },
   {
    "mode": "light",
    "text": "ink",
-   "on": "div-neg-2",
-   "ratio": 10.2
+   "on": "div-pos-1",
+   "ratio": 12.74
   },
   {
    "mode": "light",
    "text": "body",
-   "on": "div-neg-2",
-   "ratio": 6.6
+   "on": "div-pos-1",
+   "ratio": 8.24
   },
   {
    "mode": "light",
    "text": "ink",
-   "on": "div-pos-2",
+   "on": "div-neg-2",
    "ratio": 10.01
   },
   {
    "mode": "light",
    "text": "body",
-   "on": "div-pos-2",
+   "on": "div-neg-2",
    "ratio": 6.48
   },
   {
    "mode": "light",
    "text": "ink",
-   "on": "div-neg-3",
-   "ratio": 8.1
+   "on": "div-pos-2",
+   "ratio": 10.2
   },
   {
    "mode": "light",
    "text": "body",
-   "on": "div-neg-3",
-   "ratio": 5.24
+   "on": "div-pos-2",
+   "ratio": 6.6
   },
   {
    "mode": "light",
    "text": "ink",
-   "on": "div-pos-3",
+   "on": "div-neg-3",
    "ratio": 7.85
   },
   {
    "mode": "light",
    "text": "body",
-   "on": "div-pos-3",
+   "on": "div-neg-3",
    "ratio": 5.08
+  },
+  {
+   "mode": "light",
+   "text": "ink",
+   "on": "div-pos-3",
+   "ratio": 8.1
+  },
+  {
+   "mode": "light",
+   "text": "body",
+   "on": "div-pos-3",
+   "ratio": 5.24
   },
   {
    "mode": "dark",
@@ -1311,73 +1311,73 @@
    "mode": "dark",
    "text": "ink",
    "on": "div-neg-1",
-   "ratio": 11.51
-  },
-  {
-   "mode": "dark",
-   "text": "body",
-   "on": "div-neg-1",
-   "ratio": 8.41
-  },
-  {
-   "mode": "dark",
-   "text": "ink",
-   "on": "div-pos-1",
    "ratio": 11.65
   },
   {
    "mode": "dark",
    "text": "body",
-   "on": "div-pos-1",
+   "on": "div-neg-1",
    "ratio": 8.51
   },
   {
    "mode": "dark",
    "text": "ink",
-   "on": "div-neg-2",
-   "ratio": 8.93
+   "on": "div-pos-1",
+   "ratio": 11.51
   },
   {
    "mode": "dark",
    "text": "body",
-   "on": "div-neg-2",
-   "ratio": 6.52
+   "on": "div-pos-1",
+   "ratio": 8.41
   },
   {
    "mode": "dark",
    "text": "ink",
-   "on": "div-pos-2",
+   "on": "div-neg-2",
    "ratio": 9.03
   },
   {
    "mode": "dark",
    "text": "body",
-   "on": "div-pos-2",
+   "on": "div-neg-2",
    "ratio": 6.6
   },
   {
    "mode": "dark",
    "text": "ink",
-   "on": "div-neg-3",
-   "ratio": 6.83
+   "on": "div-pos-2",
+   "ratio": 8.93
   },
   {
    "mode": "dark",
    "text": "body",
-   "on": "div-neg-3",
-   "ratio": 4.99
+   "on": "div-pos-2",
+   "ratio": 6.52
   },
   {
    "mode": "dark",
    "text": "ink",
-   "on": "div-pos-3",
+   "on": "div-neg-3",
    "ratio": 6.92
   },
   {
    "mode": "dark",
    "text": "body",
-   "on": "div-pos-3",
+   "on": "div-neg-3",
    "ratio": 5.05
+  },
+  {
+   "mode": "dark",
+   "text": "ink",
+   "on": "div-pos-3",
+   "ratio": 6.83
+  },
+  {
+   "mode": "dark",
+   "text": "body",
+   "on": "div-pos-3",
+   "ratio": 4.99
   }
  ],
  "examples": [

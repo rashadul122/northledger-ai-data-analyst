@@ -28,8 +28,8 @@
   --band-green: #0f8f7a;
   --band-yellow: #e0a000;
   --band-red: #d4502c;
-  --div-neg: #2a78d6;
-  --div-pos: #b35c00;
+  --div-neg: #b35c00;
+  --div-pos: #2a78d6;
   --focus: #1f5fbf;
   --fan: rgba(11,115,102,0.16);
   --ts-1: #2a78d6;
@@ -47,12 +47,12 @@
   --heat-red-1: #f6dcd5;
   --heat-red-2: #f0c4b7;
   --heat-red-3: #eaa896;
-  --div-neg-1: #d9e7f8;
-  --div-pos-1: #f1e2d1;
-  --div-neg-2: #b7d1f1;
-  --div-pos-2: #e5c8a8;
-  --div-neg-3: #94bcea;
-  --div-pos-3: #d9ae80;
+  --div-neg-1: #f1e2d1;
+  --div-pos-1: #d9e7f8;
+  --div-neg-2: #e5c8a8;
+  --div-pos-2: #b7d1f1;
+  --div-neg-3: #d9ae80;
+  --div-pos-3: #94bcea;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -74,8 +74,8 @@
   --band-green: #199e86;
   --band-yellow: #bc8c00;
   --band-red: #e2507a;
-  --div-neg: #3987e5;
-  --div-pos: #c8741c;
+  --div-neg: #c8741c;
+  --div-pos: #3987e5;
   --focus: #8ab8ff;
   --fan: rgba(43,181,163,0.20);
   --ts-1: #3987e5;
@@ -93,12 +93,12 @@
   --heat-red-1: #44293c;
   --heat-red-2: #5d2f46;
   --heat-red-3: #76354f;
-  --div-neg-1: #19304a;
-  --div-pos-1: #332d26;
-  --div-neg-2: #1f4168;
-  --div-pos-2: #503b24;
-  --div-neg-3: #265286;
-  --div-pos-3: #6d4822;
+  --div-neg-1: #332d26;
+  --div-pos-1: #19304a;
+  --div-neg-2: #503b24;
+  --div-pos-2: #1f4168;
+  --div-neg-3: #6d4822;
+  --div-pos-3: #265286;
   }
 }
 :root[data-theme="dark"] {
@@ -120,8 +120,8 @@
   --band-green: #199e86;
   --band-yellow: #bc8c00;
   --band-red: #e2507a;
-  --div-neg: #3987e5;
-  --div-pos: #c8741c;
+  --div-neg: #c8741c;
+  --div-pos: #3987e5;
   --focus: #8ab8ff;
   --fan: rgba(43,181,163,0.20);
   --ts-1: #3987e5;
@@ -139,12 +139,12 @@
   --heat-red-1: #44293c;
   --heat-red-2: #5d2f46;
   --heat-red-3: #76354f;
-  --div-neg-1: #19304a;
-  --div-pos-1: #332d26;
-  --div-neg-2: #1f4168;
-  --div-pos-2: #503b24;
-  --div-neg-3: #265286;
-  --div-pos-3: #6d4822;
+  --div-neg-1: #332d26;
+  --div-pos-1: #19304a;
+  --div-neg-2: #503b24;
+  --div-pos-2: #1f4168;
+  --div-neg-3: #6d4822;
+  --div-pos-3: #265286;
 }
 /* NorthLedger Insights v2. Colour tokens are written above this file by build.py (one source,
    contrast-checked at build). Everything below reads tokens only. */
@@ -1046,7 +1046,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .hc2 .cv2, .hc2 .gl2 { fill: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .hc2 .cv2 { font-weight: 650; }
 .hc2 rect.q1 { fill: var(--heat-green-1); } .hc2 rect.q2 { fill: var(--heat-green-2); } .hc2 rect.q3 { fill: var(--heat-green-3); }
-.hc2 rect.m1 { fill: var(--div-pos-1); } .hc2 rect.m2 { fill: var(--div-pos-2); } .hc2 rect.m3 { fill: var(--div-pos-3); }
+.hc2 rect.m1 { fill: var(--div-neg-1); } .hc2 rect.m2 { fill: var(--div-neg-2); } .hc2 rect.m3 { fill: var(--div-neg-3); }
 .hc2 rect.cn1 { fill: var(--div-neg-1); } .hc2 rect.cn2 { fill: var(--div-neg-2); } .hc2 rect.cn3 { fill: var(--div-neg-3); }
 .hc2 rect.cp1 { fill: var(--div-pos-1); } .hc2 rect.cp2 { fill: var(--div-pos-2); } .hc2 rect.cp3 { fill: var(--div-pos-3); }
 .hc2-null rect { fill: none; stroke: var(--hairline); stroke-dasharray: 2 2; }
@@ -1698,7 +1698,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 05:48:33 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 05:53:08 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

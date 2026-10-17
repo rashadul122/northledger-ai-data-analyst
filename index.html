@@ -28,8 +28,8 @@
   --band-green: #0f8f7a;
   --band-yellow: #e0a000;
   --band-red: #d4502c;
-  --div-neg: #2a78d6;
-  --div-pos: #b35c00;
+  --div-neg: #b35c00;
+  --div-pos: #2a78d6;
   --focus: #1f5fbf;
   --fan: rgba(11,115,102,0.16);
   --ts-1: #2a78d6;
@@ -47,12 +47,12 @@
   --heat-red-1: #f6dcd5;
   --heat-red-2: #f0c4b7;
   --heat-red-3: #eaa896;
-  --div-neg-1: #d9e7f8;
-  --div-pos-1: #f1e2d1;
-  --div-neg-2: #b7d1f1;
-  --div-pos-2: #e5c8a8;
-  --div-neg-3: #94bcea;
-  --div-pos-3: #d9ae80;
+  --div-neg-1: #f1e2d1;
+  --div-pos-1: #d9e7f8;
+  --div-neg-2: #e5c8a8;
+  --div-pos-2: #b7d1f1;
+  --div-neg-3: #d9ae80;
+  --div-pos-3: #94bcea;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -74,8 +74,8 @@
   --band-green: #199e86;
   --band-yellow: #bc8c00;
   --band-red: #e2507a;
-  --div-neg: #3987e5;
-  --div-pos: #c8741c;
+  --div-neg: #c8741c;
+  --div-pos: #3987e5;
   --focus: #8ab8ff;
   --fan: rgba(43,181,163,0.20);
   --ts-1: #3987e5;
@@ -93,12 +93,12 @@
   --heat-red-1: #44293c;
   --heat-red-2: #5d2f46;
   --heat-red-3: #76354f;
-  --div-neg-1: #19304a;
-  --div-pos-1: #332d26;
-  --div-neg-2: #1f4168;
-  --div-pos-2: #503b24;
-  --div-neg-3: #265286;
-  --div-pos-3: #6d4822;
+  --div-neg-1: #332d26;
+  --div-pos-1: #19304a;
+  --div-neg-2: #503b24;
+  --div-pos-2: #1f4168;
+  --div-neg-3: #6d4822;
+  --div-pos-3: #265286;
   }
 }
 :root[data-theme="dark"] {
@@ -120,8 +120,8 @@
   --band-green: #199e86;
   --band-yellow: #bc8c00;
   --band-red: #e2507a;
-  --div-neg: #3987e5;
-  --div-pos: #c8741c;
+  --div-neg: #c8741c;
+  --div-pos: #3987e5;
   --focus: #8ab8ff;
   --fan: rgba(43,181,163,0.20);
   --ts-1: #3987e5;
@@ -139,12 +139,12 @@
   --heat-red-1: #44293c;
   --heat-red-2: #5d2f46;
   --heat-red-3: #76354f;
-  --div-neg-1: #19304a;
-  --div-pos-1: #332d26;
-  --div-neg-2: #1f4168;
-  --div-pos-2: #503b24;
-  --div-neg-3: #265286;
-  --div-pos-3: #6d4822;
+  --div-neg-1: #332d26;
+  --div-pos-1: #19304a;
+  --div-neg-2: #503b24;
+  --div-pos-2: #1f4168;
+  --div-neg-3: #6d4822;
+  --div-pos-3: #265286;
 }
 /* NorthLedger Insights v2. Colour tokens are written above this file by build.py (one source,
    contrast-checked at build). Everything below reads tokens only. */
@@ -1046,7 +1046,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .hc2 .cv2, .hc2 .gl2 { fill: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .hc2 .cv2 { font-weight: 650; }
 .hc2 rect.q1 { fill: var(--heat-green-1); } .hc2 rect.q2 { fill: var(--heat-green-2); } .hc2 rect.q3 { fill: var(--heat-green-3); }
-.hc2 rect.m1 { fill: var(--div-pos-1); } .hc2 rect.m2 { fill: var(--div-pos-2); } .hc2 rect.m3 { fill: var(--div-pos-3); }
+.hc2 rect.m1 { fill: var(--div-neg-1); } .hc2 rect.m2 { fill: var(--div-neg-2); } .hc2 rect.m3 { fill: var(--div-neg-3); }
 .hc2 rect.cn1 { fill: var(--div-neg-1); } .hc2 rect.cn2 { fill: var(--div-neg-2); } .hc2 rect.cn3 { fill: var(--div-neg-3); }
 .hc2 rect.cp1 { fill: var(--div-pos-1); } .hc2 rect.cp2 { fill: var(--div-pos-2); } .hc2 rect.cp3 { fill: var(--div-pos-3); }
 .hc2-null rect { fill: none; stroke: var(--hairline); stroke-dasharray: 2 2; }
@@ -1706,7 +1706,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:48:33 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:53:08 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2458,7 +2458,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:48:33 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:53:08 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -4960,7 +4960,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
      its axis ticks. A heatmap's tier glyphs (a circle outlined, half filled, filled) are vectors: WinAnsi has none.
      VIZ[kind]: ok(data); lay(record, CW), the geometry measured once (lay.h: the drawing's height); draw(record, top,
      bottom), called on the Doc: every mark and word within [L, L + CW] and [bottom, top]. */
-  var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#d9e7f8', '#b7d1f1', '#94bcea'], rises: ['#f1e2d1', '#e5c8a8', '#d9ae80'],
+  var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#f1e2d1', '#e5c8a8', '#d9ae80'], rises: ['#d9e7f8', '#b7d1f1', '#94bcea'],
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
     total: '#2a78d6', rise: '#12875c', fall: '#d45a26', conn: '#b9b5aa', dot: '#2a78d6', median: '#16232e', bar: '#2a78d6',
     prior: '#d45a26', otherPrior: '#abb2b7',

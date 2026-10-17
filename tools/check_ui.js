@@ -5510,6 +5510,7 @@ check('deliver-registry-takes-another-report-type', DESK, async (ctx) => {
     window.NLDeliver.register({ id: 'check-type', order: 50, title: 'Check type', blurb: 'registered by the UI check',
       needs: [{ what: 'A deals export', columns: ['deal_id', 'amount'], optional: false, how: 'Export it.' }],
       fits: (r) => ({ ok: false, why: 'deal_id, amount' }), settings: [{ key: 'q', label: 'Quarter', kind: 'choice', 'default': 'Q4', options: [{ value: 'Q3', label: 'Q3' }, { value: 'Q4', label: 'Q4' }] }],
+      rerenderOnSettings: true,   // a render-only type asks to be drawn again on a settings change (others use onSettings)
       render: (slot, r, s) => { slot.innerHTML = '<p id="check-type-out">quarter ' + s.q + '</p>'; } });
   });
   await p.selectOption('#try-need-sel', 'check-type');

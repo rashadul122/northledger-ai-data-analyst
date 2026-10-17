@@ -38,7 +38,7 @@ import fetch_pyodide  # noqa: E402
 PAGES = ["index.html", "case-study.html", "agent-demo.html"]
 # files the page's JavaScript fetches or starts by relative name (not links, so the graph cannot see them)
 RUNTIME_FILES = ["engine/worker.js", "engine/northledger-browser.zip", "engine/pack.json",
-                 "engine/sample-messy.csv", "engine/world-110m.json"]
+                 "engine/sample-messy.csv", "engine/sample-sales-synthetic.csv", "engine/world-110m.json"]
 ALWAYS = ["favicon.svg", "favicon-32.png"]
 LIMIT = 25 * 1024 * 1024
 LINK_ATTRS = {"a": "href", "link": "href", "script": "src", "img": "src", "source": "src", "iframe": "src",

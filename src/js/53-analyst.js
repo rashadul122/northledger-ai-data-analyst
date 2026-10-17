@@ -29,7 +29,8 @@
     yoy: 'same month a year earlier', seasonality: 'seasonal pattern', volatility: 'how much it swings',
     concentration: 'how concentrated the total is', answers: 'most common answers',
     periods: 'counts by period, read against size', confound: 'group averages read against size',
-    frequency: 'what the rows are mostly about' };
+    frequency: 'what the rows are mostly about', sql: 'a read-only SQL query on the rows the engine kept',
+    rate_mix: 'a ratio\'s change split into rate and mix' };
   var SHAPES = { ledger: 'a ledger of dated rows', time_series: 'a time series', panel: 'a panel (entries over time)',
     survey: 'a survey', cross_section: 'a table with no time axis' };
   var ROWS_SHOWN = 12;
@@ -51,7 +52,7 @@
   // what a step read: its arguments in plain words (a measure, a split, a filter)
   function argsText(args) {
     if (!obj(args)) return '';
-    return Object.keys(args).map(function (k) {
+    return Object.keys(args).filter(function (k) { return k !== 'sql'; }).map(function (k) {
       var v = args[k];
       if (k === 'where' && obj(v)) return 'only rows where ' + Object.keys(v).map(function (c) { return c + ' is ' + cell(v[c]); }).join(' and ');
       if (k === 'where_not' && obj(v)) return 'leaving out rows where ' + Object.keys(v).map(function (c) { return c + ' is ' + cell(v[c]); }).join(' or ');
@@ -86,6 +87,15 @@
       (rows.length > shown.length ? '<p class="note">The first ' + count(shown.length) + ' of ' + count(rows.length) + ' rows.</p>' : '');
   }
 
+  // an sql step's query (Ask your data with SQL, CONTRACT §5.16): shown as written, read-only, with a Copy button
+  function sqlHtml(st) {
+    var q = obj(st.args) && typeof st.args.sql === 'string' ? st.args.sql : '';
+    if (!q) return '';
+    return '<div class="nla-sql"><p class="nla-sql-h"><span class="nla-ro">Read-only SQL</span> run in your browser on the table <code>kept_rows</code> (the rows the engine kept)' +
+      '<button type="button" class="btn btn-ghost btn-sm nla-copy" data-copy-sql="1">Copy SQL</button></p>' +
+      '<pre class="nla-sql-q" tabindex="0" aria-label="The SQL query"><code>' + esc(q) + '</code></pre></div>';
+  }
+
   function stepHtml(st) {
     var op = String(st.op || ''), how = argsText(st.args), led = ledgerText(st.numbers);
     return '<li class="nla-step"><p class="nla-step-h"><b>Step ' + esc(st.id || '') + '</b>' +
@@ -94,7 +104,7 @@
       (how ? '<p class="nla-why"><span class="muted">Read:</span> ' + esc(how) + '</p>' : '') +
       (st.ok === false && st.refused ? '<p class="nla-why"><span class="muted">Not run:</span> ' + esc(st.refused) + '</p>' : '') +
       (led ? '<p class="nla-why"><span class="muted">Numbers recorded:</span> ' + esc(led) + '</p>' : '') +
-      stepTable(st) + '</li>';
+      sqlHtml(st) + stepTable(st) + '</li>';
   }
 
   // the chart behind an insight (ins.figure, a chart registry record the engine built from the step's own numbers):
@@ -124,9 +134,34 @@
     });
   };
 
+  // "Add this chart to the dashboard" (step 4 Ask -> step 5 Dashboard, plan/DASHBOARD-DESIGN.md): an asked answer's
+  // chart, as its chart registry record, goes to window.NL_DASH_PINS and an 'nl:pin-chart' event the dashboard reads
+  var PINS = {};
+  function pinHtml(ins) {
+    if (ins.kind !== 'planned' || !obj(ins.figure) || !ins.id) return '';
+    PINS[String(ins.id)] = ins;
+    var on = arr(window.NL_DASH_PINS).some(function (p) { return p && p.pinned_from && p.pinned_from.insight === ins.id; });
+    return '<p class="nla-pin-row"><button type="button" class="btn btn-ghost btn-sm nla-pin" data-pin="' + esc(ins.id) + '"' + (on ? ' disabled' : '') + '>' +
+      (on ? 'Added to the dashboard' : 'Add this chart to the dashboard') + '</button></p>';
+  }
+  A.pin = function (insId) {
+    var ins = PINS[String(insId)];
+    if (!ins || !obj(ins.figure)) return null;
+    var list = window.NL_DASH_PINS = Array.isArray(window.NL_DASH_PINS) ? window.NL_DASH_PINS : [];
+    var had = list.filter(function (p) { return p && p.pinned_from && p.pinned_from.insight === ins.id; })[0];
+    if (had) return had;
+    var rec = JSON.parse(JSON.stringify(ins.figure));
+    rec.pinned_from = { source: 'ask-your-data', insight: ins.id, question: A.lastQuestion || '', steps: arr(ins.steps).map(String), text: ins.text };
+    list.push(rec);
+    try { document.dispatchEvent(new CustomEvent('nl:pin-chart', { detail: rec })); } catch (e) { /* an old browser keeps the list */ }
+    return rec;
+  };
+
   function insightHtml(ins, byId) {
     var ids = arr(ins.steps).map(String), steps = ids.map(function (id) { return byId[id]; }).filter(obj);
-    return '<li class="nla-ins' + (obj(ins.figure) ? ' nla-story' : '') + '"' + (ins.id ? ' id="' + esc(anchor(ins.id)) + '"' : '') + '><p class="nla-text">' + esc(ins.text) + '</p>' + figureHtml(ins.figure) +
+    var sqlStep = steps.filter(function (x) { return x.op === 'sql' && x.ok; })[0];
+    return '<li class="nla-ins' + (obj(ins.figure) ? ' nla-story' : '') + '"' + (ins.id ? ' id="' + esc(anchor(ins.id)) + '"' : '') + '><p class="nla-text">' + esc(ins.text) + '</p>' +
+      (sqlStep ? sqlHtml(sqlStep) + stepTable(sqlStep) : '') + figureHtml(ins.figure) + pinHtml(ins) +
       (steps.length ? '<details class="more nla-how"><summary>How this was found: ' + (ids.length === 1 ? 'step ' : 'steps ') + esc(ids.join(', ')) + '</summary>' +
         '<ol class="nla-steps">' + steps.map(stepHtml).join('') + '</ol></details>' : '') + '</li>';
   }
@@ -178,18 +213,45 @@
   // planner; the steps it asks for run here, in the engine, checked again, and every figure in an answer is the
   // engine's. A.onAsk(question, say) calls say(text, busy) as it goes.
   A.onAsk = null;
+  A.aiOn = false;      // set by src/js/50-try.js: whether the AI plans the checks (else the engine does)
+  A.example = '';      // a question to offer with one click (the sales sample's)
   function askHtml(b) {
     if (typeof A.onAsk !== 'function') return '';
     var asked = arr(b.asked).filter(function (q) { return typeof q === 'string' && q; });
-    return '<form class="nla-ask" novalidate><label for="nla-q"><strong>Ask your data</strong> a question the analysis above does not answer</label>' +
+    return '<form class="nla-ask" novalidate><label for="nla-q"><strong>Ask your data</strong> a question the analysis above does not answer; the answer can include a read-only SQL query</label>' +
       (asked.length ? '<p class="nla-asked muted">You asked: ' + asked.map(function (q) { return '\u201c' + esc(q) + '\u201d'; }).join(', ') + '</p>' : '') +
-      '<div class="nla-ask-row"><input id="nla-q" name="q" type="text" maxlength="300" autocomplete="off" placeholder="e.g. Which group grew fastest?" required>' +
+      '<div class="nla-ask-row"><input id="nla-q" name="q" type="text" maxlength="300" autocomplete="off" placeholder="' + esc(A.example ? 'e.g. ' + A.example : 'e.g. Why is revenue down in a region this quarter?') + '" required>' +
       '<button type="submit" class="btn btn-primary">Ask</button></div>' +
-      '<p class="nla-ask-note muted">The AI only picks which checks to run: it sees your column names and the figures above, never a row. ' +
-      'The checks run here, in your browser, and every number in the answer is computed by the engine.</p>' +
+      (A.example ? '<p class="nla-ask-ex">Try: <button type="button" class="btn btn-ghost btn-sm" data-ask-example="' + esc(A.example) + '">' + esc(A.example) + '</button></p>' : '') +
+      '<p class="nla-ask-note muted">' + (A.aiOn ? 'The AI only picks which checks to run, a SQL query among them: it sees your column names and the figures above, never a row. '
+        : 'The AI is off, so the engine plans the checks itself from your question. ') +
+      'The checks and any SQL run here, in your browser, on the rows the engine kept (never a withheld column), and every number in the answer is computed by the engine.</p>' +
       '<p class="nla-ask-status" role="status" aria-live="polite"></p></form>';
   }
+  function bindActions(root) {
+    // on the card itself (never an outer box too: a refresh mounts the new card, and a click must act once)
+    if (root && !(root.matches && root.matches('section.nla'))) root = root.querySelector('section.nla');
+    if (!root || root.getAttribute('data-nla-acts')) return;
+    root.setAttribute('data-nla-acts', '1');
+    root.addEventListener('click', function (e) {
+      var t = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!t) return;
+      if (t.hasAttribute('data-copy-sql')) {
+        var code = t.closest('.nla-sql').querySelector('code'), txt = code ? code.textContent : '';
+        var done = function (ok) { t.textContent = ok ? 'Copied' : 'Select the query to copy it'; setTimeout(function () { t.textContent = 'Copy SQL'; }, 1600); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); });
+        else done(false);
+      } else if (t.hasAttribute('data-pin')) {
+        if (A.pin(t.getAttribute('data-pin'))) { t.textContent = 'Added to the dashboard'; t.disabled = true; }
+      } else if (t.hasAttribute('data-ask-example')) {
+        var f = t.closest('form.nla-ask'), input = f && f.querySelector('input');
+        if (input) { input.value = t.getAttribute('data-ask-example'); }
+        if (f && f.requestSubmit) f.requestSubmit(); else if (f) f.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+  }
   function bindAsk(root) {
+    bindActions(root);
     var f = root.querySelector('form.nla-ask');
     if (!f || f.getAttribute('data-bound')) return;
     f.setAttribute('data-bound', '1');
@@ -204,6 +266,7 @@
       e.preventDefault();
       var q = input ? String(input.value || '').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
       if (q.length < 3) { say('Type a question first.', false); if (input) input.focus(); return; }
+      A.lastQuestion = q;
       if (typeof A.onAsk === 'function') A.onAsk(q, say);
     });
   }

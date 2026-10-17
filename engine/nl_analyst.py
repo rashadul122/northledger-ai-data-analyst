@@ -1392,23 +1392,132 @@ def _in(ctx: Ctx, keys: List[int], unit: str):
     return (d.dt.year * 12 + d.dt.month - 1).isin(keys)
 
 
+
+# ----------------------------------------------------------------------------- the period a question asks about
+# Ask your data (CONTRACT §5.16): "this quarter", "last month", "Q3 2026", "in 2025", "since 2024" in a question set the
+# windows of change, mix and rate_mix (their grain and period arguments), never the ops' own default windows.
+ASKED_GRAINS = ("quarter", "month", "year")
+_PERIOD_RE = re.compile(r"^(?:(\d{4})-Q([1-4])|(\d{4})-(0[1-9]|1[0-2])|(\d{4})|since:(\d{4})(?:-(0[1-9]|1[0-2]))?)$")
+
+
+def _mlabel(k: int) -> str:
+    return "%d-%02d" % (k // 12, k % 12 + 1)
+
+
+def _glabel(k0: int, grain: str) -> str:
+    """A period's name from its first month index (year * 12 + month - 1)."""
+    if grain == "quarter":
+        return "%d Q%d" % (k0 // 12, (k0 % 12) // 3 + 1)
+    if grain == "year":
+        return str(k0 // 12)
+    return _mlabel(k0)
+
+
+def asked_windows(ctx: "Ctx", grain: Optional[str], period: Optional[str], measure: Optional[str] = None
+                  ) -> Dict[str, Any]:
+    """The windows a question asks for, as month index lists (year * 12 + month - 1, the keys _in reads):
+    {cur, prev, yago (or None), lc, lp, ly, grain, since} or {"refuse": why}. The latest COMPLETE period by default (a
+    period is complete when the file's dates run to its last day); a named period (2026-Q3, 2026-09, 2026) must be
+    complete in the file; since:YYYY[-MM] reads from that month to the latest complete month against the same number
+    of months before. The year-earlier window is given when the file holds rows in it (never for a year grain: the
+    period before IS a year earlier)."""
+    sh = ctx.sh
+    if sh.date is None or sh.dates is None:
+        return {"refuse": "the file has no time axis"}
+    grain = grain or "quarter"
+    if grain not in ASKED_GRAINS:
+        return {"refuse": "the period must be one of %s" % ", ".join(ASKED_GRAINS)}
+    d = sh.dates
+    ok = d.notna() & ctx.base
+    if measure is not None and measure in ctx.df.columns:
+        ok &= _num(ctx.df[measure]).notna()
+    if ok.sum() < 2:
+        return {"refuse": "too few dated rows"}
+    last = d[ok].max()
+    lastc = last.year * 12 + last.month - 1
+    if (last + pd_offset_day()).month == last.month:     # the file stops inside its last month: that month is partial
+        lastc -= 1
+    have = set(int(x) for x in (d[ok].dt.year * 12 + d[ok].dt.month - 1).unique())
+    first = d[ok].min()
+    firstc = first.year * 12 + first.month - 1 + (0 if first.day == 1 else 1)   # the first month the file holds whole
+    g = {"quarter": 3, "month": 1, "year": 12}[grain]
+    m = _PERIOD_RE.match(period) if isinstance(period, str) and period else None
+    if period and not m:
+        return {"refuse": "the period must read like 2026-Q3, 2026-09, 2026 or since:2024"}
+    if m and m.group(6):
+        k0 = int(m.group(6)) * 12 + (int(m.group(7)) - 1 if m.group(7) else 0)
+        if k0 > lastc:
+            return {"refuse": "the file has no complete month since %s" % _mlabel(k0)}
+        cur = list(range(k0, lastc + 1))
+        prev = list(range(k0 - len(cur), k0))
+        if prev[0] < firstc:
+            return {"refuse": "the %d months before %s are not all in the file (it starts in %s), so the two windows "
+                              "cannot be compared" % (len(prev), _mlabel(k0), _mlabel(firstc))}
+        if not (have & set(prev)):
+            return {"refuse": "the file holds no rows in the %d months before %s" % (len(prev), _mlabel(k0))}
+        return {"cur": cur, "prev": prev, "yago": None, "grain": "month", "since": True,
+                "lc": "%s to %s" % (_mlabel(cur[0]), _mlabel(cur[-1])),
+                "lp": "%s to %s" % (_mlabel(prev[0]), _mlabel(prev[-1])), "ly": None}
+    if m:
+        if m.group(1):
+            grain, g, k0 = "quarter", 3, int(m.group(1)) * 12 + (int(m.group(2)) - 1) * 3
+        elif m.group(3):
+            grain, g, k0 = "month", 1, int(m.group(3)) * 12 + int(m.group(4)) - 1
+        else:
+            grain, g, k0 = "year", 12, int(m.group(5)) * 12
+        if k0 + g - 1 > lastc:
+            return {"refuse": "%s is not complete in the file (its dates run to %s)" % (_glabel(k0, grain), last.strftime("%Y-%m-%d"))}
+    else:
+        end = lastc
+        while (end + 1) % g:                 # the last month of a complete period
+            end -= 1
+        k0 = end - g + 1
+    cur = list(range(k0, k0 + g))
+    prev = list(range(k0 - g, k0))
+    if not (have & set(cur)):
+        return {"refuse": "the file holds no rows in %s" % _glabel(k0, grain)}
+    if prev[0] < firstc or not (have & set(prev)):
+        return {"refuse": "%s, the %s before %s, is not all in the file (it starts in %s)" % (
+            _glabel(k0 - g, grain), grain, _glabel(k0, grain), _mlabel(firstc))}
+    yago = [k - 12 for k in cur] if g < 12 and cur[0] - 12 >= firstc and (have & {k - 12 for k in cur}) else None
+    return {"cur": cur, "prev": prev, "yago": yago, "grain": grain, "since": False, "lc": _glabel(k0, grain),
+            "lp": _glabel(k0 - g, grain), "ly": _glabel(k0 - 12, grain) if yago else None}
+
+
+def pd_offset_day():
+    import pandas as pd
+    return pd.Timedelta(days=1)
+
+
 def op_change(
     ctx: Ctx,
     st: Step,
     measure: str,
     by: Optional[str] = None,
     where: Optional[Dict[str, str]] = None,
+    grain: Optional[str] = None,
+    period: Optional[str] = None,
 ) -> Step:
-    """The measure in the latest complete window against the one before, and each group's part of the change."""
+    """The measure in the latest complete window against the one before, and each group's part of the change. With a
+    grain or a period (a question's "this quarter", "2026-09", "since 2024": asked_windows) those windows, and the same
+    window a year earlier beside them; without, the op's own windows (_windows)."""
     import pandas as pd
 
     sh = ctx.sh
     if sh.date is None:
         return st.refuse("the file has no time axis")
-    w = _windows(ctx, measure)
-    if w is None:
-        return st.refuse("fewer than two complete periods")
-    unit, prev, cur, lp, lc = w
+    yago = None
+    if grain or period:
+        aw = asked_windows(ctx, grain, period, measure)
+        if "refuse" in aw:
+            return st.refuse(aw["refuse"])
+        unit, prev, cur, lp, lc = "month", aw["prev"], aw["cur"], aw["lp"], aw["lc"]
+        yago, ly = aw["yago"], aw["ly"]
+    else:
+        w = _windows(ctx, measure)
+        if w is None:
+            return st.refuse("fewer than two complete periods")
+        unit, prev, cur, lp, lc = w
     agg = _agg_for(sh, measure)
     kind = sh.mkind.get(measure, "flow")
     base = ctx.base.copy()
@@ -1438,6 +1547,24 @@ def op_change(
         return frame["v"].sum() if agg == "sum" else frame["v"].mean()
 
     a, b = total(f[f["w"] == "prev"]), total(f[f["w"] == "cur"])
+    if grain or period:
+        sc = (st.numbers.get("scope") or {}).get("text") or ""
+        st.word("asked_the", sc + "the" if sc else "The")
+    if yago:
+        fy = pd.DataFrame({"v": _num(ctx.df[measure])})[base & _in(ctx, yago, unit)]
+        if sh.entity:
+            fy["e"] = _text(ctx.df[sh.entity])[fy.index]
+        fy = fy.dropna(subset=["v"])
+        if len(fy):
+            yv = total(fy)
+            st.word("yago_label", ly)
+            st.num("yago", yv)
+            if sh.mkind.get(measure, "flow") == "rate":
+                st.num("yago_change", (b - yv) * (100 if _frac_scale(f["v"]) else 1), "pp", signed=True)
+            elif yv and yv > 0 and _pct_ok(sh, measure) and _no_negatives(ctx.df[measure]):
+                st.num("yago_change", (b - yv) / abs(yv), "pct", signed=True)
+            else:
+                st.num("yago_change", b - yv, "plain", signed=True)
     st.word("measure", measure)
     st.word("prev_label", lp)
     st.word("cur_label", lc)
@@ -2337,7 +2464,7 @@ def op_confound(ctx: Ctx, st: Step, measure: str, by: str, against: str) -> Step
     return st
 
 
-def op_mix(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
+def op_mix(ctx: Ctx, st: Step, measure: str, by: str, grain: Optional[str] = None, period: Optional[str] = None) -> Step:
     """An average's change split into the change inside the groups (rate) and the rows moving between groups (mix):
     within = sum of w_prev * (mean_cur - mean_prev); mix = the rest (exact, so the parts add up).
     """
@@ -2345,10 +2472,18 @@ def op_mix(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
 
     if _agg_for(ctx.sh, measure) != "mean":
         return st.refuse("a mix splits the change of an average; this measure adds up")
-    w = _windows(ctx, measure) if ctx.sh.date is not None else None
-    if w is None:
-        return st.refuse("needs two complete periods")
-    unit, prev, cur, lp, lc = w
+    if grain or period:
+        aw = asked_windows(ctx, grain, period, measure)
+        if "refuse" in aw:
+            return st.refuse(aw["refuse"])
+        unit, prev, cur, lp, lc = "month", aw["prev"], aw["cur"], aw["lp"], aw["lc"]
+        st.word("prev_label", lp)
+        st.word("cur_label", lc)
+    else:
+        w = _windows(ctx, measure) if ctx.sh.date is not None else None
+        if w is None:
+            return st.refuse("needs two complete periods")
+        unit, prev, cur, lp, lc = w
     f = pd.DataFrame({"v": _num(ctx.df[measure]), "g": _group_texts(ctx.df, by)})
     f["w"] = None
     f.loc[ctx.base & _in(ctx, prev, unit), "w"] = "prev"
@@ -2404,6 +2539,222 @@ def op_mix(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
         ][:12],
     }
     return st
+
+
+RATE_MIX_GRAINS = ("quarter", "month", "year")
+_RM_FREQ = {"quarter": "Q", "month": "M", "year": "Y"}
+_RM_BACK = {"quarter": 4, "month": 12, "year": 1}
+
+
+def _rm_label(p: Any, grain: str) -> str:
+    s = str(p)
+    return s[:4] + " Q" + s[-1] if grain == "quarter" else s
+
+
+def rate_mix_parts(n0: Dict[str, float], d0: Dict[str, float], n1: Dict[str, float], d1: Dict[str, float],
+                   scale: float = 1.0) -> Dict[str, Any]:
+    """The change of a ratio of sums, R = sum(N) / sum(D), between two periods, split by groups into rate and mix: op_mix's
+    split of an average (rows as the denominator) extended to any denominator (revenue for a gross margin, units for a
+    price). With w = D_g / D (a group's share of the denominator) and r = N_g / D_g (its own ratio):
+    rate_g = (w0 + w1) / 2 * (r1 - r0) and mix_g = (w1 - w0) * ((r0 + r1) / 2 - (R0 + R1) / 2). The midpoint weights make
+    the split exact: the groups' rate and mix effects add up to R1 - R0 (a group in one period only is all mix). Returns
+    {R0, R1, total, rate, mix, groups: {g: {w0, w1, r0, r1, rate, mix}}} scaled by `scale` (100: percentage points)."""
+    keys = sorted(set(n0) | set(n1) | set(d0) | set(d1))
+    D0, D1 = sum(d0.get(k, 0.0) for k in keys), sum(d1.get(k, 0.0) for k in keys)
+    N0, N1 = sum(n0.get(k, 0.0) for k in keys), sum(n1.get(k, 0.0) for k in keys)
+    if D0 <= 0 or D1 <= 0:
+        return {}
+    R0, R1 = N0 / D0, N1 / D1
+    rbar = (R0 + R1) / 2
+    groups = {}
+    for k in keys:
+        a0, a1, b0, b1 = n0.get(k, 0.0), n1.get(k, 0.0), d0.get(k, 0.0), d1.get(k, 0.0)
+        w0, w1 = b0 / D0, b1 / D1
+        r0 = a0 / b0 if b0 > 0 else None
+        r1 = a1 / b1 if b1 > 0 else None
+        if r0 is None and r1 is None:
+            continue
+        x0 = r0 if r0 is not None else r1
+        x1 = r1 if r1 is not None else r0
+        groups[k] = {"w0": w0, "w1": w1, "r0": r0, "r1": r1, "rate": (w0 + w1) / 2 * (x1 - x0) * scale,
+                     "mix": (w1 - w0) * ((x0 + x1) / 2 - rbar) * scale}
+    return {"R0": R0, "R1": R1, "total": (R1 - R0) * scale, "rate": sum(g["rate"] for g in groups.values()),
+            "mix": sum(g["mix"] for g in groups.values()), "groups": groups}
+
+
+def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, less: Optional[str] = None,
+                where: Optional[Dict[str, str]] = None, grain: Optional[str] = None, period: Optional[str] = None) -> Step:
+    """A ratio of sums ((measure - less) / denominator: a gross margin, a price per unit), recomputed from sums and never
+    an average of row ratios, in the latest period against the one before (and the same period a year earlier), its
+    change split by `by` into rate and mix effects (rate_mix_parts). A group with fewer than MIN_GROUP_ROWS rows in either
+    period is pooled into one group, never named. The latest period is the latest in the rows read; it is said when the
+    file's dates stop before it ends."""
+    import pandas as pd
+
+    sh = ctx.sh
+    if sh.date is None or sh.dates is None:
+        return st.refuse("the file has no time axis")
+    aw = asked_windows(ctx, grain or "quarter", period, denominator)
+    if "refuse" in aw:
+        return st.refuse(aw["refuse"])
+    if less is not None and less == measure:
+        return st.refuse("the measure and the part taken from it are the same column")
+    base = ctx.base & sh.dates.notna()
+    if where:
+        st.word("scope", "In %s, " % " and ".join("%s (%s)" % (v, c) for c, v in where.items()))
+        for c, v in where.items():
+            base &= _group_texts(ctx.df, c) == str(v)
+    else:
+        st.word("scope", "")
+    num = _num(ctx.df[measure])
+    if less:
+        num = num - _num(ctx.df[less])
+    den = _num(ctx.df[denominator])
+    f = pd.DataFrame({"n": num, "d": den, "g": _group_texts(ctx.df, by)})[base]
+    # the asked windows (asked_windows): "p1" the latest (or named) period, "p0" the one before, "py" a year earlier
+    p0, p1, py = "p0", "p1", "py"
+    lab = pd.Series(None, index=f.index, dtype=object)
+    for key, months in (("py", aw["yago"]), ("p0", aw["prev"]), ("p1", aw["cur"])):
+        if months:
+            lab[_in(ctx, months, "month")[base]] = key
+    f = f.assign(p=lab).dropna(subset=["n", "d", "p"])
+    if not (f["p"] == p1).any() or not (f["p"] == p0).any():
+        return st.refuse("no rows to read in %s or %s" % (aw["lc"], aw["lp"]))
+    f["g"] = f["g"].where(f["g"] != "", "(blank)")
+    cnt = f[f["p"].isin([p0, p1])].groupby(["g", "p"]).size()
+    small = sorted(g for g in set(f["g"]) if min(int(cnt.get((g, p0), 0)), int(cnt.get((g, p1), 0))) < MIN_GROUP_ROWS)
+    pool = "groups under %d rows" % MIN_GROUP_ROWS
+    f["g"] = f["g"].where(~f["g"].isin(small), pool)
+    agg = f.groupby(["p", "g"])[["n", "d"]].sum()
+
+    def side(p, col):
+        return {g: float(v) for (pp, g), v in agg[col].items() if pp == p}
+
+    pct = bool(less) and denominator == measure
+    scale = 100.0 if pct else 1.0
+    parts = rate_mix_parts(side(p0, "n"), side(p0, "d"), side(p1, "n"), side(p1, "d"), scale)
+    if not parts:
+        return st.refuse("the denominator is not positive in one of the periods")
+    label = ("gross margin" if pct and _has(measure, ("revenue", "sales", "turnover", "income"))
+             else "%s less %s over %s" % (measure, less, denominator) if less
+             else "%s per %s" % (measure, denominator))
+    vkind = "share" if pct else "plain"
+    ckind = "pp" if pct else "plain"
+    lp, lc = aw["lp"], aw["lc"]
+    st.word("label", label)
+    sc = st.numbers["scope"]["text"]
+    st.word("lead", sc + label if sc else label[:1].upper() + label[1:])
+    st.word("by", by)
+    st.word("by_words", str(by).replace("_", " "))
+    st.word("den", denominator)
+    st.word("prev_label", lp)
+    st.word("cur_label", lc)
+    st.word("formula", "(%s - %s) / %s" % (measure, less, denominator) if less else "%s / %s" % (measure, denominator))
+    st.num("prev", parts["R0"], vkind)
+    st.num("cur", parts["R1"], vkind)
+    st.num("change", parts["total"], ckind, signed=True)
+    st.num("rate", parts["rate"], ckind, signed=True)
+    st.num("mix", parts["mix"], ckind, signed=True)
+    st.numbers["direction"] = {"value": None, "kind": "word",
+                               "text": "rose" if parts["R1"] > parts["R0"] else "fell" if parts["R1"] < parts["R0"] else "held level"}
+    st.num("rows_prev", int(cnt.xs(p0, level="p").sum()) if len(cnt) else 0, "int")
+    st.num("rows_cur", int(cnt.xs(p1, level="p").sum()) if len(cnt) else 0, "int")
+    if small:
+        st.num("pooled", len(small), "int")
+    if (f["p"] == py).any():
+        yo = f[f["p"] == py][["n", "d"]].sum()
+        if float(yo["d"]) > 0:
+            ry = float(yo["n"]) / float(yo["d"])
+            st.word("year_label", aw["ly"])
+            st.num("year_value", ry, vkind)
+            st.num("yoy_change", (parts["R1"] - ry) * scale, ckind, signed=True)
+    sign = -1.0 if parts["total"] < 0 else 1.0
+    named = {g: v for g, v in parts["groups"].items() if g != pool}
+    cands = [(g, k, v[k]) for g, v in named.items() for k in ("rate", "mix") if v[k] * sign > 0]
+    if cands:
+        g, k, eff = max(cands, key=lambda x: abs(x[2]))
+        v = named[g]
+        st.word("top", g)
+        st.word("top_poss", g + ("'" if str(g).endswith("s") else "'s"))
+        st.word("top_kind", k)
+        st.num("top_effect", eff, ckind, signed=True)
+        if k == "mix":
+            st.num("top_w0", v["w0"], "share")
+            st.num("top_w1", v["w1"], "share")
+            st.num("top_own", v["r1"] if v["r1"] is not None else v["r0"], vkind)
+        else:
+            st.num("top_r0", v["r0"], vkind)
+            st.num("top_r1", v["r1"], vkind)
+    order = sorted(parts["groups"].items(), key=lambda kv: -abs(kv[1]["rate"] + kv[1]["mix"]))
+    pr = (lambda x: _r(x * 100, 4)) if pct else (lambda x: _r(x))
+    st.table = {
+        "columns": [by, "share of %s %s" % (denominator, lp), "share of %s %s" % (denominator, lc), "%s %s" % (label, lp),
+                    "%s %s" % (label, lc), "rate effect", "mix effect", "rows %s" % lp, "rows %s" % lc],
+        "rows": [[g, _r(v["w0"], 4), _r(v["w1"], 4), None if v["r0"] is None else pr(v["r0"]),
+                  None if v["r1"] is None else pr(v["r1"]), _r(v["rate"], 4), _r(v["mix"], 4),
+                  int(cnt.get((g, p0), 0)) if g != pool else sum(int(cnt.get((x, p0), 0)) for x in small),
+                  int(cnt.get((g, p1), 0)) if g != pool else sum(int(cnt.get((x, p1), 0)) for x in small)]
+                 for g, v in order][:12],
+    }
+    rows = []
+    for g, v in named.items():
+        if v["r0"] is None or v["r1"] is None:
+            continue
+        rows.append((g, [v["r0"], v["r1"]], int(min(cnt.get((g, p0), 0), cnt.get((g, p1), 0))),
+                     fmt_num((v["r1"] - v["r0"]) * scale, ckind, signed=True)))
+    _chart_bars(st, rows, [lp, lc], label, "share_pct" if pct else "average", vkind,
+                "%s by %s, %s against %s" % (label, by, lc, lp), [measure] + ([less] if less else []) + [denominator, by, sh.date], by)
+    return st
+
+
+SQL_TABLE_ROWS = 200    # rows of a query's result a step's table keeps (the step's sentence counts them all)
+
+
+def op_sql(ctx: Ctx, st: Step, sql: str) -> Step:
+    """One read-only SQLite query over the rows the engine kept (engine/nl_sql.py: the table kept_rows, the frame's
+    columns but the free-text ones; withheld and coded columns are never in it). The query runs under the engine's fence
+    (an authorizer allowing reads of kept_rows only, a function allowlist, PRAGMA query_only), a row cap and a time
+    cap; a result row resting on fewer than 5 rows is hidden when the engine can count them, and the step says so when
+    it cannot. Its table is the result; its sentence counts rows, never reads a cell."""
+    import nl_sql
+
+    free = set(getattr(ctx.sh, "free", ()) or ())
+    cols = [c for c in ctx.df.columns if c not in free]
+    df = ctx.df[cols]
+    kinds = {}
+    for c in cols:
+        if c == ctx.sh.date and ctx.sh.dates is not None:
+            kinds[c] = "date"
+        elif str(df[c].dtype).startswith("datetime"):
+            kinds[c] = "date"
+        elif c in ctx.sh.measures or str(df[c].dtype).startswith(("float", "int")):
+            kinds[c] = "number"
+        else:
+            kinds[c] = "text"
+    if ctx.sh.date and ctx.sh.dates is not None:
+        df = df.assign(**{ctx.sh.date: ctx.sh.dates})
+    # the in-memory table is made once per frame (nl_sql caches its connection in this state, keyed by the frame)
+    if _SQL_STATE.get("key") != id(ctx.df):
+        old = _SQL_STATE.get("_sql_con")
+        if old is not None:
+            old.close()
+        _SQL_STATE.clear()
+    _SQL_STATE.update(df=df, kinds=kinds, key=id(ctx.df),
+                      hidden=list((getattr(ctx, "hint", None) or {}).get("withheld") or []))
+    out = nl_sql.run_sql(_SQL_STATE, sql)
+    if not out.get("ok"):
+        return st.refuse(str(out.get("error") or "the query did not run")[:300])
+    st.num("rows", out["row_count"], "int")
+    st.num("columns", len(out["columns"]), "int")
+    sc = out.get("small_cells") or {}
+    st.num("hidden", int(sc.get("hidden") or 0), "int")
+    st.word("small_note", sc.get("note") or "")
+    st.word("cap_note", " %s" % out["note"] if out.get("note") else "")
+    st.table = {"columns": [str(c) for c in out["columns"]], "rows": out["rows"][:SQL_TABLE_ROWS]}
+    return st
+
+
+_SQL_STATE: Dict[str, Any] = {}
 
 
 def op_outliers(ctx: Ctx, st: Step, measure: str) -> Step:
@@ -3525,6 +3876,9 @@ _OP_FN = {
     "periods": op_periods,
     "confound": op_confound,
     "frequency": op_frequency,
+    # Ask your data, with SQL (Track B, CONTRACT §5.16): planner-only steps, never run in the engine's own rounds
+    "sql": op_sql,
+    "rate_mix": op_rate_mix,
 }
 OPS = tuple(_OP_FN)
 
@@ -3551,6 +3905,13 @@ OP_DOCS = {
     "group, with their shares (weighted by answers when the file counts them)",
     "confound": "whether the groups' averages of a measure just follow their averages of a second measure (price by "
     "cut following stone size): the rank correlation across groups and the measure per unit of the second",
+    "sql": "one read-only SQLite query (SELECT or WITH ... SELECT) over the table kept_rows, whose columns are the shape's "
+    "date, measures and dimensions (dates are text YYYY-MM-DD); its result is shown as a table. Sum a flow; recompute a "
+    "ratio from sums (gross margin = (SUM(revenue) - SUM(cost)) / SUM(revenue)), never AVG of row ratios",
+    "rate_mix": "a ratio of sums, (measure - less) / denominator (gross margin: measure revenue, less cost, denominator "
+    "revenue; a price: measure revenue, denominator units), in the latest quarter, month or year against the one before "
+    "and a year earlier, its change split by a group column into rate (each group's own ratio) and mix (the groups' "
+    "shares) effects that add up",
 }
 
 # Every argument an op may take, by name: its JSON schema and the role a column it names must have in the shape.
@@ -3572,6 +3933,7 @@ OP_NEEDS = {
     "answers": "answers",
     "periods": "periods",
     "frequency": "rows",
+    "rate_mix": "date",
 }
 
 
@@ -3624,6 +3986,36 @@ _ARG_SPEC: Dict[str, Dict[str, Any]] = {
         "maxLength": 200,
         "x-role": "measure",
         "description": "the second number column the group averages are read against",
+    },
+    "denominator": {
+        "type": "string",
+        "maxLength": 200,
+        "x-role": "measure",
+        "description": "the number column a ratio is divided by (revenue for a margin, units for a price)",
+    },
+    "less": {
+        "type": "string",
+        "maxLength": 200,
+        "x-role": "measure",
+        "description": "a number column taken from the measure before dividing (cost, for a gross margin)",
+    },
+    "grain": {
+        "type": "string",
+        "maxLength": 10,
+        "enum": ["quarter", "month", "year"],
+        "description": "the period the latest is compared in (default quarter)",
+    },
+    "period": {
+        "type": "string",
+        "maxLength": 16,
+        "pattern": "^([0-9]{4}-Q[1-4]|[0-9]{4}-(0[1-9]|1[0-2])|[0-9]{4}|since:[0-9]{4}(-(0[1-9]|1[0-2]))?)$",
+        "description": "the period asked about: 2026-Q3, 2026-09, 2026, or since:2024 (default: the latest complete one)",
+    },
+    "sql": {
+        "type": "string",
+        "maxLength": 4000,
+        "x-check": "sql",
+        "description": "one read-only SQLite SELECT (or WITH ... SELECT) over the table kept_rows and its listed columns",
     },
     "years": {
         "type": "integer",
@@ -3779,6 +4171,24 @@ def _check_step(raw: Any, ctx: Ctx) -> Tuple[Optional[str], Dict[str, Any], str,
         s = _ARG_SPEC[k]
         if v is None and not spec[k]:
             continue
+        if s["type"] == "string" and "x-role" not in s:
+            if not isinstance(v, str) or len(v) > s["maxLength"] or not v.strip():
+                return op, {}, why, "%s must be text of at most %d characters" % (k, s["maxLength"])
+            if "enum" in s and v not in s["enum"]:
+                return op, {}, why, "%s must be one of %s" % (k, ", ".join(s["enum"]))
+            if "pattern" in s and not re.match(s["pattern"], v):
+                return op, {}, why, "%s must read like 2026-Q3, 2026-09, 2026 or since:2024" % k
+            if s.get("x-check") == "sql":
+                import nl_sql
+
+                free = set(getattr(ctx.sh, "free", ()) or ())
+                chk = nl_sql.check_sql(v, [c for c in ctx.df.columns if c not in free],
+                                       list((getattr(ctx, "hint", None) or {}).get("withheld") or []))
+                if not chk["ok"]:
+                    return op, {}, why, "the SQL was refused: %s" % chk["reason"]
+                v = chk["sql"]
+            out[k] = v
+            continue
         if s["type"] == "string":
             if not isinstance(v, str) or len(v) > s["maxLength"]:
                 return op, {}, why, "%s must be a column's name" % k
@@ -3865,6 +4275,13 @@ def _check_step(raw: Any, ctx: Ctx) -> Tuple[Optional[str], Dict[str, Any], str,
 # A plain sentence for a step a planner asked for: the first template whose slots the step's ledger holds.
 _OP_SENTENCES: Dict[str, List[str]] = {
     "change": [
+        "{X.asked_the} {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
+        "{X.cur_label} ({X.change}; {X.yago_change} against {X.yago} in {X.yago_label}); by {X.by}, {X.top} carried "
+        "{X.top_share} of the change ({X.top_delta}).",
+        "{X.asked_the} {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
+        "{X.cur_label} ({X.change}); by {X.by}, {X.top} carried {X.top_share} of the change ({X.top_delta}).",
+        "{X.asked_the} {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
+        "{X.cur_label} ({X.change}; {X.yago_change} against {X.yago} in {X.yago_label}).",
         "{X.scope}by {X.by}, {X.top} carried {X.top_share} of the change in {X.measure} ({X.top_delta}) from "
         "{X.prev_label} to {X.cur_label}.",
         "{X.scope}the {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
@@ -3909,8 +4326,32 @@ _OP_SENTENCES: Dict[str, List[str]] = {
         "{X.n} rows); that is association, not cause.",
     ],
     "mix": [
+        "From {X.prev_label} to {X.cur_label}, of the {X.total} change in the average {X.measure}, {X.within} came from "
+        "changes inside the {X.by} groups and {X.mix} from rows moving between them.",
         "Of the {X.total} change in the average {X.measure}, {X.within} came from changes inside the {X.by} groups and "
         "{X.mix} from rows moving between them.",
+    ],
+    "sql": [
+        "The read-only query returned {X.rows} rows of {X.columns} columns from the rows the engine kept.{X.cap_note} "
+        "{X.small_note}",
+    ],
+    "rate_mix": [
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
+        "({X.change}; {X.yoy_change} against {X.year_value} in {X.year_label}). By {X.by_words}: rate effect {X.rate}, mix "
+        "effect {X.mix}; the largest is {X.top_poss} mix ({X.top_effect}): its share of {X.den} went from {X.top_w0} to "
+        "{X.top_w1}, at its own {X.label} of {X.top_own}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
+        "({X.change}; {X.yoy_change} against {X.year_value} in {X.year_label}). By {X.by_words}: rate effect {X.rate}, mix "
+        "effect {X.mix}; the largest is {X.top_poss} rate ({X.top_effect}): its own {X.label} went from {X.top_r0} to "
+        "{X.top_r1}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
+        "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}; the largest is {X.top_poss} mix "
+        "({X.top_effect}): its share of {X.den} went from {X.top_w0} to {X.top_w1}, at its own {X.label} of {X.top_own}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
+        "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}; the largest is {X.top_poss} rate "
+        "({X.top_effect}): its own {X.label} went from {X.top_r0} to {X.top_r1}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
+        "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}.",
     ],
     "outliers": [
         "{X.far} of {X.n} {X.what} {X.measure} ({X.far_share}) sit far from the rest (robust z beyond 3.5); the largest "
@@ -5562,6 +6003,7 @@ def run_steps(
     t0 = time.perf_counter()
     sh = shape_of(df, kinds, hint)
     ctx = Ctx(df, sh)
+    ctx.hint = dict(hint or {})       # the withheld columns' names (op_sql says why a query naming one is refused)
     for p in prior or []:
         ctx.order.append(str(p.get("id")))
     rnd = 1 + max([int(p.get("round") or 0) for p in prior or []] or [0])

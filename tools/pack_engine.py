@@ -164,6 +164,9 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # clean my file (track C, CONTRACT §5.15): the cleaned CSV and the cleaning log, imported by
                  # nl_browser.cleanfile_json (engine/worker.js "cleanfile")
                  "nl_cleanfile.py": "nl_cleanfile.py",
+                 # Ask your data with SQL (CONTRACT §5.16): the SQL fence and the engine's own plan, imported by
+                 # nl_analyst's sql step and nl_browser.analyst_plan_json
+                 "nl_sql.py": "nl_sql.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",

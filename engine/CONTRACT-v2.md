@@ -2189,3 +2189,67 @@ notes, edited, cleaning}`.
 
 Tests: `tools/test_nl_cleanfile.py` (the sample against pandas, nothing filled, flagged values unchanged, the log's counts equal the
 report and the copy, idempotence, privacy, edits); `tools/check_ui.js` clean-my-file-desktop / -phone / -dark.
+### 5.16 Ask your data, with SQL (Track B of `plan/DASHBOARD-DESIGN.md`, 16 October 2026)
+
+An extension of the analyst loop (§5.10 `analyst`) and its "Ask your data" box, not a feature beside it: no new block, no
+new worker route. A visitor's question ("Why is gross margin down in EMEA this quarter?") is answered by typed steps of
+the same loop, so the ledger, the insight templates, the story card, the figures and the rule that every number in an
+answer is a printed ledger value all apply.
+
+**Two new step ops** (`engine/nl_analyst.py`; planner-only: the engine's own rounds never run them):
+
+- `sql {sql}`: one read-only SQLite query over the table `kept_rows` (`engine/nl_sql.py`): the analysis frame's columns
+  (no withheld or coded column is in it; free-text columns are left out too; dates as text `YYYY-MM-DD`). Checked twice
+  before it runs (the worker's `checkSql` and `nl_sql.check_sql`, the same rules: one statement, SELECT or WITH ...
+  SELECT, no PRAGMA/ATTACH/DETACH/INSERT/UPDATE/DELETE/CREATE/DROP/ALTER/REPLACE/VACUUM/load_extension, no parameter,
+  only `kept_rows` or the query's own CTE names, only its columns, functions from a list), then run under a SQLite
+  authorizer (reads of `kept_rows` only, withheld columns denied, function allowlist, anything else denied), `PRAGMA
+  query_only`, a row cap (`ROW_CAP` 5,000 returned; the step's table keeps the first 200) and a time cap (3 s, a progress
+  handler). Small cells: when the outer SELECT reads `kept_rows` directly, the engine counts each result row's source
+  rows (an injected `COUNT(*)`) and hides a row resting on fewer than 5; otherwise the step says plainly that it could
+  not. Ledger: `rows`, `columns`, `hidden` (ints), `small_note`, `cap_note` (words). Table: the result. `args.sql` is the
+  query as it ran (no trailing semicolon).
+- `rate_mix {measure, denominator, by, less?, where?, grain?}`: a ratio of sums, `(measure - less) / denominator`
+  (gross margin: revenue, cost, revenue; a price: revenue over units), recomputed from sums, never an average of row
+  ratios, in the latest `grain` period (quarter by default; month, year) of the rows read against the one before and
+  the same period a year earlier; the change split by `by` into rate and mix effects with midpoint weights
+  (`rate_mix_parts`: rate_g = (w0+w1)/2 (r1-r0), mix_g = (w1-w0) ((r0+r1)/2 - (R0+R1)/2); exact, so rate + mix = the
+  change). This is `mix`'s split of an average (rows as the denominator) extended to any denominator. A group under 5 rows
+  in either period is pooled, never named. Ledger: `prev`, `cur`, `year_value` (share kind for a margin), `change`,
+  `rate`, `mix`, `yoy_change`, `top_effect` (percentage points for a margin), `top_w0`/`top_w1`/`top_own` (the largest
+  effect is mix) or `top_r0`/`top_r1` (it is rate), words `lead`, `label`, `by`, `top`, `top_kind`, `partial` (the
+  latest period is said to be incomplete when the file's dates stop before it ends). Table: per group shares, own
+  ratios, rate and mix effects and rows. Figure: a grouped bar of each group's own ratio, the registry record of §5.9.
+
+**The asked period sets every windowed step** (17 October 2026). `change`, `mix` and `rate_mix` take `grain`
+(quarter, month, year) and `period` (`2026-Q3`, `2026-09`, `2026`, `since:2024[-MM]`; pattern-checked by both the worker
+and the engine); with either, `asked_windows` sets the windows instead of the op's own: the latest COMPLETE period by
+default (complete when the file's dates run to its last day), against the period before and the same period a year
+earlier (`yago`, `yago_label`, `yago_change` in `change`'s ledger; `year_*` in `rate_mix`'s), never for a year grain. A
+named period must be complete in the file; a window the file does not hold whole (it starts later) is refused with its
+reason, never compared on part of its months. The answer names both windows and the year earlier ("The total of revenue
+fell from 1.29 million in 2026 Q2 to 1.06 million in 2026 Q3 (-18.0%; -0.8% against 1.06 million in 2025 Q3); by
+region, Americas carried 42.8% of the change (-99,454)."). Without grain or period an op reads its own windows as
+before, and the engine's own rounds are unchanged. `nl_sql.read_question` reads the period ("this quarter", "last
+month", "Q3 2026", "September 2026", "in 2025", "since 2024") and `plan_steps` passes it to every step.
+
+**Who plans the steps.** With the AI chosen, the worker's `/analyst` (src/analyst.js = docs/ai-analyst/analyst-endpoint.mjs;
+step-schema.json regenerated from `step_schema()`) may answer with `sql` and `rate_mix` steps (flat fields
+`denominator`, `less`, `grain`, `sql`); without the AI, or when its round fails or chooses nothing, the engine plans them
+(`nl_sql.plan_steps`, through `nl_browser.analyst_plan_json(question)` and the engine worker's `plan` message): one `sql`
+step (`engine_sql`: the asked measure by period in the asked slice), then `rate_mix` by each of the shape's grouping
+columns for a ratio, the loop's own `change` with `by` for a flow, `mix` for an average. The question is read by the
+engine's rules (`read_question`): the measure (margin needs revenue- and cost-named columns), the grain, the slice (values
+of grouping columns the question names). The box now shows with the AI off too and says the engine plans the checks.
+
+**Pins.** An asked answer with a figure carries "Add this chart to the dashboard": the figure's chart registry record
+(§5.9, `id` `viz.7x.*`) plus `pinned_from {source: "ask-your-data", insight, question, steps[], text}` is pushed to
+`window.NL_DASH_PINS` and dispatched as `CustomEvent('nl:pin-chart', {detail: record})` on `document` (the dashboard,
+Track A, consumes either). Pinning the same answer twice adds it once.
+
+**The demo.** `engine/sample-sales-synthetic.csv` (SYNTHETIC, `tools/make_sample_sales.py`, seed 20261016; button "Try the
+sales sample (synthetic)", analysed as of 2026-10-01): 5,389 orders, Oct 2023 to Sep 2026, with a planted EMEA 2026 Q3
+gross-margin drop (Accessories mix in Germany and France; a 12% Online discount). The engine's answer: EMEA gross margin
+fell from 47.4% (2026 Q2) to 40.1% (2026 Q3), -7.37 points (-4.81 against 2025 Q3); by product line mix -4.95 points led
+by Accessories (share 11.3% to 25.0% at a 6.1% margin); by channel rate -8.43 led by Online (50.9% to 28.7%); by country
+rate -9.67 led by Germany (49.7% to 21.4%). `tools/test_nl_sql.py` recomputes these with pandas.

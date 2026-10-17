@@ -1119,6 +1119,10 @@ self.onmessage = function (e) {
     var C = (m.options && m.options.rules) ? REPORT.__cleanEdited : REPORT.__clean;
     if (C) { C = JSON.parse(JSON.stringify(C)); C.__echo = m.options || null; self.__lastClean = m.options; }
     self.postMessage({ type: 'cleaned', id: m.id, out: C || null });
+  } else if (m.type === 'plan') {           // Ask your data without an AI planner: the engine's own plan (CONTRACT §5.16)
+    self.postMessage({ type: 'plan_json', id: m.id, steps: REPORT.__plan || [] });
+  } else if (m.type === 'more') {
+    self.postMessage({ type: 'more_json', id: m.id, out: REPORT.__more || null });
   } else if (m.type === 'results') {
     if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: REPORT.__resultsJson || { charts: [], tables: [] } });
   } else if (m.type === 'run') {
@@ -4925,6 +4929,111 @@ check('clean-my-file-dark', DESK, async (ctx) => {
 }, { acceptDownloads: true, colorScheme: 'dark' });
 
 /* ------------------------------------------------------------ runner */
+/* ------------------------------------------------------------ Ask your data, with SQL (Track B, CONTRACT §5.14)
+   The SYNTHETIC sales sample's real report (tools/make_sample_sales.py, run natively), the engine's own plan for the
+   example question and the analyst loop's answer to it (nl_browser.analyst_plan_json / analyst_more_json), handed to the
+   stand-in worker. With the AI off the engine plans the checks: the read-only SQL with its Copy button and result table,
+   the rate/mix answers with their charts, and "Add this chart to the dashboard" (window.NL_DASH_PINS + 'nl:pin-chart'). */
+let SALES_REP = null;
+function salesReport() {
+  if (SALES_REP) return SALES_REP;
+  const code = 'import sys,os,json\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'd=open(site+"/engine/sample-sales-synthetic.csv","rb").read()\nrep=NB.run(d,"sample-sales-synthetic.csv","",{},"2026-10-01")\n' +
+    'q="Why is gross margin down in EMEA this quarter?"\nst=json.loads(NB.analyst_plan_json(q))\nrep["__plan"]=st\n' +
+    'rep["__more"]=json.loads(NB.analyst_more_json(json.dumps(st),json.dumps(rep["analyst"]["steps"])))\nprint(json.dumps(rep))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Skip('the sales report could not be made (' + String(r.stderr || r.error || '').trim().split('\n').pop() + ')');
+  SALES_REP = JSON.parse(r.stdout);
+  return SALES_REP;
+}
+async function askSqlChecks(ctx, tag) {
+  const rep = salesReport();
+  ok(rep.input.name === 'sample-sales-synthetic.csv' && rep.__more.insights.length === 4, 'the sales report or its answer is not what the check expects');
+  const { p } = await openV2(ctx, 'sales', rep);
+  if (/dark/.test(tag)) { await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); }); await p.waitForTimeout(100); }
+  ok(/synthetic/i.test(await p.textContent('#try-sample-sales')), 'the sales sample button does not say synthetic');
+  await p.evaluate(() => { window.__pins = []; document.addEventListener('nl:pin-chart', (e) => window.__pins.push(e.detail)); });
+  const ex = '#try-report form.nla-ask [data-ask-example]';
+  ok(await p.isVisible(ex), 'no example question in the Ask your data box');
+  ok(/engine plans the checks itself/.test(await p.textContent('#try-report .nla-ask-note')), 'the box does not say the engine plans the checks with the AI off');
+  await p.click(ex);
+  try {
+    await p.waitForFunction(() => document.querySelectorAll('#try-report .nla-pin').length >= 3, null, { timeout: 15000 });
+  } catch (e) {
+    throw new Error('no answers after the example question: status "' + (await p.evaluate(() => (document.querySelector('#try-report .nla-ask-status') || {}).textContent)) + '"; ' + (p.__errs[0] || ''));
+  }
+  const r = await p.evaluate(() => {
+    const q = document.querySelector('#try-report .nla-ins .nla-sql-q');
+    const tb = q && q.closest('.nla-ins').querySelector('table.dt');
+    const texts = Array.from(document.querySelectorAll('#try-report .nla-ins .nla-text')).map((x) => x.textContent);
+    return { sql: q ? q.textContent : '', ro: !!document.querySelector('#try-report .nla-ins .nla-ro'), copy: !!document.querySelector('#try-report .nla-ins [data-copy-sql]'),
+      rows: tb ? tb.querySelectorAll('tbody tr').length : 0, texts, figs: document.querySelectorAll('#try-report .nla-ins .nla-fig svg').length,
+      status: (document.querySelector('#try-report .nla-ask-status') || {}).textContent || '',
+      sw: document.documentElement.scrollWidth, vw: document.documentElement.clientWidth,
+      bg: q ? getComputedStyle(q).backgroundColor : '', fg: q ? getComputedStyle(q).color : '' };
+  });
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  ok(/^SELECT /.test(r.sql) && /FROM kept_rows/.test(r.sql) && /'EMEA'/.test(r.sql), 'the SQL is not shown: ' + r.sql.slice(0, 80));
+  ok(r.ro && r.copy, 'the SQL has no read-only label or no Copy button');
+  ok(r.rows === 12, 'the result table shows ' + r.rows + ' rows (12 quarters expected)');
+  const want = rep.__more.insights.map((i) => i.text);
+  ok(want.every((t) => r.texts.indexOf(t) >= 0), 'an engine answer is not shown as the engine wrote it');
+  ok(r.texts.some((t) => /gross margin fell from 47\.4% in 2026 Q2 to 40\.1% in 2026 Q3/.test(t) && /Accessories' mix/.test(t)), 'the planted mix cause is not in the answer');
+  ok(r.texts.some((t) => /Online's rate/.test(t)), 'the planted discount cause is not in the answer');
+  ok(r.figs >= 3, 'the answers\' charts are not drawn (' + r.figs + ')');
+  ok(/Answered with 4 new findings/.test(r.status), 'the status line says: ' + r.status);
+  ok(r.sw <= r.vw + 1, 'the page is wider than the viewport: ' + r.sw + ' > ' + r.vw);
+  ok(r.bg !== r.fg, 'the SQL block has no contrast');
+  await shot(p, 'asksql-' + tag + '-answer', '#try-report .nla-group:has(.nla-pin)');
+  await shot(p, 'asksql-' + tag + '-box', '#try-report form.nla-ask');
+  await p.click('#try-report .nla-pin');
+  const pin = await p.evaluate(() => ({ list: (window.NL_DASH_PINS || []).length, ev: window.__pins.length, rec: window.__pins[0],
+    btn: document.querySelector('#try-report .nla-pin').textContent, dis: document.querySelector('#try-report .nla-pin').disabled }));
+  ok(pin.list === 1 && pin.ev === 1, 'the pin did not reach NL_DASH_PINS and the nl:pin-chart event: ' + JSON.stringify([pin.list, pin.ev]));
+  ok(pin.rec && /^viz\.7\d\./.test(pin.rec.id) && pin.rec.chart && pin.rec.data && pin.rec.pinned_from && pin.rec.pinned_from.source === 'ask-your-data' &&
+    pin.rec.pinned_from.question === 'Why is gross margin down in EMEA this quarter?', 'the pinned record is not the chart registry record: ' + JSON.stringify(pin.rec).slice(0, 200));
+  ok(pin.dis && /Added to the dashboard/.test(pin.btn), 'the pin button does not say it was added');
+  await p.click('#try-report .nla-pin:not([disabled])');
+  ok(await p.evaluate(() => window.NL_DASH_PINS.length) === 2, 'a second answer\'s chart could not be pinned');
+}
+check('ask-sql-answer-desktop', DESK, async (ctx) => { await askSqlChecks(ctx, 'desktop-light'); });
+check('ask-sql-answer-phone', PHONE, async (ctx) => { await askSqlChecks(ctx, 'phone-light'); }, { mobile: true });
+check('ask-sql-answer-dark', DESK, async (ctx) => { await askSqlChecks(ctx, 'desktop-dark'); }, { colorScheme: 'dark' });
+
+// The same question through the REAL engine (the packed zip in the page's own Pyodide, engine/worker.js), the AI off: the sales
+// sample's report, then the example question planned by the engine (the worker's 'plan' message) and run by the analyst loop
+// ('more'). The answers must be the native engine's own sentences (made here with python), word for word; the SQL panel shows
+// the engine's query and its 12 quarters. Prints the measured browser time of the question.
+check('ask-sql-through-the-real-engine', DESK, async (ctx) => {
+  const why = await cdnReachable();
+  if (why) throw new Skip(why + ', so the real engine cannot load');
+  const native = salesReport().__more.insights.map((i) => i.text);
+  const p = await openTry(ctx, { proxy: 'unset' });
+  await p.click('#try-sample-sales');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
+  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
+  ok(await p.isVisible('#try-report'), 'no report from the real engine: ' + (await p.textContent('#try-msg')));
+  const ex = '#try-report form.nla-ask [data-ask-example]';
+  ok(await p.isVisible(ex), 'no example question for the sales sample');
+  await p.evaluate(() => { window.__t0 = performance.now(); });
+  await p.click(ex);
+  try {
+    await p.waitForFunction(() => /Answered with|none gave|could not|found no/.test((document.querySelector('#try-report .nla-ask-status') || {}).textContent || ''), null, { timeout: 120000 });
+  } catch (e) { throw new Error('no answer: status "' + (await p.evaluate(() => (document.querySelector('#try-report .nla-ask-status') || {}).textContent)) + '"'); }
+  const r = await p.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), status: document.querySelector('#try-report .nla-ask-status').textContent,
+    texts: Array.from(document.querySelectorAll('#try-report .nla-ins .nla-text')).map((x) => x.textContent),
+    sql: (document.querySelector('#try-report .nla-ins .nla-sql-q') || {}).textContent || '',
+    rows: Array.from(document.querySelectorAll('#try-report .nla-ins > .nla-tbl tbody tr')).map((tr) => tr.firstChild.textContent),
+    pins: document.querySelectorAll('#try-report .nla-pin').length }));
+  console.log('UI INFO ask-sql-through-the-real-engine: the question took ' + r.ms + ' ms in the browser (plan + 4 steps in Pyodide + redraw)');
+  ok(/Answered with 4 new findings/.test(r.status), 'status: ' + r.status);
+  ok(native.every((t) => r.texts.indexOf(t) >= 0), 'an answer differs from the native engine\'s: ' + native.filter((t) => r.texts.indexOf(t) < 0)[0]);
+  ok(/^SELECT /.test(r.sql) && /FROM kept_rows/.test(r.sql) && /"region" = 'EMEA'/.test(r.sql), 'the SQL panel: ' + r.sql.slice(0, 80));
+  ok(r.rows.length === 12 && r.rows[11] === '2026-Q3', 'the result table: ' + r.rows.join(' '));
+  ok(r.pins === 3, r.pins + ' pin buttons');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
 (async () => {
   const browser = await playwright.chromium.launch({ executablePath: CHROME, headless: true });
   let failed = 0, ran = 0, skipped = 0;

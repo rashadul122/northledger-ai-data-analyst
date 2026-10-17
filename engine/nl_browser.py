@@ -6927,6 +6927,24 @@ def analyst_more_json(steps_json: str, prior_json: str) -> str:
     return json.dumps(out, allow_nan=False, default=str)
 
 
+def sql_schema_json() -> str:
+    """Ask with SQL (engine/nl_sql.py, CONTRACT §5.13): the kept-rows table's columns as the worker's POST /sql may see
+    them (name, type, role, unit, kind; never a value), from the frame of the last run."""
+    import nl_sql as _ns_sql
+    return json.dumps(_ns_sql.schema(_LAST_ANALYST), allow_nan=False, default=str)
+
+
+def sql_answer_json(question: str, sql: str = "", chart_json: str = "null", why: str = "") -> str:
+    """Ask with SQL: the AI's SQL (or, with none or a refused one, the engine's own) run on the kept rows under the
+    SQLite authorizer, the engine's explanation of the asked move and the checked chart spec (nl_sql.answer)."""
+    import nl_sql as _ns_sql
+    try:
+        chart = json.loads(chart_json) if chart_json else None
+    except (TypeError, ValueError):
+        chart = None
+    return json.dumps(_ns_sql.answer(_LAST_ANALYST, question, sql, chart, why), allow_nan=False, default=str)
+
+
 def results_json(rep: Any) -> str:
     """results_for_ai as JSON text (what the page POSTs to the worker's /report)."""
     return json.dumps(results_for_ai(rep), allow_nan=False, default=str)
@@ -13511,7 +13529,10 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
         # the frame the loop read, kept for the AI rounds the page may ask for next (analyst_more_json): the same rows,
         # kinds and hint, so a planned step runs on exactly what the engine's own steps ran on, never on raw rows
         _LAST_ANALYST.clear()
-        _LAST_ANALYST.update(df=df, kinds=info.get("kinds") or {}, hint=hint)
+        _LAST_ANALYST.update(df=df, kinds=info.get("kinds") or {}, hint=hint,
+                             # Ask with SQL (engine/nl_sql.py, CONTRACT §5.13): the loop's reading of the file, and the
+                             # headers of the columns withheld or coded (never in the frame; named so SQL is told why)
+                             shape=out.get("shape"), hidden=[str(reading.header(c)) for c in hide])
         return out
     except Exception as exc:  # noqa: BLE001 - the report stands without the loop, and says so
         if os.environ.get("NL_BROWSER_STRICT"):

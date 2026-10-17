@@ -200,7 +200,7 @@
   if (typeof document === 'undefined') return;
   var ENT = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return ENT[c]; }); }
-  var last = { key: '', pack: null, busy: false };
+  var last = { key: '', pack: null, busy: false, pending: null, pendingKey: '' };
   function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function asOf(rep) { var T = window.NLTry; return (T && T.asOf && T.asOf()) || ((rep && rep.reproducibility && rep.reproducibility.parameters) || {}).as_of || ''; }
   var option = {
@@ -250,17 +250,35 @@
       var s = {}; Object.keys(settings).forEach(function (k) { s[k] = settings[k]; });
       s.as_of = asOf(rep); s.roles = roles;
       var key = JSON.stringify(s) + '|' + arr(rep.inputs).map(function (f) { return f.id + f.sha256 + f.role; }).join(',') + '|' + ((rep.input || {}).sha256 || '');
-      slot.innerHTML = '<p class="note" role="status" id="pk-status">' + (fit.why ? esc(fit.why.charAt(0).toUpperCase() + fit.why.slice(1)) + '. ' : '') + 'Making the pack from ' + arr(rep.inputs).filter(function (f) { return f.ok; }).length + ' file(s)…</p><div id="pk-out"></div>';
+      var making = (fit.why ? esc(fit.why.charAt(0).toUpperCase() + fit.why.slice(1)) + '. ' : '') + 'Making the pack from ' + arr(rep.inputs).filter(function (f) { return f.ok; }).length + ' file(s)…';
+      // the download buttons are drawn once and stay the same nodes (a settings change never redraws them, so a press that
+      // blurred a field is not lost); each takes the latest pack when pressed, waiting for one still being made
+      if (!slot.querySelector('#pk-dl-row')) {
+        slot.innerHTML = '<p class="note" role="status" id="pk-status">' + making + '</p><div id="pk-out"><div class="pk-dl ai-rep-actions" id="pk-dl-row" hidden><button type="button" class="btn btn-primary btn-sm" data-pk="xlsx">Excel workbook (.xlsx)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="docx">Cover note (.docx)</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-pk="json">Download pack recipe (.json)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="md">Checklist for next month (.md)</button>' +
+          '<span class="try-share-out" id="pk-dl-out" hidden></span></div><div id="pk-body"></div></div>';
+        Array.prototype.forEach.call(slot.querySelectorAll('button[data-pk]'), function (b) {
+          b.addEventListener('click', function () {
+            (last.pending || Promise.resolve(last.pack)).then(function (pack) {
+              var o = document.getElementById('pk-dl-out');
+              if (!o) return;
+              if (!pack || !pack.ok) { o.hidden = false; o.textContent = 'The pack could not be made with these settings.'; return; }
+              // the reader is the visitor's setting as it stands (the engine echoes it; a pack made earlier may predate an edit)
+              var made = today(), files = P.files(Object.assign({}, pack, { readers: String(D.settings('monthly-pack').readers || pack.readers || '') }), made), want = b.getAttribute('data-pk'), f = files.filter(function (x) { return x.name.slice(-want.length - 1) === '.' + want; })[0];
+              if (!f) { o.hidden = false; o.textContent = 'This file cannot be made in this browser.'; return; }
+              D.offer(o, f.bytes, f.name, f.mime, f.label);
+            });
+          });
+        });
+      }
       var draw = function (pack) {
-        var st = document.getElementById('pk-status'), out = document.getElementById('pk-out');
+        var st = document.getElementById('pk-status'), out = document.getElementById('pk-body'), row = document.getElementById('pk-dl-row');
         if (!st || !out) return;
         if (!pack || !pack.ok) { st.textContent = 'The pack could not be made: ' + ((pack && pack.error) || 'the engine did not answer (run the file again)') + '.'; return; }
         st.textContent = (fit.why ? fit.why.charAt(0).toUpperCase() + fit.why.slice(1) + '. ' : '') + 'Reporting month: ' + mlabel(pack.month) + ' (' + pack.month_why + '). ' + pack.lines.length + ' lines, ' + pack.watch.length + ' on the watch list.';
         var W = pack.lines.filter(function (l) { return l.watch; });
-        out.innerHTML = '<div class="pk-dl ai-rep-actions"><button type="button" class="btn btn-primary btn-sm" data-pk="xlsx">Excel workbook (.xlsx)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="docx">Cover note (.docx)</button>' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-pk="json">Download pack recipe (.json)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="md">Checklist for next month (.md)</button>' +
-          '<span class="try-share-out" id="pk-dl-out" hidden></span></div>' +
-          '<h5>Watch list: moves over ' + esc(thresholdText(pack)) + '</h5>' + (W.length ? '<div class="tbl-wrap"><table class="tbl pk-watch"><thead><tr><th scope="col">Line</th><th scope="col">Moved</th><th scope="col">Where it sits (from the data)</th><th scope="col">Cause</th></tr></thead><tbody>' +
+        if (row) row.hidden = false;
+        out.innerHTML = '<h5>Watch list: moves over ' + esc(thresholdText(pack)) + '</h5>' + (W.length ? '<div class="tbl-wrap"><table class="tbl pk-watch"><thead><tr><th scope="col">Line</th><th scope="col">Moved</th><th scope="col">Where it sits (from the data)</th><th scope="col">Cause</th></tr></thead><tbody>' +
           W.map(function (l) { return '<tr><th scope="row">' + esc(l.label) + '</th><td>' + esc(P.movedText(pack, l)) + '</td><td>' + esc(P.whereText(pack, l) || 'not in the data') + '</td><td>' + esc(l.cause) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="note">No line moved more than the threshold.</p>') +
           '<details class="pk-lines"><summary>Every line, what it is and whether it goes in the pack</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th scope="col">In the pack</th><th scope="col">Line</th><th scope="col">' + esc(mlabel(pack.month)) + '</th><th scope="col">Read as</th></tr></thead><tbody>' +
           pack.lines.map(function (l) {
@@ -268,19 +286,11 @@
               (l.derived ? 'rate from revenue and cost' : '<select data-pk-kind="' + esc(l.key) + '" aria-label="How to read ' + esc(l.label) + '">' + [['flow', 'flow (summed over months)'], ['stock', 'count at a date'], ['level', 'level (averaged)'], ['rate', 'rate (points)']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === l.kind ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>') + '</td></tr>';
           }).join('') + '</tbody></table></div><p class="note">Untick a line to leave it out, or change how a line is read; the pack is made again here, with no AI call.</p></details>' +
           '<details class="pk-notes"><summary>Looked wrong, please check (' + arr(pack.notes.wrong).length + ')</summary><ul>' + (arr(pack.notes.wrong).length ? pack.notes.wrong.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') : '<li>Nothing the engine flagged.</li>') + '</ul></details>';
-        Array.prototype.forEach.call(out.querySelectorAll('button[data-pk]'), function (b) {
-          b.addEventListener('click', function () {
-            // the reader is the visitor's setting as it stands (the engine echoes it; a card drawn earlier may predate an edit)
-            var made = today(), files = P.files(Object.assign({}, pack, { readers: String(D.settings('monthly-pack').readers || pack.readers || '') }), made), want = b.getAttribute('data-pk'), f = files.filter(function (x) { return x.name.slice(-want.length - 1) === '.' + want; })[0], o = document.getElementById('pk-dl-out');
-            if (!f) { o.hidden = false; o.textContent = 'This file cannot be made in this browser.'; return; }
-            D.offer(o, f.bytes, f.name, f.mime, f.label);
-          });
-        });
         Array.prototype.forEach.call(out.querySelectorAll('input[data-pk-line]'), function (c) {
           c.addEventListener('change', function () {
             var keep = Array.prototype.filter.call(out.querySelectorAll('input[data-pk-line]'), function (x) { return x.checked && !x.disabled; }).map(function (x) { return x.getAttribute('data-pk-line'); });
             D.setSettings('monthly-pack', { metrics: keep.length === pack.lines.filter(function (l) { return !l.derived; }).length ? '' : keep.join(', ') });
-            D.open('monthly-pack');
+            option.render(slot, rep, D.settings('monthly-pack'));
           });
         });
         Array.prototype.forEach.call(out.querySelectorAll('select[data-pk-kind]'), function (sel) {
@@ -289,13 +299,22 @@
             Object.keys(cur).forEach(function (x) { k[x] = cur[x]; });
             k[sel.getAttribute('data-pk-kind')] = sel.value;
             D.setSettings('monthly-pack', { kinds: k });
-            D.open('monthly-pack');
+            option.render(slot, rep, D.settings('monthly-pack'));
           });
         });
       };
-      if (last.key === key && last.pack) { draw(last.pack); return; }
-      D.engine('monthly-pack', s).then(function (pack) { last.key = key; last.pack = pack; P.lastPack = pack; draw(pack); });
-    }
+      if (last.key === key && last.pack && !last.pending) { draw(last.pack); return; }
+      if (last.pendingKey === key && last.pending) return;
+      var st0 = document.getElementById('pk-status');
+      if (st0 && last.pack) st0.textContent = 'Making the pack again with your settings…';
+      last.pendingKey = key;
+      var mine = last.pending = D.engine('monthly-pack', s).then(function (pack) {
+        if (last.pending === mine) { last.pending = null; last.key = key; last.pack = pack; P.lastPack = pack; draw(pack); }
+        return pack;
+      });
+    },
+    // a setting changed (the registry's form): the pack is made again and its figures redrawn; the buttons stay
+    onSettings: function (slot, rep, settings) { option.render(slot, rep, settings); }
   };
   P.option = option;
   if (window.NLDeliver && window.NLDeliver.register) window.NLDeliver.register(option);

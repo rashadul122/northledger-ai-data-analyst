@@ -266,6 +266,7 @@ function onClean(m) {
     if (booted && nl && nl.cleanfile_json) out = JSON.parse(String(nl.cleanfile_json(JSON.stringify(m.options || {}))));
   } catch (e) { out = { ok: false, error: lastLine(e) || 'The cleaner stopped.' }; }
   post({ type: 'cleaned', id: m.id, out: out });
+}
 // Ask your data without an AI planner (the AI is off, or its round failed or chose nothing): the steps the engine plans
 // for the question itself (nl_browser.analyst_plan_json: a read-only sql step, then rate_mix or change by group)
 function onPlan(m) {

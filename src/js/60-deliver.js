@@ -5,7 +5,10 @@
    window.NLDeliver
      register(option)   option: {id, title, blurb, order, needs: [{what, columns, optional, how}], roles: [...],
                         fits(rep) -> {ok, why}, settings: [{key, label, kind: 'text'|'number'|'choice'|'columns', default,
-                        options: [{value, label}], help, min, max, step}], render(slot, rep, settings), loadRecipe(json)?}
+                        options: [{value, label}], help, min, max, step}], render(slot, rep, settings), loadRecipe(json)?,
+                        onSettings(slot, rep, settings)? / rerenderOnSettings?: a settings change never redraws the
+                        card; it calls onSettings (or render, when rerenderOnSettings), else the option reads
+                        D.settings(id) when the visitor acts}
                         A type that loads before this file pushes its option to window.NLDeliverQueue instead.
      list() / get(id) / chosen() ('' = an analysis) / choose(id) / settings(id) / setSettings(id, values)
      open(id)           step 6: draws that type's card (its settings form, then render(slot, rep, settings))
@@ -136,52 +139,35 @@
         if (x.kind === 'number') { var n = parseFloat(el.value); return isFinite(n) ? n : x['default']; }
         return el.value;
       };
-      el.addEventListener('change', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); if (after) after(); });
+      // the value is the setting as soon as it is typed (a button pressed next reads it from D.settings at click time);
+      // its change tells the option, which never redraws its card for it (see settingsChanged)
+      el.addEventListener('input', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); syncForms(o, key, el); });
+      el.addEventListener('change', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); syncForms(o, key, el); if (after) after(); });
     });
   }
-  // A settings field's change fires when it loses focus, often because the visitor pressed a button in the same card
-  // ("Download ..."): the card redraws under the pointer and that press would be lost. The change is applied first (the
-  // download must use the new settings); then the press is given back to the redrawn button with the same identity (its
-  // id and data-* attributes, or its text), as soon as it is on the page again (an option that asks the engine first
-  // draws it a moment later). Only for presses inside the step-1 checklist or a step-6 card; never twice.
-  var press = null;
-  function pressSig(el) {
-    var sel = el.tagName.toLowerCase(), any = false;
-    if (el.id) { sel += '#' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id); any = true; }
-    Array.prototype.forEach.call(el.attributes, function (a) {
-      if (/^data-/.test(a.name)) { sel += '[' + a.name + '="' + String(a.value).replace(/["\\]/g, '\\$&') + '"]'; any = true; }
+  // the same setting shown in the other form (step 1's and the step-6 card's), its value set in place, nothing redrawn
+  function syncForms(o, key, from) {
+    Array.prototype.forEach.call(document.querySelectorAll('fieldset.dl-set[data-set="' + o.id + '"] [data-key="' + key + '"]'), function (x) {
+      if (x === from) return;
+      if (x.getAttribute('data-cols')) {
+        var on = Array.prototype.filter.call(from.querySelectorAll('input'), function (i) { return i.checked; }).map(function (i) { return i.value; });
+        Array.prototype.forEach.call(x.querySelectorAll('input'), function (i) { i.checked = on.indexOf(i.value) >= 0; });
+      } else if (x.value !== from.value) x.value = from.value;
     });
-    return { sel: sel, any: any, text: (el.textContent || '').trim() };
   }
-  function findPressed(sig) {
-    var roots = [$('try-type-card'), $('try-need')].filter(Boolean), hit = null;
-    roots.some(function (r) {
-      var c = sig.any ? r.querySelectorAll(sig.sel) : Array.prototype.filter.call(r.querySelectorAll(sig.sel), function (x) { return (x.textContent || '').trim() === sig.text; });
-      hit = c.length === 1 ? c[0] : null;
-      return !!hit;
-    });
-    return hit;
+  // A setting changed: the option's card is NOT drawn again (its buttons stay the same nodes and keep focus, so a press
+  // that blurred the field is not lost). The option is told: onSettings(slot, rep, settings) updates what depends on
+  // the settings (a preview, a status line); an option that only has render() and asks for it (rerenderOnSettings: true)
+  // is drawn again; any other reads D.settings(id) when the visitor acts.
+  function settingsChanged(o) {
+    if (openId !== o.id) return;
+    var slot = $('try-type-slot');
+    if (!slot) return;
+    try {
+      if (typeof o.onSettings === 'function') o.onSettings(slot, rep, D.settings(o.id));
+      else if (o.rerenderOnSettings) o.render(slot, rep, D.settings(o.id));
+    } catch (e) { slot.insertAdjacentHTML('beforeend', '<p class="note">This report type could not take the setting (' + esc(e && e.message || e) + ').</p>'); }
   }
-  document.addEventListener('pointerdown', function (e) {
-    var t = e.target && e.target.closest ? e.target.closest('button, a[href], [data-key], label') : null;
-    var scope = t && t.closest ? t.closest('#try-type-card, #try-need') : null;
-    press = t && scope && !t.closest('fieldset.dl-set') ? { el: t, sig: pressSig(t), clicked: false } : null;
-  }, true);
-  document.addEventListener('click', function (e) { if (press && e.target && (press.el === e.target || press.el.contains(e.target))) press.clicked = true; }, true);
-  document.addEventListener('pointerup', function () {
-    var p = press;
-    if (!p) return;
-    setTimeout(function () {
-      if (press === p) press = null;
-      if (p.clicked || document.contains(p.el)) return;         // the click happened, or nothing was redrawn
-      var again = findPressed(p.sig);
-      if (again) { again.click(); return; }
-      var mo = new MutationObserver(function () { var x = findPressed(p.sig); if (x) { mo.disconnect(); clearTimeout(stop); x.click(); } });
-      var stop = setTimeout(function () { mo.disconnect(); }, 15000);
-      mo.observe(document.body, { childList: true, subtree: true });
-    }, 0);
-  }, true);
-
   /* ---- step 1: "What do you need?", its checklist, the files of this run, a recipe ---- */
   function needRoot() {
     var r = $('try-need');
@@ -249,7 +235,7 @@
       var r = T.addFiles([{ name: 'pasted-figures.csv', size: bytes.length, getBuffer: function () { return Promise.resolve(bytes.buffer.slice(0)); } }]);
       po.textContent = r === 'companion' ? 'Read as one more file of this run (below).' : r === 'main' ? 'Read as your file: the run has started.' : 'The engine is busy; try again when it has finished.';
     });
-    if (o) bindForm(root, o, function () { if (openId === o.id) drawCard(); });
+    if (o) bindForm(root, o, function () { settingsChanged(o); });
     drawFiles();
   }
   function drawFiles() {
@@ -336,7 +322,7 @@
     var f = fitsOf(o);
     card.innerHTML = '<h4>' + esc(o.title) + '</h4>' + (f.ok ? '' : '<p class="note try-type-needs" role="status">This run does not have what it needs yet: ' + esc(f.why || 'other files') + '. Step 1 lists what to drop in.</p>') +
       formHtml(o, 'card') + '<div class="try-type-slot" id="try-type-slot"></div>';
-    bindForm(card, o, function () { drawCard(); });
+    bindForm(card, o, function () { settingsChanged(o); });
     try { o.render($('try-type-slot'), rep, D.settings(o.id)); } catch (e) { $('try-type-slot').innerHTML = '<p class="note">This report type could not be drawn (' + esc(e && e.message || e) + ').</p>'; }
   }
   D.open = function (id) {

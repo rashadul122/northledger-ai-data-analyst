@@ -5267,9 +5267,16 @@ def explore(
             m,
         )
         if tr.ok:
+            # a rate moves in points, never in percent of itself: "moved by -0.096 percentage points a year" (a visitor's FRED
+            # inflation series, 17 Oct 2026, read "-1.15 a year" and "-76.4% from that peak")
+            rate = sh.mkind.get(m) == "rate"
+            pts = ""
+            if rate:
+                vv = _num(df[m]).dropna()
+                pts = " percentage points" if len(vv) and float(vv.abs().max()) > 1.5 else " points"
             if tr.numbers["clear"]["value"]:
                 tmpl = (
-                    "Over {T.periods} {T.unit}s ({T.first} to {T.last}) {T.measure} moved by {T.slope} a {T.unit} "
+                    "Over {T.periods} {T.unit}s ({T.first} to {T.last}) {T.measure} moved by {T.slope}" + pts + " a {T.unit} "
                     "on a straight line (95% range {T.slope_lo} to {T.slope_hi})"
                 )
             else:
@@ -5281,9 +5288,11 @@ def explore(
                 tmpl += "."  # a month's peak in a few years of monthly data is the season, not a story
             elif tr.numbers["peak_at"]["text"] == tr.numbers["last"]["text"]:
                 tmpl += "; its last value, {T.peak} in {T.peak_at}, is the highest."
+            elif rate:
+                tmpl += "; its yearly average peaked at {T.peak} in {T.peak_at}, and the last year is {T.from_peak}" + pts + " from that peak."
             else:
                 tmpl += "; it peaked at {T.peak} in {T.peak_at} and the last value is {T.from_peak} from that peak."
-            if "cagr" in tr.numbers:
+            if "cagr" in tr.numbers and not rate:
                 tmpl = (
                     tmpl[:-1]
                     + ", a compound {T.cagr} a year from {T.first_value} to {T.last_value}."

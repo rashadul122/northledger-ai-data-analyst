@@ -1553,3 +1553,13 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nla-goask { margin: 14px 0 0; font-weight: 600; }
 .nla-qa-t td.num { position: relative; }
 .nla-qa-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--ts-1); vertical-align: middle; margin-right: 8px; opacity: .85; }
+
+/* what the data is: the report's title, subtitle and the AI's reading of the file */
+.nl2-titlecard { padding: 18px 20px; }
+.nl2-title { margin: 0 0 6px; font-size: 1.45rem; line-height: 1.25; }
+.nl2-subtitle { margin: 0 0 8px; color: var(--muted); font-size: 1.02rem; }
+.nl2-reading { margin: 0 0 6px; }
+.nl2-titleby { margin: 0; font-size: .85em; }
+
+/* the AI summaries card is shown once it holds something (an empty card was a blank box under the bottom line) */
+.nl2-aicard:empty { display: none; }

@@ -1,0 +1,213 @@
+{
+ "version": "2026-10-17.1",
+ "about": "Common FRED series by id: what each measures, its unit and how its values combine over time (rate: averaged and changed in points; index and level: averaged; flow: added up). Read by nl_browser._series_names when no AI plan names a column. Prefixes name a family of series.",
+ "series": {
+  "CORESTICKM159SFRBATL": [
+   "US core sticky-price inflation (12-month %)",
+   "The 12-month % change in the Atlanta Fed's sticky-price consumer price index less food and energy, monthly",
+   "rate"
+  ],
+  "STICKCPIM159SFRBATL": [
+   "US sticky-price inflation (12-month %)",
+   "The 12-month % change in the Atlanta Fed's sticky-price consumer price index, monthly",
+   "rate"
+  ],
+  "FLEXCPIM679SFRBATL": [
+   "US flexible-price inflation (12-month %)",
+   "The 12-month % change in the Atlanta Fed's flexible-price consumer price index, monthly",
+   "rate"
+  ],
+  "CPIAUCSL": [
+   "US consumer price index (1982-84 = 100)",
+   "Consumer price index for all urban consumers, all items, seasonally adjusted (BLS)",
+   "index"
+  ],
+  "CPILFESL": [
+   "US core consumer price index (1982-84 = 100)",
+   "Consumer price index less food and energy, all urban consumers, seasonally adjusted (BLS)",
+   "index"
+  ],
+  "CPIUFDSL": [
+   "US consumer price index: food (1982-84 = 100)",
+   "Consumer price index for food, all urban consumers (BLS)",
+   "index"
+  ],
+  "CPIENGSL": [
+   "US consumer price index: energy (1982-84 = 100)",
+   "Consumer price index for energy, all urban consumers (BLS)",
+   "index"
+  ],
+  "PCEPI": [
+   "US PCE price index (2017 = 100)",
+   "Personal consumption expenditures chain-type price index (BEA)",
+   "index"
+  ],
+  "PCEPILFE": [
+   "US core PCE price index (2017 = 100)",
+   "PCE price index excluding food and energy (BEA)",
+   "index"
+  ],
+  "PPIACO": [
+   "US producer price index: all commodities (1982 = 100)",
+   "Producer price index for all commodities (BLS)",
+   "index"
+  ],
+  "UNRATE": [
+   "US unemployment rate (%)",
+   "The share of the labour force without a job and looking for one, seasonally adjusted (BLS)",
+   "rate"
+  ],
+  "CIVPART": [
+   "US labour force participation rate (%)",
+   "The share of the population 16 and over in the labour force (BLS)",
+   "rate"
+  ],
+  "PAYEMS": [
+   "US nonfarm payroll employment (thousands)",
+   "All employees on nonfarm payrolls, seasonally adjusted (BLS)",
+   "level"
+  ],
+  "ICSA": [
+   "US initial jobless claims",
+   "New claims for unemployment insurance each week, seasonally adjusted (Department of Labor)",
+   "level"
+  ],
+  "FEDFUNDS": [
+   "US federal funds rate (%)",
+   "The effective federal funds rate, the Federal Reserve's policy rate, monthly average",
+   "rate"
+  ],
+  "DFF": [
+   "US federal funds rate (%)",
+   "The effective federal funds rate, daily (Federal Reserve)",
+   "rate"
+  ],
+  "DGS10": [
+   "US 10-year Treasury yield (%)",
+   "Market yield on 10-year US Treasury securities, constant maturity (Federal Reserve)",
+   "rate"
+  ],
+  "DGS2": [
+   "US 2-year Treasury yield (%)",
+   "Market yield on 2-year US Treasury securities, constant maturity (Federal Reserve)",
+   "rate"
+  ],
+  "T10Y2Y": [
+   "US 10-year minus 2-year Treasury spread (points)",
+   "The 10-year Treasury yield less the 2-year yield, in percentage points (Federal Reserve)",
+   "rate"
+  ],
+  "T10YIE": [
+   "US 10-year breakeven inflation (%)",
+   "Inflation expected over 10 years, from Treasury and inflation-protected yields (Federal Reserve)",
+   "rate"
+  ],
+  "MORTGAGE30US": [
+   "US 30-year fixed mortgage rate (%)",
+   "Average 30-year fixed mortgage rate, weekly (Freddie Mac)",
+   "rate"
+  ],
+  "PSAVERT": [
+   "US personal saving rate (%)",
+   "Personal saving as a share of disposable personal income (BEA)",
+   "rate"
+  ],
+  "GDP": [
+   "US gross domestic product ($ billions, annual rate)",
+   "Nominal GDP, seasonally adjusted annual rate, quarterly (BEA)",
+   "level"
+  ],
+  "GDPC1": [
+   "US real GDP (2017 $ billions, annual rate)",
+   "Real gross domestic product in chained 2017 dollars, seasonally adjusted annual rate (BEA)",
+   "level"
+  ],
+  "INDPRO": [
+   "US industrial production index (2017 = 100)",
+   "Output of manufacturing, mining and utilities (Federal Reserve)",
+   "index"
+  ],
+  "HOUST": [
+   "US housing starts (thousands, annual rate)",
+   "New privately owned housing units started, seasonally adjusted annual rate (Census Bureau)",
+   "level"
+  ],
+  "RSAFS": [
+   "US retail and food services sales ($ millions)",
+   "Advance retail sales: retail trade and food services, monthly (Census Bureau)",
+   "flow"
+  ],
+  "RSXFS": [
+   "US retail sales excluding food services ($ millions)",
+   "Advance retail sales: retail trade, monthly (Census Bureau)",
+   "flow"
+  ],
+  "M2SL": [
+   "US M2 money supply ($ billions)",
+   "M2 money stock, seasonally adjusted (Federal Reserve)",
+   "level"
+  ],
+  "UMCSENT": [
+   "US consumer sentiment (1966 Q1 = 100)",
+   "University of Michigan index of consumer sentiment",
+   "index"
+  ],
+  "DCOILWTICO": [
+   "WTI crude oil price ($ a barrel)",
+   "West Texas Intermediate crude oil spot price, Cushing, Oklahoma (EIA)",
+   "level"
+  ],
+  "DCOILBRENTEU": [
+   "Brent crude oil price ($ a barrel)",
+   "Brent crude oil spot price, Europe (EIA)",
+   "level"
+  ],
+  "DEXCAUS": [
+   "Canadian dollars per US dollar",
+   "The US dollar to Canadian dollar exchange rate, daily (Federal Reserve)",
+   "level"
+  ],
+  "DEXUSEU": [
+   "US dollars per euro",
+   "The US dollar to euro exchange rate, daily (Federal Reserve)",
+   "level"
+  ],
+  "CSUSHPINSA": [
+   "US home price index (Jan 2000 = 100)",
+   "S&P CoreLogic Case-Shiller US national home price index",
+   "index"
+  ],
+  "SP500": [
+   "S&P 500 stock index",
+   "The S&P 500 index, daily close",
+   "index"
+  ],
+  "VIXCLS": [
+   "Stock market volatility index (VIX)",
+   "CBOE volatility index, daily close",
+   "index"
+  ]
+ },
+ "prefixes": {
+  "PCU": [
+   "US producer price index for an industry",
+   "A producer price index for one industry (BLS, by NAICS code); its base month = 100",
+   "index"
+  ],
+  "WPU": [
+   "US producer price index for a commodity",
+   "A producer price index for one commodity group (BLS); its base period = 100",
+   "index"
+  ],
+  "CUUR": [
+   "US consumer price index series",
+   "A consumer price index series, not seasonally adjusted (BLS)",
+   "index"
+  ],
+  "CUSR": [
+   "US consumer price index series",
+   "A consumer price index series, seasonally adjusted (BLS)",
+   "index"
+  ]
+ }
+}

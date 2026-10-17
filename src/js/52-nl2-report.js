@@ -522,7 +522,13 @@
     // a step of the AI plan that set aside a tenth of the rows or more (ai_plan.row_drops[].notice, the adapter's words:
     // final evaluation, 1 Oct 2026): said beside the bottom line, so no one takes its figures for the whole file
     var drops = ((r.ai_plan && Array.isArray(r.ai_plan.row_drops)) ? r.ai_plan.row_drops : []).filter(function (d) { return d && typeof d.notice === 'string' && d.notice; });
-    var h = estimandCard(r) + '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
+    // what the data is, in words (rep.title: the AI plan's title, subtitle and reading of the file, else the engine's from a known series)
+    var T = r.title && typeof r.title === 'object' ? r.title : null;
+    var th = T && (T.title || T.subtitle) ? '<header class="tr-card nl2-titlecard">' + (T.title ? '<h2 class="nl2-title">' + esc(T.title) + '</h2>' : '') +
+      (T.subtitle ? '<p class="nl2-subtitle">' + esc(T.subtitle) + '</p>' : '') + (T.summary ? '<p class="nl2-reading">' + esc(T.summary) + '</p>' : '') +
+      (T.source || T.by ? '<p class="note nl2-titleby">' + esc([T.source, T.by === 'ai' ? 'named by the AI from the column names and ranges' : 'named from the site\'s list of published series'].filter(Boolean).join('; ')) + '</p>' : '') +
+      '</header>' : '';
+    var h = th + estimandCard(r) + '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +
       drops.map(function (d) { return '<p class="note nl2-plandrop">' + esc(d.notice) + '</p>'; }).join('') +
       (causal ? '<p class="note">' + esc(causal.text) + '</p>' : '') + '</article>';

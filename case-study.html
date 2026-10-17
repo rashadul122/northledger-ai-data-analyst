@@ -1702,6 +1702,16 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nla-qa-t td.num { position: relative; }
 .nla-qa-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--ts-1); vertical-align: middle; margin-right: 8px; opacity: .85; }
 
+/* what the data is: the report's title, subtitle and the AI's reading of the file */
+.nl2-titlecard { padding: 18px 20px; }
+.nl2-title { margin: 0 0 6px; font-size: 1.45rem; line-height: 1.25; }
+.nl2-subtitle { margin: 0 0 8px; color: var(--muted); font-size: 1.02rem; }
+.nl2-reading { margin: 0 0 6px; }
+.nl2-titleby { margin: 0; font-size: .85em; }
+
+/* the AI summaries card is shown once it holds something (an empty card was a blank box under the bottom line) */
+.nl2-aicard:empty { display: none; }
+
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
 .cs h2 { font-size: 20px; margin: 28px 0 8px; color: var(--ink); }
@@ -1718,7 +1728,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 17:36:46 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 18:44:37 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

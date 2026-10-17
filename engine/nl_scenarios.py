@@ -1198,7 +1198,8 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
         tail = "%s; history, not a forecast" % span
         v2 = {k: _ni.sig2(x) for k, x in ((lo_k, lo_v), ("p50", p50), (hi_k, hi_v))}
         txt = {k: _fmt_item(x, kind, unit, sig=2) for k, x in v2.items()}
-        of = "%s: the %%s of its changes over the %s%%s, %s" % (NB._cap(what), wins, tail)
+        esc = lambda s: str(s).replace("%", "%%")          # noqa: E731 - a label may hold "%" ("inflation (12-month %)"): formatted again below
+        of = "%s: the %%s of its changes over the %s%%s, %s" % (esc(NB._cap(what)), esc(wins), esc(tail))
         every = "one window a year, each ending in %s" % NB._mon(ms[-1])[:3] if lag == 12 else \
             "one window every %d months, the latest ending in %s" % (lag, NB._mon(ms[-1]))
         nv = {}

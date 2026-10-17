@@ -6795,6 +6795,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                   "rows": (rep.get("input") or {}).get("rows"),
                   "columns": (rep.get("input") or {}).get("columns")},
         "goal": goal,
+        "title": safe(str(((rep.get("title") or {}).get("title")) or ""), 100),
+        "subtitle": safe(str(((rep.get("title") or {}).get("subtitle")) or ""), 180),
         "reading": reading,
         "quality_risks": [safe(x, 240) for x in _cap(plan.get("quality_risks") or [], 6)],
         "plan_applied": applied,
@@ -7436,6 +7438,9 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
     out["kind"] = str(plan.get("kind") or "")[:600]
     out["goal_candidates"] = [str(x)[:200] for x in (plan.get("goal_candidates") or [])[:3] if str(x).strip()]
     out["quality_risks"] = [str(x)[:240] for x in (plan.get("quality_risks") or [])[:6]]
+    for k, n in (("title", 100), ("subtitle", 180)):
+        if isinstance(plan.get(k), str) and plan[k].strip():
+            out[k] = _cut_words(" ".join(plan[k].split()), n)
     # an indicator table's measures, as the worker kept them ("label||topic", engine/nl_explore.py label_key): matched back to the
     # table by _explore; one that matches nothing is skipped there
     inds = [str(x)[:210] for x in (plan.get("indicators") or [])[:6] if isinstance(x, str) and "||" in x]
@@ -13380,6 +13385,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the quarterly sales report (engine/nl_sales.py, CONTRACT 5.19): computed when the file reads as a CRM deals
         # export, else only what it would need (step 6's report menu reads rep.sales.fit)
         rep["sales"] = _sales(rep, reading, ai_plan, as_of)
+        _series_names(rep, ai_plan)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -13397,6 +13403,142 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["timings"] = [{"stage": s, "seconds": round(float(timings[s]), 3)} for s in STAGES]
         _ensure_v2(rep)
     return rep
+
+
+# ---------------------------------------------------------------------------------------------- what each column IS, in words
+# A published series is often a column named by its code (FRED: CORESTICKM159SFRBATL; a census: C1_COUNT_TOTAL). The report printed the
+# code everywhere and called the file by it (a visitor's FRED inflation file, 17 Oct 2026). Here a code-like column takes its name in
+# plain words: the AI plan's label, else the site's list of common FRED series (engine/fred_series.json); every sentence, chart and
+# table of the report says it; and the report gets a title and a subtitle (rep.title).
+_FRED: Optional[Dict[str, Any]] = None
+
+
+def _fred() -> Dict[str, Any]:
+    global _FRED
+    if _FRED is None:
+        try:
+            with open(os.path.join(HERE, "fred_series.json"), encoding="utf-8") as fh:
+                _FRED = json.load(fh)
+        except Exception:  # noqa: BLE001 - no list, no names from it
+            _FRED = {}
+    return _FRED
+
+
+def fred_lookup(header: Any) -> Optional[Dict[str, str]]:
+    """{label, about, kind} of a FRED series id, by the list or by its family's prefix, or None."""
+    h = str(header or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,40}", h):
+        return None
+    d = _fred()
+    s = (d.get("series") or {}).get(h)
+    if s:
+        return {"label": s[0], "about": s[1], "kind": s[2], "id": h}
+    for p, v in (d.get("prefixes") or {}).items():
+        if h.startswith(p) and len(h) > len(p) + 3:
+            return {"label": "%s (%s)" % (v[0], h), "about": v[1], "kind": v[2], "id": h}
+    return None
+
+
+def _code_like(h: str) -> bool:
+    s = str(h or "")
+    return bool(re.fullmatch(r"[A-Za-z0-9_.+]{5,60}", s)) and (not re.search(r"[a-z]", s) or bool(re.search(r"\d", s)) and "_" in s)
+
+
+def _column_names(rep: Dict[str, Any], plan: Any) -> Dict[str, str]:
+    """{the file's header: the name the report prints}: the plan's label of a code-like column, else the FRED list's."""
+    out: Dict[str, str] = {}
+    for c in ((plan or {}).get("columns") or []) if isinstance(plan, dict) else []:
+        if isinstance(c, dict) and c.get("label") and c.get("name") and _code_like(str(c["name"])):
+            out[str(c["name"])] = str(c["label"])
+    for col in [(rep.get("roles") or {}).get("date")] + list((rep.get("roles") or {}).get("measures") or []):
+        pass
+    for h in _report_headers(rep):
+        if h not in out:
+            f = fred_lookup(h)
+            if f:
+                out[h] = f["label"]
+    return out
+
+
+def _report_headers(rep: Dict[str, Any]) -> List[str]:
+    text = str((rep.get("downloads") or {}).get("clean_csv") or "")
+    first = text.split("\n", 1)[0] if text else ""
+    return [h for h in first.split(",") if h and h != "source_line"]
+
+
+def _rename_text(s: Any, subs: List[Tuple[Any, str]]) -> Any:
+    if not isinstance(s, str) or not s:
+        return s
+    for rx, lab in subs:
+        s = rx.sub(lab, s)
+        s = s.replace(lab + " (%)", lab).replace(lab + " (" + lab + ")", lab)
+    return s
+
+
+_NAMED_KEYS = frozenset(("headline", "text", "title", "subtitle", "summary", "sentence", "claim", "why", "why_shown", "supports",
+                         "label", "what_happened", "why_", "what_to_do", "whats_next", "cannot_answer", "lines", "cols", "series",
+                         "x_label", "about", "note", "needed_to_upgrade", "reason", "settle", "first_text", "last_text", "unit"))
+
+
+def _rename_tree(obj: Any, subs: List[Tuple[Any, str]], key: str = "") -> Any:
+    if isinstance(obj, dict) and key == "labels":
+        # {finding id: its label} (summary.labels): every value is text the page prints
+        return {k: _rename_text(v, subs) if isinstance(v, str) else v for k, v in obj.items()}
+    if isinstance(obj, dict):
+        for k in list(obj.keys()):
+            if k in ("id", "finding_id", "finding_ids", "columns", "columns_read", "inputs", "column", "land", "landed", "slug", "sql",
+                     "chart", "kind", "values"):
+                continue
+            obj[k] = _rename_tree(obj[k], subs, k)
+        return obj
+    if isinstance(obj, list):
+        return [_rename_tree(x, subs, key) for x in obj]
+    if isinstance(obj, str) and (key in _NAMED_KEYS or not key):
+        return _rename_text(obj, subs)
+    return obj
+
+
+def _series_names(rep: Dict[str, Any], plan: Any) -> None:
+    """Prints each code-like column by its name (see above) and sets rep.title. The report stands without it."""
+    try:
+        names = _column_names(rep, plan)
+        subs = []
+        for h, lab in sorted(names.items(), key=lambda kv: -len(kv[0])):
+            alts = {re.escape(h), re.escape(_engine_slug(h))}
+            subs.append((re.compile(r"(?<![A-Za-z0-9_])(?:%s)(?![A-Za-z0-9_])" % "|".join(sorted(alts, key=len, reverse=True)), re.I),
+                         lab))
+        if subs:
+            for k in ("story", "summary", "answer", "ai_analyses", "charts", "findings", "limitations", "explore", "forecast",
+                      "analyst", "estimand", "scenarios", "methods"):
+                if rep.get(k) is not None:
+                    rep[k] = _rename_tree(rep[k], subs)
+        p = plan if isinstance(plan, dict) else {}
+        meas = list((rep.get("roles") or {}).get("measures") or [])
+        lead = next((names[h] for h in _report_headers(rep) if h in names), None)
+        f = next((fred_lookup(h) for h in _report_headers(rep) if fred_lookup(h)), None)
+        span = _year_span(rep)
+        title = str(p.get("title") or "") or (("%s, %s" % (lead, span)) if lead and span else lead or "")
+        sub = str(p.get("subtitle") or "") or (f["about"] if f else "")
+        if title or sub:
+            rep["title"] = {"title": title[:100], "subtitle": sub[:180], "summary": str(p.get("understanding") or "")[:600],
+                            "by": "ai" if p.get("title") else "engine", "source": ("FRED series %s" % f["id"]) if f else ""}
+    except Exception:  # noqa: BLE001
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+
+
+def _year_span(rep: Dict[str, Any]) -> str:
+    d = (rep.get("roles") or {}).get("date")
+    text = str((rep.get("downloads") or {}).get("clean_csv") or "")
+    if not d or not text:
+        return ""
+    import csv as _csv
+    rows = list(_csv.reader(io.StringIO(text)))
+    if len(rows) < 3 or d not in rows[0]:
+        return ""
+    i = rows[0].index(d)
+    ys = sorted({r[i][:4] for r in rows[1:] if len(r) > i and re.match(r"\d{4}", r[i] or "")})
+    return "%s to %s" % (ys[0], ys[-1]) if len(ys) > 1 else (ys[0] if ys else "")
 
 
 def _period_story(rep: Dict[str, Any]) -> None:
@@ -13503,6 +13645,23 @@ def _rate_findings(rep: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             hit = slug if slug in pct else next((c for c in land if c in pct), None)
             if hit:
                 want[f["id"]] = {"pct": True, "uom": "Percent", "label": pct[hit], "slug": hit}
+    # the AI plan's reading: a column it types as a percentage (or whose unit it gives as %) is a rate (a visitor's FRED inflation
+    # series, 17 Oct 2026: "down 16.4% on the year before" was a percent change of a percentage)
+    plan = rep.get("ai_plan") if isinstance(rep.get("ai_plan"), dict) else {}
+    for c in plan.get("columns") or []:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        if str(c.get("semantic_type") or "") == "percentage" or str(c.get("unit") or "").strip() == "%":
+            slug = _engine_slug(str(c["name"]))
+            for f in F:
+                if f["id"] == "measure.%s.change" % slug or slug in [str(x) for x in f.get("columns_read") or []]:
+                    want.setdefault(f["id"], {"pct": True, "uom": "Percent", "label": str(c.get("label") or c["name"]), "slug": slug})
+    for f in F:                                       # a known FRED rate (engine/fred_series.json), with or without a plan
+        slug = f["id"][len("measure."):-len(".change")]
+        for h in _report_headers(rep):
+            fl = fred_lookup(h)
+            if fl and fl["kind"] == "rate" and _engine_slug(h) == slug:
+                want.setdefault(f["id"], {"pct": "points" not in fl["label"], "uom": "Percent", "label": fl["label"], "slug": slug})
     est = rep.get("estimand") if isinstance(rep.get("estimand"), dict) else None
     m = (est or {}).get("measure") or {}
     if m.get("type") == "rate":
@@ -14074,6 +14233,18 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
                              + [str(f["column"]) for f in personal or [] if _people_words(f, df)],
                 # the headers of the columns withheld or coded (never in the frame): a SQL step naming one is told why
                 "withheld": [str(reading.header(c)) for c in hide]}
+        # the plan's own reading of each column (a percentage, a level, an amount): the AI says a 12-month inflation rate is a rate,
+        # and the loop must never add twelve monthly rates into a "yearly total" (a visitor's FRED series, 17 Oct 2026: "peaked at
+        # 166.2 in 1980" was the sum of 1980's twelve readings of 13.8%)
+        st_kind = {"percentage": "rate", "rate": "rate", "level": "level", "log_scale": "level", "rating": "level", "ordinal": "level",
+                   "duration": "level", "flow_amount": "flow", "count": "flow"}
+        for col in df.columns:                        # a known FRED series (engine/fred_series.json): what it is, with no plan
+            fl = fred_lookup(col)
+            if fl:
+                hint.setdefault("mkind", {})[col] = {"rate": "rate", "index": "level", "level": "level", "flow": "flow"}[fl["kind"]]
+        for c in p.get("columns") or []:
+            if isinstance(c, dict) and c.get("name") in df.columns and st_kind.get(str(c.get("semantic_type") or "")):
+                hint.setdefault("mkind", {})[c["name"]] = st_kind[str(c["semantic_type"])]
         if isinstance(layout, dict) and layout.get("layout") == "long statistical table":
             # a published table's series: the engine's lead leads, and each series is read as the structure reads it
             hint["mkind"] = _analyst_series_kinds(layout, list(df.columns))

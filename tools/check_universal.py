@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import subprocess
 import sys
@@ -115,11 +116,20 @@ def one(entry: dict) -> dict:
     lost = [c.get("title") for c, k, s in zip(recs, kinds, share_kinds) if k != "table" and s == "table"]
     if lost:
         fails.append("%d chart(s) drawn on the page become tables in a shared report: %s" % (len(lost), "; ".join(map(str, lost[:3]))))
+    # a published series named by a code (FRED, a census): the headline and the bottom line name it in words, and a title says what it is
+    codes = [h for h in str((rep.get("downloads") or {}).get("clean_csv") or "").split("\n", 1)[0].split(",")
+             if re.fullmatch(r"[A-Z][A-Z0-9]{7,40}", h or "")]
+    lines = [head] + [str(x.get("text") or "") for x in (rep.get("summary") or {}).get("lines") or [] if isinstance(x, dict)]
+    leaked = [c for c in codes if any(re.search(re.escape(c), s, re.I) for s in lines)]
+    if leaked:
+        fails.append("the headline or bottom line prints the code %s instead of what it measures" % leaked[0])
+    if codes and not (rep.get("title") or {}).get("title"):
+        fails.append("a code-named series has no title saying what it is")
     if len(drawn) + len(other) < MIN_CHARTS:
         fails.append("only %d drawable charts (%d viz records, %d drawn; engine charts %s)" % (
             len(drawn) + len(other), len(recs), len(drawn), other))
     return {"file": entry["file"], "shape": entry.get("shape"), "secs": secs, "ok": not fails, "fails": fails,
-            "headline": head, "what_happened": list(story.get("what_happened") or [])[:6],
+            "headline": head, "what_happened": list(story.get("what_happened") or [])[:6], "title": rep.get("title"),
             "charts": [{"title": c.get("title"), "chart": c.get("chart"), "drawn_as": k,
                         "shared_as": share_kinds[i] if i < len(share_kinds) else None} for i, (c, k) in enumerate(zip(recs, kinds))],
             "engine_charts": other, "explore": bool(rep.get("explore")), "date": (rep.get("roles") or {}).get("date"),

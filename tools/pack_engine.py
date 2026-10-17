@@ -178,6 +178,8 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",
+                 # what common FRED series measure and how they combine (nl_browser._series_names, fred_lookup)
+                 "fred_series.json": "fred_series.json",
                  # the given names the themes analysis never shows as a theme and the chart registry's person-name test
                  # reads (nl_browser._first_names reads it beside itself; the chart review, 30 Sep 2026)
                  "first_names.txt": "first_names.txt",

@@ -974,7 +974,12 @@ DEMO_WORKER = "engine/worker.js"
 DEMO_RUNTIME_PREFIX = "https://cdn.jsdelivr.net/pyodide/"
 # XML namespace names look like URLs but are never fetched
 NAMESPACES = ("http://www.w3.org/2000/svg", "http://www.w3.org/1999/xhtml", "http://www.w3.org/1999/xlink",
-              "http://www.w3.org/XML/1998/namespace", "http://www.w3.org/2000/xmlns/")
+              "http://www.w3.org/XML/1998/namespace", "http://www.w3.org/2000/xmlns/",
+              # the Office Open XML (.docx, .xlsx) namespace and relationship identifiers the Word and Excel writers put
+              # inside the files they make (src/js/46-report-docx.js, 56-xlsx.js): names, never fetched (http, and the
+              # page's CSP connect-src would refuse them anyway)
+              "http://schemas.openxmlformats.org/", "http://schemas.microsoft.com/office/", "http://purl.org/dc/",
+              "http://www.w3.org/2001/XMLSchema-instance")
 ABS_URL = re.compile(r"(?i)\b(?:https?|wss?)://[^\s'\"`)<>\\,;]+")
 PROTO_REL = re.compile(r"""['"`(]\s*(//[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+[^\s'"`)<>\\]*)""")
 CSS_URL = re.compile(r"""(?i)(?:url\(\s*['"]?|@import\s+['"])\s*((?:[a-z][a-z0-9+.-]*:)?//[^'")\s]+)""")

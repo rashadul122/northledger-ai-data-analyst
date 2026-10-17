@@ -1515,6 +1515,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .nld-form { grid-template-columns: minmax(0, 1fr); }
   .nld-filters { position: static; }
   .nld-filters label, .nld-filters fieldset label { flex: 1 1 140px; }
+}
 /* "Clean my file" (src/js/59-cleanfile.js, engine/nl_cleanfile.py): the summary, the two downloads and the cleaning rules */
 .tr-clean { margin-top: 16px; }
 .tr-clean h3 { margin-top: 0; }
@@ -1559,6 +1560,30 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .try-deliver { margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
 .try-deliver-h { margin: 0 0 4px; font-size: 15px; color: var(--ink); }
 .try-deliver .ai-rep-actions { margin-top: 8px; }
+/* step 6 "Build a tracker" (src/js/63-tracker.js; Track G): the option's card inside the report-types menu */
+.trk { margin-top: 6px; }
+.trk-kind { margin: 4px 0 6px; font-size: 14.5px; color: var(--ink); }
+.trk-files { margin: 4px 0 10px; padding-left: 20px; font-size: 14px; color: var(--ink); }
+.trk-files li { margin: 2px 0; overflow-wrap: anywhere; }
+.trk-qs { margin: 8px 0; font-size: 14px; }
+.trk-qs p { margin: 0 0 4px; }
+.trk-qs ul { margin: 0; padding-left: 20px; }
+.trk-q { color: var(--ink); }
+.trk-pick { margin: 6px 0 10px; padding: 8px 12px; border: 1px solid var(--hairline); border-radius: 10px; min-width: 0; }
+.trk-pick legend { font-size: 13.5px; color: var(--muted); padding: 0 4px; }
+.trk-pick-f { display: block; margin: 3px 0; font-size: 14px; overflow-wrap: anywhere; }
+.trk-demo { margin: 6px 0 10px; }
+.trk-map table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 6px; }
+.trk-map th, .trk-map td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--hairline); vertical-align: top; overflow-wrap: anywhere; }
+.trk-map { max-width: 100%; overflow-x: auto; }
+.try-types-l { list-style: none; margin: 6px 0; padding: 0; }
+.try-types-l .try-type { margin: 6px 0; }
+.try-type-card { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); min-width: 0; }
+.try-type-card h4 { margin: 0 0 6px; font-size: 15px; color: var(--ink); }
+.dl-set { border: 0; padding: 0; margin: 4px 0 8px; min-width: 0; }
+.dl-set legend { font-size: 13.5px; color: var(--muted); padding: 0; }
+.dl-field { display: grid; gap: 3px; margin: 6px 0; min-width: 0; }
+.dl-field input[type="text"], .dl-field select { max-width: 100%; min-width: 0; font: inherit; padding: 6px 8px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); color: var(--ink); }
 
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
@@ -1576,7 +1601,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 03:28:16 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 04:06:17 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

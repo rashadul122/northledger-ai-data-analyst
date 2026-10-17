@@ -1119,6 +1119,10 @@ self.onmessage = function (e) {
     var C = (m.options && m.options.rules) ? REPORT.__cleanEdited : REPORT.__clean;
     if (C) { C = JSON.parse(JSON.stringify(C)); C.__echo = m.options || null; self.__lastClean = m.options; }
     self.postMessage({ type: 'cleaned', id: m.id, out: C || null });
+  } else if (m.type === 'tracker') {        // build a tracker: the engine's real answers, made by the adapter (trackerReport)
+    var n = (m.options && m.options.inputs || []).length, Tk = n > 1 ? REPORT.__tracker2 : REPORT.__tracker;
+    if (Tk) { Tk = JSON.parse(JSON.stringify(Tk)); Tk.__echo = m.options || null; }
+    self.postMessage({ type: 'tracked', id: m.id, out: Tk || null });
   } else if (m.type === 'plan') {           // Ask your data without an AI planner: the engine's own plan (CONTRACT §5.16)
     self.postMessage({ type: 'plan_json', id: m.id, steps: REPORT.__plan || [] });
   } else if (m.type === 'more') {
@@ -1127,6 +1131,7 @@ self.onmessage = function (e) {
     if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: REPORT.__resultsJson || { charts: [], tables: [] } });
   } else if (m.type === 'run') {
     var D = (m.options && m.options.decisions) || {}, R = REPORT;
+    if (REPORT.__second && m.options && m.options.name === REPORT.__second.input.name) R = REPORT.__second;   // a second file of the tracker demo
     if (D.__plan__ && D.__plan__.revised && REPORT.__revisedFails) {
       self.postMessage({ type: 'result', id: m.id, report: { ok: false, error: 'The corrected plan stopped the engine (stub).' } });
       return;
@@ -5049,6 +5054,105 @@ check('clean-my-file-phone', PHONE, async (ctx) => { await cleanChecks(ctx, 'pho
 check('clean-my-file-dark', DESK, async (ctx) => {
   await cleanChecks(ctx, 'desktop-dark');
 }, { acceptDownloads: true, colorScheme: 'dark' });
+
+/* ------------------------------------------------------------ build a tracker (Track G, step 6, CONTRACT §5.20)
+   The two SYNTHETIC task lists (tools/make_sample_tracker.py) run by the native adapter in ONE process (the tab's
+   memory holds both files), with the engine's real tracker answers for the first file alone and for both
+   (nl_browser.tracker_json), handed to the stand-in worker. From step 1's "Tracker demo" button: the option is in the
+   step-6 registry (window.NLDeliver), its card builds the tracker from the first list, "Add the demo's second file"
+   runs the second (the first kept in this tab), the card then shows both files' merge counts, the settings reach the
+   worker, and the workbook download is the page's own .xlsx writer's file of the engine's spec (openpyxl opens it:
+   eight sheets, an Excel table with calculated columns, dropdowns from Lists). On a phone and in the dark theme. */
+let TRACKER_REP = null;
+function trackerReport() {
+  if (TRACKER_REP) return TRACKER_REP;
+  const code = 'import sys,os,json\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'A="sample-tracker-tasks-a-synthetic.csv";B="sample-tracker-tasks-b-synthetic.csv"\n' +
+    'ra=NB.run(open(site+"/engine/"+A,"rb").read(),A,"",{},"2026-04-15")\nrb=NB.run(open(site+"/engine/"+B,"rb").read(),B,"",{},"2026-04-15")\n' +
+    'a,b=ra["input"]["sha256"],rb["input"]["sha256"]\n' +
+    'ra["__tracker"]=json.loads(NB.tracker_json(json.dumps({"sha256":a,"inputs":[a]})))\n' +
+    'ra["__tracker2"]=json.loads(NB.tracker_json(json.dumps({"sha256":b,"inputs":[a,b]})))\nra["__second"]=rb\nprint(json.dumps(ra))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Error('the tracker demo could not be made: ' + String(r.stderr || r.error || '').trim().split('\n').pop());
+  TRACKER_REP = JSON.parse(r.stdout);
+  return TRACKER_REP;
+}
+async function trackerChecks(ctx, tag) {
+  const rep = trackerReport();
+  ok(rep.__tracker.ok && rep.__tracker2.ok && rep.__tracker2.summary.rows === 37 && rep.__tracker2.summary.merged_across === 6, 'the engine\'s tracker for the demo is not what the check expects');
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  if (/dark/.test(tag)) await p.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  ok(/synthetic/i.test(await p.textContent('#try-sample-tracker')), 'the tracker demo button does not say synthetic');
+  await p.click('#try-sample-tracker');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])');
+  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])'); }
+  ok(await p.isVisible('#try-report'), 'no report for the first list: ' + (await p.textContent('#try-msg')));
+  // the registry entry (Track E's interface; the stand-in when 60-deliver.js is not on the page)
+  const reg = await p.evaluate(() => { const o = window.NLDeliver && window.NLDeliver.get('tracker'); return o ? { title: o.title, order: o.order, keys: o.settings.map((s) => s.key),
+    kinds: o.settings[0].options.map((x) => x.value), needs: o.needs.length, fits: o.fits(window.NLDeliver.report ? window.NLDeliver.report() : null) } : null; });
+  ok(reg && reg.title === 'Build a tracker (Excel)' && reg.order === 30 && JSON.stringify(reg.keys) === '["kind","questions","dup_key"]' && reg.kinds.join() === ',tasks,requests,inventory,shifts,vendors,other' && reg.needs === 1,
+    'the tracker is not registered with the step-6 menu as the interface says: ' + JSON.stringify(reg));
+  await p.waitForFunction(() => /Tracker ready/.test((document.querySelector('#try-tracker .trk-status') || {}).textContent || ''), null, { timeout: 20000 });
+  const one = await p.evaluate(() => ({ inSlot: !!document.querySelector('#try-step-6-slot #try-tracker'), status: document.querySelector('#try-tracker .trk-status').textContent,
+    demo: !!document.querySelector('#try-tracker [data-trk="demo2"]'), echo: window.NLTracker.state().last.__echo }));
+  ok(one.inSlot, 'the tracker card is not in step 6');
+  ok(/26 rows from 1 file/.test(one.status) && one.demo, 'the first list\'s tracker or the demo\'s second-file button: ' + one.status);
+  ok(one.echo && one.echo.inputs.length === 1 && one.echo.sha256 === rep.input.sha256 && one.echo.dup_key === 'exact', 'the worker was not asked for this run\'s file: ' + JSON.stringify(one.echo));
+  // the second list: the next run in this tab; the tracker then combines both, in run order
+  await p.click('#try-tracker [data-trk="demo2"]');
+  await p.waitForFunction(() => /37 rows from 2 files/.test((document.querySelector('#try-tracker .trk-status') || {}).textContent || ''), null, { timeout: 30000 });
+  const two = await p.evaluate(() => {
+    const card = document.getElementById('try-tracker');
+    return { echo: window.NLTracker.state().last.__echo, kpis: Array.from(card.querySelectorAll('.trk-kpis b')).map((b) => b.textContent.trim()),
+      files: Array.from(card.querySelectorAll('.trk-files li')).map((l) => l.textContent.replace(/\s+/g, ' ').trim()),
+      kind: card.querySelector('.trk-kind').textContent, picks: card.querySelectorAll('.trk-pick input:checked').length, demo: !!card.querySelector('[data-trk="demo2"]'),
+      sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
+  });
+  const S2 = rep.__tracker2.summary;
+  ok(two.echo.inputs.length === 2 && two.echo.inputs[0] === rep.input.sha256 && two.echo.inputs[1] === rep.__second.input.sha256, 'the two files were not sent in run order: ' + JSON.stringify(two.echo.inputs));
+  ok(JSON.stringify(two.kpis) === JSON.stringify([fmt(S2.rows, 0), fmt(S2.merged_within + S2.merged_across, 0), fmt(S2.changes, 0), fmt(S2.flagged_rows, 0), fmt(S2.unplaced, 0)]), 'the card\'s numbers are not the engine\'s: ' + JSON.stringify(two.kpis));
+  ok(two.files.length === 2 && /6 merged into another file's copy/.test(two.files[1]) && /1 withheld column left out/.test(two.files[1]), 'the per-file lines: ' + JSON.stringify(two.files));
+  ok(/^What it tracks: Tasks \(suggested: /.test(two.kind) && two.picks === 2 && !two.demo, 'the kind, the files ticked or the demo button: ' + JSON.stringify([two.kind, two.picks, two.demo]));
+  ok(two.sw <= two.cw + 1, 'the page scrolls sideways (' + two.sw + ' > ' + two.cw + ')');
+  await shot(p, 'tracker-' + tag + '-card', '#try-type-card');
+  // the settings reach the worker (no AI asked): what is tracked and the questions
+  await p.selectOption('#try-type-card [data-key="kind"]', 'requests');
+  await p.$eval('#try-type-card [data-key="questions"]', (el) => { el.value = 'How many are overdue? Which open tasks are oldest?'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForFunction(() => { const e = window.NLTracker.state().last.__echo; return e && e.kind === 'requests' && /oldest/.test(e.questions); }, null, { timeout: 20000 });
+  // the workbook: the page's writer (NLX) on the engine's spec, downloaded
+  await p.waitForSelector('#try-tracker [data-trk="xlsx"]');
+  let dl;
+  try { [dl] = await Promise.all([p.waitForEvent('download', { timeout: 15000 }), p.click('#try-tracker [data-trk="xlsx"]')]); } catch (e) {
+    throw new Error('no workbook download: ' + JSON.stringify(await p.evaluate(() => ({ out: (document.querySelector('#try-tracker .trk-dl-out') || {}).textContent, last: !!(window.NLTracker.state().last || {}).workbook, n: document.querySelectorAll('.trk-dl-out').length, x: !!window.NLX, hid: (document.querySelector('#try-tracker .trk-dl-out') || {}).hidden, off: !!(window.NLTry && window.NLTry.offerFile), html: (document.querySelector('#try-tracker .tr-actions') || {}).outerHTML }))) + ' ' + (p.__errs[0] || ''));
+  }
+  const f = await dl.path(), bytes = fs.readFileSync(f), txt = bytes.toString('latin1');
+  ok(/^tracker-tasks-sample-tracker-tasks-a-synthetic\.xlsx$/.test(dl.suggestedFilename()), 'the workbook\'s name: ' + dl.suggestedFilename());
+  ok(txt.slice(0, 2) === 'PK' && /calculatedColumnFormula/.test(txt) && /<dataValidation type="list"/.test(txt) && txt.indexOf('Signed renewal') < 0, 'the download is not the tracker workbook (zip, calculated columns, dropdowns, no withheld text)');
+  if (fs.existsSync(PY)) {
+    const code = 'import sys,openpyxl\nwb=openpyxl.load_workbook(sys.argv[1])\nws=wb["Data"]\nprint("|".join(wb.sheetnames));print(ws.max_row);print(list(ws.tables)[0]);print(ws["I2"].value[:30]);print(len(ws.data_validations.dataValidation))';
+    const fx = require('path').join(require('os').tmpdir(), 'nl-tracker-ui-' + process.pid + '.xlsx');
+    fs.writeFileSync(fx, bytes);
+    const r = require('child_process').spawnSync(PY, ['-c', code, fx], { encoding: 'utf8' });
+    fs.unlinkSync(fx);
+    const o = (r.stdout || '').trim().split('\n');
+    ok(r.status === 0 && o[0] === 'Data|Summary|Lists|Instructions|Changes|Merged duplicates|Unplaced|Flags' && o[1] === '38' && o[2] === 'Tracker' && o[3] === '=IF(ISNUMBER(Tracker[[#This Ro' && o[4] === '2',
+      'openpyxl reads the workbook as: ' + JSON.stringify(o) + ' ' + (r.stderr || '').trim().split('\n').pop());
+  }
+  ok(!ctx.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'the tracker sent a request to the AI proxy');
+  if (/dark/.test(tag)) {
+    const lum = await p.evaluate(() => {
+      const L = (c) => { const m = c.match(/[\d.]+/g).map(Number); const fn = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * fn(m[0]) + 0.7152 * fn(m[1]) + 0.0722 * fn(m[2]); };
+      const cs = (s, k) => getComputedStyle(document.querySelector(s))[k];
+      return { card: L(cs('#try-type-card', 'backgroundColor')), text: L(cs('#try-tracker .trk-kind', 'color')), sel: L(cs('#try-type-card select', 'backgroundColor')) };
+    });
+    ok(lum.card < 0.1 && lum.sel < 0.1 && lum.text > 0.5, 'the tracker card is not drawn in the dark theme: ' + JSON.stringify(lum));
+  }
+  await shot(p, 'tracker-' + tag + '-after', '#try-type-card');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}
+check('tracker-desktop', DESK, async (ctx) => { await trackerChecks(ctx, 'desktop-light'); }, { acceptDownloads: true });
+check('tracker-phone', PHONE, async (ctx) => { await trackerChecks(ctx, 'phone-light'); }, { acceptDownloads: true, mobile: true });
+check('tracker-dark', DESK, async (ctx) => { await trackerChecks(ctx, 'desktop-dark'); }, { acceptDownloads: true, colorScheme: 'dark' });
 
 /* ------------------------------------------------------------ runner */
 /* ------------------------------------------------------------ Ask your data, with SQL (Track B, CONTRACT §5.14)

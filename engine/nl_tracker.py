@@ -424,7 +424,8 @@ def _views(inputs: Sequence[Dict[str, Any]], s: Dict[str, Any]) -> Tuple[List[Di
 
 def _questions(q: Any, kind: str) -> List[str]:
     if isinstance(q, str):
-        q = [x for x in re.split(r"[\r\n]+", q)]
+        # one per line, or several on one line separated by ";" or after a "?" (the page's one-line setting)
+        q = [x for x in re.split(r"[\r\n;]+|(?<=\?)\s+", q)]
     out = [" ".join(str(x).split())[:200] for x in (q or []) if isinstance(x, str) and str(x).strip()]
     return out[:MAX_QUESTIONS]
 

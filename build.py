@@ -75,6 +75,10 @@ TRY_SAMPLE = "engine/sample-messy.csv"
 # date so its latest quarter (2026 Q3, the planted EMEA margin drop) stays the latest
 TRY_SAMPLE_SALES = "engine/sample-sales-synthetic.csv"
 TRY_SAMPLE_SALES_AS_OF = "2026-10-01"
+# the tracker demo's two SYNTHETIC task lists (tools/make_sample_tracker.py; Build a tracker, CONTRACT §5.20), read as of
+# a fixed date so their days open and overdue counts do not age (the workbook's TODAY() recalculates in Excel)
+TRY_SAMPLE_TRACKER = ["engine/sample-tracker-tasks-a-synthetic.csv", "engine/sample-tracker-tasks-b-synthetic.csv"]
+TRY_SAMPLE_TRACKER_AS_OF = "2026-04-15"
 PACK_ENGINE = os.path.join(ROOT, "tools", "pack_engine.py")
 
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -1489,6 +1493,7 @@ def try_payload(I):
     return {"max_bytes": TRY_MAX_BYTES, "max_rows": TRY_MAX_ROWS, "max_label": lab["try_max_mb"], "rows_label": lab["try_max_rows"],
             "worker": TRY_WORKER, "sample": TRY_SAMPLE, "sample_as_of": str(sample.get("as_of") or ""),
             "sample_sales": TRY_SAMPLE_SALES, "sample_sales_as_of": TRY_SAMPLE_SALES_AS_OF,
+            "sample_tracker": TRY_SAMPLE_TRACKER, "sample_tracker_as_of": TRY_SAMPLE_TRACKER_AS_OF,
             "sales_example": "Why is gross margin down in EMEA this quarter?",
             "ai_proxy_url": try_proxy(cfg)[0],
             # "Ask your data" (docs/ai-analyst/PROTOCOL.md): on only when the owner's Worker answers POST /analyst

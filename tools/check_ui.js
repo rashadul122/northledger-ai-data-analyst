@@ -4680,7 +4680,7 @@ check('statcan-line-chart-in-the-dark-theme', DESK, async (ctx) => {
   await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); });
   await p.waitForTimeout(100);
   const c = await p.evaluate((sel) => Array.from(document.querySelectorAll(sel + ' svg.nlv path.ts')).map((e) => getComputedStyle(e).stroke), lineFig);
-  const want = ['rgb(57, 135, 229)', 'rgb(217, 89, 38)', 'rgb(25, 158, 112)', 'rgb(201, 133, 0)', 'rgb(213, 81, 129)'];
+  const want = ['rgb(57, 135, 229)', 'rgb(217, 89, 38)', 'rgb(20, 160, 142)', 'rgb(201, 133, 0)', 'rgb(213, 81, 129)'];
   ok(want.every((w) => c.indexOf(w) >= 0), 'the dark theme\'s line colours are not the spec\'s: ' + JSON.stringify(Array.from(new Set(c))));
   await shot(p, 'statcan-desktop-dark-line', lineFig);
 }, { colorScheme: 'dark' });

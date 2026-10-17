@@ -2098,3 +2098,41 @@ that adds such a forecast up.
 
 **A change with no ratio is in its own units.** `results_for_ai.findings[].value_unit` is also `"own units"` for a change claim whose effect
 is a difference (the core's change when the year before has no ratio: "+13,333", never "+13333.3%"); the PDF prints it so.
+
+### 5.14 `dashboard`: the Dashboard tab (16 October 2026: `engine/nl_dashboard.py`, `plan/DASHBOARD-DESIGN.md` Track A)
+
+The AI designs, the engine computes. `rep.dashboard` is built after `rep.viz` from the rows the engine kept
+(`downloads.clean_csv` read by `nl_viz.Ctx`, without every flagged column). The design comes from, in this order:
+the plan's `dashboard` block (the worker's `/plan`, checked by `planDashboard` in `src/plan.js`, then again here;
+`chosen_by: "ai"`), the sample ledger's recorded design (`engine/dashboard_sample.json`, applied only when
+`input.sha256` is the sample's; `chosen_by: "recorded"`, `recorded` says so in words), else the engine's own
+(`default_design`; `chosen_by: "engine"`). Charts the visitor pinned (decisions `__pins__`, at most 6, from
+`NLD.pin`) are checked like the AI's and appended (`pinned: true`). The plan's raw block leaves `rep.ai_plan`.
+
+Shape (`ok: false` with `why` when no dashboard can be built: no rows kept, or a table of published series with
+totals beside their parts):
+
+```
+{version, ok, chosen_by: ai|recorded|engine, recorded, title, audience,
+ questions: [{q, answered_by: [ids]}], grain: {text, noun, by}, columns: [{column, reads_as, unit}],
+ kpis: [{id, label, measure (header|null), mkey, agg: sum|average|count|latest, where: {key, column, values, exclude?}|null,
+         unit_word, definition}],
+ charts: [{id, chart (menu name), draw: line|area|bar|grouped|multiples|static, title, why, measure, mkey, agg, by, bkey,
+           where, unit_word, definition, record (static only: the nl_viz record), pinned?}],
+ filters: [{kind: date, column} | {kind: category, key, column}], layout: [[ids]],
+ cube: {months, dims: [{key, column, levels, folded, hidden}], measures: [{key, column, flow, unit}],
+        cells: [[month index (-1 no date), level index per dim, rows, sum, filled count per measure]], rows, no_date_rows},
+ defaults: {kpis: {id: {value, n, suppressed, month}}}, remarks: {data_range, data_range_text, rows: {in, kept,
+ set_aside, reasons}, check: [strings]}, refused: [{element, why}], rules: [strings], suppress_below: 5}
+```
+
+Rules (the engine's and the page's, `query_kpi` / `query_series` and `57-dashboard.js`): flows are added up; levels,
+rates and balances are averaged and never added up over time (an AI `sum` of a level becomes `average`, refused with
+its reason; an area chart of a level is refused); a figure on fewer than 5 rows (filled values for a measure) is
+`null` and shown as "<5", after every filter; a month with no rows is a gap (`null`), never filled; a quarter or year
+the range holds in part is said so; no flagged column is a dimension, a measure, a label or a refusal's words; a level
+holding a flagged column's token (`nl_viz._label_ok`) is folded into "other" and the notes say so; at most 5
+dimensions, 12 levels each, 50,000 cells. An AI string with a digit other than a 4-digit year is refused (the
+engine writes its own title). `results_for_ai.dashboard` carries the design (ids, labels, titles, counts), never the cube.
+The cube holds sums of the visitor's own kept rows, small cells included (it never leaves the browser; the HTML
+export carries it, as the cleaned CSV download carries the rows).

@@ -6561,6 +6561,18 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     # never the file's name (final review, 29 Sep 2026: the engine's sentences name it, "22 values in the amount
     # column of private_mix.csv could not be read", and every one went to /report): FILE_WORD stands in, as in
     # the planner's profile; the page puts the name back only in what it shows the visitor (src/js/50-try.js)
+    # the Dashboard tab's design (engine/nl_dashboard.py), never its cube: its tiles and charts by id and title
+    try:
+        import nl_dashboard as _nd
+        dsum = _nd.for_ai(rep.get("dashboard"))
+    except ImportError:
+        dsum = None
+    if dsum:
+        for it in dsum["kpis"] + dsum["charts"]:
+            for k in ("label", "title", "measure"):
+                if isinstance(it.get(k), str):
+                    it[k] = safe(it[k], 120)
+        out["dashboard"] = dsum
     fname = str((rep.get("input") or {}).get("name") or "")
 
     def final(o: Dict[str, Any]) -> Dict[str, Any]:
@@ -7051,6 +7063,10 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
                     continue
                 kept_ops.append(op)
             out["operations"] = kept_ops
+    # the Dashboard tab's design (plan/DASHBOARD-DESIGN.md): kept as the worker checked it; engine/nl_dashboard.py
+    # checks every element again against the rows the engine kept, and the block leaves rep.ai_plan once it is read
+    if isinstance(plan.get("dashboard"), dict):
+        out["dashboard"] = plan["dashboard"]
     return out, refused
 
 
@@ -12038,6 +12054,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                     w_ = None
                 if w_ is not None:
                     data, wide_info = w_["csv"], w_["info"]
+        # charts the visitor pinned to the Dashboard from "Ask your data" (src/js/57-dashboard.js NLD.pin): checked by
+        # engine/nl_dashboard.py like the AI's own charts
+        dash_pins: List[Any] = []
+        if isinstance(decisions, dict) and "__pins__" in decisions:
+            decisions = dict(decisions)
+            raw_pins = decisions.pop("__pins__")
+            dash_pins = [x for x in raw_pins if isinstance(x, dict)][:6] if isinstance(raw_pins, list) else []
         if isinstance(decisions, dict) and "__plan_review__" in decisions:
             decisions = dict(decisions)
             plan_review = _clean_plan_review(decisions.pop("__plan_review__"))
@@ -12790,6 +12813,12 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         ans = _answer(rep, goal)
         if ans is not None:
             rep["answer"] = ans
+        # the Dashboard tab (engine/nl_dashboard.py): the AI's design (or the sample's recorded one, or the engine's),
+        # checked and computed over the rows the engine kept; the plan's raw block then leaves rep.ai_plan
+        rep["dashboard"] = _dashboard(rep, r if not date_withheld else None, reading, ai_plan, pub, goal,
+                                      scrub.flag_tokens, scrub.flag_tokens_by, dash_pins)
+        if isinstance(ai_plan, dict):
+            ai_plan.pop("dashboard", None)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -13567,6 +13596,22 @@ def _viz(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: s
         return {"version": VIZ_VERSION, "charts": [], "refused": [
             {"chart": "all", "columns": [], "why": "the charts could not be built for this file (%s)" % type(exc).__name__,
              "chosen_by": "engine"}], "chosen_by": "none"}
+
+
+def _dashboard(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, goal: str = "",
+               names: Any = frozenset(), names_by: Any = None, pins: Any = None) -> Dict[str, Any]:
+    """rep["dashboard"] (engine/nl_dashboard.py, CONTRACT §5.14): the Dashboard tab's design, aggregate cube and notes.
+    The report stands without it."""
+    try:
+        import nl_dashboard as _nd
+        return _nd.build(rep, {"r": r, "reading": reading, "plan": plan if isinstance(plan, dict) else None,
+                               "pub": pub, "goal": goal, "names": names, "names_by": names_by or {},
+                               "pins": list(pins or [])})
+    except Exception as exc:  # noqa: BLE001 - the report stands without the dashboard, and says so
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return {"version": "", "ok": False, "chosen_by": "none",
+                "why": "the dashboard could not be built for this file (%s)" % type(exc).__name__}
 
 
 # ----------------------------------------------------------------------------- the report's web searches

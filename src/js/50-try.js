@@ -2674,8 +2674,22 @@
               return enginePlan('The AI found no check the engine can run for this question' +
                 (Array.isArray(j.dropped) && j.dropped.length ? ' (it asked for ' + j.dropped.length + ' the engine does not allow)' : '') + '.');
             }
-            say('Running ' + j.steps.length + (j.steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
-            w.postMessage({ type: 'more', id: id, steps: j.steps, prior: b.steps || [] });
+            // every answer shows the SQL behind it (the Claude Academy brief: "write the SQL to answer it, run it"): when the
+            // AI's steps hold no sql step, the engine's own read-only query for this question goes first, and the round keeps
+            // its cap of four steps (the AI's last step gives way)
+            var run = function (steps) {
+              say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
+              w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+            };
+            if (j.steps.some(function (st) { return st && st.op === 'sql'; })) return run(j.steps);
+            S.onPlan = function (gotId, eng) {
+              if (gotId !== id) return;
+              S.onPlan = null;
+              if (seq !== S.seq) return;
+              var sq = (eng || []).filter(function (st) { return st && st.op === 'sql'; }).slice(0, 1);
+              run(sq.concat(j.steps).slice(0, 4));
+            };
+            w.postMessage({ type: 'plan', id: id, question: question });
           })
           .catch(function (e) {
             clearTimeout(timer);
@@ -2695,6 +2709,8 @@
         b.refused = (b.refused || []).concat(out.refused || []);
         if (typeof out.round === 'number') b.rounds = Math.max(b.rounds || 0, out.round);
         b.asked = (b.asked || []).concat([question]);
+        // step 4 "Ask" is done once a question is answered, and it is where the visitor is now
+        if (window.NLSteps) { window.NLSteps.set(4, 'done', b.asked.length + (b.asked.length === 1 ? ' question answered' : ' questions answered')); if (window.NLSteps.here) window.NLSteps.here(4); }
         if (planned === 'ai') b.chosen_by = 'engine+ai';
         else b.engine_planned = (b.engine_planned || []).concat([question]);
         if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, ins.length ? ins[0].id : null);

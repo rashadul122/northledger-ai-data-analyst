@@ -72,6 +72,8 @@
     staleWhy = '';
     return window.NLTry.rerun(d);
   };
+  // the step the visitor is working in now, shown on the rail without scrolling (an answer in step 4, for instance)
+  NLSteps.here = function (n) { n = +n; if (n >= 1 && n <= 6 && cur !== n) { cur = n; draw(); } };
   NLSteps.go = function (n) {
     n = Math.max(1, Math.min(6, +n || 1));
     cur = n; draw();

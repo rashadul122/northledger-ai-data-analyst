@@ -1584,7 +1584,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 03:28:16 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 03:55:07 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2329,7 +2329,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 03:28:16 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 03:55:07 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -6650,7 +6650,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   // the file's name is added only when the visitor asks for it
   function fileName(date, name, title) {
     var day = isoDate(date instanceof Date ? date : new Date());
-    var tt = title ? String(title).replace(/\[(?:your file|value [A-Z]{1,3})\]/g, '').replace(/[^A-Za-z0-9 ._()'+-]+/g, ' ').replace(/\s+/g, ' ').replace(/^[-. ]+|[-. ]+$/g, '').slice(0, 80).replace(/[-. ]+$/g, '') : '';
+    var tt = title ? String(title).replace(/\[(?:your file|value [A-Z]{1,3})\]/g, '').replace(/[^A-Za-z0-9 ._()'+-]+/g, ' ').replace(/\s+/g, ' ').replace(/^[-. ]+|[-. ]+$/g, '') : '';
+    // at most 80 characters, cut at a word boundary, never mid-word ("... are c - 2026-10-16.pdf")
+    if (tt.length > 80) { var cut = tt.slice(0, 81); var sp = cut.lastIndexOf(' '); tt = (sp > 40 ? cut.slice(0, sp) : cut.slice(0, 80)).replace(/[-. ]+$/g, ''); for (var k = 0; k < 3; k++) tt = tt.replace(/\s+(?:a|an|and|are|as|at|by|for|from|in|is|of|on|once|or|than|the|to|was|were|with)$/i, ''); }
     var base = (tt || 'NorthLedger report') + ' - ' + day;
     var nm = name ? String(name).replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/[^A-Za-z0-9 ._-]+/g, '-').replace(/^[-. ]+|[-. ]+$/g, '').slice(0, 60) : '';
     return base + (nm ? ' - ' + nm : '') + '.pdf';
@@ -10076,8 +10078,22 @@ table &#x27;RentSafeTO Evaluation View&#x27;
               return enginePlan('The AI found no check the engine can run for this question' +
                 (Array.isArray(j.dropped) && j.dropped.length ? ' (it asked for ' + j.dropped.length + ' the engine does not allow)' : '') + '.');
             }
-            say('Running ' + j.steps.length + (j.steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
-            w.postMessage({ type: 'more', id: id, steps: j.steps, prior: b.steps || [] });
+            // every answer shows the SQL behind it (the Claude Academy brief: "write the SQL to answer it, run it"): when the
+            // AI's steps hold no sql step, the engine's own read-only query for this question goes first, and the round keeps
+            // its cap of four steps (the AI's last step gives way)
+            var run = function (steps) {
+              say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
+              w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+            };
+            if (j.steps.some(function (st) { return st && st.op === 'sql'; })) return run(j.steps);
+            S.onPlan = function (gotId, eng) {
+              if (gotId !== id) return;
+              S.onPlan = null;
+              if (seq !== S.seq) return;
+              var sq = (eng || []).filter(function (st) { return st && st.op === 'sql'; }).slice(0, 1);
+              run(sq.concat(j.steps).slice(0, 4));
+            };
+            w.postMessage({ type: 'plan', id: id, question: question });
           })
           .catch(function (e) {
             clearTimeout(timer);
@@ -10097,6 +10113,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         b.refused = (b.refused || []).concat(out.refused || []);
         if (typeof out.round === 'number') b.rounds = Math.max(b.rounds || 0, out.round);
         b.asked = (b.asked || []).concat([question]);
+        // step 4 "Ask" is done once a question is answered, and it is where the visitor is now
+        if (window.NLSteps) { window.NLSteps.set(4, 'done', b.asked.length + (b.asked.length === 1 ? ' question answered' : ' questions answered')); if (window.NLSteps.here) window.NLSteps.here(4); }
         if (planned === 'ai') b.chosen_by = 'engine+ai';
         else b.engine_planned = (b.engine_planned || []).concat([question]);
         if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, ins.length ? ins[0].id : null);
@@ -15132,6 +15150,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     staleWhy = '';
     return window.NLTry.rerun(d);
   };
+  // the step the visitor is working in now, shown on the rail without scrolling (an answer in step 4, for instance)
+  NLSteps.here = function (n) { n = +n; if (n >= 1 && n <= 6 && cur !== n) { cur = n; draw(); } };
   NLSteps.go = function (n) {
     n = Math.max(1, Math.min(6, +n || 1));
     cur = n; draw();

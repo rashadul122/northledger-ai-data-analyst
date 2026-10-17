@@ -2732,7 +2732,9 @@
   // the file's name is added only when the visitor asks for it
   function fileName(date, name, title) {
     var day = isoDate(date instanceof Date ? date : new Date());
-    var tt = title ? String(title).replace(/\[(?:your file|value [A-Z]{1,3})\]/g, '').replace(/[^A-Za-z0-9 ._()'+-]+/g, ' ').replace(/\s+/g, ' ').replace(/^[-. ]+|[-. ]+$/g, '').slice(0, 80).replace(/[-. ]+$/g, '') : '';
+    var tt = title ? String(title).replace(/\[(?:your file|value [A-Z]{1,3})\]/g, '').replace(/[^A-Za-z0-9 ._()'+-]+/g, ' ').replace(/\s+/g, ' ').replace(/^[-. ]+|[-. ]+$/g, '') : '';
+    // at most 80 characters, cut at a word boundary, never mid-word ("... are c - 2026-10-16.pdf")
+    if (tt.length > 80) { var cut = tt.slice(0, 81); var sp = cut.lastIndexOf(' '); tt = (sp > 40 ? cut.slice(0, sp) : cut.slice(0, 80)).replace(/[-. ]+$/g, ''); for (var k = 0; k < 3; k++) tt = tt.replace(/\s+(?:a|an|and|are|as|at|by|for|from|in|is|of|on|once|or|than|the|to|was|were|with)$/i, ''); }
     var base = (tt || 'NorthLedger report') + ' - ' + day;
     var nm = name ? String(name).replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/[^A-Za-z0-9 ._-]+/g, '-').replace(/^[-. ]+|[-. ]+$/g, '').slice(0, 60) : '';
     return base + (nm ? ' - ' + nm : '') + '.pdf';

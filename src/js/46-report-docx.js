@@ -463,7 +463,12 @@
     var source = showName ? '“' + str(inp.name) + '”' : 'the reader\'s file (its name left off at the reader\'s choice)';
 
     // the title: the AI report's own (as the PDF's), else the question; never the engine's long list of graded claims
-    var title = str(inp.report).trim() ? m.title : m.question ? 'Research write-up: ' + sub(m.question).replace(/[?.\s]+$/, '') : 'Research write-up';
+    // a question the visitor asked reads as one (it ends in "?" or is a short sentence); with none typed, the engine's
+    // goal is its list of graded claims ("Total amount where category is 'RENT' +30.7 graded WATCH"), never a title or a
+    // file name: then the engine's answer titles it, else the plain words
+    var asked = str(m.question).trim(), askedOk = asked && (/\?\s*$/.test(asked) || (asked.length <= 120 && !/\bgraded\b/i.test(asked)));
+    var ansObj = isObj(R.answer) ? R.answer : isObj(E.answer) ? E.answer : null, ansTitle = ansObj && typeof ansObj.title === 'string' ? ansObj.title : '';
+    var title = str(inp.report).trim() ? m.title : askedOk ? 'Research write-up: ' + sub(asked).replace(/[?.\s]+$/, '') : ansTitle ? 'Research write-up: ' + sub(ansTitle) : 'Research write-up';
     add({ type: 'title', text: title });
     add({ type: 'subtitle', text: 'A research write-up of ' + (showName ? str(inp.name) : 'the reader\'s file') + DOTW + day });
     add({ type: 'note', text: 'Source data: ' + source + '. The original file was not changed: NorthLedger read a copy of it in the reader\'s browser, and nothing was uploaded. ' +

@@ -1708,6 +1708,8 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nl2-subtitle { margin: 0 0 8px; color: var(--muted); font-size: 1.02rem; }
 .nl2-reading { margin: 0 0 6px; }
 .nl2-titleby { margin: 0; font-size: .85em; }
+.nl2-lookup { margin: 10px 0 0; }
+.nl2-lookup .note { font-size: .85em; }
 
 /* the AI summaries card is shown once it holds something (an empty card was a blank box under the bottom line) */
 .nl2-aicard:empty { display: none; }
@@ -1736,7 +1738,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 18:44:37 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 20:08:09 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2483,7 +2485,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 18:44:37 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 20:08:09 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -11457,6 +11459,30 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     }
 
+    /* ---- a series named only by its code: its public name from FRED (the worker's POST /series-name; the code alone is sent) ---- */
+    function seriesLookup(b) {
+      var id = String(b.getAttribute('data-series') || '').toUpperCase();
+      var said = b.parentNode && b.parentNode.querySelector('.nl2-lookup-said');
+      var say = function (t) { if (said) said.textContent = t; };
+      if (!/^[A-Z][A-Z0-9_]{2,40}$/.test(id) || !CFG.ai_proxy_url || S.busy) return;
+      b.disabled = true; say(' Looking up ' + id + ' on FRED\u2026');
+      fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/series-name', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'FRED', id: id }) }).then(function (r) {
+        return r.json().then(function (j) { return { status: r.status, body: j }; }, function () { return { status: r.status, body: {} }; });
+      }).then(function (got) {
+        var j = got.body || {};
+        if (got.status !== 200 || !j.title) {
+          b.disabled = false;
+          say(got.status === 404 ? ' FRED has no series ' + id + '.' : got.status === 429 ? ' Too many lookups from your network; try again in a minute.'
+            : ' The lookup did not answer (' + got.status + '); the report keeps the code.');
+          return;
+        }
+        var names = {}; names[id] = { label: j.title, about: j.about || '', kind: j.kind || 'level' };
+        say(' Found: \u201c' + j.title + '\u201d. Making the report again with that name\u2026');
+        if (!T.rerun({ __names__: names })) { b.disabled = false; say(' The report is busy; try again in a moment.'); }
+      }, function () { b.disabled = false; say(' The lookup could not reach the server; the report keeps the code.'); });
+    }
+
     /* ---- report actions (one listener for the report) ---- */
     el.report.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button');
@@ -11472,6 +11498,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         saveReportHtml();
       } else if (act === 'ai-analyst' || act === 'ai-manager') {
         aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
+      } else if (act === 'series-lookup') {
+        seriesLookup(b);
       } else if (act === 'again') {
         el.report.hidden = true; clearMsg();
         goTo(el.start);
@@ -13057,7 +13085,14 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var T = r.title && typeof r.title === 'object' ? r.title : null;
     var th = T && (T.title || T.subtitle) ? '<header class="tr-card nl2-titlecard">' + (T.title ? '<h2 class="nl2-title">' + esc(T.title) + '</h2>' : '') +
       (T.subtitle ? '<p class="nl2-subtitle">' + esc(T.subtitle) + '</p>' : '') + (T.summary ? '<p class="nl2-reading">' + esc(T.summary) + '</p>' : '') +
-      (T.source || T.by ? '<p class="note nl2-titleby">' + esc([T.source, T.by === 'ai' ? 'named by the AI from the column names and ranges' : 'named from the site\'s list of published series'].filter(Boolean).join('; ')) + '</p>' : '') +
+      (T.source || T.by ? '<p class="note nl2-titleby">' + esc([T.source, T.by === 'ai' ? 'named by the AI from the column names and ranges'
+        : T.by === 'lookup' ? 'named from FRED\'s page for the series, looked up when you asked'
+        : T.lookup ? '' : 'named from the site\'s list of published series'].filter(Boolean).join('; ')) + '</p>' : '') +
+      // a series known only by its code (or only by its family): its public name is one click away, the code alone sent (50-try.js)
+      (T.lookup && T.lookup.id && window.NL && window.NL.try && window.NL.try.ai_proxy_url ? '<p class="nl2-lookup"><button type="button" class="btn btn-ghost" ' +
+        'data-act="series-lookup" data-series="' + esc(T.lookup.id) + '">Look up ' + esc(T.lookup.id) + ' on FRED</button> <span class="note">Sends only the ' +
+        'series code ' + esc(T.lookup.id) + ' to read its public name, units and frequency; none of your data. The report is then made again with that name.</span>' +
+        '<span class="note nl2-lookup-said" role="status" aria-live="polite"></span></p>' : '') +
       '</header>' : '';
     var h = th + estimandCard(r) + '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +

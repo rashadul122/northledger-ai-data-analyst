@@ -125,6 +125,29 @@ def one(entry: dict) -> dict:
         fails.append("the headline or bottom line prints the code %s instead of what it measures" % leaked[0])
     if codes and not (rep.get("title") or {}).get("title"):
         fails.append("a code-named series has no title saying what it is")
+    # a series' headline says where it stands, never only what its forecast says (17 Oct 2026: "Monthly ... forecast at 2.759 for 2026-10")
+    if re.match(r"^(?:Monthly|Quarterly|Weekly|Daily|Annual|Yearly)\s.+\sforecast at\s", head) and \
+            len((rep.get("roles") or {}).get("measures") or []) == 1:
+        fails.append("the headline is the forecast, not where the series stands: " + head[:100])
+    # the manifest's own checks for this file (headline, words that must never appear, the title's lookup offer, Ask's answers)
+    ck = entry.get("checks") or {}
+    blob = json.dumps({k: rep.get(k) for k in ("story", "summary", "analyst", "explore", "title")}, default=str)
+    if ck.get("headline_re") and not re.search(ck["headline_re"], head):
+        fails.append("headline does not match %r: %s" % (ck["headline_re"], head[:140]))
+    if ck.get("text_not_re"):
+        bad = re.search(ck["text_not_re"], blob)
+        if bad:
+            fails.append("the report says %r" % bad.group(0)[:80])
+    if ck.get("title_lookup") and ((rep.get("title") or {}).get("lookup") or {}).get("id") != ck["title_lookup"]:
+        fails.append("no offer to look %s up on FRED" % ck["title_lookup"])
+    for qa in ck.get("ask") or []:
+        try:
+            got = json.loads(nl_browser.analyst_more_json(nl_browser.analyst_plan_json(qa["q"]), "[]", qa["q"]))
+            txt = str((got.get("answer") or {}).get("text") or "")
+        except Exception as exc:  # noqa: BLE001
+            txt = "error: %s" % type(exc).__name__
+        if not re.search(qa["answer_re"], txt):
+            fails.append("Ask %r answered %r" % (qa["q"][:50], txt[:120]))
     if len(drawn) + len(other) < MIN_CHARTS:
         fails.append("only %d drawable charts (%d viz records, %d drawn; engine charts %s)" % (
             len(drawn) + len(other), len(recs), len(drawn), other))

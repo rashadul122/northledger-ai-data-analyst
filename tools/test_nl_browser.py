@@ -6531,6 +6531,64 @@ def test_amounts_of_every_size_are_kept_by_default_and_fixed_length_numbers_are_
     assert dec2.get("amount", "withhold") == "withhold", dec2
 
 
+
+def test_a_first_column_that_only_numbers_the_rows_is_left_out():
+    rows = ["Index,Date,Sales"] + ["%d,2020-%02d-01,%d" % (i, i % 12 + 1, 100 + i) for i in range(30)]
+    rows.insert(11, rows[10])                                   # one row repeated: its number repeats too
+    data, note = NB._drop_row_counter("\n".join(rows).encode())
+    assert note and "only numbers the rows (0 to 29)" in note, note
+    assert data.decode().split("\n", 1)[0] == "Date,Sales", data[:40]
+    # a first column of real figures, or one that skips, is kept
+    keep = ["Index,Date,Sales"] + ["%d,2020-01-01,%d" % (i * 5, i) for i in range(30)]
+    assert NB._drop_row_counter("\n".join(keep).encode())[1] is None
+    named = ["Units,Date,Sales"] + ["%d,2020-01-01,%d" % (i, i) for i in range(30)]
+    assert NB._drop_row_counter("\n".join(named).encode())[1] is None   # a header that is not a row number's
+
+
+def _fred_rows(code, start=1990, n=420, f=lambda i: 3.0 + 2.0 * math.sin(i / 9.0)):
+    return ("observation_date,%s\n" % code + "\n".join("%04d-%02d-01,%.4f" % (start + i // 12, i % 12 + 1, f(i)) for i in range(n))).encode()
+
+
+def test_a_series_headline_says_where_it_stands_not_its_forecast():
+    rep = _run(_fred_rows("CPIAUCSL", f=lambda i: 100 + i * 0.25), "CPIAUCSL.csv", "", None, "2026-01-20")
+    head = rep["story"]["headline"]
+    assert not re.match(r"^Monthly .+ forecast at", head), head
+    m = re.match(r"^(.+) was ([\d.,]+) in December 2024, up ([\d.]+)% from a year earlier \(([\d.,]+)\)", head)
+    assert m, head
+    assert m.group(2) == "204.8" and m.group(4) == "201.8", head        # 100 + 419 * .25, and twelve months before
+
+
+def test_an_unknown_series_code_is_averaged_never_added_up_and_offers_a_lookup():
+    rep = _run(_fred_rows("ZQXRATE7"), "ZQXRATE7.csv", "", None, "2026-01-20")
+    blob = json.dumps(rep.get("analyst"), default=str)
+    assert "The total of ZQXRATE7" not in blob, re.search(r".{60}The total of.{60}", blob)
+    peak = re.search(r"peaked at ([\d.]+)", blob)
+    assert not peak or float(peak.group(1)) < 6, peak.group(0)        # a yearly average of values between 1 and 5, never twelve summed
+    assert (rep.get("title") or {}).get("lookup") == {"source": "FRED", "id": "ZQXRATE7"}, rep.get("title")
+    # the page's lookup answer names it, reads it as a rate, and the offer is gone
+    named = _run(_fred_rows("ZQXRATE7"), "ZQXRATE7.csv", "", {"__names__": {"ZQXRATE7": {
+        "label": "Test expected rate", "about": "Percent; monthly (FRED)", "kind": "rate"}}}, "2026-01-20")
+    t = named["title"]
+    assert t["title"].startswith("Test expected rate, ") and t["by"] == "lookup" and "lookup" not in t, t
+    assert "percentage points" in named["story"]["headline"], named["story"]["headline"]
+    # a run without them forgets them; a bad entry is refused
+    again = _run(_fred_rows("ZQXRATE7"), "ZQXRATE7.csv", "", None, "2026-01-20")
+    assert again["title"].get("lookup"), again["title"]
+    NB._set_looked_up({"../x": {"label": "x"}, "OKCODE": {"label": "", "kind": "rate"}, "GOOD1": {"label": "G", "kind": "bogus"}})
+    assert set(NB._LOOKED_UP) == {"GOOD1"} and NB._LOOKED_UP["GOOD1"]["kind"] == "level", NB._LOOKED_UP
+    NB._LOOKED_UP.clear()
+
+
+def test_world_bank_groups_are_told_from_countries_by_their_codes():
+    import nl_explore as NX
+    code_of = {"World": "WLD", "IBRD only": "IBD", "India": "IND", "South Africa": "ZAF", "Puerto Rico (US)": "PRI",
+               "Small states": "SST", "North America": "NAC"}
+    assert NX._groups_of(list(code_of), code_of) == {"World", "IBRD only", "Small states", "North America"}
+    # with no codes: a known region is a group, a known country never is
+    g = NX._groups_of(["World", "South Africa", "Sub-Saharan Africa", "Puerto Rico (US)", "High income", "France"])
+    assert g == {"World", "Sub-Saharan Africa", "High income"}, g
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

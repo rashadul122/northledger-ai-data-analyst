@@ -526,7 +526,14 @@
     var T = r.title && typeof r.title === 'object' ? r.title : null;
     var th = T && (T.title || T.subtitle) ? '<header class="tr-card nl2-titlecard">' + (T.title ? '<h2 class="nl2-title">' + esc(T.title) + '</h2>' : '') +
       (T.subtitle ? '<p class="nl2-subtitle">' + esc(T.subtitle) + '</p>' : '') + (T.summary ? '<p class="nl2-reading">' + esc(T.summary) + '</p>' : '') +
-      (T.source || T.by ? '<p class="note nl2-titleby">' + esc([T.source, T.by === 'ai' ? 'named by the AI from the column names and ranges' : 'named from the site\'s list of published series'].filter(Boolean).join('; ')) + '</p>' : '') +
+      (T.source || T.by ? '<p class="note nl2-titleby">' + esc([T.source, T.by === 'ai' ? 'named by the AI from the column names and ranges'
+        : T.by === 'lookup' ? 'named from FRED\'s page for the series, looked up when you asked'
+        : T.lookup ? '' : 'named from the site\'s list of published series'].filter(Boolean).join('; ')) + '</p>' : '') +
+      // a series known only by its code (or only by its family): its public name is one click away, the code alone sent (50-try.js)
+      (T.lookup && T.lookup.id && window.NL && window.NL.try && window.NL.try.ai_proxy_url ? '<p class="nl2-lookup"><button type="button" class="btn btn-ghost" ' +
+        'data-act="series-lookup" data-series="' + esc(T.lookup.id) + '">Look up ' + esc(T.lookup.id) + ' on FRED</button> <span class="note">Sends only the ' +
+        'series code ' + esc(T.lookup.id) + ' to read its public name, units and frequency; none of your data. The report is then made again with that name.</span>' +
+        '<span class="note nl2-lookup-said" role="status" aria-live="polite"></span></p>' : '') +
       '</header>' : '';
     var h = th + estimandCard(r) + '<article class="tr-card nl2-bottomcard"><p class="kicker">Bottom line</p>' + bl +
       lines +

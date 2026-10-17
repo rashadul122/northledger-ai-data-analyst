@@ -445,6 +445,62 @@ def test_the_sample_is_the_generator_output():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+def _panel_state():
+    """A small panel: three countries a year, 2018 to 2025, one row each (a World Bank table read whole)."""
+    rows = []
+    for y in range(2018, 2026):
+        for c, base, g in (("Atlantis", 100.0, 0.02), ("Borduria", 50.0, -0.01), ("Carpania", 10.0, 0.10)):
+            rows.append({"Year": pd.Timestamp("%d-01-01" % y), "Country Name": c, "Population": base * (1 + g) ** (y - 2018)})
+    df = pd.DataFrame(rows)
+    return {"df": df, "kinds": {"Year": "date", "Country Name": "text", "Population": "number"},
+            "hint": {"date": "Year", "entity": "Country Name", "primary": "Population", "mkind": {"Population": "stock"}},
+            "shape": {"measures": [{"column": "Population", "kind": "stock"}], "dimensions": ["Country Name"], "date": "Year"}}
+
+
+def _ran(state, q):
+    out = __import__("nl_analyst").run_steps(state["df"], state["kinds"], ns.plan_steps(state, q), state["hint"])
+    st = next(s for s in out["steps"] if s.get("op") == "sql")
+    assert st.get("ok"), st
+    return st["args"]["sql"], st["table"]
+
+
+def test_a_ranking_question_ranks_the_members_in_one_period():
+    st = _panel_state()
+    sql, tb = _ran(st, "Which country had the largest population in 2025?")
+    assert "ORDER BY" in sql and "LIMIT" in sql and "'2025'" in sql, sql
+    assert [r[0] for r in tb["rows"]] == ["Atlantis", "Borduria", "Carpania"], tb
+    sql, tb = _ran(st, "Which countries have the smallest population?")          # no year: the latest in the file
+    assert "'2025'" in sql and tb["rows"][0][0] == "Carpania", (sql, tb)
+    sql, tb = _ran(st, "Top 2 countries by population in 2018")
+    assert len(tb["rows"]) == 2 and tb["rows"][0][0] == "Atlantis", tb
+
+
+def test_a_named_member_and_a_since_read_its_own_rows_by_year():
+    st = _panel_state()
+    sql, tb = _ran(st, "How did Carpania's population change since 2020?")
+    assert "'Carpania'" in sql and ">= '2020-01-01'" in sql and "GROUP BY" not in sql, sql
+    assert [r[0] for r in tb["rows"]] == [str(y) for y in range(2020, 2026)], tb         # years, never quarters
+    ans = __import__("nl_explore").answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql}, "table": tb}])
+    assert ans["text"].startswith("Population (Carpania) went from") and "2020" in ans["text"] and "1,960" not in ans["text"], ans
+
+
+def test_a_yearly_file_compares_years_when_no_period_is_named():
+    st = _panel_state()
+    rq = ns.read_question(st, "How has population changed?")
+    assert rq["grain"] == "Y" and "compares years" in " ".join(rq["notes"]), rq
+    assert rq["rank"] is None, rq
+    assert ns.read_question(st, "What was the population in 2020?")["rank"] is None     # "what was" is not a ranking
+
+
+def test_a_ranking_by_a_ratio_is_said_by_the_ratio_and_a_period_question_is_no_ranking():
+    import nl_explore as nx
+    rep = nb.run(open(SAMPLE, "rb").read(), "s.csv", "", None, AS_OF)
+    st = nb._LAST_ANALYST
+    assert ns.read_question(st, "Which month had the most revenue?")["rank"] is None
+    out = json.loads(nb.analyst_more_json(nb.analyst_plan_json("Which region has the highest gross margin?"), "[]", "q"))
+    assert out["answer"]["text"].startswith("gross margin pct: "), out["answer"]["text"]
+
+
 def main() -> int:
     tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)]
     bad = 0

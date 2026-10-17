@@ -1167,6 +1167,11 @@ self.onmessage = function (e) {
         R.downloads.contract_flagged_csv = 'source_line,column,value,test,what happened\\n9,amount,140,between 0 and 100,out of range; kept by the engine\\n';
       }
     }
+    if (D.__names__) {                     // a series name the page looked up (POST /series-name): the engine names it (stub)
+      R = JSON.parse(JSON.stringify(R)); var nid = Object.keys(D.__names__)[0], nm = D.__names__[nid];
+      R.title = { title: nm.label + ', 1968 to 2026', subtitle: nm.about, summary: '', by: 'lookup', source: 'FRED series ' + nid };
+      R.story.headline = nm.label + ' was 2.8% in September 2026 (' + nm.kind + ').';
+    }
     if (REPORT.__echoDecisions) {          // the choices the run received, on the report's headline (the released-category check)
       R = JSON.parse(JSON.stringify(R)); var dd = {};
       Object.keys(D).sort().forEach(function (k) { if (k.indexOf('__') !== 0) dd[k] = D[k]; });
@@ -1452,6 +1457,32 @@ function gatedReport() {
   r.downloads.quarantine_csv = 'source_line,building,unit,_quarantine_reason\n4,Pape Ave,B1,x\n';
   return r;
 }
+
+check('try-a-series-known-only-by-its-code-is-looked-up-when-the-visitor-asks', DESK, async (ctx) => {
+  // 17 Oct 2026: a FRED download whose code no list names offers "Look up on FRED"; only the code goes, and only on the click
+  const rep = JSON.parse(JSON.stringify(fixture(FX_NAMES[0])));
+  rep.title = { title: 'T5YIFRM, 1968 to 2026', subtitle: '', summary: '', by: 'engine', source: 'FRED series T5YIFRM', lookup: { source: 'FRED', id: 'T5YIFRM' } };
+  const sent = [];
+  const reply = (b) => {
+    if (b && b.source === 'FRED') { sent.push(b); return { status: 200, json: { id: 'T5YIFRM', title: '5-Year, 5-Year Forward Inflation Expectation Rate', about: 'Percent; monthly (FRED)', kind: 'rate' } }; }
+    return { status: 503, json: { error: 'not_configured' } };
+  };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
+  await runReport(p);
+  const btn = '#try-report [data-act="series-lookup"]';
+  await p.waitForSelector(btn, { timeout: 15000 });
+  ok(/Look up T5YIFRM on FRED/.test(await p.textContent(btn)), 'the button does not name the code');
+  const note = (await p.textContent('#try-report .nl2-lookup')).replace(/\s+/g, ' ');
+  ok(/Sends only the series code T5YIFRM/.test(note) && /none of your data/.test(note), 'the button does not say what it sends: ' + note);
+  ok(!sent.length && !ctx.__ai.some((x) => /series-name|T5YIFRM/.test(String(x))), 'something was sent before the click');
+  await p.click(btn);
+  await p.waitForFunction(() => /5-Year, 5-Year Forward Inflation Expectation Rate/.test((document.querySelector('#try-report .nl2-title') || {}).textContent || ''), null, { timeout: 30000 });
+  ok(sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify({ source: 'FRED', id: 'T5YIFRM' }), 'the lookup sent more than the code: ' + JSON.stringify(sent));
+  const after = await p.evaluate(() => ({ by: (document.querySelector('#try-report .nl2-titleby') || {}).textContent || '',
+    btn: !!document.querySelector('#try-report [data-act="series-lookup"]') }));
+  ok(/looked up when you asked/.test(after.by) && !after.btn, 'after the lookup the card does not say where the name came from, or still offers it: ' + JSON.stringify(after));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
 
 check('try-a-tripped-gate-leads-with-what-to-do-and-says-it-once', DESK, async (ctx) => {
   const rep = gatedReport();

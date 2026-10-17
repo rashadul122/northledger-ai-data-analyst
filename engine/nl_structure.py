@@ -673,6 +673,11 @@ def wide_to_long(data: bytes, max_rows: int = 200000) -> Optional[Dict[str, Any]
         return None
     label = {c: k[1] for c, k in zip(cols, kinds) if k}
     body = df[pcols].apply(lambda s: s.str.strip())
+    # a year no row reports (the World Bank's unemployment starts in 1991: 1960 to 1990 are empty columns) is no period of the table
+    live = [c for c in pcols if bool((body[c] != "").any())]
+    if len(live) < (WIDE_MIN_YEARS if fam == "year" else WIDE_MIN_PERIODS):
+        return None
+    pcols, body = live, body[live]
     if float((body != "").to_numpy().mean()) < 0.5:
         return None
     long = df[ids].copy()

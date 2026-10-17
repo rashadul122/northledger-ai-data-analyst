@@ -7223,8 +7223,10 @@ def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> s
                         prior=prior if isinstance(prior, list) else [])
     try:
         import nl_explore as _nx
+        mk = (_LAST_ANALYST.get("hint") or {}).get("mkind") or {}
         ans = _nx.answer_of(str(question or ""), out.get("steps") or [],
-                            _LAST_EXPLORE if _LAST_EXPLORE.get("kind") == "indicator_table" else None)
+                            _LAST_EXPLORE if _LAST_EXPLORE.get("kind") == "indicator_table" else None,
+                            rate_cols={str(c) for c, k in mk.items() if k == "rate"})
         if ans is not None:
             out["answer"] = json.loads(json.dumps(ans, allow_nan=False, default=str))
     except Exception:  # noqa: BLE001 - the steps stand without the answer sentence
@@ -12077,6 +12079,57 @@ def _numbers_in_place(df: Any) -> List[Dict[str, Any]]:
 SUBHEADER_MIN = 3
 
 
+_ROW_COUNTER_HEADS = frozenset(("", "index", "unnamed: 0", "unnamed:0", "#", "no", "no.", "row", "rownum", "row_number", "row number",
+                                "row_id", "row id", "rowid", "level_0"))
+
+
+def _drop_row_counter(data: bytes) -> Tuple[bytes, Optional[str]]:
+    """A first column that only numbers the rows (pandas' "Unnamed: 0", a spreadsheet's "Index": 0, 1, 2 ... down the file) is set
+    aside before the engine reads the file, with a note saying so. 17 Oct 2026: a transport file's "Index" (0 to 958, one row repeated)
+    was read as its lead measure, and the headline forecast the row number ("Monthly index forecast at 958"). Only a comma-separated
+    file's first column, at least 20 rows, every value a whole number starting at 0 or 1 and rising by 1 (a repeated row repeats it)."""
+    import csv as _csv
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data, None
+    try:
+        rows = list(_csv.reader(io.StringIO(text)))
+    except _csv.Error:
+        return data, None
+    if len(rows) < 21 or len(rows[0]) < 3:
+        return data, None
+    head = rows[0][0].strip()
+    if head.lower() not in _ROW_COUNTER_HEADS:
+        return data, None
+    body = [r for r in rows[1:] if any(c.strip() for c in r)]
+    try:
+        vals = [int(r[0].strip()) for r in body if r]
+    except ValueError:
+        return data, None
+    if len(vals) != len(body) or len(vals) < 20 or vals[0] not in (0, 1):
+        return data, None
+    steps = [b - a for a, b in zip(vals, vals[1:])]
+    if any(d not in (0, 1) for d in steps) or sum(1 for d in steps if d == 0) > max(1, 0.02 * len(steps)):
+        return data, None
+    out = io.StringIO()
+    w = _csv.writer(out, lineterminator="\n")
+    for r in rows:
+        w.writerow(r[1:] if r else r)
+    name = "the unnamed first column" if not head or head.lower().startswith("unnamed") else "the first column, %s," % head
+    return out.getvalue().encode("utf-8"), ("%s only numbers the rows (%d to %d), so it was left out: it is not a measure"
+                                             % (name[:1].upper() + name[1:], vals[0], vals[-1]))
+
+
+def _data_note(rep: Dict[str, Any], note: Optional[str]) -> None:
+    """A note on how the file was read (a column left out), first among the data notes."""
+    if not note or not isinstance(rep, dict):
+        return
+    lim = [x for x in rep.get("limitations") or []]
+    lim.insert(0, {"kind": "data", "text": note + ".", "finding_ids": []})
+    rep["limitations"] = lim
+
+
 def merge_two_row_header(data: bytes) -> Tuple[bytes, Optional[str]]:
     """(the file with its two header rows merged into one, a note) or (data, None) when the second row is not a sub-header: it
     holds "Response" in two or more cells, or names an option under three or more blank header cells, and none of its cells is a
@@ -12533,6 +12586,13 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         the sample passes its fixed date so its report does not age.
     """
     t_start = time.perf_counter()
+    # names the visitor looked up on the publisher's site (the page's "Look up on FRED": a series code sent, never data), for this run
+    # and the slice runs inside it; a run without them (a new file) forgets the last file's
+    if isinstance(decisions, dict) and "__names__" in decisions:
+        decisions = dict(decisions)
+        _set_looked_up(decisions.pop("__names__"))
+    elif not (isinstance(decisions, dict) and "__structure_inner__" in decisions):
+        _LOOKED_UP.clear()
     try:
         data = _as_bytes(csv_bytes)
     except Refusal as exc:
@@ -12564,6 +12624,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         objective = " ".join(str(objective or "").split())[:300] or DEFAULT_OBJECTIVE
         data, title_lines = _strip_title_block(data)
         data, subheader_note = merge_two_row_header(data)
+        data, rowno_note = _drop_row_counter(data)
         if subheader_note:
             title_lines += 1                              # the second header row is gone: each row's line in the file is one further
         if _looks_like_title(data):
@@ -12670,6 +12731,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                         _tidy_notes(inner, None, date_notes, number_notes)
                     if title_lines:
                         _title_note(inner, title_lines)
+                    _wide_year_panel(inner, data, wide_info, S_pre)
+                    _data_note(inner, rowno_note)
                     return inner
                 struct_error = _slice_failure(data)                 # a table of series whose slice could not be run (else: read as before)
         if struct_error is not None:
@@ -12735,6 +12798,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                             _tidy_notes(inner, None, date_notes, number_notes)
                         if title_lines:
                             _title_note(inner, title_lines)
+                        _wide_year_panel(inner, data, wide_info, S_use, ai_plan)
+                        _data_note(inner, rowno_note)
                         return inner
                     struct_error = _slice_failure(data)              # a table of series whose slice could not be run (else: read as before)
                     if struct_error is not None:
@@ -12980,6 +13045,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                 _tidy_notes(inner, None, date_notes, number_notes)
                             if title_lines:
                                 _title_note(inner, title_lines)
+                            _wide_year_panel(inner, sent, wide_info, S_hook)
+                            _data_note(inner, rowno_note)
                             return inner
                         struct_error = _slice_failure(sent)         # a table of series whose slice could not be run (else: read as before)
                         if struct_error is not None:
@@ -13386,6 +13453,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # export, else only what it would need (step 6's report menu reads rep.sales.fit)
         rep["sales"] = _sales(rep, reading, ai_plan, as_of)
         _series_names(rep, ai_plan)
+        _latest_headline(rep, ai_plan)
+        _data_note(rep, rowno_note)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -13424,18 +13493,42 @@ def _fred() -> Dict[str, Any]:
     return _FRED
 
 
+_LOOKED_UP: Dict[str, Dict[str, str]] = {}
+_LOOKUP_KINDS = ("rate", "index", "level", "flow")
+
+
+def _set_looked_up(raw: Any) -> None:
+    """The page's looked-up names, {series id: {label, about, kind}}, checked: an id as FRED writes one, a short label and note, a kind
+    of the four the list uses (any other is a level: averaged, never added up)."""
+    _LOOKED_UP.clear()
+    if not isinstance(raw, dict):
+        return
+    for k, v in list(raw.items())[:4]:
+        h = str(k or "").strip().upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,40}", h) or not isinstance(v, dict):
+            continue
+        lab = " ".join(str(v.get("label") or "").split())[:120]
+        if not lab:
+            continue
+        kind = str(v.get("kind") or "level")
+        _LOOKED_UP[h] = {"label": lab, "about": " ".join(str(v.get("about") or "").split())[:200],
+                         "kind": kind if kind in _LOOKUP_KINDS else "level", "id": h, "looked_up": "1"}
+
+
 def fred_lookup(header: Any) -> Optional[Dict[str, str]]:
-    """{label, about, kind} of a FRED series id, by the list or by its family's prefix, or None."""
+    """{label, about, kind} of a FRED series id, by the name the visitor looked up, the list, or its family's prefix, or None."""
     h = str(header or "").strip().upper()
     if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,40}", h):
         return None
+    if h in _LOOKED_UP:
+        return dict(_LOOKED_UP[h])
     d = _fred()
     s = (d.get("series") or {}).get(h)
     if s:
         return {"label": s[0], "about": s[1], "kind": s[2], "id": h}
     for p, v in (d.get("prefixes") or {}).items():
         if h.startswith(p) and len(h) > len(p) + 3:
-            return {"label": "%s (%s)" % (v[0], h), "about": v[1], "kind": v[2], "id": h}
+            return {"label": "%s (%s)" % (v[0], h), "about": v[1], "kind": v[2], "id": h, "family": "1"}
     return None
 
 
@@ -13519,12 +13612,149 @@ def _series_names(rep: Dict[str, Any], plan: Any) -> None:
         span = _year_span(rep)
         title = str(p.get("title") or "") or (("%s, %s" % (lead, span)) if lead and span else lead or "")
         sub = str(p.get("subtitle") or "") or (f["about"] if f else "")
+        by = "ai" if p.get("title") else ("lookup" if f and f.get("looked_up") else "engine")
         if title or sub:
-            rep["title"] = {"title": title[:100], "subtitle": sub[:180], "summary": str(p.get("understanding") or "")[:600],
-                            "by": "ai" if p.get("title") else "engine", "source": ("FRED series %s" % f["id"]) if f else ""}
+            rep["title"] = {"title": title[:160], "subtitle": sub[:200], "summary": str(p.get("understanding") or "")[:600],
+                            "by": by, "source": ("FRED series %s" % f["id"]) if f else ""}
+        # a FRED download (observation_date, then one series code) whose code no list or plan names: the page offers to look the name
+        # up on FRED, sending the code alone, when the visitor asks
+        code = _fred_download_code(rep)
+        fc = fred_lookup(code) if code else None
+        if code and (fc is None or fc.get("family")) and not str(p.get("title") or "") and \
+                not any(_engine_slug(c.get("name") or "") == _engine_slug(code) and c.get("label")
+                        for c in p.get("columns") or [] if isinstance(c, dict)):
+            # no name, or only its family's ("a producer price index for an industry"): the exact name is a click away
+            t0 = rep.get("title") if isinstance(rep.get("title"), dict) else {
+                "title": "%s%s" % (code, (", " + span) if span else ""), "subtitle": "", "summary": "", "by": "engine",
+                "source": "FRED series %s" % code}
+            t0["lookup"] = {"source": "FRED", "id": code}
+            rep["title"] = t0
     except Exception:  # noqa: BLE001
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
+
+
+_FORECAST_HEAD = re.compile(r"^(?:(?:Monthly|Quarterly|Weekly|Daily|Annual|Yearly)\s.+\sforecast at\s|"
+                            r"\d[\d,]* (?:months|quarters|weeks|days|years) of history \(.*settled no change)", re.I)
+_CALENDAR_MONTHS = ("January February March April May June July August September October November December").split()
+
+
+def _latest_headline(rep: Dict[str, Any], plan: Any = None) -> None:
+    """The headline of one series a date (a FRED download, an index, a price) whose story led with its forecast ("Monthly US core
+    sticky-price inflation (12-month %) forecast at 2.759 for 2026-10.") or with what its change test did not settle ("420 months of
+    history (...): ... settled no change strong enough to act on"): what a reader asks first, where the series is now. Its latest
+    value, the change from a year earlier (in percentage points for a rate, in % for anything else) and how far back the series last
+    stood there ("its lowest since May 2021"). Every figure is a cell of the kept rows; the forecast stays in what comes next. The
+    report stands without it."""
+    try:
+        st = rep.get("story")
+        if not isinstance(st, dict) or not _FORECAST_HEAD.match(str(st.get("headline") or "")):
+            return
+        roles = rep.get("roles") or {}
+        d, ms = roles.get("date"), list(roles.get("measures") or [])
+        text = str((rep.get("downloads") or {}).get("clean_csv") or "")
+        if not d or len(ms) != 1 or not text:
+            return
+        import pandas as _pd
+        f = _pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+        if d not in f.columns or ms[0] not in f.columns:
+            return
+        t = _pd.to_datetime(f[d], errors="coerce")
+        v = _pd.to_numeric(f[ms[0]].str.replace(",", "", regex=False), errors="coerce")
+        ser = _pd.Series(v.values, index=t.values).dropna()
+        ser = ser[ser.index.notna()].sort_index()
+        if len(ser) < 13 or ser.index.duplicated().any():
+            return                                    # several rows a date: a total of rows, not one series, keeps its headline
+        idx = _pd.DatetimeIndex(ser.index)
+        if bool((idx.hour != 0).any() or (idx.minute != 0).any()):
+            return                                    # times of day: a log of events, not one series of readings
+        gaps = _pd.Series(idx).diff().dt.days.dropna()
+        med = float(gaps.median())
+        if not (med in (1.0, 7.0) or 28 <= med <= 31 or 89 <= med <= 92 or 365 <= med <= 366):
+            return                                    # no steady step (a day, a week, a month, a quarter, a year)
+        if len(ser) < 0.6 * (float((idx[-1] - idx[0]).days) / med + 1):
+            return                                    # gaps: too few readings for the span to be one regular series
+        x1, v1 = ser.index[-1], float(ser.iloc[-1])
+        target = x1 - _pd.DateOffset(years=1)
+        near = ser[(ser.index >= target - _pd.Timedelta(days=16)) & (ser.index <= target + _pd.Timedelta(days=16))]
+        if not len(near):
+            return
+        x0, v0 = near.index[-1], float(near.iloc[-1])
+        rate = _rate_of(rep, ms[0])
+        names = _column_names(rep, plan)
+        label = next((lab for h, lab in names.items() if _engine_slug(h) == _engine_slug(ms[0])), "") or \
+            re.sub(r"^(?:monthly|quarterly|weekly|daily|annual|yearly)\s+", "", str((rep.get("forecast") or {}).get("label") or ms[0]), flags=re.I)
+        label = label.upper() if _engine_slug(label) == _engine_slug(ms[0]) and _fred_download_code(rep) else label[:1].upper() + label[1:]
+        pct_unit = bool(rate and rate.get("pct"))
+
+        def lv(y: float) -> str:
+            if pct_unit:
+                return "%.1f%%" % y
+            a = abs(y)
+            return ("{:,.0f}" if a >= 10000 else "{:,.1f}" if a >= 10 else "{:,.2f}").format(y)
+
+        if rate:
+            dlt = v1 - v0
+            how = ("unchanged from a year earlier" if abs(dlt) < 0.005 else
+                   "%s %.2f percentage points from a year earlier (%s)" % ("up" if dlt > 0 else "down", abs(dlt), lv(v0)))
+        else:
+            if v0 == 0:
+                return
+            dp = 100.0 * (v1 - v0) / abs(v0)
+            how = ("unchanged from a year earlier" if abs(dp) < 0.05 else
+                   "%s %.1f%% from a year earlier (%s)" % ("up" if dp > 0 else "down", abs(dp), lv(v0)))
+        # how far back it last stood there: the latest earlier value at least as low (a fall) or as high (a rise)
+        since = ""
+        prior = ser.iloc[:-1]
+        if v1 != v0 and len(prior):
+            down = v1 < v0
+            past = prior[prior <= v1] if down else prior[prior >= v1]
+            word = "lowest" if down else "highest"
+            if not len(past):
+                since = ", the %s in the whole series (since %d)" % (word, ser.index[0].year)
+            elif past.index[-1] < target:
+                xp = past.index[-1]
+                since = ", its %s since %s %d" % (word, _CALENDAR_MONTHS[xp.month - 1], xp.year)
+        gap = float(_pd.Series(ser.index).diff().dt.days.median())
+        daily = gap < 25                                  # a daily or weekly series is dated to the day, a monthly one to its month
+        when = ("on %d %s %d" % (x1.day, _CALENDAR_MONTHS[x1.month - 1], x1.year)) if daily else ("in %s %d" % (_CALENDAR_MONTHS[x1.month - 1], x1.year))
+        if since and daily:
+            since = re.sub(r"since ([A-Z][a-z]+) (\d{4})$", lambda m: "since %s %s" % (m.group(1), m.group(2)), since)
+        st["headline"] = "%s was %s %s, %s%s." % (label, lv(v1), when, how, since)
+    except Exception:  # noqa: BLE001 - the engine's headline stands
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+
+
+def _rate_of(rep: Dict[str, Any], col: str) -> Optional[Dict[str, Any]]:
+    """{"pct": a percent} when the column is a rate by the readings _rate_findings trusts (the AI plan's percentage, a FRED rate, the
+    structure's rate), else None. Read from the column, not a finding, so it holds after the findings are restated in points."""
+    slug = _engine_slug(col)
+    plan = rep.get("ai_plan") if isinstance(rep.get("ai_plan"), dict) else {}
+    for c in plan.get("columns") or []:
+        if isinstance(c, dict) and c.get("name") and _engine_slug(str(c["name"])) == slug and (
+                str(c.get("semantic_type") or "") == "percentage" or str(c.get("unit") or "").strip() == "%"):
+            return {"pct": True}
+    for h in _report_headers(rep):
+        fl = fred_lookup(h)
+        if fl and fl["kind"] == "rate" and _engine_slug(h) == slug:
+            return {"pct": "points" not in fl["label"]}
+    m = ((rep.get("estimand") or {}).get("measure") or {}) if isinstance(rep.get("estimand"), dict) else {}
+    if m.get("type") == "rate":
+        return {"pct": bool(re.search(r"(?i)percent|%", str(m.get("uom") or "")))}
+    return None
+
+
+def _fred_download_code(rep: Dict[str, Any]) -> Optional[str]:
+    """The series code of a file shaped as FRED downloads it (observation_date or DATE, then one column named by a code), else None."""
+    hs = [h for h in _report_headers(rep)]
+    d = (rep.get("roles") or {}).get("date")
+    ms = list((rep.get("roles") or {}).get("measures") or [])
+    if len(hs) != 2 or not d or len(ms) != 1 or str(d).lower() not in ("observation_date", "date"):
+        return None
+    h = next((x for x in hs if x != d), "")
+    code = h.upper()
+    return code if re.fullmatch(r"[A-Z][A-Z0-9_]{2,40}", code) and re.search(r"[A-Z]{2}", code) else None
 
 
 def _year_span(rep: Dict[str, Any]) -> str:
@@ -14242,6 +14472,20 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
             fl = fred_lookup(col)
             if fl:
                 hint.setdefault("mkind", {})[col] = {"rate": "rate", "index": "level", "level": "level", "flow": "flow"}[fl["kind"]]
+        # one published series named by a code (a FRED or StatCan download the list does not know, read with no plan): one value a date,
+        # so a reading of the series at that date (a rate, an index, a price), never a part of a total; the loop averages it over a year
+        # and never adds twelve months of it up (17 Oct 2026: T5YIFRM "peaked at 166.2 in 1980", monthly rates summed)
+        kinds0 = info.get("kinds") or {}
+        dcols = [c for c in df.columns if kinds0.get(c) == "date"]
+        ncols = [c for c in df.columns if kinds0.get(c) == "number"]
+        if len(dcols) == 1 and len(ncols) == 1 and ncols[0] not in (hint.get("mkind") or {}) and \
+                (_code_like(str(ncols[0])) or _code_like(str(reading.header(ncols[0])) if reading is not None else "")):
+            try:
+                one_a_date = not df[dcols[0]].duplicated().any()
+            except Exception:  # noqa: BLE001
+                one_a_date = False
+            if one_a_date:
+                hint.setdefault("mkind", {})[ncols[0]] = "level"
         for c in p.get("columns") or []:
             if isinstance(c, dict) and c.get("name") in df.columns and st_kind.get(str(c.get("semantic_type") or "")):
                 hint.setdefault("mkind", {})[c["name"]] = st_kind[str(c["semantic_type"])]
@@ -14362,30 +14606,39 @@ def _raw_frame(raw: Any) -> Any:
 _LAST_EXPLORE: Dict[str, Any] = {}
 
 
-def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: Any = None) -> Optional[Dict[str, Any]]:
+def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: Any = None,
+             panel_src: Optional[Tuple[Any, Dict[str, str]]] = None, panel: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """rep["explore"]: the indicator-table reading (engine/nl_explore.py) and its charts in rep.viz, or None for any other table.
-    The report stands without it."""
+    panel_src, (frame, headers): the whole long table of a wide table of years the structure layer read one member at a time
+    (_wide_year_panel), read as a panel in place of that one member. The report stands without it."""
     _LAST_EXPLORE.clear()
     try:
         import nl_explore as _nx
         import nl_viz as _nv
-        if (rep.get("roles") or {}).get("date"):
+        if panel_src is not None:
+            pass                                          # the caller checked the table: a panel of members by year
+        elif (rep.get("roles") or {}).get("date"):
             return None                                   # a dated table keeps the engine's time analysis
         st0 = rep.get("structure") if isinstance(rep.get("structure"), dict) else None
-        if st0 is not None and st0.get("kind") in ("cube", "cube_incomplete", "error", "refused"):
+        if panel_src is None and st0 is not None and st0.get("kind") in ("cube", "cube_incomplete", "error", "refused"):
             return None                                   # a table of series the structure layer reads (or refused): never row by row
-        if any(isinstance(r, dict) and r.get("chart") == "all" for r in ((rep.get("viz") or {}).get("refused") or [])):
+        if panel_src is None and any(isinstance(r, dict) and r.get("chart") == "all"
+                                     for r in ((rep.get("viz") or {}).get("refused") or [])):
             return None                                   # the registry refused to read these rows at all, with its reason
-        csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
-        if not csv_text:
-            return None
-        private = {str(f["column"]) for f in flagged or [] if isinstance(f, dict) and f.get("column")
-                   and str(f.get("decision") or "withhold") != "keep"}
-        frame = _download_frame(csv_text, private)
-        if frame is None or not len(frame):
-            return None
-        header_of = {c: (reading.header(c) if reading is not None else c) for c in frame.columns}
-        lay = _nx.detect(frame, header_of, _raw_frame(raw))
+        if panel_src is not None:
+            frame, header_of = panel_src
+            lay = None
+        else:
+            csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
+            if not csv_text:
+                return None
+            private = {str(f["column"]) for f in flagged or [] if isinstance(f, dict) and f.get("column")
+                       and str(f.get("decision") or "withhold") != "keep"}
+            frame = _download_frame(csv_text, private)
+            if frame is None or not len(frame):
+                return None
+            header_of = {c: (reading.header(c) if reading is not None else c) for c in frame.columns}
+            lay = _nx.detect(frame, header_of, _raw_frame(raw))
         viz = rep.get("viz") if isinstance(rep.get("viz"), dict) else {"version": VIZ_VERSION, "charts": [], "refused": []}
         before = [c for c in viz.get("charts") or [] if isinstance(c, dict)]
         if lay is not None:
@@ -14409,7 +14662,7 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
             land_of = {str(h): c for c, h in header_of.items()}
             prim = land_of.get(str((plan or {}).get("primary") or "")) if isinstance(plan, dict) else None
             # a panel (a country or a state a row per year, a Year column and no date): the whole and the leaders over the years
-            pan = _nx.detect_panel(frame, header_of, str((rep.get("input") or {}).get("name") or ""))
+            pan = panel if panel is not None else _nx.detect_panel(frame, header_of, str((rep.get("input") or {}).get("name") or ""))
             sv = _nx.detect_survey(frame, header_of) if pan is None else None
             if pan is not None:
                 out = _nx.build_panel(pan, primary=prim, limit=VIZ_TABLE_MAX)
@@ -14460,6 +14713,10 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
             any(str(f.get("id") or "").startswith("health.col.%s." % c) for c in flags) or
             (outline and str(f.get("id") or "").startswith("health.col.%s." % (lay or {}).get("label")) and
              re.search(r"padded|whitespace|placeholder|trim|spaces", str(f.get("id") or "") + " " + str(f.get("claim") or ""), re.I)))}
+        if panel_src is not None:
+            # the one member the structure layer read (its average-year change, graded on its last two years) is not this report
+            drop_ids |= {str(f.get("id")) for f in rep.get("findings") or [] if isinstance(f, dict)
+                         and str(f.get("id") or "").startswith(("measure.", "forecast."))}
         dropped_claims = [str(f.get("claim") or "")[:60] for f in rep.get("findings") or []
                           if isinstance(f, dict) and str(f.get("id")) in drop_ids and f.get("claim")]
         if drop_ids:
@@ -14485,9 +14742,10 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
         st = rep.get("story") if isinstance(rep.get("story"), dict) else None
         if st is not None:
             ind = [s for s in out["sentences"]]
-            if str(st.get("headline") or "").startswith(NO_DATE_HEAD) or not st.get("headline"):
+            if str(st.get("headline") or "").startswith(NO_DATE_HEAD) or not st.get("headline") or panel_src is not None:
                 st["headline"] = out["headline"]
-            wh = [s for s in st.get("what_happened") or [] if not str(s).startswith(NO_DATE_HEAD)]
+            # a panel read in place of one member: that member's own sentences (its last two years, graded) are not the report
+            wh = [] if panel_src is not None else [s for s in st.get("what_happened") or [] if not str(s).startswith(NO_DATE_HEAD)]
             st["what_happened"] = [out["about"]] + ind + wh
             st["what_to_do"] = [s for s in st.get("what_to_do") or []
                                 if not any(f.lower() + " column" in str(s).lower() for f in
@@ -14498,7 +14756,8 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
             st["why"] = ["The file states each value; it does not say why the %s differ. Read each comparison as a description, "
                          "not a cause." % _nx._plural_of(out["entity"])]
             st["cannot_answer"] = [s for s in st.get("cannot_answer") or []
-                                   if not str(s).startswith("This run produced no gated facts at all")]
+                                   if not str(s).startswith("This run produced no gated facts at all")
+                                   and not any(c and c.lower()[:50] in str(s).lower() for c in dropped_claims)]
             st["whats_next"] = list(out.get("next") or []) or [
                 "Ask a question in step 4 about any %s or %s in the file." % (out["indicator"], out["entity"])]
         lim = [x for x in rep.get("limitations") or []
@@ -14510,7 +14769,10 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
                        "publisher's 95% interval where the file gives one. A value the publisher marked (its flag column filled) is "
                        "left out. Nothing here tests a change over time.") if lay is not None else (
                        "The comparisons are descriptive: values, averages with bootstrap ranges, and correlations, which show what "
-                       "goes together, never what causes what. With no date, nothing here follows a change over time."),
+                       "goes together, never what causes what. With no date, nothing here follows a change over time.") if not (
+                       out.get("kind") == "panel") else ("The comparisons are descriptive: each year's value as the file states it, "
+                       "a member's change from one year to another, and groups (a region, an income group, the world) kept out of the "
+                       "rankings. No change is tested for chance and nothing here says what caused it."),
                        "finding_ids": []})
         rep["limitations"] = lim
         return {k: v for k, v in out.items() if k != "records"}
@@ -14518,6 +14780,78 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         return None
+
+
+def _wide_year_panel(inner: Dict[str, Any], long_csv: bytes, wide_info: Optional[Dict[str, Any]], S: Dict[str, Any],
+                     plan: Any = None) -> None:
+    """A wide table of years (the World Bank's: a country a row, 1960 ... 2025 as columns) that the structure layer could read only
+    one member at a time (no member is verified as the sum of others) is read whole, as a panel of members by year (engine/
+    nl_explore.py build_panel): the total (World) over the years, the members ranked in the latest year, who changed most, groups
+    kept out of the rankings. In place of the one member's two-year change; the slice's run stands when the panel cannot be read."""
+    try:
+        if not wide_info or wide_info.get("family") != "year" or not isinstance(inner, dict):
+            return
+        dims = [d for d in S.get("dims") or [] if isinstance(d, dict)]
+        if len(dims) != 1 or dims[0].get("role") != "single":
+            return                                    # a verified total, or more than one grouping: the structure's reading stands
+        import pandas as _pd
+        f = _pd.read_csv(io.BytesIO(long_csv), dtype=str, keep_default_na=False, encoding="utf-8-sig")
+        drop = {str(m.get("column")) for m in S.get("metadata") or [] if isinstance(m, dict)
+                and m.get("class") in ("constant", "empty")}
+        meas = S.get("measure") or {}
+        # the indicator's whole name, from the file's own constant column (the structure's hint is cut at a length)
+        named = next((str(f[c].iloc[0]).strip() for c in f.columns if c in drop and re.search(r"(?i)indicator.?name|series.?name", c)
+                      and len(f) and str(f[c].iloc[0]).strip()), "")
+        f = f[[c for c in f.columns if c not in drop]]
+        label = _short_indicator(named or str(meas.get("label_hint") or "")) or "Value"
+        header_of = {c: c for c in f.columns}
+        header_of.update({"TIME_PERIOD": "Year", "OBS_VALUE": label})
+        import nl_explore as _nx
+        pan = _nx.detect_panel(f, header_of, str((inner.get("input") or {}).get("name") or ""))
+        if pan is None or pan.get("entity") != dims[0].get("column"):
+            return
+        if str(meas.get("type") or "") == "rate":
+            pan["rate"] = True                        # unemployment (% of labour force): its changes in percentage points
+        got = _explore(inner, None, None, None, plan, panel_src=(f, header_of), panel=pan)
+        if got:
+            inner["explore"] = got
+            # step 4 (Ask) and the analyst block read the countries by year, groups left out (the countries add up to the World row,
+            # so a question's SUM over them is the world's figure, never the world counted twice), never the one member alone
+            import nl_analyst as _na
+            ent, yc, vc = pan["entity"], pan["year"], pan["measures"][0]
+            factor = float(meas.get("factor") or 1.0)
+            keep = f[~f[ent].astype(str).isin(set(pan.get("aggregates") or ()))]
+            yrs = _pd.to_numeric(keep[yc], errors="coerce")
+            df = _pd.DataFrame({"Year": _pd.to_datetime(yrs.astype("Int64").astype(str) + "-01-01", errors="coerce"),
+                                str(header_of.get(ent, ent)): keep[ent].astype(str).str.strip(),
+                                label: _pd.to_numeric(keep[vc].astype(str).str.replace(",", "", regex=False), errors="coerce") * factor})
+            df = df[df["Year"].notna()].reset_index(drop=True)
+            if len(df) >= 2:
+                kinds = {"Year": "date", str(header_of.get(ent, ent)): "text", label: "number"}
+                kind = {"rate": "rate", "index": "level", "stock": "stock", "flow": "flow", "count": "flow"}.get(str(meas.get("type") or ""))
+                hint: Dict[str, Any] = {"date": "Year", "primary": label, "entity": str(header_of.get(ent, ent)),
+                                        "topic": _topic_words("", ""), "free_text": []}
+                if kind:
+                    hint["mkind"] = {label: kind}
+                an = _na.explore(df, kinds, hint)
+                an["rows"] = {"kept": int(len(df)), "set_aside": int(len(f) - len(df))}
+                inner["analyst"] = an
+                _LAST_ANALYST.clear()
+                _LAST_ANALYST.update(df=df, kinds=kinds, hint=hint, shape=an.get("shape"), hidden=[])
+            (inner.get("structure") or {})["panel"] = {"entity": pan["entity"], "groups": len(pan.get("aggregates") or ()),
+                                                      "total": pan.get("total")}
+    except Exception:  # noqa: BLE001 - the slice's reading stands
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+
+
+def _short_indicator(name: str) -> str:
+    """An indicator's name as a sentence carries it: "Unemployment, total (% of total labor force) (modeled ILO estimate)" is
+    "Unemployment (% of total labor force)"; "Population, total" is "Population". The unit in brackets stays, a method note goes."""
+    t = " ".join(str(name or "").split())
+    t = re.sub(r"\s*\((?:modeled|modelled|national estimate|estimate|ILO)[^)]*\)?\s*$", "", t, flags=re.I)
+    t = re.sub(r",\s*total\b", "", t, flags=re.I)
+    return t.strip(" ,")[:90]
 
 
 def _join_words(xs: List[str]) -> str:

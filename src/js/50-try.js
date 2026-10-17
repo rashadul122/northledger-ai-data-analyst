@@ -3898,6 +3898,30 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     }
 
+    /* ---- a series named only by its code: its public name from FRED (the worker's POST /series-name; the code alone is sent) ---- */
+    function seriesLookup(b) {
+      var id = String(b.getAttribute('data-series') || '').toUpperCase();
+      var said = b.parentNode && b.parentNode.querySelector('.nl2-lookup-said');
+      var say = function (t) { if (said) said.textContent = t; };
+      if (!/^[A-Z][A-Z0-9_]{2,40}$/.test(id) || !CFG.ai_proxy_url || S.busy) return;
+      b.disabled = true; say(' Looking up ' + id + ' on FRED\u2026');
+      fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/series-name', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'FRED', id: id }) }).then(function (r) {
+        return r.json().then(function (j) { return { status: r.status, body: j }; }, function () { return { status: r.status, body: {} }; });
+      }).then(function (got) {
+        var j = got.body || {};
+        if (got.status !== 200 || !j.title) {
+          b.disabled = false;
+          say(got.status === 404 ? ' FRED has no series ' + id + '.' : got.status === 429 ? ' Too many lookups from your network; try again in a minute.'
+            : ' The lookup did not answer (' + got.status + '); the report keeps the code.');
+          return;
+        }
+        var names = {}; names[id] = { label: j.title, about: j.about || '', kind: j.kind || 'level' };
+        say(' Found: \u201c' + j.title + '\u201d. Making the report again with that name\u2026');
+        if (!T.rerun({ __names__: names })) { b.disabled = false; say(' The report is busy; try again in a moment.'); }
+      }, function () { b.disabled = false; say(' The lookup could not reach the server; the report keeps the code.'); });
+    }
+
     /* ---- report actions (one listener for the report) ---- */
     el.report.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button');
@@ -3913,6 +3937,8 @@
         saveReportHtml();
       } else if (act === 'ai-analyst' || act === 'ai-manager') {
         aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
+      } else if (act === 'series-lookup') {
+        seriesLookup(b);
       } else if (act === 'again') {
         el.report.hidden = true; clearMsg();
         goTo(el.start);

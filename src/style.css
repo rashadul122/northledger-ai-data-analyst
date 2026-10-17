@@ -1560,6 +1560,8 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nl2-subtitle { margin: 0 0 8px; color: var(--muted); font-size: 1.02rem; }
 .nl2-reading { margin: 0 0 6px; }
 .nl2-titleby { margin: 0; font-size: .85em; }
+.nl2-lookup { margin: 10px 0 0; }
+.nl2-lookup .note { font-size: .85em; }
 
 /* the AI summaries card is shown once it holds something (an empty card was a blank box under the bottom line) */
 .nl2-aicard:empty { display: none; }

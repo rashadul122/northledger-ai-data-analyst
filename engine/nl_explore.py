@@ -1034,20 +1034,75 @@ def build_table(t: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
 
 _YEAR_HEAD = re.compile(r"(^|_|\b)(year|yr|fiscal_?year|ref_?year|time)($|_|\b)", re.I)
 _GROUP_WORDS = re.compile(r"\b(world|income|countries|region|union|oecd|members|total|all|area|excl|incl|asia|africa|europe|america|"
-                          r"oceania|international|ussr|g20|g7|opec|eu-?27|non-oecd|kp annex)\b|\(", re.I)
+                          r"oceania|international|ussr|g20|g7|opec|eu-?27|non-oecd|kp annex|small states|dividend|ida|ibrd|"
+                          r"classified)\b|\((?:[^)]*\b(?:excl|incl|ida|ibrd|countries|income|members|total|hipc|fcv)\b)", re.I)
+# The World Bank's aggregate codes (its API's region "Aggregates"; WLD World, HIC High income, IBT IDA & IBRD total, ...): with the
+# file's code column beside the names, a member is a group exactly when its code is one of these, never by its name ("IBRD only"
+# reads like no group word; "South Africa" reads like one)
+WB_AGGREGATE_CODES = frozenset(
+    "AFE AFW ARB CEB CSS EAP EAR EAS ECA ECS EMU EUU FCS FCV HIC HPC IBD IBT IDA IDB IDX INX LAC LCN LDC LIC LMC LMY LTE MEA MIC MNA "
+    "NAC OED OSS PRE PSS PST SAS SSA SSF SST TEA TEC TLA TMN TSA TSS UMC WLD".split())
 LINES_MAX_YEARS = 30
 PANEL_LINES = 5
 
 
-def _region_groups() -> frozenset:
+def _region_lists() -> Tuple[frozenset, frozenset]:
+    """(the world regions, the countries) of context_terms.json: its "regions" list in the blocks its "region_groups" counts
+    (35 world regions, then 202 countries and territories, ...)."""
     import json as _json
     import os as _os
     try:
         with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "context_terms.json"), encoding="utf-8") as fh:
             d = _json.load(fh)
-        return frozenset(str(x).casefold() for x in (d.get("region_groups") or []) + (d.get("regions") or [])[:35])
+        regs, counts = list(d.get("regions") or []), dict(d.get("region_groups") or {})
+        n_w = int(counts.get("world regions") or 0)
+        n_c = int(counts.get("countries and territories") or 0)
+        return (frozenset(str(x).casefold() for x in regs[:n_w]), frozenset(str(x).casefold() for x in regs[n_w:n_w + n_c]))
     except Exception:  # noqa: BLE001
-        return frozenset()
+        return frozenset(), frozenset()
+
+
+def _code_column(frame: Any, ent: str, texts: Sequence[str]) -> Optional[str]:
+    """A column of short upper-case codes (ISO 3166 ABW, the World Bank's WLD) one-to-one with the entity's names, or None."""
+    names = frame[ent].astype(str)
+    for c in texts:
+        if c == ent:
+            continue
+        v = frame[c].astype(str)
+        if not v.str.fullmatch(r"[A-Z][A-Z0-9]{1,2}").mean() >= 0.98:
+            continue
+        pair = pd_unique_pairs(names, v)
+        if pair is not None and pair[0] == pair[1] == pair[2]:
+            return c
+    return None
+
+
+def pd_unique_pairs(a: Any, b: Any) -> Optional[Tuple[int, int, int]]:
+    """(distinct a, distinct b, distinct (a, b) pairs): equal three ways when a and b name the same things one to one."""
+    try:
+        import pandas as pd
+        return int(a.nunique()), int(b.nunique()), int(len(pd.DataFrame({"a": a, "b": b}).drop_duplicates()))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _groups_of(members: Sequence[str], code_of: Optional[Dict[str, str]] = None) -> set:
+    """The members that are groups of others (World, High income, Sub-Saharan Africa), never ranked beside the countries. By the World
+    Bank's own codes when the file carries them; else a known world region is a group, a known country never is (South Africa, Puerto
+    Rico (US)), and any other name is a group when it reads like one."""
+    if code_of and "WLD" in set(code_of.values()):
+        return {m for m in members if code_of.get(m) in WB_AGGREGATE_CODES}
+    world, countries = _region_lists()
+    out = set()
+    for m in members:
+        k = str(m).casefold().strip()
+        if k in world:
+            out.add(m)
+        elif k in countries or re.sub(r"\s*\([^)]*\)\s*$", "", k) in countries:
+            continue
+        elif _GROUP_WORDS.search(str(m)):
+            out.add(m)
+    return out
 
 
 def detect_panel(frame: Any, header_of: Dict[str, str], name_hint: str = "") -> Optional[Dict[str, Any]]:
@@ -1107,9 +1162,10 @@ def detect_panel(frame: Any, header_of: Dict[str, str], name_hint: str = "") -> 
         # the second grouping's total level (All causes): the level whose values are the sum of the others, else the commonest
         lv = _dim_total(f, ent, year, dim, measures[0])
         f = f[f[dim].astype(str) == lv] if lv is not None else f
-    groups = _region_groups()
     members = [str(m) for m in f[ent].dropna().astype(str).unique()]
-    aggs = {m for m in members if m.casefold() in groups or _GROUP_WORDS.search(m)}
+    code_c = _code_column(f, ent, texts)
+    code_of = dict(zip(f[ent].astype(str), f[code_c].astype(str))) if code_c else None
+    aggs = _groups_of(members, code_of)
     total = _panel_total(f, ent, year, measures[0], members)
     if total:
         aggs.add(total)
@@ -1199,12 +1255,18 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
                                                      for y in show_years]} for m in lines]
         tab = [[str(y)] + [_nfmt(float(wide.loc[y, m])) if not _m.isnan(float(wide.loc[y, m])) else "" for m in lines] for y in show_years]
         ref = lines[0]
-        have = [y for y in show_years if not _m.isnan(float(wide.loc[y, ref]))]
+        # the sentence spans every year the line's first member reports (the chart keeps its last LINES_MAX_YEARS)
+        have = [y for y in years if (last is None or y <= last) and not _m.isnan(float(wide.loc[y, ref]))]
         a, b = (have[0], have[-1]) if len(have) >= 2 else (show_years[0], show_years[-1])
         va, vb = wide.loc[a, ref], wide.loc[b, ref]
         if not (_m.isnan(float(va)) or _m.isnan(float(vb))) and float(va) != 0:
-            sent = "%s for %s went from %s in %d to %s in %d (%+.0f%%)." % (mh, ref, _nfmt(float(va)), a, _nfmt(float(vb)), b,
-                                                                            100.0 * (float(vb) - float(va)) / abs(float(va)))
+            who = ("%s %s" % (ref, mh[:1].lower() + mh[1:])) if ref == p["total"] else ("%s for %s" % (mh, ref))  # World population
+            ratio = float(vb) / float(va)
+            how = ("%+.0f%%" % (100.0 * (ratio - 1.0))) if -1.0 < ratio - 1.0 <= 9.99 or float(va) < 0 else \
+                "%s times as much" % format(round(ratio), ",")                 # 9.31 to 38,599 is "4,146 times as much", never +414671%
+            if p.get("rate"):
+                how = "%+.1f percentage points" % (float(vb) - float(va))      # a rate's change, never a percent of a percent
+            sent = "%s went from %s in %d to %s in %d (%s)." % (who, _nfmt(float(va)), a, _nfmt(float(vb)), b, how)
         else:
             sent = "%s over %d to %d, for %s." % (mh, a, b, ", ".join(lines))
         recs.append(_record("line_chart", "%s, %d to %d" % (mh, show_years[0], show_years[-1]),
@@ -1239,26 +1301,29 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
     if last is not None and len(show_years) >= 2:
         a = show_years[0]
         both = wide.loc[[a, last], members].T.dropna()
-        both = both[both[a] != 0]
+        both = both[both[a] != 0] if not p.get("rate") else both
         if len(both) >= 3:
-            ch = ((both[last] - both[a]) / both[a].abs() * 100.0).sort_values(ascending=False)
+            rate = bool(p.get("rate"))
+            ch = ((both[last] - both[a]) if rate else ((both[last] - both[a]) / both[a].abs() * 100.0)).sort_values(ascending=False)
+            unit_t = (lambda x: "%+.1f pp" % x) if rate else (lambda x: "%+.0f%%" % x)
             pick = list(ch.index[:6]) + [m for m in ch.index[-4:] if m not in ch.index[:6]]
-            rows = [{"label": str(m)[:80], "values": [float(ch[m])], "texts": ["%+.0f%%" % float(ch[m])]} for m in pick]
+            rows = [{"label": str(m)[:80], "values": [float(ch[m])], "texts": [unit_t(float(ch[m]))]} for m in pick]
             hi_c, lo_c = float(ch.iloc[0]), float(ch.iloc[-1])
             if hi_c < 0:
-                how = "fell for every %s: least for %s (%+.0f%%) and most for %s (%+.0f%%)" % (eh, ch.index[0], hi_c, ch.index[-1], lo_c)
+                how = "fell for every %s: least for %s (%s) and most for %s (%s)" % (eh, ch.index[0], unit_t(hi_c), ch.index[-1], unit_t(lo_c))
             elif lo_c > 0:
-                how = "rose for every %s: most for %s (%+.0f%%) and least for %s (%+.0f%%)" % (eh, ch.index[0], hi_c, ch.index[-1], lo_c)
+                how = "rose for every %s: most for %s (%s) and least for %s (%s)" % (eh, ch.index[0], unit_t(hi_c), ch.index[-1], unit_t(lo_c))
             else:
-                how = "rose most for %s (%+.0f%%) and fell most for %s (%+.0f%%)" % (ch.index[0], hi_c, ch.index[-1], lo_c)
+                how = "rose most for %s (%s) and fell most for %s (%s)" % (ch.index[0], unit_t(hi_c), ch.index[-1], unit_t(lo_c))
             sent = "From %d to %d, %s %s." % (a, last, mh.lower(), how)
             recs.append(_record("bar_chart", "Change in %s, %d to %d" % (mh.lower(), a, last),
                                 "The largest and the smallest changes of the %s %s with a value in both years" % (format(len(ch), ","), _plural_of(eh)),
-                                {"label": "change", "unit": "%", "kind": "change_pct"},
+                                {"label": "change", "unit": "pp" if rate else "%", "kind": "amount" if rate else "change_pct"},
                                 {"series": ["Change"], "rows": rows, "other": False},
                                 {"cols": [eh.capitalize(), "Change"], "rows": [[r["label"], r["texts"][0]] for r in rows]}, sent,
                                 {"columns": [p["header_of"].get(key)], "rows": int(len(ch)), "months": None,
-                                 "op": "(latest - first) / first, in %"}, "The rows of %d and %d" % (a, last)))
+                                 "op": "latest - first, in percentage points" if rate else "(latest - first) / first, in %"},
+                                "The rows of %d and %d" % (a, last)))
             sents.append(sent)
     # 4. the measures' links across members in the latest year
     if last is not None and len(p["measures"]) >= 3:
@@ -1271,10 +1336,10 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
         if got is not None:
             recs.append(got[0])
             sents.append(got[1].replace("rows", "%s in %d" % (_plural_of(eh), last), 1))
-    about = ("Each row is one %s in one year%s: %s rows, %d to %d, %d measures%s. A %s that is the total or a group of others (%s) is "
+    about = ("Each row is one %s in one year%s: %s rows, %d to %d, %d measure%s%s. A %s that is the total or a group of others (%s) is "
              "read as the line the others are compared with, never ranked beside them." % (
                  eh, (" and one %s (the rows of its total, %s, are used)" % (_human(p["header_of"].get(p["dim"])).lower(), p["dim_level"]))
-                 if p["dim"] else "", format(p["n"], ","), years[0], years[-1], len(p["measures"]),
+                 if p["dim"] else "", format(p["n"], ","), years[0], years[-1], len(p["measures"]), "" if len(p["measures"]) == 1 else "s",
                  "" if not last else "; the latest year most of them report is %d" % last, eh,
                  _join(sorted(p["aggregates"])[:4]) or "none here"))
     return {"version": VERSION, "kind": "panel", "records": recs[:limit], "sentences": sents, "headline": sents[0] if sents else about,
@@ -1620,7 +1685,8 @@ def _num_or_none(v: Any) -> Optional[float]:
         return None
 
 
-def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str, Any]] = None,
+              rate_cols: Optional[set] = None) -> Optional[Dict[str, Any]]:
     """The direct answer a reader looks for first: one sentence written from the first query that ran (its result table), the
     table itself (at most 20 rows) and the query. None when no query ran. Every figure is a cell of that result."""
     st = next((s for s in steps or [] if isinstance(s, dict) and s.get("op") == "sql" and s.get("ok")), None)
@@ -1636,7 +1702,8 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
         if f is None:
             return str(v)
         return _fmt_num(f, kind) if kind in ("pct", "money") else _nfmt(f)
-    shown = [[fmt(c) if _num_or_none(c) is not None else str(c) for c in r] for r in rows[:20]]
+    per_c = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|year|quarter|month|date|time_period)", c.strip().lower())}
+    shown = [[fmt(c) if _num_or_none(c) is not None and i not in per_c else str(c) for i, c in enumerate(r)] for r in rows[:20]]
     # the column headers in words: the measure's name for "value", the table's word for "place"
     if last.get("label"):
         cols = [_short(str(last["label"]), 50) if c == "value" else c for c in cols]
@@ -1649,12 +1716,58 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
     if not rows:
         text = "No rows match this question in the file."
     else:
-        num_i = [i for i in range(len(cols)) if all(_num_or_none(r[i]) is not None for r in rows if i < len(r) and r[i] is not None)]
+        # a period column (1960, 2025-Q3) is a label, never a figure: never "1,960"
+        per_i = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|year|quarter|month|date|time_period)", c.strip().lower())}
+        num_i = [i for i in range(len(cols)) if i not in per_i and
+                 all(_num_or_none(r[i]) is not None for r in rows if i < len(r) and r[i] is not None)]
         lab_i = [i for i in range(len(cols)) if i not in num_i]
         subject = last.get("label") or (cols[num_i[0]] if num_i else "")
-        if len(rows) == 1:
+        pinned = re.findall(r"\"[^\"]+\"\s*=\s*'((?:[^']|'')+)'", str((st.get("args") or {}).get("sql") or ""))
+        if pinned and subject:
+            subject = "%s (%s)" % (subject, ", ".join(x.replace("''", "'") for x in pinned[:2]))      # Population (China)
+        ranked = bool(re.search(r"\bLIMIT\s+\d+\s*$", str((st.get("args") or {}).get("sql") or ""), re.I)) and lab_i and num_i and \
+            not (set(lab_i) & per_i)
+        figs = [i for i in num_i if cols[i] != "row_count" and not cols[i].lower().startswith("average_")] or num_i
+        n_i = cols.index("row_count") if "row_count" in cols else None
+        if len(rows) == 1 and per_i and figs:
+            # one period, one figure: "Population in 1990: 5.28B (the total of its 217 rows)."
+            r0 = rows[0]
+            pi = sorted(per_i)[0]
+            n0 = _num_or_none(r0[n_i]) if n_i is not None else None
+            text = "%s in %s: %s%s." % (_short(str(subject), 120), r0[pi], "; ".join(
+                ("%s %s" % (cols[i], fmt(r0[i])) if len(figs) > 1 else fmt(r0[i])) for i in figs if r0[i] is not None),
+                (" (the total of its %s rows)" % format(int(n0), ",")) if n0 and n0 > 1 else "")
+        elif len(rows) == 1:
             text = "%s: %s." % (_short(str(subject), 120) if subject else "The answer",
-                                "; ".join("%s %s" % (cols[i], fmt(rows[0][i])) for i in range(len(cols)) if rows[0][i] is not None))
+                                "; ".join("%s %s" % (cols[i], fmt(rows[0][i]) if i not in per_i else rows[0][i])
+                                          for i in range(len(cols)) if rows[0][i] is not None and cols[i] != "row_count"))
+        elif per_i and figs and set(lab_i) <= per_i:
+            # a figure by period: where it started, where it ended, its peak
+            pi, vi = sorted(per_i)[0], figs[0]
+            pts = [(r[pi], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
+            if len(pts) >= 2:
+                (p0, v0), (p1, v1) = pts[0], pts[-1]
+                hi = max(pts, key=lambda x: x[1])
+                if cols[vi] in (rate_cols or set()):
+                    ch = " (%+.1f percentage points)" % (v1 - v0)          # a rate's change, never a percent of a percent
+                else:
+                    ch = (" (%+.0f%%)" % (100.0 * (v1 - v0) / abs(v0))) if v0 else ""
+                text = "%s went from %s in %s to %s in %s%s%s." % (
+                    _short(str(subject), 120), fmt(v0), p0, fmt(v1), p1, ch,
+                    ("; it peaked at %s in %s" % (fmt(hi[1]), hi[0])) if hi[0] not in (p0, p1) else "")
+            else:
+                text = "%s rows; see the table." % format(len(rows), ",")
+        elif ranked:
+            # a ranking query (ORDER BY ... LIMIT): the members in its order, first three named
+            li, vi = lab_i[0], num_i[0]
+            om = re.search(r'ORDER BY\s+"((?:[^"]|"")+)"', str((st.get("args") or {}).get("sql") or ""), re.I)
+            if om and om.group(1).replace('""', '"') in cols and cols.index(om.group(1).replace('""', '"')) in num_i:
+                vi = cols.index(om.group(1).replace('""', '"'))          # the column the ranking is ordered by (gross margin, not revenue)
+                if not last.get("label"):
+                    subject = cols[vi].replace("_", " ")
+            top = ["%s (%s)" % (r[li], fmt(r[vi])) for r in rows[:3] if _num_or_none(r[vi]) is not None]
+            text = "%s: %s%s." % (_short(str(subject), 120), top[0], (", then " + " and ".join(top[1:])) if len(top) > 1 else "") \
+                if top else "%s rows; see the table." % format(len(rows), ",")
         elif lab_i and num_i:
             li, vi = lab_i[0], num_i[0]
             vals = [(r[li], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]

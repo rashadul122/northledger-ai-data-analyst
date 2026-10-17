@@ -449,9 +449,18 @@
       if (lab) { if (X.draw) X.title = lab; else X.label = lab; }
       X.unit_word = card.querySelector('#nld-e-unit').value.replace(/\s+/g, ' ').trim().slice(0, 20);
       X.definition = defWords(X) + ' Edited here by you.';
+      D.__edits = D.__edits || {};
+      // one unit word per measure on the whole dashboard (nl_dashboard._unit): every tile and chart of this measure takes it
+      if (X.mkey) D.kpis.concat(D.charts).forEach(function (Y) {
+        if (Y === X || Y.mkey !== X.mkey || Y.unit_word === X.unit_word) return;
+        Y.unit_word = X.unit_word;
+        if (Y.definition) Y.definition = Y.definition.replace(/; in [^;]*?\.(?=( |$))/, X.unit_word ? '; in ' + X.unit_word + '.' : '.');
+        D.__edits[Y.id] = Object.assign(D.__edits[Y.id] || {}, { unit_word: Y.unit_word, definition: Y.definition });
+      });
+      var j0 = X.mkey ? measIdx(D, X.mkey) : -1;
+      if (j0 >= 0) D.cube.measures[j0].unit = X.unit_word;
       var g = card.querySelector('#nld-e-grain').value.replace(/\s+/g, ' ').trim().slice(0, 200);
       if (g) D.grain.text = g;
-      D.__edits = D.__edits || {};
       D.__edits[X.id] = { agg: X.agg, label: X.label, title: X.title, unit_word: X.unit_word, definition: X.definition };
       if (g) D.__edits.__grain = g;
       var root2 = box.parentNode;
@@ -652,7 +661,7 @@
         r1 = rows.length;
         (rec.table.rows || []).filter(function (r) { return r[1] === '<5'; }).forEach(function (r) { put([r[0]].concat(d.series.map(function () { return null; })).concat(two ? [null] : []).concat(['<5: fewer than 5 rows'])); });
         if (r1 >= r0) charts.push({ type: X.draw === 'bar' ? 'bar' : 'column', title: X.title + (unit ? ' (' + unit + ')' : ''), cat: { sheet: DATA, col: 0, r0: r0, r1: r1 },
-          series: d.series.map(function (s, k) { return { name: { sheet: DATA, col: 1 + k, row: head }, sheet: DATA, col: 1 + k, r0: r0, r1: r1 }; }) });
+          series: d.series.map(function (s, k) { return { name: { sheet: DATA, col: 1 + k, row: head }, sheet: DATA, col: 1 + k, r0: r0, r1: r1, color: two ? (k ? '2A78D6' : 'D45A26') : '2A78D6' }; }) });
       } else {
         S = d.series || d.parts || d.panels;
         head = put([B(d.x_label)].concat(S.map(function (s) { return B(s.label); })).concat([B('Note')]));

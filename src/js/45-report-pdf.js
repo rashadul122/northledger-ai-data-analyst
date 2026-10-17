@@ -31,7 +31,7 @@
   var LETTER_REGIONS = ['US', 'CA', 'MX'];
   var COL = { ink: '#16232e', body: '#2b3843', muted: '#56646f', hair: '#d9d5cb', accent: '#0b7366', accentInk: '#0a5c52',
     panel: '#f4f2ec', zebra: '#faf9f6', grid: '#e6e3da', axis: '#8f8a7e', white: '#ffffff',
-    series: ['#24425c', '#0b7366', '#945400', '#6b5b95'],
+    series: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00'],
     grade: { CONFIRMED: '#0a5c52', WATCH: '#945400', INSUFFICIENT: '#56646f' } };
   var GRADE_LABEL = { CONFIRMED: 'CONFIRMED', WATCH: 'WATCH', INSUFFICIENT: 'NOT ENOUGH DATA' };
   var FILE_WORD = '[your file]';   // the placeholder the engine's results and the AI's report use for the file's name
@@ -915,8 +915,9 @@
      bottom), called on the Doc: every mark and word within [L, L + CW] and [bottom, top]. */
   var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#d9e7f8', '#b7d1f1', '#94bcea'], rises: ['#f1e2d1', '#e5c8a8', '#d9ae80'],
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
-    total: '#24425c', rise: '#0b7366', fall: '#945400', conn: '#b9b5aa', dot: '#24425c', median: '#945400', bar: '#24425c',
-    other: '#56646f', cum: '#945400', ref: '#16232e', k80: '#0b7366', flat: '#56646f', ink: '#16232e', body: '#33424e',
+    total: '#2a78d6', rise: '#12875c', fall: '#d45a26', conn: '#b9b5aa', dot: '#2a78d6', median: '#16232e', bar: '#2a78d6',
+    prior: '#d45a26', otherPrior: '#abb2b7',
+    other: '#56646f', cum: '#d45a26', ref: '#16232e', k80: '#16232e', flat: '#56646f', ink: '#16232e', body: '#33424e',
     muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa', ts: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'] };
   var LEGACY = { line: 1, bars: 1, scatter: 1 };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1318,7 +1319,7 @@
           self.text(o.at[i], xa - 8 - w2, la[i] - 2.5, 7, 'R', VC.muted);
           if (Math.abs(lb[i] - yb) > 1) self.line(xb + 3, yb, xb + 7, lb[i], VC.axis, 0.5);
           self.text(o.bt[i], xb + 8, lb[i] - 2.5, 7, 'R', VC.ink);
-          self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', dir(q));
+          self.text(o.ct[i], xb + 8 + w3, lb[i] - 2.5, 7, 'B', VC.ink);
         });
       }
     },
@@ -1411,10 +1412,10 @@
   /* ---- Batch 2 of the chart registry (the chart grammar, 14 October 2026): lines, area, hbar, multiples ----
      Drawn from the record alone in the spec's light colours (colors.light.lines/area/hbar/multiples): a line per series
      in its colour and dash, the forecast dashed with its range as a band; the area's parts stacked with a key; one or
-     two bars a row (the first period hollow); a grid of small panels on ONE value scale. A point's text is its table
+     two bars a row (the period before in orange, the latest in blue, both solid); a grid of small panels on ONE value scale. A point's text is its table
      cell (table.rows[i][1 + k]); labels are cut with an ellipsis when they do not fit, and the table view follows. */
-  var GPAL = ['#24425c', '#0b7366', '#945400', '#2a78d6', '#d4502c'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
-  var GOTHER = '#56646f', GBAND = '#cfe5e1', GMON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var GPAL = ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
+  var GOTHER = '#56646f', GBAND = '#d9e7f8', GMON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function gNumN(v) { return v === null || pos(v); }
   function gTimeOk(d, key, nmin, nmax) {
     return isObj(d) && Array.isArray(d.x) && d.x.length >= 2 && d.x.length <= 30 && d.x.every(isStr) && Array.isArray(d[key]) && d[key].length >= nmin &&
@@ -1501,7 +1502,7 @@
     draw: function (r, top, bottom) {
       var o = this.lay(r), d = r.data, S = d.series, F = d.forecast || null, n = d.x.length, m = F ? F.x.length : 0, self = this, L = this.L, R = L + this.CW, nt = o.nt;
       o.key.items.forEach(function (e) {
-        e.it.mark = e.it.k >= 0 ? gLineMark(self, e.it.k) : function (x, y) { self.rect(x, y - 3.5, 18, 7, GBAND); self.line(x, y, x + 18, y, GPAL[1], 1.2, '3 2'); };
+        e.it.mark = e.it.k >= 0 ? gLineMark(self, e.it.k) : function (x, y) { self.rect(x, y - 3.5, 18, 7, GBAND); self.line(x, y, x + 18, y, GPAL[0], 1.2, '3 2'); };
       });
       this.gKey(o.key, top);
       var pt = top - o.key.lines * 11 - (o.key.lines ? 6 : 0) - 4, pb = bottom + 14, x0 = L + nt.max + 6, x1 = R - (o.end ? tw(o.end, 7, 'R') + 6 : 2);
@@ -1512,7 +1513,7 @@
         var li = o.last[0], lv = S[0].values[li];
         this.gFill([[X(li), Y(lv)]].concat(F.hi.map(function (v, j) { return [X(n + j), Y(v)]; })).concat(F.lo.map(function (v, j) { return [X(n + j), Y(v)]; }).reverse()), GBAND);
         this.line(X(n - 0.5), pt, X(n - 0.5), pb, VC.axis, 0.5, '2 2');
-        this.gPath([[X(li), Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; })), GPAL[1], 1.2, '3 2');
+        this.gPath([[X(li), Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; })), GPAL[0], 1.2, '3 2');
       }
       S.forEach(function (s, k) {
         var c = GPAL[k % GPAL.length];
@@ -1574,7 +1575,7 @@
     },
     draw: function (r, top, bottom) {
       var o = this.lay(r), d = r.data, rows = d.rows, self = this, L = this.L, R = L + this.CW;
-      if (o.two) { o.key.items.forEach(function (e) { e.it.mark = e.it.k === 0 ? gBoxMark(self, VC.white, VC.bar) : gBoxMark(self, VC.bar); }); this.gKey(o.key, top); }
+      if (o.two) { o.key.items.forEach(function (e) { e.it.mark = e.it.k === 0 ? gBoxMark(self, VC.prior) : gBoxMark(self, VC.bar); }); this.gKey(o.key, top); }
       var all = [0]; rows.forEach(function (q) { all = all.concat(q.values); });
       var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), xa = L + o.labW + (lo < 0 ? o.tw : 0), xb = R - o.cw - o.tw;
       var X = function (v) { return xa + (v - lo) / ((hi - lo) || 1) * (xb - xa); }, z = X(0), y = top - (o.key.lines ? o.key.lines * 11 + 6 : 0);
@@ -1583,7 +1584,7 @@
         self.text(o.labels[i], L, mid - 2.5, 7, 'R', VC.body);
         q.values.forEach(function (v, k) {
           var bh = o.two ? 6.5 : 8, yy = o.two ? (k ? mid - bh - 0.5 : mid + 0.5) : mid - bh / 2, a = Math.min(X(v), z), w = Math.max(0.8, Math.abs(X(v) - z));
-          if (o.two && k === 0) self.rect(a, yy, w, bh, VC.white, c, 0.8); else self.rect(a, yy, w, bh, c);
+          if (o.two && k === 0) self.rect(a, yy, w, bh, oth ? VC.otherPrior : VC.prior); else self.rect(a, yy, w, bh, c);
           var b = o.tb[i][k], tx = v < 0 ? a - 3 - tw(b, 7, 'R') : a + w + 3;
           if (b) self.text(b, tx, yy + bh / 2 - 2.5, 7, 'R', VC.ink);
         });

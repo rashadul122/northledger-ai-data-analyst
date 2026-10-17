@@ -37,6 +37,7 @@
   --ts-3: #12875c;
   --ts-4: #9a6a00;
   --ts-5: #c8457f;
+  --ts-band: #d9e7f8;
   --heat-green-1: #cfe9e4;
   --heat-green-2: #add9d2;
   --heat-green-3: #87c7bc;
@@ -82,6 +83,7 @@
   --ts-3: #199e70;
   --ts-4: #c98500;
   --ts-5: #d55181;
+  --ts-band: #1c3959;
   --heat-green-1: #143c3f;
   --heat-green-2: #154b4a;
   --heat-green-3: #155b55;
@@ -127,6 +129,7 @@
   --ts-3: #199e70;
   --ts-4: #c98500;
   --ts-5: #d55181;
+  --ts-band: #1c3959;
   --heat-green-1: #143c3f;
   --heat-green-2: #154b4a;
   --heat-green-3: #155b55;
@@ -1011,12 +1014,17 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 .nl2-fallback { margin: 0; border: 1.5px solid var(--series-3); font-size: 14.5px; }
 .nl2-footer .visual { background: var(--bg); }
 /* chart marks */
-.nl2-win-p { fill: color-mix(in srgb, var(--axis) 16%, transparent); }
-.nl2-win-l { fill: color-mix(in srgb, var(--accent) 10%, transparent); }
-.nl2-mean-p { stroke: var(--series); stroke-width: 2.5; stroke-dasharray: 6 4; }
-.nl2-mean-l { stroke: var(--accent); stroke-width: 3; }
+/* two periods (17 Oct 2026): the latest in ts-1 (blue), the one before in ts-2 (orange), both solid; each month's
+   value is neutral so the two averages carry the comparison */
+.nl2-win-p { fill: color-mix(in srgb, var(--ts-2) 8%, transparent); }
+.nl2-win-l { fill: color-mix(in srgb, var(--ts-1) 9%, transparent); }
+.nl2-mean-p { stroke: var(--ts-2); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.nl2-mean-l { stroke: var(--ts-1); stroke-width: 3; }
+.dot-s.nl2-mon { fill: var(--muted); }
+.bar-prior { fill: var(--ts-2); } .bar-latest { fill: var(--ts-1); }
+.dot-prior { fill: var(--ts-2); } .dot-latest { fill: var(--ts-1); }
 .nl2-ci-box { fill: color-mix(in srgb, var(--accent) 16%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
-.nl2-thin { stroke: var(--series); stroke-width: 1.2; opacity: 0.45; }
+.nl2-thin { stroke: var(--muted); stroke-width: 1.2; opacity: 0.45; }
 .nl2-gap { fill: var(--series-3); font-weight: 800; }
 .nl2-rbar { fill: var(--fan); stroke: color-mix(in srgb, var(--accent) 45%, transparent); }
 .nl2-tick { stroke: var(--accent); stroke-width: 2.5; }
@@ -1300,7 +1308,7 @@ th[aria-sort="descending"] .nl2-sort::after { content: " \2193"; }
 }
 
 /* ---------- the chart registry's charts (src/js/55-nl-viz.js, tools/fixtures/viz/spec.json colors): every fill is a build
-   token, so the dark theme follows. The one new token is the suppressed cell's fill: mix(surface, muted, 0.10). ---------- */
+   token, so the dark theme follows. The forecast range of a line chart: --ts-band. The one new token is the suppressed cell's fill: mix(surface, muted, 0.10). ---------- */
 :root { --viz-supp: #eef0f1; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --viz-supp: #202b36; } }
 :root[data-theme="dark"] { --viz-supp: #202b36; }
@@ -1312,34 +1320,34 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nlv .nlv-zero { stroke: var(--axis); }
 .nlv .nlv-con { stroke: var(--axis); stroke-dasharray: 3 3; }
 .nlv .nlv-lead { stroke: var(--axis); fill: none; }
-.nlv .w-tot { fill: var(--series); }
-.nlv .w-rise { fill: var(--series-2); }
-.nlv .w-fall { fill: var(--series-3); }
-.nlv .d-rng { stroke: var(--series); stroke-width: 2; }
-.nlv .d-dot { fill: var(--series); }
-.nlv .d-med { stroke: var(--series-3); stroke-width: 2.5; }
-.nlv .p-bar { fill: var(--series); }
+/* marks wear the categorical palette ts-1..ts-5 (build.py TOKENS): ts-1 the primary mark, a rise ts-3, a fall ts-2;
+   text never wears a series colour */
+.nlv .w-tot { fill: var(--ts-1); }
+.nlv .w-rise { fill: var(--ts-3); }
+.nlv .w-fall { fill: var(--ts-2); }
+.nlv .d-rng { stroke: var(--ts-1); stroke-width: 2; }
+.nlv .d-dot { fill: var(--ts-1); }
+.nlv .d-med { stroke: var(--ink); stroke-width: 2.5; }
+.nlv .p-bar { fill: var(--ts-1); }
 .nlv .p-oth { fill: var(--muted); }
-.nlv .p-k80 { stroke: var(--series-2); stroke-width: 2.5; }
-.nlv .p-cum { fill: none; stroke: var(--series-3); stroke-width: 2; }
-.nlv .p-cumd { fill: var(--series-3); }
+.nlv .p-k80 { stroke: var(--ink); stroke-width: 2.5; }
+.nlv .p-cum { fill: none; stroke: var(--ts-2); stroke-width: 2; }
+.nlv .p-cumd { fill: var(--ts-2); }
 .nlv .p-80 { stroke: var(--ink); stroke-dasharray: 5 4; }
-.nlv .nlv-k80t { fill: var(--series-2); font-size: 12px; font-weight: 700; }
+.nlv .nlv-k80t { fill: var(--ink); font-size: 12px; font-weight: 700; }
 .nlv .ts { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .nlv .ts-1 { stroke: var(--ts-1); } .nlv .ts-2 { stroke: var(--ts-2); } .nlv .ts-3 { stroke: var(--ts-3); } .nlv .ts-4 { stroke: var(--ts-4); } .nlv .ts-5 { stroke: var(--ts-5); }
 .nlv .tsd-1 { fill: var(--ts-1); } .nlv .tsd-2 { fill: var(--ts-2); } .nlv .tsd-3 { fill: var(--ts-3); } .nlv .tsd-4 { fill: var(--ts-4); } .nlv .tsd-5 { fill: var(--ts-5); }
 .nlv .ts-x { fill: none; stroke: var(--ts-5); stroke-width: 2; }
 .nlv .nlv-gap { fill: var(--hairline); opacity: 0.6; }
-.nlv .s-rise { stroke: var(--series-2); stroke-width: 2; }
-.nlv .s-fall { stroke: var(--series-3); stroke-width: 2; }
+.nlv .s-rise { stroke: var(--ts-3); stroke-width: 2; }
+.nlv .s-fall { stroke: var(--ts-2); stroke-width: 2; }
 .nlv .s-flat { stroke: var(--muted); stroke-width: 2; }
-.nlv .s-rise-d { fill: var(--series-2); }
-.nlv .s-fall-d { fill: var(--series-3); }
+.nlv .s-rise-d { fill: var(--ts-3); }
+.nlv .s-fall-d { fill: var(--ts-2); }
 .nlv .s-flat-d { fill: var(--muted); }
 .nlv .s-a { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
-.nlv .s-rise-t { fill: var(--series-2); }
-.nlv .s-fall-t { fill: var(--series-3); }
-.nlv .s-flat-t { fill: var(--muted); }
+.nlv .s-rise-t, .nlv .s-fall-t, .nlv .s-flat-t { fill: var(--ink); }
 /* heatmap cells share the report's cell style (.hc2): a suppressed cell reads "<5" on its own fill, dashed; a neutral one
    (exactly 0 on a diverging scale, the correlation diagonal) has no fill and a solid edge */
 .hc2 .nlv-cell { font-size: 11px; pointer-events: none; }
@@ -1690,7 +1698,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 05:22:16 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 05:48:33 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

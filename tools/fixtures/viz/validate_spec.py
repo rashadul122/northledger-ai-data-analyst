@@ -363,6 +363,17 @@ def contrast(a, b):
     return (la + 0.05) / (lb + 0.05)
 
 
+def marks_of(p):
+    """Every mark colour of one mode's palette that sits on the chart surface (3:1 or more): colors.contrast records
+    their minimum, recomputed here."""
+    marks = [p["waterfall"][k] for k in ("total", "rise", "fall")] + [p["slope"]["rise"], p["slope"]["fall"],
+                                                                     p["pareto"]["bar"], p["pareto"]["cumulative"],
+                                                                     p["dot_range"]["dot"]]
+    marks += list(p["lines"]["series"]) + [p["lines"]["forecast"], p["area"]["other"], p["hbar"]["bar"],
+                                           p["hbar"]["prior_fill"], p["hbar"]["prior_stroke"], p["multiples"]["line"]]
+    return marks + list(p["timeseries"]["lines"])
+
+
 def check_spec(spec):
     E = []
     for k, v in CAPS.items():
@@ -390,16 +401,30 @@ def check_spec(spec):
         if len(hexes) < 30:
             E.append("colors.%s: fewer hex values than the palette holds" % mode)
         fills = [p[g][t] for g in ("sequential", "falls", "rises") for t in ("1", "2", "3")]
-        if min(contrast(p["cell_text"], f) for f in fills) < 4.5:
+        ct, st = min(contrast(p["cell_text"], f) for f in fills), contrast(p["suppressed"]["text"], p["suppressed"]["fill"])
+        if ct < 4.5:
             E.append("colors.%s: cell text under 4.5:1 on a tier" % mode)
-        if contrast(p["suppressed"]["text"], p["suppressed"]["fill"]) < 4.5:
+        if st < 4.5:
             E.append("colors.%s: suppressed text under 4.5:1" % mode)
-        marks = [p["waterfall"][k] for k in ("total", "rise", "fall")] + [p["slope"]["rise"], p["slope"]["fall"],
-                                                                         p["pareto"]["cumulative"], p["dot_range"]["dot"]]
-        marks += list(p["lines"]["series"]) + [p["lines"]["forecast"], p["area"]["other"], p["hbar"]["bar"],
-                                               p["hbar"]["prior_stroke"], p["multiples"]["line"]]
-        if min(contrast(c, p["frame"]["surface"]) for c in marks) < 3:
+        rec = spec["colors"]["contrast"][mode]
+        if (rec["cell_text_on_tiers_min"], rec["suppressed_text_on_fill"]) != (round(ct, 2), round(st, 2)):
+            E.append("colors.contrast.%s: the recorded text minimums are not the measured %.2f and %.2f" % (mode, ct, st))
+        mk = min(contrast(c, p["frame"]["surface"]) for c in marks_of(p))
+        if mk < 3:
             E.append("colors.%s: a mark under 3:1 on the surface" % mode)
+        if spec["colors"]["contrast"][mode]["marks_on_surface_min"] != round(mk, 2):
+            E.append("colors.contrast.%s.marks_on_surface_min is not the measured %.2f" % (mode, mk))
+        # one categorical palette (17 Oct 2026): the timeseries slots, in their order, for every chart's series; the
+        # primary mark slot 1; two periods slot 1 (latest) and slot 2 (before), both solid; a rise slot 3, a fall slot 2
+        ts = list(p["timeseries"]["lines"])
+        if list(p["lines"]["series"]) != ts or list(p["area"]["parts"]) != ts:
+            E.append("colors.%s: lines.series and area.parts are not the categorical palette (timeseries.lines)" % mode)
+        prim = [p["waterfall"]["total"], p["dot_range"]["dot"], p["dot_range"]["range"], p["pareto"]["bar"],
+                p["hbar"]["bar"], p["multiples"]["line"], p["lines"]["forecast"]]
+        if any(c != ts[0] for c in prim) or p["hbar"]["prior_fill"] != ts[1] or p["hbar"]["prior_stroke"] != ts[1]:
+            E.append("colors.%s: a primary mark is not slot 1, or the earlier period not slot 2 (solid)" % mode)
+        if [p["waterfall"]["rise"], p["waterfall"]["fall"], p["slope"]["rise"], p["slope"]["fall"]] != [ts[2], ts[1], ts[2], ts[1]]:
+            E.append("colors.%s: a rise is not slot 3 or a fall not slot 2" % mode)
         ts = p["timeseries"]["lines"]
         if len(ts) != 5 or min(contrast(c, p["frame"]["surface"]) for c in ts) < 3:
             E.append("colors.%s: a timeseries line under 3:1 on the surface" % mode)
@@ -409,7 +434,7 @@ def check_spec(spec):
     for g, want in design.items():
         if [light[g][t] for t in ("1", "2", "3")] != want:
             E.append("colors.light.%s is not the design's %s" % (g, want))
-    if [light["waterfall"][k] for k in ("total", "rise", "fall")] != ["#24425c", "#0b7366", "#945400"]:
+    if [light["waterfall"][k] for k in ("total", "rise", "fall")] != ["#2a78d6", "#12875c", "#d45a26"]:
         E.append("colors.light.waterfall is not the design's")
     # the plan directive's and the limits' examples
     pd_ = spec["plan_directive"]

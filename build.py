@@ -166,19 +166,29 @@ class Checks:
 # One place for the palette. The band hues passed the dataviz skill's palette validator
 # (lightness band, chroma, colour-blind separation) in both themes; the heat-cell tints and all
 # text colours are checked for contrast below, at every build.
+# ts-1..ts-5 are THE categorical palette of every chart's marks (17 Oct 2026, the owner: "a little vivid different
+# premium color so that visually it can be understand to compare"): slot order fixed, never cycled, colour follows the
+# entity. A comparison of two periods draws the latest in ts-1 (blue) and the one before in ts-2 (orange), both solid;
+# a single series and a chart's primary mark are ts-1; a rise is ts-3 (green), a fall ts-2 (orange). Validated with the
+# dataviz skill's validate_palette.js on the surfaces below (light: adjacent colour-vision separation 6.8, green
+# against orange, legal only with secondary encoding: a line's own dash and label, a step's sign and direction; dark:
+# all pass). ts-band: the forecast range of ts-1, mix(surface, ts-1). series, series-2 and series-3 stay the page's
+# UI tones (status and notice text, borders); text never wears a series colour.
 TOKENS = {
     "light": {"bg": "#f7f6f3", "surface": "#ffffff", "ink": "#16232e", "body": "#33424e", "muted": "#56646f",
               "hairline": "#e2dfd6", "accent": "#0b7366", "accent-ink": "#0a5c52", "on-accent": "#ffffff",
               "grid": "#e8e5dd", "axis": "#b9b5aa", "series": "#24425c", "series-2": "#0b7366", "series-3": "#945400",
               "band-green": "#0f8f7a", "band-yellow": "#e0a000", "band-red": "#d4502c",
               "div-neg": "#2a78d6", "div-pos": "#b35c00", "focus": "#1f5fbf", "fan": "rgba(11,115,102,0.16)",
-              "ts-1": "#2a78d6", "ts-2": "#d45a26", "ts-3": "#12875c", "ts-4": "#9a6a00", "ts-5": "#c8457f"},
+              "ts-1": "#2a78d6", "ts-2": "#d45a26", "ts-3": "#12875c", "ts-4": "#9a6a00", "ts-5": "#c8457f",
+              "ts-band": "#d9e7f8"},
     "dark": {"bg": "#0c141c", "surface": "#121d28", "ink": "#e9eef3", "body": "#c3ced8", "muted": "#9aabb8",
              "hairline": "#26364a", "accent": "#2bb5a3", "accent-ink": "#5fd6c5", "on-accent": "#062521",
              "grid": "#1f2d3b", "axis": "#3b4d60", "series": "#b9cce0", "series-2": "#2bb5a3", "series-3": "#e3a33b",
              "band-green": "#199e86", "band-yellow": "#bc8c00", "band-red": "#e2507a",
              "div-neg": "#3987e5", "div-pos": "#c8741c", "focus": "#8ab8ff", "fan": "rgba(43,181,163,0.20)",
-             "ts-1": "#3987e5", "ts-2": "#d95926", "ts-3": "#199e70", "ts-4": "#c98500", "ts-5": "#d55181"},
+             "ts-1": "#3987e5", "ts-2": "#d95926", "ts-3": "#199e70", "ts-4": "#c98500", "ts-5": "#d55181",
+             "ts-band": "#1c3959"},
 }
 TINTS = {"light": (0.20, 0.34, 0.50), "dark": (0.24, 0.36, 0.48)}
 
@@ -727,6 +737,9 @@ def compute(I, C, downloads, pbip, examples, tests, contrast_rows):
             d("pf%d_size" % i, human_bytes(fl["bytes"]) if fl["bytes"] >= 1000 else format(fl["bytes"], ",") + " B", "PBIP file size")
 
     # --- contrast
+    marks_worst = min(contrast(TOKENS[m]["ts-%d" % k], TOKENS[m]["surface"]) for m in ("light", "dark") for k in range(1, 6))
+    C("every chart mark colour (ts-1..ts-5) reaches 3:1 on the surface in both themes", marks_worst >= 3,
+      "worst %.2f" % marks_worst)
     worst = min(r["ratio"] for r in contrast_rows)
     C("every text colour reaches 4.5:1 on its surface in both themes", worst >= 4.5, "worst %.2f" % worst)
     d("contrast_worst", format(worst, ".2f") + ":1", "computed at build from the colour tokens (WCAG 2.x)")

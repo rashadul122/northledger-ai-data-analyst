@@ -206,11 +206,13 @@
   // a chart part: line, stacked area, clustered column or bar, its series referencing cell ranges
   function chartXml(spec, nm) {
     var ns = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
-    var PAL = ['24425C', '0B7366', '945400', '2A78D6', 'D4502C', '56646F'], DASH = ['dash', 'sysDot', 'lgDashDot', 'sysDash'];
+    // the site's categorical palette (build.py TOKENS ts-1..ts-5, light): slot order fixed; a series may name its own colour
+    // (a comparison of two periods: the one before in ts-2 orange, the latest in ts-1 blue)
+    var PAL = ['2A78D6', 'D45A26', '12875C', '9A6A00', 'C8457F', '56646F'], DASH = ['dash', 'sysDot', 'lgDashDot', 'sysDash'];
     var ref = function (r) { return q(nm(r.sheet)) + '!$' + col(r.col) + '$' + r.r0 + ':$' + col(r.col) + '$' + r.r1; };
     var line = spec.type === 'line';
     var sers = (spec.series || []).map(function (s, k) {
-      var color = PAL[k % PAL.length];
+      var color = /^[0-9A-F]{6}$/i.test(s.color || '') ? String(s.color).toUpperCase() : PAL[k % PAL.length];
       var sp = line ? '<c:spPr><a:ln w="22225"><a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill>' + (k ? '<a:prstDash val="' + DASH[(k - 1) % 4] + '"/>' : '') + '</a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="4"/></c:marker>'
         : '<c:spPr><a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill></c:spPr>';
       var tx = s.name ? '<c:tx><c:strRef><c:f>' + q(nm(s.name.sheet)) + '!$' + col(s.name.col) + '$' + s.name.row + '</c:f></c:strRef></c:tx>' : '';

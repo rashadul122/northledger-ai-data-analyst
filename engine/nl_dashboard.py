@@ -106,6 +106,11 @@ class Read:
         self.rep = rep
         self.ctx = NV.Ctx(rep, dict(ctx_in, claims=NV.claims_of(ctx_in.get("r"))))
         self.refused: List[Dict[str, str]] = []
+        # one unit word per measure (measure_units), for every figure the dashboard writes: its tiles and charts, the
+        # engine's own chart records it carries, the notes and both exports
+        self.units = measure_units(self.ctx, ctx_in.get("reading"))
+        plan_unit = self.ctx.unit
+        self.ctx.unit = lambda land: (self.units[land] if land and land in self.units else plan_unit(land))
 
     def refuse(self, element: str, why: str) -> None:
         if why == R_PERSONAL:              # never echo what the AI called it (its label may name the column)
@@ -150,6 +155,36 @@ class Read:
 
 
 # ----------------------------------------------------------------------------- the design
+CURRENCY_SIGNS = "$€£¥"
+_SIGN_RX = re.compile(r"[$€£¥]")
+_ISO_WORD_RX = re.compile(r"(?<![A-Za-z])([A-Z]{3})(?![A-Za-z])")
+
+
+def measure_units(c: Any, reading: Any) -> Dict[str, str]:
+    """{landed column: unit word} for the number columns whose own cells name their currency: one sign ($ € £ ¥) or
+    one ISO 4217 code ("CAD 1,200"), the same in every cell that has one. The file's own word wins over the plan's
+    (the cleaner strips the sign from the kept rows; the engine's reading still holds the landed text). A column
+    whose cells name two currencies, or none, keeps the plan's unit; a percentage keeps "%"."""
+    out: Dict[str, str] = {}
+    texts = getattr(reading, "texts", None)
+    if texts is None or not hasattr(texts, "columns"):
+        return out
+    for land in c.columns:
+        if land == c.date or land not in texts.columns or c.ptype(land) == "percentage" or not c.numeric(land):
+            continue
+        seen: Dict[str, int] = {}
+        for t in texts[land].astype(str).head(20000):
+            if not t or not any(ch.isdigit() for ch in t):
+                continue
+            for sg in set(_SIGN_RX.findall(t)):
+                seen[sg] = seen.get(sg, 0) + 1
+            for iso in set(m.group(1) for m in _ISO_WORD_RX.finditer(t) if m.group(1) in NB._ISO_CURRENCIES):
+                seen[iso] = seen.get(iso, 0) + 1
+        if len(seen) == 1:
+            out[land] = next(iter(seen))
+    return out
+
+
 def _ident(raw: Any, prefix: str, i: int, seen: set, R: Read, element: str) -> str:
     s = str(raw or "")
     if not ID_RX.match(s):
@@ -279,8 +314,11 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
             except NV.Refused as exc:
                 R.refuse(el, str(exc))
                 continue
+            # what it counts, for its definition: the record's own measure and how the chart aggregates it
+            sm = _static_measure(c, name, lands, rec)
             item.update({"draw": "static", "record": rec, "measure": None, "agg": None, "by": None, "where": None,
-                         "unit_word": ""})
+                         "unit_word": c.unit(sm) if sm else "", "static": {"chart": name, "lands": list(lands), "measure": sm,
+                                                                       "label": _rec_measure_label(rec)}})
         out["charts"].append(item)
     raw_f = block.get("filters") if isinstance(block.get("filters"), list) else []
     for f in raw_f[:FILTER_CATS + 3]:
@@ -320,12 +358,23 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
 
 
 def _unit(R: Read, u: Any, element: str, ai: bool, land: Optional[str]) -> str:
+    """The unit word of an element. A measure has ONE unit word on the whole dashboard, its tiles, charts, notes and
+    exports (review of the AI-designed dashboard's workbook, 17 Oct 2026: tiles in "$" and the charts' definitions "in
+    CAD" for the same Amount): the file's own currency sign, else the plan's unit, else the first unit word the design
+    gave that measure (measure_units). A different word an element asks for is replaced, and the notes say so."""
     s = " ".join(str(u or "").split())[:TEXT_MAX["unit_word"]]
-    if s and UNIT_RX.match(s) and not (ai and has_figure(s)):
-        return s
-    if s:
+    ok = bool(s) and bool(UNIT_RX.match(s)) and not (ai and has_figure(s))
+    if s and not ok:
         R.refuse(element, "its unit is not a unit word; the plan's unit was used")
-    return R.ctx.unit(land) if land else ""
+    if land is None:
+        return s if ok else ""
+    have = R.ctx.unit(land)
+    if not have and ok:
+        R.units[land] = have = s                          # the first word the design gave this measure
+    if ok and s != have:
+        R.refuse(element, "its unit word \u201c%s\u201d was replaced by \u201c%s\u201d: one unit word for %s on the whole "
+                          "dashboard" % (s, have or "none", R.ctx.header(land)))
+    return have
 
 
 def _drawn_args(R: Read, name: str, lands: List[str], el: str) -> Optional[Dict[str, Any]]:
@@ -750,8 +799,74 @@ def query_series(cube: Dict[str, Any], ch: Dict[str, Any], filt: Optional[Dict[s
 AGG_WORDS = {"sum": "the total of", "average": "the average of", "count": "the number of", "latest": "the latest month's"}
 
 
+STATIC_DIMS = ("category", "category_or_rating", "segment", "text", "rating")
+
+
+def _static_measure(c: Any, name: str, lands: List[str], rec: Dict[str, Any]) -> Optional[str]:
+    """The landed measure an engine chart record reads: the column named in a measure's place, else the record's own
+    measure (a waterfall, slope or Pareto on the headline's total) when it is one of the file's columns."""
+    for land, role in zip(lands, NV._roles(name, len(lands))):
+        if role in ("measure", "total"):
+            return land
+    lab = _rec_measure_label(rec)
+    if lab:
+        for land in c.measures + c.columns:
+            if lab in (land, c.header(land)) or lab.lower() in (land.lower(), c.header(land).lower()):
+                return land
+    return None
+
+
+def _rec_measure_label(rec: Any) -> str:
+    m = rec.get("measure") if isinstance(rec, dict) else None
+    return str(m.get("label") or "") if isinstance(m, dict) else ""
+
+
+def static_definition(R: Read, st: Dict[str, Any], plural: str) -> str:
+    """The definition of an engine chart record on the dashboard (review of the AI-designed dashboard's workbook, 17 Oct
+    2026: "Charges by property and category" was defined as "The number of ledger lines." while its cells are dollar
+    totals): its own measure and aggregation, what it is split by, the measure's one unit word, and that the filters do
+    not change it."""
+    c = R.ctx
+    name, lands, m = st["chart"], st["lands"], st.get("measure")
+    dims = [l for l, r in zip(lands, NV._roles(name, len(lands))) if r in STATIC_DIMS]
+    what = str(NV.REGISTRY.get(name, {}).get("what") or "").strip()
+    if name == "correlation_heatmap":
+        head = "the correlation of each pair of %s" % _and([c.header(l) for l in lands] or ["the file's measures"])
+    elif name == "theme_rating_heatmap":
+        head = "the share of each rating's texts that use each word"
+    else:
+        if m is None:
+            head = "the total of %s" % st["label"] if st.get("label") else "the number of %s" % plural.lower()
+        elif name == "group_ranges" or not c.is_flow(m):
+            head = "the average of %s" % c.header(m)
+        else:
+            head = "the total of %s" % c.header(m)
+        if name == "change_heatmap":
+            head = "the year-on-year change of " + head
+        if dims:
+            head += ", by %s" % _and([c.header(l) for l in dims])
+        if name in ("calendar_heatmap", "change_heatmap"):
+            head += (" and " if dims else ", by ") + "month"
+        if m is not None:
+            head += "; %s" % ("a flow: added up" if c.is_flow(m) else "a level: averaged, never added up over time")
+            u = c.unit(m)
+            if u:
+                head += "; in %s" % u
+    out = head[0].upper() + head[1:] + "."
+    if what:
+        out += " The engine's own chart (%s), over every row it kept: the filters do not change it." % what.rstrip(".")
+    return out
+
+
+def _and(xs: List[str]) -> str:
+    xs = [x for x in xs if x]
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1] if xs else ""
+
+
 def definition(R: Read, x: Dict[str, Any], plural: str, measures: Dict[str, Dict[str, Any]]) -> str:
     c = R.ctx
+    if x.get("draw") == "static" and isinstance(x.get("static"), dict):
+        return static_definition(R, x["static"], plural)
     m = x.get("measure")
     agg = x.get("agg") or ("count" if m is None else "sum")
     if m is None:
@@ -988,6 +1103,7 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
                          "a value it filters on is counted in \u201cother\u201d on this dashboard")
                 return False
         y["definition"] = definition(R, x, plural, measures)
+        y.pop("static", None)
         y["measure"] = c.header(x["measure"]) if x.get("measure") else None
         y["by"] = c.header(x["by"]) if x.get("by") else None
         return y

@@ -1431,6 +1431,46 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nla-ask[aria-busy="true"] .nla-ask-status::before { content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 6px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; vertical-align: -1px; animation: nla-spin 0.8s linear infinite; }
 @keyframes nla-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .nla-ask[aria-busy="true"] .nla-ask-status::before { animation: none; } }
+/* "Clean my file" (src/js/59-cleanfile.js, engine/nl_cleanfile.py): the summary, the two downloads and the cleaning rules */
+.tr-clean { margin-top: 16px; }
+.tr-clean h3 { margin-top: 0; }
+.tr-clean-status { margin: 6px 0 10px; font-size: 14.5px; color: var(--ink); min-height: 1.2em; }
+.tr-clean-kpis { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.tr-clean-kpis li { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg); min-width: 0; }
+.tr-clean-kpis .k { display: block; font-size: 12.5px; color: var(--muted); }
+.tr-clean-kpis b { font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tr-clean-notes { margin: 8px 0; padding-left: 20px; font-size: 14px; color: var(--ink); }
+.cf-rules { margin-top: 12px; }
+.cf-cols { list-style: none; margin: 10px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.cf-col { padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg); min-width: 0; }
+.cf-private { border-style: dashed; }
+.cf-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; justify-content: space-between; }
+.cf-name { color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.cf-src { font-size: 12px; color: var(--muted); font-weight: 500; }
+.cf-ev, .cf-hint { margin: 4px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.cf-fields { display: grid; grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr); gap: 6px 8px; align-items: center; margin-top: 8px; }
+.cf-fields label { font-size: 13px; color: var(--ink); }
+.cf-fields .cf-hint { grid-column: 1 / -1; }
+.cf-fields select, .cf-fields input, .cf-fields textarea { font: inherit; font-size: 14px; width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; min-height: 36px; color: var(--ink); background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; }
+.cf-fields textarea { resize: vertical; }
+.cf-fields select:focus-visible, .cf-fields input:focus-visible, .cf-fields textarea:focus-visible, .cf-dup input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.cf-val { display: inline-block; margin: 2px 4px 0 0; padding: 1px 8px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 12.5px; overflow-wrap: anywhere; }
+.cf-dup { margin: 4px 0 12px; padding: 10px 14px; border: 1px solid var(--hairline); border-radius: 10px; min-width: 0; }
+.cf-dup legend { font-weight: 700; color: var(--ink); padding: 0 4px; }
+.cf-radio, .cf-key { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.cf-radio input, .cf-key input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+.cf-keys { display: flex; flex-wrap: wrap; gap: 0 16px; padding-left: 26px; }
+.cf-rules-l { list-style: none; margin: 8px 0 0; padding: 0; }
+.cf-rule { margin: 4px 0 8px; min-width: 0; }
+.cf-rule code { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.cf-rule .cf-fields { margin: 4px 0 0 26px; }
+.cf-general { margin: 10px 0 0; }
+@media (max-width: 560px) {
+  .cf-cols { grid-template-columns: 1fr; }
+  .cf-fields { grid-template-columns: 1fr; }
+  .cf-fields select, .cf-fields input, .cf-fields textarea, .cf-radio, .cf-key { min-height: 44px; }
+  .tr-clean .tr-actions .btn { flex: 1 1 100%; text-align: center; }
+}
 
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
@@ -1448,7 +1488,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 01:11:58 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 01:57:55 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

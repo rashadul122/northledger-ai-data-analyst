@@ -14022,8 +14022,71 @@ def _input_summary(rep: Dict[str, Any], df: Any, kinds: Dict[str, str], ident: s
     return s
 
 
-def _input_store(rep: Dict[str, Any], ident: str, primary: bool, role: Optional[str] = None) -> Dict[str, Any]:
+def own_shape_rows(data: Any, name: str, as_of: Optional[str] = None) -> str:
+    """The rows the engine's cleaner keeps, in the file's OWN shape, as CSV text: for a file the run read reshaped (a long
+    table of series is read one series at a time, so its clean CSV is that series). The same landing, personal-data
+    default (every flagged column withheld, and left out here) and cleaner (northledger.clean.clean_table) as the run;
+    only the structure layer's reshaping is not applied. '' when the file cannot be read."""
+    tmp = None
+    try:
+        data = _as_bytes(data)
+        data, _t = _strip_title_block(data)
+        data, _d, _n = normalize_file(data)
+        _install_stubs()
+        _import_engine()
+        from northledger import clean as _clean
+        from northledger import engagement as E
+        from northledger import health as _health
+        tmp = tempfile.mkdtemp(prefix="nl_input_")
+        src_dir = os.path.join(tmp, "incoming")
+        os.makedirs(src_dir)
+        src = os.path.join(src_dir, _clean_name(name))
+        with open(src, "wb") as fh:
+            fh.write(data)
+        eng = E.open_engagement(os.path.join(tmp, "engagement"), create=True)
+        res = E.land(eng, src)
+        flagged, _withheld, _scrub, _released = _decide_and_guard(E, eng, res, {})
+        hidden = {str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("decision") != "keep"}
+        try:
+            day = _dt.date.fromisoformat(str(as_of)[:10]).isoformat() if as_of else _dt.date.today().isoformat()
+        except ValueError:
+            day = _dt.date.today().isoformat()
+        con = _health.connect_read_only(eng.db_path)
+        try:
+            th = _health.score_table(con, res.table)
+            cr = _clean.clean_table(con, res.table, health=th, as_of=day)
+        finally:
+            con.close()
+        df = cr.clean.drop(columns=[c for c in cr.clean.columns if str(c) in hidden or str(c).startswith("_")], errors="ignore")
+        return df.to_csv(index=False)
+    except Exception:  # noqa: BLE001 - the input is listed with its run's own rows instead
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return ""
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _reshaped(rep: Dict[str, Any]) -> bool:
+    """The run read the file reshaped (a table of series, one slice; or a wide table of periods read long)."""
+    st = rep.get("structure")
+    if isinstance(st, dict) and (st.get("slice") or st.get("wide")):
+        return True
+    return False
+
+
+def _input_store(rep: Dict[str, Any], ident: str, primary: bool, role: Optional[str] = None,
+                 data: Any = None, as_of: Optional[str] = None) -> Dict[str, Any]:
     text = str(((rep.get("downloads") or {}).get("clean_csv")) or "") if rep.get("ok") else ""
+    if text and data is not None and _reshaped(rep):
+        own = own_shape_rows(data, str((rep.get("input") or {}).get("name") or "file.csv"), as_of)
+        if own.strip():
+            text = own
+        else:
+            data = None
+    else:
+        data = None
     df, kinds = (None, {})
     if text.strip():
         try:
@@ -14032,13 +14095,18 @@ def _input_store(rep: Dict[str, Any], ident: str, primary: bool, role: Optional[
             if os.environ.get("NL_BROWSER_STRICT"):
                 raise
             df, kinds = None, {}
-    return {"summary": _input_summary(rep, df, kinds, ident, primary, role), "csv": text}
+    summary = _input_summary(rep, df, kinds, ident, primary, role)
+    if data is not None and df is not None:
+        # the run read it reshaped; the report types read its own rows (own_shape_rows), so say how many
+        summary["rows_kept"] = int(len(df))
+        summary["own_shape"] = True
+    return {"summary": summary, "csv": text}
 
 
-def _remember_primary(rep: Dict[str, Any]) -> Dict[str, Any]:
+def _remember_primary(rep: Dict[str, Any], data: Any = None, as_of: Optional[str] = None) -> Dict[str, Any]:
     _PRIMARY.clear()
     try:
-        _PRIMARY.update(_input_store(rep, "in1", True))
+        _PRIMARY.update(_input_store(rep, "in1", True, None, data, as_of))
         _PRIMARY["analyst"] = dict(_LAST_ANALYST) if rep.get("ok") else {}
     except Exception:  # noqa: BLE001 - the report stands without its input record
         if os.environ.get("NL_BROWSER_STRICT"):
@@ -14072,7 +14140,7 @@ def input_json(csv_bytes: Any, name: str, as_of: Optional[str] = None, role: Opt
         _LAST_CLEAN.update(keep_c)
     if role is not None and hasattr(role, "to_py"):
         role = role.to_py()
-    st = _input_store(rep, "in%d" % (len(_INPUTS) + 2), False, str(role) if role else None)
+    st = _input_store(rep, "in%d" % (len(_INPUTS) + 2), False, str(role) if role else None, csv_bytes, as_of)
     st["analyst"] = frame
     sha = st["summary"].get("sha256")
     for i, old in enumerate(_INPUTS):         # the same file twice: read once, in its first place
@@ -14155,7 +14223,7 @@ def run_json(csv_bytes: Any, name: str, objective: str = "", decisions: Any = No
         decisions = decisions.to_py()
     out = run(csv_bytes, name, objective, decisions, as_of)
     # the main file's record (rep.inputs, CONTRACT §5.18): the companions the page reads next are appended by the page
-    summary = _remember_primary(out)
+    summary = _remember_primary(out, csv_bytes, as_of)
     out["inputs"] = [summary] if summary else []
     return json.dumps(out, allow_nan=False)
 

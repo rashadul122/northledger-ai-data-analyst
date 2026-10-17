@@ -190,7 +190,8 @@ def read_input(inp: Dict[str, Any], recipe_in: Optional[Dict[str, Any]] = None) 
     deb = [c for c in nums if set(_toks(c)) & {"debit", "debits", "dr"}]
     cre = [c for c in nums if set(_toks(c)) & {"credit", "credits", "cr"}]
     if len(deb) == 1 and len(cre) == 1:
-        # a trial balance's lines: debit minus credit for each account (the net), one figure per account and month
+        # a trial balance's lines: debit minus credit for each account (the net: a credit balance is negative), one
+        # figure per account and month
         df = df.copy()
         df["net"] = pd.to_numeric(df[deb[0]], errors="coerce").fillna(0) - pd.to_numeric(df[cre[0]], errors="coerce").fillna(0)
         df.loc[df[deb[0]].isna() & df[cre[0]].isna(), "net"] = float("nan")
@@ -443,7 +444,7 @@ def build(inputs: List[Dict[str, Any]], settings: Optional[Dict[str, Any]] = Non
     # derived lines: gross profit and gross margin from revenue and cost (when both are flows of the same files)
     rev = next((x for x in rows if REV_RX.match(x["key"]) and x["kind"] == "flow"), None)
     cost = next((x for x in rows if COST_RX.match(x["key"]) and x["kind"] == "flow"), None)
-    if rev and cost and len(rows) < LINES_MAX:
+    if rev and cost and rev["actual"]["input"] == cost["actual"]["input"] and len(rows) < LINES_MAX:
         rows = _derived(rows, rev, cost, lines, compare, month, prev, ytd)
 
     if not rows:
@@ -542,16 +543,16 @@ def _derived(rows, rev, cost, lines, compare, month, prev, ytd):
     src_m = dict(src, column="(%s - %s) / %s" % (rev["actual"]["column"], cost["actual"]["column"], rev["actual"]["column"]),
                  how="gross profit divided by revenue, from the month's sums (never an average of rates)")
     gm = {"key": "gross_margin", "label": "Gross margin %", "kind": "rate", "kind_by": "engine", "points": True, "scale": 100.0,
-          "cur": _r(gmA.get(month)), "prev": _r(gmA.get(prev)), "plan": _r(gmP.get(month)) if gmP else None,
+          "cur": _r(gmA.get(month), 12), "prev": _r(gmA.get(prev), 12), "plan": _r(gmP.get(month), 12) if gmP else None,
           "actual": src_m, "planned": dict(src_m) if gmP else None, "gaps": [],
           "series": {m: _r(gmA[m]) for m in sorted(gmA) if _shift(month, -12) <= m <= month},
           "derived": {"op": "ratio", "of": ["gross_profit", rev["key"]]}}
     _changes(gm)
     gm.update(ytd_act=None, ytd_plan=None, ytd_var=None, ytd_var_pct=None, ytd_why="")
     if gp["ytd_act"] is not None and rev.get("ytd_act"):
-        gm["ytd_act"] = _r(gp["ytd_act"] / rev["ytd_act"])
+        gm["ytd_act"] = _r(gp["ytd_act"] / rev["ytd_act"], 12)
         if gp.get("ytd_plan") is not None and rev.get("ytd_plan"):
-            gm["ytd_plan"] = _r(gp["ytd_plan"] / rev["ytd_plan"])
+            gm["ytd_plan"] = _r(gp["ytd_plan"] / rev["ytd_plan"], 12)
             gm["ytd_var"] = _r((gm["ytd_act"] - gm["ytd_plan"]) * 100.0)
             gm["ytd_var_pct"] = _r((gm["ytd_act"] - gm["ytd_plan"]) / abs(gm["ytd_plan"])) if gm["ytd_plan"] else None
     else:

@@ -1608,7 +1608,10 @@ def build(write=True, run_tests=False):
             print("TEMPLATE ERROR: " + e)
         return 1, site_build
     css = css_tokens() + open(os.path.join(SRC, "style.css"), encoding="utf-8").read()
-    js = "\n".join(open(p, encoding="utf-8").read() for p in sorted(glob.glob(os.path.join(SRC, "js", "*.js"))))
+    # each file opens with a /*@nl-file NAME*/ mark: the Dashboard tab's HTML export (src/js/57-dashboard.js) carries the
+    # chart files it needs (00-core, 51, 55, 57) into the file it writes, from the page's own script
+    js = "\n".join("/*@nl-file %s*/\n" % os.path.basename(p) + open(p, encoding="utf-8").read()
+                   for p in sorted(glob.glob(os.path.join(SRC, "js", "*.js"))))
     data_js = json.dumps(payload(I), separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
     page = PAGE % (css, content, data_js, js)
     # the case study as a page styled like this one, from the same template as case-study.md

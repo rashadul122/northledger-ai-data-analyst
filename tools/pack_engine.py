@@ -29,6 +29,8 @@ The zip holds exactly what the browser needs and nothing else:
                             official aggregates (engine/nl_inference.py, wave 4 track A2)
   inference_tables.json     the trend test's simulated sizes nl_inference reads beside itself
   nl_analyst.py             the adapter's analyst loop (engine/nl_analyst.py, CONTRACT §5.10)
+  nl_dashboard.py           the Dashboard tab: design check, aggregate cube, notes (engine/nl_dashboard.py, CONTRACT §5.14)
+  dashboard_sample.json     the sample ledger's recorded AI dashboard design nl_dashboard reads beside itself
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
@@ -164,6 +166,10 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the given names the themes analysis never shows as a theme and the chart registry's person-name test
                  # reads (nl_browser._first_names reads it beside itself; the chart review, 30 Sep 2026)
                  "first_names.txt": "first_names.txt",
+                 # the Dashboard tab (plan/DASHBOARD-DESIGN.md, CONTRACT §5.14), imported by nl_browser.run() and
+                 # results_for_ai; and the sample ledger's recorded AI design it reads beside itself
+                 "nl_dashboard.py": "nl_dashboard.py",
+                 "dashboard_sample.json": "dashboard_sample.json",
                  "nl_stubs/__init__.py": os.path.join("nl_stubs", "__init__.py"),
                  "nl_stubs/resource.py": os.path.join("nl_stubs", "resource.py")}
 SAMPLE = {"file": "sample-messy.csv", "as_of": "2026-09-15",

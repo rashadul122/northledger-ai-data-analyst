@@ -3172,7 +3172,7 @@ check('try-v2-bottom-line-is-decision-ready', DESK, async (ctx) => {
 // drawn inside the hidden analyst view, so a visitor on the manager view saw nothing. The offer sits under the
 // bottom line; the executive summary appears there, the technical one in the analyst view's summary section.
 check('try-v2-ai-summaries-show-in-the-view-where-the-visitor-asks', DESK, async (ctx) => {
-  // the integrated flow: the AI-written report opens in its own card, above the engine's report, where the reader is sent
+  // the integrated flow: the AI-written report opens in its own card, in step 6 (Deliver) after the engine's report
   const rep = fixture('sample'); rep.__profile = true; rep.__results = true;
   const plan = { goal: 'Which region grows fastest?', understanding: 'Orders by region.', quality_risks: [], operations: [], analyses: [] };
   const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan } }
@@ -3184,10 +3184,11 @@ check('try-v2-ai-summaries-show-in-the-view-where-the-visitor-asks', DESK, async
   const d = await p.evaluate(() => {
     const c = document.getElementById('try-ai-report'), r = document.getElementById('try-report'), t = c.textContent;
     const a = c.querySelector('.ai-rep-wm a');
-    return { before: !!(c.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING), text: t, src: c.querySelectorAll('.ai-rep-srcs a').length, home: a && a.href,
+    return { before: !!(c.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING), step6: !!c.closest('#try-step-6'), text: t, src: c.querySelectorAll('.ai-rep-srcs a').length, home: a && a.href,
       share: !!c.querySelector('#try-share'), pdf: !!c.querySelector('#try-pdf'), old: !!document.getElementById('try-ai-go') || !!document.getElementById('try-ai-ok') };
   });
-  ok(d.before && await p.isVisible('#try-ai-report') && await p.isVisible('#try-report'), 'the AI report is not shown above the engine report');
+  // the workflow order (owner, 16 Oct 2026): the AI-written report is delivered in step 6, after the engine's report (step 3)
+  ok(!d.before && d.step6 && await p.isVisible('#try-ai-report') && await p.isVisible('#try-report'), 'the AI report is not shown in step 6, after the engine report');
   ok(/The AI-written report/.test(d.text) && /Rent rose in the East/.test(d.text) && /Honesty check/.test(d.text), 'the AI report card lacks its heading, text or honesty note: ' + d.text.slice(0, 200));
   ok(d.src === 1 && d.share && d.pdf, 'the AI report lacks its sources or its share and PDF actions');
   ok(d.home === DEMO_ORIGIN + '/index.html', 'the watermark does not link to the page\'s own address: ' + d.home);
@@ -4549,6 +4550,201 @@ async function ratesChecks(ctx, tag) {
 check('rates-card-and-line-chart-desktop', DESK, async (ctx) => { await ratesChecks(ctx, 'desktop-light'); });
 check('rates-card-and-line-chart-phone', PHONE, async (ctx) => { await ratesChecks(ctx, 'phone-light'); });
 check('rates-card-and-line-chart-dark', DESK, async (ctx) => { await ratesChecks(ctx, 'desktop-dark'); }, { colorScheme: 'dark' });
+
+/* ------------------------------------------------------------ the Dashboard tab and the step rail (plan/DASHBOARD-DESIGN.md Track A)
+   The sample ledger's report, made by the native adapter (its recorded AI dashboard design, no AI call) and handed to the page:
+   the third tab, its tiles equal to the engine's own figures, charts drawn by the chart registry, filters, a "<5" after a filter,
+   the click-to-cross-filter, the definitions card in step 1 and its local rebuild, the notes, the HTML file (filters working
+   offline) and the Excel workbook (native charts; opened by openpyxl when the venv has it); a 390-px phone in the dark theme;
+   the six-step rail with its hooks. NL_UI_SHOTS=<dir> saves screenshots. */
+let SAMPLE_REP = null;
+function sampleDashReport() {
+  if (SAMPLE_REP) return JSON.parse(JSON.stringify(SAMPLE_REP));
+  const code = 'import sys,os,json\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'd=open(site+"/engine/sample-messy.csv","rb").read()\nprint(json.dumps(NB.run(d,"sample-messy.csv","",None,"2026-09-15")))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Skip('the sample report could not be made (' + String(r.stderr || r.error || '').trim().split('\n').pop() + ')');
+  SAMPLE_REP = JSON.parse(r.stdout);
+  return JSON.parse(JSON.stringify(SAMPLE_REP));
+}
+async function dashPage(ctx) {
+  const rep = sampleDashReport();
+  const { p } = await openV2(ctx, 'sample-dashboard', rep);
+  ok(await p.isVisible('#nl2-tab-d'), 'no Dashboard tab beside the Manager and Analyst views');
+  await p.click('#nl2-tab-d');
+  await p.waitForSelector('#nl2-dash:not([hidden]) .nld svg', { timeout: 15000 });
+  await p.waitForTimeout(200);
+  return { p, rep, D: rep.dashboard };
+}
+const tileText = (p, id) => p.evaluate((i) => { const t = document.querySelector('#nld-x-' + i); return t ? { lab: t.querySelector('.k-lab').textContent, val: t.querySelector('.k-val').textContent, sub: t.querySelector('.k-sub').textContent } : null; }, id);
+async function noSideways(p) {
+  const d = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, vw: document.documentElement.clientWidth,
+    out: Array.from(document.querySelectorAll('#nl2-dash svg, #nl2-dash .tr-kpi, #nl2-dash select, #try-rail')).filter((e) => e.offsetParent && e.getBoundingClientRect().right > document.documentElement.clientWidth + 0.5).length }));
+  ok(d.sw <= d.vw + 1 && d.out === 0, 'sideways scroll on the dashboard: ' + JSON.stringify(d));
+}
+check('dashboard-tab-tiles-charts-filters-and-notes', DESK, async (ctx) => {
+  const { p, D } = await dashPage(ctx);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  const self = await p.evaluate(() => window.NLD.selfCheck(window.NLD.current.D));
+  ok(self.length === 0, 'the page recomputes tiles that differ from the engine\'s: ' + self.join(', '));
+  const rent = await tileText(p, 'rent');
+  ok(rent && rent.lab === 'Rent charged' && rent.val === '$' + D.defaults.kpis.rent.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), 'the rent tile is not the engine\'s total: ' + JSON.stringify(rent));
+  const g = await p.evaluate(() => ({ figs: document.querySelectorAll('#nl2-dash figure.nld-fig').length, svgs: document.querySelectorAll('#nl2-dash figure.nld-fig svg.nlv').length,
+    labels: Array.from(document.querySelectorAll('#nl2-dash figure.nld-fig svg.nlv')).map((s) => s.getAttribute('aria-label')),
+    badge: (document.querySelector('#nl2-dash .nld-badge') || {}).textContent || '', qs: document.querySelectorAll('#nl2-dash .nld-qs li a').length,
+    notes: (document.querySelector('#nl2-dash .nld-notes') || {}).textContent || '', card: (document.querySelector('#try-counts .nld-counts') || {}).textContent || '',
+    exp: document.querySelectorAll('#nl2-dash [data-nld="html"], #nl2-dash [data-nld="xlsx"]').length }));
+  ok(g.figs === D.charts.length && g.svgs === D.charts.length, 'not every chart is drawn by the registry: ' + JSON.stringify(g).slice(0, 300));
+  ok(g.labels.every((l) => l && l.length > 4), 'a chart has no accessible name');
+  ok(/Recorded design/.test(g.badge) && g.qs >= 5, 'the recorded design is not labelled, or the questions do not link to tiles and charts');
+  ok(/Looked wrong, please check/.test(g.notes) && /exact duplicate/.test(g.notes) && /kept of 3,350 read/.test(g.notes), 'the notes miss the rows or the checks: ' + g.notes.slice(0, 200));
+  ok(/One row is one ledger line/.test(g.card) && /What each column means/.test(g.card), 'step 1\'s card does not say what one row is: ' + g.card.slice(0, 160));
+  ok(g.exp === 2, 'the two export buttons are missing');
+  // a filter: one property, then a month and "not paid" until a tile rests on fewer than 5 rows
+  await p.selectOption('#nl2-dash select[data-nld-f="cat"][data-key="d0"]', 'Danforth Triplex');
+  await p.waitForTimeout(150);
+  const want = await p.evaluate(() => window.NLD.kpi(window.NLD.current.D, window.NLD.current.D.kpis[0], window.NLD.state()).value);
+  const r2 = await tileText(p, 'rent');
+  ok(want && r2.val === '$' + Math.round(want).toLocaleString('en-US') && r2.val !== rent.val, 'the rent tile does not follow the property filter: ' + r2.val);
+  const small = await p.evaluate(() => {
+    const D = window.NLD.current.D, K = D.kpis.filter((k) => k.id === 'unpaid')[0];
+    for (const m of D.cube.months) { const r = window.NLD.kpi(D, K, { from: m, to: m, cats: { d0: ['Danforth Triplex'] } }); if (r.n > 0 && r.n < 5) return m; }
+    return null;
+  });
+  ok(small, 'no month with fewer than 5 unpaid lines to test suppression');
+  await p.selectOption('#nl2-dash select[data-nld-f="from"]', small);
+  await p.selectOption('#nl2-dash select[data-nld-f="to"]', small);
+  await p.waitForTimeout(150);
+  const u = await tileText(p, 'unpaid');
+  ok(u.val === '<5' && /fewer than 5 rows/.test(u.sub), 'a tile on fewer than 5 rows is not suppressed after filtering: ' + JSON.stringify(u));
+  const act = await p.textContent('#nld-active');
+  ok(/Property is Danforth Triplex/.test(act) && /dates/.test(act), 'the active filters are not stated: ' + act);
+  await p.click('#nl2-dash [data-nld="clear"]');
+  await p.waitForTimeout(150);
+  // click a bar: every tile and chart filters by that group
+  await p.click('#nld-x-spend_by_property svg g[data-tip]');
+  await p.waitForTimeout(150);
+  const st = await p.evaluate(() => window.NLD.state());
+  ok(st.cats && Object.keys(st.cats).some((k) => st.cats[k].length === 1), 'a click on a bar did not cross-filter: ' + JSON.stringify(st));
+  ok(/Property is/.test(await p.textContent('#nld-active')), 'the cross-filter is not stated');
+  // the Table view of a chart
+  await p.click('#nld-x-rent_trend .tbl-btn');
+  const rows = await p.evaluate(() => document.querySelectorAll('#nld-x-rent_trend .vtable tbody tr').length);
+  ok(rows >= 4, 'the line chart has no table view');
+  await p.click('#nld-x-rent_trend .tbl-btn');
+  await noSideways(p);
+  await p.click('#nl2-dash [data-nld="clear"]');
+  await p.waitForTimeout(150);
+  await shot(p, 'dashboard-desktop-light', '#nl2-dash');
+  await shot(p, 'dashboard-desktop-light-step1-card', '#try-counts');
+  await shot(p, 'dashboard-desktop-light-rail', '#try-rail');
+});
+check('dashboard-definition-edit-rebuilds-locally', DESK, async (ctx) => {
+  const { p } = await dashPage(ctx);
+  await p.click('#try-counts .nld-edit summary');
+  await p.selectOption('#nld-e-el', 'rent');
+  await p.fill('#nld-e-lab', 'Rent billed');
+  await p.selectOption('#nld-e-agg', 'average');
+  await p.click('#try-counts [data-nld="rebuild"]');
+  await p.waitForTimeout(200);
+  const t = await tileText(p, 'rent');
+  const want = await p.evaluate(() => { const D = window.NLD.current.D; return window.NLD.kpi(D, D.kpis[0], {}).value; });
+  ok(t.lab === 'Rent billed' && t.val === '$' + Math.round(want).toLocaleString('en-US') && want < 5000, 'the edit did not rebuild the tile as an average: ' + JSON.stringify(t));
+  ok(/Rebuilt/.test(await p.textContent('#nld-e-msg')), 'the rebuild is not announced');
+  const opts = await p.evaluate(() => Array.from(document.querySelectorAll('#nld-e-agg option')).map((o) => o.value));
+  ok(opts.indexOf('sum') >= 0, 'a flow can be added up');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('dashboard-exports-html-works-offline-and-xlsx-has-native-charts', DESK, async (ctx) => {
+  const { p } = await dashPage(ctx);
+  await p.selectOption('#nl2-dash select[data-nld-f="cat"][data-key="d1"]', 'RENT');
+  await p.waitForTimeout(100);
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#nl2-dash [data-nld="html"]')]);
+  ok(/-dashboard\.html$/.test(dl.suggestedFilename()), 'the HTML file name: ' + dl.suggestedFilename());
+  const hp = await dl.path(), html = fs.readFileSync(hp, 'utf8');
+  ok(/NLD_EXPORT/.test(html) && /@nl-file 51-nl2-charts\.js/.test(html) && /@nl-file 55-nl-viz\.js/.test(html) && !/https?:\/\/[^"' ]*\.js/.test(html.replace(/cdn\.jsdelivr\.net/g, '')), 'the HTML file does not carry its own chart code');
+  ok(html.indexOf('Mice treatment') < 0 && html.indexOf('Fridge not cooling') < 0, 'a withheld value is in the HTML file');
+  const p2 = await ctx.newPage(), errs = [];
+  p2.on('pageerror', (e) => errs.push(String(e)));
+  await p2.route('**/*', (r) => r.request().url().startsWith('file:') ? r.continue() : r.abort());
+  fs.copyFileSync(hp, hp + '.html');            // the download's own path has no extension: Chrome would show it as text
+  await p2.goto('file://' + hp + '.html');
+  try { await p2.waitForSelector('#nld-root svg.nlv', { timeout: 10000 }); } catch (e) { throw new Error('the saved dashboard draws no chart: ' + (errs[0] || (await p2.evaluate(() => document.body.innerHTML.slice(0, 300))))); }
+  const off = await p2.evaluate(() => ({ figs: document.querySelectorAll('#nld-root svg.nlv').length + Array.from(document.querySelectorAll('#nld-root .nld-fig .viz')).filter((v) => /No rows match|No group has/.test(v.textContent)).length, act: document.getElementById('nld-active').textContent, cat: document.querySelector('select[data-key="d1"]').value }));
+  ok(off.figs >= 4 && /Category is RENT/.test(off.act) && off.cat === 'RENT', 'the saved dashboard does not draw with its filters: ' + JSON.stringify(off));
+  await p2.selectOption('select[data-key="d1"]', '');
+  await p2.waitForTimeout(100);
+  ok(/No filter/.test(await p2.textContent('#nld-active')) && !errs.length, 'the saved dashboard\'s filters do not work offline: ' + errs[0]);
+  await p2.close();
+  fs.unlinkSync(hp + '.html');
+  await p.click('#nl2-dash [data-nld="clear"]');
+  await p.waitForTimeout(100);
+  const [dx] = await Promise.all([p.waitForEvent('download'), p.click('#nl2-dash [data-nld="xlsx"]')]);
+  const xp = await dx.path(), b = fs.readFileSync(xp);
+  ok(b[0] === 0x50 && b[1] === 0x4b && /-dashboard\.xlsx$/.test(dx.suggestedFilename()), 'the workbook is not a zip');
+  const txt = b.toString('latin1');
+  ok(/xl\/charts\/chart1\.xml/.test(txt) && /<c:lineChart>/.test(txt) && /<c:barChart>/.test(txt) && /<c:areaChart>/.test(txt), 'the workbook has no native line, bar and area charts');
+  ok(/<f>IF\(B\d+=0,"",\(C\d+-B\d+\)\/B\d+\)<\/f><v>/.test(txt.replace(/&quot;/g, '"')), 'the grouped bar\'s change is not a formula with its cached value');
+  if (fs.existsSync(PY)) {
+    const code = 'import sys,openpyxl\nwb=openpyxl.load_workbook(sys.argv[1])\nprint(",".join(wb.sheetnames), len(wb["Charts"]._charts))';
+    fs.copyFileSync(xp, xp + '.xlsx');            // openpyxl reads a file by its extension
+    const r = require('child_process').spawnSync(PY, ['-c', code, xp + '.xlsx'], { encoding: 'utf8' });
+    fs.unlinkSync(xp + '.xlsx');
+    ok(r.status === 0 && /^Data,Notes,Charts [1-9]/.test(r.stdout.trim()), 'openpyxl could not read the workbook: ' + (r.stdout + r.stderr).trim().split('\n').pop());
+  }
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { acceptDownloads: true });
+check('dashboard-on-a-phone-in-the-dark-theme', PHONE, async (ctx) => {
+  const { p } = await dashPage(ctx);
+  await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); });
+  await p.waitForTimeout(150);
+  await noSideways(p);
+  const d = await p.evaluate(() => ({ ink: getComputedStyle(document.querySelector('#nl2-dash .tr-kpi .k-val')).color, bg: getComputedStyle(document.querySelector('#nl2-dash .tr-kpi')).backgroundColor,
+    now: (document.querySelector('#try-rail .try-rail-now') || {}).textContent || '', list: getComputedStyle(document.querySelector('#try-rail .try-rail-list')).display,
+    small: Array.from(document.querySelectorAll('#nl2-dash svg text')).filter((t) => t.getBoundingClientRect().width && parseFloat(getComputedStyle(t).fontSize) < 11).length }));
+  ok(d.bg === 'rgb(18, 29, 40)' && d.ink !== 'rgb(22, 35, 46)', 'the dashboard is not in the dark theme: ' + JSON.stringify(d));
+  ok(/Step \d of 6/.test(d.now) && d.list === 'none', 'the phone rail is not the "Step n of 6" bar: ' + JSON.stringify(d));
+  ok(d.small === 0, d.small + ' chart texts under 11 px on a phone');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await shot(p, 'dashboard-phone-dark', '#nl2-dash');
+  await shot(p, 'dashboard-phone-dark-rail', '#try-rail');
+}, { colorScheme: 'dark' });
+check('step-rail-orders-the-workflow-and-exposes-its-hooks', DESK, async (ctx) => {
+  const p = await openTry(ctx, { stubReport: sampleDashReport(), proxy: 'unset' });
+  const before = await p.evaluate(() => ({ steps: Array.from(document.querySelectorAll('#try-app > .try-step')).map((s) => s.id + (s.hidden ? ':hidden' : '')),
+    links: document.querySelectorAll('#try-rail a[data-step]').length }));
+  ok(JSON.stringify(before.steps) === JSON.stringify(['try-step-1', 'try-step-2:hidden', 'try-step-3:hidden', 'try-step-4:hidden', 'try-step-5:hidden', 'try-step-6:hidden']) && before.links === 6,
+    'the six steps are not in order under the rail: ' + JSON.stringify(before));
+  await p.evaluate(() => { window.__ev = []; document.addEventListener('nl:step-status', (e) => window.__ev.push(e.detail)); document.addEventListener('nl:report', () => window.__ev.push('report')); });
+  await runReport(p);
+  const after = await p.evaluate(() => ({ st: window.NLSteps.status().map((s) => s.status), ev: window.__ev.length, rep: window.__ev.indexOf('report') >= 0,
+    slots: [1, 2, 3, 4, 5, 6].filter((n) => n === 3 || document.getElementById('try-step-' + n + '-slot')).length,
+    order: ['try-start', 'try-report', 'try-ai-report'].map((id) => { const e = document.getElementById(id); return e ? e.closest('.try-step').id : null; }) }));
+  ok(JSON.stringify(after.st) === JSON.stringify(['done', 'done', 'done', 'ready', 'done', 'ready']) && after.ev > 0 && after.rep, 'the steps\' status after a report: ' + JSON.stringify(after));
+  ok(after.slots === 6 && JSON.stringify(after.order) === JSON.stringify(['try-step-1', 'try-step-3', 'try-step-6']), 'a step\'s hook or part is missing: ' + JSON.stringify(after));
+  await p.click('#try-rail a[data-step="5"]');
+  await p.waitForTimeout(200);
+  ok(await p.isVisible('#nl2-dash .nld'), 'step 5 on the rail does not open the Dashboard');
+  // the shared column card's API (Track C reads it) and a step's edit event
+  const cols = await p.evaluate(() => { let got = null; document.addEventListener('nl:columns', (e) => { got = e.detail.columns.length; });
+    const m = window.NLColumns.meaning('Amount'); window.NLColumns.set('Amount', { note: 'what was charged or paid' });
+    return { m, after: window.NLColumns.meaning('Amount').note, got }; });
+  ok(cols.m && /flow/.test(cols.m.reads_as) && cols.after === 'what was charged or paid' && cols.got > 0, 'NLColumns does not answer or announce: ' + JSON.stringify(cols));
+  await p.evaluate(() => document.dispatchEvent(new CustomEvent('nl:step-status', { detail: { step: 2, edited: true, outOfDate: [3, 4, 5, 6] } })));
+  ok(await p.isVisible('#try-rail [data-rail="update"]') && /out of date/.test(await p.textContent('#try-step-4 .try-step-st')) && !/out of date/.test(await p.textContent('#try-step-2 .try-step-st')),
+    'an edit in step 2 does not mark steps 3 to 6 out of date with one Update');
+  // Update: the engine runs again here with the same choices (no AI call), the dashboard keeps the visitor's filter
+  await p.click('#nl2-tab-d');
+  await p.selectOption('#nl2-dash select[data-nld-f="cat"][data-key="d0"]', 'Danforth Triplex');
+  await p.click('#try-rail [data-rail="update"]');
+  await tryUntil(p, '#try-report:not([hidden])');
+  await p.waitForFunction(() => window.NLSteps.status().every((s) => s.status !== 'stale'), null, { timeout: 30000 });
+  await p.click('#nl2-tab-d');
+  await p.waitForTimeout(200);
+  const kept = await p.evaluate(() => window.NLD.state().cats);
+  ok(kept && kept.d0 && kept.d0[0] === 'Danforth Triplex', 'the dashboard\'s filter did not survive the Update: ' + JSON.stringify(kept));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
 
 /* ------------------------------------------------------------ runner */
 (async () => {

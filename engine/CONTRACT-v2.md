@@ -2253,3 +2253,32 @@ gross-margin drop (Accessories mix in Germany and France; a 12% Online discount)
 fell from 47.4% (2026 Q2) to 40.1% (2026 Q3), -7.37 points (-4.81 against 2025 Q3); by product line mix -4.95 points led
 by Accessories (share 11.3% to 25.0% at a 6.1% margin); by channel rate -8.43 led by Online (50.9% to 28.7%); by country
 rate -9.67 led by Germany (49.7% to 21.4%). `tools/test_nl_sql.py` recomputes these with pandas.
+### 5.17 The Word write-up (Track D, 16 October 2026: page side, reads this report, adds no key)
+
+`src/js/46-report-docx.js` (`window.NLDocx`; also a Node module) writes the research write-up as a .docx in the
+visitor's browser. It reads, and never changes: the PDF writer's model (`NLReportPdf.model(input)`, the same input the
+PDF is made from: the AI's report, `results_for_ai`, the visitor's choices), and from this report `input`,
+`health.columns[]` (`name`, `type`, `flagged`, `withheld`, `completeness{k, n, pct}`), `cleaning` (`rows_in`,
+`rows_clean`, `rows_quarantined`, `fixes[]`, `quarantine_reasons[]`), `answer`, `story.cannot_answer`, `limitations`
+and `estimand`. A withheld column appears by name only ("withheld: no value shown"); the file's name only when the
+visitor ticks "Include my file name" (the engine's sentences that carry it are rewritten to "your file"). The one figure
+it derives is a column's empty cells, `completeness.n - completeness.k`. Its API, for reuse by the monthly pack
+(Track E) and the quarterly sales report (Track F):
+
+- `NLDocx.document(doc) -> Uint8Array`: the generic writer. `doc = {title, subject, description, keywords, created,
+  style: 'report'|'business', paper: 'letter'|'a4', header, blocks[]}`; blocks `title`, `subtitle`, `h1`-`h3`, `p`,
+  `note`, `label {label, text}`, `bullets`/`numbered {items}`, `table {title, cols, rows, note, widths, align}`,
+  `image {png, w, h, title, caption, alt, width}`, `callout {label, text}`, `kpis {items[{label, value, sub, grade}]}`,
+  `pagebreak`. Named styles: Title, Subtitle, Heading1-3, Body, Note, Caption, FigureTitle, Callout, ListBody,
+  TableText, TableHead and the table style Table. `business`: Georgia, dense (10 pt, single leading, 4 pt after), a
+  ruled Heading 1, narrower margins.
+- `NLDocx.writeup(input, figures, {style, paper}) -> doc`: Track D's sections from the model plus `input.engine`.
+- `NLDocx.pickCharts(input, max=3)`: the charts to embed, by relevance to the question.
+- `NLDocx.make({input, engine, chartSvg(chart, W), host, hostClass, style, paper})` (browser): renders the picked charts
+  to PNG (`NLDocx.svgToPng`) and returns `{bytes, name, figures, bundle(), bundleName}`.
+- `NLDocx.bundle({docx, docxName, figures, sourceName})`: the .docx, its chart PNGs and a README in one zip.
+- `NLDocx.zip(files)`: a stored zip; `window.NLX.zip` (the xlsx module) when it is on the page, the same format.
+
+Checks: `node tools/check_report_docx.mjs` (fixtures in `tools/fixtures/report-docx`, made by its
+`make_docx_fixtures.py` from `tools/make_ui_fixtures.py`'s reports; LibreOffice conversion when installed) and
+`tools/check_ui.js` `try-word-*`.

@@ -6927,22 +6927,15 @@ def analyst_more_json(steps_json: str, prior_json: str) -> str:
     return json.dumps(out, allow_nan=False, default=str)
 
 
-def sql_schema_json() -> str:
-    """Ask with SQL (engine/nl_sql.py, CONTRACT §5.13): the kept-rows table's columns as the worker's POST /sql may see
-    them (name, type, role, unit, kind; never a value), from the frame of the last run."""
+def analyst_plan_json(question: str) -> str:
+    """Ask your data without an AI planner (the AI is off, or its round failed or chose nothing): the steps the engine
+    plans for the question itself (nl_sql.plan_steps: a read-only `sql` step, then `rate_mix` for a ratio such as gross
+    margin, or `change` by group for a flow, by the shape's grouping columns), in the typed form analyst_more_json runs
+    and checks like any planner's. [] with no run yet."""
     import nl_sql as _ns_sql
-    return json.dumps(_ns_sql.schema(_LAST_ANALYST), allow_nan=False, default=str)
-
-
-def sql_answer_json(question: str, sql: str = "", chart_json: str = "null", why: str = "") -> str:
-    """Ask with SQL: the AI's SQL (or, with none or a refused one, the engine's own) run on the kept rows under the
-    SQLite authorizer, the engine's explanation of the asked move and the checked chart spec (nl_sql.answer)."""
-    import nl_sql as _ns_sql
-    try:
-        chart = json.loads(chart_json) if chart_json else None
-    except (TypeError, ValueError):
-        chart = None
-    return json.dumps(_ns_sql.answer(_LAST_ANALYST, question, sql, chart, why), allow_nan=False, default=str)
+    if not _LAST_ANALYST:
+        return "[]"
+    return json.dumps(_ns_sql.plan_steps(_LAST_ANALYST, str(question or "")[:300]), allow_nan=False, default=str)
 
 
 def results_json(rep: Any) -> str:
@@ -13499,7 +13492,9 @@ def _analyst(reading: Any, cr: Any, hide: Dict[str, str], plan: Any, layout: Any
                 # the scan flagged by its header alone stays a grouping
                 "free_text": [c.get("name") for c in p.get("columns") or []
                               if isinstance(c, dict) and c.get("semantic_type") == "free_text"]
-                             + [str(f["column"]) for f in personal or [] if _people_words(f, df)]}
+                             + [str(f["column"]) for f in personal or [] if _people_words(f, df)],
+                # the headers of the columns withheld or coded (never in the frame): a SQL step naming one is told why
+                "withheld": [str(reading.header(c)) for c in hide]}
         if isinstance(layout, dict) and layout.get("layout") == "long statistical table":
             # a published table's series: the engine's lead leads, and each series is read as the structure reads it
             hint["mkind"] = _analyst_series_kinds(layout, list(df.columns))

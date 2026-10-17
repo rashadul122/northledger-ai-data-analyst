@@ -1,32 +1,29 @@
-"""Ask with SQL (Track B, plan/DASHBOARD-DESIGN.md; CONTRACT §5.13): a question about the visitor's rows, answered as
-SQL run in the browser, then explained by the engine's own decomposition of the asked move.
+"""Ask your data, with SQL (Track B, plan/DASHBOARD-DESIGN.md; CONTRACT §5.13): the SQL fence and the engine's own plan
+for a question. It extends the analyst loop's "Ask your data" (engine/nl_analyst.py; docs/ai-analyst/PROTOCOL.md): the
+SQL and the driver split are typed steps of that loop (`sql`, `rate_mix`), so their numbers live in its ledger and its
+insight, story and figure machinery apply.
 
 The "warehouse" is the rows the engine kept, as the analyst loop reads them (nl_browser._analysis_frame: no withheld or
-coded column is in that frame), landed in an in-memory SQLite table named kept_rows. Nothing here sends a row anywhere.
+coded column is in that frame; nl_analyst.op_sql also leaves out the free-text columns), landed in an in-memory SQLite
+table named kept_rows. Nothing here sends a row anywhere.
 
-  schema(state)                    the table and its kept columns (name, type, role, unit, kind): what the worker's
-                                   POST /sql may see. Never a value.
-  check_sql(sql, cols, hidden)     the static check (one read-only SELECT/WITH, no PRAGMA/ATTACH/..., only kept_rows and
-                                   its columns). The worker runs the same rules (src/sql.js checkSql) before a query
-                                   leaves it; this one runs again here, and the SQLite authorizer is the real fence.
-  run_sql(state, sql)              runs a query under the authorizer: reads of kept_rows only, withheld/coded columns
-                                   denied, functions from an allowlist, nothing that writes; PRAGMA query_only; a row
-                                   cap (ROW_CAP returned) and a time cap (progress handler). Small cells: a result row
-                                   that aggregates fewer than SMALL_CELL source rows is hidden when the engine can count
-                                   them (the query reads kept_rows directly in its outer SELECT), and the answer says
-                                   plainly when it cannot.
-  explain(state, question)         the engine's own explanation of the asked move: the measure (a ratio such as gross
-                                   margin = (revenue - cost) / revenue, recomputed from sums; never an average of row
-                                   ratios), the period (the latest quarter/month/year in the slice, against the one
-                                   before and the same one a year earlier), the slice (values of grouping columns
-                                   named in the question, e.g. region = EMEA), and the change split by each grouping
-                                   column into rate and mix effects (a flow: each group's contribution). Every figure
-                                   is computed here; the sentences are filled from those figures.
-  answer(state, question, sql, chart_spec)   all of it for the page: the SQL to run (the AI's, or the engine's own
-                                   when there is none or it is refused), its result, the explanation and the chart spec
-                                   (the AI's, checked against the chart menu and the kept columns, or the engine's).
+  check_sql(sql, cols, hidden)   the static check (one read-only SELECT/WITH; no PRAGMA/ATTACH/DETACH/INSERT/UPDATE/
+                                 DELETE/CREATE/DROP/ALTER/REPLACE/VACUUM/load_extension; only kept_rows and its columns).
+                                 The worker's /analyst runs the same rules (src/analyst.js checkSql) on a planner's `sql`
+                                 step; nl_analyst._check_step runs this one again; the SQLite authorizer is the real fence.
+  run_sql(state, sql)            runs a query under the authorizer: reads of kept_rows only, withheld/coded columns denied,
+                                 functions from an allowlist, nothing that writes; PRAGMA query_only; a row cap (ROW_CAP
+                                 returned) and a time cap (progress handler). Small cells: a result row aggregating fewer
+                                 than SMALL_CELL source rows is hidden when the engine can count them (the outer SELECT
+                                 reads kept_rows directly), and the answer says plainly when it cannot.
+  read_question(state, q)        the asked move by the engine's rules: the measure (gross margin = (revenue - cost) /
+                                 revenue; a price; a named flow or level), the period grain, the slice (values of grouping
+                                 columns the question names, e.g. EMEA).
+  engine_sql(state, q)           the query the engine writes for that move: the measure by period in the slice.
+  plan_steps(state, q)           the steps the engine plans when no AI planner does: `sql`, then `rate_mix` (a ratio) or
+                                 the loop's own `change`/`mix` (a flow/an average) by each grouping column.
 
-state is nl_browser._LAST_ANALYST: {"df", "kinds", "hint", "shape", "hidden"}.
+state: {"df", "kinds", "shape", "hidden"} (nl_browser._LAST_ANALYST, or nl_analyst.op_sql's own).
 """
 from __future__ import annotations
 
@@ -267,7 +264,7 @@ def _connection(state: Dict[str, Any]) -> sqlite3.Connection:
     """The kept rows in an in-memory SQLite table, made once per frame and read-only from then on."""
     import pandas as pd
     df = state["df"]
-    key = id(df)
+    key = state.get("key", id(df))
     con = state.get("_sql_con")
     if con is not None and state.get("_sql_key") == key:
         return con
@@ -578,345 +575,6 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
     return {"measure": measure, "grain": grain, "slice": sl, "notes": notes}
 
 
-# --------------------------------------------------------------------------------------------- the decomposition
-GRAIN_WORDS = {"Q": ("quarter", "quarters"), "M": ("month", "months"), "Y": ("year", "years")}
-YEAR_BACK = {"Q": 4, "M": 12, "Y": 1}
-
-
-def _pname(p: Any, grain: str) -> str:
-    s = str(p)
-    if grain == "Q":
-        return s[:4] + " Q" + s[-1]
-    return s
-
-
-def _frame_for(state: Dict[str, Any], rq: Dict[str, Any]):
-    import numpy as np
-    import pandas as pd
-    df = state["df"]
-    date = _date_col(state)
-    m = rq["measure"]
-    sub = df
-    for c, v in rq["slice"].items():
-        sub = sub[sub[c].astype(str).str.strip() == v]
-    d = pd.to_datetime(sub[date], errors="coerce")
-    sub = sub.assign(__p=d.dt.to_period(rq["grain"]))
-    sub = sub[sub["__p"].notna()]
-    num = np.zeros(len(sub))
-    ok = np.ones(len(sub), dtype=bool)
-    for col, sg in zip(m["num"], m["num_sign"]):
-        v = pd.to_numeric(sub[col], errors="coerce").to_numpy(dtype=float)
-        ok &= ~np.isnan(v)
-        num = num + sg * np.nan_to_num(v)
-    if m["den"] == "__rows__":
-        den = np.ones(len(sub))
-    elif m["den"]:
-        v = pd.to_numeric(sub[m["den"]], errors="coerce").to_numpy(dtype=float)
-        ok &= ~np.isnan(v)
-        den = np.nan_to_num(v)
-    else:
-        den = None
-    sub = sub.assign(__n=num)
-    if den is not None:
-        sub = sub.assign(__d=den)
-    dropped = int((~ok).sum())
-    return sub[ok], date, dropped
-
-
-def _value(n: float, d: Optional[float], m: Dict[str, Any]) -> Optional[float]:
-    if m["kind"] == "flow":
-        return n
-    if not d:
-        return None
-    v = n / d
-    return v * 100.0 if m["pct"] else v
-
-
-def _fmt_num(v: float, dec: Optional[int] = None) -> str:
-    if v is None:
-        return "n/a"
-    if dec is None:
-        dec = 0 if abs(v) >= 100 else (1 if abs(v) >= 10 else 2)
-    s = format(abs(v), ",.%df" % dec)
-    return ("-" if v < 0 and s.strip("0.,") else "") + s
-
-
-def _fmt_val(v: Optional[float], m: Dict[str, Any]) -> str:
-    if v is None:
-        return "n/a"
-    return ("%.1f%%" % v) if m["pct"] else _fmt_num(v)
-
-
-def _fmt_chg(v: float, m: Dict[str, Any], signed: bool = True) -> str:
-    if m["pct"]:
-        s = "%.1f points" % abs(v)
-        if s.startswith("0.0"):
-            return "0.0 points"
-        return (("+" if v > 0 else "-") + s) if signed else s
-    if m["kind"] == "flow":
-        s = _fmt_num(abs(v))
-        return (("+" if v > 0 else "-") + s) if signed and s.strip("0.,") else s
-    s = _fmt_num(abs(v), 3 if abs(v) < 10 else None)
-    return (("+" if v > 0 else "-") + s) if signed and s.strip("0.,") else s
-
-
-def _decompose(sub: Any, dim: str, p0: Any, p1: Any, m: Dict[str, Any]) -> Dict[str, Any]:
-    """The change of the measure between periods p0 and p1, split by the groups of dim. A ratio M = sum(N)/sum(D):
-    with w = D_g/D (each group's share of the denominator) and r = N_g/D_g (its own ratio), the change is
-    sum(w1 r1 - w0 r0) = rate + mix, rate_g = (w0+w1)/2 (r1-r0), mix_g = (w1-w0) ((r0+r1)/2 - (R0+R1)/2): exact, so the
-    groups' effects add up to the whole change. A flow: each group's contribution N1_g - N0_g. A group with fewer than
-    SMALL_CELL rows in either period is pooled into one "fewer than 5 rows" group (the sums stay exact)."""
-    g = sub[sub["__p"].isin([p0, p1])]
-    lab = g[dim].astype(str).str.strip().where(g[dim].notna(), "(blank)")
-    g = g.assign(__g=lab.to_numpy())
-    agg = {"__n": "sum"}
-    if "__d" in g:
-        agg["__d"] = "sum"
-    t = g.groupby(["__g", "__p"]).agg(agg)
-    cnt = g.groupby(["__g", "__p"]).size()
-    groups = sorted(set(g["__g"]))
-    small = [x for x in groups if min(int(cnt.get((x, p0), 0)), int(cnt.get((x, p1), 0))) < SMALL_CELL]
-    pooled = "groups with fewer than %d rows" % SMALL_CELL
-
-    def get(x, p, col):
-        if x == pooled:
-            return float(sum(t[col].get((y, p), 0.0) for y in small))
-        return float(t[col].get((x, p), 0.0))
-
-    def n_rows(x, p):
-        if x == pooled:
-            return int(sum(int(cnt.get((y, p), 0)) for y in small))
-        return int(cnt.get((x, p), 0))
-
-    keys = [x for x in groups if x not in small] + ([pooled] if small else [])
-    scale = 100.0 if m["pct"] else 1.0
-    segs = []
-    if m["kind"] == "flow":
-        for x in keys:
-            n0, n1 = get(x, p0, "__n"), get(x, p1, "__n")
-            segs.append({"group": x, "rows": [n_rows(x, p0), n_rows(x, p1)], "value": [n0, n1], "effect": n1 - n0,
-                         "contribution": n1 - n0, "pooled": x == pooled})
-        tot = sum(s["effect"] for s in segs)
-        return {"dimension": dim, "kind": "flow", "total": tot, "segments": segs, "pooled": small}
-    N0 = sum(get(x, p0, "__n") for x in keys)
-    D0 = sum(get(x, p0, "__d") for x in keys)
-    N1 = sum(get(x, p1, "__n") for x in keys)
-    D1 = sum(get(x, p1, "__d") for x in keys)
-    if D0 <= 0 or D1 <= 0:
-        return {"dimension": dim, "kind": "ratio", "error": "the denominator is not positive in one of the periods"}
-    R0, R1 = N0 / D0, N1 / D1
-    Rbar = (R0 + R1) / 2
-    residual_bits = 0.0
-    for x in keys:
-        n0, d0, n1, d1 = get(x, p0, "__n"), get(x, p0, "__d"), get(x, p1, "__n"), get(x, p1, "__d")
-        w0, w1 = d0 / D0, d1 / D1
-        if d0 > 0 and d1 > 0:
-            r0, r1 = n0 / d0, n1 / d1
-        elif d1 > 0:
-            r1 = n1 / d1
-            r0 = r1
-        elif d0 > 0:
-            r0 = n0 / d0
-            r1 = r0
-        else:
-            r0 = r1 = 0.0
-            residual_bits += (n1 / D1 - n0 / D0)
-        rate = (w0 + w1) / 2 * (r1 - r0)
-        mix = (w1 - w0) * ((r0 + r1) / 2 - Rbar)
-        segs.append({"group": x, "rows": [n_rows(x, p0), n_rows(x, p1)], "share": [w0, w1],
-                     "ratio": [r0 * scale if d0 > 0 else None, r1 * scale if d1 > 0 else None],
-                     "rate": rate * scale, "mix": mix * scale, "effect": (rate + mix) * scale, "pooled": x == pooled})
-    rate_t = sum(s["rate"] for s in segs)
-    mix_t = sum(s["mix"] for s in segs)
-    total = (R1 - R0) * scale
-    return {"dimension": dim, "kind": "ratio", "total": total, "rate": rate_t, "mix": mix_t,
-            "residual": total - rate_t - mix_t, "segments": segs, "pooled": small,
-            "overall": [R0 * scale, R1 * scale]}
-
-
-def _dims(state: Dict[str, Any], sub: Any, rq: Dict[str, Any], date: Optional[str]) -> List[str]:
-    kinds = state.get("kinds") or {}
-    out = []
-    for c in _cols(state):
-        if kinds.get(c) != "text" or c == date or c in rq["slice"]:
-            continue
-        k = _distinct(sub[c])
-        if 2 <= k <= MAX_GROUPS and k < max(3, 0.5 * len(sub)):
-            out.append(c)
-    return out
-
-
-def explain(state: Dict[str, Any], question: str) -> Dict[str, Any]:
-    """The engine's own explanation of the asked move (see the module's docstring). Every figure is computed here."""
-    if state.get("df") is None:
-        return {"ok": False, "why": "no file has been analysed"}
-    rq = read_question(state, question)
-    date = _date_col(state)
-    m = rq["measure"]
-    base = {"question": str(question or "")[:300], "slice": rq["slice"], "grain": rq["grain"], "notes": list(rq["notes"])}
-    if m is None:
-        return dict(base, ok=False, why=(rq["notes"] or ["The engine found no measure to read in this file."])[0])
-    base["measure"] = {k: m[k] for k in ("kind", "label", "num", "num_sign", "den", "pct", "formula")}
-    if not date:
-        return dict(base, ok=False, why="The file has no date column the engine kept, so periods cannot be compared.")
-    sub, date, dropped = _frame_for(state, rq)
-    if dropped:
-        base["notes"].append("%s kept %s had no readable %s and %s left out of these sums." %
-                             (format(dropped, ","), "row" if dropped == 1 else "rows", " or ".join(
-                                 [c for c in m["num"]] + ([m["den"]] if m["den"] and m["den"] != "__rows__" else [])),
-                              "is" if dropped == 1 else "are"))
-    if not len(sub):
-        return dict(base, ok=False, why="No kept row matches %s." % _slice_words(rq["slice"]))
-    import pandas as pd
-    grain = rq["grain"]
-    per = sorted(sub["__p"].unique())
-    p1 = per[-1]
-    p0 = p1 - 1
-    py = p1 - YEAR_BACK[grain]
-    have = set(per)
-    # the period is partial when the FILE's data stop before it ends (a slice with no order on the last day is not)
-    last_day = pd.to_datetime(state["df"][date], errors="coerce").max()
-    partial = bool(last_day is not None and not pd.isna(last_day) and last_day.normalize() < p1.end_time.normalize())
-    tot = sub.groupby("__p").agg(n=("__n", "sum"), rows=("__n", "size"), **({"d": ("__d", "sum")} if "__d" in sub else {}))
-
-    def val(p):
-        if p not in have:
-            return None
-        r = tot.loc[p]
-        return _value(float(r["n"]), float(r["d"]) if "d" in r else None, m)
-
-    v1, v0, vy = val(p1), val(p0), val(py)
-    period = {"grain": grain, "latest": _pname(p1, grain), "previous": _pname(p0, grain) if p0 in have else None,
-              "year_ago": _pname(py, grain) if py in have else None, "partial": partial,
-              "latest_last_day": None if pd.isna(last_day) else last_day.strftime("%Y-%m-%d"),
-              "rows": {"latest": int(tot.loc[p1]["rows"]), "previous": int(tot.loc[p0]["rows"]) if p0 in have else 0,
-                       "year_ago": int(tot.loc[py]["rows"]) if py in have else 0}}
-    series = [{"period": _pname(p, grain), "value": val(p), "rows": int(tot.loc[p]["rows"])} for p in per]
-    out = dict(base, ok=True, period=period, values={"latest": v1, "previous": v0, "year_ago": vy}, series=series)
-    if p0 not in have:
-        out["why"] = "The slice has no rows in the %s before %s, so there is no change to explain." % (GRAIN_WORDS[grain][0], period["latest"])
-        out["text"] = [out["why"]]
-        out["ok"] = False
-        return out
-    dims = _dims(state, sub[sub["__p"].isin([p0, p1])], rq, date)
-    comps = {}
-    for key, pp in (("vs_previous", p0), ("vs_year_ago", py)):
-        if pp not in have:
-            continue
-        comps[key] = {"from": _pname(pp, grain), "to": period["latest"],
-                      "change": (v1 - val(pp)) if (v1 is not None and val(pp) is not None) else None,
-                      "by": [d for d in (_decompose(sub, dim, pp, p1, m) for dim in dims) if "error" not in d]}
-    out["comparisons"] = comps
-    out["drivers"] = _drivers(comps.get("vs_previous"), m, v1, _slice_words(rq["slice"]))
-    out["text"] = _sentences(out, m)
-    return out
-
-
-def _slice_words(sl: Dict[str, str]) -> str:
-    return " and ".join("%s (%s)" % (v, _words(c)) for c, v in sl.items()) if sl else "the whole file"
-
-
-def _drivers(comp: Optional[Dict[str, Any]], m: Dict[str, Any], overall: Optional[float] = None,
-             where: str = "the slice") -> List[Dict[str, Any]]:
-    """The largest single effects in the direction of the change, across every split (each split is a view of the
-    same change: the drivers name where it shows most, never a sum across splits)."""
-    if not comp or comp.get("change") is None:
-        return []
-    sign = -1 if comp["change"] < 0 else 1
-    cands = []
-    for b in comp["by"]:
-        for s in b["segments"]:
-            if s.get("pooled"):
-                continue
-            if m["kind"] == "flow":
-                parts = [("contribution", s["contribution"])]
-            else:
-                parts = [("rate", s["rate"]), ("mix", s["mix"])]
-            for kind, eff in parts:
-                if eff * sign > 0:
-                    cands.append({"dimension": b["dimension"], "group": s["group"], "effect_kind": kind, "effect": eff,
-                                  "share": s.get("share"), "ratio": s.get("ratio"), "value": s.get("value"),
-                                  "rows": s["rows"]})
-    cands.sort(key=lambda x: -abs(x["effect"]))
-    out = cands[:TOP_DRIVERS]
-    for d in out:
-        d["text"] = _driver_text(d, m, overall, where)
-    return out
-
-
-def _driver_text(d: Dict[str, Any], m: Dict[str, Any], overall: Optional[float] = None, where: str = "the slice") -> str:
-    g, dim = d["group"], _words(d["dimension"])
-    if d["effect_kind"] == "contribution":
-        v0, v1 = d["value"]
-        return "%s (%s): %s to %s, %s." % (g, dim, _fmt_num(v0), _fmt_num(v1), _fmt_chg(d["effect"], m))
-    w0, w1 = d["share"]
-    r0, r1 = d["ratio"]
-    den = "rows" if m["den"] == "__rows__" else _words(m["den"])
-    if d["effect_kind"] == "mix":
-        own = r1 if r1 is not None else r0
-        return ("%s (%s), mix: its share of %s went from %.1f%% to %.1f%%, and its own %s (%s) is %s the %s of %s; "
-                "%s." % (g, dim, den, w0 * 100, w1 * 100, m["label"], _fmt_val(own, m),
-                         "below" if overall is not None and own is not None and own < overall else "above",
-                         _fmt_val(overall, m), where, _fmt_chg(d["effect"], m)))
-    return ("%s (%s), rate: its own %s went from %s to %s; %s." %
-            (g, dim, m["label"], _fmt_val(r0, m), _fmt_val(r1, m), _fmt_chg(d["effect"], m)))
-
-
-def _sentences(o: Dict[str, Any], m: Dict[str, Any]) -> List[str]:
-    P = o["period"]
-    v = o["values"]
-    sl = _slice_words(o["slice"])
-    lab = m["label"][0].upper() + m["label"][1:]
-    lines = []
-    c0 = v["latest"] - v["previous"] if v["latest"] is not None and v["previous"] is not None else None
-    if c0 is None:
-        lines.append("%s in %s was %s in %s." % (lab, sl, _fmt_val(v["latest"], m), P["latest"]))
-    else:
-        word = "down" if c0 < 0 else ("up" if c0 > 0 else "unchanged,")
-        s = "%s in %s was %s in %s, %s %s from %s in %s" % (lab, sl, _fmt_val(v["latest"], m), P["latest"], word,
-                                                          _fmt_chg(c0, m, signed=False), _fmt_val(v["previous"], m), P["previous"])
-        if v["year_ago"] is not None:
-            cy = v["latest"] - v["year_ago"]
-            s += ", and %s %s from %s in %s" % ("down" if cy < 0 else "up", _fmt_chg(cy, m, signed=False),
-                                                 _fmt_val(v["year_ago"], m), P["year_ago"])
-        lines.append(s + ".")
-    rows = P["rows"]
-    lines.append("How it is computed: %s; from %s kept rows in %s and %s in %s." %
-                 (m["formula"] + ("" if m["kind"] == "flow" else ", never an average of row-level ratios"),
-                  format(rows["latest"], ","), P["latest"], format(rows["previous"], ","), P["previous"]))
-    if P["partial"]:
-        lines.append("%s is not complete in the data: its last kept row is dated %s, so it is a part-%s against a whole one."
-                     % (P["latest"], P["latest_last_day"], GRAIN_WORDS[P["grain"]][0]))
-    comp = (o.get("comparisons") or {}).get("vs_previous")
-    if comp and comp["by"]:
-        lines.append("Each split below adds up to the whole change on its own (they are views of the same move, not "
-                     "to be added together):")
-        for b in comp["by"]:
-            if m["kind"] == "flow":
-                top = sorted(b["segments"], key=lambda s: -abs(s["effect"]))[:2]
-                lines.append("By %s: %s." % (_words(b["dimension"]), "; ".join(
-                    "%s %s" % (s["group"], _fmt_chg(s["effect"], m)) for s in top)))
-            else:
-                big = max(b["segments"], key=lambda s: abs(s["effect"]))
-                lines.append("By %s: rate effect %s, mix effect %s; the largest single group is %s (%s)." %
-                             (_words(b["dimension"]), _fmt_chg(b["rate"], m), _fmt_chg(b["mix"], m), big["group"],
-                              _fmt_chg(big["effect"], m)))
-    if o.get("drivers"):
-        lines.append("The largest drivers, as the engine computed them:")
-        lines.extend("%d. %s" % (i + 1, d["text"]) for i, d in enumerate(o["drivers"]))
-    yo = (o.get("comparisons") or {}).get("vs_year_ago")
-    if yo and yo["by"] and yo.get("change") is not None and m["kind"] != "flow":
-        b = max(yo["by"], key=lambda b: max(abs(b["rate"]), abs(b["mix"])))
-        lines.append("Against %s (%s): by %s, rate effect %s and mix effect %s." %
-                     (yo["from"], _fmt_chg(yo["change"], m), _words(b["dimension"]), _fmt_chg(b["rate"], m),
-                      _fmt_chg(b["mix"], m)))
-    pooled = sorted({d for b in (comp or {}).get("by", []) for d in b.get("pooled") or []})
-    if pooled:
-        lines.append("Groups with fewer than %d rows in either period are pooled, never named (%d pooled)." %
-                     (SMALL_CELL, len(pooled)))
-    return lines
-
-
 # --------------------------------------------------------------------------------------------- the engine's own SQL
 def _q(c: str) -> str:
     return '"%s"' % str(c).replace('"', '""')
@@ -953,118 +611,44 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
             "\nGROUP BY period\nORDER BY period")
 
 
-# --------------------------------------------------------------------------------------------- the chart spec
-def _menu() -> Dict[str, Any]:
-    try:
-        import nl_viz
-        return {k: v for k, v in nl_viz.REGISTRY.items()}
-    except Exception:  # noqa: BLE001
-        return {}
+# --------------------------------------------------------------------------------------------- the engine's own plan
+GRAIN_OF = {"Q": "quarter", "M": "month", "Y": "year"}
 
 
-_TITLE_OK_DIGITS = re.compile(r"\b(19|20)\d\d\b|\bQ[1-4]\b")
-
-
-def check_chart(spec: Any, state: Dict[str, Any]) -> Dict[str, Any]:
-    """{"ok": True, "spec"} or {"ok": False, "reason"}: a chart from the menu, its arguments kept columns."""
-    if not isinstance(spec, dict):
-        return {"ok": False, "reason": "no chart spec"}
-    menu = _menu()
-    chart = spec.get("chart")
-    if not isinstance(chart, str) or chart not in menu:
-        return {"ok": False, "reason": "%s is not on the chart menu" % chart}
-    args = spec.get("args") if isinstance(spec.get("args"), list) else []
-    cols = set(_cols(state))
-    hid = {h.lower() for h in state.get("hidden") or []}
-    allowed = len(menu[chart].get("args") or []) + (12 if menu[chart].get("repeat") else 0)
-    if len(args) > allowed:
-        return {"ok": False, "reason": "%s takes at most %d arguments" % (chart, allowed)}
-    for a in args:
-        if not isinstance(a, str) or a not in cols or a.lower() in hid:
-            return {"ok": False, "reason": "%r is not a kept column" % (a,)}
-    title = spec.get("title") if isinstance(spec.get("title"), str) else ""
-    title = re.sub(r"\s+", " ", title).strip()[:120]
-    if re.search(r"\d", _TITLE_OK_DIGITS.sub("", title)):
-        title = ""                      # a title never carries a figure
-    return {"ok": True, "spec": {"chart": chart, "args": list(args), "title": title}}
-
-
-def default_chart(state: Dict[str, Any], ex: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The engine's chart for the explained move: the split with the largest effect, as a bar of the measure's
-    numerator (the dashboard track recomputes the ratio from measure_def)."""
-    if not ex.get("ok"):
-        return None
-    m = ex["measure"]
-    drv = ex.get("drivers") or []
-    dim = drv[0]["dimension"] if drv else None
-    menu = _menu()
-    where = " in " + ", ".join(ex["slice"].values()) if ex.get("slice") else ""
-    if dim and "bar_chart" in menu:
-        # the bar draws the measure's base column (the menu's bar_chart takes one column); the pin's measure_def lets
-        # the dashboard recompute the ratio itself, so the title names what is drawn
-        return {"chart": "bar_chart", "args": [dim, m["num"][0]],
-                "title": "%s by %s%s" % (_words(m["num"][0]).capitalize(), _words(dim), where)}
-    if "line_chart" in menu:
-        return {"chart": "line_chart", "args": [m["num"][0]], "title": m["label"][0].upper() + m["label"][1:]}
-    return None
-
-
-# --------------------------------------------------------------------------------------------- all of it
-def answer(state: Dict[str, Any], question: str, sql: Any = "", chart_spec: Any = None, why: Any = "") -> Dict[str, Any]:
-    """The SQL panel's record: {question, sql, sql_by: ai|engine, why, ai_refused, query, explain, chart, pin}."""
-    question = re.sub(r"\s+", " ", str(question or "")).strip()[:300]
-    out: Dict[str, Any] = {"version": 1, "question": question, "table": TABLE}
+def plan_steps(state: Dict[str, Any], question: str, dims: Optional[List[str]] = None, max_steps: int = 4) -> List[Dict[str, Any]]:
+    """The analyst steps the engine plans for a question when no AI planner does (the AI is off, or its round failed):
+    one `sql` step (engine_sql: the asked measure by period in the asked slice), then the move split by the shape's
+    grouping columns: `rate_mix` for a ratio (gross margin, a price per unit, an average), the loop's own `change`
+    with by for a flow. Steps in nl_analyst's typed form {op, args, why}; run_steps checks them like any planner's."""
     if state.get("df") is None:
-        out.update(ok=False, error="no file has been analysed")
+        return []
+    rq = read_question(state, question)
+    m = rq["measure"]
+    out: List[Dict[str, Any]] = []
+    sql = engine_sql(state, question)
+    if sql:
+        out.append({"op": "sql", "args": {"sql": sql}, "why": "the asked measure by period in the asked slice, as SQL"})
+    if not m:
         return out
-    ai_sql = sql if isinstance(sql, str) and sql.strip() else ""
-    ai_refused = ""
-    query = None
-    if ai_sql:
-        query = run_sql(state, ai_sql)
-        if query.get("ok"):
-            out["sql"], out["sql_by"] = query["sql"], "ai"
-            w = str(why or "")[:300]
-            out["why"] = "" if re.search(r"\d", w) else w
+    where = {c: v for c, v in list(rq["slice"].items())[:2]}
+    shape = state.get("shape") or {}
+    pool = [d for d in (dims if dims is not None else (shape.get("dimensions") or [])) if d not in rq["slice"]]
+    for by in pool[: max(0, max_steps - len(out))]:
+        if m["kind"] == "ratio" and m["den"] == "__rows__":
+            # an average: the loop's own mix op splits it by rows
+            out.append({"op": "mix", "args": {"measure": m["num"][0], "by": by},
+                        "why": "the change of the average split into inside the groups and between them, by " + by})
+        elif m["kind"] == "ratio":
+            args: Dict[str, Any] = {"measure": m["num"][0], "denominator": m["den"], "by": by,
+                                    "grain": GRAIN_OF[rq["grain"]]}
+            if len(m["num"]) > 1:
+                args["less"] = m["num"][1]
+            if where:
+                args["where"] = dict(where)
+            out.append({"op": "rate_mix", "args": args, "why": "the change of the ratio split into rate and mix by " + by})
         else:
-            ai_refused = query.get("error") or "refused"
-            query = None
-    if query is None:
-        es = engine_sql(state, question)
-        if es:
-            query = run_sql(state, es)
-            out["sql"], out["sql_by"] = es, "engine"
-            out["why"] = "The engine's own query: the asked measure by period in the asked slice."
-        else:
-            query = {"ok": False, "error": "the engine found no measure and date to write a query for"}
-            out["sql"], out["sql_by"] = "", "engine"
-    out["ai_refused"] = ai_refused
-    out["query"] = query
-    ex = explain(state, question)
-    out["explain"] = ex
-    chart = None
-    chart_refused = ""
-    if chart_spec is not None:
-        c = check_chart(chart_spec, state)
-        if c["ok"]:
-            chart = c["spec"]
-            chart["by"] = "ai"
-        else:
-            chart_refused = c["reason"]
-    if chart is None:
-        chart = default_chart(state, ex)
-        if chart:
-            chart["by"] = "engine"
-    if chart and not chart.get("title"):
-        d = default_chart(state, ex)
-        chart["title"] = (d or {}).get("title") or ("Chart for: " + question)[:120]
-    out["chart"] = chart
-    out["chart_refused"] = chart_refused
-    if chart:
-        out["pin"] = {"chart": chart["chart"], "args": chart["args"], "title": chart["title"],
-                      "why": "Answers: " + question, "source": "ask-sql", "question": question,
-                      "sql": out.get("sql") or "", "filters": [{"column": c, "value": v} for c, v in (ex.get("slice") or {}).items()],
-                      "measure_def": ex.get("measure") if ex.get("ok") else None,
-                      "period": ex.get("period") if ex.get("ok") else None}
-    out["ok"] = bool(query.get("ok") or ex.get("ok"))
-    return out
+            args = {"measure": m["num"][0], "by": by}
+            if where:
+                args["where"] = dict(where)
+            out.append({"op": "change", "args": args, "why": "each group's part of the change, by " + by})
+    return out[:max_steps]

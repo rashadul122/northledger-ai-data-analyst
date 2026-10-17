@@ -39,6 +39,7 @@ AS_OF = "2026-10-01"
 SAMPLE = os.path.join(SITE, "engine", "sample-sales-synthetic.csv")
 QUESTION = "Why is gross margin down in EMEA this quarter?"
 _STATE = {}
+_REP = {}
 
 
 def sales_state():
@@ -48,6 +49,7 @@ def sales_state():
             rep = nb.run(f.read(), "sample-sales-synthetic.csv", "", {}, AS_OF)
         assert rep["ok"], rep["error"]
         _STATE.update(dict(nb._LAST_ANALYST))
+        _REP.update(rep)
     return _STATE
 
 
@@ -180,9 +182,9 @@ def test_small_cells_are_hidden_or_said_plainly():
     assert sub["ok"] and sub["small_cells"]["state"] == "not_feasible" and "not" in sub["small_cells"]["note"], sub
 
 
-# ----------------------------------------------------------------------------------------------- the explanation
+# ----------------------------------------------------------------------------------------------- the analyst steps
 def _pandas_decompose(e, dim, p0, p1):
-    """Rate and mix by group, recomputed with pivot tables (independent of nl_sql's loop)."""
+    """Rate and mix by group, recomputed with pivot tables (independent of nl_analyst.rate_mix_parts)."""
     g = e[e.q.isin([p0, p1])]
     rev = g.pivot_table(index=dim, columns="q", values="revenue", aggfunc="sum", fill_value=0.0)
     cost = g.pivot_table(index=dim, columns="q", values="cost", aggfunc="sum", fill_value=0.0)
@@ -202,6 +204,19 @@ def _pandas_decompose(e, dim, p0, p1):
     return rate, mix, (tot[p1] - tot[p0]) * 100, W, R
 
 
+def _asked(question=QUESTION):
+    """The engine's own plan for the question, run by the analyst loop as a planner's round (analyst_more_json)."""
+    import nl_analyst as na
+    st = sales_state()
+    steps = ns.plan_steps(st, question)
+    out = na.run_steps(st["df"], st["kinds"], steps, st["hint"], prior=[])
+    return steps, out
+
+
+def _num(step, key):
+    return step["numbers"][key]["value"]
+
+
 def test_the_question_is_read():
     st = sales_state()
     rq = ns.read_question(st, QUESTION)
@@ -211,131 +226,157 @@ def test_the_question_is_read():
     assert ns.read_question(st, "How did revenue in APAC move this month?")["grain"] == "M"
     rq = ns.read_question(st, "How did revenue for Online in Japan change?")
     assert rq["slice"] == {"country": "Japan", "channel": "Online"} and rq["measure"]["kind"] == "flow", rq
+    steps = ns.plan_steps(st, QUESTION)
+    assert [s["op"] for s in steps] == ["sql", "rate_mix", "rate_mix", "rate_mix"], steps
+    assert {s["args"]["by"] for s in steps[1:]} == {"country", "product_line", "channel"}
+    assert all(s["args"]["where"] == {"region": "EMEA"} and s["args"]["less"] == "cost" for s in steps[1:])
+    # a flow reuses the loop's own change op; an average its mix op
+    assert {s["op"] for s in ns.plan_steps(st, "Why did revenue fall in EMEA this quarter?")[1:]} == {"change"}
 
 
-def test_each_split_adds_up_to_the_whole_change():
-    st = sales_state()
-    for q in (QUESTION, "Why did revenue fall in EMEA this quarter?", "What moved the average price per unit in APAC?"):
-        ex = ns.explain(st, q)
-        assert ex["ok"], (q, ex.get("why"))
-        for key, comp in ex["comparisons"].items():
-            assert comp["by"], (q, key)
-            for b in comp["by"]:
-                s = sum(x["effect"] for x in b["segments"])
-                assert abs(s - comp["change"]) < 1e-6 * max(1.0, abs(comp["change"])), (q, key, b["dimension"], s, comp["change"])
-                if b["kind"] == "ratio":
-                    assert abs(b["rate"] + b["mix"] - comp["change"]) < 1e-9 * max(1, abs(comp["change"])), (q, b["dimension"])
-                    assert abs(b["residual"]) < 1e-9
+def test_rate_mix_parts_add_up():
+    import nl_analyst as na
+    rng = np.random.default_rng(3)
+    for _ in range(50):
+        k = int(rng.integers(2, 7))
+        n0 = {i: float(rng.uniform(1, 50)) for i in range(k)}
+        d0 = {i: float(rng.uniform(50, 100)) for i in range(k)}
+        n1 = {i: float(rng.uniform(1, 50)) for i in range(k) if i == 0 or rng.random() > 0.2}
+        d1 = {i: float(rng.uniform(50, 100)) for i in n1}
+        p = na.rate_mix_parts(n0, d0, n1, d1, 100.0)
+        assert abs(p["rate"] + p["mix"] - p["total"]) < 1e-9, p
+        assert abs(sum(g["rate"] + g["mix"] for g in p["groups"].values()) - p["total"]) < 1e-9
+    # an average is the same split with rows as the denominator: op_mix's within + mix total equals ours
+    p = na.rate_mix_parts({"a": 10.0, "b": 40.0}, {"a": 5.0, "b": 5.0}, {"a": 30.0, "b": 20.0}, {"a": 15.0, "b": 5.0})
+    assert abs(p["total"] - (50 / 20 - 50 / 10)) < 1e-12
 
 
 def test_the_planted_causes_are_found_with_their_magnitudes():
-    st = sales_state()
-    ex = ns.explain(st, QUESTION)
-    assert ex["ok"], ex.get("why")
+    steps, out = _asked()
+    assert not out["refused"], out["refused"]
+    by_step = {s["args"].get("by"): s for s in out["steps"] if s["op"] == "rate_mix"}
+    assert all(s["ok"] for s in out["steps"]), [s["refused"] for s in out["steps"]]
     d = raw()
     e = d[d.region == "EMEA"]
     p1, p0, py = pd.Period("2026Q3"), pd.Period("2026Q2"), pd.Period("2025Q3")
     agg = e.groupby("q")[["revenue", "cost"]].sum()
-    gm = (agg.revenue - agg.cost) / agg.revenue * 100
-    assert ex["period"]["latest"] == "2026 Q3" and ex["period"]["previous"] == "2026 Q2" and ex["period"]["year_ago"] == "2025 Q3"
-    assert not ex["period"]["partial"], ex["period"]
-    for k, p in (("latest", p1), ("previous", p0), ("year_ago", py)):
-        assert abs(ex["values"][k] - gm[p]) < 1e-9, (k, ex["values"][k], gm[p])
-    comp = ex["comparisons"]["vs_previous"]
-    by = {b["dimension"]: b for b in comp["by"]}
-    assert set(by) == {"country", "product_line", "channel"}, set(by)
+    gm = (agg.revenue - agg.cost) / agg.revenue
+    for s in by_step.values():
+        assert abs(_num(s, "prev") - gm[p0]) < 1e-12 and abs(_num(s, "cur") - gm[p1]) < 1e-12
+        assert abs(_num(s, "year_value") - gm[py]) < 1e-12
+        assert abs(_num(s, "change") - (gm[p1] - gm[p0]) * 100) < 1e-9
+        assert abs(_num(s, "rate") + _num(s, "mix") - _num(s, "change")) < 1e-9, "the split adds up to the change"
+        assert s["numbers"]["prev_label"]["text"] == "2026 Q2" and s["numbers"]["cur_label"]["text"] == "2026 Q3"
+        assert s["numbers"]["partial"]["text"] == ""
 
-    # cause 1, the mix: Accessories' share of EMEA revenue jumps; its mix effect is negative and the biggest of its split
-    rate, mix, chg, W, R = _pandas_decompose(e, "product_line", p0, p1)
-    seg = {s["group"]: s for s in by["product_line"]["segments"]}
-    for g in rate.index:
-        if g == "__pool":
-            continue
-        assert abs(seg[g]["rate"] - rate[g]) < 1e-9 and abs(seg[g]["mix"] - mix[g]) < 1e-9, (g, seg[g], rate[g], mix[g])
-    assert abs(by["product_line"]["mix"] - mix.sum()) < 1e-9 and abs(by["product_line"]["rate"] - rate.sum()) < 1e-9
+    # cause 1, the mix: Accessories' share of EMEA revenue jumps; by product line the move is mostly mix, led by it
+    rate, mix, _chg, W, R = _pandas_decompose(e, "product_line", p0, p1)
+    s = by_step["product_line"]
+    assert abs(_num(s, "rate") - rate.sum()) < 1e-9 and abs(_num(s, "mix") - mix.sum()) < 1e-9
     assert mix.idxmin() == "Accessories" and mix["Accessories"] < -3.0, mix
-    assert W.loc["Accessories", p1] > 2 * W.loc["Accessories", p0], W.loc["Accessories"]
-    assert abs(by["product_line"]["mix"]) > abs(by["product_line"]["rate"]), "by product line the move is mostly mix"
+    assert W.loc["Accessories", p1] > 2 * W.loc["Accessories", p0]
+    assert s["numbers"]["top"]["text"] == "Accessories" and s["numbers"]["top_kind"]["text"] == "mix"
+    assert abs(_num(s, "top_effect") - mix["Accessories"]) < 1e-9
+    assert abs(_num(s, "top_w0") - W.loc["Accessories", p0]) < 1e-12 and abs(_num(s, "top_w1") - W.loc["Accessories", p1]) < 1e-12
+    rows = {r[0]: r for r in s["table"]["rows"]}
+    assert abs(rows["Accessories"][6] - round(mix["Accessories"], 4)) < 1e-9
 
-    # cause 2, the discount: Online's own margin falls (rate), the biggest rate effect by channel
+    # cause 2, the discount: Online's own margin falls (rate), the largest effect by channel
     rate_c, mix_c, _c, Wc, Rc = _pandas_decompose(e, "channel", p0, p1)
-    segc = {s["group"]: s for s in by["channel"]["segments"]}
-    assert abs(segc["Online"]["rate"] - rate_c["Online"]) < 1e-9, (segc["Online"], rate_c["Online"])
-    assert rate_c.idxmin() == "Online" and rate_c["Online"] < -5.0, rate_c
-    assert (Rc.loc["Online", p0] - Rc.loc["Online", p1]) * 100 > 15, Rc.loc["Online"]
+    s = by_step["channel"]
+    assert s["numbers"]["top"]["text"] == "Online" and s["numbers"]["top_kind"]["text"] == "rate"
+    assert abs(_num(s, "top_effect") - rate_c["Online"]) < 1e-9 and rate_c["Online"] < -5.0
+    assert (Rc.loc["Online", p0] - Rc.loc["Online", p1]) * 100 > 15
+    assert abs(_num(s, "top_r0") - Rc.loc["Online", p0]) < 1e-12
 
-    # the mix shows inside the two countries: their own margins fall (a rate effect by country), the others' do not
+    # the mix shows inside the two countries: their own margins fall (rate by country), the others' hold
     rate_k, _mk, _ck, _Wk, Rk = _pandas_decompose(e, "country", p0, p1)
-    segk = {s["group"]: s for s in by["country"]["segments"]}
+    s = by_step["country"]
+    assert s["numbers"]["top"]["text"] == "Germany" and s["numbers"]["top_kind"]["text"] == "rate"
+    assert abs(_num(s, "top_effect") - rate_k["Germany"]) < 1e-9
     for g in ("Germany", "France"):
-        assert abs(segk[g]["rate"] - rate_k[g]) < 1e-9 and rate_k[g] < -1.0, (g, rate_k[g])
+        assert rate_k[g] < -1.0, (g, rate_k[g])
     for g in ("United Kingdom", "Spain", "Italy"):
         assert rate_k[g] > -1.0, (g, rate_k[g])
-
-    # the drivers the engine names: the planted causes at the top, in the direction of the change
-    drv = [(x["dimension"], x["group"], x["effect_kind"]) for x in ex["drivers"]]
-    assert ("product_line", "Accessories", "mix") in drv[:3], drv
-    assert ("channel", "Online", "rate") in drv[:3], drv
-    assert ("country", "Germany", "rate") in drv[:3], drv
-    assert ("country", "France", "rate") in drv, drv
-    assert all(x["effect"] < 0 for x in ex["drivers"])
-
-    # the text: the lead sentence's figures are this test's own, rounded as printed
-    lead = ex["text"][0]
-    for v in (gm[p1], gm[p0], gm[py]):
-        assert ("%.1f%%" % v) in lead, (v, lead)
-    assert ("%.1f points" % abs(gm[p1] - gm[p0])) in lead, lead
-    assert "never an average" in ex["text"][1]
-    joined = " ".join(ex["text"])
-    for dname, b in by.items():
-        assert ("rate effect %+.1f points" % b["rate"]).replace("+-", "-") in joined.replace("rate effect +", "rate effect +"), (dname, joined)
+    rows = {r[0]: r for r in s["table"]["rows"]}
+    assert abs(rows["France"][5] - round(rate_k["France"], 4)) < 1e-9
 
 
-def test_the_answer_record():
-    st = sales_state()
-    a = ns.answer(st, QUESTION)
-    json.dumps(a, allow_nan=False)
-    assert a["ok"] and a["sql_by"] == "engine" and a["query"]["ok"], a.get("query")
-    q = a["query"]
-    last = q["rows"][-1]
+def test_every_number_in_an_answer_is_a_ledger_value():
+    _steps, out = _asked()
+    texts = {}
+    for s in out["steps"]:
+        for v in s["numbers"].values():
+            texts.setdefault(s["id"], set()).add(v["text"])
+    assert len(out["insights"]) == 4
+    for ins in out["insights"]:
+        (sid,) = ins["steps"]
+        filled = re.sub(r"\{[A-Z]\d+\.([a-z0-9_]+)\}", lambda m: "", ins["template"])
+        assert not re.search(r"\d", filled.replace("5 or more", "")), ins["template"]   # the template holds no figure
+    lead = out["insights"][1]["text"]
     d = raw()
     e = d[d.region == "EMEA"]
     agg = e.groupby("q")[["revenue", "cost"]].sum()
-    assert last[0] == "2026-Q3" and abs(last[q["columns"].index("gross_margin_pct")] - round((1 - agg.cost.iloc[-1] / agg.revenue.iloc[-1]) * 100, 4)) < 1e-9
-    assert a["chart"]["chart"] in ns._menu() and a["chart"]["by"] == "engine"
-    assert a["pin"]["source"] == "ask-sql" and a["pin"]["filters"] == [{"column": "region", "value": "EMEA"}]
-    assert a["pin"]["measure_def"]["den"] == "revenue"
-    # the AI's SQL, refused, falls back to the engine's and says why
-    b = ns.answer(st, QUESTION, "SELECT * FROM sqlite_master")
-    assert b["sql_by"] == "engine" and "sqlite_master" in b["ai_refused"], b["ai_refused"]
-    # the AI's SQL, run as written; its why with a digit is blanked; its chart checked
-    c = ns.answer(st, QUESTION, "SELECT channel, SUM(revenue) FROM kept_rows WHERE region = 'EMEA' GROUP BY channel",
-                  {"chart": "bar_chart", "args": ["channel", "revenue"], "title": "Revenue by channel, 2026 Q3"}, "it is 12% down")
-    assert c["sql_by"] == "ai" and c["why"] == "" and c["chart"]["by"] == "ai" and c["chart"]["title"] == "Revenue by channel, 2026 Q3"
-    for bad in ({"chart": "pie", "args": []}, {"chart": "bar_chart", "args": ["customer_email"]},
-                {"chart": "bar_chart", "args": ["channel", "revenue", "cost", "units"]}):
-        r = ns.answer(st, QUESTION, "", bad)
-        assert r["chart_refused"] and r["chart"]["by"] == "engine", (bad, r["chart_refused"])
-    t = ns.check_chart({"chart": "bar_chart", "args": ["channel"], "title": "Down 7.4 points"}, st)
-    assert t["ok"] and t["spec"]["title"] == "", t
-    # deterministic
-    assert json.dumps(ns.answer(st, QUESTION), sort_keys=True) == json.dumps(a, sort_keys=True)
+    gm = (agg.revenue - agg.cost) / agg.revenue * 100
+    for p in ("2026Q3", "2026Q2", "2025Q3"):
+        assert ("%.1f%%" % gm[pd.Period(p)]) in lead, (p, lead)
+    assert "fell" in lead and "EMEA" in lead
+    # every insight with a figure carries a chart registry record the dashboard can pin
+    figs = [i["figure"] for i in out["insights"] if i.get("figure")]
+    assert len(figs) == 3 and all(f["chart"] in ("grouped_bar", "bar_chart") and f["id"].startswith("viz.7") for f in figs)
+    json.dumps(out, allow_nan=False)
 
 
-def test_the_adapter_wrappers():
+def test_the_sql_step():
+    import nl_analyst as na
+    st = sales_state()
+    _steps, out = _asked()
+    s = out["steps"][0]
+    assert s["op"] == "sql" and s["ok"], s
+    cols, rows = s["table"]["columns"], s["table"]["rows"]
+    d = raw()
+    e = d[d.region == "EMEA"]
+    agg = e.groupby("q")[["revenue", "cost"]].sum()
+    assert rows[-1][0] == "2026-Q3" and abs(rows[-1][cols.index("gross_margin_pct")] - round((1 - agg.cost.iloc[-1] / agg.revenue.iloc[-1]) * 100, 4)) < 1e-9
+    assert _num(s, "rows") == 12 and _num(s, "hidden") == 0
+    # a planner's hostile or withheld SQL is refused at the check, with its reason, and nothing of it runs
+    bad = [{"op": "sql", "args": {"sql": "SELECT * FROM sqlite_master"}},
+           {"op": "sql", "args": {"sql": "DELETE FROM kept_rows"}},
+           {"op": "sql", "args": {"sql": "SELECT 1; DROP TABLE kept_rows"}},
+           {"op": "rate_mix", "args": {"measure": "revenue", "denominator": "revenue", "by": "channel", "grain": "week"}}]
+    o = na.run_steps(st["df"], st["kinds"], bad, st["hint"], prior=[])
+    assert [x["ok"] for x in o["steps"]] == [False] * 4, o["steps"]
+    assert "sqlite_master" in o["steps"][0]["refused"] and "SELECT or WITH" in o["steps"][1]["refused"]
+    assert "more than one statement" in o["steps"][2]["refused"] and "quarter" in o["steps"][3]["refused"]
+    assert not o["insights"]
+
+
+def test_the_adapter_and_the_step_schema():
+    import nl_analyst as na
     sales_state()
     nb._LAST_ANALYST.clear()
     nb._LAST_ANALYST.update({k: v for k, v in _STATE.items() if not k.startswith("_sql")})
-    sch = json.loads(nb.sql_schema_json())
-    assert sch["ok"] and sch["table"] == "kept_rows"
-    roles = {c["name"]: c["role"] for c in sch["columns"]}
-    assert roles["order_date"] == "date" and roles["revenue"] == "measure" and roles["region"] == "dimension"
-    assert roles["order_id"] == "identifier"
-    assert all(set(c) <= {"name", "type", "role", "unit", "kind"} for c in sch["columns"])
-    a = json.loads(nb.sql_answer_json(QUESTION, "", "null", ""))
-    assert a["ok"] and a["explain"]["ok"]
+    steps = json.loads(nb.analyst_plan_json(QUESTION))
+    assert [s["op"] for s in steps] == ["sql", "rate_mix", "rate_mix", "rate_mix"]
+    out = json.loads(nb.analyst_more_json(json.dumps(steps), "[]"))
+    assert len(out["insights"]) == 4
     nb._LAST_ANALYST.clear()
-    assert json.loads(nb.sql_answer_json(QUESTION))["ok"] is False
+    assert json.loads(nb.analyst_plan_json(QUESTION)) == []
+    sc = na.step_schema(sales_state()["shape"])
+    ops = {v["properties"]["op"]["const"]: v for v in sc["oneOf"]}
+    assert "sql" in ops and "rate_mix" in ops
+    assert ops["rate_mix"]["properties"]["args"]["properties"]["denominator"]["enum"] == ["units", "revenue", "cost"]
+    assert ops["rate_mix"]["properties"]["args"]["properties"]["grain"]["enum"] == ["quarter", "month", "year"]
+    # the engine's own rounds never run the planner-only ops
+    rep_ops = {s["op"] for s in _STATE_REP()["analyst"]["steps"]}
+    assert not rep_ops & {"sql", "rate_mix"}, rep_ops
+
+
+def _STATE_REP():
+    if not _REP:
+        with open(SAMPLE, "rb") as f:
+            _REP.update(nb.run(f.read(), "sample-sales-synthetic.csv", "", {}, AS_OF))
+    return _REP
 
 
 def test_the_sample_is_the_generator_output():

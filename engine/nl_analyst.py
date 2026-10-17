@@ -2406,6 +2406,224 @@ def op_mix(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
     return st
 
 
+RATE_MIX_GRAINS = ("quarter", "month", "year")
+_RM_FREQ = {"quarter": "Q", "month": "M", "year": "Y"}
+_RM_BACK = {"quarter": 4, "month": 12, "year": 1}
+
+
+def _rm_label(p: Any, grain: str) -> str:
+    s = str(p)
+    return s[:4] + " Q" + s[-1] if grain == "quarter" else s
+
+
+def rate_mix_parts(n0: Dict[str, float], d0: Dict[str, float], n1: Dict[str, float], d1: Dict[str, float],
+                   scale: float = 1.0) -> Dict[str, Any]:
+    """The change of a ratio of sums, R = sum(N) / sum(D), between two periods, split by groups into rate and mix: op_mix's
+    split of an average (rows as the denominator) extended to any denominator (revenue for a gross margin, units for a
+    price). With w = D_g / D (a group's share of the denominator) and r = N_g / D_g (its own ratio):
+    rate_g = (w0 + w1) / 2 * (r1 - r0) and mix_g = (w1 - w0) * ((r0 + r1) / 2 - (R0 + R1) / 2). The midpoint weights make
+    the split exact: the groups' rate and mix effects add up to R1 - R0 (a group in one period only is all mix). Returns
+    {R0, R1, total, rate, mix, groups: {g: {w0, w1, r0, r1, rate, mix}}} scaled by `scale` (100: percentage points)."""
+    keys = sorted(set(n0) | set(n1) | set(d0) | set(d1))
+    D0, D1 = sum(d0.get(k, 0.0) for k in keys), sum(d1.get(k, 0.0) for k in keys)
+    N0, N1 = sum(n0.get(k, 0.0) for k in keys), sum(n1.get(k, 0.0) for k in keys)
+    if D0 <= 0 or D1 <= 0:
+        return {}
+    R0, R1 = N0 / D0, N1 / D1
+    rbar = (R0 + R1) / 2
+    groups = {}
+    for k in keys:
+        a0, a1, b0, b1 = n0.get(k, 0.0), n1.get(k, 0.0), d0.get(k, 0.0), d1.get(k, 0.0)
+        w0, w1 = b0 / D0, b1 / D1
+        r0 = a0 / b0 if b0 > 0 else None
+        r1 = a1 / b1 if b1 > 0 else None
+        if r0 is None and r1 is None:
+            continue
+        x0 = r0 if r0 is not None else r1
+        x1 = r1 if r1 is not None else r0
+        groups[k] = {"w0": w0, "w1": w1, "r0": r0, "r1": r1, "rate": (w0 + w1) / 2 * (x1 - x0) * scale,
+                     "mix": (w1 - w0) * ((x0 + x1) / 2 - rbar) * scale}
+    return {"R0": R0, "R1": R1, "total": (R1 - R0) * scale, "rate": sum(g["rate"] for g in groups.values()),
+            "mix": sum(g["mix"] for g in groups.values()), "groups": groups}
+
+
+def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, less: Optional[str] = None,
+                where: Optional[Dict[str, str]] = None, grain: Optional[str] = None) -> Step:
+    """A ratio of sums ((measure - less) / denominator: a gross margin, a price per unit), recomputed from sums and never
+    an average of row ratios, in the latest period against the one before (and the same period a year earlier), its
+    change split by `by` into rate and mix effects (rate_mix_parts). A group with fewer than MIN_GROUP_ROWS rows in either
+    period is pooled into one group, never named. The latest period is the latest in the rows read; it is said when the
+    file's dates stop before it ends."""
+    import pandas as pd
+
+    sh = ctx.sh
+    if sh.date is None or sh.dates is None:
+        return st.refuse("the file has no time axis")
+    grain = grain or "quarter"
+    if grain not in RATE_MIX_GRAINS:
+        return st.refuse("the period must be one of %s" % ", ".join(RATE_MIX_GRAINS))
+    if less is not None and less == measure:
+        return st.refuse("the measure and the part taken from it are the same column")
+    base = ctx.base & sh.dates.notna()
+    if where:
+        st.word("scope", "In %s, " % " and ".join("%s (%s)" % (v, c) for c, v in where.items()))
+        for c, v in where.items():
+            base &= _group_texts(ctx.df, c) == str(v)
+    else:
+        st.word("scope", "")
+    num = _num(ctx.df[measure])
+    if less:
+        num = num - _num(ctx.df[less])
+    den = _num(ctx.df[denominator])
+    f = pd.DataFrame({"n": num, "d": den, "g": _group_texts(ctx.df, by)})[base]
+    f = f.assign(p=sh.dates[base].dt.to_period(_RM_FREQ[grain]))
+    f = f.dropna(subset=["n", "d", "p"])
+    if f.empty:
+        return st.refuse("no rows to read")
+    p1 = f["p"].max()
+    p0, py = p1 - 1, p1 - _RM_BACK[grain]
+    if not (f["p"] == p0).any():
+        return st.refuse("no rows in the %s before %s" % (grain, _rm_label(p1, grain)))
+    f["g"] = f["g"].where(f["g"] != "", "(blank)")
+    cnt = f[f["p"].isin([p0, p1])].groupby(["g", "p"]).size()
+    small = sorted(g for g in set(f["g"]) if min(int(cnt.get((g, p0), 0)), int(cnt.get((g, p1), 0))) < MIN_GROUP_ROWS)
+    pool = "groups under %d rows" % MIN_GROUP_ROWS
+    f["g"] = f["g"].where(~f["g"].isin(small), pool)
+    agg = f.groupby(["p", "g"])[["n", "d"]].sum()
+
+    def side(p, col):
+        return {g: float(v) for (pp, g), v in agg[col].items() if pp == p}
+
+    pct = bool(less) and denominator == measure
+    scale = 100.0 if pct else 1.0
+    parts = rate_mix_parts(side(p0, "n"), side(p0, "d"), side(p1, "n"), side(p1, "d"), scale)
+    if not parts:
+        return st.refuse("the denominator is not positive in one of the periods")
+    label = ("gross margin" if pct and _has(measure, ("revenue", "sales", "turnover", "income"))
+             else "%s less %s over %s" % (measure, less, denominator) if less
+             else "%s per %s" % (measure, denominator))
+    vkind = "share" if pct else "plain"
+    ckind = "pp" if pct else "plain"
+    lp, lc = _rm_label(p0, grain), _rm_label(p1, grain)
+    st.word("label", label)
+    sc = st.numbers["scope"]["text"]
+    st.word("lead", sc + label if sc else label[:1].upper() + label[1:])
+    st.word("by", by)
+    st.word("by_words", str(by).replace("_", " "))
+    st.word("den", denominator)
+    st.word("prev_label", lp)
+    st.word("cur_label", lc)
+    st.word("formula", "(%s - %s) / %s" % (measure, less, denominator) if less else "%s / %s" % (measure, denominator))
+    st.num("prev", parts["R0"], vkind)
+    st.num("cur", parts["R1"], vkind)
+    st.num("change", parts["total"], ckind, signed=True)
+    st.num("rate", parts["rate"], ckind, signed=True)
+    st.num("mix", parts["mix"], ckind, signed=True)
+    st.numbers["direction"] = {"value": None, "kind": "word",
+                               "text": "rose" if parts["R1"] > parts["R0"] else "fell" if parts["R1"] < parts["R0"] else "held level"}
+    st.num("rows_prev", int(cnt.xs(p0, level="p").sum()) if len(cnt) else 0, "int")
+    st.num("rows_cur", int(cnt.xs(p1, level="p").sum()) if len(cnt) else 0, "int")
+    if small:
+        st.num("pooled", len(small), "int")
+    last = sh.dates[ctx.base].max()
+    st.word("partial", "" if pd.isna(last) or last.normalize() >= p1.end_time.normalize()
+            else "(%s is not complete in the file: its dates run to %s) " % (lc, last.strftime("%Y-%m-%d")))
+    if (f["p"] == py).any():
+        yo = f[f["p"] == py][["n", "d"]].sum()
+        if float(yo["d"]) > 0:
+            ry = float(yo["n"]) / float(yo["d"])
+            st.word("year_label", _rm_label(py, grain))
+            st.num("year_value", ry, vkind)
+            st.num("yoy_change", (parts["R1"] - ry) * scale, ckind, signed=True)
+    sign = -1.0 if parts["total"] < 0 else 1.0
+    named = {g: v for g, v in parts["groups"].items() if g != pool}
+    cands = [(g, k, v[k]) for g, v in named.items() for k in ("rate", "mix") if v[k] * sign > 0]
+    if cands:
+        g, k, eff = max(cands, key=lambda x: abs(x[2]))
+        v = named[g]
+        st.word("top", g)
+        st.word("top_poss", g + ("'" if str(g).endswith("s") else "'s"))
+        st.word("top_kind", k)
+        st.num("top_effect", eff, ckind, signed=True)
+        if k == "mix":
+            st.num("top_w0", v["w0"], "share")
+            st.num("top_w1", v["w1"], "share")
+            st.num("top_own", v["r1"] if v["r1"] is not None else v["r0"], vkind)
+        else:
+            st.num("top_r0", v["r0"], vkind)
+            st.num("top_r1", v["r1"], vkind)
+    order = sorted(parts["groups"].items(), key=lambda kv: -abs(kv[1]["rate"] + kv[1]["mix"]))
+    pr = (lambda x: _r(x * 100, 4)) if pct else (lambda x: _r(x))
+    st.table = {
+        "columns": [by, "share of %s %s" % (denominator, lp), "share of %s %s" % (denominator, lc), "%s %s" % (label, lp),
+                    "%s %s" % (label, lc), "rate effect", "mix effect", "rows %s" % lp, "rows %s" % lc],
+        "rows": [[g, _r(v["w0"], 4), _r(v["w1"], 4), None if v["r0"] is None else pr(v["r0"]),
+                  None if v["r1"] is None else pr(v["r1"]), _r(v["rate"], 4), _r(v["mix"], 4),
+                  int(cnt.get((g, p0), 0)) if g != pool else sum(int(cnt.get((x, p0), 0)) for x in small),
+                  int(cnt.get((g, p1), 0)) if g != pool else sum(int(cnt.get((x, p1), 0)) for x in small)]
+                 for g, v in order][:12],
+    }
+    rows = []
+    for g, v in named.items():
+        if v["r0"] is None or v["r1"] is None:
+            continue
+        rows.append((g, [v["r0"], v["r1"]], int(min(cnt.get((g, p0), 0), cnt.get((g, p1), 0))),
+                     fmt_num((v["r1"] - v["r0"]) * scale, ckind, signed=True)))
+    _chart_bars(st, rows, [lp, lc], label, "share_pct" if pct else "average", vkind,
+                "%s by %s, %s against %s" % (label, by, lc, lp), [measure] + ([less] if less else []) + [denominator, by, sh.date], by)
+    return st
+
+
+SQL_TABLE_ROWS = 200    # rows of a query's result a step's table keeps (the step's sentence counts them all)
+
+
+def op_sql(ctx: Ctx, st: Step, sql: str) -> Step:
+    """One read-only SQLite query over the rows the engine kept (engine/nl_sql.py: the table kept_rows, the frame's
+    columns but the free-text ones; withheld and coded columns are never in it). The query runs under the engine's fence
+    (an authorizer allowing reads of kept_rows only, a function allowlist, PRAGMA query_only), a row cap and a time
+    cap; a result row resting on fewer than 5 rows is hidden when the engine can count them, and the step says so when
+    it cannot. Its table is the result; its sentence counts rows, never reads a cell."""
+    import nl_sql
+
+    free = set(getattr(ctx.sh, "free", ()) or ())
+    cols = [c for c in ctx.df.columns if c not in free]
+    df = ctx.df[cols]
+    kinds = {}
+    for c in cols:
+        if c == ctx.sh.date and ctx.sh.dates is not None:
+            kinds[c] = "date"
+        elif str(df[c].dtype).startswith("datetime"):
+            kinds[c] = "date"
+        elif c in ctx.sh.measures or str(df[c].dtype).startswith(("float", "int")):
+            kinds[c] = "number"
+        else:
+            kinds[c] = "text"
+    if ctx.sh.date and ctx.sh.dates is not None:
+        df = df.assign(**{ctx.sh.date: ctx.sh.dates})
+    # the in-memory table is made once per frame (nl_sql caches its connection in this state, keyed by the frame)
+    if _SQL_STATE.get("key") != id(ctx.df):
+        old = _SQL_STATE.get("_sql_con")
+        if old is not None:
+            old.close()
+        _SQL_STATE.clear()
+    _SQL_STATE.update(df=df, kinds=kinds, key=id(ctx.df),
+                      hidden=list((getattr(ctx, "hint", None) or {}).get("withheld") or []))
+    out = nl_sql.run_sql(_SQL_STATE, sql)
+    if not out.get("ok"):
+        return st.refuse(str(out.get("error") or "the query did not run")[:300])
+    st.num("rows", out["row_count"], "int")
+    st.num("columns", len(out["columns"]), "int")
+    sc = out.get("small_cells") or {}
+    st.num("hidden", int(sc.get("hidden") or 0), "int")
+    st.word("small_note", sc.get("note") or "")
+    st.word("cap_note", " %s" % out["note"] if out.get("note") else "")
+    st.table = {"columns": [str(c) for c in out["columns"]], "rows": out["rows"][:SQL_TABLE_ROWS]}
+    return st
+
+
+_SQL_STATE: Dict[str, Any] = {}
+
+
 def op_outliers(ctx: Ctx, st: Step, measure: str) -> Step:
     """Values far from the rest: robust z = 0.6745 * (x - median) / MAD beyond 3.5 (Iglewicz and Hoaglin). A dated
     file is read on its changes from one date to the next within each series (a rising level is not an outlier; a
@@ -3525,6 +3743,9 @@ _OP_FN = {
     "periods": op_periods,
     "confound": op_confound,
     "frequency": op_frequency,
+    # Ask your data, with SQL (Track B, CONTRACT §5.13): planner-only steps, never run in the engine's own rounds
+    "sql": op_sql,
+    "rate_mix": op_rate_mix,
 }
 OPS = tuple(_OP_FN)
 
@@ -3551,6 +3772,13 @@ OP_DOCS = {
     "group, with their shares (weighted by answers when the file counts them)",
     "confound": "whether the groups' averages of a measure just follow their averages of a second measure (price by "
     "cut following stone size): the rank correlation across groups and the measure per unit of the second",
+    "sql": "one read-only SQLite query (SELECT or WITH ... SELECT) over the table kept_rows, whose columns are the shape's "
+    "date, measures and dimensions (dates are text YYYY-MM-DD); its result is shown as a table. Sum a flow; recompute a "
+    "ratio from sums (gross margin = (SUM(revenue) - SUM(cost)) / SUM(revenue)), never AVG of row ratios",
+    "rate_mix": "a ratio of sums, (measure - less) / denominator (gross margin: measure revenue, less cost, denominator "
+    "revenue; a price: measure revenue, denominator units), in the latest quarter, month or year against the one before "
+    "and a year earlier, its change split by a group column into rate (each group's own ratio) and mix (the groups' "
+    "shares) effects that add up",
 }
 
 # Every argument an op may take, by name: its JSON schema and the role a column it names must have in the shape.
@@ -3572,6 +3800,7 @@ OP_NEEDS = {
     "answers": "answers",
     "periods": "periods",
     "frequency": "rows",
+    "rate_mix": "date",
 }
 
 
@@ -3624,6 +3853,30 @@ _ARG_SPEC: Dict[str, Dict[str, Any]] = {
         "maxLength": 200,
         "x-role": "measure",
         "description": "the second number column the group averages are read against",
+    },
+    "denominator": {
+        "type": "string",
+        "maxLength": 200,
+        "x-role": "measure",
+        "description": "the number column a ratio is divided by (revenue for a margin, units for a price)",
+    },
+    "less": {
+        "type": "string",
+        "maxLength": 200,
+        "x-role": "measure",
+        "description": "a number column taken from the measure before dividing (cost, for a gross margin)",
+    },
+    "grain": {
+        "type": "string",
+        "maxLength": 10,
+        "enum": ["quarter", "month", "year"],
+        "description": "the period the latest is compared in (default quarter)",
+    },
+    "sql": {
+        "type": "string",
+        "maxLength": 4000,
+        "x-check": "sql",
+        "description": "one read-only SQLite SELECT (or WITH ... SELECT) over the table kept_rows and its listed columns",
     },
     "years": {
         "type": "integer",
@@ -3779,6 +4032,22 @@ def _check_step(raw: Any, ctx: Ctx) -> Tuple[Optional[str], Dict[str, Any], str,
         s = _ARG_SPEC[k]
         if v is None and not spec[k]:
             continue
+        if s["type"] == "string" and "x-role" not in s:
+            if not isinstance(v, str) or len(v) > s["maxLength"] or not v.strip():
+                return op, {}, why, "%s must be text of at most %d characters" % (k, s["maxLength"])
+            if "enum" in s and v not in s["enum"]:
+                return op, {}, why, "%s must be one of %s" % (k, ", ".join(s["enum"]))
+            if s.get("x-check") == "sql":
+                import nl_sql
+
+                free = set(getattr(ctx.sh, "free", ()) or ())
+                chk = nl_sql.check_sql(v, [c for c in ctx.df.columns if c not in free],
+                                       list((getattr(ctx, "hint", None) or {}).get("withheld") or []))
+                if not chk["ok"]:
+                    return op, {}, why, "the SQL was refused: %s" % chk["reason"]
+                v = chk["sql"]
+            out[k] = v
+            continue
         if s["type"] == "string":
             if not isinstance(v, str) or len(v) > s["maxLength"]:
                 return op, {}, why, "%s must be a column's name" % k
@@ -3911,6 +4180,28 @@ _OP_SENTENCES: Dict[str, List[str]] = {
     "mix": [
         "Of the {X.total} change in the average {X.measure}, {X.within} came from changes inside the {X.by} groups and "
         "{X.mix} from rows moving between them.",
+    ],
+    "sql": [
+        "The read-only query returned {X.rows} rows of {X.columns} columns from the rows the engine kept.{X.cap_note} "
+        "{X.small_note}",
+    ],
+    "rate_mix": [
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "({X.change}; {X.yoy_change} against {X.year_value} in {X.year_label}). By {X.by_words}: rate effect {X.rate}, mix "
+        "effect {X.mix}; the largest is {X.top_poss} mix ({X.top_effect}): its share of {X.den} went from {X.top_w0} to "
+        "{X.top_w1}, at its own {X.label} of {X.top_own}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "({X.change}; {X.yoy_change} against {X.year_value} in {X.year_label}). By {X.by_words}: rate effect {X.rate}, mix "
+        "effect {X.mix}; the largest is {X.top_poss} rate ({X.top_effect}): its own {X.label} went from {X.top_r0} to "
+        "{X.top_r1}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}; the largest is {X.top_poss} mix "
+        "({X.top_effect}): its share of {X.den} went from {X.top_w0} to {X.top_w1}, at its own {X.label} of {X.top_own}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}; the largest is {X.top_poss} rate "
+        "({X.top_effect}): its own {X.label} went from {X.top_r0} to {X.top_r1}.",
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}.",
     ],
     "outliers": [
         "{X.far} of {X.n} {X.what} {X.measure} ({X.far_share}) sit far from the rest (robust z beyond 3.5); the largest "
@@ -5562,6 +5853,7 @@ def run_steps(
     t0 = time.perf_counter()
     sh = shape_of(df, kinds, hint)
     ctx = Ctx(df, sh)
+    ctx.hint = dict(hint or {})       # the withheld columns' names (op_sql says why a query naming one is refused)
     for p in prior or []:
         ctx.order.append(str(p.get("id")))
     rnd = 1 + max([int(p.get("round") or 0) for p in prior or []] or [0])

@@ -661,6 +661,119 @@
     "args"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "one read-only SQLite query (SELECT or WITH ... SELECT) over the table kept_rows, whose columns are the shape's date, measures and dimensions (dates are text YYYY-MM-DD); its result is shown as a table. Sum a flow; recompute a ratio from sums (gross margin = (SUM(revenue) - SUM(cost)) / SUM(revenue)), never AVG of row ratios",
+   "x-needs": "",
+   "properties": {
+    "op": {
+     "const": "sql"
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "sql": {
+       "type": "string",
+       "maxLength": 4000,
+       "x-check": "sql",
+       "description": "one read-only SQLite SELECT (or WITH ... SELECT) over the table kept_rows and its listed columns"
+      }
+     },
+     "required": [
+      "sql"
+     ],
+     "additionalProperties": false
+    },
+    "why": {
+     "type": "string",
+     "maxLength": 200
+    }
+   },
+   "required": [
+    "op",
+    "args"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "a ratio of sums, (measure - less) / denominator (gross margin: measure revenue, less cost, denominator revenue; a price: measure revenue, denominator units), in the latest quarter, month or year against the one before and a year earlier, its change split by a group column into rate (each group's own ratio) and mix (the groups' shares) effects that add up",
+   "x-needs": "date",
+   "properties": {
+    "op": {
+     "const": "rate_mix"
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "measure": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "a number column of the analysis (one of shape.measures)",
+       "x-role": "measure"
+      },
+      "denominator": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "the number column a ratio is divided by (revenue for a margin, units for a price)",
+       "x-role": "measure"
+      },
+      "by": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "a group column (one of shape.dimensions, or shape.entity)",
+       "x-role": "dimension"
+      },
+      "less": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "a number column taken from the measure before dividing (cost, for a gross margin)",
+       "x-role": "measure"
+      },
+      "where": {
+       "type": "object",
+       "maxProperties": 2,
+       "propertyNames": {
+        "type": "string",
+        "maxLength": 200,
+        "x-role": "dimension"
+       },
+       "additionalProperties": {
+        "type": "string",
+        "maxLength": 80
+       },
+       "description": "keep only the rows where each group column holds the given value",
+       "x-role": "filter"
+      },
+      "grain": {
+       "type": "string",
+       "maxLength": 10,
+       "enum": [
+        "quarter",
+        "month",
+        "year"
+       ],
+       "description": "the period the latest is compared in (default quarter)"
+      }
+     },
+     "required": [
+      "measure",
+      "denominator",
+      "by"
+     ],
+     "additionalProperties": false
+    },
+    "why": {
+     "type": "string",
+     "maxLength": 200
+    }
+   },
+   "required": [
+    "op",
+    "args"
+   ],
+   "additionalProperties": false
   }
  ]
 }

@@ -682,7 +682,8 @@ def test_step_schema_is_generated_from_ops_and_their_signatures():
     assert ops2 == {
         "crosstab",
         "answers",
-    }, ops2  # a survey with no measure: only the cross-tabulation and the answers
+        "sql",
+    }, ops2  # a survey with no measure: the cross-tabulation, the answers, and a planner's read-only SQL (CONTRACT §5.13)
     # the reference worker reads the same file (docs/ai-analyst/step-schema.json), so it must be the current one
     with open(os.path.join(SITE, "docs", "ai-analyst", "step-schema.json")) as f:
         assert json.load(f) == json.loads(

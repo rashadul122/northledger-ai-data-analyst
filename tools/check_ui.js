@@ -2360,6 +2360,90 @@ check('try-pdf-in-an-in-app-browser-opens-the-file', DESK, async (ctx) => {
   } finally { await c.close(); }
 });
 
+/* ------------------------------------------------------------ the Word write-up, made in this browser (Track D, 16 Oct 2026)
+   "Download Word (.docx)" writes the research write-up here (src/js/46-report-docx.js) from the PDF's own input: a
+   download, no request, a .docx whose parts are all there (document, named styles, numbering, header and footer,
+   core properties, its relationships) with 2 or 3 of the report's charts as PNG pictures drawn on white (the dark theme
+   too); "Word + charts (.zip)" downloads the .docx and the chart PNGs with a note that a browser cannot save beside the
+   data. tools/check_report_docx.mjs checks the file itself. */
+function zipMembers(buf) {
+  const z = require('zlib'), out = new Map();
+  let e = buf.length - 22; while (e >= 0 && buf.readUInt32LE(e) !== 0x06054b50) e--;
+  if (e < 0) return out;
+  let at = buf.readUInt32LE(e + 16);
+  for (let i = 0, n = buf.readUInt16LE(e + 10); i < n; i++) {
+    const meth = buf.readUInt16LE(at + 10), size = buf.readUInt32LE(at + 20), nl = buf.readUInt16LE(at + 28), lo = buf.readUInt32LE(at + 42);
+    const name = buf.slice(at + 46, at + 46 + nl).toString('utf8'), ds = lo + 30 + buf.readUInt16LE(lo + 26) + buf.readUInt16LE(lo + 28);
+    const raw = buf.slice(ds, ds + size);
+    out.set(name, meth === 8 ? z.inflateRawSync(raw) : raw);
+    at += 46 + nl + buf.readUInt16LE(at + 30) + buf.readUInt16LE(at + 32);
+  }
+  return out;
+}
+// a PNG's size and its first pixel (8-bit RGB or RGBA, non-interlaced: what a canvas writes)
+function pngProbe(b) {
+  const z = require('zlib');
+  if (!b.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return null;
+  let p = 8, w = 0, h = 0, ct = 0; const idat = [];
+  while (p < b.length) {
+    const len = b.readUInt32BE(p), ty = b.slice(p + 4, p + 8).toString('latin1'), d = b.slice(p + 8, p + 8 + len);
+    if (ty === 'IHDR') { w = d.readUInt32BE(0); h = d.readUInt32BE(4); ct = d[9]; }
+    if (ty === 'IDAT') idat.push(d);
+    p += 12 + len;
+  }
+  const raw = z.inflateSync(Buffer.concat(idat)), bpp = ct === 6 ? 4 : 3;
+  return { w, h, first: Array.from(raw.slice(1, 1 + bpp)), filter: raw[0] };
+}
+const docxText = (x) => [...x.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(' ');
+async function wordRun(ctx, dark) {
+  const p = await openTry(ctx, { stubReport: pdfReport(), proxy: 'set', proxyReply: pdfReply() });
+  await optinStep(p); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  const before = toProxy(ctx).length;
+  ok(await p.isVisible('#try-docx') && await p.isVisible('#try-docx-zip'), 'no Word download beside the PDF');
+  ok(/cannot save it next to your data file/.test(await p.textContent('#try-docx-note')) && /next to your data file/.test(await p.getAttribute('#try-docx-zip', 'title')), 'the page does not say a browser cannot save beside the data');
+  const theme0 = await p.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click('#try-docx')]);
+  ok(await p.evaluate(() => document.documentElement.getAttribute('data-theme')) === theme0, 'drawing the charts left the page\'s theme changed');
+  const name = dl.suggestedFilename(), bytes = fs.readFileSync(await dl.path());
+  ok(/^Revenue rose 18\.7 on 1\.3 fewer orders.* - \d{4}-\d{2}-\d{2}\.docx$/.test(name), 'the Word download is not named for the report title: ' + JSON.stringify(name));
+  ok(bytes.slice(0, 2).toString('latin1') === 'PK', 'the Word download is not a zip');
+  // NL_KEEP_DOCX=/path/stem keeps the file (stem.docx, stem-dark.docx) to open it in Word or LibreOffice
+  if (process.env.NL_KEEP_DOCX) fs.writeFileSync(process.env.NL_KEEP_DOCX + (dark ? '-dark' : '') + '.docx', bytes);
+  const z = zipMembers(bytes);
+  ['[Content_Types].xml', '_rels/.rels', 'word/document.xml', 'word/styles.xml', 'word/numbering.xml', 'word/settings.xml', 'word/header1.xml', 'word/footer1.xml',
+    'word/_rels/document.xml.rels', 'docProps/core.xml', 'docProps/app.xml'].forEach((n) => ok(z.has(n), 'the .docx has no ' + n));
+  const media = [...z.keys()].filter((n) => /^word\/media\/image\d+\.png$/.test(n));
+  ok(media.length >= 2 && media.length <= 3, 'the .docx holds ' + media.length + ' chart pictures (2 or 3 expected)');
+  media.forEach((n) => {
+    const pr = pngProbe(z.get(n));
+    ok(pr && pr.w >= 600 && pr.h >= 100 && z.get(n).length > 3000, n + ' is not a drawn chart: ' + JSON.stringify(pr && { w: pr.w, h: pr.h, bytes: z.get(n).length }));
+    ok(pr && pr.first.slice(0, 3).every((v) => v >= 250), n + ' is not drawn on white' + (dark ? ' in the dark theme' : '') + ': ' + JSON.stringify(pr && pr.first));
+  });
+  const t = docxText(z.get('word/document.xml').toString('utf8'));
+  ['1. The question', '2. The data as found', '4. Key findings', '5. Assumptions', '6. Limits of what the data can say', '7. Can the question be answered from this file?', 'Figure 1.', 'Rows set aside, and why', 'The original file was not changed']
+    .forEach((h) => ok(t.indexOf(h) >= 0, 'the write-up lacks "' + h + '"'));
+  ok(/styleId="Heading1"/.test(z.get('word/styles.xml').toString()) && /styleId="Caption"/.test(z.get('word/styles.xml').toString()), 'the .docx lacks its named styles');
+  ok(!/sample-messy/.test(t) && !/sample-messy/.test(bytes.toString('latin1')) && !/sample-messy/.test(name), 'the Word file names the file without the visitor asking');
+  ok(!/@example\.com|call Ann Lee/.test(bytes.toString('latin1')), 'a withheld value is in the Word file');
+  ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders.*\.docx/.test(await p.textContent('#try-share-out')) && /nothing was sent/.test(await p.textContent('#try-share-out')), 'the page does not say the Word file was saved and nothing sent');
+  // the zip: the .docx, one PNG per chart, the note
+  const [dz] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click('#try-docx-zip')]);
+  const zb = zipMembers(fs.readFileSync(await dz.path())), zn = [...zb.keys()];
+  ok(/\(write-up and charts\)\.zip$/.test(dz.suggestedFilename()) && zn.some((n) => /\.docx$/.test(n)) && zn.filter((n) => /^figure-\d+-.*\.png$/.test(n)).length === media.length && zb.has('README.txt'),
+    'the Word + charts zip lacks a part: ' + dz.suggestedFilename() + ' ' + zn.join(', '));
+  ok(/cannot save next to your data file/.test(String(zb.get('README.txt') || '')), 'the zip\'s note does not say a browser cannot save beside the data');
+  ok(toProxy(ctx).length === before, 'the Word downloads sent a request: ' + JSON.stringify(toProxy(ctx).slice(before).map((r) => r.url)));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  return p;
+}
+check('try-word-docx-and-zip-made-in-this-browser', DESK, async (ctx) => { await wordRun(ctx, false); }, { acceptDownloads: true });
+check('try-word-docx-on-a-phone-in-the-dark-theme', PHONE, async (ctx) => {
+  const p = await wordRun(ctx, true);
+  const r = await p.evaluate(() => { const b = document.getElementById('try-docx').getBoundingClientRect(); return { w: b.width, right: b.right, vw: innerWidth, sw: document.documentElement.scrollWidth }; });
+  ok(r.w >= 44 && r.right <= r.vw + 0.5 && r.sw <= r.vw + 1, 'the Word button does not fit the phone: ' + JSON.stringify(r));
+}, { acceptDownloads: true, mobile: true, colorScheme: 'dark' });
+
 // the honesty check's count: on the AI report card, and in the analyst view with the figures the sentences carried
 check('try-ai-report-says-how-many-sentences-were-removed', DESK, async (ctx) => {
   const rep = fixture('sample'); rep.__profile = true; rep.__results = true;

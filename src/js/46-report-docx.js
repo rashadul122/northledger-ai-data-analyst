@@ -385,13 +385,18 @@
     var m = isObj(c.measure) ? c.measure : null;
     var u = m ? [m.label, m.unit].filter(Boolean).join(', ') : '';
     if (!u) u = [c.y_name || c.unit || '', c.x_name ? 'against ' + c.x_name : ''].filter(Boolean).join(' ');
+    // an analysis's own bars ("revenue by region"): the measure the bars show, by the groups they show
+    var bm = !u && c.kind === 'bars' ? str(c.title).match(/^(.+?) by (.+)$/i) : null;
+    if (bm) u = bm[1] + ', by ' + bm[2];
     if (m && m.kind === 'share_pct') u = cap1(m.label || 'share') + ', percent';
     else if (m && m.kind === 'count') u = 'Rows (count)';
     return u ? cap1(u) : '';
   }
   // the chart's one-line caption: the engine's own subtitle, else its summary's first sentence (the engine's words and figures)
-  function chartCaption(c) {
+  function chartCaption(c, analyses) {
     var s = str(c.subtitle).trim();
+    // an analysis's own chart: the first sentence the engine wrote for that analysis
+    if (!s && !str(c.summary).trim()) { var a = arr(analyses).filter(function (x) { return isObj(x) && x.title === c.title; })[0]; if (a) s = str(a.sentence).trim(); }
     if (!s) { s = str(c.summary).trim(); var m = s.match(/^(.+?[.!?])(\s|$)/); if (m) s = m[1]; }
     return s;
   }
@@ -418,7 +423,7 @@
       // a chart that splits the change (by group, a waterfall) answers a "why" question
       var splits = c.chart === 'contribution_waterfall' || (isObj(c.inputs) && c.inputs.op === 'change');
       if (splits && askWhy) { score += 2; why.push('it splits the change, and the question asks why'); }
-      out.push({ index: i, chart: c, title: str(c.title || c.kind || 'Chart'), units: chartUnits(c), caption: chartCaption(c), score: score, why: why });
+      out.push({ index: i, chart: c, title: str(c.title || c.kind || 'Chart'), units: chartUnits(c), caption: chartCaption(c, R.analyses), score: score, why: why });
     });
     out.sort(function (a, b) { return (b.score - a.score) || (a.index - b.index); });
     return out.slice(0, max);
@@ -529,7 +534,7 @@
     var figs = arr(figures);
     figs.forEach(function (f) {
       if (!isObj(f)) return;
-      add({ type: 'image', png: f.png, w: f.w, h: f.h, title: sub(f.title), alt: sub(f.title) + (f.units ? ' (' + sub(f.units) + ')' : ''),
+      add({ type: 'image', png: f.png, w: f.w, h: f.h, title: cap1(sub(f.title)), alt: sub(f.title) + (f.units ? ' (' + sub(f.units) + ')' : ''),
         caption: [f.units ? 'Units: ' + sub(f.units) + '.' : '', sentence(sub(f.caption)), 'Source: NorthLedger engine, from ' + file + '.'].filter(Boolean).join(' ') });
     });
     if (dq.length) add({ type: 'table', title: 'Findings about the data itself', cols: ['Finding', 'Figure', 'Grade'], widths: [62, 18, 20], align: ['left', 'right', 'left'],

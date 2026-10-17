@@ -2683,14 +2683,19 @@
         }).join('') + '</ol></div>' : '') +
         '<div class="ai-rep-actions"><button type="button" class="btn btn-primary" id="try-share">Shareable link</button>' +
         '<button type="button" class="btn btn-ghost" id="try-pdf" aria-describedby="try-pdf-note">Download PDF</button>' +
+        // the Word write-up (Track D): the same report model as the PDF, made here (src/js/46-report-docx.js)
+        (window.NLDocx ? '<button type="button" class="btn btn-ghost" id="try-docx" aria-describedby="try-docx-note">Download Word (.docx)</button>' +
+          '<button type="button" class="btn btn-ghost" id="try-docx-zip" aria-describedby="try-docx-note" title="A browser cannot save a file next to your data file. This zip holds the Word write-up and its chart pictures: unzip it beside your file to keep them together.">Word + charts (.zip)</button>' : '') +
         '<span class="try-share-out" id="try-share-out" hidden></span></div>' +
         // the PDF is made here, in this browser: its paper and whether it carries the file's name are the visitor's
-        '<fieldset class="ai-pdf-opts"><legend>PDF options</legend>' +
+        '<fieldset class="ai-pdf-opts"><legend>' + (window.NLDocx ? 'PDF and Word options' : 'PDF options') + '</legend>' +
           '<span class="ai-pdf-paper" role="radiogroup" aria-label="Paper size"><span class="ai-pdf-lab" aria-hidden="true">Paper</span>' +
           '<label><input type="radio" name="try-pdf-paper" value="letter"' + (paper === 'letter' ? ' checked' : '') + '> Letter</label>' +
           '<label><input type="radio" name="try-pdf-paper" value="a4"' + (paper === 'a4' ? ' checked' : '') + '> A4</label></span>' +
           '<label class="ai-pdf-name"><input type="checkbox" id="try-pdf-name"> Include my file name</label>' +
-          '<p class="note" id="try-pdf-note">The PDF is made in this browser and nothing is sent. It leaves your file\'s name off unless you tick the box.</p></fieldset>' +
+          '<p class="note" id="try-pdf-note">The PDF is made in this browser and nothing is sent. It leaves your file\'s name off unless you tick the box.</p>' +
+          (window.NLDocx ? '<p class="note" id="try-docx-note">The Word write-up (the question, the data as found, what was done, the findings with their grades, assumptions, limits and 2 or 3 charts) is made in this browser from the same report as the PDF; nothing is sent, and your file is not changed. A browser cannot save it next to your data file: it goes to your downloads, and the zip keeps the write-up and its charts together.</p>' : '') +
+          '</fieldset>' +
         '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
       mountAiFigs(card);
@@ -2698,6 +2703,9 @@
       if (share) share.addEventListener('click', function () { doShare(); });
       var pdf = document.getElementById('try-pdf');
       if (pdf) pdf.addEventListener('click', function () { doPdf(); });
+      var docx = document.getElementById('try-docx'), docxZip = document.getElementById('try-docx-zip');
+      if (docx) docx.addEventListener('click', function () { doWord(false); });
+      if (docxZip) docxZip.addEventListener('click', function () { doWord(true); });
       Array.prototype.forEach.call(card.querySelectorAll('input[name="try-pdf-paper"]'), function (r) {
         r.addEventListener('change', function () { if (r.checked) S.pdfPaper = r.value; });
       });
@@ -3140,27 +3148,36 @@
     }
     var IN_APP = /FBAN|FBAV|FB_IAB|Instagram|Line\/|Telegram|LinkedInApp|MicroMessenger|Snapchat|Twitter|musical_ly|; wv\)/i;
     var lastPdfUrl = '';
+    // the report model's input (NLReportPdf.model): the AI's report, the engine's results it was written from and the
+    // visitor's choices; the PDF and the Word write-up are both made from it, so they cannot disagree
+    function reportInput(rep, now) {
+      var named = !!($('try-pdf-name') && $('try-pdf-name').checked), file = S.prevFile || S.name || '';
+      return { report: rep.report, sources: rep.sources || [], model: rep.model || '', repaired: rep.repaired, removed_figures: rep.removed_figures,
+        results: S.aiResults, charts: S.aiCharts, tables: S.aiTables, kept: rep.kept, name: file, showName: named, date: now, goal: reportGoal(rep) };
+    }
     function doPdf() {
       var out = document.getElementById('try-share-out'), rep = S.aiReport;
       if (!rep || !out || !window.NLReportPdf) return;
-      var W = window.NLReportPdf, now = new Date(), named = !!($('try-pdf-name') && $('try-pdf-name').checked), file = S.prevFile || S.name || '';
+      var W = window.NLReportPdf, now = new Date(), inp = reportInput(rep, now), named = inp.showName, file = inp.name;
       var bytes, name;
       try {
-        var m = W.model({ report: rep.report, sources: rep.sources || [], model: rep.model || '', repaired: rep.repaired, removed_figures: rep.removed_figures,
-          results: S.aiResults, charts: S.aiCharts, tables: S.aiTables, kept: rep.kept, name: file, showName: named, date: now,
-          goal: reportGoal(rep) });
+        var m = W.model(inp);
         bytes = W.build(m, { paper: pdfPaper() });
         name = W.fileName(now, named ? file : '', m.title);
       } catch (e) {
         out.hidden = false; out.textContent = 'The PDF could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
         return;
       }
+      offerFile(out, bytes, name, 'application/pdf', 'PDF');
+    }
+    // a file made in this browser: downloaded, or (an in-app browser) opened in a tab; `what` names it in the page's words
+    function offerFile(out, bytes, name, type, what) {
       if (lastPdfUrl) { try { URL.revokeObjectURL(lastPdfUrl); } catch (e2) { /* already gone */ } }
-      var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      var url = URL.createObjectURL(new Blob([bytes], { type: type }));
       lastPdfUrl = url;
       out.hidden = false; out.textContent = '';
       var a = document.createElement('a');
-      a.href = url; a.download = name; a.textContent = 'Open the PDF'; a.target = '_blank'; a.rel = 'noopener';
+      a.href = url; a.download = name; a.textContent = 'Open the ' + what; a.target = '_blank'; a.rel = 'noopener';
       var said = document.createElement('span');
       if (!IN_APP.test(navigator.userAgent || '') && 'download' in a) {
         var dl = document.createElement('a');
@@ -3168,14 +3185,41 @@
         document.body.appendChild(dl); dl.click(); dl.remove();
         said.textContent = 'Saved as \u201c' + name + '\u201d (' + Math.max(1, Math.round(bytes.length / 1024)) + ' KB), made in this browser; nothing was sent. If no download started: ';
       } else {
-        // an in-app browser ignores a.download: open the PDF itself, or say how to save it
+        // an in-app browser ignores a.download: open the file itself, or say how to save it
         var w = null;
         try { w = window.open(url, '_blank'); } catch (e3) { w = null; }
-        said.textContent = w ? 'The PDF opened in a new tab (made in this browser; nothing was sent). If it did not: '
-          : 'This in-app browser blocked the download. Open this page in your phone\'s browser (Safari or Chrome) to save the PDF, or try: ';
+        said.textContent = w ? 'The ' + what + ' opened in a new tab (made in this browser; nothing was sent). If it did not: '
+          : 'This in-app browser blocked the download. Open this page in your phone\'s browser (Safari or Chrome) to save the ' + what + ', or try: ';
       }
       out.appendChild(said);
       out.appendChild(a);
+    }
+
+    // "Download Word (.docx)" and "Word + charts (.zip)" (Track D, 16 Oct 2026): the research write-up, made here by
+    // src/js/46-report-docx.js from the PDF's input (reportInput: one model, two renderers), the engine's own report for
+    // what the PDF does not print (missing values per column, rows set aside by reason; only for the report on the page,
+    // never a gallery entry's) and 2 or 3 of the report's charts, drawn by the page's own chart code and turned into PNG
+    // here. Nothing is sent; the visitor's file is not changed. A browser cannot save beside the data: the zip keeps the
+    // write-up and its charts together, and says so.
+    function docChartSvg(ch, W) {
+      if (isVizChart(ch)) { var o = window.NLV ? window.NLV.draw(ch, W) : null; return o && o.svg ? o.svg : ''; }
+      return anaChart(ch, W);
+    }
+    var wordBusy = false;
+    function doWord(zip) {
+      var out = document.getElementById('try-share-out'), rep = S.aiReport, card = document.getElementById('try-ai-report');
+      if (!rep || !out || !window.NLDocx || !window.NLReportPdf || wordBusy) return;
+      wordBusy = true;
+      out.hidden = false; out.textContent = 'Making the Word write-up in this browser\u2026';
+      var inp = reportInput(rep, new Date());
+      window.NLDocx.make({ input: inp, engine: rep === S.liveAi ? S.report : null, chartSvg: docChartSvg, host: card || document.body, hostClass: 'viz', paper: pdfPaper() })
+        .then(function (r) {
+          if (zip) offerFile(out, r.bundle(), r.bundleName, 'application/zip', 'zip');
+          else offerFile(out, r.bytes, r.name, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Word file');
+        }, function (e) {
+          out.hidden = false; out.textContent = 'The Word file could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
+        })
+        .then(function () { wordBusy = false; });
     }
 
     // what a visitor can do about the reasons rows were set aside (plain steps, no figures)

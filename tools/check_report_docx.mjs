@@ -199,7 +199,7 @@ function runCase(c) {
   ok(/The original file was not changed/.test(all), c.name + ': the write-up does not say the original was not changed');
   // each figure: its title, its picture at the PNG's aspect, a caption with its units
   figs.forEach((f, i) => {
-    ok(T.some((t) => t.startsWith('Figure ' + (i + 1) + '. ' + f.title.slice(0, 20))), c.name + ': no "Figure ' + (i + 1) + '." title');
+    ok(T.some((t) => t.toLowerCase().startsWith(('Figure ' + (i + 1) + '. ' + f.title.slice(0, 20)).toLowerCase())), c.name + ': no "Figure ' + (i + 1) + '." title');
   });
   const ext = [...dx.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"/g)].map((m) => Number(m[1]) / Number(m[2]));
   ext.forEach((r, i) => ok(Math.abs(r - figs[i].w / figs[i].h) < 0.01, c.name + ': figure ' + (i + 1) + ' drawn at aspect ' + r.toFixed(3) + ', its PNG is ' + (figs[i].w / figs[i].h).toFixed(3)));

@@ -181,7 +181,7 @@
     });
     charts.forEach(function (c) { files.push({ name: 'xl/charts/chart' + c.n + '.xml', data: c.xml }); });
     var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      (numFmts.length ? '<numFmts count="' + numFmts.length + '">' + numFmts.map(function (f, i) { return '<numFmt numFmtId="' + (164 + i) + '" formatCode="' + xe(f) + '"/>'; }).join('') + '</numFmts>' : '') +
+      (numFmts.length ? '<numFmts count="' + numFmts.length + '">' + numFmts.map(function (f, i) { return '<numFmt numFmtId="' + (164 + i) + '" formatCode="' + xe(negLiteral(f)) + '"/>'; }).join('') + '</numFmts>' : '') +
       '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
       '<borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' +
       xfs.map(function (x) { return '<xf numFmtId="' + x.id + '" fontId="' + (x.b ? 1 : 0) + '" fillId="0" borderId="0" xfId="0"' + (x.id ? ' applyNumberFormat="1"' : '') + (x.b ? ' applyFont="1"' : '') + '/>'; }).join('') + '</cellXfs></styleSheet>';
@@ -203,6 +203,11 @@
     return NLX.zip(head.concat(files));
   };
 
+  // a negative section that starts with a minus writes it escaped (\-): Excel and LibreOffice show the same "-187", and
+  // Numbers, which otherwise adds its own sign to an unescaped one ("--187"), shows it once
+  function negLiteral(f) { return String(f).replace(/^([^;"]*(?:"[^"]*"[^;"]*)*;)((?:\[[^\]]*\])*)-/, '$1$2\\-'); }
+  NLX.negLiteral = negLiteral;
+
   // a chart part: line, stacked area, clustered column or bar, its series referencing cell ranges
   function chartXml(spec, nm) {
     var ns = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
@@ -220,6 +225,9 @@
         '<c:cat><c:strRef><c:f>' + ref(spec.cat) + '</c:f></c:strRef></c:cat><c:val><c:numRef><c:f>' + ref(s) + '</c:f></c:numRef></c:val>' + (line ? '<c:smooth val="0"/>' : '') + '</c:ser>';
     }).join('');
     var axes = '<c:axId val="1001"/><c:axId val="1002"/>', bar = spec.type === 'bar';
+    // a legend only when there is more than one series (the title names a single one), above the plot so it never sits
+    // on the category labels or the title (Numbers lays a bottom legend over the labels and a top one over a long title)
+    var legend = (spec.series || []).length > 1 ? '<c:legend><c:legendPos val="r"/><c:overlay val="0"/></c:legend>' : '';
     var plot = line ? '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>' + sers + '<c:marker val="1"/>' + axes + '</c:lineChart>'
       : spec.type === 'area' ? '<c:areaChart><c:grouping val="stacked"/><c:varyColors val="0"/>' + sers + axes + '</c:areaChart>'
       : '<c:barChart><c:barDir val="' + (bar ? 'bar' : 'col') + '"/><c:grouping val="clustered"/><c:varyColors val="0"/>' + sers + '<c:gapWidth val="60"/>' + axes + '</c:barChart>';
@@ -227,6 +235,6 @@
       '</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/>' + plot +
       '<c:catAx><c:axId val="1001"/><c:scaling><c:orientation val="' + (bar ? 'maxMin' : 'minMax') + '"/></c:scaling><c:delete val="0"/><c:axPos val="' + (bar ? 'l' : 'b') + '"/><c:numFmt formatCode="General" sourceLinked="1"/><c:tickLblPos val="nextTo"/><c:crossAx val="1002"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx>' +
       '<c:valAx><c:axId val="1002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="' + (bar ? 'b' : 'l') + '"/><c:majorGridlines/><c:numFmt formatCode="#,##0" sourceLinked="0"/><c:tickLblPos val="nextTo"/><c:crossAx val="1001"/><c:crosses val="' + (bar ? 'max' : 'autoZero') + '"/><c:crossBetween val="between"/></c:valAx>' +
-      '</c:plotArea><c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>';
+      '</c:plotArea>' + legend + '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>';
   }
 })();

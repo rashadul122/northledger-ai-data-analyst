@@ -45,7 +45,7 @@ const spec = {
     { name: 'Charts/[1]', rows: [[B('Charts')], ['Month', 'A', 'B'], ['Jan', 1, 2], ['Feb', 3, null], ['Mar', 2, 5]],
       charts: ['line', 'column', 'bar', 'area'].map((t, i) => ({ type: t, title: t + ' chart', at: { col: 4, row: i * 18, cols: 8, rows: 16 },
         cat: { sheet: 'Charts/[1]', col: 0, r0: 3, r1: 5 },
-        series: [1, 2].map((c) => ({ name: { sheet: 'Charts/[1]', col: c, row: 2 }, sheet: 'Charts/[1]', col: c, r0: 3, r1: 5 })) })) }
+        series: (t === 'bar' ? [1] : [1, 2]).map((c) => ({ name: { sheet: 'Charts/[1]', col: c, row: 2 }, sheet: 'Charts/[1]', col: c, r0: 3, r1: 5 })) })) }
   ]
 };
 const bytes = NLX.workbook(spec);
@@ -112,6 +112,15 @@ test('native charts', () => {
   const kinds = [1, 2, 3, 4].map((i) => Z['xl/charts/chart' + i + '.xml']);
   ok(kinds[0].includes('<c:lineChart>') && kinds[1].includes('<c:barDir val="col"/>') && kinds[2].includes('<c:barDir val="bar"/>') && kinds[3].includes('<c:grouping val="stacked"/>'), 'chart kinds');
   ok(kinds.every((k) => k.includes('<c:dispBlanksAs val="gap"/>')), 'a blank must stay a gap');
+  // one series: no legend (the title names it); two or more: a legend right of the plot, never over the category labels or the title
+  ok(kinds.every((k) => ((k.match(/<c:ser>/g) || []).length > 1) === k.includes('<c:legend><c:legendPos val="r"/>') && !k.includes('legendPos val="b"')), 'legend rule');
+});
+// a negative section's minus is written escaped: Numbers shows "--187" for an unescaped one, Excel and LibreOffice the same
+test('negative sections write an escaped minus', () => {
+  const n = NLX.negLiteral;
+  ok(n('+#,##0;-#,##0;0') === '+#,##0;\\-#,##0;0' && n('+0.0" pt";-0.0" pt";0.0" pt"') === '+0.0" pt";\\-0.0" pt";0.0" pt"' &&
+    n('[>0]+#,##0;[<0]-#,##0;0') === '[>0]+#,##0;[<0]\\-#,##0;0' && n('#,##0') === '#,##0' && n(n('+#,##0;-#,##0')) === '+#,##0;\\-#,##0', 'negLiteral');
+  ok(!/formatCode="[^"]*;-/.test(Z['xl/styles.xml']), 'a format with an unescaped negative minus was written');
 });
 test('dates', () => {
   ok(NLX.dateSerial('2026-10-16') === 46311 && NLX.dateSerial('1900-03-01') === 61 && NLX.dateSerial('nope') === null, 'serials');
@@ -127,6 +136,11 @@ if (fs.existsSync(PY)) {
     ok(r.status === 0, (r.stderr || '').trim().split('\n').pop());
     const o = r.stdout.trim();
     ok(o.includes('=COUNTIFS(C2:C4,"Open")') && o.includes('A2') && o.includes(' 2 ') && o.includes("['Tracker_1']") && o.includes(' 4 yyyy-mm-dd 2026-10-20'), o);
+  });
+  // what Excel refuses and LibreOffice forgives: schema element order, relationships, content types, dropdown lengths
+  test('strict OOXML (Excel\'s rules)', () => {
+    const r = spawnSync(PY, [path.join(SITE, 'tools', 'check_xlsx_strict.py'), f], { encoding: 'utf8' });
+    ok(r.status === 0, (r.stdout + r.stderr).trim());
   });
   fs.unlinkSync(f);
 } else console.log('(no python with openpyxl: the openpyxl check was not run)');

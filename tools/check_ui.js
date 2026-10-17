@@ -1123,6 +1123,15 @@ self.onmessage = function (e) {
     self.postMessage({ type: 'plan_json', id: m.id, steps: REPORT.__plan || [] });
   } else if (m.type === 'more') {
     self.postMessage({ type: 'more_json', id: m.id, out: REPORT.__more || null });
+  } else if (m.type === 'input') {         // another file of the run (CONTRACT §5.18): the engine's summaries, in order
+    self.__in = self.__in || 0;
+    var X = (REPORT.__inputs || [])[self.__in++] || { id: '', name: m.name, primary: false, ok: false, error: 'the stub has no such file', role: 'other' };
+    self.postMessage({ type: 'input_read', id: m.id, input: X });
+  } else if (m.type === 'deliver') {       // a step-6 report type: the engine's record (made by python), the settings echoed
+    var O = (REPORT.__deliver || {})[m.kind];
+    O = O ? JSON.parse(JSON.stringify(O)) : null;
+    if (O) O.__settings = m.settings;
+    self.postMessage({ type: 'delivered', id: m.id, req: m.req, out: O });
   } else if (m.type === 'results') {
     if (REPORT.__results) self.postMessage({ type: 'results_json', id: m.id, results: REPORT.__resultsJson || { charts: [], tables: [] } });
   } else if (m.type === 'run') {
@@ -5153,6 +5162,180 @@ check('ask-sql-through-the-real-engine', DESK, async (ctx) => {
   ok(/^SELECT /.test(r.sql) && /FROM kept_rows/.test(r.sql) && /"region" = 'EMEA'/.test(r.sql), 'the SQL panel: ' + r.sql.slice(0, 80));
   ok(r.rows.length === 12 && r.rows[11] === '2026-Q3', 'the result table: ' + r.rows.join(' '));
   ok(r.pins === 3, r.pins + ' pin buttons');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Step 6 report types (window.NLDeliver, src/js/60-deliver.js) and the monthly reporting pack (Track E, src/js/61-pack.js;
+// engine/nl_pack.py, CONTRACT §5.18): step 1's "What do you need?" with the chosen type's checklist and settings, several
+// files per run (the pack demo: the sales ledger + its budget + a KPI extract), the menu in step 6, the pack's card and
+// its four downloads, a recipe loaded back. The stand-in worker answers with the engine's own records made here by python
+// (run_json, input_json, deliver_json), so every figure on the card is the engine's.
+let PACK_REP = null;
+function packReport() {
+  if (PACK_REP) return PACK_REP;
+  const code = 'import sys,os,json,warnings\nwarnings.filterwarnings("ignore")\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'e=site+"/engine/"\nrep=json.loads(NB.run_json(open(e+"sample-sales-synthetic.csv","rb").read(),"sample-sales-synthetic.csv","",None,"2026-10-01"))\n' +
+    'ins=[json.loads(NB.input_json(open(e+n,"rb").read(),n,"2026-10-01")) for n in ("sample-pack-budget-synthetic.csv","sample-pack-kpi-synthetic.csv")]\n' +
+    'rep["__inputs"]=ins\nrep["__deliver"]={"monthly-pack":json.loads(NB.deliver_json("monthly-pack",json.dumps({"as_of":"2026-10-01"})))}\nprint(json.dumps(rep))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Skip('the pack report could not be made (' + String(r.stderr || r.error || '').trim().split('\n').pop() + ')');
+  PACK_REP = JSON.parse(r.stdout);
+  return PACK_REP;
+}
+async function packRun(ctx, tag) {
+  const rep = packReport(), pack = rep.__deliver['monthly-pack'];
+  ok(pack.ok && pack.month === '2026-09' && pack.watch.length >= 4, 'the engine\'s pack is not what the check expects: ' + JSON.stringify([pack.ok, pack.month, pack.watch]));
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  if (/dark/.test(tag)) { await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); }); await p.waitForTimeout(100); }
+  // step 1 before any file: the select fed by the registry, the chosen type's checklist and its settings
+  ok(await p.isVisible('#try-need-sel'), 'step 1 has no "What do you need?" select');
+  const opts = await p.$$eval('#try-need-sel option', (o) => o.map((x) => x.value));
+  ok(opts[0] === '' && opts.indexOf('monthly-pack') > 0, 'the select does not list the monthly pack: ' + opts.join(','));
+  await p.selectOption('#try-need-sel', 'monthly-pack');
+  const need = await p.evaluate(() => ({ items: Array.from(document.querySelectorAll('#try-need-list > li')).map((li) => li.textContent.replace(/\s+/g, ' ')),
+    fields: Array.from(document.querySelectorAll('#try-need [data-scope="need"] [data-key]')).map((x) => x.getAttribute('data-key')),
+    folder: /cannot open a folder/.test(document.getElementById('try-need').textContent), recipe: !!document.getElementById('try-recipe-load'),
+    paste: !!document.getElementById('try-paste-text'), multi: document.getElementById('try-file').multiple }));
+  ok(need.items.length === 4 && /This month's actuals/.test(need.items[0]) && /Budget or plan.*optional/.test(need.items[1]) && /KPI extract/.test(need.items[2]) && /Columns:/.test(need.items[0]),
+    'the upload checklist: ' + JSON.stringify(need.items).slice(0, 300));
+  ok(['readers', 'metrics', 'threshold', 'basis', 'compare', 'fiscal_start', 'month'].every((k) => need.fields.indexOf(k) >= 0), 'the settings in step 1: ' + need.fields.join(','));
+  ok(need.folder && need.recipe && need.paste && need.multi, 'step 1 lacks the folder note, Load a recipe, Paste figures or several files: ' + JSON.stringify(need));
+  await shot(p, 'pack-' + tag + '-step1', '#try-need');
+  await p.fill('#try-need [data-scope="need"] [data-key="readers"]', 'the board');
+  await p.dispatchEvent('#try-need [data-scope="need"] [data-key="readers"]', 'change');
+  ok(/synthetic/i.test(await p.textContent('#try-sample-pack')), 'the pack demo button does not say synthetic');
+  // the demo: three files in one run
+  await p.click('#try-sample-pack');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])');
+  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-noai').catch(() => p.click('#try-pd-go')); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])'); }
+  ok(await p.isVisible('#try-report'), 'no report: ' + (await p.textContent('#try-msg')));
+  await p.waitForFunction(() => window.NLDeliver.inputs().length === 3 && document.querySelector('#try-type-card #pk-out .pk-dl'), null, { timeout: 20000 })
+    .catch(async () => { throw new Error('the pack card did not appear: ' + await p.evaluate(() => JSON.stringify([window.NLDeliver.inputs().length, (document.getElementById('try-type-card') || {}).textContent]).slice(0, 300))); });
+  const r = await p.evaluate(() => ({
+    files: Array.from(document.querySelectorAll('#try-files .try-file')).map((li) => [li.querySelector('b').textContent, (li.querySelector('select') || {}).value || '', li.querySelector('.tag').textContent]),
+    menu: Array.from(document.querySelectorAll('#try-types .try-type')).map((li) => li.textContent.replace(/\s+/g, ' ')),
+    order: Array.from(document.querySelectorAll('#try-step-6-slot > *')).map((x) => x.id),
+    status: document.getElementById('pk-status').textContent,
+    watch: Array.from(document.querySelectorAll('#pk-out table.pk-watch tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent)),
+    readers: (document.querySelector('#try-type-card [data-key="readers"]') || {}).value,
+    sw: document.documentElement.scrollWidth, vw: document.documentElement.clientWidth }));
+  ok(JSON.stringify(r.files.map((f) => f[0])) === JSON.stringify(['sample-sales-synthetic.csv', 'sample-pack-budget-synthetic.csv', 'sample-pack-kpi-synthetic.csv']), 'the files of the run: ' + JSON.stringify(r.files));
+  ok(r.files[0][2].indexOf('main file') >= 0 && r.files[1][1] === 'plan' && r.files[2][1] === 'actuals_vs_plan', 'roles or the main file: ' + JSON.stringify(r.files));
+  ok(r.order.indexOf('try-deliver') >= 0 && r.order.indexOf('try-deliver') < r.order.indexOf('try-types'), 'step 6 does not show the downloads first, then the report types: ' + r.order.join(','));
+  ok(r.menu.length >= 1 && /Monthly reporting pack ready/.test(r.menu[0]), 'the menu: ' + r.menu.join(' | '));
+  ok(r.status.indexOf('Reporting month: September 2026') >= 0 && r.status.indexOf(pack.lines.length + ' lines, ' + pack.watch.length + ' on the watch list') >= 0, 'the card status: ' + r.status);
+  ok(r.watch.length === pack.watch.length && r.watch.every((row) => row[3] === 'driver to be confirmed'), 'the watch list on the card: ' + JSON.stringify(r.watch).slice(0, 200));
+  const rev = r.watch.find((row) => row[0] === 'Revenue');
+  ok(rev && /EMEA/.test(rev[2]) && /vs plan/.test(rev[1]), 'revenue\'s row: ' + JSON.stringify(rev));
+  ok(r.readers === 'the board', 'the reader set in step 1 is not the step 6 setting: ' + r.readers);
+  ok(r.sw <= r.vw + 1, 'the page is wider than the viewport: ' + r.sw + ' > ' + r.vw);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await shot(p, 'pack-' + tag + '-files', '#try-files');
+  await shot(p, 'pack-' + tag + '-card', '#try-types');
+  return { p, rep, pack };
+}
+async function packDownloads(p, pack) {
+  const got = {};
+  for (const k of ['xlsx', 'docx', 'json', 'md']) {
+    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click('#pk-out button[data-pk="' + k + '"]')]);
+    got[k] = { name: dl.suggestedFilename(), bytes: fs.readFileSync(await dl.path()) };
+  }
+  ok(got.xlsx.name === 'monthly-pack-2026-09.xlsx' && got.docx.name === 'monthly-pack-2026-09-cover-note.docx', 'file names: ' + got.xlsx.name + ', ' + got.docx.name);
+  const zx = zipMembers(got.xlsx.bytes), zd = zipMembers(got.docx.bytes);
+  ok(['xl/workbook.xml', 'xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml', 'xl/worksheets/sheet3.xml', 'xl/worksheets/sheet4.xml'].every((n) => zx.has(n)), 'the workbook parts: ' + [...zx.keys()].join(','));
+  const wb = zx.get('xl/workbook.xml').toString('utf8'), m = zx.get('xl/worksheets/sheet1.xml').toString('utf8'), w = zx.get('xl/worksheets/sheet2.xml').toString('utf8');
+  ok(/name="Metrics"/.test(wb) && /name="Watch list"/.test(wb) && /name="Notes"/.test(wb) && /name="Inputs checklist"/.test(wb), 'sheet names: ' + wb.slice(0, 300));
+  ok((m.match(/<f>/g) || []).length >= 6 * pack.lines.length, 'the Metrics sheet has ' + (m.match(/<f>/g) || []).length + ' formulas');
+  ok((w.match(/\$B\$2/g) || []).length >= pack.lines.length * 2, 'the watch flags do not all read the one threshold cell');
+  const doc = zd.get('word/document.xml').toString('utf8').replace(/<[^>]+>/g, ' ');
+  ok(/Monthly pack: September 2026/.test(doc) && /for the board/.test(doc) && /driver to be confirmed/.test(doc) && /Watch list/.test(doc), 'the cover note: ' + doc.replace(/\s+/g, ' ').slice(0, 300));
+  const rec = JSON.parse(got.json.bytes.toString('utf8'));
+  ok(rec.kind === 'monthly-pack' && rec.settings && rec.inputs.length === 3, 'the recipe: ' + JSON.stringify(rec).slice(0, 200));
+  ok(/Inputs checklist for next month/.test(got.md.bytes.toString('utf8')), 'the checklist file');
+  ok(/Saved as/.test(await p.textContent('#pk-dl-out')), 'the card does not say the file was saved');
+  return rec;
+}
+check('pack-step1-to-step6-desktop', DESK, async (ctx) => {
+  const { p, pack } = await packRun(ctx, 'desktop-light');
+  const rec = await packDownloads(p, pack);
+  // a setting changed in the card goes to the engine (the stand-in echoes it): the threshold, as typed
+  await p.evaluate(() => { const T = window.NLTry, f = T.deliver; window.__sent = []; T.deliver = function (k, s, cb) { window.__sent.push(s); return f(k, s, cb); }; });
+  await p.fill('#try-type-card [data-key="threshold"]', '30');
+  await p.dispatchEvent('#try-type-card [data-key="threshold"]', 'change');
+  await p.waitForFunction(() => window.__sent.length && document.querySelector('#pk-out .pk-dl'), null, { timeout: 10000 });
+  const sent = await p.evaluate(() => window.__sent[window.__sent.length - 1]);
+  ok(sent.threshold === 30 && sent.as_of === '2026-10-01' && sent.readers === 'the board', 'the settings sent to the engine: ' + JSON.stringify(sent));
+  // a role changed in step 1 goes with the next pack (settings.roles)
+  await p.selectOption('#try-files select[data-input="in3"]', 'kpi');
+  await p.waitForFunction(() => window.__sent.some((s) => s.roles && s.roles.in3 === 'kpi'), null, { timeout: 10000 }).catch(() => { throw new Error('the role the visitor chose did not reach the engine'); });
+  // Load a recipe: its settings come back into the form
+  rec.settings.readers = 'the audit committee';
+  const f = path.join(require('os').tmpdir(), 'nl-pack-recipe-' + process.pid + '.json');
+  fs.writeFileSync(f, JSON.stringify(rec));
+  await p.setInputFiles('#try-recipe-file', f);
+  fs.unlinkSync(f);
+  await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 10000 });
+  ok(await p.inputValue('#try-need [data-scope="need"] [data-key="readers"]') === 'the audit committee', 'the recipe\'s reader is not in the form');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}, { acceptDownloads: true });
+check('pack-step1-to-step6-phone', PHONE, async (ctx) => {
+  const { p, pack } = await packRun(ctx, 'phone-light');
+  await packDownloads(p, pack);
+  const r = await p.evaluate(() => Array.from(document.querySelectorAll('#pk-out .pk-dl .btn, #try-need-sel, #try-files select')).map((b) => { const x = b.getBoundingClientRect(); return [x.height, x.right, innerWidth]; }));
+  ok(r.every((x) => x[0] >= 36 && x[1] <= x[2] + 0.5), 'a control does not fit the phone: ' + JSON.stringify(r));
+}, { acceptDownloads: true, mobile: true });
+check('pack-step1-to-step6-dark', DESK, async (ctx) => {
+  const { p } = await packRun(ctx, 'desktop-dark');
+  const c = await p.evaluate(() => { const el = document.querySelector('#try-types'), t = document.querySelector('#pk-out table.pk-watch td'); return [getComputedStyle(el).backgroundColor, getComputedStyle(t).color]; });
+  ok(c[0] !== c[1], 'the card has no contrast in the dark theme: ' + c.join(' / '));
+}, { colorScheme: 'dark' });
+// the registry other report types code against (Tracks F and G): a type registered from outside shows in step 1's select
+// with its checklist and in step 6's menu with its fits() answer; the engine call reaches the worker
+check('deliver-registry-takes-another-report-type', DESK, async (ctx) => {
+  const rep = packReport();
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  await p.evaluate(() => {
+    window.NLDeliver.register({ id: 'check-type', order: 50, title: 'Check type', blurb: 'registered by the UI check',
+      needs: [{ what: 'A deals export', columns: ['deal_id', 'amount'], optional: false, how: 'Export it.' }],
+      fits: (r) => ({ ok: false, why: 'deal_id, amount' }), settings: [{ key: 'q', label: 'Quarter', kind: 'choice', 'default': 'Q4', options: [{ value: 'Q3', label: 'Q3' }, { value: 'Q4', label: 'Q4' }] }],
+      render: (slot, r, s) => { slot.innerHTML = '<p id="check-type-out">quarter ' + s.q + '</p>'; } });
+  });
+  await p.selectOption('#try-need-sel', 'check-type');
+  ok(/A deals export/.test(await p.textContent('#try-need-list')) && /deal_id/.test(await p.textContent('#try-need-list')), 'another type\'s checklist is not shown in step 1');
+  await runReport(p);
+  await p.waitForSelector('#try-types .try-type button[data-type="check-type"]');
+  ok(/needs: deal_id, amount/.test(await p.textContent('#try-types')), 'the menu does not show the type\'s fits() answer');
+  // the type chosen in step 1 opens in step 6 by itself after the run
+  ok(await p.getAttribute('#try-types button[data-type="check-type"]', 'aria-expanded') === 'true', 'the type chosen in step 1 is not open in step 6');
+  ok(await p.textContent('#check-type-out') === 'quarter Q4', 'the type\'s render() did not get its settings');
+  await p.selectOption('#try-type-card [data-key="q"]', 'Q3');
+  ok(await p.textContent('#check-type-out') === 'quarter Q3', 'a changed setting did not render again');
+  const out = await p.evaluate(() => window.NLDeliver.engine('monthly-pack', { as_of: '2026-10-01' }).then((o) => o && o.ok && o.__settings.as_of));
+  ok(out === '2026-10-01', 'NLDeliver.engine did not reach the worker: ' + out);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+// the pack through the REAL engine (Pyodide, engine/worker.js), the AI off: three files, the companions read by the worker,
+// the pack made by nl_pack in the browser; its watch list and figures must be the native engine's
+check('pack-through-the-real-engine', DESK, async (ctx) => {
+  const why = await cdnReachable();
+  if (why) throw new Skip(why + ', so the real engine cannot load');
+  const native = packReport().__deliver['monthly-pack'];
+  const p = await openTry(ctx, { proxy: 'unset' });
+  await p.evaluate(() => { window.__t0 = performance.now(); });
+  await p.click('#try-sample-pack');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
+  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-noai'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
+  ok(await p.isVisible('#try-report'), 'no report from the real engine: ' + (await p.textContent('#try-msg')));
+  await p.waitForFunction(() => window.NLPack && window.NLPack.lastPack && document.querySelector('#pk-out .pk-dl'), null, { timeout: 120000 });
+  const r = await p.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), pack: window.NLPack.lastPack, ins: window.NLDeliver.inputs().map((f) => [f.name, f.role, f.rows_kept]) }));
+  console.log('UI INFO pack-through-the-real-engine: three files and the pack took ' + r.ms + ' ms in the browser (Pyodide load included)');
+  ok(JSON.stringify(r.pack.watch) === JSON.stringify(native.watch) && r.pack.month === native.month, 'the watch list differs from the native engine\'s: ' + JSON.stringify([r.pack.watch, native.watch]));
+  native.lines.forEach((L) => {
+    const b = r.pack.lines.find((x) => x.key === L.key);
+    ok(b && ['cur', 'prev', 'mom', 'plan', 'var', 'ytd_act', 'ytd_plan'].every((k) => (b[k] === null && L[k] === null) || Math.abs(b[k] - L[k]) <= 1e-6 * Math.max(1, Math.abs(L[k]))), 'a figure differs from the native engine\'s: ' + L.key);
+  });
+  ok(r.ins.length === 3 && r.ins[1][1] === 'plan' && r.ins[2][1] === 'actuals_vs_plan', 'the files: ' + JSON.stringify(r.ins));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 

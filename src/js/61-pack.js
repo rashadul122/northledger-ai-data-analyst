@@ -268,7 +268,8 @@
           '<details class="pk-notes"><summary>Looked wrong, please check (' + arr(pack.notes.wrong).length + ')</summary><ul>' + (arr(pack.notes.wrong).length ? pack.notes.wrong.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') : '<li>Nothing the engine flagged.</li>') + '</ul></details>';
         Array.prototype.forEach.call(out.querySelectorAll('button[data-pk]'), function (b) {
           b.addEventListener('click', function () {
-            var made = today(), files = P.files(pack, made), want = b.getAttribute('data-pk'), f = files.filter(function (x) { return x.name.slice(-want.length - 1) === '.' + want; })[0], o = document.getElementById('pk-dl-out');
+            // the reader is the visitor's setting as it stands (the engine echoes it; a card drawn earlier may predate an edit)
+            var made = today(), files = P.files(Object.assign({}, pack, { readers: String(D.settings('monthly-pack').readers || pack.readers || '') }), made), want = b.getAttribute('data-pk'), f = files.filter(function (x) { return x.name.slice(-want.length - 1) === '.' + want; })[0], o = document.getElementById('pk-dl-out');
             if (!f) { o.hidden = false; o.textContent = 'This file cannot be made in this browser.'; return; }
             D.offer(o, f.bytes, f.name, f.mime, f.label);
           });

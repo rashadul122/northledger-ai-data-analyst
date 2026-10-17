@@ -325,6 +325,8 @@ def test_workbook_opens_with_formulas_dropdowns_table():
         assert f["How many tasks are overdue?"].startswith("=B"), f["How many tasks are overdue?"]
         assert str(f["What does the weather do?"]).startswith("Not answered by a formula"), f
         assert str(f["Which open tasks are oldest?"]).startswith("=C"), f["Which open tasks are oldest?"]
+        assert [sm.cell(5, c).value for c in (1, 2, 6)] == ["Your questions", "Answer", "How it is worked out"]
+        assert sm.cell(6, 1).value == "How many tasks are overdue?" and sm.cell(9, 1).value is None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

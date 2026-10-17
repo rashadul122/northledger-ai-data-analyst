@@ -798,7 +798,7 @@ def _workbook(kind: str, T: Dict[str, Any], tcols, data_cols: List[str], extra_c
     if "days_open" in fcols:
         O, C = _sref(op), _sref(cl) if cl else '""'
         fdefs["days_open"] = ('IF(ISNUMBER(%s),IF(ISNUMBER(%s),%s-%s,IF(%s="",TODAY()-%s,"")),"")' % (O, C, C, O, C, O)
-                              if cl else 'IF(ISNUMBER(%s),TODAY()-%s,"")' % (O, O), "num")
+                              if cl else 'IF(ISNUMBER(%s),TODAY()-%s,"")' % (O, O), "int")
     if "is_open" in fcols:
         fdefs["is_open"] = ('IF(%s="","",IF(COUNTIF(%s,%s)>0,"No","Yes"))' % (_sref(sc), closed_ref, _sref(sc)), None)
     if "overdue" in fcols:
@@ -806,7 +806,7 @@ def _workbook(kind: str, T: Dict[str, Any], tcols, data_cols: List[str], extra_c
         fdefs["overdue"] = ('IF(AND(%s="Yes",ISNUMBER(%s)),IF(%s<TODAY(),"Yes","No"),"")' % (IO, D, D), None)
     if "open_key" in fcols:
         IO, DO = _sref(FORMULA_COLS["is_open"]), _sref(FORMULA_COLS["days_open"])
-        fdefs["open_key"] = ('IF(AND(%s="Yes",ISNUMBER(%s)),%s+ROW()/1000000,"")' % (IO, DO, DO), "num")
+        fdefs["open_key"] = ('IF(AND(%s="Yes",ISNUMBER(%s)),%s+ROW()/1000000,"")' % (IO, DO, DO), "int")
     if "stock_value" in fcols:
         Q, U = _sref(role_col["qty"]), _sref(role_col["unit_cost"])
         fdefs["stock_value"] = ('IF(AND(ISNUMBER(%s),ISNUMBER(%s)),%s*%s,"")' % (Q, U, Q, U), "num2")
@@ -916,9 +916,12 @@ def _workbook(kind: str, T: Dict[str, Any], tcols, data_cols: List[str], extra_c
     if not rows:
         data_rows.append([None] * len(heads))
     widths = []
-    for h in heads:
-        w = max([len(h)] + [len(str(r.vals.get(h, ""))) for r in rows[:300]]) + 2
-        widths.append(max(8, min(w, 48 if h != CHECK_COL else 70)))
+    for j, h in enumerate(heads):
+        cells = [r[j] for r in data_rows[1:301] if r and j < len(r)]
+        texts = [str(c.get("v")) if isinstance(c, dict) and "f" not in c else ("0000000000" if isinstance(c, dict) else str(c or ""))
+                 for c in cells]
+        w = max([len(h)] + [len(t) for t in texts]) + 3
+        widths.append(max(9, min(w, 48 if h != CHECK_COL else 70)))
     validations = []
     if sc and st_list:
         c0, r0, r1 = lists_at["Status"]
@@ -942,16 +945,16 @@ def _workbook(kind: str, T: Dict[str, Any], tcols, data_cols: List[str], extra_c
         cell = {"f": f, "v": v}
         if fmt and v != "":
             cell["fmt"] = fmt
-        sm.append([label, cell, how])
+        sm.append([label, cell, None, None, None, how])
         return "B%d" % len(sm)
 
     sm.append([_B("%s tracker: summary" % T["label"]), None, None])
     sm.append(["Every number here is a formula over the Data sheet; add or edit a row there and these update. "
                "Today's date comes from TODAY(), so day counts move each day.", None, None])
-    sm.append(["Today", {"f": "TODAY()", "v": today_serial, "fmt": "date"}, "TODAY()"])
+    sm.append(["Today", {"f": "TODAY()", "v": today_serial, "fmt": "date"}, None, None, None, "TODAY()"])
     sm.append([None, None, None])
     q_at = len(sm)
-    sm.append([_B("Your questions"), _B("Answer"), _B("How it is worked out")])
+    sm.append([_B("Your questions"), _B("Answer"), None, None, None, _B("How it is worked out")])
     for _ in asked or T["questions"]:
         sm.append([None, None, None])
     sm.append([None, None, None])
@@ -1083,16 +1086,16 @@ def _workbook(kind: str, T: Dict[str, Any], tcols, data_cols: List[str], extra_c
     for i, q in enumerate(asked or T["questions"]):
         a = _answer(q, cells, group_at, oldest_at, role_col, fcols, T, sm)
         answers.append(dict(a, question=q))
-        r = q_at + 1 + i
+        r = q_at + 2 + i                                  # under the "Your questions" header row
         if a["cell"]:
             ref = a["cell"]
             src = sm[int(re.sub(r"\D", "", ref)) - 1]
             val = src[1 if ref.startswith("B") else 2]
             v = val.get("v") if isinstance(val, dict) else val
-            sm[r - 1] = [q, {"f": ref, "v": v, **({"fmt": val["fmt"]} if isinstance(val, dict) and val.get("fmt") else {})}, a["how"]]
+            sm[r - 1] = [q, {"f": ref, "v": v, **({"fmt": val["fmt"]} if isinstance(val, dict) and val.get("fmt") else {})}, None, None, None, a["how"]]
         else:
-            sm[r - 1] = [q, a["text"], a["how"]]
-    summary_sheet = {"name": "Summary", "widths": [52, 16, 16, 16, 16], "rows": sm}
+            sm[r - 1] = [q, a["text"], None, None, None, a["how"]]
+    summary_sheet = {"name": "Summary", "widths": [52, 16, 16, 16, 16, 80], "rows": sm}
 
     # -- the record sheets
     def fl(f, ln):
@@ -1233,7 +1236,7 @@ def _answer(q: str, cells: Dict[str, str], group_at: Dict[str, int], oldest_at: 
         if not re.search(pat, ql):
             continue
         if what in cells:
-            how = sm[int(cells[what][1:]) - 1][2]
+            how = sm[int(cells[what][1:]) - 1][5]
             return {"cell": cells[what], "text": None, "how": "the %s line under Totals: %s" % (sm[int(cells[what][1:]) - 1][0], how)}
         if what in group_at:
             return {"cell": None, "text": "See “%s” below (row %d)" % (sm[group_at[what] - 1][0]["v"], group_at[what]),

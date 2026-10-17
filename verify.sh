@@ -112,7 +112,9 @@ if "</body>" not in page:
     sys.exit("index.html has no </body>")
 # the copy sits in scratch, so rewrite relative links only for rendering, never on the site
 open(os.path.join(t, "site_test.html"), "w", encoding="utf-8").write(
-    page.replace("<head>", '<head><base href="file://%s/">' % d, 1).replace("</body>", driver + "</body>"))
+    # the driver goes before the LAST </body>: an inline script may hold the text "</body>" in a string
+    (lambda p: p[:p.rindex("</body>")] + driver + p[p.rindex("</body>"):])(
+        page.replace("<head>", '<head><base href="file://%s/">' % d, 1)))
 EOF
   if dump_dom "file://$TMPD/site_test.html" "$TMPD/index.driver.html" 15000 TESTOUT; then
     if "$PY" "$DIR/tools/check_driver.py" "$TMPD/index.driver.html" --root "$DIR"; then record render PASS "index.html renders with no JS errors, a main landmark, named charts and no sideways scroll; figures are checked against their JSON in the honesty step"

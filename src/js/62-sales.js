@@ -204,7 +204,7 @@
       'table{border-collapse:collapse;width:100%;font-size:8pt;margin:0 0 2pt}th,td{padding:2pt 4pt;border-bottom:.5pt solid #bfbfbf;text-align:left}thead th{background:#e9edf2;border-top:1pt solid #111;border-bottom:1pt solid #111}' +
       'td.num{text-align:right;font-variant-numeric:tabular-nums}.sr-ft{font-weight:bold;font-size:9pt;margin:8pt 0 2pt}figure{margin:6pt 0;break-inside:avoid}figure img{display:block;margin:0 auto;max-width:86%;height:auto}' +
       '.sr-page{border:0;break-after:page;margin:0}@media screen{.sr-page{border-top:1px dashed #bfbfbf;margin:16pt 0}}.print-note{font:9pt sans-serif;background:#fff8e1;padding:6pt 8pt;border:1px solid #e0c96f}@media print{.print-note{display:none}}' +
-      '</style></head><body><p class="print-note">Made by NorthLedger in your browser. To keep it as a PDF: File &gt; Print &gt; Save as PDF.</p>' + body + '</body></html>';
+      '</style></head><body><p class="print-note">Made by NorthLedger in your browser. To keep it as a PDF: File &gt; Print &gt; Save as PDF.</p>' + body + '<\/body><\/html>';
   };
 
   if (typeof module === 'object' && module && module.exports) { module.exports = NLSales; return; }

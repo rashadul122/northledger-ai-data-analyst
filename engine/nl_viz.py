@@ -3563,7 +3563,7 @@ def _b_series_change_heatmap(ctx: Ctx, lay: Dict[str, Any]) -> Dict[str, Any]:
              if data["values"][i][j] is not None]
     hi = max(shown, key=lambda x: x[0])
     lo = min(shown, key=lambda x: x[0])
-    ft = (lambda v: _signed_figure(v, 2) + " percentage points") if pp else _pct_text
+    ft = (lambda v: _pp_signed(v) + " percentage points") if pp else _pct_text
     summary = ("The largest rise: %s in %s (%s on the same months of %d); the largest fall: %s in %s (%s). Each cell compares a "
                "year's published months with the same months a year earlier%s; the figures are the agency's, not graded."
                % (hi[1], hi[2], ft(hi[0]), int(hi[2]) - 1, lo[1], lo[2], ft(lo[0]),
@@ -3790,6 +3790,14 @@ def _figure(v: float, dp: int) -> str:
     return (MINUS + s) if v < 0 and float(s.replace(",", "")) != 0 else s
 
 
+def _pp_signed(v: float) -> str:
+    """A change in percentage points, signed: NB.pp_body's decimals (2, or 3 when 2 would round it to 0.00)."""
+    b = NB.pp_body(v)
+    if float(b.replace(",", "")) == 0:
+        return b
+    return ("+" if v > 0 else MINUS) + b
+
+
 def _signed_figure(v: float, dp: int) -> str:
     s = _figure(v, dp)
     return s if s[:1] == MINUS or float(s.replace(",", "")) == 0 else "+" + s
@@ -4014,14 +4022,14 @@ def _fact_for(label: str, fid: str, column: Optional[str], order: int, pts: List
         years = ((t1.year * 12 + t1.month) - (t0.year * 12 + t0.month)) / 12.0
     change = v1 - v0
     pp = _is_pct_unit(unit)
-    # a change in percentage points is said to 2 decimals whatever the series' own (one list never mixes "−3.50" and "−3.4740")
-    cdp = PP_DECIMALS if pp and (round(abs(change), PP_DECIMALS) > 0 or change == 0) else dp
+    # a change in percentage points is said to 2 decimals whatever the series' own (one list never mixes "−3.50" and "−3.4740"):
+    # NB.pp_body, 3 decimals only when 2 would round a nonzero change to 0.00
     f: Dict[str, Any] = {
         "id": fid, "column": column, "label": _short_label(label), "order": order, "unit": unit, "pp": pp, "pts": pts,
         "first": {"date": _date_text(t0, grain, whole_year), "value": _r6(v0), "text": _figure(v0, dp)},
         "latest": {"date": _date_text(t1, grain, whole_year), "value": _r6(v1), "text": _figure(v1, dp)},
         "published": len(pts), "years": round(years, 3), "decimals": dp,
-        "change": {"value": _r6(change), "text": _figure(abs(change), cdp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
+        "change": {"value": _r6(change), "text": NB.pp_body(change) if pp else _figure(abs(change), dp), "direction": "up" if change > 0 else "down" if change < 0 else "unchanged"},
         "change_pct": None, "per_year": None, "cagr_pct": None}
     # a rate's change is in percentage points: the percent change of 6.00 to 2.50 is not the story, and its compounded rate is no rate
     if not pp and v0 != 0 and (v0 > 0) == (v1 >= 0 if v1 != 0 else v0 > 0):
@@ -4029,7 +4037,7 @@ def _fact_for(label: str, fid: str, column: Optional[str], order: int, pts: List
         f["change_pct"] = {"value": _r6(pct), "text": _pct_text(pct)}
     if years >= 1.0:
         py = change / years
-        f["per_year"] = {"value": _r6(py), "text": _signed_figure(py, cdp)}
+        f["per_year"] = {"value": _r6(py), "text": _pp_signed(py) if pp else _signed_figure(py, dp)}
         if not pp and v0 > 0 and v1 > 0:
             cagr = 100.0 * ((v1 / v0) ** (1.0 / years) - 1.0)
             f["cagr_pct"] = {"value": _r6(cagr), "text": _pct_text(cagr)}
@@ -4262,13 +4270,13 @@ def _fair_ranking(pf: Dict[str, Any], goal: str, n: int = 3) -> Optional[Dict[st
 
     def item(f: Dict[str, Any], ch: float, t0: Any = None, t1: Any = None, twins: Sequence[Tuple[Dict[str, Any], float]] = ()) -> Dict[str, Any]:
         sign = lambda x: "+" if x > 0 else MINUS if x < 0 else ""  # noqa: E731
-        txt = sign(ch) + _figure(abs(ch), ldp) + pts_w
+        fig = (lambda x: NB.pp_body(x)) if pp else (lambda x: _figure(abs(x), ldp))  # noqa: E731
+        txt = sign(ch) + fig(ch) + pts_w
         label = f["label"]
         if twins:
             label = twin_label(f["label"], [o["label"] for o, _c in twins])
             # a twin whose change over the window differs (its figures part on a date at an end) says its own
-            odd = ["%s %s" % (o["label"], sign(c) + _figure(abs(c), ldp) + pts_w) for o, c in twins
-                   if sign(c) + _figure(abs(c), ldp) != sign(ch) + _figure(abs(ch), ldp)]
+            odd = ["%s %s" % (o["label"], sign(c) + fig(c) + pts_w) for o, c in twins if sign(c) + fig(c) != sign(ch) + fig(ch)]
             if odd:
                 label = label[:-1] + "; %s)" % "; ".join(odd)
         out = {"id": f["id"], "label": label, "change": _r6(ch), "change_text": txt,

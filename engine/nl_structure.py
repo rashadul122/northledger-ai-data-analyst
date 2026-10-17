@@ -4379,13 +4379,24 @@ def _percent_rate(S: Dict[str, Any]) -> bool:
     return S["measure"]["type"] == "rate" and bool(re.search(r"(?i)percent|%", str(S["measure"].get("uom") or "")))
 
 
+def pp_body(v: float) -> str:
+    """A change in percentage points, unsigned: 2 decimals everywhere, 3 when 2 would round a nonzero change to 0.00 (weak2,
+    16 Oct 2026: "0.775" beside "3.50" and "-4.0")."""
+    a = abs(float(v))
+    for d in (2, 3):
+        s = format(a, ",.%df" % d)
+        if a == 0 or float(s.replace(",", "")) != 0:
+            return s
+    return "%.3g" % a
+
+
 def points(v: Optional[float]) -> str:
-    """A change of a percentage: "+0.617 percentage points" (never "%", which would read as a relative change)."""
+    """A change of a percentage: "+0.62 percentage points" (never "%", which would read as a relative change; pp_body's decimals)."""
     if v is None or v != v:
         return "n/a"
-    body = "%.3g" % abs(v)
+    body = pp_body(v)
     if not re.search(r"[1-9]", body):
-        return "0 percentage points"
+        return "0.00 percentage points"
     return ("+" if v > 0 else "\u2212") + body + " percentage points"
 
 

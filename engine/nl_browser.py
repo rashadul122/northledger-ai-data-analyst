@@ -8137,8 +8137,13 @@ def _diff_amt(v: Any, st: str, unit: Any) -> str:
     """A difference or a rate of change of a column: a percentage's in percentage points (5% to 7% is 2
     percentage points, not 2%), anything else in the column's own unit."""
     if st == "percentage":
-        s = _fmt(v)
-        return s if s == "n/a" else s + " percentage points"
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return "n/a"
+        if x != x:
+            return "n/a"
+        return ("\u2212" if x < 0 and float(pp_body(x).replace(",", "")) else "") + pp_body(x) + " percentage points"
     return _amt(v, unit)
 
 
@@ -8894,31 +8899,45 @@ def _short_labels(names: List[str]) -> Dict[str, str]:
     return out
 
 
+def pp_body(v: float) -> str:
+    """A change in percentage points, unsigned: 2 decimals everywhere, 3 when 2 would round a nonzero change to 0.00 (weak2,
+    16 Oct 2026: "0.775" beside "3.50" and "-4.0")."""
+    a = abs(float(v))
+    for d in (2, 3):
+        s = format(a, ",.%df" % d)
+        if a == 0 or float(s.replace(",", "")) != 0:
+            return s
+    return "%.3g" % a
+
+
 def _signed_pp(v: float) -> str:
-    """A change in percentage points as every list says it: 2 decimals, a sign, a true minus."""
-    t = format(abs(float(v)), ",.2f")
+    """A change in percentage points as every list says it: pp_body's decimals, a sign, a true minus."""
+    t = pp_body(v)
     if float(t.replace(",", "")) == 0:
         return t
     return ("+" if v > 0 else "\u2212") + t
 
 
 def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
-    """Series side by side (currencies after long_to_wide): each one's change from its first complete
-    year to its last, as a percentage of the first year's average (a level) or total (an amount). A rate in percent
-    changes in percentage points (the last year's average minus the first's: a percent of a percent reads as a relative
-    change nobody means), and the rates are ranked apart from the series compared as percentages (16 Oct 2026)."""
+    """Series side by side (currencies after long_to_wide): each one's change over ONE common window of complete calendar years
+    (weak2, 16 Oct 2026: each series used to run from its own first complete year to its own last, so a rate that stopped in 2018
+    was ranked beside rates read to 2025), as a percentage of the first year's average (a level) or total (an amount). A rate in
+    percent changes in percentage points (the last year's average minus the first's: a percent of a percent reads as a relative
+    change nobody means), and the rates are ranked apart from the series compared as percentages (16 Oct 2026). The series published
+    to the table's last complete year and over most of its span are ranked over the window they share; a series the agency stopped
+    publishing, or began late, is read apart over its own span and labelled so, never ranked against them."""
     rows = []
+    ys: Dict[str, Any] = {}
     for col in cols[:60]:
         st, _u = _col_type(plan, col, layout)
         y, _g = _period_values(df, date, None, col, _how(st))
         y = y.dropna()
         if len(y) < RANK_MIN_YEARS:
             continue
+        ys[col] = y
         a, b = float(y.iloc[0]), float(y.iloc[-1])
-        if st == "percentage":
-            rows.append((col, int(y.index[0]), int(y.index[-1]), a, b, b - a, "pp"))
-        elif a:
-            rows.append((col, int(y.index[0]), int(y.index[-1]), a, b, 100.0 * (b / a - 1.0) if a > 0 else None, "pct"))
+        kind = "pp" if st == "percentage" else "pct"
+        rows.append((col, int(y.index[0]), int(y.index[-1]), a, b, _rank_change(a, b, kind), kind, col))
     rows = [r for r in rows if r[5] is not None]
     # twins (the same figures under two names: nl_viz.series_twins) are one series here, named once with their variants (16 Oct 2026:
     # "Bank rate, last Tuesday or last Thursday rose most (+0.417 percentage points)" beside "Bank rate" -1.38, the same rate whose
@@ -8951,10 +8970,27 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
             rows = kept
     if len(rows) < 2:
         return {"refused": "rank: fewer than two series with two complete years"}
-    y0 = min(r[1] for r in rows)
-    y1 = max(r[2] for r in rows)
-    pp = sorted([r for r in rows if r[6] == "pp"], key=lambda r: -r[5])
-    pc = sorted([r for r in rows if r[6] == "pct"], key=lambda r: -r[5])
+    # one common window: the table's last complete year, from the latest first year of the series published over most of the span
+    y_last = max(r[2] for r in rows)
+    y_first = min(r[1] for r in rows)
+    reach = 0.6 * max(1, y_last - y_first)
+    whole0 = [r for r in rows if r[2] == y_last and (y_last - r[1]) >= reach]
+    w0 = max([r[1] for r in whole0] or [y_first])
+    ranked, apart = [], []
+    for r in rows:
+        y = ys[r[7]]
+        if r in whole0 and w0 in y.index and y_last in y.index and w0 < y_last:
+            a, b = float(y[w0]), float(y[y_last])
+            ch = _rank_change(a, b, r[6])
+            if ch is not None:
+                ranked.append((r[0], w0, y_last, a, b, ch, r[6], r[7]))
+                continue
+        apart.append(r)
+    if len(ranked) < 2:
+        return {"refused": "rank: fewer than two series share a window of complete years"}
+    y0, y1 = w0, y_last
+    pp = sorted([r for r in ranked if r[6] == "pp"], key=lambda r: -r[5])
+    pc = sorted([r for r in ranked if r[6] == "pct"], key=lambda r: -r[5])
 
     def amt(r: Tuple[Any, ...], words: str = " percentage points") -> str:
         # a change in percentage points to 2 decimals, every rate alike (16 Oct 2026: "+0.417" beside "-2.24")
@@ -8984,15 +9020,36 @@ def _a_rank_series(df, date, cols, plan, layout) -> Dict[str, Any]:
         text = ("From %d to %d (yearly averages, or totals for an amount), %s." % (y0, y1, said(pc, "series")))
         method_unit = "change as a percentage of the first year. Series of different units are compared only as percentages."
     text = text[:1].upper() + text[1:]
+
+    def own(r: Tuple[Any, ...]) -> str:
+        return "no longer published after %d" % r[2] if r[2] < y_last else "published only from %d" % r[1]
+    if apart:
+        ap = sorted(apart, key=lambda r: (r[6] != "pp", -abs(r[5])))
+        text += " Read apart, over their own span (%s): %s." % (
+            "no longer published, or begun later" if len(ap) > 1 else own(ap[0]),
+            "; ".join("%s %s (%d to %d)" % (r[0], amt(r), r[1], r[2]) for r in ap[:3]))
+        if len(ap) > 3:
+            text += " %d more %s read apart in the table." % (len(ap) - 3, "is" if len(ap) == 4 else "are")
     ordered = pp + pc
     lead = pp if len(pp) >= 2 or not pc else pc
     shown = lead if len(lead) <= 12 else lead[:6] + lead[-6:]
     return {"type": "rank", "title": "Which series moved most", "sentence": text,
-            "method": "Each series' first and last complete calendar year, averaged (a total for an amount); " + method_unit,
+            "method": ("The complete calendar years every ranked series shares, %d to %d, averaged (a total for an amount); a series "
+                       "no longer published to %d, or begun after most of the span, is read over its own span and listed apart; " % (
+                           y0, y1, y1)) + method_unit,
             "table": {"cols": ["Series", "First year", "Last year", "First", "Last", "Change"],
-                      "rows": [[r[0], str(r[1]), str(r[2]), _fmt(r[3]), _fmt(r[4]), amt(r, " points")] for r in ordered]},
+                      "rows": [[r[0], str(r[1]), str(r[2]), _fmt(r[3]), _fmt(r[4]), amt(r, " points")] for r in ordered] +
+                      [["%s (%s, read over its own span)" % (r[0], own(r)), str(r[1]), str(r[2]), _fmt(r[3]), _fmt(r[4]), amt(r, " points")]
+                       for r in sorted(apart, key=lambda r: (r[6] != "pp", -abs(r[5])))]},
             "chart": {"kind": "bars", "unit": "percentage points" if lead is pp else "%",
                       "series": [{"label": _short_labels([x[0] for x in lead])[r[0]], "value": r[5]} for r in shown]}}
+
+
+def _rank_change(a: float, b: float, kind: str) -> Optional[float]:
+    """A series' change from a to b: in percentage points for a rate in percent, else a percentage of a positive first value."""
+    if kind == "pp":
+        return b - a
+    return 100.0 * (b / a - 1.0) if a > 0 else None
 
 
 def _shrink_m(groups: Any, st: str = "") -> Tuple[int, Dict[str, Any]]:
@@ -12821,11 +12878,11 @@ def _num_of(s: str) -> Optional[float]:
 
 
 def _points_text(v: float, pct: bool, signed: bool = True) -> str:
-    """A rate's change: "−0.729 percentage points" (nl_structure.points' wording, 3 significant digits); a rate in another unit (per
+    """A rate's change: "−0.73 percentage points" (nl_structure.points' wording, pp_body's decimals); a rate in another unit (per
     1,000, an index rate) "−0.729 in the rate's own units"."""
-    body = "%.3g" % abs(v)
+    body = pp_body(v) if pct else "%.3g" % abs(v)
     if not re.search(r"[1-9]", body):
-        return "0 percentage points" if pct else "0 in the rate's own units"
+        return "0.00 percentage points" if pct else "0 in the rate's own units"
     sign = ("+" if v > 0 else "−") if signed else ""
     return sign + body + (" percentage points" if pct else " in the rate's own units")
 
@@ -12909,7 +12966,7 @@ def _swap_rel_pct(text: Any, rel: Optional[float], pts: float, pct: bool) -> Any
         if not (m.group("s") or w in _CHANGE_NOUNS or _CHANGE_BEFORE.search(before)) or _LEVEL_BEFORE.search(before):
             return m.group(0)
         if w in _CHANGE_NOUNS:
-            body = "%.3g" % abs(pts)
+            body = pp_body(pts) if pct else "%.3g" % abs(pts)
             unit = "-percentage-point" if pct else " (in the rate's own units)"
             return (("+" if pts > 0 else "−") if m.group("s") else "") + body + unit + after
         return _points_text(pts, pct, signed=bool(m.group("s"))) + after

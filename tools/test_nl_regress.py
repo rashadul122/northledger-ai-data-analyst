@@ -2609,10 +2609,10 @@ def test_s18_a_rates_change_is_in_percentage_points_and_the_answer_leads_with_or
         # the story: each rate's sentence in points with its interval as a ratio, and no percent change of a rate anywhere
         wh = rep["story"]["what_happened"]
         lead_line = next(x for x in wh if x.startswith("Average Bank rate, last Tuesday or last Thursday (the average month)"))
-        assert "moved from 3.295 in the year before to 2.521 in the latest year, a change of \u22120.775 percentage points." in lead_line, lead_line
+        assert "moved from 3.295 in the year before to 2.521 in the latest year, a change of \u22120.77 percentage points." in lead_line, lead_line
         assert "as a ratio of the latest year's level to the year before's, runs from 0.549 to 1.11 times" in lead_line, lead_line
         bank = next(x for x in wh if x.startswith("Average Bank rate (the average month)"))
-        assert "a change of \u22120.729 percentage points" in bank and "0.59 to 1.11 times" in bank and "%" not in bank.split("It is")[0], bank
+        assert "a change of \u22120.73 percentage points" in bank and "0.59 to 1.11 times" in bank and "%" not in bank.split("It is")[0], bank
         assert "NOT ENOUGH DATA" in bank, bank          # the core's grade, kept
         for bad in ("-22.4%", "\u221222.4%", "-41.0%", "+11.2%", "-23.5%", "-24.2%", "-45.1%"):
             assert bad not in _all_text(rep), bad
@@ -2620,7 +2620,7 @@ def test_s18_a_rates_change_is_in_percentage_points_and_the_answer_leads_with_or
         assert any(x.startswith("Average Treasury bill auction - amount auctioned: 3 month") and "a change of -1.6%" in x for x in wh)
         # the bottom line, the KPI tile, the findings table and the change chart
         moved = rep["summary"]["lines"][0]
-        assert moved["text"] == "Average Bank rate, last Tuesday or last Thursday is down 0.775 percentage points on the year before (too little data to judge).", moved
+        assert moved["text"] == "Average Bank rate, last Tuesday or last Thursday is down 0.77 percentage points on the year before (too little data to judge).", moved
         charts = {c["id"]: c for c in rep["charts"]}
         tile = next(t for t in charts["kpi"]["data"]["tiles"] if t["finding_id"] == rep["primary_metric"]["finding_id"])
         assert tile["scale"] == "difference" and tile["unit"] == "percentage points" and tile["ci"] is None and abs(tile["value"] + 0.7746) < 1e-3, tile
@@ -2637,7 +2637,7 @@ def test_s18_a_rates_change_is_in_percentage_points_and_the_answer_leads_with_or
         for bad in ("-22.4", "\u221222.4", "22.43", "-41.0%", "+11.2%"):
             assert bad not in blob, bad
         rs = {x["label"]: x for x in ai["rate_series"]}
-        assert rs["Bank rate"]["text"] == "\u22120.729 percentage points" and abs(rs["Bank rate"]["relative_pct"] + 22.4359) < 1e-3, rs.get("Bank rate")
+        assert rs["Bank rate"]["text"] == "\u22120.73 percentage points" and abs(rs["Bank rate"]["relative_pct"] + 22.4359) < 1e-3, rs.get("Bank rate")
         fai = next(f for f in ai["findings"] if f["claim"].startswith("Change in the average month of bank_rate,"))
         assert fai["value_unit"] == "percentage points" and abs(fai["value"] + 0.72917) < 1e-4, fai
     # the answer: the rules-only run has no question, so the graded claim answers it; the plan's question is about the whole period
@@ -2719,13 +2719,13 @@ def test_s19_the_answer_follows_the_question_on_the_debt_table_and_a_plain_file(
     # held, its percent goes from the estimand, the scenarios, the claim and the story; the slice's answer is its final headline
     rep = run_file("pyodide_rate_with_aggregate.csv")
     E = rep["estimand"]
-    assert E["measure"]["type"] == "rate" and "change_pct" not in E["figures"] and E["figures"]["change"]["text"] == "\u22120.883 percentage points", E["figures"]
+    assert E["measure"]["type"] == "rate" and "change_pct" not in E["figures"] and E["figures"]["change"]["text"] == "\u22120.88 percentage points", E["figures"]
     assert "change_pct" not in E["inference"]["describe"] and abs(E["relative_change_pct"]["value"] + 12.412178) < 1e-6, E.get("relative_change_pct")
     assert not any(i["id"] == "headline.change_pct" for i in rep["scenarios"]["items"]), [i["id"] for i in rep["scenarios"]["items"]]
     f = next(x for x in rep["findings"] if x["id"] == "measure.value.change")
     assert abs(f["value"] - (E["figures"]["latest"]["value"] - E["figures"]["prior"]["value"])) < 1e-5 and f["effect"]["unit"] == "percentage points", f["value"]
-    assert "The 0.883-percentage-point difference is real in this sample" in f["why"] and "12%" not in f["why"], f["why"]
-    assert "a change of \u22120.883 percentage points" in rep["story"]["what_happened"][0] and "0.668 to 1.36 times" in rep["story"]["what_happened"][0]
+    assert "The 0.88-percentage-point difference is real in this sample" in f["why"] and "12%" not in f["why"], f["why"]
+    assert "a change of \u22120.88 percentage points" in rep["story"]["what_happened"][0] and "0.668 to 1.36 times" in rep["story"]["what_happened"][0]
     assert rep["answer"]["leads"] == "latest_change" and rep["answer"]["text"] == rep["story"]["headline"] == rep["summary"]["lines"][0]["text"], rep["answer"]
     ai = NB.results_for_ai(rep)
     assert "change_pct" not in ai["estimand"]["figures"] and "12.4%" not in json.dumps(ai, ensure_ascii=False), ai["estimand"]["figures"]
@@ -2953,6 +2953,60 @@ def test_s32_changes_in_one_list_share_one_precision():
         for tx in texts:
             for m in re.findall(r"[−+-]?\d[\d,]*(?:\.(\d+))? (?:percentage )?points", tx):
                 assert len(m) == 2, (m, tx)
+
+
+def test_s33_percentage_points_are_two_decimals_in_every_text_three_only_when_two_round_to_zero():
+    """weak2 (16 Oct 2026): the graded 12-month line said "down 0.775 percentage points" beside "3.50", and the analyst "-4.0
+    percentage points". Every percentage-point figure in the report (story, bottom line, estimand, answer, analyst, period block, AI
+    payload) has 2 decimals; 3 only when 2 would round a nonzero change to 0.00. The rule itself, on its edge cases."""
+    import nl_analyst as NA
+    import nl_structure as NST
+    assert NB.pp_body(0.7746) == "0.77" and NB.pp_body(-0.004) == "0.004" and NB.pp_body(0) == "0.00" and NB.pp_body(4.0) == "4.00"
+    assert NA.fmt_num(-0.04024, "pp", signed=True) == "-0.04 percentage points" and NA.fmt_num(0.0, "pp") == "0.00 percentage points"
+    assert NST.points(-0.7291) == "−0.73 percentage points" and NST.points(0.0031) == "+0.003 percentage points"
+    assert NB._points_text(-0.729, True) == "−0.73 percentage points"
+    for rep in (run_file("s12_statcan_interest_rates.csv"), run_file("s12_statcan_interest_rates.csv", plan=_rates_plan())):
+        ai = NB.results_for_ai(rep)
+        texts = _all_text({k: v for k, v in rep.items() if k not in ("input",)}) + "\n" + _all_text(ai)
+        hits = re.findall(r"(\d[\d,]*(?:\.(\d+))?)(?: |-)(?:percentage[ -]points?|percentage-point)", texts)
+        assert hits, "no percentage points said"
+        for whole, dec in hits:
+            v = float(whole.replace(",", ""))
+            assert len(dec) == 2 or (len(dec) == 3 and round(v, 2) == 0), (whole, [l for l in texts.splitlines() if whole in l][:2])
+    # the moved line, recomputed from the file: the 12 months to 2026-09 against the 12 before
+    prior, latest = _window_means(frame("s12_statcan_interest_rates.csv"), "Bank rate, last Tuesday or last Thursday")
+    rep = run_file("s12_statcan_interest_rates.csv")
+    assert ("is down %.2f percentage points on the year before" % abs(latest - prior)) in rep["answer"]["latest"]["text"], rep["answer"]["latest"]
+
+
+def test_s34_the_ai_plans_ranking_compares_series_over_one_window_and_reads_a_discontinued_one_apart():
+    """weak2 (16 Oct 2026): the AI plan's "Which series moved most" ran each series from its own first complete year to its own last,
+    so a rate that stopped in 2014 was ranked beside rates read to 2025 (and the bank rate's twin, one month short, "rose most" over
+    2001-2024). Now the series published to the table's last complete year over most of its span are ranked over the window they
+    share; a series no longer published is read apart over its own span and labelled; the changes are recomputed here with pandas."""
+    d = pd.date_range("2001-01-01", "2025-12-01", freq="MS")
+    t = np.arange(len(d))
+    df = pd.DataFrame({"date": d.strftime("%Y-%m-%d"),
+                       "Policy rate": np.round(5.0 - 0.01 * t, 2),
+                       "Bond yield": np.round(6.0 - 0.005 * t, 2),
+                       "Deposit rate": np.round(2.0 + 0.002 * t, 2),
+                       "Old mortgage rate": np.where(d.year <= 2014, np.round(8.0 - 0.03 * t, 2), np.nan)})
+    plan = {"columns": [{"name": c, "semantic_type": "percentage"} for c in ("Policy rate", "Bond yield", "Deposit rate", "Old mortgage rate")]}
+    out = NB._a_rank_series(df, "date", ["Policy rate", "Bond yield", "Deposit rate", "Old mortgage rate"], plan, None)
+    assert "refused" not in out, out
+    yr = df.assign(y=d.year).groupby("y").mean(numeric_only=True)
+    want = {c: yr.loc[2025, c] - yr.loc[2001, c] for c in ("Policy rate", "Bond yield", "Deposit rate")}
+    rows = {r[0]: r for r in out["table"]["rows"]}
+    for c, w in want.items():
+        assert rows[c][1:3] == ["2001", "2025"], rows[c]
+        assert rows[c][5] == NB._signed_pp(w) + " points", (rows[c], w)
+    old = next(r for r in out["table"]["rows"] if r[0].startswith("Old mortgage rate"))
+    assert old[0] == "Old mortgage rate (no longer published after 2014, read over its own span)" and old[1:3] == ["2001", "2014"], old
+    sent = out["sentence"]
+    assert sent.startswith("From 2001 to 2025") and "fell most (" in sent and "Old mortgage rate" not in sent.split(" Read apart")[0], sent
+    assert "Read apart, over their own span (no longer published after 2014): Old mortgage rate %s percentage points (2001 to 2014)" % (
+        NB._signed_pp(yr.loc[2014, "Old mortgage rate"] - yr.loc[2001, "Old mortgage rate"])) in sent, sent
+    assert [x["label"] for x in out["chart"]["series"]] and all("Old" not in x["label"] for x in out["chart"]["series"])
 
 
 # ----------------------------------------------------------------------------- runner

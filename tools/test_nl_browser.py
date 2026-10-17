@@ -2899,7 +2899,7 @@ def test_money_units_are_written_where_a_reader_expects_them():
     assert NB._amt(933.4, "USD") == "933 USD" and NB._amt(31.2, "kg") == "31.2 kg" and NB._amt(5, "%") == "5%"
     assert NB._amt(10, "$", tail=False) == "$10" and NB._amt(10, "kg", tail=False) == "10" and NB._amt(float("nan"), "$") == "n/a"
     assert NB._amt(12, "") == "12"
-    assert NB._diff_amt(0.648, "percentage", "%") == "0.648 percentage points" and NB._diff_amt(3, "flow_amount", "$") == "$3"
+    assert NB._diff_amt(0.648, "percentage", "%") == "0.65 percentage points" and NB._diff_amt(3, "flow_amount", "$") == "$3"
 
 
 def test_a_fraction_percentage_prints_times_100_on_the_scale_its_test_chose():

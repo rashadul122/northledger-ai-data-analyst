@@ -160,8 +160,8 @@ def _fmt_item(value: Any, kind: str, unit: str = "", sig: Optional[int] = None) 
     if kind == "percent":
         return NB._pct_text(v).replace("-", "−")
     if kind == "points":
-        s = _sig_text(v, sig) if sig else NB._fmt(v)
-        return s if s == "n/a" else s + " percentage points"
+        # percentage points: 2 decimals everywhere (NB.pp_body), never 3 significant digits
+        return ("−" if v < 0 and float(NB.pp_body(v).replace(",", "")) else "") + NB.pp_body(v) + " percentage points"
     if sig and kind in ("change", "amount", "per_unit"):
         pre, post = NB._unit_parts(unit)
         s = _sig_text(v, sig)

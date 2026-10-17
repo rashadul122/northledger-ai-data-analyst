@@ -1577,6 +1577,7 @@
     function clearMsg() { el.msg.hidden = true; el.msg.innerHTML = ''; }
     function refuse(kind, info) {
       stopRun();
+      if (window.NLSteps) window.NLSteps.set(1, 'attention');
       var L = LIM;
       if (kind === 'big') say('This file is too big for the demo', 'It is ' + bytes(info.size) + '; the demo takes files up to ' + L.max_label + '. It did not open it, and nothing was sampled or uploaded. Split the file (for example one year at a time) or email me for the full audit.');
       else if (kind === 'rows') say('This file has too many rows for the demo', 'It has ' + num(info.rows, 0) + ' data rows; the demo takes up to ' + L.rows_label + '. It did not open it and has not sampled it: a sample would change every number. Split the file, or email me for the full audit.');
@@ -2364,6 +2365,7 @@
     function start(name, size, getBuffer, asOf) {
       if (S.busy) return;
       clearMsg();
+      if (window.NLSteps) window.NLSteps.running();
       el.report.hidden = true;
       if (el.planCard) el.planCard.hidden = true;
       S.again = function () { start(name, size, getBuffer, asOf); };
@@ -2488,6 +2490,19 @@
       S.firstRep = null;
       finishReport(rep);
     }
+    // the step rail's Update (src/js/58-steps.js): the engine runs again here with the last run's choices and plan, plus
+    // what the later steps added (pins, cleaning rules), and no new AI call
+    T.rerun = function (more) {
+      if (!S.lastD || S.busy) return false;
+      if (window.NLD && window.NLD.remember) window.NLD.remember();
+      var d = copyOf(S.lastD);
+      delete d.__plan_review__;
+      Object.keys(more || {}).forEach(function (k) { d[k] = more[k]; });
+      if (window.NLD && window.NLD.pins && window.NLD.pins.length) d.__pins__ = window.NLD.pins.slice();
+      S.localUpdate = true;
+      rerun(d);
+      return true;
+    };
     function finishReport(rep) {
       // stages the engine did not announce take their time from the report
       (rep.timings || []).forEach(function (t) { var li = stageEl(t.stage); if (li && li.className !== 'st-done') setStage(t.stage, 'done', t.seconds); });
@@ -2499,7 +2514,10 @@
       el.report.hidden = false;
       el.run.hidden = true;
       drawFc();
+      if (window.NLSteps) window.NLSteps.report(rep);
       goTo(el.report, true);
+      // a local update from the step rail (NLSteps.update): the same plan, no new AI call, so no new AI report
+      if (S.localUpdate) { S.localUpdate = false; var sr = stageEl('report'); if (sr) setStage('report', 'skip', null, 'a local update: the AI report was not asked again'); return; }
       // the AI report writer: the last stage of the one integrated flow (owner's design,
       // 26 Sep 2026). The engine's distilled results go to the proxy's /report; the model writes
       // the full storytelling report and may fetch cited web context through the same worker.
@@ -3315,6 +3333,9 @@
       drawStory();
       window.NL2.mount(el.report.querySelector('.nl2'), r);
       if (window.NLA && window.NLA.mount) window.NLA.mount(el.report);
+      // the Dashboard tab is built at once (hidden), so step 1's "what each column means" card is filled
+      var dp = el.report.querySelector('#nl2-dash');
+      if (dp && window.NLD && window.NLD.show) { try { window.NLD.show(dp, r); } catch (e) { if (window.console) console.error(e); } }
     }
     function drawReport() {
       var r = S.report, c = r.cleaning, F = r.forecast, gated = T.gateTripped(r);
@@ -3526,7 +3547,8 @@
         // the cover is page 1: it goes before everything that prints, and the AI's plan card and the AI-written report
         // come before the engine's report on the page (live baseline, 30 Sep 2026: the plan card filled pages 1 to 3
         // and the cover began halfway down page 4)
-        var lead = el.planCard && el.planCard.parentNode ? el.planCard : el.report;
+        // (the step rail, 16 Oct 2026: the cover goes first in the Try section's app, before the rail and step 1)
+        var app = document.getElementById('try-app'), lead = app && app.firstChild ? app.firstChild : (el.planCard && el.planCard.parentNode ? el.planCard : el.report);
         lead.parentNode.insertBefore(cover, lead);
         document.head.appendChild(rule);
         var d0 = new Date(), z = function (n) { return (n < 10 ? '0' : '') + n; };   // the visitor's own date, not UTC's

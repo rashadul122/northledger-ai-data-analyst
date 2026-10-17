@@ -7,6 +7,10 @@
       <p class="try-bars">The engine holds back on small files, on purpose: a forecast needs at least {{d try_fc_months}} months of monthly history, so that the last {{d try_fc_replay}} can be replayed to test it, and a finding must rest on {{d try_rec_rows}} rows before the engine will grade it CONFIRMED. A smaller file still gets the cleaning, the data-health check and the checked facts.</p>
     </div>
     <div class="try-app" id="try-app">
+      <nav class="try-rail" id="try-rail" aria-label="The six steps, in order" data-fact-exempt="the step numbers of this workflow"><ol class="try-rail-list"><li><a href="#try-step-1">1 Bring your data</a></li><li><a href="#try-step-2">2 Clean</a></li><li><a href="#try-step-3">3 Analyse</a></li><li><a href="#try-step-4">4 Ask</a></li><li><a href="#try-step-5">5 Dashboard</a></li><li><a href="#try-step-6">6 Deliver</a></li></ol></nav>
+      <section class="try-step" id="try-step-1" data-step="1" aria-labelledby="try-step-1-h">
+        <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-1-h"><span class="try-step-n" aria-hidden="true">1</span> Bring your data <span class="try-step-st"></span></h3>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Your file, your question and what may leave the browser; then what each column means and what one row is.</p>
       <div class="try-start" id="try-start">
         <div class="try-drop" id="try-drop">
           <svg class="try-drop-ic" aria-hidden="true" viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M25 36V22m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -44,9 +48,35 @@
         <p class="note" id="try-run-note" aria-live="polite"></p>
       </div>
       <div class="try-plan-card" id="try-plan-card" hidden role="region" aria-label="The AI's plan for this file"></div>
-      <div class="try-ai-report" id="try-ai-report" hidden role="region" aria-label="The AI-written report" data-fact-exempt="the AI-written report; every figure checked against the engine's results or the source cited beside it"></div>
       <div class="try-prev" id="try-prev" hidden role="region" aria-label="Your previous reports" data-fact-exempt="titles, goals and links of reports this browser ran before"></div>
-      <div class="try-report" id="try-report" hidden tabindex="-1" role="region" aria-label="Your report" data-fact-exempt="every figure here is computed in your browser by the engine, from your own file"></div>
+        <div class="try-counts" id="try-counts" role="region" aria-label="What each column means and what one row is"></div>
+        <div class="try-step-slot" id="try-step-1-slot"></div>
+      </section>
+      <section class="try-step" id="try-step-2" data-step="2" aria-labelledby="try-step-2-h" hidden>
+        <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-2-h"><span class="try-step-n" aria-hidden="true">2</span> Clean <span class="try-step-st"></span></h3>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">The engine's cleaning: every rule it applied and how many values each changed, and the rows it set aside. The full account is in the report (step 3): <a href="#try-report">what the cleaning did</a>.</p>
+        <div class="try-step-slot" id="try-step-2-slot"></div>
+      </section>
+      <section class="try-step" id="try-step-3" data-step="3" aria-labelledby="try-step-3-h" hidden>
+        <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-3-h"><span class="try-step-n" aria-hidden="true">3</span> Analyse <span class="try-step-st"></span></h3>
+        <div class="try-report" id="try-report" hidden tabindex="-1" role="region" aria-label="Your report" data-fact-exempt="every figure here is computed in your browser by the engine, from your own file"></div>
+      </section>
+      <section class="try-step" id="try-step-4" data-step="4" aria-labelledby="try-step-4-h" hidden>
+        <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-4-h"><span class="try-step-n" aria-hidden="true">4</span> Ask <span class="try-step-st"></span></h3>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Follow-up questions about the same rows: the "Ask your data" box at the end of the report (step 3); each answer can be added to the dashboard.</p>
+        <div class="try-step-slot" id="try-step-4-slot"></div>
+      </section>
+      <section class="try-step" id="try-step-5" data-step="5" aria-labelledby="try-step-5-h" hidden>
+        <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-5-h"><span class="try-step-n" aria-hidden="true">5</span> Dashboard <span class="try-step-st"></span></h3>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">The AI designs it, the engine computes it: tiles, charts and filters over the rows the engine kept, with notes. <button type="button" class="btn btn-ghost btn-sm" data-rail-open="5">Open the Dashboard</button></p>
+        <div class="try-step-slot" id="try-step-5-slot"></div>
+      </section>
+      <section class="try-step" id="try-step-6" data-step="6" aria-labelledby="try-step-6-h" hidden>
+        <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-6-h"><span class="try-step-n" aria-hidden="true">6</span> Deliver <span class="try-step-st"></span></h3>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">The AI-written report, and the files to take away: the dashboard as HTML or Excel (in the Dashboard tab), and the report's own downloads (at the end of step 3).</p>
+        <div class="try-ai-report" id="try-ai-report" hidden role="region" aria-label="The AI-written report" data-fact-exempt="the AI-written report; every figure checked against the engine's results or the source cited beside it"></div>
+        <div class="try-step-slot" id="try-step-6-slot"></div>
+      </section>
     </div>
     <noscript><p class="note">This demo needs JavaScript: the engine runs in your browser, so without it nothing can run.</p></noscript>
   </div>

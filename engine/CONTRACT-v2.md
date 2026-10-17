@@ -2293,7 +2293,7 @@ the log are unchanged): `{heads, kinds[date|number|code|text], rows[{line, value
 changes[{line, column, before, after, rule}], merged[{line, into, values, rule}], duplicate_rule}`. `line` is the line
 in the visitor's file; `written` / `before` are the visitor's own text (`nl_browser._written_grid`: the bytes before the
 H/E rewrite of dates and numbers, when the records line up; else the landed text); a withheld column is absent, a coded
-column is "(coded)" and never a `before`. `nl_browser._CLEANS` keeps each run's cleaner record by SHA-256 (the last 6
+column is "(coded)" and never a `before`. `nl_browser._CLEANS` keeps each run's cleaner record by SHA-256 (the last 8
 files run in the tab; never sent), so several files can be combined: `nl_browser.clean_view(sha, rules, plan_columns)`.
 `nl_tracker.build(inputs, settings)` (the `DELIVER_MODULES['tracker']` signature of Track E's `deliver_json`) takes
 `{name, view}`, `{sha256, primary}` or Track E's input frames (`summary.sha256`), and settings `{kind ("" = suggested),

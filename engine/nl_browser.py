@@ -6973,7 +6973,7 @@ _LAST_CLEAN: Dict[str, Any] = {}
 # The same record for each of the last few files run in this tab, by the file's SHA-256: what "Build a tracker"
 # (engine/nl_tracker.py) combines when several files are run (each file is its own run). Never sent; the tab's memory.
 _CLEANS: Dict[str, Dict[str, Any]] = {}
-_CLEANS_MAX = 6
+_CLEANS_MAX = 8                       # Track E: the main file and up to 6 companions, and one more
 
 
 def _remember_clean(db_path: str, table: str, cr: Any, rules: List[Any], colmap: Dict[str, str], flagged: Any,

@@ -529,7 +529,7 @@
     // the optional AI summaries (50-try.js) sit right under the bottom line, where the visitor reads and asks
     h += (parts && parts.ai) || '';
     h += periodHtml(r);
-    if (K) h += '<div class="nl2-kpis" data-chart="kpi" data-findings="' + esc(K.finding_ids.join(' ')) + '" role="list" aria-label="' + esc(K.title) + '">' + tiles(r, K).replace(/<div class="nl2-tile"/g, '<div role="listitem" class="nl2-tile"') + '</div>';
+    if (K && K.data.tiles.length) h += '<div class="nl2-kpis" data-chart="kpi" data-findings="' + esc(K.finding_ids.join(' ')) + '" role="list" aria-label="' + esc(K.title) + '">' + tiles(r, K).replace(/<div class="nl2-tile"/g, '<div role="listitem" class="nl2-tile"') + '</div>';
     h += '<article class="tr-card nl2-trustcard"><p class="nl2-trust-line"><b>Can I trust it?</b> ' + esc(trustLine(r)) + '</p>' +
       '<details class="nl2-trust-more"><summary>How much to trust it, layer by layer</summary><ul class="nl2-trust">' + trustLayers(r).map(function (x) { return '<li data-layer="' + x[0] + '">' + x[1] + '</li>'; }).join('') + '</ul></details></article>';
     if (figs.length) h += '<div class="nl2-grid' + (figs.length === 1 ? ' nl2-grid-1' : '') + '">' + figs.map(function (c) { return fig(c, 'm', r); }).join('') + '</div>';

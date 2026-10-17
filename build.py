@@ -75,6 +75,10 @@ TRY_SAMPLE = "engine/sample-messy.csv"
 # date so its latest quarter (2026 Q3, the planted EMEA margin drop) stays the latest
 TRY_SAMPLE_SALES = "engine/sample-sales-synthetic.csv"
 TRY_SAMPLE_SALES_AS_OF = "2026-10-01"
+# the same invented company's SYNTHETIC CRM deals export (tools/make_sample_sales.py; the quarterly sales report, CONTRACT
+# §5.18), analysed as of its export date so 2025 Q4 against Q3 stays the report it shows
+TRY_SAMPLE_CRM = "engine/sample-crm-deals-synthetic.csv"
+TRY_SAMPLE_CRM_AS_OF = "2026-01-05"
 PACK_ENGINE = os.path.join(ROOT, "tools", "pack_engine.py")
 
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -1489,6 +1493,7 @@ def try_payload(I):
     return {"max_bytes": TRY_MAX_BYTES, "max_rows": TRY_MAX_ROWS, "max_label": lab["try_max_mb"], "rows_label": lab["try_max_rows"],
             "worker": TRY_WORKER, "sample": TRY_SAMPLE, "sample_as_of": str(sample.get("as_of") or ""),
             "sample_sales": TRY_SAMPLE_SALES, "sample_sales_as_of": TRY_SAMPLE_SALES_AS_OF,
+            "sample_crm": TRY_SAMPLE_CRM, "sample_crm_as_of": TRY_SAMPLE_CRM_AS_OF,
             "sales_example": "Why is gross margin down in EMEA this quarter?",
             "ai_proxy_url": try_proxy(cfg)[0],
             # "Ask your data" (docs/ai-analyst/PROTOCOL.md): on only when the owner's Worker answers POST /analyst

@@ -1548,7 +1548,7 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'), sample3: $('try-sample-crm'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report'),
       qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
@@ -1565,6 +1565,13 @@
       S.onCleaned = function (out) { S.onCleaned = null; cb(out); };
       S.worker.postMessage({ type: 'cleanfile', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, rules: rules || null,
         plan_columns: S.plan && Array.isArray(S.plan.columns) ? S.plan.columns : null } });
+    };
+    // the quarterly sales report (src/js/60-sales.js, engine/nl_sales.py): this run's kept rows again with the visitor's
+    // settings, from the worker that ran it; cb(out) gets the report's sales block, or null when no worker holds the run
+    T.salesReport = function (settings, cb) {
+      if (!S.worker || !S.report) { cb(null); return; }
+      S.onSales = function (out) { S.onSales = null; cb(out); };
+      S.worker.postMessage({ type: 'sales', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, settings: settings || {} } });
     };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
@@ -1724,6 +1731,9 @@
       } else if (m.type === 'cleaned') {
         // clean my file (engine/nl_cleanfile.py), asked for by T.cleanFile (src/js/59-cleanfile.js)
         if (S.onCleaned) S.onCleaned(m.out && typeof m.out === 'object' ? m.out : null);
+      } else if (m.type === 'sales') {
+        // the quarterly sales report with the visitor's settings (engine/nl_sales.py), asked for by T.salesReport
+        if (S.onSales) S.onSales(m.out && typeof m.out === 'object' ? m.out : null);
       } else if (m.type === 'plan_json') {
         if (S.onPlan) S.onPlan(m.id, Array.isArray(m.steps) ? m.steps : null);
       } else if (m.type === 'more_json') {
@@ -2471,6 +2481,12 @@
     // the SYNTHETIC sales sample (tools/make_sample_sales.py): Ask your data's SQL demo, "Why is gross margin down in EMEA
     // this quarter?" (CONTRACT §5.16)
     if (el.sample2) el.sample2.addEventListener('click', function () { startSample(CFG.sample_sales || 'engine/sample-sales-synthetic.csv', CFG.sample_sales_as_of); });
+    // the SYNTHETIC CRM deals export (tools/make_sample_sales.py): the quarterly sales report in step 6 (src/js/60-sales.js,
+    // CONTRACT §5.18); picking it also picks that report type in step 1's "What do you need?"
+    if (el.sample3) el.sample3.addEventListener('click', function () {
+      try { document.dispatchEvent(new CustomEvent('nl:pick-report', { detail: { id: 'sales-report', source: 'sample' } })); } catch (e) { /* no event */ }
+      startSample(CFG.sample_crm || 'engine/sample-crm-deals-synthetic.csv', CFG.sample_crm_as_of);
+    });
     el.cancel.addEventListener('click', function () {
       killWorker();
       S.seq += 1;

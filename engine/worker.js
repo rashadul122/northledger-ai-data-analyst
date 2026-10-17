@@ -19,6 +19,9 @@
      {type: 'cleanfile', id, options}           clean my file, a view of the last run's cleaning: options {sha256,
                                                 rules (the visitor's edits, or null), plan_columns}
                                                 -> {type: 'cleaned', id, out: {ok, error, csv, log, summary, card}}
+     {type: 'sales', id, options}               the quarterly sales report again with the visitor's settings
+                                                (nl_browser.sales_json): options {sha256, settings} -> {type: 'sales', id,
+                                                out: the report's sales block, CONTRACT §5.18}
      {type: 'run',  id, options}                the visitor's decisions: the same report if every
                                                 flagged column stays withheld, else a new run
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
@@ -267,6 +270,15 @@ function onClean(m) {
   } catch (e) { out = { ok: false, error: lastLine(e) || 'The cleaner stopped.' }; }
   post({ type: 'cleaned', id: m.id, out: out });
 }
+// The quarterly sales report (engine/nl_sales.py through nl_browser.sales_json, CONTRACT §5.18): the last run's kept rows
+// again with the visitor's settings (fiscal year start, quarter, target, columns). Nothing leaves this worker.
+function onSales(m) {
+  var out = null;
+  try {
+    if (booted && nl && nl.sales_json) out = JSON.parse(String(nl.sales_json(JSON.stringify(m.options || {}))));
+  } catch (e) { out = { ok: false, why: lastLine(e) || 'The sales report stopped.' }; }
+  post({ type: 'sales', id: m.id, out: out });
+}
 // Ask your data without an AI planner (the AI is off, or its round failed or chose nothing): the steps the engine plans
 // for the question itself (nl_browser.analyst_plan_json: a read-only sql step, then rate_mix or change by group)
 function onPlan(m) {
@@ -288,6 +300,7 @@ self.onmessage = function (e) {
     if (m.type === 'more') return onMore(m);
     if (m.type === 'cleanfile') return onClean(m);
     if (m.type === 'plan') return onPlan(m);
+    if (m.type === 'sales') return onSales(m);
     return null;
   }).catch(function (err) {
     if (err && err.code) fail(m.id, err.code, err.message, err.detail);

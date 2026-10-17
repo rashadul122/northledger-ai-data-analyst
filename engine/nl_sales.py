@@ -569,6 +569,8 @@ def _build(frame: Any, header_of: Dict[str, str], as_of: Any, raw: Dict[str, Any
     rec: Dict[str, Any] = {"version": VERSION, "ok": False, "why": "", "as_of": AS_OF.isoformat(),
                            "settings": {k: v for k, v in st.items() if k != "columns"},
                            "chosen_columns": st["columns"], "mapping": mapping, "cannot": cannot, "needs": NEEDS,
+                           "columns": [{"header": h, "kind": k} for h, k in mp["kinds"].items()],
+                           "owner_decision": private.get((roles.get("owner") or {}).get("land") or "") or None,
                            "fit": {"ok": not missing, "missing": missing,
                                    "why": ("this file reads as a deals export: %s" % ", ".join(
                                        "%s = %s" % (m["label"], m["column"]) for m in mapping if m["column"]))
@@ -739,13 +741,19 @@ def _segments(R: Report, Q0: Tuple[int, int], Q1: Tuple[int, int], roles: Dict[s
                                "avg_cur": _cell(b["avg"], b["won"], lambda v: _amt(v, cur))}})
     rows.sort(key=lambda r: (-(r["rev_cur"] or 0), r["label"]))
     hidden = sum(1 for r in rows if "<5" in r["texts"].values())
-    table = {"cols": ["Segment", "Won revenue %s" % L0, "Won revenue %s" % L1, "Change", "Deals won %s" % L0,
-                      "Deals won %s" % L1, "Win rate %s" % L0, "Win rate %s" % L1, "Win rate change",
-                      "Average deal %s" % L1],
+    for r in rows:
+        r["texts"]["closed_prev"] = _cell(r["closed_prev"], r["closed_prev"], _count)
+        r["texts"]["closed_cur"] = _cell(r["closed_cur"], r["closed_cur"], _count)
+    sh = roles["segment"]["header"]
+    table = {"cols": [sh, "Revenue %s" % L0, "Revenue %s" % L1, "Change", "Won %s" % L0, "Won %s" % L1,
+                      "Avg deal %s" % L0, "Avg deal %s" % L1],
              "rows": [[r["label"], r["texts"]["rev_prev"], r["texts"]["rev_cur"], r["texts"]["change"],
-                       r["texts"]["won_prev"], r["texts"]["won_cur"], r["texts"]["win_prev"], r["texts"]["win_cur"],
-                       r["texts"]["win_change"], r["texts"]["avg_cur"]] for r in rows]}
-    return {"ok": True, "column": roles["segment"]["header"], "rows": rows, "table": table,
+                       r["texts"]["won_prev"], r["texts"]["won_cur"], r["texts"]["avg_prev"], r["texts"]["avg_cur"]]
+                      for r in rows]}
+    win_table = {"cols": [sh, "Closed %s" % L0, "Win rate %s" % L0, "Closed %s" % L1, "Win rate %s" % L1, "Change"],
+                 "rows": [[r["label"], r["texts"]["closed_prev"], r["texts"]["win_prev"], r["texts"]["closed_cur"],
+                           r["texts"]["win_cur"], r["texts"]["win_change"]] for r in rows]}
+    return {"ok": True, "column": sh, "rows": rows, "table": table, "win_table": win_table,
             "note": ("%s rest on fewer than 5 deals and are shown as “<5” (the engine's small-cell rule)."
                      % ("Some figures" if hidden else "")) if hidden else "",
             "why": ""}
@@ -855,6 +863,13 @@ def _pipeline(R: Report, Q1: Tuple[int, int], roles: Dict[str, Any], cur: str, s
                       + [s["texts"]["age"]] for s in out["stages"]]}
     out["table"] = table
     st_ = out["stalled"]
+    cvv = out["coverage"]
+    out["texts"] = {"value": _amt(out["value"], cur), "n": _count(len(opened)),
+                    "weighted": _amt(out["weighted"], cur) if out["weighted"] is not None else "",
+                    "stalled_share": _pct(st_["share"]) if st_["share"] is not None else "",
+                    "stalled_n": _count(st_["n"]),
+                    "coverage": ("%.1fx" % cvv["x"]) if cvv else "",
+                    "coverage_weighted": ("%.1fx" % cvv["weighted_x"]) if (cvv and cvv["weighted_x"] is not None) else ""}
     out["text"] = ("On the export date (%s), %s were open, worth %s%s. %s %s past %s expected close date%s; together "
                    "%s (%s of the open value)." % (
                        R.as_of.isoformat(), _plural(len(opened), "deal"), _amt(out["value"], cur),

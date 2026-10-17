@@ -453,7 +453,8 @@
     var R = isObj(inp.results) ? inp.results : {}, E = isObj(inp.engine) ? inp.engine : {};
     // the engine's own report names the file in some sentences (results_for_ai writes "[your file]" instead): each name it
     // may carry becomes the reader's choice, the file's name or "your file", as in the PDF
-    var names = uniq([str(inp.name), isObj(E.input) ? str(E.input.name) : ''].filter(function (x) { return x.length >= 3; }));
+    // (a name with an extension, or 6 characters or more: a short bare name could be part of an ordinary word)
+    var names = uniq([str(inp.name), isObj(E.input) ? str(E.input.name) : ''].filter(function (x) { return /\.\w{1,5}$/.test(x) ? x.length >= 5 : x.length >= 6; }));
     var sub = function (s) { s = str(s).split(FILE_WORD).join(file); names.forEach(function (n) { s = s.split(n).join(file); }); return s; };
     var pa = partBlocks(m, 'method'), blocks = [];
     var add = function (b) { blocks.push(b); return b; };
@@ -483,7 +484,6 @@
     if (IN.columns !== undefined && IN.columns !== null) facts.push(int(IN.columns) + ' columns');
     add({ type: 'p', text: 'The file' + (facts.length ? ' has ' + facts.join(' and ') : '') + '.' + (CL.rows_clean !== undefined && CL.rows_clean !== null && CL.rows_in !== undefined && CL.rows_in !== null
       ? ' The engine analysed ' + int(CL.rows_clean) + ' of its ' + int(CL.rows_in) + ' rows and set ' + int(CL.rows_quarantined || 0) + ' aside.' : '') });
-    if (R.reading) add({ type: 'p', text: sub(R.reading) });
     var HC = isObj(E.health) ? arr(E.health.columns) : [];
     if (HC.length) {
       add({ type: 'table', title: 'Missing values by column', cols: ['Column', 'Type', 'Rows', 'Filled', 'Empty', 'Filled, %'],
@@ -568,6 +568,8 @@
     if (pp) asm.push(['Reading: rates', 'a change in a rate is stated in percentage points, the difference of the two rates, not a percent of a percent']);
     if (arr(R.findings).some(function (f) { return isObj(f) && /^change in /i.test(str(f.claim)) && f.value_unit !== 'percentage points'; }))
       asm.push(['Reading: periods', 'a change compares the latest 12 months with the 12 months before, month by month']);
+    // the AI planner's reading of the file (what one row is, what the columns hold): its words, labelled as its reading
+    if (R.reading) asm.push(['AI plan: what one row is', sub(R.reading)]);
     arr(R.plan_applied).forEach(function (x) { asm.push(['AI plan choice', sub(x)]); });
     arr(R.quality_risks).forEach(function (x) { asm.push(['AI plan: a risk it named', sub(x)]); });
     var SC = isObj(R.scenarios) ? R.scenarios : {};

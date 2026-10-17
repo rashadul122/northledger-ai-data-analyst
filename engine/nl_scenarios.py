@@ -612,6 +612,16 @@ def _slugs(names: List[str]) -> Dict[str, str]:
     return out
 
 
+def price_volume(R0: float, U0: float, R1: float, U1: float) -> Tuple[float, float]:
+    """The price-volume split of a money total's change, R1 - R0, with U the units (orders, deals, items) and the
+    price the total per unit: volume = (U1 - U0) x the prior price R0 / U0 (the units' change at the old price),
+    price = R1 - U1 x R0 / U0 (the latest units at the change in price). Exact: price + volume = R1 - R0. U0 > 0.
+    One formula for every caller: the scenarios' price_volume_mix items and the quarterly sales report's split of
+    won revenue into the number of won deals and the average deal size (engine/nl_sales.py)."""
+    p0 = R0 / U0
+    return R1 - U1 * p0, (U1 - U0) * p0
+
+
 def _breakdown(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, f: Dict[str, Any],
                claim: Dict[str, Any], chart: Dict[str, Any], plan: Optional[Dict[str, Any]],
                landed: Optional[Callable[[Any], Any]], pub: Optional[Callable[[Any], Any]],
@@ -816,7 +826,7 @@ def _breakdown(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, f: D
     u_cols = seg_cols + ([units_col] if per_unit_ok else [])
     if per_unit_ok:
         P0, P1 = R0 / U0, R1 / U1
-        volume = (U1 - U0) * P0
+        _price_total, volume = price_volume(R0, U0, R1, U1)
         pvm_ok = True
         if groups:
             bad = [g for g in groups if stats[g]["u0"] <= 0 or (stats[g]["u1"] <= 0 and stats[g]["r1"] != 0.0)]
@@ -832,7 +842,7 @@ def _breakdown(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, f: D
                     seg_col, (" (%s %s %s)" % (NB._listed(new), "is" if len(new) == 1 else "are", ENTERED))
                     if new else ""))
         if not groups or not pvm_ok:
-            price, mix = R1 - U1 * P0, None
+            price, mix = _price_total, None
         parts = [price, volume] + ([mix] if mix is not None else [])
         pvm_words = "price, volume and mix" if mix is not None else "price and volume"
         assumes = PVM_ASSUMES if mix is not None else PV_ASSUMES

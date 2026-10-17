@@ -1,0 +1,1441 @@
+{
+ "about": "made by make_docx_fixtures.py from tools/make_ui_fixtures.py's orders-private report",
+ "engine": {
+  "answer": {
+   "key_figures": [
+    "1.6%"
+   ],
+   "latest": {
+    "finding_id": "measure.spend.change",
+    "grade": "WATCH",
+    "label": "the latest 12 months against the 12 before (the graded test)",
+    "text": "Average spend is up 1.6% on the year before (not yet conclusive)."
+   },
+   "leads": "latest_change",
+   "source": "graded_claim",
+   "text": "Average spend is up 1.6% on the year before (not yet conclusive).",
+   "version": 1,
+   "why": "the question asks about the latest change"
+  },
+  "cleaning": {
+   "fixes": [
+    {
+     "column": "order_date",
+     "count": 240,
+     "rule": "order_date_date",
+     "what": "Read as dates in one format: every text value converted is counted, whether or not it was written differently"
+    },
+    {
+     "column": "spend",
+     "count": 231,
+     "rule": "spend_numeric",
+     "what": "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+    }
+   ],
+   "quarantine_reasons": [],
+   "rows_clean": 240,
+   "rows_in": 240,
+   "rows_quarantined": 0
+  },
+  "estimand": null,
+  "health": {
+   "columns": [
+    {
+     "completeness": {
+      "ci": [
+       98.42460798138268,
+       100.0
+      ],
+      "k": 240,
+      "n": 240,
+      "pct": 100.0
+     },
+     "flagged": false,
+     "n": 240,
+     "name": "order_date",
+     "type": "date",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       98.42460798138268,
+       100.0
+      ],
+      "k": 240,
+      "n": 240,
+      "pct": 100.0
+     },
+     "flagged": true,
+     "n": 240,
+     "name": "customer_email",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       98.42460798138268,
+       100.0
+      ],
+      "k": 240,
+      "n": 240,
+      "pct": 100.0
+     },
+     "flagged": true,
+     "n": 240,
+     "name": "notes",
+     "type": "text",
+     "withheld": true
+    },
+    {
+     "completeness": {
+      "ci": [
+       98.42460798138268,
+       100.0
+      ],
+      "k": 240,
+      "n": 240,
+      "pct": 100.0
+     },
+     "flagged": true,
+     "n": 240,
+     "name": "staff_name",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       93.02797670445642,
+       98.01478567832255
+      ],
+      "k": 231,
+      "n": 240,
+      "pct": 96.25
+     },
+     "flagged": false,
+     "n": 240,
+     "name": "spend",
+     "type": "numeric",
+     "withheld": false
+    }
+   ],
+   "score": 65.6
+  },
+  "input": {
+   "columns": 5,
+   "name": "orders-private.csv",
+   "rows": 240
+  },
+  "limitations": [
+   {
+    "finding_ids": [
+     "measure.volume.change_pct",
+     "measure.spend.total.change",
+     "measure.spend.change"
+    ],
+    "kind": "causal",
+    "text": "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause."
+   },
+   {
+    "finding_ids": [],
+    "kind": "data",
+    "text": "Churn and retention are not measured: the file names each customer (customer_email) and dates each row, but this engine compares monthly totals and counts, not how long each customer stays or what each one spends."
+   },
+   {
+    "finding_ids": [],
+    "kind": "data",
+    "text": "The data cannot support this claim: Months of history available to forecast monthly rows in orders-private.csv. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) of history."
+   },
+   {
+    "finding_ids": [],
+    "kind": "data",
+    "text": "The data cannot support this claim: Months of history available to forecast monthly total spend in orders-private.csv. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) of history."
+   },
+   {
+    "finding_ids": [],
+    "kind": "statistical",
+    "text": "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: each tested claim quotes the nearest one, not a power computed for itself."
+   },
+   {
+    "finding_ids": [],
+    "kind": "statistical",
+    "text": "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+   },
+   {
+    "finding_ids": [],
+    "kind": "external",
+    "text": "Accuracy, whether the values match reality, is not measured: no rows were checked against their source."
+   }
+  ],
+  "privacy": {
+   "flagged": [
+    {
+     "column": "customer_email",
+     "decision": "code",
+     "kind": "email, named like customer; coded as it arrived"
+    },
+    {
+     "column": "notes",
+     "decision": "withhold",
+     "kind": "some values look personal"
+    },
+    {
+     "column": "staff_name",
+     "decision": "keep",
+     "kind": "named like personal data"
+    }
+   ],
+   "released": []
+  },
+  "story": {
+   "cannot_answer": [
+    "Churn and retention are not measured: the file names each customer (customer_email) and dates each row, but this engine compares monthly totals and counts, not how long each customer stays or what each one spends.",
+    "The data cannot support this claim: Months of history available to forecast monthly rows in orders-private.csv. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) of history.",
+    "The data cannot support this claim: Months of history available to forecast monthly total spend in orders-private.csv. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) of history."
+   ]
+  }
+ },
+ "forbid": [
+  "call 416-555-5305",
+  "call 416-555-5991",
+  "call 416-555-7104",
+  "call 416-555-2028",
+  "call 416-555-0812",
+  "call 416-555-8858",
+  "call 416-555-9358",
+  "call 416-555-3374",
+  "call 416-555-7424",
+  "call 416-555-9411",
+  "call 416-555-1199",
+  "call 416-555-6909",
+  "call 416-555-5140",
+  "call 416-555-1533",
+  "call 416-555-5072",
+  "call 416-555-5685",
+  "call 416-555-3575",
+  "call 416-555-8134",
+  "call 416-555-7053",
+  "call 416-555-3780",
+  "call 416-555-9652",
+  "call 416-555-9278",
+  "call 416-555-0884",
+  "call 416-555-6428",
+  "call 416-555-1103",
+  "call 416-555-0003",
+  "call 416-555-3407",
+  "call 416-555-2012",
+  "call 416-555-1407",
+  "call 416-555-2645",
+  "call 416-555-8899",
+  "call 416-555-1491",
+  "call 416-555-3650",
+  "call 416-555-3197",
+  "call 416-555-8073",
+  "call 416-555-3172",
+  "call 416-555-5974",
+  "call 416-555-9998",
+  "call 416-555-1964",
+  "call 416-555-7109",
+  "call 416-555-1391",
+  "call 416-555-7624",
+  "call 416-555-5741",
+  "call 416-555-1683",
+  "call 416-555-3457",
+  "call 416-555-4249",
+  "call 416-555-7506",
+  "call 416-555-8219",
+  "call 416-555-3000",
+  "call 416-555-1971",
+  "call 416-555-1738",
+  "call 416-555-1601",
+  "call 416-555-5334",
+  "call 416-555-8325",
+  "call 416-555-4253",
+  "call 416-555-1992",
+  "call 416-555-4960",
+  "call 416-555-2342",
+  "call 416-555-6525",
+  "call 416-555-7070",
+  "call 416-555-5218",
+  "call 416-555-0296",
+  "call 416-555-3744",
+  "call 416-555-2974",
+  "call 416-555-4237",
+  "call 416-555-1465",
+  "call 416-555-0275",
+  "call 416-555-4332",
+  "call 416-555-4388",
+  "call 416-555-4290",
+  "call 416-555-8701",
+  "call 416-555-0297",
+  "call 416-555-8425",
+  "call 416-555-8110",
+  "call 416-555-3761",
+  "call 416-555-5694",
+  "call 416-555-4187",
+  "call 416-555-4619",
+  "call 416-555-7304",
+  "call 416-555-5071"
+ ],
+ "results": {
+  "analyses": [
+   {
+    "method": "Percentiles of every value; the bars count values in equal-width bins.",
+    "sentence": "spend: half the 231 values lie between 29.7 and 73.8 (median 52.1); one in ten is below 13.8 and one in ten above 87.1.",
+    "title": "How spend is spread"
+   }
+  ],
+  "analyses_refused": [],
+  "analyst_insights": [
+   "Key numbers: 5,884 (Spend, the 12 months to 2025-12; -0.1% against the 12 months to 2024-12); 441.18 (Spend, 2025-11; -11.3% on 2024-11); 651.85 (Peak, 2025-05; the last value is -32.3% from it).",
+   "The total of spend fell from 5,893 in the 12 months to 2024-12 to 5,884 in the 12 months to 2025-12 (-0.1%).",
+   "In 2025-11, spend fell to 441.18 from 497.58 in 2024-11 (-11.3% year on year); the three months from 2025-09 moved the same way (-2.3% on a year earlier).",
+   "Over 23 months (2024-01 to 2025-11) spend shows no clear straight-line trend (95% range -1.75 to +6.02 a month).",
+   "23 of 230 relative changes from one date to the next in spend (10.0%) sit far from the rest (robust z beyond 3.5); the furthest out is the largest, +17-fold (2025-12-06) against a median of -5.1%."
+  ],
+  "answer": {
+   "key_figures": [
+    "1.6%"
+   ],
+   "latest": {
+    "grade": "WATCH",
+    "label": "the latest 12 months against the 12 before (the graded test)",
+    "text": "Average spend is up 1.6% on the year before (not yet conclusive)."
+   },
+   "leads": "latest_change",
+   "text": "Average spend is up 1.6% on the year before (not yet conclusive).",
+   "why": "the question asks about the latest change"
+  },
+  "charts": [
+   {
+    "kind": "bars",
+    "series": [
+     {
+      "label": "5.33 to 12.8",
+      "value": 20.0
+     },
+     {
+      "label": "12.8 to 20.2",
+      "value": 24.0
+     },
+     {
+      "label": "20.2 to 27.6",
+      "value": 11.0
+     },
+     {
+      "label": "27.6 to 35.1",
+      "value": 12.0
+     },
+     {
+      "label": "35.1 to 42.5",
+      "value": 22.0
+     },
+     {
+      "label": "42.5 to 49.9",
+      "value": 19.0
+     },
+     {
+      "label": "49.9 to 57.3",
+      "value": 23.0
+     },
+     {
+      "label": "57.3 to 64.8",
+      "value": 23.0
+     },
+     {
+      "label": "64.8 to 72.2",
+      "value": 17.0
+     },
+     {
+      "label": "72.2 to 79.6",
+      "value": 21.0
+     },
+     {
+      "label": "79.6 to 87.1",
+      "value": 15.0
+     },
+     {
+      "label": "87.1 to 94.5",
+      "value": 24.0
+     }
+    ],
+    "title": "How spend is spread"
+   },
+   {
+    "anchors": [
+     "finding:measure.spend.total.change"
+    ],
+    "chart": "calendar_heatmap",
+    "chosen_by": "engine",
+    "data": {
+     "col_label": "Month",
+     "cols": [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "legend": [
+      {
+       "text": "203 to 462",
+       "tier": 1
+      },
+      {
+       "text": "462 to 531",
+       "tier": 2
+      },
+      {
+       "text": "531 to 652",
+       "tier": 3
+      }
+     ],
+     "n": [
+      [
+       10,
+       9,
+       11,
+       9,
+       10,
+       10,
+       9,
+       11,
+       10,
+       9,
+       10,
+       9
+      ],
+      [
+       11,
+       9,
+       9,
+       10,
+       11,
+       9,
+       10,
+       10,
+       9,
+       11,
+       10,
+       5
+      ]
+     ],
+     "row_label": "Year",
+     "rows": [
+      "2024",
+      "2025"
+     ],
+     "scale": "sequential",
+     "text": [
+      [
+       "559",
+       "405",
+       "517",
+       "449",
+       "468",
+       "440",
+       "474",
+       "541",
+       "564",
+       "412",
+       "498",
+       "567"
+      ],
+      [
+       "451",
+       "495",
+       "522",
+       "526",
+       "652",
+       "472",
+       "542",
+       "581",
+       "427",
+       "570",
+       "441",
+       "203"
+      ]
+     ],
+     "tier": [
+      [
+       3,
+       1,
+       2,
+       1,
+       2,
+       1,
+       2,
+       3,
+       3,
+       1,
+       2,
+       3
+      ],
+      [
+       1,
+       2,
+       2,
+       2,
+       3,
+       2,
+       3,
+       3,
+       1,
+       3,
+       1,
+       1
+      ]
+     ],
+     "values": [
+      [
+       558.78,
+       404.52,
+       516.73,
+       449.44,
+       467.51,
+       440.3,
+       474.29,
+       540.68,
+       563.93,
+       411.61,
+       497.58,
+       567.42
+      ],
+      [
+       451.07,
+       494.7,
+       522.02,
+       526.2,
+       651.85,
+       472.38,
+       542.48,
+       581.19,
+       427.48,
+       570.47,
+       441.18,
+       203.28
+      ]
+     ]
+    },
+    "grade": null,
+    "id": "viz.1.calendar_heatmap",
+    "inputs": {
+     "columns": [
+      "spend",
+      "order_date"
+     ],
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "spend added up by calendar month",
+     "rows": 231
+    },
+    "kind": "heatmap",
+    "measure": {
+     "kind": "amount",
+     "label": "spend",
+     "unit": "currency"
+    },
+    "parent_grade": null,
+    "section": "headline",
+    "source": "The rows the engine kept, by order_date month; each month's total equals the engine's own charted series",
+    "subtitle": "Total spend in each month; the shade and the glyph mark the lowest, middle and highest third of the months",
+    "summary": "The highest month is May 2025 (652) and the lowest Dec 2025 (203). 2025 is above 2024 in 8 of the 12 months.",
+    "supports": "Change in the monthly total of spend, latest 12 months against the 12 before",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Year",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ],
+     "rows": [
+      [
+       "2024",
+       "559",
+       "405",
+       "517",
+       "449",
+       "468",
+       "440",
+       "474",
+       "541",
+       "564",
+       "412",
+       "498",
+       "567"
+      ],
+      [
+       "2025",
+       "451",
+       "495",
+       "522",
+       "526",
+       "652",
+       "472",
+       "542",
+       "581",
+       "427",
+       "570",
+       "441",
+       "203"
+      ]
+     ]
+    },
+    "title": "Spend by month, 2024 and 2025",
+    "why": "Chosen by the engine: month (across) by year (down) of the measure, on the engine's date column"
+   },
+   {
+    "anchors": [
+     "finding:measure.spend.change",
+     "chart:trend.spend"
+    ],
+    "chart": "line_chart",
+    "chosen_by": "engine",
+    "data": {
+     "forecast": null,
+     "grain": "month",
+     "series": [
+      {
+       "label": "Average spend",
+       "values": [
+        55.878,
+        44.946667,
+        46.975455,
+        49.937778,
+        46.751,
+        44.03,
+        52.698889,
+        49.152727,
+        56.393,
+        45.734444,
+        49.758,
+        63.046667,
+        41.006364,
+        54.966667,
+        58.002222,
+        52.62,
+        59.259091,
+        52.486667,
+        54.248,
+        58.119,
+        47.497778,
+        51.860909,
+        44.118,
+        40.656
+       ]
+      }
+     ],
+     "x": [
+      "2024-01",
+      "2024-02",
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+      "2024-07",
+      "2024-08",
+      "2024-09",
+      "2024-10",
+      "2024-11",
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12"
+     ],
+     "x_label": "Month"
+    },
+    "grade": null,
+    "id": "viz.2.line_chart",
+    "inputs": {
+     "columns": [
+      "spend",
+      "order_date"
+     ],
+     "months": [
+      "2024-01",
+      "2025-12"
+     ],
+     "op": "spend averaged by month",
+     "rows": 231
+    },
+    "kind": "lines",
+    "measure": {
+     "kind": "average",
+     "label": "spend",
+     "unit": "currency"
+    },
+    "parent_grade": null,
+    "section": "headline",
+    "source": "The rows the engine kept, by order_date month; each month equals the engine's own charted series",
+    "subtitle": "Average spend in each month of order_date",
+    "summary": "Average spend went from 55.9 in Jan 2024 to 40.7 in Dec 2025; the highest month was Dec 2024 (63) and the lowest Dec 2025 (40.7).",
+    "supports": "Change in the average month of spend, latest 12 months against the 12 before",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "Average spend (currency)"
+     ],
+     "rows": [
+      [
+       "Jan 2024",
+       "55.9"
+      ],
+      [
+       "Feb 2024",
+       "44.9"
+      ],
+      [
+       "Mar 2024",
+       "47"
+      ],
+      [
+       "Apr 2024",
+       "49.9"
+      ],
+      [
+       "May 2024",
+       "46.8"
+      ],
+      [
+       "Jun 2024",
+       "44"
+      ],
+      [
+       "Jul 2024",
+       "52.7"
+      ],
+      [
+       "Aug 2024",
+       "49.2"
+      ],
+      [
+       "Sep 2024",
+       "56.4"
+      ],
+      [
+       "Oct 2024",
+       "45.7"
+      ],
+      [
+       "Nov 2024",
+       "49.8"
+      ],
+      [
+       "Dec 2024",
+       "63"
+      ],
+      [
+       "Jan 2025",
+       "41"
+      ],
+      [
+       "Feb 2025",
+       "55"
+      ],
+      [
+       "Mar 2025",
+       "58"
+      ],
+      [
+       "Apr 2025",
+       "52.6"
+      ],
+      [
+       "May 2025",
+       "59.3"
+      ],
+      [
+       "Jun 2025",
+       "52.5"
+      ],
+      [
+       "Jul 2025",
+       "54.2"
+      ],
+      [
+       "Aug 2025",
+       "58.1"
+      ],
+      [
+       "Sep 2025",
+       "47.5"
+      ],
+      [
+       "Oct 2025",
+       "51.9"
+      ],
+      [
+       "Nov 2025",
+       "44.1"
+      ],
+      [
+       "Dec 2025",
+       "40.7"
+      ]
+     ]
+    },
+    "title": "Average spend by month, Jan 2024 to Dec 2025",
+    "why": "Chosen by the engine: the measure over time (the primary series, or up to 5 series of a long table), with the engine's forecast range when it has one"
+   },
+   {
+    "anchors": [],
+    "chart": "line_chart",
+    "chosen_by": "engine",
+    "data": {
+     "forecast": null,
+     "grain": "month",
+     "series": [
+      {
+       "label": "spend",
+       "values": [
+        558.78,
+        404.52,
+        516.73,
+        449.44,
+        467.51,
+        440.3,
+        474.28999999999996,
+        540.68,
+        563.93,
+        411.61,
+        497.58,
+        567.4200000000001,
+        451.07,
+        494.70000000000005,
+        522.02,
+        526.2,
+        651.85,
+        472.38,
+        542.48,
+        581.19,
+        427.48,
+        570.47,
+        441.18
+       ]
+      }
+     ],
+     "x": [
+      "2024-01",
+      "2024-02",
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+      "2024-07",
+      "2024-08",
+      "2024-09",
+      "2024-10",
+      "2024-11",
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11"
+     ],
+     "x_label": "Month"
+    },
+    "grade": null,
+    "id": "viz.52.line_chart",
+    "inputs": {
+     "columns": [
+      "spend",
+      "order_date"
+     ],
+     "months": null,
+     "op": "trend",
+     "rows": null
+    },
+    "kind": "lines",
+    "measure": {
+     "kind": "amount",
+     "label": "spend",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "other",
+    "source": "The rows the engine kept",
+    "subtitle": "2024-01 to 2025-11, one point a month",
+    "summary": "Over 23 months (2024-01 to 2025-11) spend shows no clear straight-line trend (95% range -1.75 to +6.02 a month).",
+    "supports": "Over 23 months (2024-01 to 2025-11) spend shows no clear straight-line trend (95% range -1.75 to +6.02 a month).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "spend"
+     ],
+     "rows": [
+      [
+       "2024-01",
+       "558.8"
+      ],
+      [
+       "2024-02",
+       "404.5"
+      ],
+      [
+       "2024-03",
+       "516.7"
+      ],
+      [
+       "2024-04",
+       "449.4"
+      ],
+      [
+       "2024-05",
+       "467.5"
+      ],
+      [
+       "2024-06",
+       "440.3"
+      ],
+      [
+       "2024-07",
+       "474.3"
+      ],
+      [
+       "2024-08",
+       "540.7"
+      ],
+      [
+       "2024-09",
+       "563.9"
+      ],
+      [
+       "2024-10",
+       "411.6"
+      ],
+      [
+       "2024-11",
+       "497.6"
+      ],
+      [
+       "2024-12",
+       "567.4"
+      ],
+      [
+       "2025-01",
+       "451.1"
+      ],
+      [
+       "2025-02",
+       "494.7"
+      ],
+      [
+       "2025-03",
+       "522.0"
+      ],
+      [
+       "2025-04",
+       "526.2"
+      ],
+      [
+       "2025-05",
+       "651.9"
+      ],
+      [
+       "2025-06",
+       "472.4"
+      ],
+      [
+       "2025-07",
+       "542.5"
+      ],
+      [
+       "2025-08",
+       "581.2"
+      ],
+      [
+       "2025-09",
+       "427.5"
+      ],
+      [
+       "2025-10",
+       "570.5"
+      ],
+      [
+       "2025-11",
+       "441.2"
+      ]
+     ]
+    },
+    "title": "Spend by month",
+    "why": "Chosen by the engine: the chart behind this finding."
+   }
+  ],
+  "cleaning": {
+   "fixes": [
+    "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+    "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+   ],
+   "rows_clean": 240,
+   "rows_in": 240,
+   "rows_quarantined": 0
+  },
+  "estimand": null,
+  "findings": [
+   {
+    "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
+    "interval_coverage": {
+     "hi": 1.0,
+     "lo": 0.9904877055170676,
+     "measured": 1.0
+    },
+    "kind": "business",
+    "value": -3.278688524590166,
+    "verdict": "WATCH",
+    "why": "No change of at least the 5% bar is shown: a 3.3% fall in the average month, latest 12 months against the 12 before (95% interval -60.4% to +97.5%; a 95% interval by construction; in the benchmark's simulated series nearest this one it held"
+   },
+   {
+    "claim": "Change in the monthly total of spend, latest 12 months against the 12 before",
+    "kind": "business",
+    "value": -0.14407436884735603,
+    "verdict": "WATCH",
+    "why": "No change of at least the 5% bar is shown: a 0.1% fall in the average month, latest 12 months against the 12 before (95% interval -93.1% to +533.3%; labelled 95%; coverage not measured for this kind of series). If the change were smaller th"
+   },
+   {
+    "claim": "Change in the average month of spend, latest 12 months against the 12 before",
+    "interval_coverage": {
+     "hi": 0.9636034047373394,
+     "lo": 0.9357991593448416,
+     "measured": 0.9515608180839612
+    },
+    "kind": "business",
+    "value": 1.5757524076778537,
+    "verdict": "WATCH",
+    "why": "No change of at least the 5% bar is shown: a 1.6% rise in the average month, latest 12 months against the 12 before (95% interval -30.6% to +68.1%; a 95% interval by construction; in the benchmark's simulated series nearest this one it held"
+   },
+   {
+    "claim": "3.8% of the spend column of [your file] is null-like",
+    "kind": "data_quality",
+    "value": 3.8,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 3.8% of the table where we want at least 5% before recommending a change and it rests on 240 rows where we want 1,000 behind advice."
+   },
+   {
+    "claim": "Months of history available to forecast monthly total spend in [your file]",
+    "kind": "forecast",
+    "value": 24.0,
+    "verdict": "INSUFFICIENT",
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   },
+   {
+    "claim": "Months of history available to forecast monthly rows in [your file]",
+    "kind": "forecast",
+    "value": 24.0,
+    "verdict": "INSUFFICIENT",
+    "why": "There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made."
+   }
+  ],
+  "forecast": {},
+  "goal": "How does spend move month by month?",
+  "health_explain": "65.6 because the newest row is 9 months old (the timeliness check); the other checks averaged 97.3.",
+  "health_issues": [
+   "The health score is 65.6 because the newest row is 9 months old (the timeliness check); the other checks averaged 97.3.",
+   "9 of 1200 cells are null-like, so completeness is 99.3/100.",
+   "Newest row in order_date is [withheld], 271 days old as of 2026-09-15.",
+   "spend: 3.8% null-like (9 of 240 values)."
+  ],
+  "health_score": 65.6,
+  "input": {
+   "columns": 5,
+   "name": "[your file]",
+   "rows": 240
+  },
+  "limitations": [
+   "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+   "Churn and retention are not measured: the file names each customer (customer_email) and dates each row, but this engine compares monthly totals and counts, not how long each customer stays or what each one spends.",
+   "The data cannot support this claim: Months of history available to forecast monthly rows in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made.",
+   "The data cannot support this claim: Months of history available to forecast monthly total spend in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none i",
+   "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea",
+   "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+  ],
+  "ok": true,
+  "plan_applied": [
+   "data test on customer_email (identifier): probably not an identifier: only 60 of 240 values are unique (25%): the engine kept these rows; the tests changed no value",
+   "data test on staff_name (identifier): probably not an identifier: only 4 of 240 values are unique (1%): the engine kept these rows; the tests changed no value"
+  ],
+  "plan_refused": [],
+  "plan_row_drops": [],
+  "primary": {
+   "claim": "Change in the monthly total of spend, latest 12 months against the 12 before",
+   "grade": "WATCH",
+   "id": "measure.spend.total.change"
+  },
+  "quality_risks": [],
+  "reading": "Orders with the buyer, a note and the member of staff. The visitor chose to send these personal columns to the AI: staff_name.",
+  "scenarios": {
+   "basis": {
+    "claim": "Change in the monthly total of spend, latest 12 months against the 12 before",
+    "finding_id": "measure.spend.total.change",
+    "grade": "WATCH",
+    "grade_words": "not yet conclusive",
+    "how": "total",
+    "measure": "spend",
+    "reconciles": true,
+    "rows": {
+     "latest": 114,
+     "prior": 117,
+     "units_missing": null
+    },
+    "segment": {
+     "column": null,
+     "entered": [],
+     "exited": [],
+     "folded": [],
+     "levels": []
+    },
+    "unit": "currency",
+    "windows": {
+     "latest": [
+      "2025-01",
+      "2025-12"
+     ],
+     "prior": [
+      "2024-01",
+      "2024-12"
+     ]
+    }
+   },
+   "items": [
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.prior",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "Total spend, the 12 months before",
+     "parent_grade": null,
+     "segment": null,
+     "text": "5,893",
+     "unit": "currency",
+     "value": 5892.79
+    },
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.latest",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Total spend, the latest 12 months",
+     "parent_grade": null,
+     "segment": null,
+     "text": "5,884",
+     "unit": "currency",
+     "value": 5884.3
+    },
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.change",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Change in total spend, the latest 12 months against the 12 before",
+     "parent_grade": null,
+     "segment": null,
+     "text": "\u22128.49",
+     "unit": "currency",
+     "value": -8.49
+    },
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.change_pct",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Change in total spend, in percent of the 12 months before",
+     "parent_grade": null,
+     "segment": null,
+     "text": "\u22120.144%",
+     "unit": "%",
+     "value": -0.144074
+    },
+    {
+     "assumes": "the latest 12 months repeat unchanged",
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "run_rate",
+     "id": "run_rate.year",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Run rate: total spend over the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": null,
+     "text": "5,884",
+     "unit": "currency",
+     "value": 5884.3
+    },
+    {
+     "assumes": "the latest 12 months repeat unchanged",
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "run_rate",
+     "id": "run_rate.month",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "latest / 12",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Run rate: total spend in the average month of the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": null,
+     "text": "490",
+     "unit": "currency",
+     "value": 490.358333
+    },
+    {
+     "assumes": "a change of 1% held for a whole year, at the latest 12 months' level",
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "sensitivity",
+     "id": "sensitivity.one_pct",
+     "inputs": {
+      "columns": [
+       "order_date",
+       "spend"
+      ],
+      "op": "latest / 100",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Each 1% of total spend, over a year at the latest 12 months' level",
+     "parent_grade": "WATCH",
+     "segment": null,
+     "text": "58.8",
+     "unit": "currency",
+     "value": 58.843
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.months",
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "op": "count distinct months",
+      "window": null
+     },
+     "kind": "count",
+     "label": "Months with a dated row the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "24",
+     "unit": "",
+     "value": 24.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.dates",
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "op": "count distinct dates",
+      "window": null
+     },
+     "kind": "count",
+     "label": "Distinct dates in the rows the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "240",
+     "unit": "",
+     "value": 240.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.first",
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "op": "min",
+      "window": null
+     },
+     "kind": "date",
+     "label": "The first date in the rows the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "2024-01-01",
+     "unit": "",
+     "value": "2024-01-01"
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.last",
+     "inputs": {
+      "columns": [
+       "order_date"
+      ],
+      "op": "max",
+      "window": null
+     },
+     "kind": "date",
+     "label": "The last date in the rows the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "2025-12-18",
+     "unit": "",
+     "value": "2025-12-18"
+    }
+   ],
+   "note": "Descriptive arithmetic on the rows the engine kept, in the engine's own comparison windows (the latest 12 months against the 12 before); the monthly totals of these rows match the engine's own charted series. The headline figures carry the claim's grade; a figure derived from them is not graded itself and names the grade of the change it is part of. A contribution says where the change sits, not what caused it, and a what-if is arithmetic, not a forecast. The figures are shown rounded; they add up before rounding.",
+   "refused": [
+    "no segment column qualifies: a segment is a category, geography or segment column that is not flagged as personal data and has 2 to 12 levels, at least 2 of them with 5 of the claim's rows in both windows"
+   ]
+  },
+  "story": {
+   "cannot_answer": [
+    "Churn and retention are not measured: the file names each customer (customer_email) and dates each row, but this engine compares monthly totals and counts, not how long each customer stays or what each one spends.",
+    "The data cannot support this claim: Months of history available to forecast monthly rows in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) of hist",
+    "The data cannot support this claim: Months of history available to forecast monthly total spend in [your file]. Why: There are 24 months of history; a forecast we can check needs at least 36 (12 to replay, the rest to learn from), so none is made. What would settle it: About 12 more month(s) "
+   ],
+   "headline": "Total spend -0.1%, -28.5% since its peak in the 3 months to 2025-05, graded WATCH; volume -3.3% on the year before, graded WATCH; average spend +1.6%, graded WATCH.",
+   "what_happened": [
+    "The monthly total of spend moved from 5,893 in the year before to 5,884 in the latest year, a change of -0.1%. The same test's interval for the change runs from -93.1% to +533.3%. It is labelled 95%; coverage not measured for this kind of series. If the change were smaller than the materiality bar, ",
+    "It peaked in the 3 months to 2025-05 (an average of 566.7 a month) and has fallen since: the latest 3 months average 405.0, -28.5% from the peak. The 12-against-12 comparison above averages across that turn. This is a description found by looking at the series, not a tested change.",
+    "Row volume changed by -3.3% in the latest year (118 rows) against the year before (122 rows). The same test's interval for the change runs from -60.4% to +97.5%. It is a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true change 100.0% of the time (99.",
+    "Average spend (the average month) moved from 50.4 in the year before to 51.2 in the latest year, a change of +1.6%. The same test's interval for the change runs from -30.6% to +68.1%. It is a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true change 9",
+    "The most common staff_name value is 'Dana Whitfield', with 25.0% of rows."
+   ],
+   "what_to_do": [
+    "Nothing in this analysis was graded CONFIRMED or cleared for planning, so it recommends no action. The changes above are things to watch, not to act on."
+   ],
+   "whats_next": [
+    "No forecast of monthly total spend in [your file]: 24 months of history is too short to replay and check one.",
+    "No forecast of monthly rows in [your file]: 24 months of history is too short to replay and check one."
+   ],
+   "why": [
+    "Nothing in this data explains the changes above, and no outside context was attached. That is not the same as having no cause: the file records what happened, not why."
+   ]
+  },
+  "structure": null,
+  "tables": [
+   {
+    "cols": [
+     "Values",
+     "10th",
+     "25th",
+     "Median",
+     "75th",
+     "90th"
+    ],
+    "rows": [
+     [
+      "231",
+      "13.8",
+      "29.7",
+      "52.1",
+      "73.8",
+      "87.1"
+     ]
+    ],
+    "title": "How spend is spread"
+   }
+  ]
+ }
+}

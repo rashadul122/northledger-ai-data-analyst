@@ -1,0 +1,2877 @@
+{
+ "about": "made by make_docx_fixtures.py from tools/make_ui_fixtures.py's sample report",
+ "engine": {
+  "answer": {
+   "key_figures": [
+    "30.7%",
+    "3",
+    "4.5%"
+   ],
+   "latest": {
+    "finding_id": "measure.amount.total.rent.change",
+    "grade": "WATCH",
+    "label": "the latest 12 months against the 12 before (the graded test)",
+    "text": "Rent is up 30.7% on the year before, but that is mostly a change in what the file covers: 'East York Low-Rise' first appears in the file in Mar 2025 and 'Junction Six-Plex' in Jul 2024. The 3 properties held throughout grew 4.5% like for like (not yet conclusive)."
+   },
+   "leads": "latest_change",
+   "source": "graded_claim",
+   "text": "Rent is up 30.7% on the year before, but that is mostly a change in what the file covers: 'East York Low-Rise' first appears in the file in Mar 2025 and 'Junction Six-Plex' in Jul 2024. The 3 properties held throughout grew 4.5% like for like (not yet conclusive).",
+   "version": 1,
+   "why": "the question asks about the latest change"
+  },
+  "cleaning": {
+   "fixes": [
+    {
+     "column": "date",
+     "count": 3349,
+     "rule": "date_date",
+     "what": "Read as dates in one format: every text value converted is counted, whether or not it was written differently"
+    },
+    {
+     "column": "amount",
+     "count": 3287,
+     "rule": "amount_numeric",
+     "what": "Read as numbers: every text value converted is counted, whether or not it needed a repair"
+    },
+    {
+     "column": "category",
+     "count": 3262,
+     "rule": "category_case",
+     "what": "Letter case made the same across the column (written in capitals): every value rewritten is counted, not only the spellings that differed"
+    },
+    {
+     "column": "paid",
+     "count": 1004,
+     "rule": "paid_boolean",
+     "what": "Yes/no values written several ways were brought to one spelling"
+    },
+    {
+     "column": null,
+     "count": 361,
+     "rule": "trim_text",
+     "what": "Leading, trailing and doubled spaces were removed"
+    },
+    {
+     "column": "property",
+     "count": 173,
+     "rule": "property_case",
+     "what": "Letter-case and spacing variants brought to the column's most common spelling, so one name is one group: only the values that differed are counted"
+    },
+    {
+     "column": null,
+     "count": 9,
+     "rule": "null_like",
+     "what": "Placeholder values (such as N/A, NULL, a dash or a blank) were turned into true empty values"
+    }
+   ],
+   "quarantine_reasons": [
+    {
+     "count": 55,
+     "reason": "exact_duplicates: exact duplicate row"
+    },
+    {
+     "count": 6,
+     "reason": "amount_range: value outside the possible range"
+    },
+    {
+     "count": 3,
+     "reason": "date_not_future: date is in the future"
+    },
+    {
+     "count": 1,
+     "reason": "date_date: value matches no known date format"
+    }
+   ],
+   "rows_clean": 3285,
+   "rows_in": 3350,
+   "rows_quarantined": 65
+  },
+  "estimand": null,
+  "health": {
+   "columns": [
+    {
+     "completeness": {
+      "ci": [
+       99.88546092806136,
+       100.0
+      ],
+      "k": 3350,
+      "n": 3350,
+      "pct": 100.0
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "date",
+     "type": "date",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       99.88546092806136,
+       100.0
+      ],
+      "k": 3350,
+      "n": 3350,
+      "pct": 100.0
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "property",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       99.88546092806136,
+       100.0
+      ],
+      "k": 3350,
+      "n": 3350,
+      "pct": 100.0
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "unit",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       99.88546092806136,
+       100.0
+      ],
+      "k": 3350,
+      "n": 3350,
+      "pct": 100.0
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "category",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       98.20741509358827,
+       98.99455583939087
+      ],
+      "k": 3305,
+      "n": 3350,
+      "pct": 98.65671641791045
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "amount",
+     "type": "numeric",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       99.88546092806136,
+       100.0
+      ],
+      "k": 3350,
+      "n": 3350,
+      "pct": 100.0
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "paid",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       53.11611048164712,
+       56.48482038964714
+      ],
+      "k": 1836,
+      "n": 3350,
+      "pct": 54.80597014925373
+     },
+     "flagged": false,
+     "n": 3350,
+     "name": "vendor",
+     "type": "text",
+     "withheld": false
+    },
+    {
+     "completeness": {
+      "ci": [
+       53.11611048164712,
+       56.48482038964714
+      ],
+      "k": 1836,
+      "n": 3350,
+      "pct": 54.80597014925373
+     },
+     "flagged": true,
+     "n": 3350,
+     "name": "notes",
+     "type": "text",
+     "withheld": true
+    }
+   ],
+   "score": 59.2
+  },
+  "input": {
+   "columns": 8,
+   "name": "sample-messy.csv",
+   "rows": 3350
+  },
+  "limitations": [
+   {
+    "finding_ids": [
+     "measure.volume.change_pct",
+     "measure.volume.like_for_like.change_pct",
+     "measure.amount.total.rent.change",
+     "measure.amount.total.rent.like_for_like.change",
+     "measure.amount.total.other.change",
+     "measure.amount.total.other.like_for_like.change"
+    ],
+    "kind": "causal",
+    "text": "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause."
+   },
+   {
+    "finding_ids": [
+     "forecast.total_amount_rent.next",
+     "forecast.monthly_rows.next",
+     "forecast.total_amount_other.next"
+    ],
+    "kind": "forecast",
+    "text": "the series stepped in 2025-03, and the months since are too few to fit and replay a forecast on alone (that needs 45), so the models learned across the step"
+   },
+   {
+    "finding_ids": [
+     "forecast.total_amount_rent.next",
+     "forecast.monthly_rows.next",
+     "forecast.total_amount_other.next"
+    ],
+    "kind": "forecast",
+    "text": "the 131 replayed forecasts that were made before a step and scored after it measure the step, not the method, so they are left out of the ranges and the replay scores, and the same-month-last-year rule is scaled by the step (+87.4% at 2025-03; +30.2% at 2024-07) for months whose last-year value is from before it"
+   },
+   {
+    "finding_ids": [
+     "forecast.total_amount_rent.next",
+     "forecast.monthly_rows.next",
+     "forecast.total_amount_other.next"
+    ],
+    "kind": "forecast",
+    "text": "months ahead shown: 9 of 12; after a step the forecast could not fit around, a month ahead is shown only while its 80% range's high end is at most 2 times its low end"
+   },
+   {
+    "finding_ids": [],
+    "kind": "data",
+    "text": "The average amount is not compared: rows where category is 'RENT' and the other rows hold different kinds of amount, so an average across them means nothing; each kind's monthly total is compared instead."
+   },
+   {
+    "finding_ids": [],
+    "kind": "statistical",
+    "text": "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: each tested claim quotes the nearest one, not a power computed for itself."
+   },
+   {
+    "finding_ids": [],
+    "kind": "statistical",
+    "text": "The release check certifies each simulated no-change condition below a 2.0% false-confirm cap; 50 of 52 conditions pass and 2 do not, so in those conditions the engine can confirm a change that is not there more often than that."
+   },
+   {
+    "finding_ids": [],
+    "kind": "external",
+    "text": "Accuracy, whether the values match reality, is not measured: no rows were checked against their source."
+   }
+  ],
+  "privacy": {
+   "flagged": [
+    {
+     "column": "notes",
+     "decision": "withhold",
+     "kind": "named like personal data"
+    }
+   ],
+   "released": []
+  },
+  "story": {
+   "cannot_answer": [
+    "The average amount is not compared: rows where category is 'RENT' and the other rows hold different kinds of amount, so an average across them means nothing; each kind's monthly total is compared instead."
+   ]
+  }
+ },
+ "forbid": [],
+ "results": {
+  "analyses": [],
+  "analyses_refused": [],
+  "analyst_insights": [
+   "Key numbers: 1.22 million (Amount, the 12 months to 2026-08; +32.2% against the 12 months to 2025-08); 101,887 (Amount, 2026-08; +1.6% on 2025-08); 107,599 (Record high, 2026-03; low 36,205 in 2023-11); 78.7% (of the change came from East York Low-Rise; +233,150, by Property).",
+   "The total of Amount rose from 918,969 in the 12 months to 2025-08 to 1.22 million in the 12 months to 2026-08 (+32.2%).",
+   "In 2026-08, Amount rose to 101,887 from 100,314 in 2025-08 (+1.6% year on year); the three months from 2026-06 moved the same way (+3.6% on a year earlier).",
+   "Over 56 months (2022-01 to 2026-08) Amount moved by +1,457 a month on a straight line (95% range +1,230 to +1,684). Its monthly record high was 107,599 in 2026-03 and its low 36,205 in 2023-11.",
+   "By Property, East York Low-Rise carried 78.7% of the change (+233,150); the top three of 5 groups carried 90.8%. East York Low-Rise first appears in 2025-03, so much of that is a group added, not growth of what was already there.",
+   "Among rows where Property is East York Low-Rise, RENT (Category) carried 90.8% of its change (+211,611).",
+   "In the 12 months to 2026-08, East York Low-Rise holds 38.0% of the total Amount, then Parkdale Walk-Up (24.7%), and the top three of 5 Property groups 77.6% (Herfindahl-Hirschman index 2,527, the same as 3.96 equal-sized groups: not concentrated); the top three held 74.0% in the 12 months to 2025-08 (+3.60 percentage points, more concentrated). Across all 3,285 rows, Parkdale Walk-Up appears\u2026",
+   "Unit 3 is the most common Unit (311 of 3,285 rows, 9.5%); RENT the most common Category (45.3%), then APPLIANCE (8.5%).",
+   "Over 56 months (2022-01 to 2026-08) the month of the year accounts for 0.0% of the movement in Amount around its trend once chance is allowed for: no season to speak of.",
+   "Leaving out East York Low-Rise, Amount still rose (+9.1%)."
+  ],
+  "answer": {
+   "key_figures": [
+    "30.7%",
+    "3",
+    "4.5%"
+   ],
+   "latest": {
+    "grade": "WATCH",
+    "label": "the latest 12 months against the 12 before (the graded test)",
+    "text": "Rent is up 30.7% on the year before, but that is mostly a change in what the file covers: 'East York Low-Rise' first appears in the file in Mar 2025 and 'Junction Six-Plex' in Jul 2024. The 3 properties held throughout grew 4.5% like for like (not yet conclusive)."
+   },
+   "leads": "latest_change",
+   "text": "Rent is up 30.7% on the year before, but that is mostly a change in what the file covers: 'East York Low-Rise' first appears in the file in Mar 2025 and 'Junction Six-Plex' in Jul 2024. The 3 properties held throughout grew 4.5% like for like (not yet conclusive).",
+   "why": "the question asks about the latest change"
+  },
+  "charts": [
+   {
+    "anchors": [
+     "finding:measure.amount.total.rent.change",
+     "chart:trend.total:amount:rent",
+     "chart:fan.total_amount_rent",
+     "finding:forecast.total_amount_rent.next"
+    ],
+    "chart": "line_chart",
+    "chosen_by": "engine",
+    "data": {
+     "forecast": {
+      "hi": [
+       94821.216493,
+       100990.488896,
+       98675.140668,
+       102181.129539,
+       117888.303313,
+       116996.260859,
+       116108.582917,
+       115314.262338,
+       117645.899584
+      ],
+      "level": 80,
+      "lo": [
+       74149.91474,
+       74149.91474,
+       72336.444383,
+       72789.882067,
+       64498.730706,
+       64498.730706,
+       64498.730706,
+       76022.530849,
+       74260.453428
+      ],
+      "values": [
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201,
+       82201
+      ],
+      "x": [
+       "2026-09",
+       "2026-10",
+       "2026-11",
+       "2026-12",
+       "2027-01",
+       "2027-02",
+       "2027-03",
+       "2027-04",
+       "2027-05"
+      ]
+     },
+     "grain": "month",
+     "series": [
+      {
+       "label": "Total Amount where Category is 'RENT'",
+       "values": [
+        49717,
+        47852,
+        38564,
+        79796,
+        86506,
+        88272,
+        86226,
+        82306,
+        84093,
+        84255,
+        84255,
+        84190,
+        86312,
+        86064,
+        79745,
+        88769,
+        80734,
+        84055,
+        84122,
+        88383,
+        82201
+       ]
+      }
+     ],
+     "x": [
+      "2024-12",
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+      "2026-07",
+      "2026-08"
+     ],
+     "x_label": "Month"
+    },
+    "grade": null,
+    "id": "viz.1.line_chart",
+    "inputs": {
+     "columns": [
+      "Amount",
+      "Date"
+     ],
+     "months": [
+      "2024-12",
+      "2026-08"
+     ],
+     "op": "Amount added up by month",
+     "rows": 801
+    },
+    "kind": "lines",
+    "measure": {
+     "kind": "amount",
+     "label": "Amount",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "headline",
+    "source": "The rows the engine kept, by Date month; each month equals the engine's own charted series",
+    "subtitle": "Total Amount where Category is 'RENT' in each month of Date; the latest 21 months, then the engine's forecast with its 80% range, dashed",
+    "summary": "Total Amount where Category is 'RENT' went from 49,717 in Dec 2024 to 82,201 in Aug 2026; the highest month was Mar 2026 (88,769) and the lowest Feb 2025 (38,564). The engine's forecast for May 2027 is 82,201 (80% range 74,260 to 117,646).",
+    "supports": "Change in the monthly total of amount where category is 'RENT', latest 12 months against the 12 before",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Month",
+      "Total Amount where Category is 'RENT'",
+      "Forecast",
+      "80% range"
+     ],
+     "rows": [
+      [
+       "Dec 2024",
+       "49,717",
+       "",
+       ""
+      ],
+      [
+       "Jan 2025",
+       "47,852",
+       "",
+       ""
+      ],
+      [
+       "Feb 2025",
+       "38,564",
+       "",
+       ""
+      ],
+      [
+       "Mar 2025",
+       "79,796",
+       "",
+       ""
+      ],
+      [
+       "Apr 2025",
+       "86,506",
+       "",
+       ""
+      ],
+      [
+       "May 2025",
+       "88,272",
+       "",
+       ""
+      ],
+      [
+       "Jun 2025",
+       "86,226",
+       "",
+       ""
+      ],
+      [
+       "Jul 2025",
+       "82,306",
+       "",
+       ""
+      ],
+      [
+       "Aug 2025",
+       "84,093",
+       "",
+       ""
+      ],
+      [
+       "Sep 2025",
+       "84,255",
+       "",
+       ""
+      ],
+      [
+       "Oct 2025",
+       "84,255",
+       "",
+       ""
+      ],
+      [
+       "Nov 2025",
+       "84,190",
+       "",
+       ""
+      ],
+      [
+       "Dec 2025",
+       "86,312",
+       "",
+       ""
+      ],
+      [
+       "Jan 2026",
+       "86,064",
+       "",
+       ""
+      ],
+      [
+       "Feb 2026",
+       "79,745",
+       "",
+       ""
+      ],
+      [
+       "Mar 2026",
+       "88,769",
+       "",
+       ""
+      ],
+      [
+       "Apr 2026",
+       "80,734",
+       "",
+       ""
+      ],
+      [
+       "May 2026",
+       "84,055",
+       "",
+       ""
+      ],
+      [
+       "Jun 2026",
+       "84,122",
+       "",
+       ""
+      ],
+      [
+       "Jul 2026",
+       "88,383",
+       "",
+       ""
+      ],
+      [
+       "Aug 2026",
+       "82,201",
+       "",
+       ""
+      ],
+      [
+       "Sep 2026",
+       "",
+       "82,201",
+       "74,150 to 94,821"
+      ],
+      [
+       "Oct 2026",
+       "",
+       "82,201",
+       "74,150 to 100,990"
+      ],
+      [
+       "Nov 2026",
+       "",
+       "82,201",
+       "72,336 to 98,675"
+      ],
+      [
+       "Dec 2026",
+       "",
+       "82,201",
+       "72,790 to 102,181"
+      ],
+      [
+       "Jan 2027",
+       "",
+       "82,201",
+       "64,499 to 117,888"
+      ],
+      [
+       "Feb 2027",
+       "",
+       "82,201",
+       "64,499 to 116,996"
+      ],
+      [
+       "Mar 2027",
+       "",
+       "82,201",
+       "64,499 to 116,109"
+      ],
+      [
+       "Apr 2027",
+       "",
+       "82,201",
+       "76,023 to 115,314"
+      ],
+      [
+       "May 2027",
+       "",
+       "82,201",
+       "74,260 to 117,646"
+      ]
+     ]
+    },
+    "title": "Total Amount where Category is 'RENT' by month, Dec 2024 to Aug 2026, and the engine's forecast",
+    "why": "Chosen by the engine: the measure over time (the primary series, or up to 5 series of a long table), with the engine's forecast range when it has one"
+   },
+   {
+    "anchors": [],
+    "chart": "line_chart",
+    "chosen_by": "engine",
+    "data": {
+     "forecast": null,
+     "grain": "quarter",
+     "series": [
+      {
+       "label": "Amount",
+       "values": [
+        118809.99,
+        123348.54,
+        119581.83,
+        120950.92,
+        126143.34,
+        125583.52,
+        117581.65,
+        117306.68,
+        123838.69,
+        123728.45,
+        154595.97,
+        165418.92,
+        202884.65,
+        302468.41,
+        294045.16,
+        308458.06,
+        307064.17,
+        295874.7,
+        207302.84
+       ]
+      }
+     ],
+     "x": [
+      "2022-Q1",
+      "2022-Q2",
+      "2022-Q3",
+      "2022-Q4",
+      "2023-Q1",
+      "2023-Q2",
+      "2023-Q3",
+      "2023-Q4",
+      "2024-Q1",
+      "2024-Q2",
+      "2024-Q3",
+      "2024-Q4",
+      "2025-Q1",
+      "2025-Q2",
+      "2025-Q3",
+      "2025-Q4",
+      "2026-Q1",
+      "2026-Q2",
+      "2026-Q3"
+     ],
+     "x_label": "Quarter"
+    },
+    "grade": null,
+    "id": "viz.52.line_chart",
+    "inputs": {
+     "columns": [
+      "Amount",
+      "Date"
+     ],
+     "months": null,
+     "op": "trend",
+     "rows": null
+    },
+    "kind": "lines",
+    "measure": {
+     "kind": "amount",
+     "label": "Amount",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "other",
+    "source": "The rows the engine kept",
+    "subtitle": "2022-Q1 to 2026-Q3, one point a quarter",
+    "summary": "Over 56 months (2022-01 to 2026-08) Amount moved by +1,457 a month on a straight line (95% range +1,230 to +1,684). Its monthly record high was 107,599 in 2026-03 and its low 36,205 in 2023-11.",
+    "supports": "Over 56 months (2022-01 to 2026-08) Amount moved by +1,457 a month on a straight line (95% range +1,230 to +1,684). Its monthly record high was 107,599 in 2026-03 and its low 36,205 in 2023-11.",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Quarter",
+      "Amount"
+     ],
+     "rows": [
+      [
+       "2022-Q1",
+       "118,810"
+      ],
+      [
+       "2022-Q2",
+       "123,349"
+      ],
+      [
+       "2022-Q3",
+       "119,582"
+      ],
+      [
+       "2022-Q4",
+       "120,951"
+      ],
+      [
+       "2023-Q1",
+       "126,143"
+      ],
+      [
+       "2023-Q2",
+       "125,584"
+      ],
+      [
+       "2023-Q3",
+       "117,582"
+      ],
+      [
+       "2023-Q4",
+       "117,307"
+      ],
+      [
+       "2024-Q1",
+       "123,839"
+      ],
+      [
+       "2024-Q2",
+       "123,728"
+      ],
+      [
+       "2024-Q3",
+       "154,596"
+      ],
+      [
+       "2024-Q4",
+       "165,419"
+      ],
+      [
+       "2025-Q1",
+       "202,885"
+      ],
+      [
+       "2025-Q2",
+       "302,468"
+      ],
+      [
+       "2025-Q3",
+       "294,045"
+      ],
+      [
+       "2025-Q4",
+       "308,458"
+      ],
+      [
+       "2026-Q1",
+       "307,064"
+      ],
+      [
+       "2026-Q2",
+       "295,875"
+      ],
+      [
+       "2026-Q3",
+       "207,303"
+      ]
+     ]
+    },
+    "title": "Amount by quarter",
+    "why": "Chosen by the engine: the chart behind this finding."
+   },
+   {
+    "anchors": [],
+    "chart": "grouped_bar",
+    "chosen_by": "engine",
+    "data": {
+     "other": false,
+     "rows": [
+      {
+       "change_text": "+233,150",
+       "label": "East York Low-Rise",
+       "texts": [
+        "228,145",
+        "461,294"
+       ],
+       "values": [
+        228144.61,
+        461294.27
+       ]
+      },
+      {
+       "change_text": "+14,730",
+       "label": "Parkdale Walk-Up",
+       "texts": [
+        "285,569",
+        "300,299"
+       ],
+       "values": [
+        285568.51,
+        300298.84
+       ]
+      },
+      {
+       "change_text": "+15,097",
+       "label": "Junction Six-Plex",
+       "texts": [
+        "166,698",
+        "181,795"
+       ],
+       "values": [
+        166697.92,
+        181794.98
+       ]
+      },
+      {
+       "change_text": "+12,565",
+       "label": "Leslieville Fourplex",
+       "texts": [
+        "134,338",
+        "146,904"
+       ],
+       "values": [
+        134338.24,
+        146903.67
+       ]
+      },
+      {
+       "change_text": "+20,627",
+       "label": "Danforth Triplex",
+       "texts": [
+        "104,219",
+        "124,847"
+       ],
+       "values": [
+        104219.46,
+        124846.93
+       ]
+      }
+     ],
+     "series": [
+      "the 12 months to 2025-08",
+      "the 12 months to 2026-08"
+     ]
+    },
+    "grade": null,
+    "id": "viz.53.grouped_bar",
+    "inputs": {
+     "columns": [
+      "Amount",
+      "Property",
+      "Date"
+     ],
+     "months": null,
+     "op": "change",
+     "rows": null
+    },
+    "kind": "hbar",
+    "measure": {
+     "kind": "amount",
+     "label": "Amount",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "other",
+    "source": "The rows the engine kept",
+    "subtitle": "the 12 months to 2026-08 for each Property, the largest first",
+    "summary": "By Property, East York Low-Rise carried 78.7% of the change (+233,150); the top three of 5 groups carried 90.8%. East York Low-Rise first appears in 2025-03, so much of that is a group added, not growth of what was already there.",
+    "supports": "By Property, East York Low-Rise carried 78.7% of the change (+233,150); the top three of 5 groups carried 90.8%. East York Low-Rise first appears in 2025-03, so much of that is a group added, not gro\u2026",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Property",
+      "the 12 months to 2025-08",
+      "the 12 months to 2026-08",
+      "change"
+     ],
+     "rows": [
+      [
+       "East York Low-Rise",
+       "228,145",
+       "461,294",
+       "+233,150"
+      ],
+      [
+       "Parkdale Walk-Up",
+       "285,569",
+       "300,299",
+       "+14,730"
+      ],
+      [
+       "Junction Six-Plex",
+       "166,698",
+       "181,795",
+       "+15,097"
+      ],
+      [
+       "Leslieville Fourplex",
+       "134,338",
+       "146,904",
+       "+12,565"
+      ],
+      [
+       "Danforth Triplex",
+       "104,219",
+       "124,847",
+       "+20,627"
+      ]
+     ]
+    },
+    "title": "Amount by Property, the 12 months to 2026-08 against the 12 months to 2025-08",
+    "why": "Chosen by the engine: the chart behind this finding."
+   },
+   {
+    "anchors": [],
+    "chart": "grouped_bar",
+    "chosen_by": "engine",
+    "data": {
+     "other": false,
+     "rows": [
+      {
+       "change_text": "+211,611",
+       "label": "RENT",
+       "texts": [
+        "209,356",
+        "420,967"
+       ],
+       "values": [
+        209356.0,
+        420967.0
+       ]
+      },
+      {
+       "change_text": "+3,354",
+       "label": "ELECTRICAL",
+       "texts": [
+        "5,115",
+        "8,468"
+       ],
+       "values": [
+        5114.67,
+        8468.34
+       ]
+      },
+      {
+       "change_text": "+4,816",
+       "label": "APPLIANCE",
+       "texts": [
+        "2,350",
+        "7,166"
+       ],
+       "values": [
+        2350.47,
+        7166.34
+       ]
+      },
+      {
+       "change_text": "+4,355",
+       "label": "HEATING",
+       "texts": [
+        "2,553",
+        "6,908"
+       ],
+       "values": [
+        2552.55,
+        6907.67
+       ]
+      },
+      {
+       "change_text": "+2,022",
+       "label": "PLUMBING",
+       "texts": [
+        "3,582",
+        "5,603"
+       ],
+       "values": [
+        3581.63,
+        5603.43
+       ]
+      },
+      {
+       "change_text": "+3,372",
+       "label": "PEST CONTROL",
+       "texts": [
+        "1,814",
+        "5,186"
+       ],
+       "values": [
+        1814.07,
+        5185.7
+       ]
+      },
+      {
+       "change_text": "+746.4",
+       "label": "CLEANING",
+       "texts": [
+        "1,099",
+        "1,845"
+       ],
+       "values": [
+        1098.85,
+        1845.27
+       ]
+      }
+     ],
+     "series": [
+      "the 12 months to 2025-08",
+      "the 12 months to 2026-08"
+     ]
+    },
+    "grade": null,
+    "id": "viz.54.grouped_bar",
+    "inputs": {
+     "columns": [
+      "Amount",
+      "Category",
+      "Date"
+     ],
+     "months": null,
+     "op": "change",
+     "rows": null
+    },
+    "kind": "hbar",
+    "measure": {
+     "kind": "amount",
+     "label": "Amount",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "other",
+    "source": "The rows the engine kept",
+    "subtitle": "the 12 months to 2026-08 for each Category, the largest first",
+    "summary": "Among rows where Property is East York Low-Rise, RENT (Category) carried 90.8% of its change (+211,611).",
+    "supports": "Among rows where Property is East York Low-Rise, RENT (Category) carried 90.8% of its change (+211,611).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Category",
+      "the 12 months to 2025-08",
+      "the 12 months to 2026-08",
+      "change"
+     ],
+     "rows": [
+      [
+       "RENT",
+       "209,356",
+       "420,967",
+       "+211,611"
+      ],
+      [
+       "ELECTRICAL",
+       "5,115",
+       "8,468",
+       "+3,354"
+      ],
+      [
+       "APPLIANCE",
+       "2,350",
+       "7,166",
+       "+4,816"
+      ],
+      [
+       "HEATING",
+       "2,553",
+       "6,908",
+       "+4,355"
+      ],
+      [
+       "PLUMBING",
+       "3,582",
+       "5,603",
+       "+2,022"
+      ],
+      [
+       "PEST CONTROL",
+       "1,814",
+       "5,186",
+       "+3,372"
+      ],
+      [
+       "CLEANING",
+       "1,099",
+       "1,845",
+       "+746.4"
+      ]
+     ]
+    },
+    "title": "Amount by Category, the 12 months to 2026-08 against the 12 months to 2025-08",
+    "why": "Chosen by the engine: the chart behind this finding."
+   },
+   {
+    "anchors": [],
+    "chart": "bar_chart",
+    "chosen_by": "engine",
+    "data": {
+     "other": false,
+     "rows": [
+      {
+       "label": "East York Low-Rise",
+       "texts": [
+        "38.0%"
+       ],
+       "values": [
+        37.962273
+       ]
+      },
+      {
+       "label": "Parkdale Walk-Up",
+       "texts": [
+        "24.7%"
+       ],
+       "values": [
+        24.713133
+       ]
+      },
+      {
+       "label": "Junction Six-Plex",
+       "texts": [
+        "15.0%"
+       ],
+       "values": [
+        14.960842
+       ]
+      },
+      {
+       "label": "Leslieville Fourplex",
+       "texts": [
+        "12.1%"
+       ],
+       "values": [
+        12.089457
+       ]
+      },
+      {
+       "label": "Danforth Triplex",
+       "texts": [
+        "10.3%"
+       ],
+       "values": [
+        10.274295
+       ]
+      }
+     ],
+     "series": [
+      "share"
+     ]
+    },
+    "grade": null,
+    "id": "viz.55.bar_chart",
+    "inputs": {
+     "columns": [
+      "Amount",
+      "Property"
+     ],
+     "months": null,
+     "op": "concentration",
+     "rows": null
+    },
+    "kind": "hbar",
+    "measure": {
+     "kind": "share_pct",
+     "label": "share of Amount",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "other",
+    "source": "The rows the engine kept",
+    "subtitle": "share for each Property, the largest first",
+    "summary": "In the 12 months to 2026-08, East York Low-Rise holds 38.0% of the total Amount, then Parkdale Walk-Up (24.7%), and the top three of 5 Property groups 77.6% (Herfindahl-Hirschman index 2,527, the same as 3.96 equal-sized groups: not concentrated); the top three held 74.0% in the 12 months to 2025-08 (+3.60 percentage points, more concentrated). Across all 3,285 rows, Parkdale Walk-Up appears mos\u2026",
+    "supports": "In the 12 months to 2026-08, East York Low-Rise holds 38.0% of the total Amount, then Parkdale Walk-Up (24.7%), and the top three of 5 Property groups 77.6% (Herfindahl-Hirschman index 2,527, the sam\u2026",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Property",
+      "share"
+     ],
+     "rows": [
+      [
+       "East York Low-Rise",
+       "38.0%"
+      ],
+      [
+       "Parkdale Walk-Up",
+       "24.7%"
+      ],
+      [
+       "Junction Six-Plex",
+       "15.0%"
+      ],
+      [
+       "Leslieville Fourplex",
+       "12.1%"
+      ],
+      [
+       "Danforth Triplex",
+       "10.3%"
+      ]
+     ]
+    },
+    "title": "Share of Amount by Property, the 12 months to 2026-08",
+    "why": "Chosen by the engine: the chart behind this finding."
+   },
+   {
+    "anchors": [],
+    "chart": "bar_chart",
+    "chosen_by": "engine",
+    "data": {
+     "other": false,
+     "rows": [
+      {
+       "label": "RENT",
+       "texts": [
+        "1,487"
+       ],
+       "values": [
+        1487.0
+       ]
+      },
+      {
+       "label": "APPLIANCE",
+       "texts": [
+        "279"
+       ],
+       "values": [
+        279.0
+       ]
+      },
+      {
+       "label": "PLUMBING",
+       "texts": [
+        "279"
+       ],
+       "values": [
+        279.0
+       ]
+      },
+      {
+       "label": "PEST CONTROL",
+       "texts": [
+        "258"
+       ],
+       "values": [
+        258.0
+       ]
+      },
+      {
+       "label": "ELECTRICAL",
+       "texts": [
+        "252"
+       ],
+       "values": [
+        252.0
+       ]
+      },
+      {
+       "label": "CLEANING",
+       "texts": [
+        "234"
+       ],
+       "values": [
+        234.0
+       ]
+      },
+      {
+       "label": "HEATING",
+       "texts": [
+        "152"
+       ],
+       "values": [
+        152.0
+       ]
+      },
+      {
+       "label": "LANDSCAPING",
+       "texts": [
+        "138"
+       ],
+       "values": [
+        138.0
+       ]
+      },
+      {
+       "label": "SNOW REMOVAL",
+       "texts": [
+        "107"
+       ],
+       "values": [
+        107.0
+       ]
+      },
+      {
+       "label": "COOLING",
+       "texts": [
+        "99"
+       ],
+       "values": [
+        99.0
+       ]
+      }
+     ],
+     "series": [
+      "rows"
+     ]
+    },
+    "grade": null,
+    "id": "viz.56.bar_chart",
+    "inputs": {
+     "columns": [
+      "Category"
+     ],
+     "months": null,
+     "op": "frequency",
+     "rows": null
+    },
+    "kind": "hbar",
+    "measure": {
+     "kind": "count",
+     "label": "rows",
+     "unit": ""
+    },
+    "parent_grade": null,
+    "section": "other",
+    "source": "The rows the engine kept",
+    "subtitle": "rows for each Category, the largest first",
+    "summary": "Unit 3 is the most common Unit (311 of 3,285 rows, 9.5%); RENT the most common Category (45.3%), then APPLIANCE (8.5%).",
+    "supports": "Unit 3 is the most common Unit (311 of 3,285 rows, 9.5%); RENT the most common Category (45.3%), then APPLIANCE (8.5%).",
+    "suppressed": {
+     "cells": 0,
+     "why": ""
+    },
+    "table": {
+     "cols": [
+      "Category",
+      "rows"
+     ],
+     "rows": [
+      [
+       "RENT",
+       "1,487"
+      ],
+      [
+       "APPLIANCE",
+       "279"
+      ],
+      [
+       "PLUMBING",
+       "279"
+      ],
+      [
+       "PEST CONTROL",
+       "258"
+      ],
+      [
+       "ELECTRICAL",
+       "252"
+      ],
+      [
+       "CLEANING",
+       "234"
+      ],
+      [
+       "HEATING",
+       "152"
+      ],
+      [
+       "LANDSCAPING",
+       "138"
+      ],
+      [
+       "SNOW REMOVAL",
+       "107"
+      ],
+      [
+       "COOLING",
+       "99"
+      ]
+     ]
+    },
+    "title": "Rows by Category",
+    "why": "Chosen by the engine: the chart behind this finding."
+   }
+  ],
+  "cleaning": {
+   "fixes": [
+    "Read as dates in one format: every text value converted is counted, whether or not it was written differently",
+    "Read as numbers: every text value converted is counted, whether or not it needed a repair",
+    "Letter case made the same across the column (written in capitals): every value rewritten is counted, not only the spellings that differed",
+    "Yes/no values written several ways were brought to one spelling",
+    "Leading, trailing and doubled spaces were removed",
+    "Letter-case and spacing variants brought to the column's most common spelling, so one name is one group: only the values that differed are counted"
+   ],
+   "rows_clean": 3285,
+   "rows_in": 3350,
+   "rows_quarantined": 65
+  },
+  "estimand": null,
+  "findings": [
+   {
+    "claim": "55 of 3350 rows in [your file] are exact duplicates of another row",
+    "kind": "data_quality",
+    "value": 55.0,
+    "verdict": "RECOMMEND",
+    "why": "Any amount of this is a defect: 55 found. Fix it at the source, and check whatever was counted or billed from these rows."
+   },
+   {
+    "claim": "966 values in the date column of [your file] are not in the column's most common date format (YYYY-MM-DD, used by 79% of its dates across 3 formats), so a tool that assumes one date format will misread or drop them",
+    "kind": "data_quality",
+    "value": 966.0,
+    "verdict": "RECOMMEND",
+    "why": "It affects 28% of the table, measured across 3,350 rows from a source scoring 87 out of 100 on quality. Widespread enough to act on."
+   },
+   {
+    "claim": "173 values in the property column of [your file] are letter-case variants of a more common spelling, so one category is counted as several",
+    "kind": "data_quality",
+    "value": 173.0,
+    "verdict": "RECOMMEND",
+    "why": "It affects 5.1% of the table, measured across 3,350 rows from a source scoring 87 out of 100 on quality. Widespread enough to act on."
+   },
+   {
+    "claim": "187 values in the category column of [your file] are letter-case variants of a more common spelling, so one category is counted as several",
+    "kind": "data_quality",
+    "value": 187.0,
+    "verdict": "RECOMMEND",
+    "why": "It affects 5.5% of the table, measured across 3,350 rows from a source scoring 87 out of 100 on quality. Widespread enough to act on."
+   },
+   {
+    "claim": "790 values in the paid column of [your file] break the column's UPPER-case convention, so one value can be stored several ways",
+    "kind": "data_quality",
+    "value": 790.0,
+    "verdict": "RECOMMEND",
+    "why": "It affects 23% of the table, measured across 3,350 rows from a source scoring 87 out of 100 on quality. Widespread enough to act on."
+   },
+   {
+    "claim": "Change in the average month's row volume, latest 12 months against the 12 before",
+    "interval_coverage": {
+     "hi": 0.9996611008917755,
+     "lo": 0.989208949706462,
+     "measured": 0.9980806142034548
+    },
+    "kind": "business",
+    "value": 33.8691159586682,
+    "verdict": "WATCH",
+    "why": "A 33.9% rise in the average month, latest 12 months against the 12 before (95% interval -19.0% to +128.1%; a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true change 99.8% of the time (98.9%"
+   },
+   {
+    "claim": "Change in the average month's row volume like for like (the 3 property values present in every modelled month), latest 12 months against the 12 before",
+    "interval_coverage": {
+     "hi": 0.9971680367048785,
+     "lo": 0.9845917120288008,
+     "measured": 0.9933774834437086
+    },
+    "kind": "business",
+    "value": 20.864661654135332,
+    "verdict": "WATCH",
+    "why": "A 20.9% rise in the average month, latest 12 months against the 12 before (95% interval -7.1% to +42.3%; a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true change 99.3% of the time (98.5% t"
+   },
+   {
+    "claim": "Change in the monthly total of amount where category is 'RENT', latest 12 months against the 12 before",
+    "kind": "business",
+    "value": 30.67275991765598,
+    "verdict": "WATCH",
+    "why": "A 30.7% rise in the average month, latest 12 months against the 12 before (95% interval -26.3% to +160.4%; labelled 95%; coverage not measured for this kind of series), but part of it is a change in what the file covers, not in the business"
+   },
+   {
+    "claim": "Change in the monthly total of amount where category is 'RENT' like for like (the 3 property values present in every modelled month), latest 12 months against the 12 before",
+    "interval_coverage": {
+     "hi": 0.9791381493135928,
+     "lo": 0.9442699913190685,
+     "measured": 0.9657534246575342
+    },
+    "kind": "business",
+    "value": 4.474117789423715,
+    "verdict": "WATCH",
+    "why": "No change of at least the 5% bar is shown: a 4.5% rise in the average month, latest 12 months against the 12 before (95% interval -5.5% to +15.2%; a 95% interval by construction; in the benchmark's simulated series nearest this one it held "
+   },
+   {
+    "claim": "Change in the monthly total of amount for the other category values, latest 12 months against the 12 before",
+    "kind": "business",
+    "value": 40.622929059829175,
+    "verdict": "WATCH",
+    "why": "A 40.6% rise in the average month, latest 12 months against the 12 before (95% interval -15.0% to +163.6%; labelled 95%; coverage not measured for this kind of series), but part of it is a change in what the file covers, not in the business"
+   },
+   {
+    "claim": "Change in the monthly total of amount for the other category values like for like (the 3 property values present in every modelled month), latest 12 months against the 12 before",
+    "interval_coverage": {
+     "hi": 0.9290930958191638,
+     "lo": 0.8743238496424003,
+     "measured": 0.9051918735891648
+    },
+    "kind": "business",
+    "value": 30.396320482710507,
+    "verdict": "WATCH",
+    "why": "No change of at least the 5% bar is shown: a 30.4% rise in the average month, latest 12 months against the 12 before (95% interval -10.3% to +96.0%; a 95% interval by construction; in the benchmark's simulated series nearest this one it hel"
+   },
+   {
+    "claim": "Forecast of monthly total amount where category is 'RENT' in [your file] for 2026-09",
+    "kind": "forecast",
+    "value": 82201.0,
+    "verdict": "WATCH",
+    "why": "The chosen method (repeat last month's value) had a lower replay error than the simple rule of repeating the same month from last year, but that is not shown to be more than luck: when the whole method -- including picking the best of the f"
+   },
+   {
+    "claim": "Forecast of monthly rows in [your file] for 2026-09",
+    "kind": "forecast",
+    "value": 103.73733566960667,
+    "verdict": "WATCH",
+    "why": "The chosen method (a damped trend fitted on the log scale (Holt)) had a lower replay error than the simple rule of repeating the same month from last year, but that is not shown to be more than luck: when the whole method -- including picki"
+   },
+   {
+    "claim": "Forecast of monthly total amount for the other category values in [your file] for 2026-09",
+    "kind": "forecast",
+    "value": 13717.584992779943,
+    "verdict": "WATCH",
+    "why": "The chosen method (a log-linear trend with month-of-year effects) had a lower replay error than the simple rule of repeating the same month from last year, but that is not shown to be more than luck: when the whole method -- including picki"
+   },
+   {
+    "claim": "3 rows in [your file] are dated after 2026-09-15 in column date",
+    "kind": "data_quality",
+    "value": 3.0,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 0% of the table where we want at least 5% before recommending a change."
+   },
+   {
+    "claim": "1.3% of the amount column of [your file] is null-like",
+    "kind": "data_quality",
+    "value": 1.3,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 1.3% of the table where we want at least 5% before recommending a change."
+   },
+   {
+    "claim": "99 values in the date column of [your file] carry leading or trailing whitespace, so values that look equal do not match",
+    "kind": "data_quality",
+    "value": 99.0,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 2.9% of the table where we want at least 5% before recommending a change."
+   },
+   {
+    "claim": "99 values in the property column of [your file] carry leading or trailing whitespace, so values that look equal do not match",
+    "kind": "data_quality",
+    "value": 99.0,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 2.9% of the table where we want at least 5% before recommending a change."
+   },
+   {
+    "claim": "71 values in the category column of [your file] carry leading or trailing whitespace, so values that look equal do not match",
+    "kind": "data_quality",
+    "value": 71.0,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 2.1% of the table where we want at least 5% before recommending a change."
+   },
+   {
+    "claim": "6 values in the amount column of [your file] are negative while nearly all the others are not. Check whether amount can be negative (a refund or a credit, say) or whether these are entry errors",
+    "kind": "data_quality",
+    "value": 6.0,
+    "verdict": "WATCH",
+    "why": "Solid enough to keep an eye on, not enough to act on: it affects 0.1% of the table where we want at least 5% before recommending a change."
+   }
+  ],
+  "forecast": {
+   "audit": {
+    "grade_label": "the engine's grade (the back-test neither passed nor failed it)",
+    "label": "back-tested: held 11 of 11 at 1 month, 9 of 9 at 3 months, 6 of 6 at 6 months",
+    "status": "unclear",
+    "trusted": false
+   },
+   "available": true,
+   "baseline_won": true,
+   "champion": "repeat last month's value",
+   "points": [
+    {
+     "date": "2026-09",
+     "hi": 94821,
+     "lo": 74150,
+     "value": 82201
+    },
+    {
+     "date": "2026-10",
+     "hi": 100990,
+     "lo": 74150,
+     "value": 82201
+    },
+    {
+     "date": "2026-11",
+     "hi": 98675,
+     "lo": 72336,
+     "value": 82201
+    },
+    {
+     "date": "2026-12",
+     "hi": 102181,
+     "lo": 72790,
+     "value": 82201
+    },
+    {
+     "date": "2027-01",
+     "hi": 117888,
+     "lo": 64499,
+     "value": 82201
+    },
+    {
+     "date": "2027-02",
+     "hi": 116996,
+     "lo": 64499,
+     "value": 82201
+    },
+    {
+     "date": "2027-03",
+     "hi": 116109,
+     "lo": 64499,
+     "value": 82201
+    },
+    {
+     "date": "2027-04",
+     "hi": 115314,
+     "lo": 76023,
+     "value": 82201
+    },
+    {
+     "date": "2027-05",
+     "hi": 117646,
+     "lo": 74260,
+     "value": 82201
+    }
+   ],
+   "reason": "The chosen method (repeat last month's value) had a lower replay error than the simple rule of repeating the same month from last year, but that is not shown to be more than luck: when the whole metho",
+   "series": "monthly total amount where category is 'RENT' in [your file]",
+   "verdict": "not yet shown usable"
+  },
+  "goal": "Total amount where category is 'RENT' +30.7%, graded WATCH; like for like +4.5%, graded WATCH; volume +33.9% on the year before, graded WATCH; rows like for like +20.9%, graded WATCH; total amount for the other category values +40.6%, graded WATCH; like for like +30.4%, graded WATCH; monthly total a",
+  "health_explain": "59.2 because some columns write the same value with different case or spacing (the consistency check); the other checks averaged 94.1.",
+  "health_issues": [
+   "The health score is 59.2 because some columns write the same value with different case or spacing (the consistency check); the other checks averaged 94.1.",
+   "3073 of 26800 cells are null-like, so completeness is 88.5/100.",
+   "55 rows (1.6%) are exact duplicates of another row.",
+   "3 of 3021 dated rows are in the future (latest 2027-11-11, today is 2026-09-15) -- a date column with future rows is usually a parsing or timezone fault.",
+   "date: mixed content: 3,021 date-like, 0 numeric and 329 text values.",
+   "date: 3 date formats in one column (DD/MM/YYYY x471, YYYY-MM-DD x2,384, YYYY/MM/DD x166); anything that sorts or filters on this will be wrong."
+  ],
+  "health_score": 59.2,
+  "input": {
+   "columns": 8,
+   "name": "[your file]",
+   "rows": 3350
+  },
+  "limitations": [
+   "The engine compares periods in observational data: a change it reports is an association with the period, not a finding about its cause.",
+   "the series stepped in 2025-03, and the months since are too few to fit and replay a forecast on alone (that needs 45), so the models learned across the step",
+   "the 131 replayed forecasts that were made before a step and scored after it measure the step, not the method, so they are left out of the ranges and the replay scores, and the same-month-last-year rule is scaled by the step (+87.4% at 2025-",
+   "months ahead shown: 9 of 12; after a step the forecast could not fit around, a month ahead is shown only while its 80% range's high end is at most 2 times its low end",
+   "The average amount is not compared: rows where category is 'RENT' and the other rows hold different kinds of amount, so an average across them means nothing; each kind's monthly total is compared instead.",
+   "Not measured in this release: tipping points for the set-aside rows, which segments drive a change and reversals within them, and model-based probabilities. Power is measured only at one size of true change (20%) in simulated conditions: ea"
+  ],
+  "ok": true,
+  "plan_applied": [],
+  "plan_refused": [],
+  "plan_row_drops": [],
+  "primary": {
+   "claim": "Change in the monthly total of amount where category is 'RENT', latest 12 months against the 12 before",
+   "grade": "WATCH",
+   "id": "measure.amount.total.rent.change"
+  },
+  "quality_risks": [],
+  "reading": "",
+  "scenarios": {
+   "basis": {
+    "claim": "Change in the monthly total of amount where category is 'RENT', latest 12 months against the 12 before",
+    "finding_id": "measure.amount.total.rent.change",
+    "grade": "WATCH",
+    "grade_words": "not yet conclusive",
+    "how": "total",
+    "measure": "amount",
+    "reconciles": true,
+    "rows": {
+     "latest": 486,
+     "prior": 381,
+     "units_missing": null
+    },
+    "segment": {
+     "column": "property",
+     "entered": [],
+     "exited": [],
+     "folded": [],
+     "levels": [
+      "Danforth Triplex",
+      "East York Low-Rise",
+      "Junction Six-Plex",
+      "Leslieville Fourplex",
+      "Parkdale Walk-Up"
+     ]
+    },
+    "unit": "",
+    "windows": {
+     "latest": [
+      "2025-09",
+      "2026-08"
+     ],
+     "prior": [
+      "2024-09",
+      "2025-08"
+     ]
+    }
+   },
+   "items": [
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.prior",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "Total amount where category is 'RENT', the 12 months before",
+     "parent_grade": null,
+     "segment": null,
+     "text": "775,284",
+     "unit": "",
+     "value": 775284.0
+    },
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.latest",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Total amount where category is 'RENT', the latest 12 months",
+     "parent_grade": null,
+     "segment": null,
+     "text": "1,013,085",
+     "unit": "",
+     "value": 1013085.0
+    },
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.change",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Change in total amount where category is 'RENT', the latest 12 months against the 12 before",
+     "parent_grade": null,
+     "segment": null,
+     "text": "+237,801",
+     "unit": "",
+     "value": 237801.0
+    },
+    {
+     "assumes": null,
+     "grade": "WATCH",
+     "grade_words": "the claim itself, graded WATCH",
+     "group": "headline",
+     "id": "headline.change_pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Change in total amount where category is 'RENT', in percent of the 12 months before",
+     "parent_grade": null,
+     "segment": null,
+     "text": "+30.7%",
+     "unit": "%",
+     "value": 30.67276
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.east_york_low_rise.prior",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "East York Low-Rise: total amount where category is 'RENT', the 12 months before",
+     "parent_grade": "WATCH",
+     "segment": "East York Low-Rise",
+     "text": "209,356",
+     "unit": "",
+     "value": 209356.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.east_york_low_rise.latest",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "East York Low-Rise: total amount where category is 'RENT', the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "East York Low-Rise",
+     "text": "420,967",
+     "unit": "",
+     "value": 420967.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.east_york_low_rise.change",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "East York Low-Rise: its contribution to the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "East York Low-Rise",
+     "text": "+211,611",
+     "unit": "",
+     "value": 211611.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.east_york_low_rise.share",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "share of the change",
+      "window": "both"
+     },
+     "kind": "percent",
+     "label": "East York Low-Rise: its share of the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "East York Low-Rise",
+     "text": "89.0%",
+     "unit": "%",
+     "value": 88.98659
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.east_york_low_rise.pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "East York Low-Rise: its own change in total amount where category is 'RENT', in percent",
+     "parent_grade": "WATCH",
+     "segment": "East York Low-Rise",
+     "text": "+101%",
+     "unit": "%",
+     "value": 101.077113
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.parkdale_walk_up.prior",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "Parkdale Walk-Up: total amount where category is 'RENT', the 12 months before",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "254,871",
+     "unit": "",
+     "value": 254871.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.parkdale_walk_up.latest",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Parkdale Walk-Up: total amount where category is 'RENT', the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "264,828",
+     "unit": "",
+     "value": 264828.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.parkdale_walk_up.change",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Parkdale Walk-Up: its contribution to the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "+9,957",
+     "unit": "",
+     "value": 9957.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.parkdale_walk_up.share",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "share of the change",
+      "window": "both"
+     },
+     "kind": "percent",
+     "label": "Parkdale Walk-Up: its share of the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "4.2%",
+     "unit": "%",
+     "value": 4.187114
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.parkdale_walk_up.pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Parkdale Walk-Up: its own change in total amount where category is 'RENT', in percent",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "+3.91%",
+     "unit": "%",
+     "value": 3.906682
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.junction_six_plex.prior",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "Junction Six-Plex: total amount where category is 'RENT', the 12 months before",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "136,212",
+     "unit": "",
+     "value": 136212.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.junction_six_plex.latest",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Junction Six-Plex: total amount where category is 'RENT', the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "143,176",
+     "unit": "",
+     "value": 143176.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.junction_six_plex.change",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Junction Six-Plex: its contribution to the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "+6,964",
+     "unit": "",
+     "value": 6964.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.junction_six_plex.share",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "share of the change",
+      "window": "both"
+     },
+     "kind": "percent",
+     "label": "Junction Six-Plex: its share of the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "2.9%",
+     "unit": "%",
+     "value": 2.928499
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.junction_six_plex.pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Junction Six-Plex: its own change in total amount where category is 'RENT', in percent",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "+5.11%",
+     "unit": "%",
+     "value": 5.112619
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.leslieville_fourplex.prior",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "Leslieville Fourplex: total amount where category is 'RENT', the 12 months before",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "97,846",
+     "unit": "",
+     "value": 97846.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.leslieville_fourplex.latest",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Leslieville Fourplex: total amount where category is 'RENT', the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "104,649",
+     "unit": "",
+     "value": 104649.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.leslieville_fourplex.change",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Leslieville Fourplex: its contribution to the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "+6,803",
+     "unit": "",
+     "value": 6803.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.leslieville_fourplex.share",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "share of the change",
+      "window": "both"
+     },
+     "kind": "percent",
+     "label": "Leslieville Fourplex: its share of the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "2.9%",
+     "unit": "%",
+     "value": 2.860795
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.leslieville_fourplex.pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Leslieville Fourplex: its own change in total amount where category is 'RENT', in percent",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "+6.95%",
+     "unit": "%",
+     "value": 6.952763
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.danforth_triplex.prior",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "prior"
+     },
+     "kind": "amount",
+     "label": "Danforth Triplex: total amount where category is 'RENT', the 12 months before",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "76,999",
+     "unit": "",
+     "value": 76999.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.danforth_triplex.latest",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Danforth Triplex: total amount where category is 'RENT', the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "79,465",
+     "unit": "",
+     "value": 79465.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.danforth_triplex.change",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "latest - prior",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Danforth Triplex: its contribution to the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "+2,466",
+     "unit": "",
+     "value": 2466.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.danforth_triplex.share",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "share of the change",
+      "window": "both"
+     },
+     "kind": "percent",
+     "label": "Danforth Triplex: its share of the change in total amount where category is 'RENT'",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "1.0%",
+     "unit": "%",
+     "value": 1.037002
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "contribution",
+     "id": "contribution.danforth_triplex.pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "percent change",
+      "window": "both"
+     },
+     "kind": "change",
+     "label": "Danforth Triplex: its own change in total amount where category is 'RENT', in percent",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "+3.2%",
+     "unit": "%",
+     "value": 3.202639
+    },
+    {
+     "assumes": "the latest 12 months repeat unchanged",
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "run_rate",
+     "id": "run_rate.year",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "sum",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Run rate: total amount where category is 'RENT' over the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": null,
+     "text": "1,013,085",
+     "unit": "",
+     "value": 1013085.0
+    },
+    {
+     "assumes": "the latest 12 months repeat unchanged",
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "run_rate",
+     "id": "run_rate.month",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "latest / 12",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Run rate: total amount where category is 'RENT' in the average month of the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": null,
+     "text": "84,424",
+     "unit": "",
+     "value": 84423.75
+    },
+    {
+     "assumes": "a change of 1% held for a whole year, at the latest 12 months' level",
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "sensitivity",
+     "id": "sensitivity.one_pct",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount"
+      ],
+      "op": "latest / 100",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Each 1% of total amount where category is 'RENT', over a year at the latest 12 months' level",
+     "parent_grade": "WATCH",
+     "segment": null,
+     "text": "10,131",
+     "unit": "",
+     "value": 10130.85
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.parkdale_walk_up.amount",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap to the largest",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Parkdale Walk-Up: how far its total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "156,139",
+     "unit": "",
+     "value": 156139.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.parkdale_walk_up.points",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap in share of the total",
+      "window": "latest"
+     },
+     "kind": "points",
+     "label": "Parkdale Walk-Up: how far its share of total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Parkdale Walk-Up",
+     "text": "15.41 percentage points",
+     "unit": "points",
+     "value": 15.412231
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.junction_six_plex.amount",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap to the largest",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Junction Six-Plex: how far its total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "277,791",
+     "unit": "",
+     "value": 277791.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.junction_six_plex.points",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap in share of the total",
+      "window": "latest"
+     },
+     "kind": "points",
+     "label": "Junction Six-Plex: how far its share of total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Junction Six-Plex",
+     "text": "27.42 percentage points",
+     "unit": "points",
+     "value": 27.420305
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.leslieville_fourplex.amount",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap to the largest",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Leslieville Fourplex: how far its total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "316,318",
+     "unit": "",
+     "value": 316318.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.leslieville_fourplex.points",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap in share of the total",
+      "window": "latest"
+     },
+     "kind": "points",
+     "label": "Leslieville Fourplex: how far its share of total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Leslieville Fourplex",
+     "text": "31.22 percentage points",
+     "unit": "points",
+     "value": 31.223244
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.danforth_triplex.amount",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap to the largest",
+      "window": "latest"
+     },
+     "kind": "amount",
+     "label": "Danforth Triplex: how far its total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "341,502",
+     "unit": "",
+     "value": 341502.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "part of a change graded WATCH; not graded itself",
+     "group": "gap",
+     "id": "gap.danforth_triplex.points",
+     "inputs": {
+      "columns": [
+       "date",
+       "amount",
+       "property"
+      ],
+      "op": "gap in share of the total",
+      "window": "latest"
+     },
+     "kind": "points",
+     "label": "Danforth Triplex: how far its share of total amount where category is 'RENT' in the latest 12 months is below East York Low-Rise's, the largest property by total amount where category is 'RENT' in the latest 12 months",
+     "parent_grade": "WATCH",
+     "segment": "Danforth Triplex",
+     "text": "33.71 percentage points",
+     "unit": "points",
+     "value": 33.709116
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.months",
+     "inputs": {
+      "columns": [
+       "date"
+      ],
+      "op": "count distinct months",
+      "window": null
+     },
+     "kind": "count",
+     "label": "Months with a dated row the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "56",
+     "unit": "",
+     "value": 56.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.dates",
+     "inputs": {
+      "columns": [
+       "date"
+      ],
+      "op": "count distinct dates",
+      "window": null
+     },
+     "kind": "count",
+     "label": "Distinct dates in the rows the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "1,133",
+     "unit": "",
+     "value": 1133.0
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.first",
+     "inputs": {
+      "columns": [
+       "date"
+      ],
+      "op": "min",
+      "window": null
+     },
+     "kind": "date",
+     "label": "The first date in the rows the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "2022-01-01",
+     "unit": "",
+     "value": "2022-01-01"
+    },
+    {
+     "assumes": null,
+     "grade": null,
+     "grade_words": "a fact about the rows, not graded",
+     "group": "facts",
+     "id": "facts.last",
+     "inputs": {
+      "columns": [
+       "date"
+      ],
+      "op": "max",
+      "window": null
+     },
+     "kind": "date",
+     "label": "The last date in the rows the engine kept",
+     "parent_grade": null,
+     "segment": null,
+     "text": "2026-08-31",
+     "unit": "",
+     "value": "2026-08-31"
+    }
+   ],
+   "note": "Descriptive arithmetic on the rows the engine kept, in the engine's own comparison windows (the latest 12 months against the 12 before); the monthly totals of these rows match the engine's own charted series. The headline figures carry the claim's grade; a figure derived from them is not graded itself and names the grade of the change it is part of. A contribution says where the change sits, not what caused it, and a what-if is arithmetic, not a forecast. The figures are shown rounded; they add up before rounding.",
+   "refused": [
+    "the forecast is not yet shown usable, so it is not added up into scenarios"
+   ]
+  },
+  "story": {
+   "cannot_answer": [
+    "The average amount is not compared: rows where category is 'RENT' and the other rows hold different kinds of amount, so an average across them means nothing; each kind's monthly total is compared instead."
+   ],
+   "headline": "Total amount where category is 'RENT' +30.7%, graded WATCH; like for like +4.5%, graded WATCH; volume +33.9% on the year before, graded WATCH; rows like for like +20.9%, graded WATCH; total amount for the other category values +40.6%, graded WATCH; like for like +30.4%, graded WATCH; monthly total a",
+   "what_happened": [
+    "The monthly total of amount where category is 'RENT' moved from 775,284 in the year before to 1,013,085 in the latest year, a change of +30.7%. The same test's interval for the change runs from -26.3% to +160.4%. It is labelled 95%; coverage not measured for this kind of series. If the change were s",
+    "Like for like, on the 3 properties present in every modelled month, the monthly total of amount where category is 'RENT' moved from 429,716 in the year before to 448,942 in the latest year, a change of +4.5%. The same test's interval for the change runs from -5.5% to +15.2%. It is a 95% interval by ",
+    "The monthly total of amount for the other category values moved from 143,685 in the year before to 202,054 in the latest year, a change of +40.6%. The same test's interval for the change runs from -15.0% to +163.6%. It is labelled 95%; coverage not measured for this kind of series. If the change wer",
+    "Like for like, on the 3 properties present in every modelled month, the monthly total of amount for the other category values moved from 94,410 in the year before to 123,107 in the latest year, a change of +30.4%. The same test's interval for the change runs from -10.3% to +96.0%. It is a 95% interv",
+    "Row volume changed by +33.9% in the latest year (1,166 rows) against the year before (871 rows). The same test's interval for the change runs from -19.0% to +128.1%. It is a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true change 99.8% of the time (",
+    "Like for like, on the 3 properties present in every modelled month, row volume changed by +20.9% (643 rows against 532). The same test's interval for the change runs from -7.1% to +42.3%. It is a 95% interval by construction; in the benchmark's simulated series nearest this one it held the true chan",
+    "Amount holds two kinds of value: rows where category is 'RENT' (median 2,059.0) and the other rows (median 279.5), so an average across them means nothing and is not compared; the monthly total of each kind is compared instead.",
+    "The most common category value is 'RENT', with 45.3% of rows."
+   ],
+   "what_to_do": [
+    "Act on: 55 of 3350 rows in [your file] are exact duplicates of another row. Basis: 55 (count). Support: 3,350 rows scanned, effect size 0.02.",
+    "Act on: 966 values in the date column of [your file] are not in the column's most common date format (YYYY-MM-DD, used by 79% of its dates across 3 formats), so a tool that assumes one date format will misread or drop them. Basis: 966 (count). Support: 3,350 rows scanned, effect size 0.29.",
+    "Act on: 790 values in the paid column of [your file] break the column's UPPER-case convention, so one value can be stored several ways. Basis: 790 (count). Support: 3,350 rows scanned, effect size 0.24.",
+    "Act on: 187 values in the category column of [your file] are letter-case variants of a more common spelling, so one category is counted as several. Basis: 187 (count). Support: 3,350 rows scanned, effect size 0.06.",
+    "Act on: 173 values in the property column of [your file] are letter-case variants of a more common spelling, so one category is counted as several. Basis: 173 (count). Support: 3,350 rows scanned, effect size 0.05."
+   ],
+   "whats_next": [
+    "monthly total amount where category is 'RENT' in [your file] for 2026-09: 82,201 (80% range 74,150 to 94,821). By 2027-05: 82,201 (80% range 74,260 to 117,646).",
+    "The series stepped in 2025-03 ('East York Low-Rise' first appears), and the months since are too few to fit and replay a forecast on alone, so the model learned across the step. The replayed forecasts made before a step and scored after it measure the step, not the method, so they are left out of it",
+    "Method: repeat last month's value, chosen because it had the lowest error when we replayed the last 12 months, forecasting each from what was known at the time. Over that replay it missed by 3.5% on average across every horizon: by 4.0% one month ahead and by 2.3% at the furthest month ahead. Plainl",
+    "Its 80% range was back-tested: held 11 of 11 at 1 month, 9 of 9 at 3 months, 6 of 6 at 6 months. This forecast did not clear the confidence gate: watch it, do not act on it yet.",
+    "monthly rows in [your file] for 2026-09: 104 rows (80% range 90 to 117). By 2027-05: 107 (80% range 85 to 122).",
+    "Method: a damped trend fitted on the log scale (Holt), chosen because it had the lowest error when we replayed the last 12 months, forecasting each from what was known at the time. Over that replay it missed by 6.4% on average across every horizon: by 7.7% one month ahead and by 0.7% at the furthest",
+    "Its month-ahead 80% range held in 11 of 12 replayed months, each range built only from errors known at the time. This forecast did not clear the confidence gate: watch it, do not act on it yet.",
+    "monthly total amount for the other category values in [your file] for 2026-09: 13,718 (80% range 10,823 to 23,717)."
+   ],
+   "why": [
+    "Part of the change is in what the file covers, not in the business: in property, 'Junction Six-Plex' first appears in 2024-07; 'East York Low-Rise' first appears in 2025-03. The monthly total of amount where category is 'RENT' steps up by +87.4% in 2025-03, when 'East York Low-Rise' first appears; b"
+   ]
+  },
+  "structure": null,
+  "tables": [
+   {
+    "cols": [
+     "property",
+     "12 months before",
+     "Latest 12 months",
+     "Change",
+     "Share of the change",
+     "Own change"
+    ],
+    "rows": [
+     [
+      "East York Low-Rise",
+      "209,356",
+      "420,967",
+      "+211,611",
+      "89.0%",
+      "+101%"
+     ],
+     [
+      "Parkdale Walk-Up",
+      "254,871",
+      "264,828",
+      "+9,957",
+      "4.2%",
+      "+3.91%"
+     ],
+     [
+      "Junction Six-Plex",
+      "136,212",
+      "143,176",
+      "+6,964",
+      "2.9%",
+      "+5.11%"
+     ],
+     [
+      "Leslieville Fourplex",
+      "97,846",
+      "104,649",
+      "+6,803",
+      "2.9%",
+      "+6.95%"
+     ],
+     [
+      "Danforth Triplex",
+      "76,999",
+      "79,465",
+      "+2,466",
+      "1.0%",
+      "+3.2%"
+     ]
+    ],
+    "title": "Where the change in total amount where category is 'RENT' came from"
+   }
+  ]
+ }
+}

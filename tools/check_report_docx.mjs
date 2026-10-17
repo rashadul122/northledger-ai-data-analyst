@@ -262,11 +262,11 @@ thin.engine.story.cannot_answer = ['The file has no column for the vacancy rate,
 thin.results.charts = thin.results.charts.slice(0, 2);
 const cases = [
   { name: 'sample-report-letter', input: base({ results: sample.results, engine: sample.engine, goal: 'Is rent up on the year before, and why?', name: 'sample-messy.csv', showName: true }),
-    firstChart: 0, expect: [/The engine's answer/, /Missing values by column/, /Rows set aside, and why/, /Exact duplicate row/, /Assumption \(reading: flow or level\)/, /Assumption \(scenario\)/, /sample-messy\.csv/] },
+    firstChart: 0, expect: [/The engine's answer/, /Missing values by column/, /Rows set aside, and why/, /Exact duplicate row/, /Assumption \(reading: flow or level\)/, /Assumption \(scenario\)/, /sample-messy\.csv/, /written by the engine without the AI/] },
   { name: 'sample-business-a4', style: 'business', paper: 'a4', input: base({ results: sample.results, engine: sample.engine, goal: 'Is rent up on the year before, and why?', name: 'sample-messy.csv', showName: false }),
     refuse: [/sample-messy/] },
   { name: 'ship2-ai-report', input: base({ report: shipR.report, sources: shipR.sources, model: shipR.model, repaired: shipR.repaired, removed_figures: shipR.removed_figures, results: ship, kept: [], name: 'ship2-orders.csv', showName: false }),
-    expect: [/The findings and their grades/, /per-column count of missing values was not kept/] },
+    expect: [/The findings and their grades/, /per-column count of missing values was not kept/, /An AI model/], refuse: [/written by the engine without the AI/] },
   { name: 'orders-private', input: base({ results: priv.results, engine: priv.engine, goal: 'How did spend change?', kept: ['staff_name'], name: 'orders-private.csv', showName: false }),
     forbid: priv.forbid, expect: [/notes \(withheld: no value shown\)/] },
   { name: 'cannot-answer', minCharts: 2, input: base({ results: thin.results, engine: thin.engine, goal: 'Are vacancies rising?', name: 'sample-messy.csv', showName: false }),

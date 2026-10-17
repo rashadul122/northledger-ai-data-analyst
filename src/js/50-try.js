@@ -2533,6 +2533,7 @@
       el.run.hidden = true;
       drawFc();
       if (window.NLSteps) window.NLSteps.report(rep);
+      S.engResults = null; drawDeliver();
       goTo(el.report, true);
       // a local update from the step rail (NLSteps.update): the same plan, no new AI call, so no new AI report
       if (S.localUpdate) { S.localUpdate = false; var sr = stageEl('report'); if (sr) setStage('report', 'skip', null, 'a local update: the AI report was not asked again'); return; }
@@ -2741,33 +2742,17 @@
           return '<li><a href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.title || ('Source ' + (i + 1))) + '</a></li>';
         }).join('') + '</ol></div>' : '') +
         '<div class="ai-rep-actions"><button type="button" class="btn btn-primary" id="try-share">Shareable link</button>' +
-        '<button type="button" class="btn btn-ghost" id="try-pdf" aria-describedby="try-pdf-note">Download PDF</button>' +
-        // the Word write-up (Track D): the same report model as the PDF, made here (src/js/46-report-docx.js)
-        (window.NLDocx ? '<button type="button" class="btn btn-ghost" id="try-docx" aria-describedby="try-docx-note">Download Word (.docx)</button>' +
-          '<button type="button" class="btn btn-ghost" id="try-docx-zip" aria-describedby="try-docx-note" title="A browser cannot save a file next to your data file. This zip holds the Word write-up and its chart pictures: unzip it beside your file to keep them together.">Word + charts (.zip)</button>' : '') +
+        // the downloads (PDF, Word, Word + charts) are ONE set of controls in step 6's Deliver panel (drawDeliver), for every run
+        '<a class="btn btn-ghost" href="#try-deliver" id="try-to-deliver">Download it: PDF or Word</a>' +
         '<span class="try-share-out" id="try-share-out" hidden></span></div>' +
-        // the PDF is made here, in this browser: its paper and whether it carries the file's name are the visitor's
-        '<fieldset class="ai-pdf-opts"><legend>' + (window.NLDocx ? 'PDF and Word options' : 'PDF options') + '</legend>' +
-          '<span class="ai-pdf-paper" role="radiogroup" aria-label="Paper size"><span class="ai-pdf-lab" aria-hidden="true">Paper</span>' +
-          '<label><input type="radio" name="try-pdf-paper" value="letter"' + (paper === 'letter' ? ' checked' : '') + '> Letter</label>' +
-          '<label><input type="radio" name="try-pdf-paper" value="a4"' + (paper === 'a4' ? ' checked' : '') + '> A4</label></span>' +
-          '<label class="ai-pdf-name"><input type="checkbox" id="try-pdf-name"> Include my file name</label>' +
-          '<p class="note" id="try-pdf-note">The PDF is made in this browser and nothing is sent. It leaves your file\'s name off unless you tick the box.</p>' +
-          (window.NLDocx ? '<p class="note" id="try-docx-note">The Word write-up (the question, the data as found, what was done, the findings with their grades, assumptions, limits and 2 or 3 charts) is made in this browser from the same report as the PDF; nothing is sent, and your file is not changed. A browser cannot save it next to your data file: it goes to your downloads, and the zip keeps the write-up and its charts together.</p>' : '') +
-          '</fieldset>' +
         '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
       mountAiFigs(card);
       var share = document.getElementById('try-share');
       if (share) share.addEventListener('click', function () { doShare(); });
-      var pdf = document.getElementById('try-pdf');
-      if (pdf) pdf.addEventListener('click', function () { doPdf(); });
-      var docx = document.getElementById('try-docx'), docxZip = document.getElementById('try-docx-zip');
-      if (docx) docx.addEventListener('click', function () { doWord(false); });
-      if (docxZip) docxZip.addEventListener('click', function () { doWord(true); });
-      Array.prototype.forEach.call(card.querySelectorAll('input[name="try-pdf-paper"]'), function (r) {
-        r.addEventListener('change', function () { if (r.checked) S.pdfPaper = r.value; });
-      });
+      var toDl = document.getElementById('try-to-deliver');
+      if (toDl) toDl.addEventListener('click', function (e) { e.preventDefault(); var d = document.getElementById('try-deliver'); if (d) { d.setAttribute('tabindex', '-1'); d.scrollIntoView({ block: 'start' }); d.focus({ preventScroll: true }); } });
+      drawDeliver();
       // the analyst view says it too, with the figures the check removed (52-nl2-report.js), for the engine
       // report it was written from only (a report reopened from the gallery may be another file's)
       if (window.NL2 && window.NL2.aiAudit) window.NL2.aiAudit(j === S.liveAi ? T.removedWords(j) : '');
@@ -3207,6 +3192,57 @@
     }
     var IN_APP = /FBAN|FBAV|FB_IAB|Instagram|Line\/|Telegram|LinkedInApp|MicroMessenger|Snapchat|Twitter|musical_ly|; wv\)/i;
     var lastPdfUrl = '';
+    // Step 6 "Deliver" (owner, 16 Oct 2026): the report's downloads, ONE set of controls in #try-step-6-slot for every run.
+    // The PDF is the AI-written report's (ready once that report is); the Word write-up needs no AI: without an AI report
+    // the engine writes it from its own results. The paper and the file-name choice are kept across redraws.
+    function drawDeliver() {
+      var slot = document.getElementById('try-step-6-slot');
+      if (!slot || !S.report || !S.report.ok) return;
+      var box = document.getElementById('try-deliver');
+      if (!box) { box = document.createElement('div'); box.className = 'try-deliver'; box.id = 'try-deliver'; box.setAttribute('role', 'region'); box.setAttribute('aria-label', 'Download the report'); slot.insertBefore(box, slot.firstChild); }
+      var ai = !!S.aiReport, paper = pdfPaper(), W = !!window.NLDocx;
+      box.innerHTML = '<h4 class="try-deliver-h">Download the report</h4>' +
+        '<div class="ai-rep-actions">' +
+        '<button type="button" class="btn btn-ghost" id="try-pdf" aria-describedby="try-pdf-note"' + (ai ? '' : ' disabled') + '>Download PDF</button>' +
+        (W ? '<button type="button" class="btn btn-ghost" id="try-docx" aria-describedby="try-docx-note">Download Word (.docx)</button>' +
+          '<button type="button" class="btn btn-ghost" id="try-docx-zip" aria-describedby="try-docx-note" title="A browser cannot save a file next to your data file. This zip holds the Word write-up and its chart pictures: unzip it beside your file to keep them together.">Word + charts (.zip)</button>' : '') +
+        '<span class="try-share-out" id="try-deliver-out" hidden></span></div>' +
+        '<fieldset class="ai-pdf-opts"><legend>' + (W ? 'PDF and Word options' : 'PDF options') + '</legend>' +
+          '<span class="ai-pdf-paper" role="radiogroup" aria-label="Paper size"><span class="ai-pdf-lab" aria-hidden="true">Paper</span>' +
+          '<label><input type="radio" name="try-pdf-paper" value="letter"' + (paper === 'letter' ? ' checked' : '') + '> Letter</label>' +
+          '<label><input type="radio" name="try-pdf-paper" value="a4"' + (paper === 'a4' ? ' checked' : '') + '> A4</label></span>' +
+          '<label class="ai-pdf-name"><input type="checkbox" id="try-pdf-name"' + (S.pdfNamed ? ' checked' : '') + '> Include my file name</label>' +
+          '<p class="note" id="try-pdf-note">' + (ai ? 'The PDF is made in this browser and nothing is sent. It leaves your file\'s name off unless you tick the box.'
+            : 'The PDF is the AI-written report\'s: it is ready once that report is. The Word write-up below needs no AI.') + '</p>' +
+          (W ? '<p class="note" id="try-docx-note">The Word write-up (the question, the data as found, what was done, the findings with their grades, assumptions, limits and 2 or 3 charts) is made in this browser' +
+            (ai ? ' from the same report as the PDF' : ', written by the engine without the AI') + '; nothing is sent, and your file is not changed. A browser cannot save it next to your data file: it goes to your downloads, and the zip keeps the write-up and its charts together.</p>' : '') +
+          '</fieldset>';
+      var pdf = document.getElementById('try-pdf');
+      if (pdf) pdf.addEventListener('click', function () { doPdf(); });
+      var docx = document.getElementById('try-docx'), docxZip = document.getElementById('try-docx-zip');
+      if (docx) docx.addEventListener('click', function () { doWord(false); });
+      if (docxZip) docxZip.addEventListener('click', function () { doWord(true); });
+      Array.prototype.forEach.call(box.querySelectorAll('input[name="try-pdf-paper"]'), function (r) {
+        r.addEventListener('change', function () { if (r.checked) S.pdfPaper = r.value; });
+      });
+      var nm = document.getElementById('try-pdf-name');
+      if (nm) nm.addEventListener('change', function () { S.pdfNamed = nm.checked; });
+    }
+    // the engine's distilled results (results_for_ai) for a write-up without the AI: asked of the engine worker once per
+    // run (sharing a request the AI report already made; a local update is a new report, so it asks again)
+    function engineResults(cb) {
+      if (S.engResults && S.engResultsSeq === S.seq) return cb(S.engResults);
+      var prev = S.onResults, seq = S.seq;
+      S.onResults = function (r) {
+        S.onResults = null;
+        if (prev) prev(r);
+        if (seq !== S.seq) return;
+        S.engResults = r; S.engResultsSeq = seq;
+        cb(r);
+      };
+      if (!prev) worker().postMessage({ type: 'results', id: seq, report: S.report });
+    }
+
     // the report model's input (NLReportPdf.model): the AI's report, the engine's results it was written from and the
     // visitor's choices; the PDF and the Word write-up are both made from it, so they cannot disagree
     function reportInput(rep, now) {
@@ -3215,7 +3251,7 @@
         results: S.aiResults, charts: S.aiCharts, tables: S.aiTables, kept: rep.kept, name: file, showName: named, date: now, goal: reportGoal(rep) };
     }
     function doPdf() {
-      var out = document.getElementById('try-share-out'), rep = S.aiReport;
+      var out = document.getElementById('try-deliver-out'), rep = S.aiReport;
       if (!rep || !out || !window.NLReportPdf) return;
       var W = window.NLReportPdf, now = new Date(), inp = reportInput(rep, now), named = inp.showName, file = inp.name;
       var bytes, name;
@@ -3266,19 +3302,30 @@
     }
     var wordBusy = false;
     function doWord(zip) {
-      var out = document.getElementById('try-share-out'), rep = S.aiReport, card = document.getElementById('try-ai-report');
-      if (!rep || !out || !window.NLDocx || !window.NLReportPdf || wordBusy) return;
+      var out = document.getElementById('try-deliver-out'), rep = S.aiReport, card = document.getElementById('try-step-6') || document.body;
+      if (!out || !window.NLDocx || !window.NLReportPdf || !S.report || wordBusy) return;
       wordBusy = true;
       out.hidden = false; out.textContent = 'Making the Word write-up in this browser\u2026';
-      var inp = reportInput(rep, new Date());
-      window.NLDocx.make({ input: inp, engine: rep === S.liveAi ? S.report : null, chartSvg: docChartSvg, host: card || document.body, hostClass: 'viz', paper: pdfPaper() })
-        .then(function (r) {
-          if (zip) offerFile(out, r.bundle(), r.bundleName, 'application/zip', 'zip');
-          else offerFile(out, r.bytes, r.name, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Word file');
-        }, function (e) {
-          out.hidden = false; out.textContent = 'The Word file could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
-        })
-        .then(function () { wordBusy = false; });
+      var go = function (inp, engine) {
+        window.NLDocx.make({ input: inp, engine: engine, chartSvg: docChartSvg, host: card, hostClass: 'viz', paper: pdfPaper() })
+          .then(function (r) {
+            if (zip) offerFile(out, r.bundle(), r.bundleName, 'application/zip', 'zip');
+            else offerFile(out, r.bytes, r.name, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Word file');
+          }, function (e) {
+            out.hidden = false; out.textContent = 'The Word file could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
+          })
+          .then(function () { wordBusy = false; });
+      };
+      if (rep) { go(reportInput(rep, new Date()), rep === S.liveAi ? S.report : null); return; }
+      // no AI report (the AI is off, or its report failed or is still on its way): the engine writes it from its own results
+      var seq = S.seq;
+      engineResults(function (R) {
+        if (seq !== S.seq) { wordBusy = false; return; }
+        if (!R) { wordBusy = false; out.textContent = 'The Word file could not be made in this browser (the engine\'s results could not be read).'; return; }
+        var named = !!($('try-pdf-name') && $('try-pdf-name').checked);
+        go({ report: '', sources: [], results: R, charts: R.charts || [], tables: R.tables || [], kept: (S.kept || []).slice(), name: S.prevFile || S.name || '', showName: named,
+          date: new Date(), goal: reportGoal(null), engineOnly: true }, S.report);
+      });
     }
 
     // what a visitor can do about the reasons rows were set aside (plain steps, no figures)

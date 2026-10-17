@@ -2327,7 +2327,7 @@ check('try-pdf-downloads-in-this-browser-with-no-share-request', DESK, async (ct
   ok(/PERSONAL COLUMNS/.test(w.text) && /Sent to the AI at the reader's choice: staff_name/.test(w.text), 'the cover does not say which personal columns were sent: ' + w.text.slice(0, 600));
   ok(/Page 1 of \d+/.test(w.text) && /EXECUTIVE SUMMARY/.test(w.text) && /PART 3 . SCENARIOS/.test(w.text) && /RUN RATE, A YEAR/.test(w.text), 'the PDF lacks its footer, sections or scenario cards');
   ok(!/sample-messy/.test(w.text) && !/sample-messy/.test(d.bytes.toString('latin1')), 'the PDF names the file without the visitor asking');
-  ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders/.test(await p.textContent('#try-share-out')) && /nothing was sent/.test(await p.textContent('#try-share-out')), 'the page does not say the PDF was saved and nothing sent');
+  ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders/.test(await p.textContent('#try-deliver-out')) && /nothing was sent/.test(await p.textContent('#try-deliver-out')), 'the page does not say the PDF was saved and nothing sent');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });
 
@@ -2336,10 +2336,10 @@ check('try-pdf-paper-toggle-and-file-name-opt-in', DESK, async (ctx) => {
   await optinStep(p); await p.click('#try-pd-go');
   await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
   // the default follows the browser's region (this context is en-US: Letter), and says it before the click
-  ok(await p.isChecked('#try-ai-report input[name="try-pdf-paper"][value="letter"]'), 'Letter is not the default for an en-US browser');
+  ok(await p.isChecked('#try-deliver input[name="try-pdf-paper"][value="letter"]'), 'Letter is not the default for an en-US browser');
   let d = await downloadPdf(p);
   ok(pdfWords(d.bytes).media === '612x792', 'the Letter PDF is ' + pdfWords(d.bytes).media + ' pt');
-  await p.check('#try-ai-report input[name="try-pdf-paper"][value="a4"]');
+  await p.check('#try-deliver input[name="try-pdf-paper"][value="a4"]');
   d = await downloadPdf(p);
   ok(pdfWords(d.bytes).media === '595.28x841.89', 'the A4 choice made a ' + pdfWords(d.bytes).media + ' pt PDF');
   ok(!/sample-messy/.test(d.bytes.toString('latin1')) && !/sample-messy/.test(d.name), 'without the tick the file name is on the PDF or its name');
@@ -2362,7 +2362,7 @@ check('try-pdf-in-an-in-app-browser-opens-the-file', DESK, async (ctx) => {
     const before = toProxy(c).length;
     const [pop] = await Promise.all([p.waitForEvent('popup', { timeout: 10000 }), p.click('#try-pdf')]);
     ok(/^blob:/.test(pop.url()) && !downloaded, 'the in-app path did not open the PDF itself: ' + pop.url());
-    ok(/opened in a new tab/.test(await p.textContent('#try-share-out')) && await p.$('#try-share-out a[href^="blob:"]'), 'the page does not say the PDF opened, or offers no link to it');
+    ok(/opened in a new tab/.test(await p.textContent('#try-deliver-out')) && await p.$('#try-deliver-out a[href^="blob:"]'), 'the page does not say the PDF opened, or offers no link to it');
     ok(toProxy(c).length === before, 'the in-app PDF sent a request');
     ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
   } finally { await c.close(); }
@@ -2409,6 +2409,11 @@ async function wordRun(ctx, dark) {
   await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
   const before = toProxy(ctx).length;
   ok(await p.isVisible('#try-docx') && await p.isVisible('#try-docx-zip'), 'no Word download beside the PDF');
+  // one set of download controls, in step 6's slot; the AI report card links to them
+  const where = await p.evaluate(() => ({ pdf: document.querySelectorAll('#try-pdf').length, docx: document.querySelectorAll('#try-docx').length,
+    inSlot: !!document.querySelector('#try-step-6-slot #try-deliver #try-pdf') && !!document.querySelector('#try-step-6-slot #try-deliver #try-docx'),
+    inCard: !!document.querySelector('#try-ai-report #try-pdf, #try-ai-report #try-docx'), link: !!document.querySelector('#try-ai-report a[href="#try-deliver"]') }));
+  ok(where.pdf === 1 && where.docx === 1 && where.inSlot && !where.inCard && where.link, 'the downloads are not one set in step 6 linked from the AI report: ' + JSON.stringify(where));
   ok(/cannot save it next to your data file/.test(await p.textContent('#try-docx-note')) && /next to your data file/.test(await p.getAttribute('#try-docx-zip', 'title')), 'the page does not say a browser cannot save beside the data');
   const theme0 = await p.evaluate(() => document.documentElement.getAttribute('data-theme'));
   const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click('#try-docx')]);
@@ -2434,7 +2439,7 @@ async function wordRun(ctx, dark) {
   ok(/styleId="Heading1"/.test(z.get('word/styles.xml').toString()) && /styleId="Caption"/.test(z.get('word/styles.xml').toString()), 'the .docx lacks its named styles');
   ok(!/sample-messy/.test(t) && !/sample-messy/.test(bytes.toString('latin1')) && !/sample-messy/.test(name), 'the Word file names the file without the visitor asking');
   ok(!/@example\.com|call Ann Lee/.test(bytes.toString('latin1')), 'a withheld value is in the Word file');
-  ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders.*\.docx/.test(await p.textContent('#try-share-out')) && /nothing was sent/.test(await p.textContent('#try-share-out')), 'the page does not say the Word file was saved and nothing sent');
+  ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders.*\.docx/.test(await p.textContent('#try-deliver-out')) && /nothing was sent/.test(await p.textContent('#try-deliver-out')), 'the page does not say the Word file was saved and nothing sent');
   // the zip: the .docx, one PNG per chart, the note
   const [dz] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click('#try-docx-zip')]);
   const zb = zipMembers(fs.readFileSync(await dz.path())), zn = [...zb.keys()];
@@ -2451,6 +2456,39 @@ check('try-word-docx-on-a-phone-in-the-dark-theme', PHONE, async (ctx) => {
   const r = await p.evaluate(() => { const b = document.getElementById('try-docx').getBoundingClientRect(); return { w: b.width, right: b.right, vw: innerWidth, sw: document.documentElement.scrollWidth }; });
   ok(r.w >= 44 && r.right <= r.vw + 0.5 && r.sw <= r.vw + 1, 'the Word button does not fit the phone: ' + JSON.stringify(r));
 }, { acceptDownloads: true, mobile: true, colorScheme: 'dark' });
+
+// Without the AI (the visitor runs the engine alone): step 6 still offers the Word write-up, written by the engine from its
+// own results (the worker's results_for_ai); the PDF waits for an AI report and says so. Desktop, and a phone.
+async function wordNoAi(ctx) {
+  const rep = fixture('sample'); rep.__results = true;
+  rep.__resultsJson = JSON.parse(fs.readFileSync(path.join(SITE_DIR, 'tools', 'fixtures', 'report-docx', 'sample.json'), 'utf8')).results;
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  await runReport(p);
+  ok(await p.isHidden('#try-ai-report'), 'an AI report card shows with the AI off');
+  ok(await p.isVisible('#try-step-6-slot #try-deliver #try-docx') && await p.isDisabled('#try-pdf') && /needs no AI/.test(await p.textContent('#try-pdf-note')),
+    'step 6 does not offer the Word write-up without the AI, or the PDF does not say it waits for the AI report');
+  ok(/written by the engine without the AI/.test(await p.textContent('#try-docx-note')), 'the Word note does not say the engine writes it without the AI');
+  const before = ctx.__reqs.length;
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click('#try-docx')]);
+  const bytes = fs.readFileSync(await dl.path()), z = zipMembers(bytes);
+  ok(/\.docx$/.test(dl.suggestedFilename()) && z.has('word/document.xml') && z.has('word/styles.xml') && z.has('docProps/core.xml'), 'no .docx from step 6 without the AI: ' + dl.suggestedFilename());
+  const t = docxText(z.get('word/document.xml').toString('utf8'));
+  ['1. The question', '2. The data as found', 'Missing values by column', '4. Key findings', '5. Assumptions', '6. Limits of what the data can say', '7. Can the question be answered from this file?', 'written by the engine without the AI', 'Figure 1.']
+    .forEach((h) => ok(t.indexOf(h) >= 0, 'the engine-only write-up lacks "' + h + '"'));
+  ok(!/An AI model/.test(t), 'the engine-only write-up says an AI worded it');
+  const media = [...z.keys()].filter((n) => /^word\/media\/image\d+\.png$/.test(n));
+  ok(media.length >= 2 && media.every((n) => { const pr = pngProbe(z.get(n)); return pr && pr.w >= 600 && pr.first.slice(0, 3).every((v) => v >= 250); }), 'the engine-only write-up has ' + media.length + ' drawn charts on white');
+  ok(!ctx.__reqs.slice(before).some((r) => r.url.indexOf(PROXY_URL) === 0), 'the engine-only write-up sent a request to the AI proxy');
+  ok(/Saved as .*\.docx/.test(await p.textContent('#try-deliver-out')), 'step 6 does not say the Word file was saved');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  return p;
+}
+check('try-word-without-the-ai-in-step-6', DESK, async (ctx) => { await wordNoAi(ctx); }, { acceptDownloads: true });
+check('try-word-without-the-ai-in-step-6-on-a-phone', PHONE, async (ctx) => {
+  const p = await wordNoAi(ctx);
+  const r = await p.evaluate(() => { const b = document.getElementById('try-docx').getBoundingClientRect(); return { w: b.width, right: b.right, vw: innerWidth, sw: document.documentElement.scrollWidth }; });
+  ok(r.w >= 44 && r.right <= r.vw + 0.5 && r.sw <= r.vw + 1, 'the Word button does not fit the phone: ' + JSON.stringify(r));
+}, { acceptDownloads: true, mobile: true });
 
 // the honesty check's count: on the AI report card, and in the analyst view with the figures the sentences carried
 check('try-ai-report-says-how-many-sentences-were-removed', DESK, async (ctx) => {

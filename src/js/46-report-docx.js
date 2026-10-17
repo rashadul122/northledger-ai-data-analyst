@@ -607,11 +607,15 @@
 
     // 8. how this write-up was made
     add({ type: 'h1', text: 'How this write-up was made' });
-    add({ type: 'p', text: sub(m.notice) });
+    // with no AI report (the AI off, or its report failed) the engine writes the whole write-up: the model's notice speaks
+    // of an AI's wording, so this one says what happened instead
+    var engineOnly = !str(inp.report).trim();
+    add({ type: 'p', text: engineOnly ? 'This write-up was written by the engine without the AI: no AI model was asked to word it, and nothing was sent to make it. Every figure and every sentence comes from the NorthLedger engine\'s results for the reader\'s own file, computed in their browser. No person reviewed it.'
+      : sub(m.notice) });
     add({ type: 'note', text: 'Made in the reader\'s browser on ' + day + ' by NorthLedger from the same report model as its PDF, so the two say the same thing. A browser cannot save a file beside the original: this write-up and its charts download to the browser\'s download folder. Source file: ' + (showName ? str(inp.name) : 'the reader\'s file') + ', unchanged.' });
 
     return { title: title, subject: 'Research write-up' + (showName ? ': ' + str(inp.name) : ''), description: 'The question, the data as found, what was done, key findings, assumptions and limits; every figure computed by the NorthLedger engine.',
-      keywords: 'NorthLedger; research write-up', created: date, style: opts.style || 'report', paper: opts.paper || 'letter', header: title, blocks: blocks, model: m };
+      keywords: 'NorthLedger; research write-up' + (engineOnly ? '; written by the engine without the AI' : ''), created: date, style: opts.style || 'report', paper: opts.paper || 'letter', header: title, blocks: blocks, model: m };
   };
   var DOTW = ' · ';
 

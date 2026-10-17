@@ -1410,3 +1410,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .cf-fields select, .cf-fields input, .cf-fields textarea, .cf-radio, .cf-key { min-height: 44px; }
   .tr-clean .tr-actions .btn { flex: 1 1 100%; text-align: center; }
 }
+/* step 6 "Deliver": the report's downloads, one set for every run (src/js/50-try.js drawDeliver) */
+.try-deliver { margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.try-deliver-h { margin: 0 0 4px; font-size: 15px; color: var(--ink); }
+.try-deliver .ai-rep-actions { margin-top: 8px; }

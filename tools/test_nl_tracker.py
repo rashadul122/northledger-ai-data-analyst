@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for "Build a tracker" (engine/nl_tracker.py through nl_browser.tracker_json, CONTRACT-v2 section 5.18).
+"""Tests for "Build a tracker" (engine/nl_tracker.py through nl_browser.tracker_json, CONTRACT-v2 section 5.20).
 
     ../agent-demo/venv/bin/python tools/test_nl_tracker.py
 
@@ -430,6 +430,18 @@ def test_multi_file_order_and_single_file():
     assert {x["sha256"] for x in only_b["available"]} >= {a, b}
     gone = json.loads(NB.tracker_json(json.dumps({"sha256": "0" * 64})))
     assert not gone["ok"] and "run it again" in gone["error"]
+    # Track E's several-file intake: deliver_json('tracker', settings) calls build(input_frames(), settings); a frame
+    # names its file by the summary's sha256, and the tracker reads that file's cleaner view (not its kept rows)
+    frames = [{"id": "in1", "name": NA, "primary": True, "role": "tasks", "df": None, "kinds": {},
+               "summary": {"sha256": a, "ok": True, "name": NA}},
+              {"id": "in2", "name": NBN, "primary": False, "role": "tasks", "df": None, "kinds": {},
+               "summary": {"sha256": b, "ok": True, "name": NBN}},
+              {"id": "in3", "name": "broken.csv", "primary": False, "role": "other", "summary": {"ok": False, "error": "empty"}}]
+    ef = TR.build(frames, {"kind": "", "questions": "", "dup_key": "exact"})
+    assert ef["ok"] and ef["summary"]["rows"] == 37 and ef["summary"]["merged_across"] == 6 and ef["today"] == AS_OF, ef.get("error")
+    un = _sheet(ef, "Unplaced")["rows"][1:]
+    assert any(r[0] == "broken.csv" and r[1] is None and "empty" in r[3] for r in un), un
+    assert TR.build(frames, {"dup_key": "id"})["summary"]["merged_across"] == 9
 
 
 def test_duplicate_key_merges_and_says_what_differed():

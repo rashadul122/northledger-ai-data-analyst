@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a tracker from messy files (Track G, plan/DASHBOARD-DESIGN.md; CONTRACT-v2 section 5.18).
+"""Build a tracker from messy files (Track G, plan/DASHBOARD-DESIGN.md; CONTRACT-v2 section 5.20).
 
     build(inputs, kind=None, questions=None, today=None, plan_columns=None, dup_key=None) -> record
 
@@ -369,18 +369,57 @@ def _is_header_row(vals: Sequence[str], heads: Sequence[str]) -> bool:
     return len(filled) >= 2 and all(_norm(v) == _norm(h) for v, h in filled)
 
 
-def build(inputs: Sequence[Dict[str, Any]], kind: Optional[str] = None, questions: Any = None,
-          today: Optional[str] = None, plan_columns: Any = None, dup_key: Any = None) -> Dict[str, Any]:
-    """The tracker for these inputs. inputs: [{name, view}] in order (the first file's copy is kept when a row is in
-    two files), each view nl_cleanfile.view(..., detail=True), or {name, error} for a file that could not be cleaned.
-    kind: one of KINDS (None: the suggestion). questions: the visitor's, one per line or a list. today: YYYY-MM-DD for
-    the formulas' cached values (Excel recalculates TODAY() on opening). dup_key: [tracker column labels] that make two
-    rows the same record (None: the cleaner's rule, equal in every column both files hold). Never raises."""
+def build(inputs: Sequence[Dict[str, Any]], settings: Any = None, **kw: Any) -> Dict[str, Any]:
+    """The tracker for these inputs, in order (the first file's copy is kept when a row is in two files). Never raises.
+
+    inputs, any of:
+      * {name, view}: a clean-my-file view with records (nl_cleanfile.view(..., detail=True)), or {name, error};
+      * {sha256, primary}: a file run in this tab (nl_browser.clean_view reads its view);
+      * Track E's input frames (nl_browser.input_frames(): {id, name, primary, role, df, kinds, summary: {sha256,
+        ok, ...}}): the same, by the summary's sha256 (the tracker reads the cleaner's view, never the kept rows alone:
+        a row the analysis sets aside is a row of the tracker, flagged).
+    settings (Track E's registry form, or keywords): kind (one of KINDS; "" or "auto": the suggestion), questions (one
+    per line, or a list), today (YYYY-MM-DD for the formulas' cached values; Excel recalculates TODAY() on opening;
+    default: the main file's analysis date), plan_columns (the AI plan's columns), rules (the "Clean my file" edits, for
+    the main file), dup_key ("exact" or "": the cleaner's rule across files; "id": the ID column; or a list of
+    tracker column names)."""
     try:
-        return _build(inputs, kind, questions, today, plan_columns, dup_key)
+        s = dict(settings) if isinstance(settings, dict) else {}
+        s.update(kw)
+        views, today = _views(inputs, s)
+        return _build(views, s.get("kind") if s.get("kind") in KINDS else None, s.get("questions"),
+                      s.get("today") or today, s.get("plan_columns"), s.get("dup_key"))
     except Exception as exc:  # noqa: BLE001 - the page shows the reason; nothing half-made is offered
         return {"ok": False, "error": "The tracker could not be built (%s)." % (str(exc)[:200] or type(exc).__name__),
                 "workbook": None}
+
+
+def _views(inputs: Sequence[Dict[str, Any]], s: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Each input as {name, view} (or {name, error}); and the main file's analysis date."""
+    out: List[Dict[str, Any]] = []
+    today = None
+    for i, x in enumerate(inputs or []):
+        if not isinstance(x, dict):
+            continue
+        if "view" in x or ("error" in x and "sha256" not in x and "summary" not in x):
+            out.append(x)
+            continue
+        summ = x.get("summary") if isinstance(x.get("summary"), dict) else {}
+        sha = x.get("sha256") or summ.get("sha256")
+        primary = bool(x.get("primary", i == 0))
+        name = x.get("name") or summ.get("name") or "a file"
+        if summ and summ.get("ok") is False:
+            out.append({"name": name, "error": summ.get("error") or "the engine could not read it"})
+            continue
+        import nl_browser                                              # the tab's files (each run's cleaner record)
+        v = nl_browser.clean_view(sha, s.get("rules") if primary else None, s.get("plan_columns") if primary else None)
+        if v is None:
+            out.append({"name": name, "error": "this tab no longer holds it; run it again"})
+            continue
+        if primary or today is None:
+            today = v.get("as_of") if primary or today is None else today
+        out.append({"name": v.get("name") or name, "view": v, "error": None if v.get("ok") else v.get("error")})
+    return out, today
 
 
 def _questions(q: Any, kind: str) -> List[str]:
@@ -541,8 +580,10 @@ def _build(inputs: Sequence[Dict[str, Any]], kind: Optional[str], questions: Any
                 cats[v] = cats.get(v, 0) + 1
 
     # -- the same record in two files: merged into the first file's copy (the cleaner's rule, across files)
-    key_cols = [c for c in (dup_key or []) if c in data_cols] if isinstance(dup_key, list) else []
     id_col = role_col.get("id")
+    if dup_key == "id":
+        dup_key = [id_col] if id_col else []
+    key_cols = [c for c in (dup_key or []) if c in data_cols] if isinstance(dup_key, list) else []
     cols_of_file = [set(f["col_of"].values()) for f in per_file]
     kept: List[_Row] = []
     first_by_key: Dict[Tuple[str, ...], _Row] = {}

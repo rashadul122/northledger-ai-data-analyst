@@ -7062,14 +7062,30 @@ def cleanfile_json(options_json: Any = None) -> str:
     return json.dumps(out, allow_nan=False, default=str)
 
 
-def tracker_json(options_json: Any = None) -> str:
-    """Build a tracker (engine/nl_tracker.py, CONTRACT-v2 section 5.18): the files run in this tab, each as its "Clean
-    my file" view (one cleaner, nl_cleanfile.view(detail=True)), combined into a tracker workbook spec for the page's
-    .xlsx writer (src/js/56-xlsx.js). options_json: {sha256 (the run on the page), inputs: [sha256, ...] (the files to
-    combine, in order; default: the run on the page), kind, questions, today, plan_columns, rules (the "Clean my file"
-    edits, for the run on the page), dup_key}. Also lists `available`: every file this tab still holds. Nothing is
-    sent anywhere."""
+def clean_view(sha: str, rules: Any = None, plan_columns: Any = None) -> Optional[Dict[str, Any]]:
+    """One file run in this tab, as its "Clean my file" view with records (nl_cleanfile.view(detail=True)): the
+    tracker's reader (engine/nl_tracker.py). None when this tab no longer holds that file. rules: the visitor's edits
+    to the cleaning rules (the same cleaner runs again)."""
     import nl_cleanfile
+    rec = _CLEANS.get(str(sha or ""))
+    if rec is None:
+        return None
+
+    def recount(cr2: Any, rules2: List[Any]) -> Dict[str, Any]:
+        return _cleaning_block(cr2, _ambiguous_dates(cr2, rules2), rules2, rec["pub"])
+    v = nl_cleanfile.view(rec, rules, plan_columns, recount, detail=True)
+    v["as_of"] = rec.get("as_of")
+    v["name"] = rec.get("name")
+    return v
+
+
+def tracker_json(options_json: Any = None) -> str:
+    """Build a tracker (engine/nl_tracker.py, CONTRACT-v2 section 5.20) from the files run in this tab, each as its
+    clean-my-file view (clean_view; one cleaner), as a workbook spec for the page's .xlsx writer (src/js/56-xlsx.js).
+    options_json: {sha256 (the run on the page), inputs: [sha256, ...] (the files to combine, in order; default: the
+    run on the page), kind, questions, today, plan_columns, rules (the "Clean my file" edits, for the run on the
+    page), dup_key}; with Track E's several-file intake the page asks deliver_json('tracker', settings) instead, which
+    calls the same nl_tracker.build. Also lists `available`: every file this tab still holds. Nothing is sent."""
     import nl_tracker
     opts: Any = options_json
     if hasattr(opts, "to_py"):
@@ -7086,26 +7102,14 @@ def tracker_json(options_json: Any = None) -> str:
     if not cur or cur not in _CLEANS:
         return json.dumps({"ok": False, "error": "The engine no longer holds this file; run it again.",
                            "workbook": None, "available": available})
-    shas = [str(x) for x in (opts.get("inputs") or []) if isinstance(x, str)] or [cur]
     seen: List[str] = []
-    for x in shas:
+    for x in [str(x) for x in (opts.get("inputs") or []) if isinstance(x, str)] or [cur]:
         if x not in seen:
             seen.append(x)
-    inputs: List[Dict[str, Any]] = []
-    for sha in seen[:_CLEANS_MAX]:
-        rec = _CLEANS.get(sha)
-        if rec is None:
-            inputs.append({"name": "a file run earlier", "error": "this tab no longer holds it; run it again"})
-            continue
-
-        def recount(cr2: Any, rules2: List[Any], _rec: Dict[str, Any] = rec) -> Dict[str, Any]:
-            return _cleaning_block(cr2, _ambiguous_dates(cr2, rules2), rules2, _rec["pub"])
-        v = nl_cleanfile.view(rec, opts.get("rules") if sha == cur else None,
-                              opts.get("plan_columns") if sha == cur else None, recount, detail=True)
-        inputs.append({"name": rec.get("name") or "file", "view": v, "error": None if v.get("ok") else v.get("error")})
-    today = opts.get("today") or _CLEANS[cur].get("as_of")
-    out = nl_tracker.build(inputs, opts.get("kind"), opts.get("questions"), today, opts.get("plan_columns"),
-                           opts.get("dup_key"))
+    inputs = [{"sha256": sha, "primary": sha == cur} for sha in seen[:_CLEANS_MAX]]
+    settings = {k: opts.get(k) for k in ("kind", "questions", "today", "plan_columns", "rules", "dup_key")}
+    settings["today"] = settings.get("today") or _CLEANS[cur].get("as_of")
+    out = nl_tracker.build(inputs, settings)
     out["available"] = available
     out["inputs"] = [{"sha256": sha, "name": (_CLEANS.get(sha) or {}).get("name")} for sha in seen[:_CLEANS_MAX]]
     return json.dumps(out, allow_nan=False, default=str)

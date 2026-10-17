@@ -271,7 +271,7 @@ function onClean(m) {
   } catch (e) { out = { ok: false, error: lastLine(e) || 'The cleaner stopped.' }; }
   post({ type: 'cleaned', id: m.id, out: out });
 }
-// Build a tracker (engine/nl_tracker.py through nl_browser.tracker_json, CONTRACT §5.18): the files run in this tab,
+// Build a tracker (engine/nl_tracker.py through nl_browser.tracker_json, CONTRACT §5.20): the files run in this tab,
 // each as its clean-my-file view, combined into a workbook spec the page writes with NLX. Nothing leaves this worker.
 function onTracker(m) {
   var out = null;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Write the tracker demo's two files: SYNTHETIC messy task lists for "Build a tracker" (Track G,
-plan/DASHBOARD-DESIGN.md; engine/nl_tracker.py, CONTRACT-v2 section 5.18).
+plan/DASHBOARD-DESIGN.md; engine/nl_tracker.py, CONTRACT-v2 section 5.20).
 
     python tools/make_sample_tracker.py           # (re)write both files
     python tools/make_sample_tracker.py --check   # exit 1 if a file on disk differs
@@ -22,8 +22,9 @@ The two files are what a small property-operations team might track tasks in tod
 The planted facts tools/test_nl_tracker.py checks (with pandas, independently of the engine):
   * the files overlap on T-115 to T-125: T-115, T-116, T-118, T-122, T-123 and T-124 are the same task in both files
     once cleaned (status words mapped, categories in one spelling) and are merged into file A's copy;
-    T-117, T-119 and T-125 changed between the exports (status, closed date or a note) and are NOT merged: they are
-    flagged as the same ID in both files;
+    T-117, T-119 and T-125 changed between the exports (their status, and T-117's closed date) and are NOT merged:
+    they are flagged as the same ID in both files (B's Notes column is named like personal data, so the engine
+    withholds it by default and it is in no sheet);
   * one exact duplicate inside each file (T-110 in A, T-129 in B), merged by the cleaner;
   * two rows that are not tasks (A's repeated header, B's note line) go to the Unplaced sheet;
   * nothing is filled: T-126 is "done" with no completed date and stays blank, flagged; T-121 and T-133 have no

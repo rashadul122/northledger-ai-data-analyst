@@ -32,7 +32,7 @@ The zip holds exactly what the browser needs and nothing else:
   nl_dashboard.py           the Dashboard tab: design check, aggregate cube, notes (engine/nl_dashboard.py, CONTRACT §5.14)
   dashboard_sample.json     the sample ledger's recorded AI dashboard design nl_dashboard reads beside itself
   nl_cleanfile.py           clean my file: the cleaned CSV and the cleaning log (engine/nl_cleanfile.py, CONTRACT §5.15)
-  nl_tracker.py             build a tracker: kind templates and the workbook spec (engine/nl_tracker.py, CONTRACT §5.18)
+  nl_tracker.py             build a tracker: kind templates and the workbook spec (engine/nl_tracker.py, CONTRACT §5.20)
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
@@ -165,7 +165,7 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # clean my file (track C, CONTRACT §5.15): the cleaned CSV and the cleaning log, imported by
                  # nl_browser.cleanfile_json (engine/worker.js "cleanfile")
                  "nl_cleanfile.py": "nl_cleanfile.py",
-                 # build a tracker (track G, CONTRACT §5.18): kind templates and the workbook spec on top of the
+                 # build a tracker (track G, CONTRACT §5.20): kind templates and the workbook spec on top of the
                  # clean-my-file view, imported by nl_browser.tracker_json (engine/worker.js "tracker")
                  "nl_tracker.py": "nl_tracker.py",
                  # Ask your data with SQL (CONTRACT §5.16): the SQL fence and the engine's own plan, imported by

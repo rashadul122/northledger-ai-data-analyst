@@ -208,7 +208,7 @@
     var ns = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
     // the site's categorical palette (build.py TOKENS ts-1..ts-5, light): slot order fixed; a series may name its own colour
     // (a comparison of two periods: the one before in ts-2 orange, the latest in ts-1 blue)
-    var PAL = ['2A78D6', 'D45A26', '12875C', '9A6A00', 'C8457F', '56646F'], DASH = ['dash', 'sysDot', 'lgDashDot', 'sysDash'];
+    var PAL = ['2A78D6', 'D45A26', '0E8A7A', '9A6A00', 'C8457F', '56646F'], DASH = ['dash', 'sysDot', 'lgDashDot', 'sysDash'];
     var ref = function (r) { return q(nm(r.sheet)) + '!$' + col(r.col) + '$' + r.r0 + ':$' + col(r.col) + '$' + r.r1; };
     var line = spec.type === 'line';
     var sers = (spec.series || []).map(function (s, k) {

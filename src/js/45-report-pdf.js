@@ -31,7 +31,7 @@
   var LETTER_REGIONS = ['US', 'CA', 'MX'];
   var COL = { ink: '#16232e', body: '#2b3843', muted: '#56646f', hair: '#d9d5cb', accent: '#0b7366', accentInk: '#0a5c52',
     panel: '#f4f2ec', zebra: '#faf9f6', grid: '#e6e3da', axis: '#8f8a7e', white: '#ffffff',
-    series: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00'],
+    series: ['#2a78d6', '#d45a26', '#0e8a7a', '#9a6a00'],
     grade: { CONFIRMED: '#0a5c52', WATCH: '#945400', INSUFFICIENT: '#56646f' } };
   var GRADE_LABEL = { CONFIRMED: 'CONFIRMED', WATCH: 'WATCH', INSUFFICIENT: 'NOT ENOUGH DATA' };
   var FILE_WORD = '[your file]';   // the placeholder the engine's results and the AI's report use for the file's name
@@ -915,10 +915,10 @@
      bottom), called on the Doc: every mark and word within [L, L + CW] and [bottom, top]. */
   var VC = { seq: ['#cfe9e4', '#add9d2', '#87c7bc'], falls: ['#f1e2d1', '#e5c8a8', '#d9ae80'], rises: ['#d9e7f8', '#b7d1f1', '#94bcea'],
     cell: '#16232e', supFill: '#eef0f1', supLine: '#b9b5aa', supText: '#56646f', emptyLine: '#e2dfd6', white: '#ffffff',
-    total: '#2a78d6', rise: '#12875c', fall: '#d45a26', conn: '#b9b5aa', dot: '#2a78d6', median: '#16232e', bar: '#2a78d6',
+    total: '#2a78d6', rise: '#0e8a7a', fall: '#d45a26', conn: '#b9b5aa', dot: '#2a78d6', median: '#16232e', bar: '#2a78d6',
     prior: '#d45a26', otherPrior: '#abb2b7',
     other: '#56646f', cum: '#d45a26', ref: '#16232e', k80: '#16232e', flat: '#56646f', ink: '#16232e', body: '#33424e',
-    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa', ts: ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'] };
+    muted: '#56646f', grid: '#e8e5dd', axis: '#b9b5aa', ts: ['#2a78d6', '#d45a26', '#0e8a7a', '#9a6a00', '#c8457f'] };
   var LEGACY = { line: 1, bars: 1, scatter: 1 };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
@@ -1414,7 +1414,7 @@
      in its colour and dash, the forecast dashed with its range as a band; the area's parts stacked with a key; one or
      two bars a row (the period before in orange, the latest in blue, both solid); a grid of small panels on ONE value scale. A point's text is its table
      cell (table.rows[i][1 + k]); labels are cut with an ellipsis when they do not fit, and the table view follows. */
-  var GPAL = ['#2a78d6', '#d45a26', '#12875c', '#9a6a00', '#c8457f'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
+  var GPAL = ['#2a78d6', '#d45a26', '#0e8a7a', '#9a6a00', '#c8457f'], GDASH = [null, '4 2', '1.5 2', '5 2 1.5 2', '1 1.5'];
   var GOTHER = '#56646f', GBAND = '#d9e7f8', GMON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function gNumN(v) { return v === null || pos(v); }
   function gTimeOk(d, key, nmin, nmax) {

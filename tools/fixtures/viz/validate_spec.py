@@ -434,7 +434,7 @@ def check_spec(spec):
     for g, want in design.items():
         if [light[g][t] for t in ("1", "2", "3")] != want:
             E.append("colors.light.%s is not the design's %s" % (g, want))
-    if [light["waterfall"][k] for k in ("total", "rise", "fall")] != ["#2a78d6", "#12875c", "#d45a26"]:
+    if [light["waterfall"][k] for k in ("total", "rise", "fall")] != ["#2a78d6", "#0e8a7a", "#d45a26"]:
         E.append("colors.light.waterfall is not the design's")
     # the plan directive's and the limits' examples
     pd_ = spec["plan_directive"]

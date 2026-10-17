@@ -267,7 +267,7 @@ def test_the_planted_causes_are_found_with_their_magnitudes():
         assert abs(_num(s, "change") - (gm[p1] - gm[p0]) * 100) < 1e-9
         assert abs(_num(s, "rate") + _num(s, "mix") - _num(s, "change")) < 1e-9, "the split adds up to the change"
         assert s["numbers"]["prev_label"]["text"] == "2026 Q2" and s["numbers"]["cur_label"]["text"] == "2026 Q3"
-        assert s["numbers"]["partial"]["text"] == ""
+        assert "partial" not in s["numbers"]   # the latest COMPLETE quarter is read (asked_windows)
 
     # cause 1, the mix: Accessories' share of EMEA revenue jumps; by product line the move is mostly mix, led by it
     rate, mix, _chg, W, R = _pandas_decompose(e, "product_line", p0, p1)
@@ -377,6 +377,66 @@ def _STATE_REP():
         with open(SAMPLE, "rb") as f:
             _REP.update(nb.run(f.read(), "sample-sales-synthetic.csv", "", {}, AS_OF))
     return _REP
+
+
+def _run_q(question):
+    import nl_analyst as na
+    st = sales_state()
+    steps = ns.plan_steps(st, question)
+    return steps, na.run_steps(st["df"], st["kinds"], steps, st["hint"], prior=[])
+
+
+def test_the_asked_quarter_sets_the_windows_of_the_reused_change_op():
+    steps, out = _run_q("Why did revenue fall this quarter?")
+    assert [s["op"] for s in steps] == ["sql", "change", "change", "change"], steps
+    assert all(s["args"].get("grain") == "quarter" for s in steps[1:])
+    d = raw()
+    q = d.groupby("q")["revenue"].sum()
+    for s in out["steps"][1:]:
+        assert s["ok"], s["refused"]
+        n = s["numbers"]
+        assert n["prev_label"]["text"] == "2026 Q2" and n["cur_label"]["text"] == "2026 Q3" and n["yago_label"]["text"] == "2025 Q3"
+        assert abs(n["prev"]["value"] - q[pd.Period("2026Q2")]) < 1e-6 and abs(n["cur"]["value"] - q[pd.Period("2026Q3")]) < 1e-6
+        assert abs(n["yago"]["value"] - q[pd.Period("2025Q3")]) < 1e-6
+        assert abs(n["change"]["value"] - (q[pd.Period("2026Q3")] / q[pd.Period("2026Q2")] - 1)) < 1e-12
+        assert abs(n["yago_change"]["value"] - (q[pd.Period("2026Q3")] / q[pd.Period("2025Q3")] - 1)) < 1e-12
+        by = s["args"]["by"]
+        g = d[d.q.isin([pd.Period("2026Q2"), pd.Period("2026Q3")])].pivot_table(index=by, columns="q", values="revenue", aggfunc="sum").fillna(0.0)
+        delta = (g[pd.Period("2026Q3")] - g[pd.Period("2026Q2")])
+        top = delta.idxmin()
+        assert n["top"]["text"] == top and abs(n["top_delta"]["value"] - delta[top]) < 1e-6, (by, n["top"], delta)
+    t = out["insights"][1]["text"]
+    assert t.startswith("The total of revenue fell from") and "in 2026 Q2 to" in t and "in 2026 Q3" in t and "against" in t and "2025 Q3" in t, t
+
+
+def test_a_monthly_question_reads_months():
+    steps, out = _run_q("Why did revenue fall last month?")
+    d = raw()
+    mo = d.groupby(d.order_date.dt.to_period("M"))["revenue"].sum()
+    s = out["steps"][1]
+    n = s["numbers"]
+    assert s["ok"] and n["prev_label"]["text"] == "2026-08" and n["cur_label"]["text"] == "2026-09" and n["yago_label"]["text"] == "2025-09"
+    assert abs(n["cur"]["value"] - mo[pd.Period("2026-09")]) < 1e-6 and abs(n["prev"]["value"] - mo[pd.Period("2026-08")]) < 1e-6
+    assert abs(n["yago"]["value"] - mo[pd.Period("2025-09")]) < 1e-6
+    assert len(out["steps"][0]["table"]["rows"]) == 36
+    # a named period and the margin question's windows (rate_mix reads the same asked windows)
+    steps, out = _run_q("What moved revenue in Q2 2026?")
+    assert steps[1]["args"]["period"] == "2026-Q2" and out["steps"][1]["numbers"]["cur_label"]["text"] == "2026 Q2"
+    assert out["steps"][1]["numbers"]["prev_label"]["text"] == "2026 Q1" and out["steps"][1]["numbers"]["yago_label"]["text"] == "2025 Q2"
+    steps, out = _run_q("What happened to gross margin in 2025?")
+    s = out["steps"][1]
+    assert steps[1]["args"]["period"] == "2025" and s["op"] == "rate_mix" and s["ok"]
+    assert s["numbers"]["prev_label"]["text"] == "2024" and s["numbers"]["cur_label"]["text"] == "2025" and "year_label" not in s["numbers"]
+    y = d.groupby(d.order_date.dt.year)[["revenue", "cost"]].sum()
+    assert abs(s["numbers"]["cur"]["value"] - (1 - y.cost[2025] / y.revenue[2025])) < 1e-12
+    # a window the file does not hold whole is refused with its reason, never compared on part of its months
+    steps, out = _run_q("How has revenue changed since 2025?")
+    assert steps[1]["args"]["period"] == "since:2025" and not out["steps"][1]["ok"]
+    assert "not all in the file" in out["steps"][1]["refused"], out["steps"][1]["refused"]
+    steps, out = _run_q("How did revenue change in Q4 2023?")
+    assert not out["steps"][1]["ok"] and "not all in the file" in out["steps"][1]["refused"]
+    steps, out = _run_q("How did revenue change in Q4 2026?")
+    assert not out["steps"][1]["ok"] and "not complete in the file" in out["steps"][1]["refused"]
 
 
 def test_the_sample_is_the_generator_output():

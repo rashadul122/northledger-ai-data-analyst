@@ -95,6 +95,9 @@ export const SYSTEM_PROMPT = [
   "   SELECT or WITH query, column names in double quotes, text values in single quotes; dates are text YYYY-MM-DD.",
   "   A ratio such as gross margin is recomputed from sums, never an average of row ratios. To explain why a ratio",
   "   moved, pair it with rate_mix steps (measure, less, denominator, by, where, grain).",
+  "8. The period the objective asks about sets every windowed step (change, mix, rate_mix): grain quarter, month or",
+  "   year for \"this quarter\", \"last month\", \"this year\" (the latest complete one); period 2026-Q3, 2026-09,",
+  "   2026 or since:2024 for a named one. Leave both empty only when the objective names no period.",
 ].join("\n");
 
 // ------------------------------------------------------------------------------------------ the sql step's check
@@ -259,6 +262,7 @@ export function outputSchema(ops) {
             "denominator",
             "less",
             "grain",
+            "period",
             "sql",
             "why",
           ],
@@ -273,6 +277,7 @@ export function outputSchema(ops) {
             denominator: { type: "string" },
             less: { type: "string" },
             grain: { type: "string" },
+            period: { type: "string" },
             sql: { type: "string" },
             why: { type: "string" },
           },
@@ -294,6 +299,7 @@ function fromFlat(s) {
   if (s.denominator) args.denominator = s.denominator;
   if (s.less) args.less = s.less;
   if (s.grain) args.grain = s.grain;
+  if (s.period) args.period = s.period;
   if (s.sql) args.sql = s.sql;
   return { op: s.op, args, why: typeof s.why === "string" ? s.why : "" };
 }
@@ -434,7 +440,8 @@ export function checkStep(raw, variants, shape) {
       if (
         typeof val !== "string" ||
         val.length > s.maxLength ||
-        (s.enum && !s.enum.includes(val))
+        (s.enum && !s.enum.includes(val)) ||
+        (s.pattern && !new RegExp(s.pattern).test(val))
       )
         return { why: "bad " + k };
       if (s["x-check"] === "sql") {

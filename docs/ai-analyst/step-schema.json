@@ -42,6 +42,22 @@
        },
        "description": "keep only the rows where each group column holds the given value",
        "x-role": "filter"
+      },
+      "grain": {
+       "type": "string",
+       "maxLength": 10,
+       "enum": [
+        "quarter",
+        "month",
+        "year"
+       ],
+       "description": "the period the latest is compared in (default quarter)"
+      },
+      "period": {
+       "type": "string",
+       "maxLength": 16,
+       "pattern": "^([0-9]{4}-Q[1-4]|[0-9]{4}-(0[1-9]|1[0-2])|[0-9]{4}|since:[0-9]{4}(-(0[1-9]|1[0-2]))?)$",
+       "description": "the period asked about: 2026-Q3, 2026-09, 2026, or since:2024 (default: the latest complete one)"
       }
      },
      "required": [
@@ -347,6 +363,22 @@
        "maxLength": 200,
        "description": "a group column (one of shape.dimensions, or shape.entity)",
        "x-role": "dimension"
+      },
+      "grain": {
+       "type": "string",
+       "maxLength": 10,
+       "enum": [
+        "quarter",
+        "month",
+        "year"
+       ],
+       "description": "the period the latest is compared in (default quarter)"
+      },
+      "period": {
+       "type": "string",
+       "maxLength": 16,
+       "pattern": "^([0-9]{4}-Q[1-4]|[0-9]{4}-(0[1-9]|1[0-2])|[0-9]{4}|since:[0-9]{4}(-(0[1-9]|1[0-2]))?)$",
+       "description": "the period asked about: 2026-Q3, 2026-09, 2026, or since:2024 (default: the latest complete one)"
       }
      },
      "required": [
@@ -755,6 +787,12 @@
         "year"
        ],
        "description": "the period the latest is compared in (default quarter)"
+      },
+      "period": {
+       "type": "string",
+       "maxLength": 16,
+       "pattern": "^([0-9]{4}-Q[1-4]|[0-9]{4}-(0[1-9]|1[0-2])|[0-9]{4}|since:[0-9]{4}(-(0[1-9]|1[0-2]))?)$",
+       "description": "the period asked about: 2026-Q3, 2026-09, 2026, or since:2024 (default: the latest complete one)"
       }
      },
      "required": [

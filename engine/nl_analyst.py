@@ -1392,23 +1392,132 @@ def _in(ctx: Ctx, keys: List[int], unit: str):
     return (d.dt.year * 12 + d.dt.month - 1).isin(keys)
 
 
+
+# ----------------------------------------------------------------------------- the period a question asks about
+# Ask your data (CONTRACT §5.14): "this quarter", "last month", "Q3 2026", "in 2025", "since 2024" in a question set the
+# windows of change, mix and rate_mix (their grain and period arguments), never the ops' own default windows.
+ASKED_GRAINS = ("quarter", "month", "year")
+_PERIOD_RE = re.compile(r"^(?:(\d{4})-Q([1-4])|(\d{4})-(0[1-9]|1[0-2])|(\d{4})|since:(\d{4})(?:-(0[1-9]|1[0-2]))?)$")
+
+
+def _mlabel(k: int) -> str:
+    return "%d-%02d" % (k // 12, k % 12 + 1)
+
+
+def _glabel(k0: int, grain: str) -> str:
+    """A period's name from its first month index (year * 12 + month - 1)."""
+    if grain == "quarter":
+        return "%d Q%d" % (k0 // 12, (k0 % 12) // 3 + 1)
+    if grain == "year":
+        return str(k0 // 12)
+    return _mlabel(k0)
+
+
+def asked_windows(ctx: "Ctx", grain: Optional[str], period: Optional[str], measure: Optional[str] = None
+                  ) -> Dict[str, Any]:
+    """The windows a question asks for, as month index lists (year * 12 + month - 1, the keys _in reads):
+    {cur, prev, yago (or None), lc, lp, ly, grain, since} or {"refuse": why}. The latest COMPLETE period by default (a
+    period is complete when the file's dates run to its last day); a named period (2026-Q3, 2026-09, 2026) must be
+    complete in the file; since:YYYY[-MM] reads from that month to the latest complete month against the same number
+    of months before. The year-earlier window is given when the file holds rows in it (never for a year grain: the
+    period before IS a year earlier)."""
+    sh = ctx.sh
+    if sh.date is None or sh.dates is None:
+        return {"refuse": "the file has no time axis"}
+    grain = grain or "quarter"
+    if grain not in ASKED_GRAINS:
+        return {"refuse": "the period must be one of %s" % ", ".join(ASKED_GRAINS)}
+    d = sh.dates
+    ok = d.notna() & ctx.base
+    if measure is not None and measure in ctx.df.columns:
+        ok &= _num(ctx.df[measure]).notna()
+    if ok.sum() < 2:
+        return {"refuse": "too few dated rows"}
+    last = d[ok].max()
+    lastc = last.year * 12 + last.month - 1
+    if (last + pd_offset_day()).month == last.month:     # the file stops inside its last month: that month is partial
+        lastc -= 1
+    have = set(int(x) for x in (d[ok].dt.year * 12 + d[ok].dt.month - 1).unique())
+    first = d[ok].min()
+    firstc = first.year * 12 + first.month - 1 + (0 if first.day == 1 else 1)   # the first month the file holds whole
+    g = {"quarter": 3, "month": 1, "year": 12}[grain]
+    m = _PERIOD_RE.match(period) if isinstance(period, str) and period else None
+    if period and not m:
+        return {"refuse": "the period must read like 2026-Q3, 2026-09, 2026 or since:2024"}
+    if m and m.group(6):
+        k0 = int(m.group(6)) * 12 + (int(m.group(7)) - 1 if m.group(7) else 0)
+        if k0 > lastc:
+            return {"refuse": "the file has no complete month since %s" % _mlabel(k0)}
+        cur = list(range(k0, lastc + 1))
+        prev = list(range(k0 - len(cur), k0))
+        if prev[0] < firstc:
+            return {"refuse": "the %d months before %s are not all in the file (it starts in %s), so the two windows "
+                              "cannot be compared" % (len(prev), _mlabel(k0), _mlabel(firstc))}
+        if not (have & set(prev)):
+            return {"refuse": "the file holds no rows in the %d months before %s" % (len(prev), _mlabel(k0))}
+        return {"cur": cur, "prev": prev, "yago": None, "grain": "month", "since": True,
+                "lc": "%s to %s" % (_mlabel(cur[0]), _mlabel(cur[-1])),
+                "lp": "%s to %s" % (_mlabel(prev[0]), _mlabel(prev[-1])), "ly": None}
+    if m:
+        if m.group(1):
+            grain, g, k0 = "quarter", 3, int(m.group(1)) * 12 + (int(m.group(2)) - 1) * 3
+        elif m.group(3):
+            grain, g, k0 = "month", 1, int(m.group(3)) * 12 + int(m.group(4)) - 1
+        else:
+            grain, g, k0 = "year", 12, int(m.group(5)) * 12
+        if k0 + g - 1 > lastc:
+            return {"refuse": "%s is not complete in the file (its dates run to %s)" % (_glabel(k0, grain), last.strftime("%Y-%m-%d"))}
+    else:
+        end = lastc
+        while (end + 1) % g:                 # the last month of a complete period
+            end -= 1
+        k0 = end - g + 1
+    cur = list(range(k0, k0 + g))
+    prev = list(range(k0 - g, k0))
+    if not (have & set(cur)):
+        return {"refuse": "the file holds no rows in %s" % _glabel(k0, grain)}
+    if prev[0] < firstc or not (have & set(prev)):
+        return {"refuse": "%s, the %s before %s, is not all in the file (it starts in %s)" % (
+            _glabel(k0 - g, grain), grain, _glabel(k0, grain), _mlabel(firstc))}
+    yago = [k - 12 for k in cur] if g < 12 and cur[0] - 12 >= firstc and (have & {k - 12 for k in cur}) else None
+    return {"cur": cur, "prev": prev, "yago": yago, "grain": grain, "since": False, "lc": _glabel(k0, grain),
+            "lp": _glabel(k0 - g, grain), "ly": _glabel(k0 - 12, grain) if yago else None}
+
+
+def pd_offset_day():
+    import pandas as pd
+    return pd.Timedelta(days=1)
+
+
 def op_change(
     ctx: Ctx,
     st: Step,
     measure: str,
     by: Optional[str] = None,
     where: Optional[Dict[str, str]] = None,
+    grain: Optional[str] = None,
+    period: Optional[str] = None,
 ) -> Step:
-    """The measure in the latest complete window against the one before, and each group's part of the change."""
+    """The measure in the latest complete window against the one before, and each group's part of the change. With a
+    grain or a period (a question's "this quarter", "2026-09", "since 2024": asked_windows) those windows, and the same
+    window a year earlier beside them; without, the op's own windows (_windows)."""
     import pandas as pd
 
     sh = ctx.sh
     if sh.date is None:
         return st.refuse("the file has no time axis")
-    w = _windows(ctx, measure)
-    if w is None:
-        return st.refuse("fewer than two complete periods")
-    unit, prev, cur, lp, lc = w
+    yago = None
+    if grain or period:
+        aw = asked_windows(ctx, grain, period, measure)
+        if "refuse" in aw:
+            return st.refuse(aw["refuse"])
+        unit, prev, cur, lp, lc = "month", aw["prev"], aw["cur"], aw["lp"], aw["lc"]
+        yago, ly = aw["yago"], aw["ly"]
+    else:
+        w = _windows(ctx, measure)
+        if w is None:
+            return st.refuse("fewer than two complete periods")
+        unit, prev, cur, lp, lc = w
     agg = _agg_for(sh, measure)
     kind = sh.mkind.get(measure, "flow")
     base = ctx.base.copy()
@@ -1438,6 +1547,24 @@ def op_change(
         return frame["v"].sum() if agg == "sum" else frame["v"].mean()
 
     a, b = total(f[f["w"] == "prev"]), total(f[f["w"] == "cur"])
+    if grain or period:
+        sc = (st.numbers.get("scope") or {}).get("text") or ""
+        st.word("asked_the", sc + "the" if sc else "The")
+    if yago:
+        fy = pd.DataFrame({"v": _num(ctx.df[measure])})[base & _in(ctx, yago, unit)]
+        if sh.entity:
+            fy["e"] = _text(ctx.df[sh.entity])[fy.index]
+        fy = fy.dropna(subset=["v"])
+        if len(fy):
+            yv = total(fy)
+            st.word("yago_label", ly)
+            st.num("yago", yv)
+            if sh.mkind.get(measure, "flow") == "rate":
+                st.num("yago_change", (b - yv) * (100 if _frac_scale(f["v"]) else 1), "pp", signed=True)
+            elif yv and yv > 0 and _pct_ok(sh, measure) and _no_negatives(ctx.df[measure]):
+                st.num("yago_change", (b - yv) / abs(yv), "pct", signed=True)
+            else:
+                st.num("yago_change", b - yv, "plain", signed=True)
     st.word("measure", measure)
     st.word("prev_label", lp)
     st.word("cur_label", lc)
@@ -2337,7 +2464,7 @@ def op_confound(ctx: Ctx, st: Step, measure: str, by: str, against: str) -> Step
     return st
 
 
-def op_mix(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
+def op_mix(ctx: Ctx, st: Step, measure: str, by: str, grain: Optional[str] = None, period: Optional[str] = None) -> Step:
     """An average's change split into the change inside the groups (rate) and the rows moving between groups (mix):
     within = sum of w_prev * (mean_cur - mean_prev); mix = the rest (exact, so the parts add up).
     """
@@ -2345,10 +2472,18 @@ def op_mix(ctx: Ctx, st: Step, measure: str, by: str) -> Step:
 
     if _agg_for(ctx.sh, measure) != "mean":
         return st.refuse("a mix splits the change of an average; this measure adds up")
-    w = _windows(ctx, measure) if ctx.sh.date is not None else None
-    if w is None:
-        return st.refuse("needs two complete periods")
-    unit, prev, cur, lp, lc = w
+    if grain or period:
+        aw = asked_windows(ctx, grain, period, measure)
+        if "refuse" in aw:
+            return st.refuse(aw["refuse"])
+        unit, prev, cur, lp, lc = "month", aw["prev"], aw["cur"], aw["lp"], aw["lc"]
+        st.word("prev_label", lp)
+        st.word("cur_label", lc)
+    else:
+        w = _windows(ctx, measure) if ctx.sh.date is not None else None
+        if w is None:
+            return st.refuse("needs two complete periods")
+        unit, prev, cur, lp, lc = w
     f = pd.DataFrame({"v": _num(ctx.df[measure]), "g": _group_texts(ctx.df, by)})
     f["w"] = None
     f.loc[ctx.base & _in(ctx, prev, unit), "w"] = "prev"
@@ -2448,7 +2583,7 @@ def rate_mix_parts(n0: Dict[str, float], d0: Dict[str, float], n1: Dict[str, flo
 
 
 def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, less: Optional[str] = None,
-                where: Optional[Dict[str, str]] = None, grain: Optional[str] = None) -> Step:
+                where: Optional[Dict[str, str]] = None, grain: Optional[str] = None, period: Optional[str] = None) -> Step:
     """A ratio of sums ((measure - less) / denominator: a gross margin, a price per unit), recomputed from sums and never
     an average of row ratios, in the latest period against the one before (and the same period a year earlier), its
     change split by `by` into rate and mix effects (rate_mix_parts). A group with fewer than MIN_GROUP_ROWS rows in either
@@ -2459,9 +2594,9 @@ def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, les
     sh = ctx.sh
     if sh.date is None or sh.dates is None:
         return st.refuse("the file has no time axis")
-    grain = grain or "quarter"
-    if grain not in RATE_MIX_GRAINS:
-        return st.refuse("the period must be one of %s" % ", ".join(RATE_MIX_GRAINS))
+    aw = asked_windows(ctx, grain or "quarter", period, denominator)
+    if "refuse" in aw:
+        return st.refuse(aw["refuse"])
     if less is not None and less == measure:
         return st.refuse("the measure and the part taken from it are the same column")
     base = ctx.base & sh.dates.notna()
@@ -2476,14 +2611,15 @@ def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, les
         num = num - _num(ctx.df[less])
     den = _num(ctx.df[denominator])
     f = pd.DataFrame({"n": num, "d": den, "g": _group_texts(ctx.df, by)})[base]
-    f = f.assign(p=sh.dates[base].dt.to_period(_RM_FREQ[grain]))
-    f = f.dropna(subset=["n", "d", "p"])
-    if f.empty:
-        return st.refuse("no rows to read")
-    p1 = f["p"].max()
-    p0, py = p1 - 1, p1 - _RM_BACK[grain]
-    if not (f["p"] == p0).any():
-        return st.refuse("no rows in the %s before %s" % (grain, _rm_label(p1, grain)))
+    # the asked windows (asked_windows): "p1" the latest (or named) period, "p0" the one before, "py" a year earlier
+    p0, p1, py = "p0", "p1", "py"
+    lab = pd.Series(None, index=f.index, dtype=object)
+    for key, months in (("py", aw["yago"]), ("p0", aw["prev"]), ("p1", aw["cur"])):
+        if months:
+            lab[_in(ctx, months, "month")[base]] = key
+    f = f.assign(p=lab).dropna(subset=["n", "d", "p"])
+    if not (f["p"] == p1).any() or not (f["p"] == p0).any():
+        return st.refuse("no rows to read in %s or %s" % (aw["lc"], aw["lp"]))
     f["g"] = f["g"].where(f["g"] != "", "(blank)")
     cnt = f[f["p"].isin([p0, p1])].groupby(["g", "p"]).size()
     small = sorted(g for g in set(f["g"]) if min(int(cnt.get((g, p0), 0)), int(cnt.get((g, p1), 0))) < MIN_GROUP_ROWS)
@@ -2504,7 +2640,7 @@ def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, les
              else "%s per %s" % (measure, denominator))
     vkind = "share" if pct else "plain"
     ckind = "pp" if pct else "plain"
-    lp, lc = _rm_label(p0, grain), _rm_label(p1, grain)
+    lp, lc = aw["lp"], aw["lc"]
     st.word("label", label)
     sc = st.numbers["scope"]["text"]
     st.word("lead", sc + label if sc else label[:1].upper() + label[1:])
@@ -2525,14 +2661,11 @@ def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, les
     st.num("rows_cur", int(cnt.xs(p1, level="p").sum()) if len(cnt) else 0, "int")
     if small:
         st.num("pooled", len(small), "int")
-    last = sh.dates[ctx.base].max()
-    st.word("partial", "" if pd.isna(last) or last.normalize() >= p1.end_time.normalize()
-            else "(%s is not complete in the file: its dates run to %s) " % (lc, last.strftime("%Y-%m-%d")))
     if (f["p"] == py).any():
         yo = f[f["p"] == py][["n", "d"]].sum()
         if float(yo["d"]) > 0:
             ry = float(yo["n"]) / float(yo["d"])
-            st.word("year_label", _rm_label(py, grain))
+            st.word("year_label", aw["ly"])
             st.num("year_value", ry, vkind)
             st.num("yoy_change", (parts["R1"] - ry) * scale, ckind, signed=True)
     sign = -1.0 if parts["total"] < 0 else 1.0
@@ -3872,6 +4005,12 @@ _ARG_SPEC: Dict[str, Dict[str, Any]] = {
         "enum": ["quarter", "month", "year"],
         "description": "the period the latest is compared in (default quarter)",
     },
+    "period": {
+        "type": "string",
+        "maxLength": 16,
+        "pattern": "^([0-9]{4}-Q[1-4]|[0-9]{4}-(0[1-9]|1[0-2])|[0-9]{4}|since:[0-9]{4}(-(0[1-9]|1[0-2]))?)$",
+        "description": "the period asked about: 2026-Q3, 2026-09, 2026, or since:2024 (default: the latest complete one)",
+    },
     "sql": {
         "type": "string",
         "maxLength": 4000,
@@ -4037,6 +4176,8 @@ def _check_step(raw: Any, ctx: Ctx) -> Tuple[Optional[str], Dict[str, Any], str,
                 return op, {}, why, "%s must be text of at most %d characters" % (k, s["maxLength"])
             if "enum" in s and v not in s["enum"]:
                 return op, {}, why, "%s must be one of %s" % (k, ", ".join(s["enum"]))
+            if "pattern" in s and not re.match(s["pattern"], v):
+                return op, {}, why, "%s must read like 2026-Q3, 2026-09, 2026 or since:2024" % k
             if s.get("x-check") == "sql":
                 import nl_sql
 
@@ -4134,6 +4275,13 @@ def _check_step(raw: Any, ctx: Ctx) -> Tuple[Optional[str], Dict[str, Any], str,
 # A plain sentence for a step a planner asked for: the first template whose slots the step's ledger holds.
 _OP_SENTENCES: Dict[str, List[str]] = {
     "change": [
+        "{X.asked_the} {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
+        "{X.cur_label} ({X.change}; {X.yago_change} against {X.yago} in {X.yago_label}); by {X.by}, {X.top} carried "
+        "{X.top_share} of the change ({X.top_delta}).",
+        "{X.asked_the} {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
+        "{X.cur_label} ({X.change}); by {X.by}, {X.top} carried {X.top_share} of the change ({X.top_delta}).",
+        "{X.asked_the} {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
+        "{X.cur_label} ({X.change}; {X.yago_change} against {X.yago} in {X.yago_label}).",
         "{X.scope}by {X.by}, {X.top} carried {X.top_share} of the change in {X.measure} ({X.top_delta}) from "
         "{X.prev_label} to {X.cur_label}.",
         "{X.scope}the {X.agg_word} of {X.measure} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in "
@@ -4178,6 +4326,8 @@ _OP_SENTENCES: Dict[str, List[str]] = {
         "{X.n} rows); that is association, not cause.",
     ],
     "mix": [
+        "From {X.prev_label} to {X.cur_label}, of the {X.total} change in the average {X.measure}, {X.within} came from "
+        "changes inside the {X.by} groups and {X.mix} from rows moving between them.",
         "Of the {X.total} change in the average {X.measure}, {X.within} came from changes inside the {X.by} groups and "
         "{X.mix} from rows moving between them.",
     ],
@@ -4186,21 +4336,21 @@ _OP_SENTENCES: Dict[str, List[str]] = {
         "{X.small_note}",
     ],
     "rate_mix": [
-        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
         "({X.change}; {X.yoy_change} against {X.year_value} in {X.year_label}). By {X.by_words}: rate effect {X.rate}, mix "
         "effect {X.mix}; the largest is {X.top_poss} mix ({X.top_effect}): its share of {X.den} went from {X.top_w0} to "
         "{X.top_w1}, at its own {X.label} of {X.top_own}.",
-        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
         "({X.change}; {X.yoy_change} against {X.year_value} in {X.year_label}). By {X.by_words}: rate effect {X.rate}, mix "
         "effect {X.mix}; the largest is {X.top_poss} rate ({X.top_effect}): its own {X.label} went from {X.top_r0} to "
         "{X.top_r1}.",
-        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
         "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}; the largest is {X.top_poss} mix "
         "({X.top_effect}): its share of {X.den} went from {X.top_w0} to {X.top_w1}, at its own {X.label} of {X.top_own}.",
-        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
         "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}; the largest is {X.top_poss} rate "
         "({X.top_effect}): its own {X.label} went from {X.top_r0} to {X.top_r1}.",
-        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} {X.partial}"
+        "{X.lead} {X.direction} from {X.prev} in {X.prev_label} to {X.cur} in {X.cur_label} "
         "({X.change}). By {X.by_words}: rate effect {X.rate}, mix effect {X.mix}.",
     ],
     "outliers": [

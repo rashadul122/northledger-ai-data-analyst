@@ -548,7 +548,8 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
         grain = "Q"
     elif re.search(r"\bmonth|monthly\b", q):
         grain = "M"
-    elif re.search(r"\byear\b|annual|yearly", q) and not re.search(r"(last|a) year (ago|earlier)", q):
+    elif (re.search(r"\byear\b|annual|yearly", q) and not re.search(r"(last|a) year (ago|earlier)", q)) or \
+            re.search(r"\b(?:in|for|during)\s+(?:19|20)\d\d\b", q):
         grain = "Y"
     else:
         grain = "Q"
@@ -572,7 +573,32 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
                     best = v2
         if best is not None:
             sl[c] = best
-    return {"measure": measure, "grain": grain, "slice": sl, "notes": notes}
+    return {"measure": measure, "grain": grain, "slice": sl, "notes": notes, "period": _read_period(q, grain)}
+
+
+_MONTHS = {m: i + 1 for i, m in enumerate(("january february march april may june july august september october november "
+                                             "december").split())}
+
+
+def _read_period(q: str, grain: str) -> Optional[str]:
+    """A named period in the question, as nl_analyst's `period` argument (2026-Q3, 2026-09, 2026, since:2024[-03]);
+    None for "this/last/latest quarter" and the like: the latest complete period, the steps' default."""
+    m = re.search(r"\bsince\s+(?:([a-z]+)\s+)?((?:19|20)\d\d)\b", q)
+    if m:
+        mo = _MONTHS.get((m.group(1) or "").lower())
+        return "since:%s" % m.group(2) + ("-%02d" % mo if mo else "")
+    m = re.search(r"\bq([1-4])\s*(?:of\s+)?((?:19|20)\d\d)\b", q) or re.search(r"\b((?:19|20)\d\d)\s*-?\s*q([1-4])\b", q)
+    if m:
+        a, b = m.group(1), m.group(2)
+        y, n = (b, a) if len(a) == 1 else (a, b)
+        return "%s-Q%s" % (y, n)
+    m = re.search(r"\b(" + "|".join(_MONTHS) + r")\s+((?:19|20)\d\d)\b", q)
+    if m:
+        return "%s-%02d" % (m.group(2), _MONTHS[m.group(1)])
+    m = re.search(r"\b(?:in|for|during)\s+((?:19|20)\d\d)\b", q)
+    if m and grain == "Y":
+        return m.group(1)
+    return None
 
 
 # --------------------------------------------------------------------------------------------- the engine's own SQL
@@ -631,23 +657,27 @@ def plan_steps(state: Dict[str, Any], question: str, dims: Optional[List[str]] =
     if not m:
         return out
     where = {c: v for c, v in list(rq["slice"].items())[:2]}
+    when = {"grain": GRAIN_OF[rq["grain"]]}
+    if rq.get("period"):
+        when["period"] = rq["period"]
+        if rq["period"].startswith("since:"):
+            when.pop("grain")
     shape = state.get("shape") or {}
     pool = [d for d in (dims if dims is not None else (shape.get("dimensions") or [])) if d not in rq["slice"]]
     for by in pool[: max(0, max_steps - len(out))]:
         if m["kind"] == "ratio" and m["den"] == "__rows__":
             # an average: the loop's own mix op splits it by rows
-            out.append({"op": "mix", "args": {"measure": m["num"][0], "by": by},
+            out.append({"op": "mix", "args": dict({"measure": m["num"][0], "by": by}, **when),
                         "why": "the change of the average split into inside the groups and between them, by " + by})
         elif m["kind"] == "ratio":
-            args: Dict[str, Any] = {"measure": m["num"][0], "denominator": m["den"], "by": by,
-                                    "grain": GRAIN_OF[rq["grain"]]}
+            args: Dict[str, Any] = dict({"measure": m["num"][0], "denominator": m["den"], "by": by}, **when)
             if len(m["num"]) > 1:
                 args["less"] = m["num"][1]
             if where:
                 args["where"] = dict(where)
             out.append({"op": "rate_mix", "args": args, "why": "the change of the ratio split into rate and mix by " + by})
         else:
-            args = {"measure": m["num"][0], "by": by}
+            args = dict({"measure": m["num"][0], "by": by}, **when)
             if where:
                 args["where"] = dict(where)
             out.append({"op": "change", "args": args, "why": "each group's part of the change, by " + by})

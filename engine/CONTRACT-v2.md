@@ -2131,6 +2131,18 @@ answer is a printed ledger value all apply.
   latest period is said to be incomplete when the file's dates stop before it ends). Table: per group shares, own
   ratios, rate and mix effects and rows. Figure: a grouped bar of each group's own ratio, the registry record of §5.9.
 
+**The asked period sets every windowed step** (17 October 2026). `change`, `mix` and `rate_mix` take `grain`
+(quarter, month, year) and `period` (`2026-Q3`, `2026-09`, `2026`, `since:2024[-MM]`; pattern-checked by both the worker
+and the engine); with either, `asked_windows` sets the windows instead of the op's own: the latest COMPLETE period by
+default (complete when the file's dates run to its last day), against the period before and the same period a year
+earlier (`yago`, `yago_label`, `yago_change` in `change`'s ledger; `year_*` in `rate_mix`'s), never for a year grain. A
+named period must be complete in the file; a window the file does not hold whole (it starts later) is refused with its
+reason, never compared on part of its months. The answer names both windows and the year earlier ("The total of revenue
+fell from 1.29 million in 2026 Q2 to 1.06 million in 2026 Q3 (-18.0%; -0.8% against 1.06 million in 2025 Q3); by
+region, Americas carried 42.8% of the change (-99,454)."). Without grain or period an op reads its own windows as
+before, and the engine's own rounds are unchanged. `nl_sql.read_question` reads the period ("this quarter", "last
+month", "Q3 2026", "September 2026", "in 2025", "since 2024") and `plan_steps` passes it to every step.
+
 **Who plans the steps.** With the AI chosen, the worker's `/analyst` (src/analyst.js = docs/ai-analyst/analyst-endpoint.mjs;
 step-schema.json regenerated from `step_schema()`) may answer with `sql` and `rate_mix` steps (flat fields
 `denominator`, `less`, `grain`, `sql`); without the AI, or when its round fails or chooses nothing, the engine plans them

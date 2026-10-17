@@ -4618,6 +4618,10 @@ async function cleanChecks(ctx, tag) {
   const csvText = fs.readFileSync(await dl1.path(), 'utf8');
   ok(csvText === C.csv && dl1.suggestedFilename() === 'sample-messy-cleaned.csv', 'the cleaned CSV download is not the cleaner\'s file: ' + dl1.suggestedFilename());
   ok(csvText.split('\n')[0] === 'Date,Property,Unit,Category,Amount,Paid?,Vendor,nl_flag,nl_missing', 'the cleaned CSV header: ' + csvText.split('\n')[0]);
+  // a row the analysis sets aside: kept, its other cells cleaned like every row, only the named cell as written
+  const aside = csvText.split('\n').filter((l) => /sets this row aside/.test(l));
+  ok(aside.length === C.summary.kept_set_aside && aside.every((l) => /^Amount: /.test(l.split(',').slice(7).join(',').replace(/^"/, '')) ? /^\d{4}-\d{2}-\d{2},/.test(l) : true),
+    'a set-aside row is not cleaned apart from its doubtful cell: ' + aside[0]);
   const [dl2] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="log"]')]);
   const md = fs.readFileSync(await dl2.path(), 'utf8');
   ok(md === C.log && /^# Cleaning log: sample-messy\.csv/.test(md) && /## Before and after/.test(md) && /## Rules applied/.test(md) && /## Duplicates/.test(md) && /## Flagged rows/.test(md) && /## Missing values/.test(md),

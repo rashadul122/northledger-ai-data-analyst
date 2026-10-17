@@ -2,8 +2,8 @@
    cleaning section ("What the cleaning did" / "What was set aside"). It is a second VIEW of the same cleaning, never a
    second cleaner: window.NLTry.cleanFile asks the run's own worker (engine/worker.js "cleanfile") for
      * a cleaned copy of the visitor's file: every value as the engine's cleaner wrote it, exact duplicates merged into
-       the first copy, every row the analysis sets aside and every cell it empties KEPT as written and flagged in
-       nl_flag, blank cells listed in nl_missing, nothing filled in;
+       the first copy, every row the analysis sets aside kept and cleaned with only its doubtful cell as written, every
+       value it could not read kept as written, each named in nl_flag; blank cells in nl_missing, nothing filled in;
      * a Markdown log whose rule table is the report's own cleaning record (same rules, words and counts);
      * the "Cleaning rules" card: per column what the cleaner expects (its rules in words, each switchable and
        tunable) and the duplicate rule. Editing runs the same cleaner again in this tab, no AI call.
@@ -36,7 +36,7 @@
     return '<article class="tr-card tr-clean" id="try-clean" aria-labelledby="try-clean-h" data-step="2">' +
       '<h3 id="try-clean-h">Clean my file</h3>' +
       '<p class="note">The cleaning above, as a copy of your whole file you can take away, with a log of every rule. Your original file is not changed. ' +
-      'Where the analysis sets a row aside or empties a value it could not read, this copy keeps it exactly as written and flags it; missing values are left blank and listed, never filled in.</p>' +
+      'Where the analysis sets a row aside or cannot read a value, this copy keeps the row, cleans its other cells like every row, keeps only the doubtful value exactly as written and names it in a flag; missing values are left blank and listed, never filled in.</p>' +
       '<p class="tr-clean-status" id="try-clean-status" role="status" aria-live="polite">Making the cleaned copy…</p>' +
       '<div class="tr-clean-out" id="try-clean-out" hidden></div></article>';
   };
@@ -104,7 +104,7 @@
       '<div class="tr-actions"><button type="button" class="btn btn-primary" data-clean-dl="csv">Download cleaned file (CSV)</button>' +
       '<button type="button" class="btn btn-ghost" data-clean-dl="log">Download cleaning log (Markdown)</button></div>' +
       '<p class="note">' + (S.edited ? '<b>Your edited rules.</b> The report above keeps the engine\'s own. ' : 'The same rules and counts as the cleaning above. ') +
-      esc(plural(S.kept_set_aside, 'row the analysis sets aside is', 'rows the analysis sets aside are')) + ' kept and flagged; ' +
+      esc(plural(S.kept_set_aside, 'row the analysis sets aside is', 'rows the analysis sets aside are')) + ' kept, cleaned and flagged; ' +
       esc(plural(Object.keys(S.cells_restored || {}).reduce(function (a, k) { return a + Number(S.cells_restored[k] || 0); }, 0), 'unreadable value is', 'unreadable values are')) + ' kept as written. Columns: ' +
       esc(num(S.columns_in)) + ' in, ' + esc(num(S.columns_out)) + ' out (nl_flag and nl_missing added' +
       (S.withheld_left_out ? '; ' + esc(plural(S.withheld_left_out, 'withheld column', 'withheld columns')) + ' left out, as you chose' : '') + ').</p>';

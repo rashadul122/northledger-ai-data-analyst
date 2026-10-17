@@ -185,7 +185,7 @@
     if (two) {
       var sp = span(D, cells);
       if (!sp || sp.months.length < 24) return { kind: 'table', chart: X.chart, title: X.title, empty: true,
-        summary: 'This chart compares the latest 12 months with the 12 before: the date range needs 24 months or more.', table: { cols: [X.by || ''], rows: [] } };
+        summary: !sp ? 'No rows match the filters.' : 'This chart compares the latest 12 months with the 12 before: the date range needs 24 months or more.', table: { cols: [X.by || ''], rows: [] } };
       var last = sp.months[sp.months.length - 1], a0 = shiftM(last, -23), a1 = shiftM(last, -12), b0 = shiftM(last, -11);
       rec.data = { series: [monthWord(a0) + ' to ' + monthWord(a1), monthWord(b0) + ' to ' + monthWord(last)], rows: [] };
       lv.forEach(function (z) {
@@ -283,7 +283,7 @@
       (st ? '<p class="note nld-static">Not filtered: the engine\'s own chart of every row it kept.</p>' : '') +
       '<div class="viz" id="nld-v-' + esc(X.id) + '"></div><div class="nld-fignote"></div></figure>';
   }
-  function notes(D, F) {
+  function notes(D, F, local) {
     var R = D.remarks, rows = R.rows, act = activeWords(D, F);
     var defs = D.kpis.concat(D.charts).map(function (x) { return '<li><strong>' + esc(x.label || x.title) + ':</strong> ' + esc(x.definition || (x.draw === 'static' ? 'the engine\'s own chart record, over every row it kept (not filtered).' : '')) + '</li>'; }).join('');
     return '<section class="tr-card nld-notes" aria-labelledby="nld-notes-h"><h4 id="nld-notes-h">Notes</h4>' +
@@ -291,9 +291,24 @@
       '<h5>Dates</h5><p>Shown: <span data-nld="shown">' + esc(shownRange(D, F)) + '</span>. The data run from ' + esc(R.data_range_text) + '.</p>' +
       '<h5>Filters</h5><p data-nld="filters">' + esc(act || 'None: every row the engine kept.') + '</p>' +
       '<h5>Rows</h5><p>' + rows.kept.toLocaleString('en-US') + ' kept of ' + rows['in'].toLocaleString('en-US') + ' read; ' + rows.set_aside.toLocaleString('en-US') + ' set aside' +
-      (rows.reasons.length ? ': ' + esc(rows.reasons.map(function (q) { return q.count.toLocaleString('en-US') + ' ' + q.reason; }).join('; ')) : '') + '.</p>' +
+      (rows.set_aside ? ' (each reason is under \u201cNeeds your check\u201d below)' : '') + '.</p>' +
       '<h5>Rules</h5><ul>' + D.rules.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' +
-      '<h5>Looked wrong, please check</h5>' + (R.check.length ? '<ul class="nld-check">' + R.check.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '<p>Nothing the engine flagged.</p>') + '</section>';
+      lookedWrong(D, local) + '</section>';
+  }
+  // "Looked wrong, please check": what a person must look at first, then what was fixed and the health detail, folded
+  function lookedWrong(D, local) {
+    var R = D.remarks, need = R.needs_check || [], li = function (t) { return '<li>' + esc(t) + '</li>'; };
+    var find = function (n) {
+      if (n.where !== 'set_aside' && n.where !== 'blank') return '';
+      var w = n.where === 'set_aside' ? 'in the set-aside rows' : 'blank in the cleaned file';
+      return local ? ' <span class="note">(' + w + '; the cleaned file\'s nl_flag column marks them)</span>'
+        : ' <a class="nld-find" href="#try-step-2" data-rule="' + esc(n.rule || '') + '">Find them (' + w + '; nl_flag in step 2)</a>';
+    };
+    return '<h5 id="nld-check-h">Looked wrong, please check</h5>' +
+      '<h6>Needs your check</h6>' + (need.length ? '<ul class="nld-check">' + need.map(function (n) { return '<li>' + esc(n.text) + find(n) + '</li>'; }).join('') + '</ul>' : '<p>Nothing for a person to check.</p>') +
+      ((R.fixed || []).length ? '<details class="more nld-fold"><summary>Fixed automatically (' + R.fixed.length + ' cleaning rules)</summary><ul>' + R.fixed.map(li).join('') + '</ul></details>' : '') +
+      ((R.detail || []).length ? '<details class="more nld-fold"><summary>Data quality detail (' + R.detail.length + ' lines from the health check)</summary><ul>' + R.detail.map(li).join('') + '</ul></details>' : '') +
+      ((R.design || []).length ? '<details class="more nld-fold"><summary>About this design (' + R.design.length + ' changed or left out)</summary><ul>' + R.design.map(li).join('') + '</ul></details>' : '');
   }
   function shownRange(D, F) { var ms = D.cube.months; return ms.length ? monthWord(F.from || ms[0]) + ' to ' + monthWord(F.to || ms[ms.length - 1]) : 'no dates'; }
   function activeWords(D, F) {
@@ -316,7 +331,7 @@
       if (cs.length) body += '<div class="nld-row">' + cs.map(function (i) { return figHtml(I[i]); }).join('') + '</div>';
     });
     var card = NLD.cardHost && !local ? '<p class="nld-counts-link note">What this dashboard counts: <a href="#nld-counts-h">what each column means and what one row is</a> (step 1, editable).</p>' : countsCard(D);
-    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + body + notes(D, {}) + exportsBar(local) + '</div>';
+    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + body + notes(D, {}, local) + exportsBar(local) + '</div>';
   };
   NLD.countsCard = countsCard;
 
@@ -455,6 +470,13 @@
       if (X.unit_word && X.agg !== 'count') s += '; in ' + X.unit_word;
       return s + '.';
     }
+    // the filters stick under the rail on a wide screen: a jump to a tile or chart lands below them too
+    var fbar = box.querySelector('.nld-filters'), fmeasure = function () {
+      if (!fbar || !fbar.offsetParent) return;
+      document.documentElement.style.setProperty('--nld-filt', (getComputedStyle(fbar).position === 'sticky' ? Math.ceil(fbar.getBoundingClientRect().height) : 0) + 'px');
+    };
+    if (fbar && window.ResizeObserver && !opts.local) new ResizeObserver(fmeasure).observe(fbar);
+    if (window.NLSteps && window.NLSteps.measure) window.NLSteps.measure();
     NLD.__fill = fillEdit; NLD.__rebuild = rebuild;
     fillEdit();
     render();
@@ -654,7 +676,11 @@
     h('Filters'); n(activeWords(D, F) || 'None: every row the engine kept.');
     h('Rows'); n(R.rows.kept + ' kept of ' + R.rows['in'] + ' read; ' + R.rows.set_aside + ' set aside' + (R.rows.reasons.length ? ': ' + R.rows.reasons.map(function (q) { return q.count + ' ' + q.reason; }).join('; ') : '') + '.');
     h('Rules'); D.rules.forEach(n);
-    h('Looked wrong, please check'); (R.check.length ? R.check : ['Nothing the engine flagged.']).forEach(n);
+    h('Looked wrong, please check');
+    h('Needs your check'); ((R.needs_check || []).length ? R.needs_check.map(function (x) { return x.text + (x.where === 'set_aside' ? ' (in the set-aside rows; the cleaned file\'s nl_flag column marks them)' : x.where === 'blank' ? ' (blank in the cleaned file; nl_flag marks them)' : ''); }) : ['Nothing for a person to check.']).forEach(n);
+    h('Fixed automatically'); (R.fixed || []).forEach(n);
+    h('Data quality detail'); (R.detail || []).forEach(n);
+    if ((R.design || []).length) { h('About this design'); R.design.forEach(n); }
     charts.forEach(function (c, i) { c.at = { col: 0, row: 3 + i * 20, cols: 10, rows: 18 }; });
     return { title: D.title || 'Dashboard', sheets: [
       { name: DATA, rows: rows, widths: [34, 18, 18, 14, 40, 16, 16, 24], freeze: 1 },

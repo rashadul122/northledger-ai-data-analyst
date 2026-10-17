@@ -1434,7 +1434,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .nla-ask[aria-busy="true"] .nla-ask-status::before { animation: none; } }
 
 /* ---- the Try section's step rail and steps (src/js/58-steps.js; plan/DASHBOARD-DESIGN.md "The workflow order") ---- */
-.try-rail { position: sticky; top: 8px; z-index: 5; margin: 0 0 16px; padding: 8px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
+.try-rail { position: sticky; top: var(--nl-top, 64px); z-index: 5; margin: 0 0 16px; padding: 8px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
 .try-rail-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .try-rail-list a { display: flex; flex-direction: column; gap: 2px; min-height: 44px; padding: 6px 8px; border-radius: 10px; color: var(--body); text-decoration: none; border: 1px solid transparent; }
 .try-rail-list a:hover, .try-rail-list a:focus-visible { border-color: var(--accent); }
@@ -1446,7 +1446,10 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .try-rail .rs-s { font-size: 12px; color: var(--muted); }
 .try-rail-now { display: none; }
 .try-rail-stale { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
-.try-step { margin: 0 0 22px; scroll-margin-top: 96px; }
+/* a jump lands below the site's bar (html scroll-padding-top: 72px) and the rail; inside the dashboard, below its filters too */
+.try-step { margin: 0 0 22px; scroll-margin-top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + 12px - 72px); }
+.nld-head, .nld-counts, #try-counts, #nld-counts-h, #nld-check-h { scroll-margin-top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + 12px - 72px); }
+.nld-kpi, .nld-fig, .nld-notes { scroll-margin-top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + var(--nld-filt, 0px) + 12px - 72px); }
 .try-step-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 19px; margin: 18px 0 8px; }
 .try-step-n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 14px; }
 .try-step-st { font-size: 13px; font-weight: 500; color: var(--muted); }
@@ -1454,7 +1457,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .try-step-in { margin: 0 0 10px; }
 .try-counts:empty, .try-step-slot:empty { display: none; }
 @media (max-width: 720px) {
-  .try-rail { top: 4px; padding: 8px 10px; }
+  .try-rail { padding: 8px 10px; }
   .try-rail-list { display: none; }
   .try-rail-now { display: block; }
   .try-rail-now p { margin: 0 0 6px; }
@@ -1478,7 +1481,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nld-form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
 .nld-form .nld-wide, .nld-form p { grid-column: 1 / -1; }
 .nld-form input, .nld-form select, .nld-filters select { font: inherit; min-height: 40px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); max-width: 100%; min-width: 0; }
-.nld-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); position: sticky; top: 76px; z-index: 3; }
+.nld-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); position: sticky; top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + 6px); z-index: 3; }
 .nld-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
 .nld-filters legend { font-weight: 650; font-size: 13.5px; padding: 0; }
 .nld-filters label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; font-weight: 600; min-width: 0; }
@@ -1490,7 +1493,10 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nld-static { margin: 2px 0 6px; }
 .nld-exp { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .nld-exp p { flex-basis: 100%; margin: 0; }
-.nld-check li { margin: 3px 0; }
+.nld-check li { margin: 4px 0; }
+.nld-notes h6 { margin: 8px 0 2px; font-size: 13.5px; }
+.nld-find { font-size: 13px; color: var(--accent-ink); }
+.nld-fold { margin: 6px 0; }
 .nld-cols li { margin: 6px 0; }
 .nld-colnote { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); margin-top: 2px; }
 .nld-colnote input { font: inherit; min-height: 36px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); max-width: 100%; }
@@ -1524,7 +1530,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 02:09:38 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 02:21:39 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2267,7 +2273,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 02:09:38 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 02:21:39 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -13530,7 +13536,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     if (two) {
       var sp = span(D, cells);
       if (!sp || sp.months.length < 24) return { kind: 'table', chart: X.chart, title: X.title, empty: true,
-        summary: 'This chart compares the latest 12 months with the 12 before: the date range needs 24 months or more.', table: { cols: [X.by || ''], rows: [] } };
+        summary: !sp ? 'No rows match the filters.' : 'This chart compares the latest 12 months with the 12 before: the date range needs 24 months or more.', table: { cols: [X.by || ''], rows: [] } };
       var last = sp.months[sp.months.length - 1], a0 = shiftM(last, -23), a1 = shiftM(last, -12), b0 = shiftM(last, -11);
       rec.data = { series: [monthWord(a0) + ' to ' + monthWord(a1), monthWord(b0) + ' to ' + monthWord(last)], rows: [] };
       lv.forEach(function (z) {
@@ -13628,7 +13634,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       (st ? '<p class="note nld-static">Not filtered: the engine\'s own chart of every row it kept.</p>' : '') +
       '<div class="viz" id="nld-v-' + esc(X.id) + '"></div><div class="nld-fignote"></div></figure>';
   }
-  function notes(D, F) {
+  function notes(D, F, local) {
     var R = D.remarks, rows = R.rows, act = activeWords(D, F);
     var defs = D.kpis.concat(D.charts).map(function (x) { return '<li><strong>' + esc(x.label || x.title) + ':</strong> ' + esc(x.definition || (x.draw === 'static' ? 'the engine\'s own chart record, over every row it kept (not filtered).' : '')) + '</li>'; }).join('');
     return '<section class="tr-card nld-notes" aria-labelledby="nld-notes-h"><h4 id="nld-notes-h">Notes</h4>' +
@@ -13636,9 +13642,24 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       '<h5>Dates</h5><p>Shown: <span data-nld="shown">' + esc(shownRange(D, F)) + '</span>. The data run from ' + esc(R.data_range_text) + '.</p>' +
       '<h5>Filters</h5><p data-nld="filters">' + esc(act || 'None: every row the engine kept.') + '</p>' +
       '<h5>Rows</h5><p>' + rows.kept.toLocaleString('en-US') + ' kept of ' + rows['in'].toLocaleString('en-US') + ' read; ' + rows.set_aside.toLocaleString('en-US') + ' set aside' +
-      (rows.reasons.length ? ': ' + esc(rows.reasons.map(function (q) { return q.count.toLocaleString('en-US') + ' ' + q.reason; }).join('; ')) : '') + '.</p>' +
+      (rows.set_aside ? ' (each reason is under \u201cNeeds your check\u201d below)' : '') + '.</p>' +
       '<h5>Rules</h5><ul>' + D.rules.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' +
-      '<h5>Looked wrong, please check</h5>' + (R.check.length ? '<ul class="nld-check">' + R.check.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '<p>Nothing the engine flagged.</p>') + '</section>';
+      lookedWrong(D, local) + '</section>';
+  }
+  // "Looked wrong, please check": what a person must look at first, then what was fixed and the health detail, folded
+  function lookedWrong(D, local) {
+    var R = D.remarks, need = R.needs_check || [], li = function (t) { return '<li>' + esc(t) + '</li>'; };
+    var find = function (n) {
+      if (n.where !== 'set_aside' && n.where !== 'blank') return '';
+      var w = n.where === 'set_aside' ? 'in the set-aside rows' : 'blank in the cleaned file';
+      return local ? ' <span class="note">(' + w + '; the cleaned file\'s nl_flag column marks them)</span>'
+        : ' <a class="nld-find" href="#try-step-2" data-rule="' + esc(n.rule || '') + '">Find them (' + w + '; nl_flag in step 2)</a>';
+    };
+    return '<h5 id="nld-check-h">Looked wrong, please check</h5>' +
+      '<h6>Needs your check</h6>' + (need.length ? '<ul class="nld-check">' + need.map(function (n) { return '<li>' + esc(n.text) + find(n) + '</li>'; }).join('') + '</ul>' : '<p>Nothing for a person to check.</p>') +
+      ((R.fixed || []).length ? '<details class="more nld-fold"><summary>Fixed automatically (' + R.fixed.length + ' cleaning rules)</summary><ul>' + R.fixed.map(li).join('') + '</ul></details>' : '') +
+      ((R.detail || []).length ? '<details class="more nld-fold"><summary>Data quality detail (' + R.detail.length + ' lines from the health check)</summary><ul>' + R.detail.map(li).join('') + '</ul></details>' : '') +
+      ((R.design || []).length ? '<details class="more nld-fold"><summary>About this design (' + R.design.length + ' changed or left out)</summary><ul>' + R.design.map(li).join('') + '</ul></details>' : '');
   }
   function shownRange(D, F) { var ms = D.cube.months; return ms.length ? monthWord(F.from || ms[0]) + ' to ' + monthWord(F.to || ms[ms.length - 1]) : 'no dates'; }
   function activeWords(D, F) {
@@ -13661,7 +13682,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (cs.length) body += '<div class="nld-row">' + cs.map(function (i) { return figHtml(I[i]); }).join('') + '</div>';
     });
     var card = NLD.cardHost && !local ? '<p class="nld-counts-link note">What this dashboard counts: <a href="#nld-counts-h">what each column means and what one row is</a> (step 1, editable).</p>' : countsCard(D);
-    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + body + notes(D, {}) + exportsBar(local) + '</div>';
+    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + body + notes(D, {}, local) + exportsBar(local) + '</div>';
   };
   NLD.countsCard = countsCard;
 
@@ -13800,6 +13821,13 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (X.unit_word && X.agg !== 'count') s += '; in ' + X.unit_word;
       return s + '.';
     }
+    // the filters stick under the rail on a wide screen: a jump to a tile or chart lands below them too
+    var fbar = box.querySelector('.nld-filters'), fmeasure = function () {
+      if (!fbar || !fbar.offsetParent) return;
+      document.documentElement.style.setProperty('--nld-filt', (getComputedStyle(fbar).position === 'sticky' ? Math.ceil(fbar.getBoundingClientRect().height) : 0) + 'px');
+    };
+    if (fbar && window.ResizeObserver && !opts.local) new ResizeObserver(fmeasure).observe(fbar);
+    if (window.NLSteps && window.NLSteps.measure) window.NLSteps.measure();
     NLD.__fill = fillEdit; NLD.__rebuild = rebuild;
     fillEdit();
     render();
@@ -13999,7 +14027,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     h('Filters'); n(activeWords(D, F) || 'None: every row the engine kept.');
     h('Rows'); n(R.rows.kept + ' kept of ' + R.rows['in'] + ' read; ' + R.rows.set_aside + ' set aside' + (R.rows.reasons.length ? ': ' + R.rows.reasons.map(function (q) { return q.count + ' ' + q.reason; }).join('; ') : '') + '.');
     h('Rules'); D.rules.forEach(n);
-    h('Looked wrong, please check'); (R.check.length ? R.check : ['Nothing the engine flagged.']).forEach(n);
+    h('Looked wrong, please check');
+    h('Needs your check'); ((R.needs_check || []).length ? R.needs_check.map(function (x) { return x.text + (x.where === 'set_aside' ? ' (in the set-aside rows; the cleaned file\'s nl_flag column marks them)' : x.where === 'blank' ? ' (blank in the cleaned file; nl_flag marks them)' : ''); }) : ['Nothing for a person to check.']).forEach(n);
+    h('Fixed automatically'); (R.fixed || []).forEach(n);
+    h('Data quality detail'); (R.detail || []).forEach(n);
+    if ((R.design || []).length) { h('About this design'); R.design.forEach(n); }
     charts.forEach(function (c, i) { c.at = { col: 0, row: 3 + i * 20, cols: 10, rows: 18 }; });
     return { title: D.title || 'Dashboard', sheets: [
       { name: DATA, rows: rows, widths: [34, 18, 18, 14, 40, 16, 16, 24], freeze: 1 },
@@ -14136,10 +14168,21 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   };
   NLSteps.running = function () { st[0] = { status: 'ready', note: 'the engine is working' }; draw(); };
 
+  // what sticks at the top (the site's bar and this rail), measured, so the rail sits under the bar and a jump lands
+  // below both (CSS: --nl-top, --nl-rail; 57-dashboard.js adds --nld-filt for its own sticky filters)
+  NLSteps.measure = function () {
+    var tb = document.querySelector('.topbar'), rail = $('try-rail'), root = document.documentElement;
+    var top = tb && /sticky|fixed/.test(getComputedStyle(tb).position) ? Math.ceil(tb.getBoundingClientRect().height) : 0;
+    root.style.setProperty('--nl-top', top + 'px');
+    if (rail && rail.offsetParent) root.style.setProperty('--nl-rail', Math.ceil(rail.getBoundingClientRect().height) + 'px');
+  };
   function boot() {
     var rail = $('try-rail');
     if (!rail) return;
     draw();
+    NLSteps.measure();
+    window.addEventListener('resize', NLSteps.measure, { passive: true });
+    if (window.ResizeObserver) new ResizeObserver(NLSteps.measure).observe(rail);
     rail.addEventListener('click', function (e) {
       var a = e.target.closest && e.target.closest('a[data-step]'), b = e.target.closest && e.target.closest('button[data-rail="update"]');
       if (a) { e.preventDefault(); NLSteps.go(a.getAttribute('data-step')); }
@@ -14152,7 +14195,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var io = new IntersectionObserver(function (es) {
         es.forEach(function (en) {
           if (!en.isIntersecting) return;
-          var n = +en.target.getAttribute('data-step');
+          var n = +en.target.getAttribute('data-step'), dt = $('nl2-tab-d');
+          if (n === 3 && dt && dt.getAttribute('aria-selected') === 'true') n = 5;    // the report shows its Dashboard tab
           if (n && n !== cur) { cur = n; draw(); }
         });
       }, { rootMargin: '-35% 0px -55% 0px' });
@@ -14168,7 +14212,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     });
     // a part rendered inside the report that belongs to another step (data-step-home="N") is moved into that step's slot
     document.addEventListener('nl:report', function () { NLSteps.place(); });
-    document.addEventListener('nl:view', function (e) { if (e.detail && e.detail.view === 'dashboard' && cur !== 5) { cur = 5; draw(); } });
+    document.addEventListener('nl:view', function (e) { var v = e.detail && e.detail.view, n = v === 'dashboard' ? 5 : 3; if (v && cur !== n && (cur === 3 || cur === 5)) { cur = n; draw(); } });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

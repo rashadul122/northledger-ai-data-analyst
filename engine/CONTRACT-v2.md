@@ -2123,7 +2123,8 @@ totals beside their parts):
  cube: {months, dims: [{key, column, levels, folded, hidden}], measures: [{key, column, flow, unit}],
         cells: [[month index (-1 no date), level index per dim, rows, sum, filled count per measure]], rows, no_date_rows},
  defaults: {kpis: {id: {value, n, suppressed, month}}}, remarks: {data_range, data_range_text, rows: {in, kept,
- set_aside, reasons}, check: [strings]}, refused: [{element, why}], rules: [strings], suppress_below: 5}
+ set_aside, reasons}, needs_check: [{text, rule, column, count, where: set_aside|blank|months|other}], fixed: [strings],
+ detail: [strings], design: [strings]}, refused: [{element, why}], rules: [strings], suppress_below: 5}
 ```
 
 Rules (the engine's and the page's, `query_kpi` / `query_series` and `57-dashboard.js`): flows are added up; levels,
@@ -2133,6 +2134,11 @@ its reason; an area chart of a level is refused); a figure on fewer than 5 rows 
 the range holds in part is said so; no flagged column is a dimension, a measure, a label or a refusal's words; a level
 holding a flagged column's token (`nl_viz._label_ok`) is folded into "other" and the notes say so; at most 5
 dimensions, 12 levels each, 50,000 cells. An AI string with a digit other than a 4-digit year is refused (the
-engine writes its own title). `results_for_ai.dashboard` carries the design (ids, labels, titles, counts), never the cube.
+engine writes its own title). A stacked area whose "other" would hold more than 40% of its total (its 5 largest groups
+named, a group with a period on fewer than 5 rows counted as "other", as the page draws it) is drawn as a grouped bar
+(24 months or more) or a bar chart, and `remarks.design` says why. The notes put what a person must check first
+(`needs_check`, in plain words from the cleaning's set-aside reasons, the health check's text-in-a-number-column lines,
+gaps, thin months and the groups hidden for privacy; `rule` names the cleaning rule Track C's `nl_flag` carries), then
+the cleaning rules (`fixed`) and the raw health lines (`detail`), folded. `results_for_ai.dashboard` carries the design (ids, labels, titles, counts), never the cube.
 The cube holds sums of the visitor's own kept rows, small cells included (it never leaves the browser; the HTML
 export carries it, as the cleaned CSV download carries the rows).

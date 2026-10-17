@@ -107,10 +107,21 @@
   };
   NLSteps.running = function () { st[0] = { status: 'ready', note: 'the engine is working' }; draw(); };
 
+  // what sticks at the top (the site's bar and this rail), measured, so the rail sits under the bar and a jump lands
+  // below both (CSS: --nl-top, --nl-rail; 57-dashboard.js adds --nld-filt for its own sticky filters)
+  NLSteps.measure = function () {
+    var tb = document.querySelector('.topbar'), rail = $('try-rail'), root = document.documentElement;
+    var top = tb && /sticky|fixed/.test(getComputedStyle(tb).position) ? Math.ceil(tb.getBoundingClientRect().height) : 0;
+    root.style.setProperty('--nl-top', top + 'px');
+    if (rail && rail.offsetParent) root.style.setProperty('--nl-rail', Math.ceil(rail.getBoundingClientRect().height) + 'px');
+  };
   function boot() {
     var rail = $('try-rail');
     if (!rail) return;
     draw();
+    NLSteps.measure();
+    window.addEventListener('resize', NLSteps.measure, { passive: true });
+    if (window.ResizeObserver) new ResizeObserver(NLSteps.measure).observe(rail);
     rail.addEventListener('click', function (e) {
       var a = e.target.closest && e.target.closest('a[data-step]'), b = e.target.closest && e.target.closest('button[data-rail="update"]');
       if (a) { e.preventDefault(); NLSteps.go(a.getAttribute('data-step')); }
@@ -123,7 +134,8 @@
       var io = new IntersectionObserver(function (es) {
         es.forEach(function (en) {
           if (!en.isIntersecting) return;
-          var n = +en.target.getAttribute('data-step');
+          var n = +en.target.getAttribute('data-step'), dt = $('nl2-tab-d');
+          if (n === 3 && dt && dt.getAttribute('aria-selected') === 'true') n = 5;    // the report shows its Dashboard tab
           if (n && n !== cur) { cur = n; draw(); }
         });
       }, { rootMargin: '-35% 0px -55% 0px' });
@@ -139,7 +151,7 @@
     });
     // a part rendered inside the report that belongs to another step (data-step-home="N") is moved into that step's slot
     document.addEventListener('nl:report', function () { NLSteps.place(); });
-    document.addEventListener('nl:view', function (e) { if (e.detail && e.detail.view === 'dashboard' && cur !== 5) { cur = 5; draw(); } });
+    document.addEventListener('nl:view', function (e) { var v = e.detail && e.detail.view, n = v === 'dashboard' ? 5 : 3; if (v && cur !== n && (cur === 3 || cur === 5)) { cur = n; draw(); } });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

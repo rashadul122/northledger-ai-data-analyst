@@ -4597,7 +4597,12 @@ check('dashboard-tab-tiles-charts-filters-and-notes', DESK, async (ctx) => {
   ok(g.figs === D.charts.length && g.svgs === D.charts.length, 'not every chart is drawn by the registry: ' + JSON.stringify(g).slice(0, 300));
   ok(g.labels.every((l) => l && l.length > 4), 'a chart has no accessible name');
   ok(/Recorded design/.test(g.badge) && g.qs >= 5, 'the recorded design is not labelled, or the questions do not link to tiles and charts');
-  ok(/Looked wrong, please check/.test(g.notes) && /exact duplicate/.test(g.notes) && /kept of 3,350 read/.test(g.notes), 'the notes miss the rows or the checks: ' + g.notes.slice(0, 200));
+  ok(/Looked wrong, please check/.test(g.notes) && /repeat another row exactly/.test(g.notes) && /kept of 3,350 read/.test(g.notes), 'the notes miss the rows or the checks: ' + g.notes.slice(0, 200));
+  const lw = await p.evaluate(() => { const n = document.querySelector('#nl2-dash .nld-notes');
+    return { first: (n.querySelector('h6') || {}).textContent, items: n.querySelectorAll('ul.nld-check > li').length, finds: n.querySelectorAll('ul.nld-check a.nld-find[href="#try-step-2"][data-rule]').length,
+      folds: Array.from(n.querySelectorAll('details.nld-fold')).map((d) => (d.open ? 'open:' : '') + d.querySelector('summary').textContent), rawShown: /null-like/.test(n.querySelector('ul.nld-check').textContent) }; });
+  ok(lw.first === 'Needs your check' && lw.items >= 6 && lw.finds >= 5 && !lw.rawShown, 'what needs a check is not first, in plain words, with where to find it: ' + JSON.stringify(lw));
+  ok(lw.folds.length >= 2 && /^Fixed automatically/.test(lw.folds[0]) && /^Data quality detail/.test(lw.folds[1]), 'the cleaning rules and the health detail are not folded: ' + JSON.stringify(lw.folds));
   ok(/One row is one ledger line/.test(g.card) && /What each column means/.test(g.card), 'step 1\'s card does not say what one row is: ' + g.card.slice(0, 160));
   ok(g.exp === 2, 'the two export buttons are missing');
   // a filter: one property, then a month and "not paid" until a tile rests on fewer than 5 rows
@@ -4638,6 +4643,68 @@ check('dashboard-tab-tiles-charts-filters-and-notes', DESK, async (ctx) => {
   await shot(p, 'dashboard-desktop-light', '#nl2-dash');
   await shot(p, 'dashboard-desktop-light-step1-card', '#try-counts');
   await shot(p, 'dashboard-desktop-light-rail', '#try-rail');
+});
+// the site's sticky bar, the rail and the dashboard's sticky filters never cover what a jump or a scroll lands on
+async function stickyChecks(p, tag) {
+  await p.evaluate(() => { document.documentElement.style.scrollBehavior = 'auto'; });
+  const covered = (sel) => p.evaluate((s) => {
+    const t = document.querySelector(s), r = t.getBoundingClientRect(), bar = document.querySelector('.topbar'), rail = document.getElementById('try-rail'), f = document.querySelector('#nl2-dash .nld-filters');
+    const b = (e) => e && e.offsetParent !== null ? e.getBoundingClientRect() : null, under = [];
+    [['bar', b(bar)], ['rail', b(rail)], ['filters', f && getComputedStyle(f).position === 'sticky' && !f.contains(t) && b(f)]].forEach(([n, x]) => { if (x && x.top <= 1 && x.bottom > r.top + 1 && x.top < r.bottom) under.push(n + ' ' + Math.round(x.bottom) + ' > ' + Math.round(r.top)); });
+    return under; }, sel);
+  // the dashboard's header, its questions and its filters, scrolled into view the instant way
+  for (const sel of ['#nl2-dash .nld-head', '#nl2-dash .nld-qs', '#nl2-dash .nld-filters']) {
+    await p.evaluate((s) => document.querySelector(s).scrollIntoView({ behavior: 'instant', block: 'start' }), sel);
+    await p.waitForTimeout(80);
+    const u = await covered(sel);
+    ok(!u.length, tag + ': ' + sel + ' is under ' + u.join(', '));
+  }
+  // every question's links, and the rail's jump links
+  const links = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-dash .nld-qs a')).map((a) => a.getAttribute('href')));
+  for (const h of links.slice(0, 6)) {
+    await p.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await p.click('#nl2-dash .nld-qs a[href="' + h + '"]');
+    await p.waitForTimeout(80);
+    const u = await covered(h);
+    ok(!u.length, tag + ': the question link ' + h + ' lands under ' + u.join(', '));
+  }
+  for (const n of [2, 3, 5, 6]) {
+    await p.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await p.evaluate((k) => window.NLSteps.go(k), n);
+    await p.waitForTimeout(120);
+    const u = await covered('#try-step-' + n + ' > .try-step-h');
+    ok(!u.length, tag + ': the rail\'s step ' + n + ' lands under ' + u.join(', '));
+  }
+  // a scroll through the dashboard: the filters never slide under the rail, the rail never under the bar
+  const H = await p.evaluate(() => { const d = document.getElementById('nl2-dash').getBoundingClientRect(); return { top: d.top + window.scrollY, h: d.height }; });
+  await p.click('#nl2-tab-d');
+  for (let y = H.top - 200; y < H.top + H.h; y += 400) {
+    await p.evaluate((yy) => window.scrollTo({ top: yy, behavior: 'instant' }), y);
+    const o = await p.evaluate(() => { const bar = document.querySelector('.topbar').getBoundingClientRect(), rail = document.getElementById('try-rail').getBoundingClientRect(), f = document.querySelector('#nl2-dash .nld-filters').getBoundingClientRect();
+      // a sticky part may leave under the one above it only when its own container has ended (the dashboard, the Try app)
+      const app = document.getElementById('try-app').getBoundingClientRect(), nld = document.querySelector('#nl2-dash .nld').getBoundingClientRect();
+      const railLeaving = app.bottom < bar.bottom + rail.height + 24, filtLeaving = nld.bottom < rail.bottom + f.height + 24;
+      return { railUnderBar: rail.top < bar.bottom - 1 && !railLeaving, filtUnderRail: getComputedStyle(document.querySelector('#nl2-dash .nld-filters')).position === 'sticky' && f.top < rail.bottom - 1 && f.bottom > rail.top && f.top < 400 && !filtLeaving }; });
+    if (o.railUnderBar || o.filtUnderRail) o.dbg = await p.evaluate(() => ({ bar: document.querySelector('.topbar').getBoundingClientRect().toJSON(), rail: document.getElementById('try-rail').getBoundingClientRect().toJSON(),
+      top: getComputedStyle(document.documentElement).getPropertyValue('--nl-top'), railTop: getComputedStyle(document.getElementById('try-rail')).top, app: document.getElementById('try-app').getBoundingClientRect().bottom }));
+    ok(!o.railUnderBar && !o.filtUnderRail, tag + ': at ' + y + ' px the sticky parts overlap: ' + JSON.stringify(o));
+  }
+}
+check('dashboard-sticky-bars-never-cover-the-header-questions-or-filters', DESK, async (ctx) => {
+  const { p } = await dashPage(ctx);
+  await stickyChecks(p, 'desktop');
+  await p.evaluate(() => { window.scrollTo({ top: 0, behavior: 'instant' }); document.querySelector('#nl2-dash .nld-qs a').click(); });
+  await p.waitForTimeout(100);
+  await shot(p, 'dashboard-desktop-light-question-jump');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('dashboard-sticky-bars-never-cover-on-a-phone', PHONE, async (ctx) => {
+  const { p } = await dashPage(ctx);
+  await stickyChecks(p, 'phone');
+  await p.evaluate(() => { window.scrollTo({ top: 0, behavior: 'instant' }); document.querySelector('#nl2-dash .nld-qs a').click(); });
+  await p.waitForTimeout(100);
+  await shot(p, 'dashboard-phone-light-question-jump');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 check('dashboard-definition-edit-rebuilds-locally', DESK, async (ctx) => {
   const { p } = await dashPage(ctx);
@@ -4683,7 +4750,8 @@ check('dashboard-exports-html-works-offline-and-xlsx-has-native-charts', DESK, a
   const xp = await dx.path(), b = fs.readFileSync(xp);
   ok(b[0] === 0x50 && b[1] === 0x4b && /-dashboard\.xlsx$/.test(dx.suggestedFilename()), 'the workbook is not a zip');
   const txt = b.toString('latin1');
-  ok(/xl\/charts\/chart1\.xml/.test(txt) && /<c:lineChart>/.test(txt) && /<c:barChart>/.test(txt) && /<c:areaChart>/.test(txt), 'the workbook has no native line, bar and area charts');
+  ok(/xl\/charts\/chart1\.xml/.test(txt) && /<c:lineChart>/.test(txt) && /<c:barDir val="bar"\/>/.test(txt) && /<c:barDir val="col"\/>/.test(txt), 'the workbook has no native line, bar and column charts');
+  ok(/Needs your check/.test(txt) && /Fixed automatically/.test(txt) && /Data quality detail/.test(txt), 'the workbook\'s Notes are not in the same three parts');
   ok(/<f>IF\(B\d+=0,"",\(C\d+-B\d+\)\/B\d+\)<\/f><v>/.test(txt.replace(/&quot;/g, '"')), 'the grouped bar\'s change is not a formula with its cached value');
   if (fs.existsSync(PY)) {
     const code = 'import sys,openpyxl\nwb=openpyxl.load_workbook(sys.argv[1])\nprint(",".join(wb.sheetnames), len(wb["Charts"]._charts))';

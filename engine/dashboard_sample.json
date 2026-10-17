@@ -5,44 +5,190 @@
  "dashboard": {
   "audience": "A property manager checking rent and repair spending across the portfolio",
   "questions": [
-   {"q": "How much rent is charged each month, and is it growing?", "answered_by": ["rent", "rent_trend"]},
-   {"q": "Which kinds of repair and service cost the most, and when?", "answered_by": ["spend", "spend_by_kind"]},
-   {"q": "Which properties carry the most repair and service spending?", "answered_by": ["spend_by_property"]},
-   {"q": "Has rent at each property grown on the year before?", "answered_by": ["rent_by_property"]},
-   {"q": "How many ledger lines are still unpaid?", "answered_by": ["unpaid", "lines"]}
+   {
+    "q": "How much rent is charged each month, and is it growing?",
+    "answered_by": [
+     "rent",
+     "rent_trend"
+    ]
+   },
+   {
+    "q": "Which kinds of repair and service cost the most, and is that rising?",
+    "answered_by": [
+     "spend",
+     "spend_by_kind"
+    ]
+   },
+   {
+    "q": "Which properties carry the most repair and service spending?",
+    "answered_by": [
+     "spend_by_property"
+    ]
+   },
+   {
+    "q": "Has rent at each property grown on the year before?",
+    "answered_by": [
+     "rent_by_property"
+    ]
+   },
+   {
+    "q": "How many ledger lines are still unpaid?",
+    "answered_by": [
+     "unpaid",
+     "lines"
+    ]
+   }
   ],
   "kpis": [
-   {"id": "rent", "measure": "Amount", "agg": "sum", "label": "Rent charged", "unit_word": "$",
-    "where": {"column": "Category", "values": ["RENT"]}},
-   {"id": "spend", "measure": "Amount", "agg": "sum", "label": "Repair and service spending", "unit_word": "$",
-    "where": {"column": "Category", "values": ["RENT"], "exclude": true}},
-   {"id": "unpaid", "measure": "rows", "agg": "count", "label": "Unpaid ledger lines",
-    "where": {"column": "Paid?", "values": ["N"]}},
-   {"id": "lines", "measure": "rows", "agg": "count", "label": "Ledger lines"}
+   {
+    "id": "rent",
+    "measure": "Amount",
+    "agg": "sum",
+    "label": "Rent charged",
+    "unit_word": "$",
+    "where": {
+     "column": "Category",
+     "values": [
+      "RENT"
+     ]
+    }
+   },
+   {
+    "id": "spend",
+    "measure": "Amount",
+    "agg": "sum",
+    "label": "Repair and service spending",
+    "unit_word": "$",
+    "where": {
+     "column": "Category",
+     "values": [
+      "RENT"
+     ],
+     "exclude": true
+    }
+   },
+   {
+    "id": "unpaid",
+    "measure": "rows",
+    "agg": "count",
+    "label": "Unpaid ledger lines",
+    "where": {
+     "column": "Paid?",
+     "values": [
+      "N"
+     ]
+    }
+   },
+   {
+    "id": "lines",
+    "measure": "rows",
+    "agg": "count",
+    "label": "Ledger lines"
+   }
   ],
   "charts": [
-   {"id": "rent_trend", "chart": "line_chart", "args": ["Amount"], "title": "Rent charged by month",
+   {
+    "id": "rent_trend",
+    "chart": "line_chart",
+    "args": [
+     "Amount"
+    ],
+    "title": "Rent charged by month",
     "why": "Shows whether rent is growing month by month and where it stepped up",
-    "where": {"column": "Category", "values": ["RENT"]}, "unit_word": "$"},
-   {"id": "spend_by_kind", "chart": "area_chart", "args": ["Category", "Amount"],
-    "title": "Repair and service spending by month, by kind",
-    "why": "Shows which kinds of work drive spending and in which seasons",
-    "where": {"column": "Category", "values": ["RENT"], "exclude": true}, "unit_word": "$"},
-   {"id": "spend_by_property", "chart": "bar_chart", "args": ["Property", "Amount"],
+    "where": {
+     "column": "Category",
+     "values": [
+      "RENT"
+     ]
+    },
+    "unit_word": "$"
+   },
+   {
+    "id": "spend_by_kind",
+    "chart": "grouped_bar",
+    "args": [
+     "Category",
+     "Amount"
+    ],
+    "title": "Repair and service spending by kind: the latest year against the year before",
+    "why": "Ranks the kinds of work by cost and shows which grew",
+    "where": {
+     "column": "Category",
+     "values": [
+      "RENT"
+     ],
+     "exclude": true
+    },
+    "unit_word": "$"
+   },
+   {
+    "id": "spend_by_property",
+    "chart": "bar_chart",
+    "args": [
+     "Property",
+     "Amount"
+    ],
     "title": "Repair and service spending by property",
     "why": "Ranks the properties by what their upkeep costs",
-    "where": {"column": "Category", "values": ["RENT"], "exclude": true}, "unit_word": "$"},
-   {"id": "rent_by_property", "chart": "grouped_bar", "args": ["Property", "Amount"],
+    "where": {
+     "column": "Category",
+     "values": [
+      "RENT"
+     ],
+     "exclude": true
+    },
+    "unit_word": "$"
+   },
+   {
+    "id": "rent_by_property",
+    "chart": "grouped_bar",
+    "args": [
+     "Property",
+     "Amount"
+    ],
     "title": "Rent by property: the latest year against the year before",
     "why": "Separates growth at the properties held throughout from new properties",
-    "where": {"column": "Category", "values": ["RENT"]}, "unit_word": "$"}
+    "where": {
+     "column": "Category",
+     "values": [
+      "RENT"
+     ]
+    },
+    "unit_word": "$"
+   }
   ],
   "filters": [
-   {"kind": "date"},
-   {"column": "Property", "kind": "category"},
-   {"column": "Category", "kind": "category"},
-   {"column": "Paid?", "kind": "category"}
+   {
+    "kind": "date"
+   },
+   {
+    "column": "Property",
+    "kind": "category"
+   },
+   {
+    "column": "Category",
+    "kind": "category"
+   },
+   {
+    "column": "Paid?",
+    "kind": "category"
+   }
   ],
-  "layout": [["rent", "spend", "unpaid", "lines"], ["rent_trend", "spend_by_kind"], ["spend_by_property", "rent_by_property"]]
+  "layout": [
+   [
+    "rent",
+    "spend",
+    "unpaid",
+    "lines"
+   ],
+   [
+    "rent_trend",
+    "spend_by_kind"
+   ],
+   [
+    "spend_by_property",
+    "rent_by_property"
+   ]
+  ]
  }
 }

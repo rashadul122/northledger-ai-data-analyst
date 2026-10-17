@@ -1289,7 +1289,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .nla-ask[aria-busy="true"] .nla-ask-status::before { animation: none; } }
 
 /* ---- the Try section's step rail and steps (src/js/58-steps.js; plan/DASHBOARD-DESIGN.md "The workflow order") ---- */
-.try-rail { position: sticky; top: 8px; z-index: 5; margin: 0 0 16px; padding: 8px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
+.try-rail { position: sticky; top: var(--nl-top, 64px); z-index: 5; margin: 0 0 16px; padding: 8px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
 .try-rail-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .try-rail-list a { display: flex; flex-direction: column; gap: 2px; min-height: 44px; padding: 6px 8px; border-radius: 10px; color: var(--body); text-decoration: none; border: 1px solid transparent; }
 .try-rail-list a:hover, .try-rail-list a:focus-visible { border-color: var(--accent); }
@@ -1301,7 +1301,10 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .try-rail .rs-s { font-size: 12px; color: var(--muted); }
 .try-rail-now { display: none; }
 .try-rail-stale { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
-.try-step { margin: 0 0 22px; scroll-margin-top: 96px; }
+/* a jump lands below the site's bar (html scroll-padding-top: 72px) and the rail; inside the dashboard, below its filters too */
+.try-step { margin: 0 0 22px; scroll-margin-top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + 12px - 72px); }
+.nld-head, .nld-counts, #try-counts, #nld-counts-h, #nld-check-h { scroll-margin-top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + 12px - 72px); }
+.nld-kpi, .nld-fig, .nld-notes { scroll-margin-top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + var(--nld-filt, 0px) + 12px - 72px); }
 .try-step-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 19px; margin: 18px 0 8px; }
 .try-step-n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 14px; }
 .try-step-st { font-size: 13px; font-weight: 500; color: var(--muted); }
@@ -1309,7 +1312,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .try-step-in { margin: 0 0 10px; }
 .try-counts:empty, .try-step-slot:empty { display: none; }
 @media (max-width: 720px) {
-  .try-rail { top: 4px; padding: 8px 10px; }
+  .try-rail { padding: 8px 10px; }
   .try-rail-list { display: none; }
   .try-rail-now { display: block; }
   .try-rail-now p { margin: 0 0 6px; }
@@ -1333,7 +1336,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nld-form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
 .nld-form .nld-wide, .nld-form p { grid-column: 1 / -1; }
 .nld-form input, .nld-form select, .nld-filters select { font: inherit; min-height: 40px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); max-width: 100%; min-width: 0; }
-.nld-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); position: sticky; top: 76px; z-index: 3; }
+.nld-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); position: sticky; top: calc(var(--nl-top, 64px) + var(--nl-rail, 72px) + 6px); z-index: 3; }
 .nld-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
 .nld-filters legend { font-weight: 650; font-size: 13.5px; padding: 0; }
 .nld-filters label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; font-weight: 600; min-width: 0; }
@@ -1345,7 +1348,10 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .nld-static { margin: 2px 0 6px; }
 .nld-exp { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .nld-exp p { flex-basis: 100%; margin: 0; }
-.nld-check li { margin: 3px 0; }
+.nld-check li { margin: 4px 0; }
+.nld-notes h6 { margin: 8px 0 2px; font-size: 13.5px; }
+.nld-find { font-size: 13px; color: var(--accent-ink); }
+.nld-fold { margin: 6px 0; }
 .nld-cols li { margin: 6px 0; }
 .nld-colnote { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); margin-top: 2px; }
 .nld-colnote input { font: inherit; min-height: 36px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); max-width: 100%; }

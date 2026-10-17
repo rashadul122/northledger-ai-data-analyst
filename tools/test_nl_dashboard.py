@@ -225,7 +225,7 @@ def test_gaps_not_filled():
     assert s["series"][0]["points"][j] is None                              # 3 rows: suppressed, a gap too
     assert s["series"][0]["points"][i - 1] is not None and s["series"][0]["points"][i + 1] is not None
     assert "2024-05" not in d["cube"]["months"]
-    chk = " ".join(d["remarks"]["check"])
+    chk = " ".join(x["text"] for x in d["remarks"]["needs_check"])
     assert "May 2024" in chk and "left as gaps" in chk, chk
     assert "Sep 2024" in chk and "fewer than 5 rows" in chk, chk
 
@@ -255,7 +255,7 @@ def test_recorded_design():
     d = sample_rep()["dashboard"]
     assert d["chosen_by"] == "recorded" and "recorded AI design" in d["recorded"], (d["chosen_by"], d["recorded"])
     assert [k["id"] for k in d["kpis"]] == ["rent", "spend", "unpaid", "lines"], d["kpis"]
-    assert [c["draw"] for c in d["charts"]] == ["line", "area", "bar", "grouped"], d["charts"]
+    assert [c["draw"] for c in d["charts"]] == ["line", "grouped", "bar", "grouped"], d["charts"]
     assert not d["refused"], d["refused"]
     assert [f["column"] for f in d["filters"]] == ["Date", "Property", "Category", "Paid?"], d["filters"]
     with open(SAMPLE, "rb") as fh:
@@ -269,6 +269,35 @@ def test_recorded_design():
     for s in [fx["dashboard"]["audience"]] + [q["q"] for q in fx["dashboard"]["questions"]] + \
             [k["label"] for k in fx["dashboard"]["kpis"]] + [c["title"] for c in fx["dashboard"]["charts"]]:
         assert not ND.has_figure(s), s
+
+
+def test_notes_put_what_needs_a_check_first():
+    r = sample_rep()["dashboard"]["remarks"]
+    need = [x["text"] for x in r["needs_check"]]
+    assert need[0].startswith("55 ledger lines repeat another row exactly"), need
+    assert any("dated in the future (the latest 2027-11-11)" in t for t in need), need
+    assert any(t.startswith("1 ledger line has a Date that is no real date") for t in need), need
+    assert any(t.startswith("17 Amount values were words, not numbers") for t in need), need
+    assert any("never named (privacy" in t for t in need), need
+    assert {x["rule"] for x in r["needs_check"] if x["where"] == "set_aside"} >= {"exact_duplicates", "amount_range", "date_not_future", "date_date"}
+    assert len(r["fixed"]) == 7 and all(t.endswith(")." ) for t in r["fixed"]), r["fixed"]
+    assert len(r["detail"]) >= 10 and not any("Cleaning:" in t for t in r["detail"])
+    assert not any("null-like" in t for t in need)                       # the raw health lines are folded, not first
+
+
+def test_area_dominated_by_other_is_drawn_as_bars():
+    with open(SAMPLE, "rb") as fh:
+        b = bytearray(fh.read())
+    b[-2:-1] = b"x"                                                       # not the sample: the engine's own design
+    d = NB.run(bytes(b), "sample-messy.csv", "", None, AS_OF)["dashboard"]
+    assert d["chosen_by"] == "engine"
+    assert all(c["draw"] != "area" for c in d["charts"]), [(c["id"], c["draw"]) for c in d["charts"]]
+    assert any("stacked area" in t and "would hold" in t and "grouped bar" in t for t in d["remarks"]["design"]), d["remarks"]["design"]
+    # an area whose named groups hold most of the total stays an area (the synthetic stores: 5 stores, full months)
+    rep = synth_rep({"charts": [{"id": "a", "chart": "area_chart", "args": ["store", "sales"], "title": "Sales by store"}]})
+    a = next(c for c in rep["dashboard"]["charts"] if c["id"] == "a")
+    sh = ND.area_other_share(ND.Read(rep, {"r": None, "reading": None, "plan": None}), {"measure": "sales", "by": "store", "where": None})
+    assert a["draw"] == "area" and sh is not None and sh <= ND.AREA_OTHER_MAX, (a["draw"], sh)
 
 
 def test_results_for_ai():

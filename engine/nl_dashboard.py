@@ -463,6 +463,72 @@ def default_design(R: Read) -> Dict[str, Any]:
     return out
 
 
+AREA_OTHER_MAX = 0.40          # a stacked area whose "other" would hold more of the total is drawn as bars instead
+AREA_PARTS = 5                 # the parts a stacked area names (57-dashboard.js), the rest are "other"
+PMAX = 30                      # periods a time chart shows (57-dashboard.js PMAX): a longer span by quarter or year
+
+
+def area_other_share(R: Read, x: Dict[str, Any]) -> Optional[float]:
+    """The share of the total a stacked area would draw as "other" over the whole span, by the page's rule
+    (57-dashboard.js NLD.record): its 5 largest groups are named, a group with a period on 1 to 4 filled values goes
+    to "other", and a value that shares a word with a flagged column is "other" too. None when it cannot be read."""
+    import pandas as pd
+    c = R.ctx
+    m, by = x.get("measure"), x.get("by")
+    if not m or not by or c.month is None:
+        return None
+    v = c.nums(m)
+    keep = v.notna() & c.month.notna()
+    wh = x.get("where")
+    if wh:
+        hit = c.texts(wh["dim"]).isin(wh["values"])
+        keep &= ~hit if wh.get("exclude") else hit
+    if not keep.any():
+        return None
+    mon = c.month[keep]
+    span = NB._month_range(min(mon), max(mon))
+    grain = "month" if len(span) <= PMAX else ("quarter" if -(-len(span) // 3) <= PMAX else "year")
+    per = mon.map(lambda ym: ym if grain == "month" else (ym[:4] + "-Q%d" % ((int(ym[5:7]) - 1) // 3 + 1) if grain == "quarter" else ym[:4]))
+    lv = c.texts(by)[keep]
+    vals = v[keep]
+    tot = vals.abs().groupby(lv).sum().sort_values(ascending=False)
+    total = float(tot.sum())
+    if total <= 0:
+        return None
+    named = 0.0
+    shown = 0
+    for level, t in tot.items():
+        if shown >= AREA_PARTS:
+            break
+        if level == "" or not NV._label_ok(c, str(level)):
+            continue
+        k = pd.Series(1, index=per[lv == level].index).groupby(per[lv == level]).sum()
+        shown += 1
+        if ((k > 0) & (k < SMALL)).any():
+            continue
+        named += float(t)
+    return 1.0 - named / total
+
+
+def _area_check(R: Read, design: Dict[str, Any]) -> None:
+    """A stacked area whose "other" would hold more than AREA_OTHER_MAX of the total says little: it is drawn as a
+    grouped bar (the latest 12 months against the 12 before) when the file spans 24 months, else a bar chart, and the
+    notes say why."""
+    c = R.ctx
+    n_months = len(set(c.month.dropna())) if c.month is not None else 0
+    for x in design["charts"]:
+        if x.get("draw") != "area":
+            continue
+        sh = area_other_share(R, x)
+        if sh is None or sh <= AREA_OTHER_MAX:
+            continue
+        to = "grouped_bar" if n_months >= 24 else "bar_chart"
+        R.refuse("the stacked area “%s”" % (x.get("title") or "%s by %s" % (c.header(x["measure"]), c.header(x["by"]))),
+                 "“other” would hold %d%% of its total (groups with a period on fewer than 5 rows count there), so it is "
+                 "drawn as a %s" % (round(sh * 100), "grouped bar of the latest 12 months against the 12 before" if to == "grouped_bar" else "bar chart"))
+        x.update({"chart": to, "draw": DRAWN[to], "title": ""})   # the engine writes the bars' own title
+
+
 def _slug(s: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(s).lower()).strip("_") or "x"
 
@@ -745,31 +811,55 @@ def remarks(R: Read, cube: Dict[str, Any], plural: str) -> Dict[str, Any]:
             return None
         return _text(c.pub(t), 300)
 
-    check: List[str] = []
-    for s in ((rep.get("health") or {}).get("issues") or [])[:14]:
-        t = clean_line(s)
-        if t:
-            check.append(t)
-    for fx in (cl.get("fixes") or [])[:12]:
-        if not isinstance(fx, dict):
+    sing = row_noun(rep)[1]
+
+    def rows_w(n: int) -> str:
+        return "%s %s" % (NV._count(n), sing if n == 1 else plural.lower())
+
+    # (a) needs your check: what a person must look at, in plain words with counts, from the engine's own records
+    need: List[Dict[str, Any]] = []
+    rules = {str(r.get("name")): r for r in cl.get("rules") or [] if isinstance(r, dict)}
+    issues = [str(x) for x in (rep.get("health") or {}).get("issues") or []]
+    latest_future = next((m.group(1) for x in issues for m in [re.search(r"latest (\d{4}-\d{2}-\d{2})", x)] if m), "")
+    for q in cl.get("quarantine_reasons") or []:
+        if not isinstance(q, dict) or not q.get("count"):
             continue
-        col = fx.get("column")
-        t = clean_line("Cleaning: %s (%s values%s)." % (str(fx.get("what") or fx.get("rule") or "").rstrip("."),
-                                                      NV._count(fx.get("count") or 0),
-                                                      ", " + c.header(str(col)) if col else ""))
-        if t:
-            check.append(t)
-    for q in reasons:
-        if q["count"]:
-            check.append("Set aside: %s %s, %s." % (NV._count(q["count"]), plural.lower() if q["count"] != 1 else
-                                                     row_noun(rep)[1], q["reason"]))
+        n = int(q["count"])
+        name = str(q.get("reason") or "").split(": ", 1)[0]
+        rr = rules.get(name) or {}
+        kind, col = str(rr.get("kind") or ""), rr.get("column")
+        h = c.header(str(col)) if col else ""
+        if col and hid_rx is not None and hid_rx.search(h):
+            h = "a column you withheld"
+        hv, ar, rp = ("has", "is", "repeats") if n == 1 else ("have", "are", "repeat")
+        words = {
+            "dedupe": "%s %s another row exactly: the repeats were set aside, one copy of each counts" % (rows_w(n), rp),
+            "range": "%s %s %s %s outside the range it can take (a negative or impossible value): set aside, not corrected" % (rows_w(n), hv, "an" if h[:1].lower() in "aeiou" else "a", h),
+            "not_future": "%s %s dated in the future%s: set aside" % (rows_w(n), ar, " (the latest %s)" % latest_future if latest_future else ""),
+            "date": "%s %s %s %s that is no real date (for example a day that does not exist): set aside" % (rows_w(n), hv, "an" if h[:1].lower() in "aeiou" else "a", h),
+            "date_plausible": "%s %s a placeholder or impossibly early %s: set aside" % (rows_w(n), hv, h),
+            "series_end": "%s %s dated after the series ends: set aside" % (rows_w(n), ar),
+            "numeric": "%s %s %s %s that is not a number: set aside" % (rows_w(n), hv, "an" if h[:1].lower() in "aeiou" else "a", h),
+            "boolean": "%s %s %s %s that is not a yes or no: set aside" % (rows_w(n), hv, "an" if h[:1].lower() in "aeiou" else "a", h),
+        }.get(kind) or "%s set aside: %s%s" % (rows_w(n), str(q.get("reason") or "").split(": ", 1)[-1], " (%s)" % h if h else "")
+        need.append({"text": words[0].upper() + words[1:] + ".", "rule": name, "column": h or None, "count": n, "where": "set_aside"})
+    for x in issues:
+        m = re.match(r"^([\w.]+): mixed content: [\d,]+ date-like, [\d,]+ numeric and ([\d,]+) text values", x)
+        if m and m.group(1) in c.measures:
+            n = int(m.group(2).replace(",", ""))
+            if n:
+                h = c.header(m.group(1))
+                need.append({"text": "%s %s values were words, not numbers (a placeholder or a note): the engine left "
+                                     "them blank and guessed nothing." % (NV._count(n), h),
+                             "rule": "%s_numeric" % m.group(1), "column": h, "count": n, "where": "blank"})
     months = cube["months"]
     if months:
         span = NB._month_range(months[0], months[-1])
         have = set(months)
         gaps = [m for m in span if m not in have]
         if gaps:
-            check.append("Months with no rows, left as gaps (never filled): %s." % "; ".join(_ranges(gaps)[:12]))
+            need.append({"text": "Months with no rows, left as gaps on every chart (never filled): %s." % "; ".join(_ranges(gaps)[:12]),
+                         "rule": "", "column": None, "count": len(gaps), "where": "months"})
         nd = len(cube["dims"])
         by_m: Dict[int, int] = {}
         for x in cube["cells"]:
@@ -777,28 +867,41 @@ def remarks(R: Read, cube: Dict[str, Any], plural: str) -> Dict[str, Any]:
                 by_m[x[0]] = by_m.get(x[0], 0) + x[1 + nd]
         thin = [months[i] for i, k in sorted(by_m.items()) if k < SMALL]
         if thin:
-            check.append("Months with fewer than %d rows (their figures are shown as “<5”): %s." % (
-                SMALL, "; ".join(_ranges(thin)[:12])))
+            need.append({"text": "Months with fewer than %d rows (their figures show as “<5”): %s." % (SMALL, "; ".join(_ranges(thin)[:12])),
+                         "rule": "", "column": None, "count": len(thin), "where": "months"})
     if cube.get("no_date_rows"):
-        check.append("%s %s have no date the engine reads: they count only while the date range is the whole span." % (
-            NV._count(cube["no_date_rows"]), plural.lower()))
+        need.append({"text": "%s have no date the engine reads: they count only while the date range is the whole span." % (
+            rows_w(int(cube["no_date_rows"]))[0].upper() + rows_w(int(cube["no_date_rows"]))[1:]), "rule": "", "column": None,
+            "count": int(cube["no_date_rows"]), "where": "other"})
     for d in cube["dims"]:
-        if d.get("folded"):
-            check.append("%s: its %s smallest values are counted together as “other”." % (
-                d["column"], NV._count(d["folded"])))
         if d.get("hidden"):
-            check.append("%s: %s a word with a column you withheld or coded, so %s counted in “other” and never "
-                         "named." % (d["column"], "1 value shares" if d["hidden"] == 1 else
-                                     "%s values share" % NV._count(d["hidden"]),
-                                     "it is" if d["hidden"] == 1 else "they are"))
-    for r_ in R.refused:
-        check.append("Not on this dashboard: %s, because %s." % (r_["element"], r_["why"].rstrip(".")))
+            need.append({"text": "%s: %s a word with a column you withheld or coded, so %s counted in “other” and never named "
+                                 "(privacy: a value that could point to a person is never printed)." % (
+                d["column"], "1 value shares" if d["hidden"] == 1 else "%s values share" % NV._count(d["hidden"]),
+                "it is" if d["hidden"] == 1 else "they are"), "rule": "", "column": d["column"], "count": int(d["hidden"]), "where": "other"})
+        if d.get("folded"):
+            need.append({"text": "%s: its %s smallest values are counted together as “other”." % (d["column"], NV._count(d["folded"])),
+                         "rule": "", "column": d["column"], "count": int(d["folded"]), "where": "other"})
+    # (b) fixed automatically: the cleaning rules with their counts
+    fixed: List[str] = []
+    for fx in (cl.get("fixes") or [])[:16]:
+        if not isinstance(fx, dict):
+            continue
+        col = fx.get("column")
+        t = clean_line("%s (%s values%s)." % (str(fx.get("what") or fx.get("rule") or "").rstrip("."),
+                                             NV._count(fx.get("count") or 0), ", " + c.header(str(col)) if col else ""))
+        if t:
+            fixed.append(t)
+    # (c) data quality detail: the health check's own lines
+    detail = [t for t in (clean_line(x) for x in issues[:20]) if t]
+    # about the design: what the engine refused or changed in it
+    design = ["%s: %s." % (r_["element"][0].upper() + r_["element"][1:], r_["why"].rstrip(".")) for r_ in R.refused]
     return {"data_range": [months[0], months[-1]] if months else None,
             "data_range_text": ("%s to %s" % (_month_word(months[0]), _month_word(months[-1]))) if months else
             "the file has no date the engine reads",
             "rows": {"in": rows_in, "kept": kept, "set_aside": max(0, rows_in - kept) if rows_in else 0,
                      "reasons": reasons},
-            "check": check[:60]}
+            "needs_check": need[:30], "fixed": fixed, "detail": detail, "design": design[:30]}
 
 
 # ----------------------------------------------------------------------------- the record
@@ -861,6 +964,7 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
             seen.add(pid)
             design["charts"].append(dict(ch, id=pid, pinned=True))
             design["layout"].append([pid])
+    _area_check(R, design)
     cube, dkey, mkey = make_cube(R, design)
     plural, sing = row_noun(rep)
     measures = {m["column"]: m for m in cube["measures"]}

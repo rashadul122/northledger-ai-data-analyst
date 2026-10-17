@@ -735,11 +735,15 @@
     return '<div class="nl2" data-contract="2">' +
       '<div class="nl2-views" role="tablist" aria-label="How to read this report">' +
         '<button type="button" role="tab" id="nl2-tab-m" data-view="manager" aria-selected="true" aria-controls="nl2-manager">Manager view <small>summary</small></button>' +
-        '<button type="button" role="tab" id="nl2-tab-a" data-view="analyst" aria-selected="false" aria-controls="nl2-analyst" tabindex="-1">Analyst view <small>the full paper</small></button></div>' +
+        '<button type="button" role="tab" id="nl2-tab-a" data-view="analyst" aria-selected="false" aria-controls="nl2-analyst" tabindex="-1">Analyst view <small>the full paper</small></button>' +
+        (dashOn(r) ? '<button type="button" role="tab" id="nl2-tab-d" data-view="dashboard" aria-selected="false" aria-controls="nl2-dash" tabindex="-1">Dashboard <small>filter and export</small></button>' : '') + '</div>' +
       '<p class="sr" id="nl2-live" aria-live="polite"></p>' +
       '<div class="nl2-panel" id="nl2-manager" role="tabpanel" aria-labelledby="nl2-tab-m">' + manager(r, CH, parts) + '</div>' +
-      '<div class="nl2-panel nl2-paper" id="nl2-analyst" role="tabpanel" aria-labelledby="nl2-tab-a" hidden>' + analyst(r, CH, parts) + '</div></div>';
+      '<div class="nl2-panel nl2-paper" id="nl2-analyst" role="tabpanel" aria-labelledby="nl2-tab-a" hidden>' + analyst(r, CH, parts) + '</div>' +
+      (dashOn(r) ? '<div class="nl2-panel nl2-dash" id="nl2-dash" role="tabpanel" aria-labelledby="nl2-tab-d" hidden></div>' : '') + '</div>';
   };
+  // the Dashboard tab (src/js/57-dashboard.js, engine/nl_dashboard.py): only when the engine built one
+  function dashOn(r) { return !!(window.NLD && r && r.dashboard && r.dashboard.ok && r.dashboard.cube); }
 
   function draw(panel, r) {
     var CH = chartMap(r);
@@ -764,10 +768,13 @@
       t.tabIndex = on ? 0 : -1;
       if (on && focus) t.focus();
     });
-    var M = root.querySelector('#nl2-manager'), A = root.querySelector('#nl2-analyst');
+    var M = root.querySelector('#nl2-manager'), A = root.querySelector('#nl2-analyst'), Dp = root.querySelector('#nl2-dash');
     M.hidden = view !== 'manager'; A.hidden = view !== 'analyst';
+    if (Dp) Dp.hidden = view !== 'dashboard';
     clear(root);
-    draw(view === 'manager' ? M : A, root.__rep);
+    if (view === 'dashboard') { if (Dp && window.NLD && window.NLD.show) window.NLD.show(Dp, root.__rep); }
+    else draw(view === 'manager' ? M : A, root.__rep);
+    try { document.dispatchEvent(new CustomEvent('nl:view', { detail: { view: view } })); } catch (e) { /* old browsers: no event */ }
     if (U.redraw) U.redraw();
   }
   function clear(root) {

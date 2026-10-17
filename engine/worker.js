@@ -266,7 +266,7 @@ function onLedger(m) {
 function onMore(m) {
   var out = null;
   try {
-    if (booted && nl && nl.analyst_more_json) out = JSON.parse(nl.analyst_more_json(JSON.stringify(m.steps || []), JSON.stringify(m.prior || [])));
+    if (booted && nl && nl.analyst_more_json) out = JSON.parse(nl.analyst_more_json(JSON.stringify(m.steps || []), JSON.stringify(m.prior || []), String(m.question || '')));
   } catch (e) { out = null; }
   post({ type: 'more_json', id: m.id, out: out });
 }

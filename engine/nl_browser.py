@@ -7203,7 +7203,7 @@ def analyst_ledger_json(block_json: str) -> str:
     return json.dumps(_na.ledger_for_ai(block if isinstance(block, dict) else {}), allow_nan=False, default=str)
 
 
-def analyst_more_json(steps_json: str, prior_json: str) -> str:
+def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> str:
     """One AI round (docs/ai-analyst/PROTOCOL.md): the steps the worker's /analyst returned, run by
     nl_analyst.run_steps on the frame of the last run, after the block's steps so far (prior). Every step is checked
     again here (an op, an argument or a column outside the schema is refused with its reason); every figure comes from
@@ -7219,6 +7219,15 @@ def analyst_more_json(steps_json: str, prior_json: str) -> str:
         steps, prior = None, []
     out = _na.run_steps(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"], steps, _LAST_ANALYST["hint"],
                         prior=prior if isinstance(prior, list) else [])
+    try:
+        import nl_explore as _nx
+        ans = _nx.answer_of(str(question or ""), out.get("steps") or [],
+                            _LAST_EXPLORE if _LAST_EXPLORE.get("kind") == "indicator_table" else None)
+        if ans is not None:
+            out["answer"] = json.loads(json.dumps(ans, allow_nan=False, default=str))
+    except Exception:  # noqa: BLE001 - the steps stand without the answer sentence
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
     return json.dumps(out, allow_nan=False, default=str)
 
 

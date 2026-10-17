@@ -1684,6 +1684,24 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .trk-map th, .trk-map td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--hairline); vertical-align: top; overflow-wrap: anywhere; }
 .trk-map { max-width: 100%; overflow-x: auto; }
 
+/* step 4 "Ask": the question box and every answer, the newest first */
+.nla-askp h3 { margin-top: 0; }
+.nla-thread { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.nla-qa .tscroll { max-width: 100%; overflow-x: auto; }
+.nla-qa .nla-sql-q { max-width: 100%; }
+.nla-qa { min-width: 0; overflow-wrap: anywhere; scroll-margin-top: 200px; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.nla-qa:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+.nla-qa-fail { border-style: dashed; }
+.nla-qa-q { margin: 0 0 6px; font-weight: 600; }
+.nla-qa-q .kicker { margin-right: 6px; }
+.nla-qa-a { margin: 0 0 10px; font-size: 1.05rem; color: var(--ink); }
+.nla-qa-t { margin: 0 0 6px; }
+.nla-qa-x { margin: 6px 0; padding-left: 1.2em; }
+.nla-qa-by, .nla-qa-more { font-size: .88em; margin: 6px 0 0; }
+.nla-goask { margin: 14px 0 0; font-weight: 600; }
+.nla-qa-t td.num { position: relative; }
+.nla-qa-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--ts-1); vertical-align: middle; margin-right: 8px; opacity: .85; }
+
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
 .cs h2 { font-size: 20px; margin: 28px 0 8px; color: var(--ink); }
@@ -1700,7 +1718,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 17:03:44 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 17:36:46 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

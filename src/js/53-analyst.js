@@ -118,7 +118,9 @@
       '<div class="viz" id="' + id + '"></div><div class="nla-fig-note"></div></figure>';
   }
   A.mount = function (root) {
-    if (root) bindAsk(root);
+    if (root) bindActions(root);                  // the report card's own buttons (Copy SQL, Add to the dashboard)
+    var panel = document.getElementById('nla-askp');
+    if (panel) { bindPanel(panel); bindAsk(panel); }
     var U = window.NLU;
     if (!root || !U || !U.visual || !window.NLV) return;
     if (window.NLC && window.NLC.extendNLV) window.NLC.extendNLV(window.NLV);
@@ -218,7 +220,7 @@
   function askHtml(b) {
     if (typeof A.onAsk !== 'function') return '';
     var asked = arr(b.asked).filter(function (q) { return typeof q === 'string' && q; });
-    return '<form class="nla-ask" novalidate><label for="nla-q"><strong>Ask your data</strong> a question the analysis above does not answer; the answer can include a read-only SQL query</label>' +
+    return '<form class="nla-ask" novalidate><label for="nla-q">A question about these rows, in your own words: the answer is computed from your file, with the query behind it</label>' +
       (asked.length ? '<p class="nla-asked muted">You asked: ' + asked.map(function (q) { return '\u201c' + esc(q) + '\u201d'; }).join(', ') + '</p>' : '') +
       '<div class="nla-ask-row"><input id="nla-q" name="q" type="text" maxlength="300" autocomplete="off" placeholder="' + esc(A.example ? 'e.g. ' + A.example : 'e.g. Why is revenue down in a region this quarter?') + '" required>' +
       '<button type="submit" class="btn btn-primary">Ask</button></div>' +
@@ -251,7 +253,7 @@
     });
   }
   function bindAsk(root) {
-    bindActions(root);
+    if (!(root.matches && root.matches('section.nla-askp'))) bindActions(root);
     var f = root.querySelector('form.nla-ask');
     if (!f || f.getAttribute('data-bound')) return;
     f.setAttribute('data-bound', '1');
@@ -323,6 +325,75 @@
       h += '<details class="more nla-refused"><summary>' + (ins.length ? 'Steps it did not run (' + count(refused.length) + ')' : 'Why it did not run') + '</summary><ul class="nla-list">' +
         refused.map(function (x) { return '<li>' + (x.op && x.op !== 'all' ? '<code>' + esc(x.op) + '</code>: ' : '') + esc(x.why || '') + '</li>'; }).join('') + '</ul></details>';
     }
-    return h + askHtml(b) + '</section>';
+    // the question box and its answers live in step 4 (A.askPanel): the card says where
+    return h + (typeof A.onAsk === 'function' ? '<p class="nla-goask"><a href="#try-step-4">Ask your own question about this data in step 4</a></p>' : '') + '</section>';
   };
+
+  // ---- step 4 "Ask" (owner, 17 Oct 2026: "I can't see any answer it gave when I ask two questions; that should be easily
+  // navigated"): the question box and every question with its answer, newest first, in one panel the step rail's "4 Ask" opens.
+  // Each answer leads with the engine's sentence written from the query's result, then that result as a table, then the query.
+  function answerHtml(a, n) {
+    if (!obj(a)) return '';
+    var cols = arr(a.columns), rows = arr(a.rows);
+    var table = cols.length && rows.length ? '<div class="tscroll"><table class="dt nla-qa-t"><thead><tr>' +
+      cols.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function (r, ri) {
+        return '<tr>' + arr(r).map(function (c, i) {
+          if (i === 0) return '<th scope="row">' + esc(c) + '</th>';
+          var w = i === 1 && arr(a.bars).length === rows.length ? a.bars[ri] : null;
+          return '<td class="num">' + (typeof w === 'number' && isFinite(w) ? '<span class="nla-qa-bar" aria-hidden="true" style="width:' + Math.max(1, Math.round(w * 120)) + 'px"></span>' : '') + esc(c) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') +
+      '</tbody></table></div>' + (a.rows_total > rows.length ? '<p class="muted nla-qa-more">The first ' + count(rows.length) + ' of ' + count(a.rows_total) + ' rows.</p>' : '') : '';
+    var extra = arr(a.findings).filter(function (x) { return typeof x === 'string' && x; });
+    return '<li class="nla-qa' + (a.failed ? ' nla-qa-fail' : '') + '" id="nla-qa-' + n + '" tabindex="-1">' +
+      '<p class="nla-qa-q"><span class="kicker">Question ' + (n + 1) + '</span> ' + esc(a.question || '') + '</p>' +
+      '<p class="nla-qa-a">' + esc(a.text || '') + '</p>' + table +
+      (extra.length ? '<ul class="nla-qa-x">' + extra.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+      (a.sql ? '<details class="nla-sql"><summary>The query behind this answer</summary><div class="nla-sql-h"><button type="button" class="btn btn-ghost btn-sm nla-copy" data-copy-sql>Copy SQL</button></div><pre class="nla-sql-q"><code>' + esc(a.sql) + '</code></pre></details>' : '') +
+      (a.pin ? '<p><button type="button" class="btn btn-ghost btn-sm" data-pin="' + esc(a.pin) + '">Add to the dashboard</button></p>' : '') +
+      (a.by ? '<p class="muted nla-qa-by">' + esc(a.by) + '</p>' : '') + '</li>';
+  }
+  function threadHtml(b) {
+    var list = arr(b && b.answers);
+    if (!list.length) return '<li class="nla-qa-none muted">Your questions and their answers will appear here, the newest first.</li>';
+    return list.map(function (a, i) { return { a: a, i: i }; }).reverse().map(function (x) { return answerHtml(x.a, x.i); }).join('');
+  }
+  A.askPanel = function (r) {
+    if (typeof A.onAsk !== 'function') return '';
+    var b = r && obj(r.analyst) ? r.analyst : {};
+    return '<section class="tr-card nla-askp" id="nla-askp" data-step-home="4" aria-labelledby="nla-askp-h"><h3 id="nla-askp-h">Ask your data</h3>' +
+      askHtml(b) + '<ol class="nla-thread" id="nla-thread" aria-label="Your questions and their answers, the newest first">' + threadHtml(b) + '</ol></section>';
+  };
+  // the list again after an answer, and the newest answer brought into view and focused
+  A.showAnswer = function (r, n) {
+    var ol = document.getElementById('nla-thread');
+    if (!ol) return;
+    ol.innerHTML = threadHtml(r && r.analyst);
+    var li = document.getElementById('nla-qa-' + n);
+    if (li) {
+      if (li.scrollIntoView) li.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      try { li.focus({ preventScroll: true }); } catch (e) { /* an old browser */ }
+    }
+  };
+  function bindPanel(p) {
+    if (!p || p.getAttribute('data-nla-acts')) return;
+    p.setAttribute('data-nla-acts', '1');
+    p.addEventListener('click', function (e) {
+      var t = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!t) return;
+      if (t.hasAttribute('data-copy-sql')) {
+        var code = t.closest('.nla-sql').querySelector('code'), txt = code ? code.textContent : '';
+        var done = function (ok) { t.textContent = ok ? 'Copied' : 'Select the query to copy it'; setTimeout(function () { t.textContent = 'Copy SQL'; }, 1600); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); });
+        else done(false);
+      } else if (t.hasAttribute('data-pin')) {
+        if (A.pin(t.getAttribute('data-pin'))) { t.textContent = 'Added to the dashboard'; t.disabled = true; }
+      } else if (t.hasAttribute('data-ask-example')) {
+        var f = t.closest('form.nla-ask'), input = f && f.querySelector('input');
+        if (input) { input.value = t.getAttribute('data-ask-example'); }
+        if (f && f.requestSubmit) f.requestSubmit(); else if (f) f.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+  }
 }());

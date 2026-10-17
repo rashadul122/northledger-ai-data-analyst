@@ -1684,6 +1684,24 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .trk-map th, .trk-map td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--hairline); vertical-align: top; overflow-wrap: anywhere; }
 .trk-map { max-width: 100%; overflow-x: auto; }
 
+/* step 4 "Ask": the question box and every answer, the newest first */
+.nla-askp h3 { margin-top: 0; }
+.nla-thread { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.nla-qa .tscroll { max-width: 100%; overflow-x: auto; }
+.nla-qa .nla-sql-q { max-width: 100%; }
+.nla-qa { min-width: 0; overflow-wrap: anywhere; scroll-margin-top: 200px; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.nla-qa:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+.nla-qa-fail { border-style: dashed; }
+.nla-qa-q { margin: 0 0 6px; font-weight: 600; }
+.nla-qa-q .kicker { margin-right: 6px; }
+.nla-qa-a { margin: 0 0 10px; font-size: 1.05rem; color: var(--ink); }
+.nla-qa-t { margin: 0 0 6px; }
+.nla-qa-x { margin: 6px 0; padding-left: 1.2em; }
+.nla-qa-by, .nla-qa-more { font-size: .88em; margin: 6px 0 0; }
+.nla-goask { margin: 14px 0 0; font-weight: 600; }
+.nla-qa-t td.num { position: relative; }
+.nla-qa-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--ts-1); vertical-align: middle; margin-right: 8px; opacity: .85; }
+
 </style>
 </head>
 <body>
@@ -1708,7 +1726,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 17:03:44 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 17:36:46 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2175,7 +2193,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
       </section>
       <section class="try-step" id="try-step-4" data-step="4" aria-labelledby="try-step-4-h" hidden>
         <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-4-h"><span class="try-step-n" aria-hidden="true">4</span> Ask <span class="try-step-st"></span></h3>
-        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Follow-up questions about the same rows: the "Ask your data" box at the end of the report (step 3); each answer can be added to the dashboard.</p>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">Ask anything about the same rows, in your own words, once the analysis is done. Each answer is computed from your file and listed here, the newest first, with the query behind it.</p>
         <div class="try-step-slot" id="try-step-4-slot"></div>
       </section>
       <section class="try-step" id="try-step-5" data-step="5" aria-labelledby="try-step-5-h" hidden>
@@ -2455,7 +2473,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 17:03:44 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 17:36:46 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -10269,12 +10287,13 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // tells what the planner may see (ledger_for_ai: the steps so far with their printed figures, never a row); the
     // worker's /analyst picks up to four typed steps; the engine runs them on the file's rows, checking each again;
     // their insights join the analyst's card. On any failure the card stays as it was and the box says why.
-    var ASK_ROUNDS = 3, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
+    var ASK_ROUNDS = 3, ASK_MAX = 20, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
     function askData(question, say) {
       var rep = S.report, b = rep && rep.analyst;
       if (!b) { say('This file has no analysis to ask about.', false); return; }
-      var done = (b.asked || []).length;
-      if (done >= ASK_ROUNDS) { say('That is the ' + ASK_ROUNDS + ' questions a file can take. Run the file again to ask more.', false); return; }
+      var done = (b.asked || []).length, aiDone = b.ai_rounds || 0;
+      // the AI plans at most ASK_ROUNDS questions a file (the worker's round limit); after that the engine plans each one itself
+      if (done >= ASK_MAX) { say('That is the ' + ASK_MAX + ' questions a file can take. Run the file again to ask more.', false); return; }
       // the worker echoes the run's id (onMsg drops any other); the box is disabled while a question is out, so one at a time
       var seq = S.seq, id = seq, w = worker(), planned = 'ai';
       function fail(why) {
@@ -10293,15 +10312,20 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           if (seq !== S.seq) return;
           if (!steps || !steps.length) {
             b.asked = (b.asked || []).concat([question]);
-            return fail((why ? why + ' ' : '') + 'The engine found no check it can run for this question. Try naming a measure and a group, as in \u201cWhy is revenue down in a region this quarter?\u201d');
+            var msg = (why ? why + ' ' : '') + 'The engine found no check it can run for this question. Try naming a measure and a group, as in \u201cWhy is revenue down in a region this quarter?\u201d';
+            b.answers = (b.answers || []).concat([{ question: question, text: msg, failed: true }]);
+            if (window.NLA && window.NLA.showAnswer) window.NLA.showAnswer(rep, b.answers.length - 1);
+            return fail(msg);
           }
           say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
           S.onMore = gotMore;
-          w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+          w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [], question: question });
         };
         w.postMessage({ type: 'plan', id: id, question: question });
       }
       if (!(CFG.ask_data === true && planOn())) return enginePlan('');
+      if (aiDone >= ASK_ROUNDS) return enginePlan('The AI has planned ' + ASK_ROUNDS + ' questions on this file.');
+      b.ai_rounds = aiDone + 1;
       say('Asking the AI which checks answer this\u2026', true);
       S.onLedger = function (gotId, steps) {
         if (gotId !== id) return;
@@ -10312,7 +10336,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, ASK_ABORT_MS);
         fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: done + 1 }),
+          body: JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: aiDone + 1 }),
           credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
           .then(function (res) {
             return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; });
@@ -10335,7 +10359,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             // its cap of four steps (the AI's last step gives way)
             var run = function (steps) {
               say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
-              w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+              w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [], question: question });
             };
             if (j.steps.some(function (st) { return st && st.op === 'sql'; })) return run(j.steps);
             S.onPlan = function (gotId, eng) {
@@ -10369,13 +10393,25 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         if (window.NLSteps) { window.NLSteps.set(4, 'done', b.asked.length + (b.asked.length === 1 ? ' question answered' : ' questions answered')); if (window.NLSteps.here) window.NLSteps.here(4); }
         if (planned === 'ai') b.chosen_by = 'engine+ai';
         else b.engine_planned = (b.engine_planned || []).concat([question]);
-        if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, ins.length ? ins[0].id : null);
+        if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, null);
         // a step the engine would not run says why in the step itself (ok false, refused), or in out.refused
         var why = out.steps.filter(function (x) { return x && !x.ok && x.refused; }).map(function (x) { return x.refused; })
           .concat((out.refused || []).map(function (x) { return x && x.why; }).filter(Boolean));
-        var f = el.report.querySelector('form.nla-ask .nla-ask-status');
-        if (f) f.textContent = ins.length ? 'Answered with ' + ins.length + (ins.length === 1 ? ' new finding' : ' new findings') + ', under \u201cWhat you asked\u201d.'
-          : 'The checks ran but none gave a finding the engine can state' + (why.length ? ': ' + String(why[0]).slice(0, 160).replace(/[.\s]+$/, '') + '.' : '.');
+        // the answer, in step 4: the engine's sentence from the query's result, the result and the query; the findings the other
+        // checks stated under it
+        var a = out.answer && typeof out.answer.text === 'string' ? out.answer : null;
+        var entry = { question: question, text: a ? a.text : (ins.length ? ins[0].text : 'The checks ran but none gave an answer the engine can state' +
+            (why.length ? ': ' + String(why[0]).slice(0, 160).replace(/[.\s]+$/, '') + '.' : '.')),
+          columns: a ? a.columns : [], rows: a ? a.rows : [], rows_total: a ? a.rows_total : 0, sql: a ? a.sql : '',
+          bars: a ? a.bars : null,
+          findings: ins.map(function (i) { return i.text; }).filter(function (x) { return (!a || x !== a.text) && !/^The read-only query returned /.test(x); }).slice(0, 4),
+          pin: (ins.filter(function (i) { return i && i.figure; })[0] || {}).id || '', failed: !a && !ins.length,
+          by: planned === 'ai' ? 'The AI chose the checks; the engine ran them on your rows and computed every number.' : 'The engine planned and ran the checks on your rows.' };
+        b.answers = (b.answers || []).concat([entry]);
+        say('Answered: question ' + b.answers.length + ', at the top of the list below.', false);
+        if (window.NLA && window.NLA.showAnswer) window.NLA.showAnswer(rep, b.answers.length - 1);
+        var inp = document.querySelector('#nla-askp input');
+        if (inp) inp.value = '';
       }
       w.postMessage({ type: 'ledger', id: id, block: b });
     }
@@ -11091,6 +11127,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         window.NLA.example = /sample-sales-synthetic\.csv$/.test(String((r.input && r.input.name) || '')) ? String(CFG.sales_example || '') : '';
       }
       var h = window.NLA ? window.NLA.html(r) : '';
+      // step 4: the question box and the answers (moved into step 4 by data-step-home)
+      if (window.NLA && window.NLA.askPanel) h += window.NLA.askPanel(r);
       var hasLine = /^source_line,/.test(r.downloads.clean_csv) || /^source_line,/.test(r.downloads.quarantine_csv);
       var held = r.privacy.flagged.filter(function (f) { return f.decision === 'withhold'; }).map(function (f) { return f.column; });
       h += '<article class="tr-card tr-dl"><h3>Take it with you</h3><div class="tr-actions">' +
@@ -13484,7 +13522,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       '<div class="viz" id="' + id + '"></div><div class="nla-fig-note"></div></figure>';
   }
   A.mount = function (root) {
-    if (root) bindAsk(root);
+    if (root) bindActions(root);                  // the report card's own buttons (Copy SQL, Add to the dashboard)
+    var panel = document.getElementById('nla-askp');
+    if (panel) { bindPanel(panel); bindAsk(panel); }
     var U = window.NLU;
     if (!root || !U || !U.visual || !window.NLV) return;
     if (window.NLC && window.NLC.extendNLV) window.NLC.extendNLV(window.NLV);
@@ -13584,7 +13624,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   function askHtml(b) {
     if (typeof A.onAsk !== 'function') return '';
     var asked = arr(b.asked).filter(function (q) { return typeof q === 'string' && q; });
-    return '<form class="nla-ask" novalidate><label for="nla-q"><strong>Ask your data</strong> a question the analysis above does not answer; the answer can include a read-only SQL query</label>' +
+    return '<form class="nla-ask" novalidate><label for="nla-q">A question about these rows, in your own words: the answer is computed from your file, with the query behind it</label>' +
       (asked.length ? '<p class="nla-asked muted">You asked: ' + asked.map(function (q) { return '\u201c' + esc(q) + '\u201d'; }).join(', ') + '</p>' : '') +
       '<div class="nla-ask-row"><input id="nla-q" name="q" type="text" maxlength="300" autocomplete="off" placeholder="' + esc(A.example ? 'e.g. ' + A.example : 'e.g. Why is revenue down in a region this quarter?') + '" required>' +
       '<button type="submit" class="btn btn-primary">Ask</button></div>' +
@@ -13617,7 +13657,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     });
   }
   function bindAsk(root) {
-    bindActions(root);
+    if (!(root.matches && root.matches('section.nla-askp'))) bindActions(root);
     var f = root.querySelector('form.nla-ask');
     if (!f || f.getAttribute('data-bound')) return;
     f.setAttribute('data-bound', '1');
@@ -13689,8 +13729,77 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       h += '<details class="more nla-refused"><summary>' + (ins.length ? 'Steps it did not run (' + count(refused.length) + ')' : 'Why it did not run') + '</summary><ul class="nla-list">' +
         refused.map(function (x) { return '<li>' + (x.op && x.op !== 'all' ? '<code>' + esc(x.op) + '</code>: ' : '') + esc(x.why || '') + '</li>'; }).join('') + '</ul></details>';
     }
-    return h + askHtml(b) + '</section>';
+    // the question box and its answers live in step 4 (A.askPanel): the card says where
+    return h + (typeof A.onAsk === 'function' ? '<p class="nla-goask"><a href="#try-step-4">Ask your own question about this data in step 4</a></p>' : '') + '</section>';
   };
+
+  // ---- step 4 "Ask" (owner, 17 Oct 2026: "I can't see any answer it gave when I ask two questions; that should be easily
+  // navigated"): the question box and every question with its answer, newest first, in one panel the step rail's "4 Ask" opens.
+  // Each answer leads with the engine's sentence written from the query's result, then that result as a table, then the query.
+  function answerHtml(a, n) {
+    if (!obj(a)) return '';
+    var cols = arr(a.columns), rows = arr(a.rows);
+    var table = cols.length && rows.length ? '<div class="tscroll"><table class="dt nla-qa-t"><thead><tr>' +
+      cols.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function (r, ri) {
+        return '<tr>' + arr(r).map(function (c, i) {
+          if (i === 0) return '<th scope="row">' + esc(c) + '</th>';
+          var w = i === 1 && arr(a.bars).length === rows.length ? a.bars[ri] : null;
+          return '<td class="num">' + (typeof w === 'number' && isFinite(w) ? '<span class="nla-qa-bar" aria-hidden="true" style="width:' + Math.max(1, Math.round(w * 120)) + 'px"></span>' : '') + esc(c) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') +
+      '</tbody></table></div>' + (a.rows_total > rows.length ? '<p class="muted nla-qa-more">The first ' + count(rows.length) + ' of ' + count(a.rows_total) + ' rows.</p>' : '') : '';
+    var extra = arr(a.findings).filter(function (x) { return typeof x === 'string' && x; });
+    return '<li class="nla-qa' + (a.failed ? ' nla-qa-fail' : '') + '" id="nla-qa-' + n + '" tabindex="-1">' +
+      '<p class="nla-qa-q"><span class="kicker">Question ' + (n + 1) + '</span> ' + esc(a.question || '') + '</p>' +
+      '<p class="nla-qa-a">' + esc(a.text || '') + '</p>' + table +
+      (extra.length ? '<ul class="nla-qa-x">' + extra.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+      (a.sql ? '<details class="nla-sql"><summary>The query behind this answer</summary><div class="nla-sql-h"><button type="button" class="btn btn-ghost btn-sm nla-copy" data-copy-sql>Copy SQL</button></div><pre class="nla-sql-q"><code>' + esc(a.sql) + '</code></pre></details>' : '') +
+      (a.pin ? '<p><button type="button" class="btn btn-ghost btn-sm" data-pin="' + esc(a.pin) + '">Add to the dashboard</button></p>' : '') +
+      (a.by ? '<p class="muted nla-qa-by">' + esc(a.by) + '</p>' : '') + '</li>';
+  }
+  function threadHtml(b) {
+    var list = arr(b && b.answers);
+    if (!list.length) return '<li class="nla-qa-none muted">Your questions and their answers will appear here, the newest first.</li>';
+    return list.map(function (a, i) { return { a: a, i: i }; }).reverse().map(function (x) { return answerHtml(x.a, x.i); }).join('');
+  }
+  A.askPanel = function (r) {
+    if (typeof A.onAsk !== 'function') return '';
+    var b = r && obj(r.analyst) ? r.analyst : {};
+    return '<section class="tr-card nla-askp" id="nla-askp" data-step-home="4" aria-labelledby="nla-askp-h"><h3 id="nla-askp-h">Ask your data</h3>' +
+      askHtml(b) + '<ol class="nla-thread" id="nla-thread" aria-label="Your questions and their answers, the newest first">' + threadHtml(b) + '</ol></section>';
+  };
+  // the list again after an answer, and the newest answer brought into view and focused
+  A.showAnswer = function (r, n) {
+    var ol = document.getElementById('nla-thread');
+    if (!ol) return;
+    ol.innerHTML = threadHtml(r && r.analyst);
+    var li = document.getElementById('nla-qa-' + n);
+    if (li) {
+      if (li.scrollIntoView) li.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      try { li.focus({ preventScroll: true }); } catch (e) { /* an old browser */ }
+    }
+  };
+  function bindPanel(p) {
+    if (!p || p.getAttribute('data-nla-acts')) return;
+    p.setAttribute('data-nla-acts', '1');
+    p.addEventListener('click', function (e) {
+      var t = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!t) return;
+      if (t.hasAttribute('data-copy-sql')) {
+        var code = t.closest('.nla-sql').querySelector('code'), txt = code ? code.textContent : '';
+        var done = function (ok) { t.textContent = ok ? 'Copied' : 'Select the query to copy it'; setTimeout(function () { t.textContent = 'Copy SQL'; }, 1600); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); });
+        else done(false);
+      } else if (t.hasAttribute('data-pin')) {
+        if (A.pin(t.getAttribute('data-pin'))) { t.textContent = 'Added to the dashboard'; t.disabled = true; }
+      } else if (t.hasAttribute('data-ask-example')) {
+        var f = t.closest('form.nla-ask'), input = f && f.querySelector('input');
+        if (input) { input.value = t.getAttribute('data-ask-example'); }
+        if (f && f.requestSubmit) f.requestSubmit(); else if (f) f.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+  }
 }());
 
 /*@nl-file 55-nl-viz.js*/

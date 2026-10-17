@@ -1604,6 +1604,75 @@ def ask_steps(ix: Dict[str, Any], question: str) -> List[Dict[str, Any]]:
         where.append("%s IN (%s)" % (qi(ix["entity"]), ", ".join(lit(m) for m in named + ([ix["total"]] if ix.get("total") and
                                                                                              ix["total"] not in named else []))))
     sql = "SELECT %s FROM kept_rows WHERE %s ORDER BY value DESC" % (", ".join(sel), " AND ".join(where))
+    ix["last_ask"] = {"label": best["label"], "kind": best["kind"], "named": named}
     return [{"op": "sql", "args": {"sql": sql},
              "why": "the measure the question names (%s), for %s, largest first" % (
                  _short(best["label"], 120), "the places it names" if named else "every place")}]
+
+
+
+# ============================================================================================ the answer to a question (step 4)
+def _num_or_none(v: Any) -> Optional[float]:
+    try:
+        f = float(v)
+        return f if f == f else None
+    except (TypeError, ValueError):
+        return None
+
+
+def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The direct answer a reader looks for first: one sentence written from the first query that ran (its result table), the
+    table itself (at most 20 rows) and the query. None when no query ran. Every figure is a cell of that result."""
+    st = next((s for s in steps or [] if isinstance(s, dict) and s.get("op") == "sql" and s.get("ok")), None)
+    if st is None:
+        return None
+    tb = st.get("table") or {}
+    cols = [str(c) for c in tb.get("columns") or []]
+    rows = [list(r) for r in tb.get("rows") or [] if isinstance(r, (list, tuple))]
+    last = (ix or {}).get("last_ask") or {}
+    kind = str(last.get("kind") or "")
+    def fmt(v: Any) -> str:
+        f = _num_or_none(v)
+        if f is None:
+            return str(v)
+        return _fmt_num(f, kind) if kind in ("pct", "money") else _nfmt(f)
+    shown = [[fmt(c) if _num_or_none(c) is not None else str(c) for c in r] for r in rows[:20]]
+    # the column headers in words: the measure's name for "value", the table's word for "place"
+    if last.get("label"):
+        cols = [_short(str(last["label"]), 50) if c == "value" else c for c in cols]
+    # a bar per row for a single measure (its share of the largest), when every value is 0 or more
+    bars = None
+    if len(cols) >= 2 and rows:
+        v1 = [_num_or_none(r[1]) if len(r) > 1 else None for r in rows[:20]]
+        if all(x is not None and x >= 0 for x in v1) and max(v1) > 0:
+            bars = [round(x / max(v1), 4) for x in v1]
+    if not rows:
+        text = "No rows match this question in the file."
+    else:
+        num_i = [i for i in range(len(cols)) if all(_num_or_none(r[i]) is not None for r in rows if i < len(r) and r[i] is not None)]
+        lab_i = [i for i in range(len(cols)) if i not in num_i]
+        subject = last.get("label") or (cols[num_i[0]] if num_i else "")
+        if len(rows) == 1:
+            text = "%s: %s." % (_short(str(subject), 120) if subject else "The answer",
+                                "; ".join("%s %s" % (cols[i], fmt(rows[0][i])) for i in range(len(cols)) if rows[0][i] is not None))
+        elif lab_i and num_i:
+            li, vi = lab_i[0], num_i[0]
+            vals = [(r[li], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
+            tot = (ix or {}).get("total")
+            members = [(lb, v) for lb, v in vals if str(lb) != str(tot)]
+            if members:
+                hi = max(members, key=lambda x: x[1])
+                lo = min(members, key=lambda x: x[1])
+                text = "%s: highest in %s (%s), lowest in %s (%s)" % (
+                    _short(str(subject), 120), hi[0], fmt(hi[1]), lo[0], fmt(lo[1]))
+                tv = next((v for lb, v in vals if str(lb) == str(tot)), None)
+                text += ("; %s as a whole: %s." % (tot, fmt(tv))) if tv is not None else "."
+                if len(members) == 2 and hi[1] != lo[1]:
+                    text = "%s: %s %s, %s %s." % (_short(str(subject), 120), hi[0], fmt(hi[1]), lo[0], fmt(lo[1])) + \
+                        ((" %s as a whole: %s." % (tot, fmt(tv))) if tv is not None else "")
+            else:
+                text = "%s rows; see the table." % format(len(rows), ",")
+        else:
+            text = "%s rows match; see the table." % format(len(rows), ",")
+    return {"question": str(question)[:300], "text": text, "columns": cols[:12], "rows": [r[:12] for r in shown], "bars": bars,
+            "rows_total": len(rows), "sql": str((st.get("args") or {}).get("sql") or "")[:4000], "step": st.get("id")}

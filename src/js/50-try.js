@@ -2738,12 +2738,13 @@
     // tells what the planner may see (ledger_for_ai: the steps so far with their printed figures, never a row); the
     // worker's /analyst picks up to four typed steps; the engine runs them on the file's rows, checking each again;
     // their insights join the analyst's card. On any failure the card stays as it was and the box says why.
-    var ASK_ROUNDS = 3, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
+    var ASK_ROUNDS = 3, ASK_MAX = 20, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
     function askData(question, say) {
       var rep = S.report, b = rep && rep.analyst;
       if (!b) { say('This file has no analysis to ask about.', false); return; }
-      var done = (b.asked || []).length;
-      if (done >= ASK_ROUNDS) { say('That is the ' + ASK_ROUNDS + ' questions a file can take. Run the file again to ask more.', false); return; }
+      var done = (b.asked || []).length, aiDone = b.ai_rounds || 0;
+      // the AI plans at most ASK_ROUNDS questions a file (the worker's round limit); after that the engine plans each one itself
+      if (done >= ASK_MAX) { say('That is the ' + ASK_MAX + ' questions a file can take. Run the file again to ask more.', false); return; }
       // the worker echoes the run's id (onMsg drops any other); the box is disabled while a question is out, so one at a time
       var seq = S.seq, id = seq, w = worker(), planned = 'ai';
       function fail(why) {
@@ -2762,15 +2763,20 @@
           if (seq !== S.seq) return;
           if (!steps || !steps.length) {
             b.asked = (b.asked || []).concat([question]);
-            return fail((why ? why + ' ' : '') + 'The engine found no check it can run for this question. Try naming a measure and a group, as in \u201cWhy is revenue down in a region this quarter?\u201d');
+            var msg = (why ? why + ' ' : '') + 'The engine found no check it can run for this question. Try naming a measure and a group, as in \u201cWhy is revenue down in a region this quarter?\u201d';
+            b.answers = (b.answers || []).concat([{ question: question, text: msg, failed: true }]);
+            if (window.NLA && window.NLA.showAnswer) window.NLA.showAnswer(rep, b.answers.length - 1);
+            return fail(msg);
           }
           say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
           S.onMore = gotMore;
-          w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+          w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [], question: question });
         };
         w.postMessage({ type: 'plan', id: id, question: question });
       }
       if (!(CFG.ask_data === true && planOn())) return enginePlan('');
+      if (aiDone >= ASK_ROUNDS) return enginePlan('The AI has planned ' + ASK_ROUNDS + ' questions on this file.');
+      b.ai_rounds = aiDone + 1;
       say('Asking the AI which checks answer this\u2026', true);
       S.onLedger = function (gotId, steps) {
         if (gotId !== id) return;
@@ -2781,7 +2787,7 @@
         var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, ASK_ABORT_MS);
         fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: done + 1 }),
+          body: JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: aiDone + 1 }),
           credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
           .then(function (res) {
             return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; });
@@ -2804,7 +2810,7 @@
             // its cap of four steps (the AI's last step gives way)
             var run = function (steps) {
               say('Running ' + steps.length + (steps.length === 1 ? ' check' : ' checks') + ' on your rows\u2026', true);
-              w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [] });
+              w.postMessage({ type: 'more', id: id, steps: steps, prior: b.steps || [], question: question });
             };
             if (j.steps.some(function (st) { return st && st.op === 'sql'; })) return run(j.steps);
             S.onPlan = function (gotId, eng) {
@@ -2838,13 +2844,25 @@
         if (window.NLSteps) { window.NLSteps.set(4, 'done', b.asked.length + (b.asked.length === 1 ? ' question answered' : ' questions answered')); if (window.NLSteps.here) window.NLSteps.here(4); }
         if (planned === 'ai') b.chosen_by = 'engine+ai';
         else b.engine_planned = (b.engine_planned || []).concat([question]);
-        if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, ins.length ? ins[0].id : null);
+        if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, null);
         // a step the engine would not run says why in the step itself (ok false, refused), or in out.refused
         var why = out.steps.filter(function (x) { return x && !x.ok && x.refused; }).map(function (x) { return x.refused; })
           .concat((out.refused || []).map(function (x) { return x && x.why; }).filter(Boolean));
-        var f = el.report.querySelector('form.nla-ask .nla-ask-status');
-        if (f) f.textContent = ins.length ? 'Answered with ' + ins.length + (ins.length === 1 ? ' new finding' : ' new findings') + ', under \u201cWhat you asked\u201d.'
-          : 'The checks ran but none gave a finding the engine can state' + (why.length ? ': ' + String(why[0]).slice(0, 160).replace(/[.\s]+$/, '') + '.' : '.');
+        // the answer, in step 4: the engine's sentence from the query's result, the result and the query; the findings the other
+        // checks stated under it
+        var a = out.answer && typeof out.answer.text === 'string' ? out.answer : null;
+        var entry = { question: question, text: a ? a.text : (ins.length ? ins[0].text : 'The checks ran but none gave an answer the engine can state' +
+            (why.length ? ': ' + String(why[0]).slice(0, 160).replace(/[.\s]+$/, '') + '.' : '.')),
+          columns: a ? a.columns : [], rows: a ? a.rows : [], rows_total: a ? a.rows_total : 0, sql: a ? a.sql : '',
+          bars: a ? a.bars : null,
+          findings: ins.map(function (i) { return i.text; }).filter(function (x) { return (!a || x !== a.text) && !/^The read-only query returned /.test(x); }).slice(0, 4),
+          pin: (ins.filter(function (i) { return i && i.figure; })[0] || {}).id || '', failed: !a && !ins.length,
+          by: planned === 'ai' ? 'The AI chose the checks; the engine ran them on your rows and computed every number.' : 'The engine planned and ran the checks on your rows.' };
+        b.answers = (b.answers || []).concat([entry]);
+        say('Answered: question ' + b.answers.length + ', at the top of the list below.', false);
+        if (window.NLA && window.NLA.showAnswer) window.NLA.showAnswer(rep, b.answers.length - 1);
+        var inp = document.querySelector('#nla-askp input');
+        if (inp) inp.value = '';
       }
       w.postMessage({ type: 'ledger', id: id, block: b });
     }
@@ -3560,6 +3578,8 @@
         window.NLA.example = /sample-sales-synthetic\.csv$/.test(String((r.input && r.input.name) || '')) ? String(CFG.sales_example || '') : '';
       }
       var h = window.NLA ? window.NLA.html(r) : '';
+      // step 4: the question box and the answers (moved into step 4 by data-step-home)
+      if (window.NLA && window.NLA.askPanel) h += window.NLA.askPanel(r);
       var hasLine = /^source_line,/.test(r.downloads.clean_csv) || /^source_line,/.test(r.downloads.quarantine_csv);
       var held = r.privacy.flagged.filter(function (f) { return f.decision === 'withhold'; }).map(function (f) { return f.column; });
       h += '<article class="tr-card tr-dl"><h3>Take it with you</h3><div class="tr-actions">' +

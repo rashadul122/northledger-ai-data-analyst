@@ -5306,14 +5306,14 @@ async function askSqlChecks(ctx, tag) {
   if (/dark/.test(tag)) { await p.evaluate(() => { document.documentElement.setAttribute('data-theme', 'dark'); }); await p.waitForTimeout(100); }
   ok(/synthetic/i.test(await p.textContent('#try-sample-sales')), 'the sales sample button does not say synthetic');
   await p.evaluate(() => { window.__pins = []; document.addEventListener('nl:pin-chart', (e) => window.__pins.push(e.detail)); });
-  const ex = '#try-report form.nla-ask [data-ask-example]';
+  const ex = '#nla-askp form.nla-ask [data-ask-example]';
   ok(await p.isVisible(ex), 'no example question in the Ask your data box');
-  ok(/engine plans the checks itself/.test(await p.textContent('#try-report .nla-ask-note')), 'the box does not say the engine plans the checks with the AI off');
+  ok(/engine plans the checks itself/.test(await p.textContent('#nla-askp .nla-ask-note')), 'the box does not say the engine plans the checks with the AI off');
   await p.click(ex);
   try {
     await p.waitForFunction(() => document.querySelectorAll('#try-report .nla-pin').length >= 3, null, { timeout: 15000 });
   } catch (e) {
-    throw new Error('no answers after the example question: status "' + (await p.evaluate(() => (document.querySelector('#try-report .nla-ask-status') || {}).textContent)) + '"; ' + (p.__errs[0] || ''));
+    throw new Error('no answers after the example question: status "' + (await p.evaluate(() => (document.querySelector('#nla-askp .nla-ask-status') || {}).textContent)) + '"; ' + (p.__errs[0] || ''));
   }
   const r = await p.evaluate(() => {
     const q = document.querySelector('#try-report .nla-ins .nla-sql-q');
@@ -5321,7 +5321,7 @@ async function askSqlChecks(ctx, tag) {
     const texts = Array.from(document.querySelectorAll('#try-report .nla-ins .nla-text')).map((x) => x.textContent);
     return { sql: q ? q.textContent : '', ro: !!document.querySelector('#try-report .nla-ins .nla-ro'), copy: !!document.querySelector('#try-report .nla-ins [data-copy-sql]'),
       rows: tb ? tb.querySelectorAll('tbody tr').length : 0, texts, figs: document.querySelectorAll('#try-report .nla-ins .nla-fig svg').length,
-      status: (document.querySelector('#try-report .nla-ask-status') || {}).textContent || '',
+      status: (document.querySelector('#nla-askp .nla-ask-status') || {}).textContent || '',
       sw: document.documentElement.scrollWidth, vw: document.documentElement.clientWidth,
       bg: q ? getComputedStyle(q).backgroundColor : '', fg: q ? getComputedStyle(q).color : '' };
   });
@@ -5334,11 +5334,19 @@ async function askSqlChecks(ctx, tag) {
   ok(r.texts.some((t) => /gross margin fell from 47\.4% in 2026 Q2 to 40\.1% in 2026 Q3/.test(t) && /Accessories' mix/.test(t)), 'the planted mix cause is not in the answer');
   ok(r.texts.some((t) => /Online's rate/.test(t)), 'the planted discount cause is not in the answer');
   ok(r.figs >= 3, 'the answers\' charts are not drawn (' + r.figs + ')');
-  ok(/Answered with 4 new findings/.test(r.status), 'the status line says: ' + r.status);
+  ok(/^Answered: question 1, at the top of the list below/.test(r.status) && r.texts.length >= 4, 'the status line says: ' + r.status + ' (' + r.texts.length + ' findings)');
   ok(r.sw <= r.vw + 1, 'the page is wider than the viewport: ' + r.sw + ' > ' + r.vw);
   ok(r.bg !== r.fg, 'the SQL block has no contrast');
+  // step 4 (owner, 17 Oct 2026): the box and every answer live in step 4, the newest first, each with a direct sentence, its query and its table
+  const qa = await p.evaluate(() => {
+    const li = document.querySelector('#try-step-4-slot #nla-thread li.nla-qa');
+    return li ? { q: (li.querySelector('.nla-qa-q') || {}).textContent || '', a: (li.querySelector('.nla-qa-a') || {}).textContent || '',
+      sql: !!li.querySelector('.nla-sql-q'), rows: li.querySelectorAll('table.nla-qa-t tbody tr').length, focused: document.activeElement === li } : null;
+  });
+  ok(qa && qa.a.trim().length > 10 && qa.sql && qa.rows >= 1, 'step 4 does not list the answer with its sentence, query and table: ' + JSON.stringify(qa));
+  ok(qa && qa.focused, 'the newest answer is not focused after it arrives');
   await shot(p, 'asksql-' + tag + '-answer', '#try-report .nla-group:has(.nla-pin)');
-  await shot(p, 'asksql-' + tag + '-box', '#try-report form.nla-ask');
+  await shot(p, 'asksql-' + tag + '-box', '#nla-askp form.nla-ask');
   await p.click('#try-report .nla-pin');
   const pin = await p.evaluate(() => ({ list: (window.NL_DASH_PINS || []).length, ev: window.__pins.length, rec: window.__pins[0],
     btn: document.querySelector('#try-report .nla-pin').textContent, dis: document.querySelector('#try-report .nla-pin').disabled }));
@@ -5366,20 +5374,20 @@ check('ask-sql-through-the-real-engine', DESK, async (ctx) => {
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
   if (await p.isVisible('#try-pd')) { await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
   ok(await p.isVisible('#try-report'), 'no report from the real engine: ' + (await p.textContent('#try-msg')));
-  const ex = '#try-report form.nla-ask [data-ask-example]';
+  const ex = '#nla-askp form.nla-ask [data-ask-example]';
   ok(await p.isVisible(ex), 'no example question for the sales sample');
   await p.evaluate(() => { window.__t0 = performance.now(); });
   await p.click(ex);
   try {
-    await p.waitForFunction(() => /Answered with|none gave|could not|found no/.test((document.querySelector('#try-report .nla-ask-status') || {}).textContent || ''), null, { timeout: 120000 });
-  } catch (e) { throw new Error('no answer: status "' + (await p.evaluate(() => (document.querySelector('#try-report .nla-ask-status') || {}).textContent)) + '"'); }
-  const r = await p.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), status: document.querySelector('#try-report .nla-ask-status').textContent,
+    await p.waitForFunction(() => /Answered|none gave|could not|found no/.test((document.querySelector('#nla-askp .nla-ask-status') || {}).textContent || ''), null, { timeout: 120000 });
+  } catch (e) { throw new Error('no answer: status "' + (await p.evaluate(() => (document.querySelector('#nla-askp .nla-ask-status') || {}).textContent)) + '"'); }
+  const r = await p.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), status: document.querySelector('#nla-askp .nla-ask-status').textContent,
     texts: Array.from(document.querySelectorAll('#try-report .nla-ins .nla-text')).map((x) => x.textContent),
     sql: (document.querySelector('#try-report .nla-ins .nla-sql-q') || {}).textContent || '',
     rows: Array.from(document.querySelectorAll('#try-report .nla-ins > .nla-tbl tbody tr')).map((tr) => tr.firstChild.textContent),
     pins: document.querySelectorAll('#try-report .nla-pin').length }));
   console.log('UI INFO ask-sql-through-the-real-engine: the question took ' + r.ms + ' ms in the browser (plan + 4 steps in Pyodide + redraw)');
-  ok(/Answered with 4 new findings/.test(r.status), 'status: ' + r.status);
+  ok(/^Answered: question 1/.test(r.status) && r.texts.length >= 4, 'status: ' + r.status + ' (' + r.texts.length + ' findings)');
   ok(native.every((t) => r.texts.indexOf(t) >= 0), 'an answer differs from the native engine\'s: ' + native.filter((t) => r.texts.indexOf(t) < 0)[0]);
   ok(/^SELECT /.test(r.sql) && /FROM kept_rows/.test(r.sql) && /"region" = 'EMEA'/.test(r.sql), 'the SQL panel: ' + r.sql.slice(0, 80));
   ok(r.rows.length === 12 && r.rows[11] === '2026-Q3', 'the result table: ' + r.rows.join(' '));

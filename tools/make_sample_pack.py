@@ -18,10 +18,11 @@ region, grown by a fixed rate; the KPIs come from a seeded random walk). No comp
 The file names say so, and so does the page's sample button.
 
 The pack's planted facts for September 2026 (tools/test_nl_pack.py recomputes every figure from these files with
-pandas, never from the engine): revenue below budget, carried by EMEA (the ledger's planted Q3 shock); the churn rate
-up about 1.3 percentage points in the month and over its target; NPS down 8 points; support tickets up by about a
-third, with no target; headcount flat (a level: never summed over months); NPS has no July 2026 value (a gap the pack
-leaves as a gap). Deterministic: a fixed seed and no clock. Standard library only.
+pandas, never from the engine): revenue about 12% below budget, with EMEA (whose budget is ambitious, and whose Q3 has
+the ledger's planted shock) carrying more than the whole shortfall; the churn rate up 1.2 percentage points in the
+month (2.2 to 3.4) and 1.4 points over its target; NPS down 7 points; support tickets up about 32%, with no target;
+headcount flat (a count at a date: never summed over months); NPS has no July 2026 value (a gap the pack leaves as a
+gap). Deterministic: a fixed seed and no clock. Standard library only.
 """
 from __future__ import annotations
 
@@ -40,7 +41,8 @@ ENGINE = os.path.join(HERE, "..", "engine")
 BUDGET = os.path.join(ENGINE, "sample-pack-budget-synthetic.csv")
 KPI = os.path.join(ENGINE, "sample-pack-kpi-synthetic.csv")
 SEED = 20261017
-GROWTH = {"EMEA": 0.08, "Americas": 0.06, "APAC": 0.10}    # the budget: last year's month grown by this
+GROWTH = {"EMEA": 0.45, "Americas": 0.06, "APAC": 0.10}    # the budget: last year's month grown by this (EMEA's
+#                                                            ambitious: the month falls short of it)
 FORECAST_CUT = {"EMEA": 0.90, "Americas": 1.00, "APAC": 1.04}  # the July reforecast against the budget
 KPI_MONTHS = ["%04d-%02d" % (y, m) for y in (2024, 2025, 2026) for m in range(1, 13)
               if "2024-10" <= "%04d-%02d" % (y, m) <= "2026-09"]

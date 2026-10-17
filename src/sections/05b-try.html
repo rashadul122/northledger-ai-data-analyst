@@ -14,10 +14,10 @@
       <div class="try-start" id="try-start">
         <div class="try-drop" id="try-drop">
           <svg class="try-drop-ic" aria-hidden="true" viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M25 36V22m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <p class="try-drop-t"><strong>Drop a CSV or TSV file here</strong></p>
+          <p class="try-drop-t"><strong>Drop a CSV or TSV file here</strong> (or several, for a report that reads more than one)</p>
           <p class="try-drop-or">or</p>
-          <button type="button" class="btn btn-primary" id="try-pick">Choose a file</button>
-          <input type="file" id="try-file" class="sr" tabindex="-1" aria-label="Choose a CSV or TSV file" accept=".csv,.tsv,.txt,.xlsx,.xlsm,text/csv,text/tab-separated-values,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          <button type="button" class="btn btn-primary" id="try-pick">Choose files</button>
+          <input type="file" id="try-file" class="sr" tabindex="-1" multiple aria-label="Choose one or more CSV or TSV files" accept=".csv,.tsv,.txt,.xlsx,.xlsm,text/csv,text/tab-separated-values,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
           <p class="note try-limits">Up to {{d try_max_mb}} and {{d try_max_rows}} rows. A larger file is refused, never sampled.</p>
         </div>
         <div class="try-side">
@@ -26,8 +26,11 @@
           <p class="note">The sample is a deliberately messy rent and expense ledger for five invented Toronto buildings, made for this demo: no real people or accounts in it.</p>
           <button type="button" class="btn btn-ghost" id="try-sample-sales">Try the sales sample (synthetic)</button>
           <p class="note">SYNTHETIC: three years of invented orders (region, country, product line, channel, units, revenue, cost) made by a seeded script, with a planted cause behind a gross-margin drop to find with "Ask your data".</p>
+          <button type="button" class="btn btn-ghost" id="try-sample-pack">Monthly pack demo (synthetic)</button>
+          <p class="note">SYNTHETIC: the same sales ledger with its budget (a scenario column) and a KPI extract (each KPI beside its target), three files in one run, for the monthly reporting pack (the last step, Deliver).</p>
         </div>
       </div>
+      <div class="try-need" id="try-need" hidden></div>
       <div class="try-q-wrap" id="try-q-wrap" data-needs-ai>
         <label class="try-q-label" for="try-q"><strong>Ask your question about the data (optional)</strong></label>
         <input type="text" id="try-q" class="try-q" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. What drives the rent the most, and what does the regression table say about each driver?">
@@ -75,7 +78,7 @@
       </section>
       <section class="try-step" id="try-step-6" data-step="6" aria-labelledby="try-step-6-h" hidden>
         <h3 data-fact-exempt="the step number" class="try-step-h" id="try-step-6-h"><span class="try-step-n" aria-hidden="true">6</span> Deliver <span class="try-step-st"></span></h3>
-        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">The AI-written report, and the files to take away: the report as a PDF or a Word write-up (below; the Word write-up needs no AI), and the dashboard as HTML or Excel (in the Dashboard tab).</p>
+        <p class="note try-step-in" data-fact-exempt="step numbers of this workflow">The AI-written report, and the files to take away: the report as a PDF or a Word write-up (below; the Word write-up needs no AI), the dashboard as HTML or Excel (in the Dashboard tab), and the report types below (a monthly reporting pack, and more), made from every file of the run.</p>
         <div class="try-ai-report" id="try-ai-report" hidden role="region" aria-label="The AI-written report" data-fact-exempt="the AI-written report; every figure checked against the engine's results or the source cited beside it"></div>
         <div class="try-step-slot" id="try-step-6-slot"></div>
       </section>

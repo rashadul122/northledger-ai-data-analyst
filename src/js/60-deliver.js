@@ -101,7 +101,9 @@
   var uid = 0;
   function formHtml(o, scope) {
     var v = D.settings(o.id), s = arr(o.settings);
-    if (!s.length) return '';
+    // one form a setting: a type that draws its own settings form in its card (ownForm, e.g. the sales report's,
+    // which lists the file's own quarters and columns) gets none from the registry
+    if (!s.length || o.ownForm) return '';
     return '<fieldset class="dl-set" data-set="' + esc(o.id) + '" data-scope="' + esc(scope) + '"><legend>Settings for the ' + esc(o.title.toLowerCase()) + '</legend>' + s.map(function (x) {
       var id = 'dl-f' + (++uid), cur = v[x.key], help = x.help ? '<small class="note" id="' + id + 'h">' + esc(x.help) + '</small>' : '';
       var desc = x.help ? ' aria-describedby="' + id + 'h"' : '', h = '<div class="dl-field" data-kind="' + esc(x.kind) + '"><label for="' + id + '">' + esc(x.label) + '</label>';
@@ -161,12 +163,17 @@
       '</div><p class="note try-need-out" id="try-recipe-out" role="status" aria-live="polite"' + (D._recipeNote ? '' : ' hidden') + '>' + esc(D._recipeNote || '') + '</p>';
     if (o) {
       h += '<div class="try-need-card" id="try-need-card"><p class="try-need-blurb">' + esc(o.blurb || '') + '</p>' +
-        '<p class="note"><strong>What to drop in</strong> (pick them together: hold Ctrl or Cmd to choose several files). A browser page cannot open a folder or connect to your finance system by itself, so export each file and pick them here; or paste the figures below.</p>' +
+        '<p class="note"><strong>What to drop in</strong> (pick them together: hold Ctrl or Cmd to choose several files). A browser page cannot open a folder or connect to your ' + esc(o.system || 'finance system or CRM') + ' by itself, so export each file and pick them here; or paste the figures below.</p>' +
         '<ol class="try-need-list" id="try-need-list">' + arr(o.needs).map(function (n) {
           return '<li><strong>' + esc(n.what) + '</strong>' + (n.optional ? ' <span class="tag">optional</span>' : '') +
             (arr(n.columns).length ? '<br><span class="note">Columns: ' + arr(n.columns).map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(', ') + '</span>' : '') +
             (n.how ? '<br><span class="note">' + esc(n.how) + '</span>' : '') + '</li>';
-        }).join('') + '</ol>' + formHtml(o, 'need') + '</div>';
+        }).join('') + '</ol>' +
+        // how to export, per system (an option's howSteps: [[system, steps]], text only, escaped like every other field)
+        (arr(o.howSteps).length ? '<details class="sr-how try-need-how" open><summary>' + esc(o.howTitle || 'How to export the files') + '</summary><dl>' +
+          arr(o.howSteps).map(function (x) { return '<dt>' + esc(arr(x)[0]) + '</dt><dd>' + esc(arr(x)[1]) + '</dd>'; }).join('') + '</dl>' +
+          (o.howNote ? '<p class="note">' + esc(o.howNote) + '</p>' : '') + '</details>' : '') +
+        formHtml(o, 'need') + '</div>';
     }
     h += '<details class="try-paste" id="try-paste"><summary>Paste figures instead</summary><label for="try-paste-text" class="note">Paste a small table (copied from a spreadsheet, or CSV text with a header row). It is read in this browser as one more file, named “pasted-figures.csv”.</label>' +
       '<textarea id="try-paste-text" rows="5" spellcheck="false" placeholder="month,revenue,revenue_budget&#10;2026-08,120000,125000&#10;2026-09,118000,126000"></textarea>' +

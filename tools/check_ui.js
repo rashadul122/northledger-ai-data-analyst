@@ -5100,11 +5100,11 @@ async function salesChecks(ctx, tag) {
   ok(/Close date/.test(need) && /Salesforce/.test(need) && /HubSpot/.test(need) && /Pipedrive/.test(need) && /Zoho/.test(need), 'step 1 does not list the export\'s columns and how to export them');
   await p.evaluate(() => { window.__steps = []; });
   await runReport(p);
-  await p.waitForSelector('#try-report-types [data-type="sales-report"]', { timeout: 10000 });
-  const menu = await p.evaluate(() => { const b = document.querySelector('#try-report-types [data-type="sales-report"]'), slot = document.getElementById('try-step-6-slot'), dl = document.getElementById('try-deliver');
-    return { st: b.parentElement.querySelector('.try-types-st').textContent, inSix: slot.contains(b), after: !dl || !!(dl.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), pressed: b.getAttribute('aria-pressed') }; });
+  await p.waitForSelector('#try-types [data-type="sales-report"]', { timeout: 10000 });
+  const menu = await p.evaluate(() => { const b = document.querySelector('#try-types [data-type="sales-report"]'), slot = document.getElementById('try-step-6-slot'), dl = document.getElementById('try-deliver');
+    return { st: (b.parentElement.querySelector('.try-type-fit') || b.parentElement.querySelector('.try-types-st')).textContent, inSix: slot.contains(b), after: !dl || !!(dl.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), pressed: b.getAttribute('aria-expanded') || b.getAttribute('aria-pressed') }; });
   ok(menu.inSix && menu.after && menu.st === 'ready', 'step 6 does not list the sales report as ready after the downloads: ' + JSON.stringify(menu));
-  if (menu.pressed !== 'true') await p.click('#try-report-types [data-type="sales-report"]');
+  if (menu.pressed !== 'true') await p.click('#try-types [data-type="sales-report"]');
   await p.waitForSelector('#try-sales .sr-preview svg', { timeout: 15000 });
   const d = await p.evaluate(() => {
     const t = (s) => { const e = document.querySelector(s); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; };

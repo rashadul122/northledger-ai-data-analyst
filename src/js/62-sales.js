@@ -284,9 +284,14 @@
   function render(slot, rep, settings) {
     if (!slot) return;
     var sha = (rep && rep.input && rep.input.sha256) || '';
-    if (sha !== state.sha) { state.sha = sha; state.rec = rep && rep.sales; state.settings = {}; state.asked = ''; }
-    // Track E's registry calls render again with the visitor's settings (its own form): ask the engine once per change
     var own = !root.NLDeliver || root.NLDeliver._shim, key = JSON.stringify(settings || {});
+    // a new run starts from the defaults, which are what the engine's own report already used: drawing the card with
+    // them is not a change (asking again labelled the engine's own report "with your settings" and ran it twice)
+    if (sha !== state.sha) {
+      state.sha = sha; state.rec = rep && rep.sales; state.settings = {};
+      state.asked = !own && root.NLDeliver.settings ? JSON.stringify(root.NLDeliver.settings('sales-report')) : '';
+    }
+    // Track E's registry calls render again with the visitor's settings (its own form): ask the engine once per change
     if (!own && settings && Object.keys(settings).length && key !== state.asked && !state.busy) {
       state.asked = key;
       ask(slot, rep, settings);
@@ -298,7 +303,8 @@
     } else {
       h += '<p class="sr-status" id="try-sales-status" role="status">' + esc(rec.quarter.label) + ' against ' + esc(rec.quarter.prev_label) + ', from the deals the engine kept; every figure is the engine\'s. Nothing is sent anywhere.</p>';
     }
-    h += colsHtml(rec) + (!root.NLDeliver || root.NLDeliver._shim ? setHtml(rec) : '');
+    // its own settings form always (ownForm: the registry draws none for this type), so one form a setting
+    h += colsHtml(rec) + setHtml(rec);
     if (rec.ok) {
       h += '<div class="ai-rep-actions sr-actions"><button type="button" class="btn btn-primary" data-sales-dl="docx">Download Word (.docx)</button>' +
         '<button type="button" class="btn btn-ghost" data-sales-dl="html">Download HTML (print to PDF)</button><span class="try-share-out" id="try-sales-out" hidden></span></div>' +
@@ -420,7 +426,9 @@
     NLSales.HOW.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
     '</dl><p class="note">Export every deal of the two quarters you want to compare, won and lost, and the deals open today. A CSV or an Excel file works; it stays in your browser.</p></details>';
   NLSales.option = { id: 'sales-report', order: 20, roles: ['deals'], title: 'Quarterly sales report', blurb: 'The quarter against the one before from a CRM deals export: revenue, deals and deal size, segments, cycle, pipeline, top reps.',
-    needs: NLSales.needs(), how: howHtml, fits: fits,
+    needs: NLSales.needs(), how: howHtml, fits: fits, system: 'CRM', ownForm: true,
+    howSteps: NLSales.HOW, howTitle: 'How to export the deals from your CRM',
+    howNote: 'Export every deal of the two quarters you want to compare, won and lost, and the deals open today. A CSV or an Excel file works; it stays in your browser.',
     settings: [{ key: 'fiscal_start', label: 'Fiscal year starts (month)', kind: 'choice', default: 1, options: MONTHS.map(function (m, i) { return { value: i + 1, label: m }; }) },
       { key: 'quarter', label: 'Quarter (blank: the latest complete one)', kind: 'text', default: '', help: 'e.g. 2025 Q4, or FY2026 Q3 with a fiscal year' },
       { key: 'target', label: 'Target for the next quarter', kind: 'number', default: '', min: 0, help: 'optional: the pipeline\'s coverage of it' },

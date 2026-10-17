@@ -1682,7 +1682,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 04:39:00 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:04:22 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2432,7 +2432,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 04:39:00 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:04:22 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -15746,7 +15746,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   var uid = 0;
   function formHtml(o, scope) {
     var v = D.settings(o.id), s = arr(o.settings);
-    if (!s.length) return '';
+    // one form a setting: a type that draws its own settings form in its card (ownForm, e.g. the sales report's,
+    // which lists the file's own quarters and columns) gets none from the registry
+    if (!s.length || o.ownForm) return '';
     return '<fieldset class="dl-set" data-set="' + esc(o.id) + '" data-scope="' + esc(scope) + '"><legend>Settings for the ' + esc(o.title.toLowerCase()) + '</legend>' + s.map(function (x) {
       var id = 'dl-f' + (++uid), cur = v[x.key], help = x.help ? '<small class="note" id="' + id + 'h">' + esc(x.help) + '</small>' : '';
       var desc = x.help ? ' aria-describedby="' + id + 'h"' : '', h = '<div class="dl-field" data-kind="' + esc(x.kind) + '"><label for="' + id + '">' + esc(x.label) + '</label>';
@@ -15806,12 +15808,17 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       '</div><p class="note try-need-out" id="try-recipe-out" role="status" aria-live="polite"' + (D._recipeNote ? '' : ' hidden') + '>' + esc(D._recipeNote || '') + '</p>';
     if (o) {
       h += '<div class="try-need-card" id="try-need-card"><p class="try-need-blurb">' + esc(o.blurb || '') + '</p>' +
-        '<p class="note"><strong>What to drop in</strong> (pick them together: hold Ctrl or Cmd to choose several files). A browser page cannot open a folder or connect to your finance system by itself, so export each file and pick them here; or paste the figures below.</p>' +
+        '<p class="note"><strong>What to drop in</strong> (pick them together: hold Ctrl or Cmd to choose several files). A browser page cannot open a folder or connect to your ' + esc(o.system || 'finance system or CRM') + ' by itself, so export each file and pick them here; or paste the figures below.</p>' +
         '<ol class="try-need-list" id="try-need-list">' + arr(o.needs).map(function (n) {
           return '<li><strong>' + esc(n.what) + '</strong>' + (n.optional ? ' <span class="tag">optional</span>' : '') +
             (arr(n.columns).length ? '<br><span class="note">Columns: ' + arr(n.columns).map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(', ') + '</span>' : '') +
             (n.how ? '<br><span class="note">' + esc(n.how) + '</span>' : '') + '</li>';
-        }).join('') + '</ol>' + formHtml(o, 'need') + '</div>';
+        }).join('') + '</ol>' +
+        // how to export, per system (an option's howSteps: [[system, steps]], text only, escaped like every other field)
+        (arr(o.howSteps).length ? '<details class="sr-how try-need-how" open><summary>' + esc(o.howTitle || 'How to export the files') + '</summary><dl>' +
+          arr(o.howSteps).map(function (x) { return '<dt>' + esc(arr(x)[0]) + '</dt><dd>' + esc(arr(x)[1]) + '</dd>'; }).join('') + '</dl>' +
+          (o.howNote ? '<p class="note">' + esc(o.howNote) + '</p>' : '') + '</details>' : '') +
+        formHtml(o, 'need') + '</div>';
     }
     h += '<details class="try-paste" id="try-paste"><summary>Paste figures instead</summary><label for="try-paste-text" class="note">Paste a small table (copied from a spreadsheet, or CSV text with a header row). It is read in this browser as one more file, named “pasted-figures.csv”.</label>' +
       '<textarea id="try-paste-text" rows="5" spellcheck="false" placeholder="month,revenue,revenue_budget&#10;2026-08,120000,125000&#10;2026-09,118000,126000"></textarea>' +
@@ -16548,9 +16555,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
   function render(slot, rep, settings) {
     if (!slot) return;
     var sha = (rep && rep.input && rep.input.sha256) || '';
-    if (sha !== state.sha) { state.sha = sha; state.rec = rep && rep.sales; state.settings = {}; state.asked = ''; }
-    // Track E's registry calls render again with the visitor's settings (its own form): ask the engine once per change
     var own = !root.NLDeliver || root.NLDeliver._shim, key = JSON.stringify(settings || {});
+    // a new run starts from the defaults, which are what the engine's own report already used: drawing the card with
+    // them is not a change (asking again labelled the engine's own report "with your settings" and ran it twice)
+    if (sha !== state.sha) {
+      state.sha = sha; state.rec = rep && rep.sales; state.settings = {};
+      state.asked = !own && root.NLDeliver.settings ? JSON.stringify(root.NLDeliver.settings('sales-report')) : '';
+    }
+    // Track E's registry calls render again with the visitor's settings (its own form): ask the engine once per change
     if (!own && settings && Object.keys(settings).length && key !== state.asked && !state.busy) {
       state.asked = key;
       ask(slot, rep, settings);
@@ -16562,7 +16574,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
     } else {
       h += '<p class="sr-status" id="try-sales-status" role="status">' + esc(rec.quarter.label) + ' against ' + esc(rec.quarter.prev_label) + ', from the deals the engine kept; every figure is the engine\'s. Nothing is sent anywhere.</p>';
     }
-    h += colsHtml(rec) + (!root.NLDeliver || root.NLDeliver._shim ? setHtml(rec) : '');
+    // its own settings form always (ownForm: the registry draws none for this type), so one form a setting
+    h += colsHtml(rec) + setHtml(rec);
     if (rec.ok) {
       h += '<div class="ai-rep-actions sr-actions"><button type="button" class="btn btn-primary" data-sales-dl="docx">Download Word (.docx)</button>' +
         '<button type="button" class="btn btn-ghost" data-sales-dl="html">Download HTML (print to PDF)</button><span class="try-share-out" id="try-sales-out" hidden></span></div>' +
@@ -16684,7 +16697,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
     NLSales.HOW.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
     '</dl><p class="note">Export every deal of the two quarters you want to compare, won and lost, and the deals open today. A CSV or an Excel file works; it stays in your browser.</p></details>';
   NLSales.option = { id: 'sales-report', order: 20, roles: ['deals'], title: 'Quarterly sales report', blurb: 'The quarter against the one before from a CRM deals export: revenue, deals and deal size, segments, cycle, pipeline, top reps.',
-    needs: NLSales.needs(), how: howHtml, fits: fits,
+    needs: NLSales.needs(), how: howHtml, fits: fits, system: 'CRM', ownForm: true,
+    howSteps: NLSales.HOW, howTitle: 'How to export the deals from your CRM',
+    howNote: 'Export every deal of the two quarters you want to compare, won and lost, and the deals open today. A CSV or an Excel file works; it stays in your browser.',
     settings: [{ key: 'fiscal_start', label: 'Fiscal year starts (month)', kind: 'choice', default: 1, options: MONTHS.map(function (m, i) { return { value: i + 1, label: m }; }) },
       { key: 'quarter', label: 'Quarter (blank: the latest complete one)', kind: 'text', default: '', help: 'e.g. 2025 Q4, or FY2026 Q3 with a fiscal year' },
       { key: 'target', label: 'Target for the next quarter', kind: 'number', default: '', min: 0, help: 'optional: the pipeline\'s coverage of it' },

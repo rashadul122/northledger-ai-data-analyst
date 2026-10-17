@@ -93,7 +93,7 @@ from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = ("banned", "figures", "shipped", "links", "contact", "collab", "pl300", "stray", "requests", "promises",
-          "timeouts")
+          "timeouts", "syntax")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
         "track", "wbr"}
 SKIP_TEXT = {"script", "style", "template"}
@@ -1163,6 +1163,46 @@ def _js_int(text, name):
     return int(m.group(1).replace("_", "")) if m else None
 
 
+def check_syntax(site: Site) -> Result:
+    """Every page script parses and every stylesheet's braces balance (16 Oct 2026: two merges that kept both sides of a
+    conflict dropped a closing brace each: engine/worker.js would not load, and an unclosed @media block in src/style.css
+    left every later rule phone-only, so the clean-file card and step 6 shipped unstyled on desktops while every
+    behaviour check passed)."""
+    import shutil
+    import subprocess
+    r = Result("syntax")
+    root = site.root
+    js = sorted(os.path.join(dp, f) for sub in ("src/js", "engine") for dp, _d, fs in os.walk(os.path.join(root, sub))
+                for f in fs if f.endswith(".js")) if os.path.isdir(os.path.join(root, "src")) else []
+    node = shutil.which("node")
+    if js and not node:
+        r.fail("node is not installed, so the page scripts could not be parsed")
+    for path in js if node else []:
+        rel = os.path.relpath(path, root)
+        p = subprocess.run([node, "--check", path], capture_output=True, text=True)
+        if p.returncode != 0:
+            r.fail("%s does not parse: %s" % (rel, (p.stderr.strip().splitlines() or ["?"])[-1][:160]))
+    for dp, _d, fs in os.walk(os.path.join(root, "src")):
+        for f in fs:
+            if not f.endswith(".css"):
+                continue
+            path = os.path.join(dp, f)
+            text = re.sub(r"/\*.*?\*/", "", open(path, encoding="utf-8").read(), flags=re.S)
+            text = re.sub(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'", "", text)
+            depth, worst = 0, 0
+            for ch in text:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    worst = min(worst, depth)
+            if depth != 0 or worst < 0:
+                r.fail("%s: braces do not balance (%+d at the end%s)" % (os.path.relpath(path, root), depth,
+                                                                         ", a } closes nothing" if worst < 0 else ""))
+    r.note("%d script(s) parsed, stylesheets' braces checked" % len(js))
+    return r
+
+
 def check_timeouts(site: Site) -> Result:
     r = Result("timeouts")
     page_src = os.path.join(site.root, "src", "js", "50-try.js")
@@ -1211,7 +1251,7 @@ def check_timeouts(site: Site) -> Result:
 # ----------------------------------------------------------------------------- main
 RUNNERS = {"banned": check_banned, "figures": check_figures, "shipped": check_shipped, "links": check_links,
            "contact": check_contact, "collab": check_collab, "pl300": check_pl300, "stray": check_stray, "requests": check_requests,
-           "promises": check_promises, "timeouts": check_timeouts}
+           "promises": check_promises, "timeouts": check_timeouts, "syntax": check_syntax}
 
 
 def run(root, checks=CHECKS, doms=None):

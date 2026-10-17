@@ -803,6 +803,7 @@ dl.tr-dl-roles ul { margin: 0; padding-left: 18px; }
   body.print-try .tr-cta { background: none; color: var(--ink); border: 1px solid var(--hairline); }
   body.print-try details.tr-times, body.print-try details.tr-issues { display: block; }
   body.print-try #try-q-wrap, body.print-try .tr-more { display: none !important; }
+  body.print-try .try-rail, body.print-try .try-step-h, body.print-try .try-step-in, body.print-try .try-step-slot:empty, body.print-try .nld-edit, body.print-try .nld-filters, body.print-try .nld-exp { display: none !important; }
   body.print-try .tr-meter, body.print-try .tr-meter i, body.print-try .pd-dec, body.print-try .badge { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.print-try .tr-cta a[data-email]::after { content: " (" attr(data-email) ")"; font-weight: 700; }
   body.print-try .tr-cta .btn { color: var(--ink); background: none; border: 1px solid var(--hairline); }
@@ -1432,6 +1433,73 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 @keyframes nla-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .nla-ask[aria-busy="true"] .nla-ask-status::before { animation: none; } }
 
+/* ---- the Try section's step rail and steps (src/js/58-steps.js; plan/DASHBOARD-DESIGN.md "The workflow order") ---- */
+.try-rail { position: sticky; top: 8px; z-index: 5; margin: 0 0 16px; padding: 8px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
+.try-rail-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.try-rail-list a { display: flex; flex-direction: column; gap: 2px; min-height: 44px; padding: 6px 8px; border-radius: 10px; color: var(--body); text-decoration: none; border: 1px solid transparent; }
+.try-rail-list a:hover, .try-rail-list a:focus-visible { border-color: var(--accent); }
+.try-rail-list .rs-on a { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); color: var(--ink); }
+.try-rail-list .rs-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--axis); font-size: 12px; font-weight: 700; }
+.try-rail-list .rs-done .rs-n { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.try-rail-list .rs-attention .rs-n, .try-rail-list .rs-stale .rs-n { border-color: var(--band-red); color: var(--band-red); }
+.try-rail-list .rs-t { font-weight: 650; font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
+.try-rail .rs-s { font-size: 12px; color: var(--muted); }
+.try-rail-now { display: none; }
+.try-rail-stale { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+.try-step { margin: 0 0 22px; scroll-margin-top: 96px; }
+.try-step-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 19px; margin: 18px 0 8px; }
+.try-step-n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 14px; }
+.try-step-st { font-size: 13px; font-weight: 500; color: var(--muted); }
+.try-step[data-status="stale"] .try-step-st, .try-step[data-status="attention"] .try-step-st { color: var(--band-red); }
+.try-step-in { margin: 0 0 10px; }
+.try-counts:empty, .try-step-slot:empty { display: none; }
+@media (max-width: 720px) {
+  .try-rail { top: 4px; padding: 8px 10px; }
+  .try-rail-list { display: none; }
+  .try-rail-now { display: block; }
+  .try-rail-now p { margin: 0 0 6px; }
+  .try-rail-jump { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+  .try-rail-jump select { flex: 1; min-width: 0; min-height: 44px; }
+}
+
+/* ---- the Dashboard tab (src/js/57-dashboard.js; engine/nl_dashboard.py) ---- */
+.nld { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.nld-head h3 { margin: 0 0 6px; }
+.nld-badge { margin: 0 0 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--hairline); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); font-size: 14px; }
+.nld-badge.nld-rec { border-color: var(--band-yellow); background: color-mix(in srgb, var(--band-yellow) 10%, var(--surface)); }
+.nld-qs ol { margin: 4px 0 0; padding-left: 22px; }
+.nld-qs li { margin: 2px 0; }
+.nld-ans { font-size: 13px; color: var(--muted); }
+.nld-ans a { color: var(--accent-ink); }
+.nld-counts h4, .nld-notes h4 { margin: 0 0 6px; }
+.nld-notes h5 { margin: 12px 0 4px; font-size: 14px; }
+.nld-defs, .nld-notes ul { margin: 4px 0; padding-left: 20px; }
+.nld-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.nld-form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+.nld-form .nld-wide, .nld-form p { grid-column: 1 / -1; }
+.nld-form input, .nld-form select, .nld-filters select { font: inherit; min-height: 40px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); max-width: 100%; min-width: 0; }
+.nld-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); position: sticky; top: 76px; z-index: 3; }
+.nld-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.nld-filters legend { font-weight: 650; font-size: 13.5px; padding: 0; }
+.nld-filters label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; font-weight: 600; min-width: 0; }
+.nld-active { flex-basis: 100%; margin: 0; }
+.nld-kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.nld-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+.nld-fig .viz { min-width: 0; }
+.nld-fig[data-draw="bar"] svg g[data-tip] { cursor: pointer; }
+.nld-static { margin: 2px 0 6px; }
+.nld-exp { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.nld-exp p { flex-basis: 100%; margin: 0; }
+.nld-check li { margin: 3px 0; }
+.nld-cols li { margin: 6px 0; }
+.nld-colnote { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.nld-colnote input { font: inherit; min-height: 36px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); max-width: 100%; }
+@media (max-width: 720px) {
+  .nld-form { grid-template-columns: minmax(0, 1fr); }
+  .nld-filters { position: static; }
+  .nld-filters label, .nld-filters fieldset label { flex: 1 1 140px; }
+}
+
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
 .cs h2 { font-size: 20px; margin: 28px 0 8px; color: var(--ink); }
@@ -1448,7 +1516,7 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 01:11:58 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-17 02:09:38 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

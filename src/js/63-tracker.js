@@ -89,7 +89,7 @@
   /* ---- the option ---- */
   var KINDS = [['', 'Suggested from your data'], ['tasks', 'Tasks'], ['requests', 'Requests'], ['inventory', 'Inventory'], ['shifts', 'Shifts'],
     ['vendors', 'Vendors (bills and spend)'], ['other', 'Something else']];
-  var TR = { ticked: {}, last: null, busy: false, seq: 0 };
+  var TR = { ticked: {}, last: null, seq: 0, pending: null, pendingKey: '', settings: {} };
 
   function shas(rep) {
     // the files to combine, in order: the run's own (rep.inputs: main first), the files the visitor added in this tab,
@@ -135,58 +135,67 @@
     }).join('') + '<p class="note">Rows that are the same record in two files are merged into the first file\'s copy, and the Merged duplicates sheet lists each one.</p></fieldset>';
   }
 
+  // the tracker for these files and settings: a promise of the engine's answer (the one on hand when nothing changed, the
+  // one being made when it is asked again); its figures are drawn in the card's summary, never over its buttons
   function build(slot, rep, settings) {
     var T = window.NLTry, st = slot.querySelector('.trk-status');
-    if (!T || typeof T.tracker !== 'function') { st.textContent = 'The engine is not on this page.'; return; }
+    if (!T || typeof T.tracker !== 'function') { st.textContent = 'The engine is not on this page.'; return Promise.resolve(null); }
     // the run's other files are still being read (Track E's intake): the registry draws this card again on 'nl:inputs'
     var pend = typeof T.pendingFiles === 'function' ? arr(T.pendingFiles()) : [];
-    if (pend.length) { st.textContent = 'Reading ' + plural(pend.length, 'more file') + ' of this run first…'; return; }
+    if (pend.length) { st.textContent = 'Reading ' + plural(pend.length, 'more file') + ' of this run first…'; return Promise.resolve(null); }
     var use = shas(rep), ask = { inputs: use, kind: settings.kind || '', questions: settings.questions || '', dup_key: settings.dup_key || 'exact', rules: cleaningEdits() };
     var key = JSON.stringify([rep && rep.input && rep.input.sha256, rep && rep.inputs ? rep.inputs.length : 0, ask]);
-    // the same files and settings as the tracker on hand (a redraw, or a field left without a change): drawn from it at
-    // once, the engine not asked again (and a click on its download button is not lost to a redraw)
-    if (key === TR.key && TR.last) { show(slot, rep, settings, TR.last, use); return; }
+    if (key === TR.key && TR.last && !TR.pending) { show(slot, rep, settings, TR.last, use); return Promise.resolve(TR.last); }
+    TR.slot = slot;                 // the card on the page (the registry may draw it again while a tracker is being made)
+    if (key === TR.pendingKey && TR.pending) { st.textContent = 'Building the tracker…'; return TR.pending; }
     var my = ++TR.seq;
-    TR.busy = true;
-    st.textContent = 'Building the tracker from ' + plural(use.length, 'file') + '…';
-    T.tracker(ask, function (out) {
-      if (my !== TR.seq) return;
-      TR.busy = false;
-      TR.key = out && out.ok ? key : '';
-      show(slot, rep, settings, out, use);
+    st.textContent = (TR.last ? 'Building the tracker again with your settings' : 'Building the tracker from ' + plural(use.length, 'file')) + '…';
+    TR.pendingKey = key;
+    TR.pending = new Promise(function (resolve) {
+      T.tracker(ask, function (out) {
+        if (my === TR.seq) { TR.pending = null; TR.key = out && out.ok ? key : ''; show(TR.slot || slot, rep, settings, out, use); }
+        resolve(out);
+      });
     });
+    return TR.pending;
   }
   function show(slot, rep, settings, out, use) {
-    var box = slot.querySelector('.trk-out'), st = slot.querySelector('.trk-status');
+    var box = slot.querySelector('.trk-out'), st = slot.querySelector('.trk-status'), act = slot.querySelector('.trk-actions');
     if (!box || !st) return;
+    TR.last = out;
     if (!out || !out.ok) {
-      TR.last = out;
       st.textContent = (out && out.error) || 'The run is no longer loaded in this page; run the file again to build a tracker.';
       box.innerHTML = filesHtml(out, use);
-      bindPick(slot, rep, settings);
+      if (act) act.hidden = true;
+      bindPick(slot, rep);
       return;
     }
-    TR.last = out;
     st.textContent = 'Tracker ready: ' + plural(out.summary.rows, 'row') + ' from ' + plural(arr(out.summary.files).length, 'file') + '. Nothing was invented or filled in.';
-    box.innerHTML = filesHtml(out, use) + summaryHtml(out, settings) +
-      '<div class="tr-actions"><button type="button" class="btn btn-primary" data-trk="xlsx">Download the tracker (Excel)</button><span class="try-share-out trk-dl-out" hidden></span></div>' +
-      '<p class="note">Made in this browser by the page\'s Excel writer; nothing is sent. Sheets: Data (an Excel table with dropdowns and formula columns), Summary (formulas, not pasted numbers), Lists, Instructions, Changes, Merged duplicates, Unplaced and Flags.</p>';
-    bindPick(slot, rep, settings);
+    box.innerHTML = filesHtml(out, use) + summaryHtml(out, settings);
+    if (act) act.hidden = false;
+    bindPick(slot, rep);
     fire('nl:tracker', { out: out });
   }
-  function bindPick(slot, rep, settings) {
+  function current() { var D = window.NLDeliver; return D && D.settings && !D.__standin ? D.settings('tracker') : (TR.settings || {}); }
+  function bindPick(slot, rep) {
     Array.prototype.forEach.call(slot.querySelectorAll('.trk-pick input[data-sha]'), function (c) {
-      c.addEventListener('change', function () { TR.ticked[c.getAttribute('data-sha')] = !!c.checked; TR.key = ''; build(slot, rep, settings); });
+      c.addEventListener('change', function () { TR.ticked[c.getAttribute('data-sha')] = !!c.checked; TR.key = ''; build(slot, rep, current()); });
     });
   }
-  function download(slot) {
-    var out = TR.last, X = window.NLX, o = slot.querySelector('.trk-dl-out');
-    if (!out || !out.ok || !out.workbook || !X || !o) return;
-    var bytes;
-    try { bytes = X.workbook(out.workbook); } catch (e) { o.hidden = false; o.textContent = 'The workbook could not be written in this browser (' + String(e && e.message || e) + ').'; return; }
-    var first = arr(out.summary && out.summary.files)[0], name = 'tracker-' + (out.kind || 'rows') + '-' + stem(first ? first.name : 'file') + '.xlsx';
-    window.NLDeliver.offer(o, bytes, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Excel tracker');
-    if (window.NLSteps) window.NLSteps.set(6, 'done');
+  // Download: the settings as they stand when it is pressed (a field just typed in included), the tracker made for
+  // them first when they differ from the one on hand
+  function download(slot, rep) {
+    var o = slot.querySelector('.trk-dl-out');
+    build(slot, rep, current()).then(function (out) {
+      var X = window.NLX;
+      if (!o) return;
+      if (!out || !out.ok || !out.workbook || !X) { o.hidden = false; o.textContent = 'The tracker could not be built: ' + ((out && out.error) || 'run the file again') + '.'; return; }
+      var bytes;
+      try { bytes = X.workbook(out.workbook); } catch (e) { o.hidden = false; o.textContent = 'The workbook could not be written in this browser (' + String(e && e.message || e) + ').'; return; }
+      var first = arr(out.summary && out.summary.files)[0], name = 'tracker-' + (out.kind || 'rows') + '-' + stem(first ? first.name : 'file') + '.xlsx';
+      window.NLDeliver.offer(o, bytes, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Excel tracker');
+      if (window.NLSteps) window.NLSteps.set(6, 'done');
+    });
   }
 
   var option = {
@@ -219,17 +228,22 @@
     render: function (slot, rep, settings) {
       if (!slot) return;
       settings = settings || {};
+      TR.settings = settings;
+      // the layout once: the summary region is redrawn with each tracker, the Download button stays the same node
       slot.innerHTML = '<div class="trk" id="try-tracker" data-step="6"><p class="note">The tracker\'s rows are the cleaned rows of step 2 (the same cleaner, with any rule you edited there). A value the cleaner could not read stays as written and is flagged; a blank stays blank and is flagged; nothing is invented.</p>' +
-        '<p class="tr-clean-status trk-status" role="status" aria-live="polite"></p><div class="trk-out"></div></div>';
-      var root = slot.querySelector('.trk');
-      root.addEventListener('click', function (e) {
-        var t = e.target && e.target.closest ? e.target.closest('[data-trk]') : null;
-        if (!t) return;
-        var what = t.getAttribute('data-trk');
-        if (what === 'xlsx') download(slot);
-      });
+        '<p class="tr-clean-status trk-status" role="status" aria-live="polite"></p><div class="trk-out"></div>' +
+        '<div class="trk-actions" hidden><div class="tr-actions"><button type="button" class="btn btn-primary" data-trk="xlsx">Download the tracker (Excel)</button><span class="try-share-out trk-dl-out" hidden></span></div>' +
+        '<p class="note">Made in this browser by the page\'s Excel writer; nothing is sent. Sheets: Data (an Excel table with dropdowns and formula columns), Summary (formulas, not pasted numbers), Lists, Instructions, Changes, Merged duplicates, Unplaced and Flags.</p></div></div>';
+      var btn = slot.querySelector('[data-trk="xlsx"]');
+      btn.addEventListener('click', function () { download(slot, rep); });
       if (!rep || !rep.ok) { slot.querySelector('.trk-status').textContent = 'Run a file first (step 1): the tracker is built only from your data.'; return; }
       build(slot, rep, settings);
+    },
+    // a setting changed in the registry's form: the tracker is built again and its summary redrawn; the card and its
+    // Download button are not (they keep focus; a press that blurred the field goes through)
+    onSettings: function (slot, rep, settings) {
+      TR.settings = settings || {};
+      if (slot && slot.querySelector('.trk-status') && rep && rep.ok) build(slot, rep, TR.settings);
     }
   };
 

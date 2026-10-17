@@ -1698,7 +1698,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:10:48 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-17 05:22:16 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2450,7 +2450,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:10:48 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-17 05:22:16 UTC</span>; <span data-fact="site_build:display.build_checks_passed">47</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -15699,7 +15699,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
    window.NLDeliver
      register(option)   option: {id, title, blurb, order, needs: [{what, columns, optional, how}], roles: [...],
                         fits(rep) -> {ok, why}, settings: [{key, label, kind: 'text'|'number'|'choice'|'columns', default,
-                        options: [{value, label}], help, min, max, step}], render(slot, rep, settings), loadRecipe(json)?}
+                        options: [{value, label}], help, min, max, step}], render(slot, rep, settings), loadRecipe(json)?,
+                        onSettings(slot, rep, settings)? / rerenderOnSettings?: a settings change never redraws the
+                        card; it calls onSettings (or render, when rerenderOnSettings), else the option reads
+                        D.settings(id) when the visitor acts}
                         A type that loads before this file pushes its option to window.NLDeliverQueue instead.
      list() / get(id) / chosen() ('' = an analysis) / choose(id) / settings(id) / setSettings(id, values)
      open(id)           step 6: draws that type's card (its settings form, then render(slot, rep, settings))
@@ -15830,52 +15833,35 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         if (x.kind === 'number') { var n = parseFloat(el.value); return isFinite(n) ? n : x['default']; }
         return el.value;
       };
-      el.addEventListener('change', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); if (after) after(); });
+      // the value is the setting as soon as it is typed (a button pressed next reads it from D.settings at click time);
+      // its change tells the option, which never redraws its card for it (see settingsChanged)
+      el.addEventListener('input', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); syncForms(o, key, el); });
+      el.addEventListener('change', function () { var p = {}; p[key] = read(); D.setSettings(o.id, p); syncForms(o, key, el); if (after) after(); });
     });
   }
-  // A settings field's change fires when it loses focus, often because the visitor pressed a button in the same card
-  // ("Download ..."): the card redraws under the pointer and that press would be lost. The change is applied first (the
-  // download must use the new settings); then the press is given back to the redrawn button with the same identity (its
-  // id and data-* attributes, or its text), as soon as it is on the page again (an option that asks the engine first
-  // draws it a moment later). Only for presses inside the step-1 checklist or a step-6 card; never twice.
-  var press = null;
-  function pressSig(el) {
-    var sel = el.tagName.toLowerCase(), any = false;
-    if (el.id) { sel += '#' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id); any = true; }
-    Array.prototype.forEach.call(el.attributes, function (a) {
-      if (/^data-/.test(a.name)) { sel += '[' + a.name + '="' + String(a.value).replace(/["\\]/g, '\\$&') + '"]'; any = true; }
+  // the same setting shown in the other form (step 1's and the step-6 card's), its value set in place, nothing redrawn
+  function syncForms(o, key, from) {
+    Array.prototype.forEach.call(document.querySelectorAll('fieldset.dl-set[data-set="' + o.id + '"] [data-key="' + key + '"]'), function (x) {
+      if (x === from) return;
+      if (x.getAttribute('data-cols')) {
+        var on = Array.prototype.filter.call(from.querySelectorAll('input'), function (i) { return i.checked; }).map(function (i) { return i.value; });
+        Array.prototype.forEach.call(x.querySelectorAll('input'), function (i) { i.checked = on.indexOf(i.value) >= 0; });
+      } else if (x.value !== from.value) x.value = from.value;
     });
-    return { sel: sel, any: any, text: (el.textContent || '').trim() };
   }
-  function findPressed(sig) {
-    var roots = [$('try-type-card'), $('try-need')].filter(Boolean), hit = null;
-    roots.some(function (r) {
-      var c = sig.any ? r.querySelectorAll(sig.sel) : Array.prototype.filter.call(r.querySelectorAll(sig.sel), function (x) { return (x.textContent || '').trim() === sig.text; });
-      hit = c.length === 1 ? c[0] : null;
-      return !!hit;
-    });
-    return hit;
+  // A setting changed: the option's card is NOT drawn again (its buttons stay the same nodes and keep focus, so a press
+  // that blurred the field is not lost). The option is told: onSettings(slot, rep, settings) updates what depends on
+  // the settings (a preview, a status line); an option that only has render() and asks for it (rerenderOnSettings: true)
+  // is drawn again; any other reads D.settings(id) when the visitor acts.
+  function settingsChanged(o) {
+    if (openId !== o.id) return;
+    var slot = $('try-type-slot');
+    if (!slot) return;
+    try {
+      if (typeof o.onSettings === 'function') o.onSettings(slot, rep, D.settings(o.id));
+      else if (o.rerenderOnSettings) o.render(slot, rep, D.settings(o.id));
+    } catch (e) { slot.insertAdjacentHTML('beforeend', '<p class="note">This report type could not take the setting (' + esc(e && e.message || e) + ').</p>'); }
   }
-  document.addEventListener('pointerdown', function (e) {
-    var t = e.target && e.target.closest ? e.target.closest('button, a[href], [data-key], label') : null;
-    var scope = t && t.closest ? t.closest('#try-type-card, #try-need') : null;
-    press = t && scope && !t.closest('fieldset.dl-set') ? { el: t, sig: pressSig(t), clicked: false } : null;
-  }, true);
-  document.addEventListener('click', function (e) { if (press && e.target && (press.el === e.target || press.el.contains(e.target))) press.clicked = true; }, true);
-  document.addEventListener('pointerup', function () {
-    var p = press;
-    if (!p) return;
-    setTimeout(function () {
-      if (press === p) press = null;
-      if (p.clicked || document.contains(p.el)) return;         // the click happened, or nothing was redrawn
-      var again = findPressed(p.sig);
-      if (again) { again.click(); return; }
-      var mo = new MutationObserver(function () { var x = findPressed(p.sig); if (x) { mo.disconnect(); clearTimeout(stop); x.click(); } });
-      var stop = setTimeout(function () { mo.disconnect(); }, 15000);
-      mo.observe(document.body, { childList: true, subtree: true });
-    }, 0);
-  }, true);
-
   /* ---- step 1: "What do you need?", its checklist, the files of this run, a recipe ---- */
   function needRoot() {
     var r = $('try-need');
@@ -15943,7 +15929,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var r = T.addFiles([{ name: 'pasted-figures.csv', size: bytes.length, getBuffer: function () { return Promise.resolve(bytes.buffer.slice(0)); } }]);
       po.textContent = r === 'companion' ? 'Read as one more file of this run (below).' : r === 'main' ? 'Read as your file: the run has started.' : 'The engine is busy; try again when it has finished.';
     });
-    if (o) bindForm(root, o, function () { if (openId === o.id) drawCard(); });
+    if (o) bindForm(root, o, function () { settingsChanged(o); });
     drawFiles();
   }
   function drawFiles() {
@@ -16030,7 +16016,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var f = fitsOf(o);
     card.innerHTML = '<h4>' + esc(o.title) + '</h4>' + (f.ok ? '' : '<p class="note try-type-needs" role="status">This run does not have what it needs yet: ' + esc(f.why || 'other files') + '. Step 1 lists what to drop in.</p>') +
       formHtml(o, 'card') + '<div class="try-type-slot" id="try-type-slot"></div>';
-    bindForm(card, o, function () { drawCard(); });
+    bindForm(card, o, function () { settingsChanged(o); });
     try { o.render($('try-type-slot'), rep, D.settings(o.id)); } catch (e) { $('try-type-slot').innerHTML = '<p class="note">This report type could not be drawn (' + esc(e && e.message || e) + ').</p>'; }
   }
   D.open = function (id) {
@@ -16256,7 +16242,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   if (typeof document === 'undefined') return;
   var ENT = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return ENT[c]; }); }
-  var last = { key: '', pack: null, busy: false };
+  var last = { key: '', pack: null, busy: false, pending: null, pendingKey: '' };
   function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function asOf(rep) { var T = window.NLTry; return (T && T.asOf && T.asOf()) || ((rep && rep.reproducibility && rep.reproducibility.parameters) || {}).as_of || ''; }
   var option = {
@@ -16306,17 +16292,35 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var s = {}; Object.keys(settings).forEach(function (k) { s[k] = settings[k]; });
       s.as_of = asOf(rep); s.roles = roles;
       var key = JSON.stringify(s) + '|' + arr(rep.inputs).map(function (f) { return f.id + f.sha256 + f.role; }).join(',') + '|' + ((rep.input || {}).sha256 || '');
-      slot.innerHTML = '<p class="note" role="status" id="pk-status">' + (fit.why ? esc(fit.why.charAt(0).toUpperCase() + fit.why.slice(1)) + '. ' : '') + 'Making the pack from ' + arr(rep.inputs).filter(function (f) { return f.ok; }).length + ' file(s)…</p><div id="pk-out"></div>';
+      var making = (fit.why ? esc(fit.why.charAt(0).toUpperCase() + fit.why.slice(1)) + '. ' : '') + 'Making the pack from ' + arr(rep.inputs).filter(function (f) { return f.ok; }).length + ' file(s)…';
+      // the download buttons are drawn once and stay the same nodes (a settings change never redraws them, so a press that
+      // blurred a field is not lost); each takes the latest pack when pressed, waiting for one still being made
+      if (!slot.querySelector('#pk-dl-row')) {
+        slot.innerHTML = '<p class="note" role="status" id="pk-status">' + making + '</p><div id="pk-out"><div class="pk-dl ai-rep-actions" id="pk-dl-row" hidden><button type="button" class="btn btn-primary btn-sm" data-pk="xlsx">Excel workbook (.xlsx)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="docx">Cover note (.docx)</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-pk="json">Download pack recipe (.json)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="md">Checklist for next month (.md)</button>' +
+          '<span class="try-share-out" id="pk-dl-out" hidden></span></div><div id="pk-body"></div></div>';
+        Array.prototype.forEach.call(slot.querySelectorAll('button[data-pk]'), function (b) {
+          b.addEventListener('click', function () {
+            (last.pending || Promise.resolve(last.pack)).then(function (pack) {
+              var o = document.getElementById('pk-dl-out');
+              if (!o) return;
+              if (!pack || !pack.ok) { o.hidden = false; o.textContent = 'The pack could not be made with these settings.'; return; }
+              // the reader is the visitor's setting as it stands (the engine echoes it; a pack made earlier may predate an edit)
+              var made = today(), files = P.files(Object.assign({}, pack, { readers: String(D.settings('monthly-pack').readers || pack.readers || '') }), made), want = b.getAttribute('data-pk'), f = files.filter(function (x) { return x.name.slice(-want.length - 1) === '.' + want; })[0];
+              if (!f) { o.hidden = false; o.textContent = 'This file cannot be made in this browser.'; return; }
+              D.offer(o, f.bytes, f.name, f.mime, f.label);
+            });
+          });
+        });
+      }
       var draw = function (pack) {
-        var st = document.getElementById('pk-status'), out = document.getElementById('pk-out');
+        var st = document.getElementById('pk-status'), out = document.getElementById('pk-body'), row = document.getElementById('pk-dl-row');
         if (!st || !out) return;
         if (!pack || !pack.ok) { st.textContent = 'The pack could not be made: ' + ((pack && pack.error) || 'the engine did not answer (run the file again)') + '.'; return; }
         st.textContent = (fit.why ? fit.why.charAt(0).toUpperCase() + fit.why.slice(1) + '. ' : '') + 'Reporting month: ' + mlabel(pack.month) + ' (' + pack.month_why + '). ' + pack.lines.length + ' lines, ' + pack.watch.length + ' on the watch list.';
         var W = pack.lines.filter(function (l) { return l.watch; });
-        out.innerHTML = '<div class="pk-dl ai-rep-actions"><button type="button" class="btn btn-primary btn-sm" data-pk="xlsx">Excel workbook (.xlsx)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="docx">Cover note (.docx)</button>' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-pk="json">Download pack recipe (.json)</button><button type="button" class="btn btn-ghost btn-sm" data-pk="md">Checklist for next month (.md)</button>' +
-          '<span class="try-share-out" id="pk-dl-out" hidden></span></div>' +
-          '<h5>Watch list: moves over ' + esc(thresholdText(pack)) + '</h5>' + (W.length ? '<div class="tbl-wrap"><table class="tbl pk-watch"><thead><tr><th scope="col">Line</th><th scope="col">Moved</th><th scope="col">Where it sits (from the data)</th><th scope="col">Cause</th></tr></thead><tbody>' +
+        if (row) row.hidden = false;
+        out.innerHTML = '<h5>Watch list: moves over ' + esc(thresholdText(pack)) + '</h5>' + (W.length ? '<div class="tbl-wrap"><table class="tbl pk-watch"><thead><tr><th scope="col">Line</th><th scope="col">Moved</th><th scope="col">Where it sits (from the data)</th><th scope="col">Cause</th></tr></thead><tbody>' +
           W.map(function (l) { return '<tr><th scope="row">' + esc(l.label) + '</th><td>' + esc(P.movedText(pack, l)) + '</td><td>' + esc(P.whereText(pack, l) || 'not in the data') + '</td><td>' + esc(l.cause) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="note">No line moved more than the threshold.</p>') +
           '<details class="pk-lines"><summary>Every line, what it is and whether it goes in the pack</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th scope="col">In the pack</th><th scope="col">Line</th><th scope="col">' + esc(mlabel(pack.month)) + '</th><th scope="col">Read as</th></tr></thead><tbody>' +
           pack.lines.map(function (l) {
@@ -16324,19 +16328,11 @@ table &#x27;RentSafeTO Evaluation View&#x27;
               (l.derived ? 'rate from revenue and cost' : '<select data-pk-kind="' + esc(l.key) + '" aria-label="How to read ' + esc(l.label) + '">' + [['flow', 'flow (summed over months)'], ['stock', 'count at a date'], ['level', 'level (averaged)'], ['rate', 'rate (points)']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === l.kind ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>') + '</td></tr>';
           }).join('') + '</tbody></table></div><p class="note">Untick a line to leave it out, or change how a line is read; the pack is made again here, with no AI call.</p></details>' +
           '<details class="pk-notes"><summary>Looked wrong, please check (' + arr(pack.notes.wrong).length + ')</summary><ul>' + (arr(pack.notes.wrong).length ? pack.notes.wrong.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') : '<li>Nothing the engine flagged.</li>') + '</ul></details>';
-        Array.prototype.forEach.call(out.querySelectorAll('button[data-pk]'), function (b) {
-          b.addEventListener('click', function () {
-            // the reader is the visitor's setting as it stands (the engine echoes it; a card drawn earlier may predate an edit)
-            var made = today(), files = P.files(Object.assign({}, pack, { readers: String(D.settings('monthly-pack').readers || pack.readers || '') }), made), want = b.getAttribute('data-pk'), f = files.filter(function (x) { return x.name.slice(-want.length - 1) === '.' + want; })[0], o = document.getElementById('pk-dl-out');
-            if (!f) { o.hidden = false; o.textContent = 'This file cannot be made in this browser.'; return; }
-            D.offer(o, f.bytes, f.name, f.mime, f.label);
-          });
-        });
         Array.prototype.forEach.call(out.querySelectorAll('input[data-pk-line]'), function (c) {
           c.addEventListener('change', function () {
             var keep = Array.prototype.filter.call(out.querySelectorAll('input[data-pk-line]'), function (x) { return x.checked && !x.disabled; }).map(function (x) { return x.getAttribute('data-pk-line'); });
             D.setSettings('monthly-pack', { metrics: keep.length === pack.lines.filter(function (l) { return !l.derived; }).length ? '' : keep.join(', ') });
-            D.open('monthly-pack');
+            option.render(slot, rep, D.settings('monthly-pack'));
           });
         });
         Array.prototype.forEach.call(out.querySelectorAll('select[data-pk-kind]'), function (sel) {
@@ -16345,13 +16341,22 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             Object.keys(cur).forEach(function (x) { k[x] = cur[x]; });
             k[sel.getAttribute('data-pk-kind')] = sel.value;
             D.setSettings('monthly-pack', { kinds: k });
-            D.open('monthly-pack');
+            option.render(slot, rep, D.settings('monthly-pack'));
           });
         });
       };
-      if (last.key === key && last.pack) { draw(last.pack); return; }
-      D.engine('monthly-pack', s).then(function (pack) { last.key = key; last.pack = pack; P.lastPack = pack; draw(pack); });
-    }
+      if (last.key === key && last.pack && !last.pending) { draw(last.pack); return; }
+      if (last.pendingKey === key && last.pending) return;
+      var st0 = document.getElementById('pk-status');
+      if (st0 && last.pack) st0.textContent = 'Making the pack again with your settings…';
+      last.pendingKey = key;
+      var mine = last.pending = D.engine('monthly-pack', s).then(function (pack) {
+        if (last.pending === mine) { last.pending = null; last.key = key; last.pack = pack; P.lastPack = pack; draw(pack); }
+        return pack;
+      });
+    },
+    // a setting changed (the registry's form): the pack is made again and its figures redrawn; the buttons stay
+    onSettings: function (slot, rep, settings) { option.render(slot, rep, settings); }
   };
   P.option = option;
   if (window.NLDeliver && window.NLDeliver.register) window.NLDeliver.register(option);
@@ -16904,7 +16909,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
   /* ---- the option ---- */
   var KINDS = [['', 'Suggested from your data'], ['tasks', 'Tasks'], ['requests', 'Requests'], ['inventory', 'Inventory'], ['shifts', 'Shifts'],
     ['vendors', 'Vendors (bills and spend)'], ['other', 'Something else']];
-  var TR = { ticked: {}, last: null, busy: false, seq: 0 };
+  var TR = { ticked: {}, last: null, seq: 0, pending: null, pendingKey: '', settings: {} };
 
   function shas(rep) {
     // the files to combine, in order: the run's own (rep.inputs: main first), the files the visitor added in this tab,
@@ -16950,58 +16955,67 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
     }).join('') + '<p class="note">Rows that are the same record in two files are merged into the first file\'s copy, and the Merged duplicates sheet lists each one.</p></fieldset>';
   }
 
+  // the tracker for these files and settings: a promise of the engine's answer (the one on hand when nothing changed, the
+  // one being made when it is asked again); its figures are drawn in the card's summary, never over its buttons
   function build(slot, rep, settings) {
     var T = window.NLTry, st = slot.querySelector('.trk-status');
-    if (!T || typeof T.tracker !== 'function') { st.textContent = 'The engine is not on this page.'; return; }
+    if (!T || typeof T.tracker !== 'function') { st.textContent = 'The engine is not on this page.'; return Promise.resolve(null); }
     // the run's other files are still being read (Track E's intake): the registry draws this card again on 'nl:inputs'
     var pend = typeof T.pendingFiles === 'function' ? arr(T.pendingFiles()) : [];
-    if (pend.length) { st.textContent = 'Reading ' + plural(pend.length, 'more file') + ' of this run first…'; return; }
+    if (pend.length) { st.textContent = 'Reading ' + plural(pend.length, 'more file') + ' of this run first…'; return Promise.resolve(null); }
     var use = shas(rep), ask = { inputs: use, kind: settings.kind || '', questions: settings.questions || '', dup_key: settings.dup_key || 'exact', rules: cleaningEdits() };
     var key = JSON.stringify([rep && rep.input && rep.input.sha256, rep && rep.inputs ? rep.inputs.length : 0, ask]);
-    // the same files and settings as the tracker on hand (a redraw, or a field left without a change): drawn from it at
-    // once, the engine not asked again (and a click on its download button is not lost to a redraw)
-    if (key === TR.key && TR.last) { show(slot, rep, settings, TR.last, use); return; }
+    if (key === TR.key && TR.last && !TR.pending) { show(slot, rep, settings, TR.last, use); return Promise.resolve(TR.last); }
+    TR.slot = slot;                 // the card on the page (the registry may draw it again while a tracker is being made)
+    if (key === TR.pendingKey && TR.pending) { st.textContent = 'Building the tracker…'; return TR.pending; }
     var my = ++TR.seq;
-    TR.busy = true;
-    st.textContent = 'Building the tracker from ' + plural(use.length, 'file') + '…';
-    T.tracker(ask, function (out) {
-      if (my !== TR.seq) return;
-      TR.busy = false;
-      TR.key = out && out.ok ? key : '';
-      show(slot, rep, settings, out, use);
+    st.textContent = (TR.last ? 'Building the tracker again with your settings' : 'Building the tracker from ' + plural(use.length, 'file')) + '…';
+    TR.pendingKey = key;
+    TR.pending = new Promise(function (resolve) {
+      T.tracker(ask, function (out) {
+        if (my === TR.seq) { TR.pending = null; TR.key = out && out.ok ? key : ''; show(TR.slot || slot, rep, settings, out, use); }
+        resolve(out);
+      });
     });
+    return TR.pending;
   }
   function show(slot, rep, settings, out, use) {
-    var box = slot.querySelector('.trk-out'), st = slot.querySelector('.trk-status');
+    var box = slot.querySelector('.trk-out'), st = slot.querySelector('.trk-status'), act = slot.querySelector('.trk-actions');
     if (!box || !st) return;
+    TR.last = out;
     if (!out || !out.ok) {
-      TR.last = out;
       st.textContent = (out && out.error) || 'The run is no longer loaded in this page; run the file again to build a tracker.';
       box.innerHTML = filesHtml(out, use);
-      bindPick(slot, rep, settings);
+      if (act) act.hidden = true;
+      bindPick(slot, rep);
       return;
     }
-    TR.last = out;
     st.textContent = 'Tracker ready: ' + plural(out.summary.rows, 'row') + ' from ' + plural(arr(out.summary.files).length, 'file') + '. Nothing was invented or filled in.';
-    box.innerHTML = filesHtml(out, use) + summaryHtml(out, settings) +
-      '<div class="tr-actions"><button type="button" class="btn btn-primary" data-trk="xlsx">Download the tracker (Excel)</button><span class="try-share-out trk-dl-out" hidden></span></div>' +
-      '<p class="note">Made in this browser by the page\'s Excel writer; nothing is sent. Sheets: Data (an Excel table with dropdowns and formula columns), Summary (formulas, not pasted numbers), Lists, Instructions, Changes, Merged duplicates, Unplaced and Flags.</p>';
-    bindPick(slot, rep, settings);
+    box.innerHTML = filesHtml(out, use) + summaryHtml(out, settings);
+    if (act) act.hidden = false;
+    bindPick(slot, rep);
     fire('nl:tracker', { out: out });
   }
-  function bindPick(slot, rep, settings) {
+  function current() { var D = window.NLDeliver; return D && D.settings && !D.__standin ? D.settings('tracker') : (TR.settings || {}); }
+  function bindPick(slot, rep) {
     Array.prototype.forEach.call(slot.querySelectorAll('.trk-pick input[data-sha]'), function (c) {
-      c.addEventListener('change', function () { TR.ticked[c.getAttribute('data-sha')] = !!c.checked; TR.key = ''; build(slot, rep, settings); });
+      c.addEventListener('change', function () { TR.ticked[c.getAttribute('data-sha')] = !!c.checked; TR.key = ''; build(slot, rep, current()); });
     });
   }
-  function download(slot) {
-    var out = TR.last, X = window.NLX, o = slot.querySelector('.trk-dl-out');
-    if (!out || !out.ok || !out.workbook || !X || !o) return;
-    var bytes;
-    try { bytes = X.workbook(out.workbook); } catch (e) { o.hidden = false; o.textContent = 'The workbook could not be written in this browser (' + String(e && e.message || e) + ').'; return; }
-    var first = arr(out.summary && out.summary.files)[0], name = 'tracker-' + (out.kind || 'rows') + '-' + stem(first ? first.name : 'file') + '.xlsx';
-    window.NLDeliver.offer(o, bytes, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Excel tracker');
-    if (window.NLSteps) window.NLSteps.set(6, 'done');
+  // Download: the settings as they stand when it is pressed (a field just typed in included), the tracker made for
+  // them first when they differ from the one on hand
+  function download(slot, rep) {
+    var o = slot.querySelector('.trk-dl-out');
+    build(slot, rep, current()).then(function (out) {
+      var X = window.NLX;
+      if (!o) return;
+      if (!out || !out.ok || !out.workbook || !X) { o.hidden = false; o.textContent = 'The tracker could not be built: ' + ((out && out.error) || 'run the file again') + '.'; return; }
+      var bytes;
+      try { bytes = X.workbook(out.workbook); } catch (e) { o.hidden = false; o.textContent = 'The workbook could not be written in this browser (' + String(e && e.message || e) + ').'; return; }
+      var first = arr(out.summary && out.summary.files)[0], name = 'tracker-' + (out.kind || 'rows') + '-' + stem(first ? first.name : 'file') + '.xlsx';
+      window.NLDeliver.offer(o, bytes, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Excel tracker');
+      if (window.NLSteps) window.NLSteps.set(6, 'done');
+    });
   }
 
   var option = {
@@ -17034,17 +17048,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
     render: function (slot, rep, settings) {
       if (!slot) return;
       settings = settings || {};
+      TR.settings = settings;
+      // the layout once: the summary region is redrawn with each tracker, the Download button stays the same node
       slot.innerHTML = '<div class="trk" id="try-tracker" data-step="6"><p class="note">The tracker\'s rows are the cleaned rows of step 2 (the same cleaner, with any rule you edited there). A value the cleaner could not read stays as written and is flagged; a blank stays blank and is flagged; nothing is invented.</p>' +
-        '<p class="tr-clean-status trk-status" role="status" aria-live="polite"></p><div class="trk-out"></div></div>';
-      var root = slot.querySelector('.trk');
-      root.addEventListener('click', function (e) {
-        var t = e.target && e.target.closest ? e.target.closest('[data-trk]') : null;
-        if (!t) return;
-        var what = t.getAttribute('data-trk');
-        if (what === 'xlsx') download(slot);
-      });
+        '<p class="tr-clean-status trk-status" role="status" aria-live="polite"></p><div class="trk-out"></div>' +
+        '<div class="trk-actions" hidden><div class="tr-actions"><button type="button" class="btn btn-primary" data-trk="xlsx">Download the tracker (Excel)</button><span class="try-share-out trk-dl-out" hidden></span></div>' +
+        '<p class="note">Made in this browser by the page\'s Excel writer; nothing is sent. Sheets: Data (an Excel table with dropdowns and formula columns), Summary (formulas, not pasted numbers), Lists, Instructions, Changes, Merged duplicates, Unplaced and Flags.</p></div></div>';
+      var btn = slot.querySelector('[data-trk="xlsx"]');
+      btn.addEventListener('click', function () { download(slot, rep); });
       if (!rep || !rep.ok) { slot.querySelector('.trk-status').textContent = 'Run a file first (step 1): the tracker is built only from your data.'; return; }
       build(slot, rep, settings);
+    },
+    // a setting changed in the registry's form: the tracker is built again and its summary redrawn; the card and its
+    // Download button are not (they keep focus; a press that blurred the field goes through)
+    onSettings: function (slot, rep, settings) {
+      TR.settings = settings || {};
+      if (slot && slot.querySelector('.trk-status') && rep && rep.ok) build(slot, rep, TR.settings);
     }
   };
 

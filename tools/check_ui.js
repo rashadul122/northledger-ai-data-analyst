@@ -5201,7 +5201,9 @@ async function trackerChecks(ctx, tag) {
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])');
   if (await p.isVisible('#try-pd')) { await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])'); }
   ok(await p.isVisible('#try-report'), 'no report for the first list: ' + (await p.textContent('#try-msg')));
-  await p.waitForFunction(() => /37 rows from 2 files/.test((document.querySelector('#try-type-slot .trk-status') || {}).textContent || ''), null, { timeout: 30000 });
+  try { await p.waitForFunction(() => /37 rows from 2 files/.test((document.querySelector('#try-type-slot .trk-status') || {}).textContent || ''), null, { timeout: 30000 }); } catch (e) {
+    throw new Error('no tracker from both files: "' + (await p.evaluate(() => (document.querySelector('#try-type-slot .trk-status') || {}).textContent)) + '" ' + (p.__errs[0] || ''));
+  }
   const m = await p.evaluate(() => {
     const b = document.querySelector('#try-types [data-type="tracker"]'), li = b && b.closest('li');
     return { exp: b && b.getAttribute('aria-expanded'), fit: li && (li.querySelector('.try-type-fit') || {}).textContent, forms: document.querySelectorAll('#try-type-card fieldset.dl-set').length,
@@ -5227,7 +5229,9 @@ async function trackerChecks(ctx, tag) {
   await shot(p, 'tracker-' + tag + '-card', '#try-type-card');
   // a setting: the registry's form, sent to the worker
   await p.selectOption('#try-type-card fieldset.dl-set[data-set="tracker"] [data-key="kind"]', 'requests');
-  await p.waitForFunction(() => window.NLTracker.state().last.__echo.kind === 'requests', null, { timeout: 20000 });
+  try { await p.waitForFunction(() => window.NLTracker.state().last.__echo.kind === 'requests', null, { timeout: 20000 }); } catch (e) {
+    throw new Error('the kind setting did not reach the worker: ' + JSON.stringify(await p.evaluate(() => window.NLTracker.state().last.__echo)) + ' ' + (p.__errs[0] || ''));
+  }
   // a question typed, then Download pressed straight away: the field's change redraws the card; the change is applied and
   // the press is not lost (60-deliver.js gives it back to the redrawn button)
   await p.fill('#try-type-card fieldset.dl-set[data-set="tracker"] [data-key="questions"]', 'How many are overdue? Which open tasks are oldest?');
@@ -5522,29 +5526,57 @@ check('deliver-registry-takes-another-report-type', DESK, async (ctx) => {
   ok(out === '2026-10-01', 'NLDeliver.engine did not reach the worker: ' + out);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
-// a settings field of any report type, typed in and left by pressing a button in the same card: the field's change redraws
-// the card (the button under the pointer is replaced), yet the press reaches the redrawn button once, with the new setting
-check('deliver-settings-change-keeps-the-press', DESK, async (ctx) => {
+// a settings field of any report type, typed in and left by pressing a button in the same card: the field's change must
+// not redraw the card (60-deliver.js tells the option through onSettings instead), so the button under the pointer is the
+// same node, the press goes through once, and the option reads the new value (D.settings) when it acts. With the keyboard
+// too: type, Tab to the button (focus stays on it), Enter.
+async function pressType(ctx) {
   const rep = packReport();
   const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
   await p.evaluate(() => {
-    window.__go = [];
+    window.__go = []; window.__told = [];
     window.NLDeliver.register({ id: 'press-type', order: 60, title: 'Press type', blurb: 'registered by the UI check', needs: [], fits: () => ({ ok: true, why: '' }),
       settings: [{ key: 'note', label: 'Note', kind: 'text', 'default': '' }],
-      render: (slot, r, s) => { slot.innerHTML = '<button type="button" class="btn" data-go="1">Go</button>'; slot.querySelector('[data-go]').addEventListener('click', () => window.__go.push(s.note)); } });
+      onSettings: (slot, r, s) => { window.__told.push(s.note); },
+      render: (slot) => {
+        slot.innerHTML = '<button type="button" class="btn" data-go="1">Go</button>';
+        const b = slot.querySelector('[data-go]');
+        b.__mark = (window.__renders = (window.__renders || 0) + 1);
+        b.addEventListener('click', () => window.__go.push(window.NLDeliver.settings('press-type').note));
+      } });
   });
   await runReport(p);
   await p.click('#try-types button[data-type="press-type"]');
+  await p.waitForSelector('#try-type-card [data-go]');
+  return p;
+}
+check('deliver-settings-change-keeps-the-press', DESK, async (ctx) => {
+  const p = await pressType(ctx);
+  const before = await p.evaluate(() => document.querySelector('#try-type-card [data-go]').__mark);
   await p.fill('#try-type-card [data-key="note"]', 'typed');
   await p.click('#try-type-card [data-go]');
-  await p.waitForFunction(() => window.__go.length >= 1, null, { timeout: 5000 }).catch(() => {});
   await p.waitForTimeout(300);
-  const go = await p.evaluate(() => window.__go);
-  ok(JSON.stringify(go) === '["typed"]', 'the press after typing was lost or doubled, or used the old setting: ' + JSON.stringify(go));
-  // a press with no change before it: one click, as always
+  const r = await p.evaluate(() => ({ go: window.__go, told: window.__told, mark: document.querySelector('#try-type-card [data-go]').__mark }));
+  ok(r.mark === before, 'the settings change drew the option\'s buttons again (render ran ' + r.mark + ' times)');
+  ok(JSON.stringify(r.go) === '["typed"]', 'the press after typing was lost or doubled, or read the old setting: ' + JSON.stringify(r.go));
+  ok(r.told.indexOf('typed') >= 0, 'the option was not told of the change (onSettings): ' + JSON.stringify(r.told));
   await p.click('#try-type-card [data-go]');
   await p.waitForTimeout(200);
   ok(JSON.stringify(await p.evaluate(() => window.__go)) === '["typed","typed"]', 'a plain press was not counted once');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+check('deliver-settings-change-keeps-the-press-keyboard', DESK, async (ctx) => {
+  const p = await pressType(ctx);
+  await p.focus('#try-type-card [data-key="note"]');
+  await p.keyboard.type('by keys');
+  await p.keyboard.press('Tab');
+  const f = await p.evaluate(() => { const a = document.activeElement; return { go: !!(a && a.matches && a.matches('#try-type-card [data-go]')), tag: a && a.tagName }; });
+  ok(f.go, 'Tab from the field did not land on the option\'s button (focus on ' + f.tag + ')');
+  await p.keyboard.press('Enter');
+  await p.waitForTimeout(300);
+  const go = await p.evaluate(() => window.__go);
+  ok(JSON.stringify(go) === '["by keys"]', 'Enter on the button did not act once with the typed value: ' + JSON.stringify(go));
+  ok(await p.evaluate(() => !!(document.activeElement && document.activeElement.matches('#try-type-card [data-go]'))), 'the button lost focus');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 // the pack through the REAL engine (Pyodide, engine/worker.js), the AI off: three files, the companions read by the worker,

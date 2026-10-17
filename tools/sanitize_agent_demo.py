@@ -360,9 +360,12 @@ h2.sec { color: var(--ink); font-size: 26px; line-height: 1.15; letter-spacing: 
    the hero below says the same thing */
 @media (max-width: 600px) { .hd .live { display: none; } .hd .theme-btn { margin-left: auto; } }
 """
-# runs in <head>, before the page paints: light unless the visitor chose dark on either page
-THEME_BOOT = ("<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}"
-              "document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>")
+# runs in <head>, before the page paints: the visitor's choice on either page, else the device's setting
+THEME_BOOT = ("<script>(function(){var t=null,r=document.documentElement,m=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');"
+              "try{t=localStorage.getItem('nl-theme');}catch(e){}"
+              "var saved=t==='dark'||t==='light';r.setAttribute('data-theme',saved?t:(m&&m.matches?'dark':'light'));"
+              "if(!saved&&m&&m.addEventListener)m.addEventListener('change',function(e){var s=null;try{s=localStorage.getItem('nl-theme');}catch(x){}"
+              "if(s!=='dark'&&s!=='light')r.setAttribute('data-theme',e.matches?'dark':'light');});})();</script>")
 # the site's favicon (tools/make_favicon.py), as the main page and the case study link it
 FAVICON = ('<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">\n'
            '<link rel="icon" href="favicon.svg" type="image/svg+xml">')

@@ -1725,7 +1725,7 @@ PAGE = """<!doctype html>
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="description" content="Rashadul Islam Roman, data analyst in Toronto. A RentSafeTO building-health scorecard built from City of Toronto open data, with checked findings, honest forecasts and the receipts behind every number.">
-<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
+<script>(function(){var t=null,r=document.documentElement,m=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');try{t=localStorage.getItem('nl-theme');}catch(e){}var saved=t==='dark'||t==='light';r.setAttribute('data-theme',saved?t:(m&&m.matches?'dark':'light'));if(!saved&&m&&m.addEventListener)m.addEventListener('change',function(e){var s=null;try{s=localStorage.getItem('nl-theme');}catch(x){}if(s!=='dark'&&s!=='light')r.setAttribute('data-theme',e.matches?'dark':'light');});})();</script>
 <style>
 %s
 </style>
@@ -1796,7 +1796,7 @@ CASE_PAGE = """<!doctype html>
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="description" content="A RentSafeTO case study on City of Toronto open data: what the audit found and what it means for a building operator. Every figure is filled in from the site's data files.">
-<script>(function(){var t=null;try{t=localStorage.getItem('nl-theme');}catch(e){}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');})();</script>
+<script>(function(){var t=null,r=document.documentElement,m=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');try{t=localStorage.getItem('nl-theme');}catch(e){}var saved=t==='dark'||t==='light';r.setAttribute('data-theme',saved?t:(m&&m.matches?'dark':'light'));if(!saved&&m&&m.addEventListener)m.addEventListener('change',function(e){var s=null;try{s=localStorage.getItem('nl-theme');}catch(x){}if(s!=='dark'&&s!=='light')r.setAttribute('data-theme',e.matches?'dark':'light');});})();</script>
 <style>
 %s
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }

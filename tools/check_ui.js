@@ -1007,20 +1007,28 @@ check('header-fits-beside-a-classic-scrollbar', DESK, async (ctx) => {
   ok(!bad.length, 'the header overflows at ' + bad.length + ' widths, e.g. ' + bad.slice(0, 3).join('; '));
 });
 
-// both pages open light (white) even on a computer set to dark mode; dark only when the visitor picks it
-// (owner's request, 23 Sep 2026), and the choice carries between the main page and the replay page
+// both pages follow the computer's light or dark setting until the visitor picks one with the toggle (owner's request,
+// 17 Oct 2026, replacing white-by-default of 23 Sep); the choice is remembered and carries between the two pages
 async function themeOf(p) {
   return p.evaluate(() => { const bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number);
     return { theme: document.documentElement.getAttribute('data-theme'), light: (bg[0] + bg[1] + bg[2]) / 3 > 200 }; });
 }
-check('pages-open-light-on-a-dark-computer', DESK, async (ctx) => {
+check('pages-follow-a-dark-computer', DESK, async (ctx) => {
   const p = await open(ctx);
   const a = await themeOf(p);
-  ok(a.theme === 'light' && a.light, 'the main page opens ' + a.theme + ' (light background: ' + a.light + ') on a dark-mode computer');
+  ok(a.theme === 'dark' && !a.light, 'the main page opens ' + a.theme + ' (light background: ' + a.light + ') on a dark-mode computer');
   const d = await openDemo(ctx);
   const b = await themeOf(d);
-  ok(b.theme === 'light' && b.light, 'the replay page opens ' + b.theme + ' (light background: ' + b.light + ') on a dark-mode computer');
+  ok(b.theme === 'dark' && !b.light, 'the replay page opens ' + b.theme + ' (light background: ' + b.light + ') on a dark-mode computer');
+  await p.click('#theme-btn'); await p.reload(); await p.waitForTimeout(150);
+  const c = await themeOf(p);
+  ok(c.theme === 'light' && c.light, 'a visitor who picked light on a dark computer is shown ' + c.theme + ' after a reload');
 }, { colorScheme: 'dark' });
+check('pages-follow-a-light-computer', DESK, async (ctx) => {
+  const p = await open(ctx);
+  const a = await themeOf(p);
+  ok(a.theme === 'light' && a.light, 'the main page opens ' + a.theme + ' on a light-mode computer');
+}, { colorScheme: 'light' });
 check('theme-choice-carries-between-pages', DESK, async (ctx) => {
   const p = await open(ctx);
   await p.click('#theme-btn');
@@ -1036,7 +1044,7 @@ check('theme-choice-carries-between-pages', DESK, async (ctx) => {
   await p.reload(); await p.waitForTimeout(150);
   const e = await themeOf(p);
   ok(e.theme === 'light', 'the main page did not pick up the choice made on the replay page (' + e.theme + ')');
-}, { colorScheme: 'dark' });
+}, { colorScheme: 'light' });
 
 // the replay page's header keeps everything inside it on a phone, theme toggle included
 check('replay-header-fits-on-phone', PHONE, async (ctx) => {

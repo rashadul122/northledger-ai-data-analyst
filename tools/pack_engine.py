@@ -32,6 +32,7 @@ The zip holds exactly what the browser needs and nothing else:
   nl_dashboard.py           the Dashboard tab: design check, aggregate cube, notes (engine/nl_dashboard.py, CONTRACT §5.14)
   dashboard_sample.json     the sample ledger's recorded AI dashboard design nl_dashboard reads beside itself
   nl_cleanfile.py           clean my file: the cleaned CSV and the cleaning log (engine/nl_cleanfile.py, CONTRACT §5.15)
+  nl_sales.py               the quarterly sales report from a CRM deals export (engine/nl_sales.py, CONTRACT §5.19)
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
@@ -176,6 +177,9 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the Dashboard tab (plan/DASHBOARD-DESIGN.md, CONTRACT §5.14), imported by nl_browser.run() and
                  # results_for_ai; and the sample ledger's recorded AI design it reads beside itself
                  "nl_dashboard.py": "nl_dashboard.py",
+                 # the quarterly sales report from a CRM deals export (Track F, CONTRACT §5.19), imported by
+                 # nl_browser.run() and nl_browser.sales_json (engine/worker.js "sales")
+                 "nl_sales.py": "nl_sales.py",
                  "dashboard_sample.json": "dashboard_sample.json",
                  # step 6's report types (plan/DASHBOARD-DESIGN.md "Batch 2", CONTRACT §5.18), imported by
                  # nl_browser.deliver_json: the monthly reporting pack (Track E); Tracks F and G add nl_sales.py and

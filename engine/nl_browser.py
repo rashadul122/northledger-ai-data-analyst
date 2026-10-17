@@ -12903,6 +12903,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                                       scrub.flag_tokens, scrub.flag_tokens_by, dash_pins)
         if isinstance(ai_plan, dict):
             ai_plan.pop("dashboard", None)
+        # the quarterly sales report (engine/nl_sales.py, CONTRACT 5.19): computed when the file reads as a CRM deals
+        # export, else only what it would need (step 6's report menu reads rep.sales.fit)
+        rep["sales"] = _sales(rep, reading, ai_plan, as_of)
         rep["ok"] = True
     except Refusal as exc:
         rep["error"] = str(exc)
@@ -13701,6 +13704,70 @@ def _dashboard(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, g
             raise
         return {"version": "", "ok": False, "chosen_by": "none",
                 "why": "the dashboard could not be built for this file (%s)" % type(exc).__name__}
+
+
+# The last run's kept rows for the quarterly sales report (engine/nl_sales.py), so the visitor's settings (the fiscal
+# year's first month, the quarter, a target, the columns) recompute it here with no new run. Replaced by every run.
+_LAST_SALES: Dict[str, Any] = {}
+
+
+def _sales_inputs(rep: Dict[str, Any], reading: Any, plan: Any) -> Optional[Dict[str, Any]]:
+    """The kept rows the report reads (downloads.clean_csv, as every chart reads them), without every flagged column
+    but the one the visitor kept or coded that may be the owner (rep) column; the file's headers; the plan's columns."""
+    import nl_scenarios as _ns
+    csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
+    if not csv_text:
+        return None
+    flagged = [f for f in (rep.get("privacy") or {}).get("flagged") or [] if isinstance(f, dict) and f.get("column")]
+    private = {str(f["column"]): str(f.get("decision") or "withhold") for f in flagged}
+    may = {c for c, d in private.items() if d in ("keep", "code")}      # nl_sales reads them as the owner only
+    frame = _download_frame(csv_text, set(private) - may)
+    if frame is None:
+        return None
+    header_of = {c: (reading.header(c) if reading is not None else c) for c in frame.columns}
+    for c in private:
+        header_of.setdefault(c, reading.header(c) if reading is not None else c)
+    plan_by = _ns._plan_entries(plan if isinstance(plan, dict) else None,
+                                reading.landed if reading is not None else None) if isinstance(plan, dict) else {}
+    return {"frame": frame, "header_of": header_of, "plan_by": plan_by, "private": private,
+            "sha256": (rep.get("input") or {}).get("sha256")}
+
+
+def _sales(rep: Dict[str, Any], reading: Any, plan: Any, as_of: Any) -> Dict[str, Any]:
+    """rep["sales"] (engine/nl_sales.py, CONTRACT 5.19) with the default settings. The report stands without it."""
+    _LAST_SALES.clear()
+    try:
+        import nl_sales as _nsl
+        inp = _sales_inputs(rep, reading, plan)
+        if inp is None:
+            return _nsl.blank("the engine kept no rows")
+        day = str(as_of or ((rep.get("reproducibility") or {}).get("parameters") or {}).get("as_of") or "")[:10] \
+            or _dt.date.today().isoformat()
+        _LAST_SALES.update(inp, as_of=day)
+        return _nsl.build(inp["frame"], inp["header_of"], day, {}, inp["plan_by"], inp["private"])
+    except Exception as exc:  # noqa: BLE001 - the report stands without the sales report, and says so
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return {"version": "", "ok": False, "why": "the sales report could not be built for this file (%s)"
+                % type(exc).__name__, "fit": {"ok": False, "why": "", "missing": []}, "mapping": [], "cannot": []}
+
+
+def sales_json(options_json: Any = None) -> str:
+    """The quarterly sales report again with the visitor's settings (engine/worker.js {type: 'sales', id, options} ->
+    {type: 'sales', id, out}): options {sha256 (the report's input.sha256; another file's is refused), settings:
+    {fiscal_start, quarter, target, stall_days, currency, rep_names, columns: {role: header | ""}}}. Same rows as the
+    run; no AI is called and nothing leaves the browser."""
+    import nl_sales as _nsl
+    try:
+        o = json.loads(options_json) if isinstance(options_json, str) else dict(options_json or {})
+    except (TypeError, ValueError):
+        o = {}
+    L = _LAST_SALES
+    if not L or (o.get("sha256") and o.get("sha256") != L.get("sha256")):
+        return json.dumps(_nsl.blank("run the file again: the engine no longer holds this file's rows"))
+    rec = _nsl.build(L["frame"], L["header_of"], L["as_of"], o.get("settings") if isinstance(o.get("settings"), dict)
+                     else {}, L["plan_by"], L["private"])
+    return json.dumps(rec, allow_nan=False, default=str)
 
 
 # ----------------------------------------------------------------------------- the report's web searches

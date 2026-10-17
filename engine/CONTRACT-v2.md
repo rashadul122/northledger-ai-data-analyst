@@ -2333,3 +2333,70 @@ list with flags `IF(OR(IF(ISNUMBER(..),ABS(..)>$B$2,FALSE),..),"WATCH","")` agai
 Inputs checklist), `NLPack.cover(pack)` (an NLDocx spec, style business, one page), `NLPack.recipe`, `NLPack.checklist`,
 `NLPack.files`. Checks: `tools/test_nl_pack.py` (the workbook made by `tools/pack_files.mjs` with the page's own code,
 its formulas evaluated and compared with pandas), `tools/check_ui.js` `pack-*`, `deliver-registry-*`.
+### 5.19 `sales`: the quarterly sales report from a CRM deals export (Track F, 17 October 2026: `engine/nl_sales.py`, `src/js/62-sales.js`)
+
+(Section numbers of Batch 2 per `plan/DASHBOARD-DESIGN.md`: E 5.18, F 5.19, G 5.20.) `rep.sales` is built in every run
+after the dashboard, from the rows the engine kept (`downloads.clean_csv`, as every chart reads them) without any flagged
+column except one the visitor kept or coded, which may be read only as the owner (rep). It is computed in full when the
+file reads as a deals export and otherwise says what it needs; the report stands without it (`ok: false` and `why`).
+`nl_browser.sales_json(options)` (engine/worker.js `{type: 'sales', id, options: {sha256, settings}}` -> `{type: 'sales',
+id, out}`) recomputes it from the same rows with the visitor's settings; no AI is called, nothing is sent. `nl_sales.build`
+also takes `(inputs, settings)`, the step-6 registry's engine call (Track E's `deliver_json`): the input whose role is
+`deals`, else the main one. `results_for_ai` does not carry it (the AI does not word this report; every sentence is the
+engine's).
+
+Settings: `{fiscal_start (1-12; quarters are calendar ones at 1, else FY named by the year it ends, "FY2026 Q3"), quarter
+("2025 Q4" | "FY2026 Q3"; default the latest COMPLETE quarter, complete when the export date is after its last day),
+target (the next quarter's, for coverage), stall_days (7-365, default 30), currency ("", $, €, £, ¥ or a 3-letter code;
+default the AI plan's unit of the amount column when it is one), rep_names (false hides kept names), columns: {role:
+header | "" (none)}}`.
+
+Shape: `{version, ok, why, as_of, settings, chosen_columns, mapping: [{role, label, what, optional, column, how:
+visitor|plan|name|values, from_stage}], cannot: [{role, text}], needs (nl_sales.NEEDS), columns: [{header, kind}],
+owner_decision, fit: {ok, missing, why}, quarters: [{label, complete}], quarter: {label, start, end, prev_label,
+prev_start, prev_end, complete, fiscal_start, note}, counts, growth: {prev, cur, change, pct, deals_prev, deals_cur,
+avg_prev, avg_cur, count_effect, size_effect, adds_up, suppressed, lead, text}, kpis: [{id, label, value, prev, text,
+prev_text, change_text, n, suppressed}], segments: {ok, column, rows: [{label, rev_*, won_*, closed_*, win_*, avg_*,
+change, count_effect, size_effect, texts}], table, win_table, note}, cycle: {ok, median_*, mean_*, n_*, segments, change,
+bad_dates, text}, pipeline: {ok, as_of, n, value, weighted, stages: [...], age, stalled: {n, past_close, no_change, value,
+share, days, by_change}, next: {label, n, value, weighted}, coverage, table, texts, text}, reps: {ok, names, rows: [{rank,
+label, revenue, won, win_rate, avg, share, texts}], ranked, left_out, note, small_note, table}, findings: {working: [...],
+change: [...]} (each {side, kind, subject, score, rank, title, text, driver}), summary: {headline, lines, working, change},
+notes, charts (chart registry records, §5.9: pvm_waterfall, grouped_bar x3, bar_chart; ids viz.8n.*), title}`.
+
+Rules. Roles (`map_columns`): the visitor's choice wins; then a header that reads as the role (Salesforce, HubSpot,
+Pipedrive and Zoho names), the AI plan's words and semantic type for the column, and the values (won/lost/open, true/false
+for "Is Won", dates, numbers; a probability is a number from 0 to 100 or 0 to 1). Won/lost comes from an outcome (status)
+column, else from a stage column whose values hold closed-won and closed-lost. A role nothing fits is empty and `cannot`
+says what that costs ("No created date: the sales cycle ... cannot be measured"); amount, close date and won/lost are
+required (`fit.missing`). A deal is in the quarter its close date falls in; won revenue is the sum of won amounts; the
+win rate is won / (won + lost) of the deals closed in the quarter. The change in won revenue is split by
+`nl_scenarios.price_volume` (the one price-volume formula, now shared with the scenarios' items): number of won deals
+= (n1 - n0) x the prior average, deal size = R1 - n1 x the prior average; exact, the two add up to the change; per
+segment too. The cycle is close - created of won deals (a close before the created date is left out and said). The
+pipeline is the open deals on the export date: value by stage (in the order of their mean probability), weighted by
+probability, median age, stalled = past the expected close date, or (with a last-stage-change column) no stage change for
+more than `stall_days`; the next quarter's open value and its coverage of a target. Reps: ranked by won revenue among
+those with 5 or more won deals; the owner column's values are shown only when the visitor kept it (and did not hide them),
+else "Rep A/B/C"; a coded column's codes are never shown; withheld: the reason. Small cells: no figure rests on fewer than
+5 deals ("<5"). Findings: segment revenue moves of 2% of the prior won revenue or more (with the data's count/size split),
+win-rate moves of 5 points or more, a cycle change of 10% or more, stalled value over 20% of the open value, coverage
+against 3x; scored by the size of the move and ranked per side; every cause beyond the data's split reads "driver to be
+confirmed".
+
+Page (`src/js/62-sales.js`): `NLDeliver.register({id: 'sales-report', order: 20, roles: ['deals'], title, blurb, needs,
+how, fits (rep.sales.fit), settings, render})` (Track E's registry, or its queue, or a minimal stand-in made only when
+none is on the page). The card: the columns read (a select per role), settings (drawn by the registry; by the card with
+the stand-in), "Update the report" (`NLTry.salesReport`), "Download Word (.docx)" (`NLDocx.document`, style `business`:
+a one-page executive summary with the KPI tiles, the headline, the segment/cycle/pipeline/rep lines, the deals/size
+waterfall and the top working / needs-to-change items, then sections 1-6 and "How this report was made"; the charts are
+the records drawn by `window.NLV` and turned into PNG by `NLDocx.svgToPng` in Georgia), "Download HTML (print to PDF)"
+(the same document model, `NLSales.htmlFile`), and a preview from the same model. Step 1 offers "Sales report demo
+(synthetic CRM export)" (`engine/sample-crm-deals-synthetic.csv`, `tools/make_sample_sales.py`, as of 2026-01-05) and the
+option's checklist with how to export from each CRM.
+
+The demo's report (owner kept): won revenue 3,310,350 in 2025 Q4, up +650,100 (+24.4%) on 2025 Q3; 89 won deals (106)
+at an average of 37,195 (25,097): deal size +1,076,744, number of deals −426,644; Enterprise 1,486,750 to 2,192,700 from
+bigger deals (average 92,922 to 137,044); SMB win rate 38.0% to 22.0%; median cycle 34 to 50 days; 20 of 85 open deals
+stalled (24.4% of the open value). Tests: `tools/test_nl_sales.py` (pandas), `tools/check_report_docx.mjs` (the Word
+file, LibreOffice), `tools/check_ui.js` sales-report-desktop / -phone / -dark.

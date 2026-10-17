@@ -1119,6 +1119,9 @@ self.onmessage = function (e) {
     var C = (m.options && m.options.rules) ? REPORT.__cleanEdited : REPORT.__clean;
     if (C) { C = JSON.parse(JSON.stringify(C)); C.__echo = m.options || null; self.__lastClean = m.options; }
     self.postMessage({ type: 'cleaned', id: m.id, out: C || null });
+  } else if (m.type === 'sales') {          // the quarterly sales report with the visitor's settings (CONTRACT §5.19)
+    self.__lastSales = m.options || null;
+    self.postMessage({ type: 'sales', id: m.id, out: REPORT.__salesNext || REPORT.sales || null });
   } else if (m.type === 'plan') {           // Ask your data without an AI planner: the engine's own plan (CONTRACT §5.16)
     self.postMessage({ type: 'plan_json', id: m.id, steps: REPORT.__plan || [] });
   } else if (m.type === 'more') {
@@ -5058,6 +5061,103 @@ check('clean-my-file-phone', PHONE, async (ctx) => { await cleanChecks(ctx, 'pho
 check('clean-my-file-dark', DESK, async (ctx) => {
   await cleanChecks(ctx, 'desktop-dark');
 }, { acceptDownloads: true, colorScheme: 'dark' });
+
+/* ------------------------------------------------------------ the quarterly sales report (Track F, CONTRACT §5.19)
+   The SYNTHETIC CRM deals export's real report (tools/make_sample_sales.py, run natively with the owner column kept) and
+   its report again with the visitor's settings (nl_browser.sales_json: fiscal year from April, a target), handed to the
+   stand-in worker. Step 1 offers the report type with its checklist; step 6's report menu (window.NLDeliver, the registry)
+   lists it as ready; its card shows the engine's columns, settings and a preview whose every figure is the engine's; the
+   Word file is a real .docx in the business style with one PNG per chart; the HTML file is the same document; Update asks
+   the worker again, never the AI. */
+let CRM_REP = null;
+const CRM_SET = { fiscal_start: 4, target: '1,000,000' };
+function crmReport() {
+  if (CRM_REP) return CRM_REP;
+  const code = 'import sys,os,json\nos.environ["NL_BROWSER_STRICT"]="1"\nsite=sys.argv[1]\nsys.path[:0]=[site+"/../northledger-core",site+"/engine"]\nimport nl_browser as NB\n' +
+    'd=open(site+"/engine/sample-crm-deals-synthetic.csv","rb").read()\nrep=NB.run(d,"sample-crm-deals-synthetic.csv","",{"opportunity_owner":"keep"},"2026-01-05")\n' +
+    'rep["__salesNext"]=json.loads(NB.sales_json(json.dumps({"sha256":rep["input"]["sha256"],"settings":json.loads(sys.argv[2])})))\nprint(json.dumps(rep))';
+  const r = require('child_process').spawnSync(fs.existsSync(PY) ? PY : 'python3', ['-c', code, SITE_DIR, JSON.stringify(CRM_SET)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.status !== 0) throw new Error('the sales report could not be made: ' + String(r.stderr || r.error || '').trim().split('\n').pop());
+  CRM_REP = JSON.parse(r.stdout);
+  return CRM_REP;
+}
+async function salesChecks(ctx, tag) {
+  const rep = crmReport(), S = rep.sales;
+  ok(S && S.ok && rep.__salesNext && rep.__salesNext.ok && rep.__salesNext.quarter.label === 'FY2026 Q3', 'the engine gave no sales report for the sample');
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'unset' });
+  if (/dark/.test(tag)) await p.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  ok(/synthetic CRM export/i.test(await p.textContent('#try-sample-crm')), 'the step-1 sample does not say it is a synthetic CRM export');
+  // the registry entry and step 1's "What do you need?" (fed by the same registry)
+  const reg = await p.evaluate(() => { const D = window.NLDeliver, o = D && D.list().find((x) => x.id === 'sales-report');
+    return o ? { title: o.title, needs: o.needs.map((n) => n.columns[0]), req: o.needs.filter((n) => !n.optional).map((n) => n.columns[0]), fn: typeof o.fits + typeof o.render, set: o.settings.map((x) => x.key) } : null; });
+  ok(reg && reg.title === 'Quarterly sales report' && reg.fn === 'functionfunction', 'no sales-report entry in window.NLDeliver: ' + JSON.stringify(reg));
+  ok(JSON.stringify(reg.needs) === JSON.stringify(S.needs.map((n) => n.role)) && JSON.stringify(reg.req) === JSON.stringify(S.needs.filter((n) => !n.optional).map((n) => n.role)),
+    'the step-1 checklist is not the engine\'s list of needs: ' + JSON.stringify(reg.needs));
+  ok(['fiscal_start', 'quarter', 'target', 'columns'].every((k) => reg.set.indexOf(k) >= 0), 'the entry\'s settings: ' + JSON.stringify(reg.set));
+  ok(await p.isVisible('#try-need-sel'), 'step 1 has no "What do you need?" choice');
+  await p.selectOption('#try-need-sel', 'sales-report');
+  const need = await p.textContent('#try-need');
+  ok(/Close date/.test(need) && /Salesforce/.test(need) && /HubSpot/.test(need) && /Pipedrive/.test(need) && /Zoho/.test(need), 'step 1 does not list the export\'s columns and how to export them');
+  await p.evaluate(() => { window.__steps = []; });
+  await runReport(p);
+  await p.waitForSelector('#try-report-types [data-type="sales-report"]', { timeout: 10000 });
+  const menu = await p.evaluate(() => { const b = document.querySelector('#try-report-types [data-type="sales-report"]'), slot = document.getElementById('try-step-6-slot'), dl = document.getElementById('try-deliver');
+    return { st: b.parentElement.querySelector('.try-types-st').textContent, inSix: slot.contains(b), after: !dl || !!(dl.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), pressed: b.getAttribute('aria-pressed') }; });
+  ok(menu.inSix && menu.after && menu.st === 'ready', 'step 6 does not list the sales report as ready after the downloads: ' + JSON.stringify(menu));
+  if (menu.pressed !== 'true') await p.click('#try-report-types [data-type="sales-report"]');
+  await p.waitForSelector('#try-sales .sr-preview svg', { timeout: 15000 });
+  const d = await p.evaluate(() => {
+    const t = (s) => { const e = document.querySelector(s); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    return { status: t('#try-sales-status'), head: t('#try-sales-preview .sr-p strong'), kpis: Array.from(document.querySelectorAll('#try-sales-preview .sr-kpis b')).map((b) => b.textContent),
+      figs: document.querySelectorAll('#try-sales-preview .sr-fig svg').length, cols: Array.from(document.querySelectorAll('#try-sales select[data-role]')).map((s) => [s.getAttribute('data-role'), s.value]),
+      preview: t('#try-sales-preview'), sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth,
+      bg: getComputedStyle(document.getElementById('try-sales')).backgroundColor, ink: getComputedStyle(document.querySelector('#try-sales .sr-card-h')).color };
+  });
+  ok(/2025 Q4 against 2025 Q3/.test(d.status), 'the card\'s status: ' + d.status);
+  ok(d.head === S.summary.headline, 'the preview\'s headline is not the engine\'s: ' + d.head);
+  const want = S.kpis.map((k) => k.text).slice(0, 4);
+  ok(JSON.stringify(d.kpis.slice(0, 4)) === JSON.stringify(want) && d.kpis.indexOf(S.pipeline.texts.value) >= 0, 'the KPI tiles are not the engine\'s texts: ' + JSON.stringify(d.kpis));
+  ok(d.figs === S.charts.length, 'the preview draws ' + d.figs + ' of ' + S.charts.length + ' charts');
+  ok(S.mapping.every((m) => d.cols.some((c) => c[0] === m.role && c[1] === (m.column || ''))), 'the column choices are not the engine\'s mapping: ' + JSON.stringify(d.cols));
+  ok(['Avery Lindqvist', 'SMB win rate', 'driver to be confirmed', 'Enterprise grew most'].every((w) => d.preview.indexOf(w) >= 0), 'the preview lacks the reps, the planted findings or the driver wording');
+  ok(d.sw <= d.cw + 1, 'the page scrolls sideways (' + d.sw + ' > ' + d.cw + ')');
+  if (/dark/.test(tag)) {
+    const L = (c) => { const m = c.match(/[\d.]+/g).map(Number); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]); };
+    ok(L(d.bg) < 0.1 && L(d.ink) > 0.5, 'the card is not drawn in the dark theme: ' + d.bg + ' / ' + d.ink);
+  }
+  await shot(p, 'sales-' + tag + '-card', '#try-sales');
+  // the Word file: a .docx in the business style, the engine's words, one PNG per chart drawn on white
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#try-sales [data-sales-dl="docx"]')]);
+  ok(/^Sales report 2025 Q4 - \d{4}-\d{2}-\d{2}\.docx$/.test(dl.suggestedFilename()), 'the Word file\'s name: ' + dl.suggestedFilename());
+  const buf = fs.readFileSync(await dl.path()), Z = zipMembers(buf), docXml = String(Z.get('word/document.xml') || ''), sty = String(Z.get('word/styles.xml') || '');
+  if (process.env.NL_SALES_KEEP) { fs.mkdirSync(process.env.NL_SALES_KEEP, { recursive: true }); fs.writeFileSync(path.join(process.env.NL_SALES_KEEP, 'sales-' + tag + '.docx'), buf); }
+  const pngs = Array.from(Z.keys()).filter((k) => /^word\/media\/image\d+\.png$/.test(k));
+  ok(Z.has('[Content_Types].xml') && docXml.length > 1000 && /Georgia/.test(sty), 'the .docx lacks its parts or the business style\'s serif');
+  ok(pngs.length === S.charts.length && pngs.every((k) => { const pr = pngProbe(Z.get(k)); return pr && pr.w >= 600 && pr.first.slice(0, 3).every((v) => v >= 250); }), 'the .docx does not hold one white PNG per chart: ' + pngs.length);
+  const plain = docXml.replace(/<w:tab\/>/g, ' ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, '\'').replace(/&quot;/g, '"');
+  ok(plain.indexOf('Executive summary') >= 0 && plain.indexOf(S.summary.headline) >= 0 && plain.indexOf(S.growth.text) >= 0, 'the .docx lacks the summary or the engine\'s words');
+  ok(docXml.indexOf('w:br w:type="page"') > 0 && docXml.indexOf('Executive summary') < docXml.indexOf('w:br w:type="page"'), 'the executive summary is not on its own first page');
+  const [dh] = await Promise.all([p.waitForEvent('download'), p.click('#try-sales [data-sales-dl="html"]')]);
+  const html = fs.readFileSync(await dh.path(), 'utf8');
+  ok(/\.html$/.test(dh.suggestedFilename()) && html.indexOf(S.summary.headline.replace(/&/g, '&amp;').replace(/'/g, '&#39;')) > 0 && (html.match(/data:image\/png;base64,/g) || []).length === S.charts.length && /Georgia/.test(html) && /@page/.test(html),
+    'the HTML file is not the same document with its charts');
+  // settings: the same worker asked again (fiscal year from April, a target), never the AI
+  await p.click('#try-sales-cols > summary');
+  await p.selectOption('#sr-fs', '4');
+  await p.fill('#sr-target', '1,000,000');
+  await p.click('#try-sales [data-sales-act="update"]');
+  await p.waitForFunction(() => /No AI was asked/.test(document.getElementById('try-sales-status').textContent), null, { timeout: 15000 });
+  const u = await p.evaluate(() => ({ st: document.getElementById('try-sales-status').textContent, kp: Array.from(document.querySelectorAll('#try-sales-preview .sr-kpis .k')).map((k) => k.textContent),
+    sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  ok(/^FY2026 Q3 against FY2026 Q2/.test(u.st) && u.kp.some((k) => /^Coverage of the FY2026 Q4 target$/.test(k)), 'after Update the card is not the engine\'s fiscal report with coverage: ' + JSON.stringify(u));
+  ok(u.sw <= u.cw + 1, 'with the settings open the page scrolls sideways');
+  ok(!ctx.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'the sales report sent a request to the AI proxy');
+  await shot(p, 'sales-' + tag + '-updated', '#try-sales');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+}
+check('sales-report-desktop', DESK, async (ctx) => { await salesChecks(ctx, 'desktop-light'); }, { acceptDownloads: true });
+check('sales-report-phone', PHONE, async (ctx) => { await salesChecks(ctx, 'phone-light'); }, { acceptDownloads: true, mobile: true });
+check('sales-report-dark', DESK, async (ctx) => { await salesChecks(ctx, 'desktop-dark'); }, { acceptDownloads: true, colorScheme: 'dark' });
 
 /* ------------------------------------------------------------ runner */
 /* ------------------------------------------------------------ Ask your data, with SQL (Track B, CONTRACT §5.14)

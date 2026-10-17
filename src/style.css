@@ -1462,3 +1462,53 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
   .pk-dl .btn { flex: 1 1 100%; text-align: center; min-height: 44px; }
   .dl-set { grid-template-columns: 1fr; }
 }
+/* step 1 "What do you need?" and step 6's report menu (the step-6 registry, window.NLDeliver), and the quarterly sales
+   report's card and preview (src/js/62-sales.js, CONTRACT 5.19). The preview reads like the document: a serif, dense */
+.sr-how dl { margin: 6px 0; font-size: 14px; color: var(--ink); }
+.sr-how dt { font-weight: 700; margin-top: 6px; }
+.sr-how dd { margin: 0 0 0 0; overflow-wrap: anywhere; }
+.try-types { margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.try-types-l { list-style: none; margin: 6px 0 0; padding: 0; }
+.try-types-l li { margin: 4px 0; overflow-wrap: anywhere; }
+.try-types-st { font-size: 13px; font-weight: 600; margin-left: 4px; }
+.try-types-st.ok { color: var(--accent-ink); }
+.try-types-st.no { color: var(--muted); }
+.sr-card { margin-top: 10px; min-width: 0; }
+.sr-card-h { margin: 0 0 4px; font-size: 16px; color: var(--ink); }
+.sr-status { margin: 4px 0 10px; font-size: 14.5px; color: var(--ink); }
+.sr-cols, .sr-set { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg); min-width: 0; }
+.sr-cols > summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.sr-set legend { font-weight: 700; color: var(--ink); padding: 0 4px; }
+.sr-map { grid-template-columns: minmax(0, 10em) minmax(0, 1fr); }
+.sr-set .cf-fields { grid-template-columns: minmax(0, 14em) minmax(0, 1fr); }
+.sr-names { font-size: 13.5px; color: var(--ink); display: flex; gap: 8px; align-items: flex-start; }
+.sr-names input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--accent); }
+.sr-cannot { margin: 8px 0 0; padding-left: 20px; font-size: 13.5px; color: var(--ink); }
+.sr-actions { margin: 10px 0 4px; }
+.sr-preview { margin-top: 12px; padding: 18px 20px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); color: var(--body);
+  font-family: Georgia, "Times New Roman", serif; font-size: 14px; line-height: 1.35; min-width: 0; }
+.sr-preview .sr-title { margin: 0 0 2px; font-size: 22px; color: var(--ink); font-family: inherit; }
+.sr-preview .sr-sub { margin: 0 0 10px; font-style: italic; color: var(--muted); }
+.sr-preview .sr-h1 { margin: 16px 0 6px; padding-bottom: 3px; border-bottom: 1.5px solid var(--ink); font-size: 17px; color: var(--ink); font-family: inherit; }
+.sr-preview .sr-h2 { margin: 10px 0 4px; font-size: 15px; color: var(--accent-ink); font-family: inherit; }
+.sr-preview .sr-h3 { margin: 10px 0 2px; font-size: 14px; font-variant: small-caps; letter-spacing: .04em; color: var(--ink); font-family: inherit; }
+.sr-preview .sr-p { margin: 0 0 6px; }
+.sr-preview .note { font-family: inherit; }
+.sr-preview .sr-list { margin: 0 0 6px; padding-left: 22px; }
+.sr-preview .sr-list li { margin: 0 0 3px; }
+.sr-kpis { list-style: none; margin: 0 0 8px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 4px; }
+.sr-kpis li { padding: 6px 8px; background: var(--bg); border: 1px solid var(--hairline); min-width: 0; }
+.sr-kpis .k, .sr-kpis .s { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.sr-kpis b { display: block; font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sr-preview .sr-ft { margin: 10px 0 3px; font-weight: 700; font-size: 13px; color: var(--ink); }
+.sr-preview .sr-tbl table { font-size: 12.5px; }
+.sr-preview .sr-cap { margin: 2px 0 8px; }
+.sr-fig { margin: 8px 0 12px; min-width: 0; }
+.sr-fig svg { display: block; max-width: 100%; height: auto; }
+.sr-page { border: 0; border-top: 1px dashed var(--hairline); margin: 18px 0; }
+@media (max-width: 560px) {
+  .sr-map, .sr-set .cf-fields { grid-template-columns: 1fr; }
+  .sr-preview { padding: 12px; font-size: 13.5px; }
+  .sr-actions .btn { flex: 1 1 100%; text-align: center; }
+  .try-need select, .sr-set select, .sr-set input, .sr-map select { min-height: 44px; }
+}

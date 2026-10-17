@@ -1548,7 +1548,7 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'), sample3: $('try-sample-pack'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'), sample3: $('try-sample-pack'), sample4: $('try-sample-crm'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report'),
       qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
@@ -1578,6 +1578,13 @@
       var req = ++S.deliverReq;
       S.onDelivered[req] = cb;
       S.worker.postMessage({ type: 'deliver', id: S.seq, req: req, kind: String(kind), settings: settings || {} });
+    };
+    // the quarterly sales report (src/js/62-sales.js, engine/nl_sales.py): this run's kept rows again with the visitor's
+    // settings, from the worker that ran it; cb(out) gets the report's sales block, or null when no worker holds the run
+    T.salesReport = function (settings, cb) {
+      if (!S.worker || !S.report) { cb(null); return; }
+      S.onSales = function (out) { S.onSales = null; cb(out); };
+      S.worker.postMessage({ type: 'sales', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, settings: settings || {} } });
     };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
@@ -1683,7 +1690,7 @@
       if (S.tick) { clearInterval(S.tick); S.tick = null; }
       S.t0 = {}; S.busy = false; if (el.q) el.q.disabled = false;
       el.run.hidden = true; el.pd.hidden = true;
-      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; if (el.sample4) el.sample4.disabled = false; el.pick.disabled = false;
     }
 
     /* ---- the worker ---- */
@@ -1744,6 +1751,9 @@
         // a step-6 report type's record (nl_browser.deliver_json), asked for by T.deliver (src/js/60-deliver.js)
         var cbd = S.onDelivered && S.onDelivered[m.req];
         if (cbd) { delete S.onDelivered[m.req]; cbd(m.out && typeof m.out === 'object' ? m.out : null); }
+      } else if (m.type === 'sales') {
+        // the quarterly sales report with the visitor's settings (engine/nl_sales.py), asked for by T.salesReport
+        if (S.onSales) S.onSales(m.out && typeof m.out === 'object' ? m.out : null);
       } else if (m.type === 'plan_json') {
         if (S.onPlan) S.onPlan(m.id, Array.isArray(m.steps) ? m.steps : null);
       } else if (m.type === 'more_json') {
@@ -2080,7 +2090,7 @@
     // the visitor's optional edit after the run: the engine runs the edited plan (no second AI correction)
     function rerun(d) {
       S.seq += 1; S.replanned = true; S.replan = null; S.replanFail = null; S.firstRep = null; S.busy = true; S.aiReport = null;
-      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; if (el.sample4) el.sample4.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       var ar = document.getElementById('try-ai-report'); if (ar) ar.hidden = true;
       el.report.hidden = true; el.run.hidden = false;
       drawStages(); setStage('load', 'skip', null, 'already loaded'); setStage('plan', 'done', null, 'the plan that ran, as you changed it'); setStage('replan', 'skip', null, 'you edited the plan');
@@ -2406,7 +2416,7 @@
       if (!LIM.max_bytes || !LIM.max_rows) return refuse('engine', { title: 'The demo is not set up on this page', body: 'Its limits are missing from the page data.' });
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
-      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; if (el.sample4) el.sample4.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       // the question box: typed before the run, sent as the objective the AI plans around
       S.question = (el.q && el.q.value || '').trim().slice(0, 300);
       S.objective = S.question;
@@ -2553,6 +2563,13 @@
       if (window.NLDeliver && window.NLDeliver.get('monthly-pack')) window.NLDeliver.choose('monthly-pack');
       startSample(CFG.sample_sales || 'engine/sample-sales-synthetic.csv', CFG.sample_sales_as_of, CFG.sample_pack || []);
     });
+    // the SYNTHETIC CRM deals export (tools/make_sample_sales.py): the quarterly sales report in step 6 (src/js/62-sales.js,
+    // CONTRACT §5.19); picking it also picks that report type in step 1's "What do you need?"
+    if (el.sample4) el.sample4.addEventListener('click', function () {
+      var D = window.NLDeliver;
+      if (D && (D.choose || D.pick)) { try { (D.choose || D.pick)('sales-report'); } catch (e) { /* the registry draws its own choice */ } }
+      startSample(CFG.sample_crm || 'engine/sample-crm-deals-synthetic.csv', CFG.sample_crm_as_of);
+    });
     el.cancel.addEventListener('click', function () {
       killWorker();
       S.seq += 1;
@@ -2610,7 +2627,7 @@
       S.report = rep; S.busy = false; if (el.q) el.q.disabled = false;
       // the run's files (CONTRACT §5.18): the engine's record of the main file, then every companion read so far
       rep.inputs = (Array.isArray(rep.inputs) ? rep.inputs.filter(function (x) { return x && x.primary; }) : []).concat(S.companions);
-      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; if (el.sample4) el.sample4.disabled = false; el.pick.disabled = false;
       drawPlan(rep);
       drawReport();
       el.report.hidden = false;

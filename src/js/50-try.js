@@ -2585,16 +2585,13 @@
       if (D && (D.choose || D.pick)) { try { (D.choose || D.pick)('sales-report'); } catch (e) { /* the registry draws its own choice */ } }
       startSample(CFG.sample_crm || 'engine/sample-crm-deals-synthetic.csv', CFG.sample_crm_as_of);
     });
-    // the tracker demo (tools/make_sample_tracker.py, SYNTHETIC): two task lists for "Build a tracker" (step 6,
-    // src/js/63-tracker.js, CONTRACT §5.20). The first runs as the file; the tracker card then reads the second
-    // (T.startSample also serves its "Add the demo's second file" when the several-file intake is not on the page)
-    var trackerFiles = function () { return Array.isArray(CFG.sample_tracker) && CFG.sample_tracker.length ? CFG.sample_tracker
-      : ['engine/sample-tracker-tasks-a-synthetic.csv', 'engine/sample-tracker-tasks-b-synthetic.csv']; };
-    T.startSample = function (url, asOf) { startSample(url, asOf); };
-    T.trackerDemo = function () { return { files: trackerFiles(), as_of: CFG.sample_tracker_as_of || null }; };
+    // the tracker demo (tools/make_sample_tracker.py, SYNTHETIC): two overlapping task lists in one run (the first
+    // analysed, the second read as a companion) and "Build a tracker" (step 6, src/js/63-tracker.js, CONTRACT §5.20) chosen
     if (el.sample5) el.sample5.addEventListener('click', function () {
-      try { document.dispatchEvent(new CustomEvent('nl:tracker-demo', { detail: T.trackerDemo() })); } catch (e) { /* no CustomEvent: no card note */ }
-      startSample(trackerFiles()[0], CFG.sample_tracker_as_of);
+      var files = Array.isArray(CFG.sample_tracker) && CFG.sample_tracker.length ? CFG.sample_tracker
+        : ['engine/sample-tracker-tasks-a-synthetic.csv', 'engine/sample-tracker-tasks-b-synthetic.csv'];
+      if (window.NLDeliver && window.NLDeliver.get('tracker')) window.NLDeliver.choose('tracker');
+      startSample(files[0], CFG.sample_tracker_as_of, files.slice(1));
     });
     el.cancel.addEventListener('click', function () {
       killWorker();

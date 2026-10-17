@@ -15,9 +15,9 @@
    file loads after 60-deliver.js; a page without it gets the minimal stand-in below, guarded by `if (!window.NLDeliver)`)
    the option draws itself in step 6.
 
-   The tracker demo (step 1, "Tracker demo (synthetic task lists)", tools/make_sample_tracker.py): the first list runs as
-   the file; this card then adds the second (Track E's T.addFiles as a companion, or, without it, as the next run, the
-   first kept in this tab) and builds the tracker from both. Everything shown that came from a file is escaped. */
+   The tracker demo (step 1, "Tracker demo (synthetic task lists)", tools/make_sample_tracker.py): both lists in one run
+   (the first analysed, the second read as a companion), "Build a tracker" chosen; the card waits for the companion and
+   builds from both. Its settings are the registry's form (no ownForm). Everything shown from a file is escaped. */
 (function () {
   'use strict';
   var ENT = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -89,14 +89,13 @@
   /* ---- the option ---- */
   var KINDS = [['', 'Suggested from your data'], ['tasks', 'Tasks'], ['requests', 'Requests'], ['inventory', 'Inventory'], ['shifts', 'Shifts'],
     ['vendors', 'Vendors (bills and spend)'], ['other', 'Something else']];
-  var TR = { added: [], ticked: {}, last: null, busy: false, demo: null, seq: 0 };
+  var TR = { ticked: {}, last: null, busy: false, seq: 0 };
 
   function shas(rep) {
     // the files to combine, in order: the run's own (rep.inputs: main first), the files the visitor added in this tab,
     // the file on the page; a box the visitor unticked stays off
     var out = [], cur = rep && rep.input && rep.input.sha256;
     arr(rep && rep.inputs).forEach(function (f) { if (f && f.ok !== false && f.sha256 && out.indexOf(f.sha256) < 0) out.push(f.sha256); });
-    TR.added.forEach(function (s) { if (out.indexOf(s) < 0) out.push(s); });
     if (cur && out.indexOf(cur) < 0) out.push(cur);
     Object.keys(TR.ticked).forEach(function (s) { if (TR.ticked[s] && out.indexOf(s) < 0) out.push(s); });
     return out.filter(function (s) { return TR.ticked[s] !== false; });
@@ -136,21 +135,12 @@
     }).join('') + '<p class="note">Rows that are the same record in two files are merged into the first file\'s copy, and the Merged duplicates sheet lists each one.</p></fieldset>';
   }
 
-  function demoHtml(rep, use) {
-    var d = TR.demo;
-    if (!d || !rep || !rep.input) return '';
-    var files = arr(d.files), second = files[1];
-    if (!second) return '';
-    var names = arr(TR.last && TR.last.inputs).map(function (x) { return x.name; });
-    if (names.indexOf(second.split('/').pop()) >= 0) return '';
-    if (String(rep.input.name || '') !== files[0].split('/').pop()) return '';
-    return '<p class="trk-demo"><button type="button" class="btn btn-primary btn-sm" data-trk="demo2">Add the demo\'s second file</button> ' +
-      '<span class="note">The demo has two overlapping task lists (SYNTHETIC). The second is read in this browser like the first; the tracker then combines both.</span></p>';
-  }
-
   function build(slot, rep, settings) {
     var T = window.NLTry, st = slot.querySelector('.trk-status');
     if (!T || typeof T.tracker !== 'function') { st.textContent = 'The engine is not on this page.'; return; }
+    // the run's other files are still being read (Track E's intake): the registry draws this card again on 'nl:inputs'
+    var pend = typeof T.pendingFiles === 'function' ? arr(T.pendingFiles()) : [];
+    if (pend.length) { st.textContent = 'Reading ' + plural(pend.length, 'more file') + ' of this run first…'; return; }
     var use = shas(rep), ask = { inputs: use, kind: settings.kind || '', questions: settings.questions || '', dup_key: settings.dup_key || 'exact', rules: cleaningEdits() };
     var key = JSON.stringify([rep && rep.input && rep.input.sha256, rep && rep.inputs ? rep.inputs.length : 0, ask]);
     // the same files and settings as the tracker on hand (a redraw, or a field left without a change): drawn from it at
@@ -178,7 +168,7 @@
     }
     TR.last = out;
     st.textContent = 'Tracker ready: ' + plural(out.summary.rows, 'row') + ' from ' + plural(arr(out.summary.files).length, 'file') + '. Nothing was invented or filled in.';
-    box.innerHTML = demoHtml(rep, use) + filesHtml(out, use) + summaryHtml(out, settings) +
+    box.innerHTML = filesHtml(out, use) + summaryHtml(out, settings) +
       '<div class="tr-actions"><button type="button" class="btn btn-primary" data-trk="xlsx">Download the tracker (Excel)</button><span class="try-share-out trk-dl-out" hidden></span></div>' +
       '<p class="note">Made in this browser by the page\'s Excel writer; nothing is sent. Sheets: Data (an Excel table with dropdowns and formula columns), Summary (formulas, not pasted numbers), Lists, Instructions, Changes, Merged duplicates, Unplaced and Flags.</p>';
     bindPick(slot, rep, settings);
@@ -208,6 +198,12 @@
       columns: ['an ID or a name', 'a status', 'a category or type', 'dates opened, due and closed (tasks, requests)', 'or qty and unit cost (stock), start and end (shifts), vendor and amount (bills)'],
       how: 'Save each sheet as CSV (File > Save as > CSV) or drop the .xlsx. Several files are combined by matching columns; each row keeps its source file and line.' }],
     roles: ['tasks', 'list', 'other'],
+    system: 'spreadsheet or tracking tool',
+    howTitle: 'How to export the lists you track things in',
+    howSteps: [['Excel', 'File > Save As > CSV UTF-8 for each sheet (or drop the .xlsx: its first sheet is read).'],
+      ['Google Sheets', 'File > Download > Comma-separated values (.csv), once per tab.'],
+      ['Trello, Asana, Jira, Monday', 'Export the board or project as CSV from its menu (Board > Print and export, Export, Export issues > CSV).'],
+      ['Several files', 'Pick them together in step 1 (hold Ctrl or Cmd): the first is analysed in full, the others are read as more files of the same run, and the tracker combines them.']],
     fits: function (rep) {
       if (!rep || !rep.ok) return { ok: false, why: 'run a file first' };
       return { ok: true, why: plural(rep.input && rep.input.rows, 'row') + ' to load' };
@@ -231,44 +227,14 @@
         if (!t) return;
         var what = t.getAttribute('data-trk');
         if (what === 'xlsx') download(slot);
-        if (what === 'demo2') addDemoSecond(rep);
       });
       if (!rep || !rep.ok) { slot.querySelector('.trk-status').textContent = 'Run a file first (step 1): the tracker is built only from your data.'; return; }
       build(slot, rep, settings);
     }
   };
 
-  // the demo's second list: Track E's intake reads it as a companion of this run; without it, it runs as the next file
-  // and the first stays in this tab for the tracker
-  function addDemoSecond(rep) {
-    var T = window.NLTry, d = TR.demo;
-    if (!T || !d || !arr(d.files)[1]) return;
-    var url = d.files[1], name = url.split('/').pop();
-    if (typeof T.addFiles === 'function') {
-      T.addFiles([{ name: name, size: 0, getBuffer: function () { return fetch(url, { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }); } }]);
-      return;
-    }
-    if (rep && rep.input && rep.input.sha256 && TR.added.indexOf(rep.input.sha256) < 0) TR.added.push(rep.input.sha256);
-    TR.demoOpen = true;
-    if (typeof T.startSample === 'function') T.startSample(url, d.as_of);
-  }
-
-  document.addEventListener('nl:tracker-demo', function (e) {
-    TR.demo = e.detail || null; TR.added = []; TR.ticked = {}; TR.demoOpen = true;
-    var D = window.NLDeliver;
-    if (D && D.choose) D.choose('tracker');
-  });
-  document.addEventListener('nl:report', function (e) {
-    var rep = e.detail && e.detail.report, D = window.NLDeliver;
-    if (!rep || !rep.ok) return;
-    // a file that is not the demo's ends the demo (its added files stay in this tab, unticked unless chosen)
-    if (TR.demo && arr(TR.demo.files).map(function (u) { return u.split('/').pop(); }).indexOf(String(rep.input && rep.input.name || '')) < 0) { TR.demo = null; TR.added = []; }
-    if (TR.demoOpen && D && D.open) { TR.demoOpen = false; setTimeout(function () { D.open('tracker'); }, 0); }
-  });
-  document.addEventListener('nl:inputs', function () { var D = window.NLDeliver; if (TR.demo && D && D.open && D.chosen && D.chosen() === 'tracker') D.open('tracker'); });
-
   var D0 = window.NLDeliver;
   if (D0 && typeof D0.register === 'function') D0.register(option);
   else (window.NLDeliverQueue = window.NLDeliverQueue || []).push(option);
-  window.NLTracker = { option: option, state: function () { return { added: TR.added.slice(), last: TR.last, demo: TR.demo }; } };
+  window.NLTracker = { option: option, state: function () { return { last: TR.last, key: TR.key || '' }; } };
 })();

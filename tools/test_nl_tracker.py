@@ -141,7 +141,7 @@ def _expected():
                 elif t == "Category":
                     # the engine's case rule on words (nl_browser._guard_case_rule, 17 Oct 2026): a value in all small letters or all
                     # capitals takes title case, so "maintenance" in one file and "Maintenance" in the other are one category
-                    v = v.title() if v and (v == v.lower() or v == v.upper()) else v
+                    v = v.title() if v and v == v.lower() else v
                 elif t == "Est hours":
                     v = v.replace(" hrs", "")
                 rec[t] = v

@@ -223,14 +223,17 @@ def _guard_case_rule() -> None:
                     continue
                 lens = sorted(len(v.strip()) for v in vals)
                 coded = lens[len(lens) // 2] <= 4 and not any(" " in v.strip() for v in vals)
-                if coded:
-                    real(state, rule)                 # codes (CA, NY, A1): the engine's capitals
+                folded: Dict[str, set] = {}
+                for v in vals:
+                    folded.setdefault(" ".join(v.split()).casefold(), set()).add(" ".join(v.split()))
+                if coded or any(len(s) > 1 for s in folded.values()):
+                    real(state, rule)                 # codes (CA, NY), or one word in several cases (Rent, RENT, rent): the engine's rule
                     return
-                # words (Alabama, United States, Maintenance): a value written all in small letters or all in capitals is
-                # written in title case ("maintenance" and "MAINTENANCE" become "Maintenance", the variants the rule exists to
-                # merge, also across two files); a value that already mixes cases ("District of Columbia") is left as written
+                # words (Alabama, United States, Maintenance): a value written all in small letters takes title case
+                # ("maintenance" becomes "Maintenance", so two files' spellings are one category); a value in capitals or in
+                # mixed case is left as the file wrote it, so cleaning a cleaned file changes nothing (idempotent)
                 new = state.work[col].map(lambda v: _smart_title(v) if isinstance(v, str) and v.strip() and
-                                          (v == v.lower() or v == v.upper()) else v)
+                                          v == v.lower() and v != v.upper() else v)
                 if not new.equals(state.work[col]):
                     _cl._apply_fix(state, rule, col, new)
             return
@@ -14275,8 +14278,10 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
         outline = lay is not None and any(int(d) > 0 for d in (lay.get("depth") or {}).values())
         drop_ids = {str(f.get("id")) for f in rep.get("findings") or [] if isinstance(f, dict) and (
             any(str(f.get("id") or "").startswith("health.col.%s." % c) for c in flags) or
-            (outline and str(f.get("id") or "") in ("health.col.%s.padded_values" % (lay or {}).get("label"),
-                                                     "health.col.%s.placeholder_values" % (lay or {}).get("label"))))}
+            (outline and str(f.get("id") or "").startswith("health.col.%s." % (lay or {}).get("label")) and
+             re.search(r"padded|whitespace|placeholder|trim|spaces", str(f.get("id") or "") + " " + str(f.get("claim") or ""), re.I)))}
+        dropped_claims = [str(f.get("claim") or "")[:60] for f in rep.get("findings") or []
+                          if isinstance(f, dict) and str(f.get("id")) in drop_ids and f.get("claim")]
         if drop_ids:
             rep["findings"] = [f for f in rep.get("findings") or [] if str((f or {}).get("id")) not in drop_ids]
             keep = []
@@ -14306,7 +14311,16 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
             st["what_happened"] = [out["about"]] + ind + wh
             st["what_to_do"] = [s for s in st.get("what_to_do") or []
                                 if not any(f.lower() + " column" in str(s).lower() for f in
-                                           flags | {_flag_header(reading, f) for f in flags})]
+                                           flags | {_flag_header(reading, f) for f in flags})
+                                and not any(c and c.lower()[:50] in str(s).lower() for c in dropped_claims)
+                                and not (outline and re.search(r"whitespace|padded", str(s), re.I))]
+            # with no change measured, the time words of the story are replaced by what this reading does say
+            st["why"] = ["The file states each value; it does not say why the %s differ. Read each comparison as a description, "
+                         "not a cause." % _nx._plural_of(out["entity"])]
+            st["cannot_answer"] = [s for s in st.get("cannot_answer") or []
+                                   if not str(s).startswith("This run produced no gated facts at all")]
+            st["whats_next"] = list(out.get("next") or []) or [
+                "Ask a question in step 4 about any %s or %s in the file." % (out["indicator"], out["entity"])]
         lim = [x for x in rep.get("limitations") or []
                if not (isinstance(x, dict) and str(x.get("text") or "").startswith("This run produced no gated facts at all"))]
         at = 0

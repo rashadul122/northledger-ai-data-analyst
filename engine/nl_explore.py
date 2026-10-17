@@ -466,7 +466,7 @@ def _titled(iv: Dict[str, Any], n: int = 90) -> str:
     top = iv.get("topic") or ""
     if top and len(iv["label"]) < 40 and top.lower() not in iv["label"].lower() and \
             not top.lower().startswith(iv["label"].lower()):
-        top = re.sub(r"\s+for the (population|private households|employed).*$", "", top)
+        top = _topic_short(top, 70)
         return _short("%s: %s" % (top, iv["label"]), n)
     return lab
 
@@ -586,7 +586,7 @@ def _plural_of(w: str) -> str:
 
 
 def _topic_short(t: str, n: int = 60) -> str:
-    t = re.sub(r"\s+for the (population|private households|employed|labour).*$", "", t)
+    t = re.sub(r"\s+(for|of|in) (the )?(population|private households|employed|labour|persons|people).*$", "", t)
     if len(t) <= n:
         return t
     return t[:n].rsplit(" ", 1)[0] + "…"
@@ -709,11 +709,18 @@ def build(lay: Dict[str, Any], prefer: Optional[Sequence[str]] = None) -> Dict[s
         shown = uniq[:4]
         about += " %d topics, among them %s." % (len(uniq), ", ".join(shown[:-1]) + " and " + shown[-1] if len(shown) > 1 else shown[0])
     head = sentences[0] if sentences else about
+    ex = [iv for iv in chosen[:3]]
+    nxt = ["Ask in step 4, naming a %s: for example \u201cWhich %s has the highest %s?\u201d" % (
+        lab_w, ent_w, _short(ex[0]["label"], 70).lower())] if ex else []
+    if tm and ex:
+        nxt.append("Or compare a %s with %s as a whole: \u201c%s in %s\u201d." % (ent_w, tm, _short(ex[-1]["label"], 60),
+                                                                         next((m for m in lay["frame"][lay["entity"]].astype(str).unique()
+                                                                               if m != tm), tm)))
     return {"version": VERSION, "kind": "indicator_table", "records": records, "sentences": sentences, "headline": head,
             "about": about, "entity": ent_w, "indicator": lab_w, "entity_column": ent_h, "indicator_column": lab_h,
             "total_member": tm,
             "indicators": [{"label": iv["label"], "kind": iv["kind"], "topic": iv["topic"]} for iv in chosen],
-            "chosen_by": "ai" if first else "engine",
+            "chosen_by": "ai" if first else "engine", "next": nxt,
             "n_indicators": lay["n_indicators"], "n_entities": lay["n_entities"]}
 
 

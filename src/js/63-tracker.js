@@ -61,12 +61,12 @@
         if (!slot || !rep || !rep.ok || !opts.length) return;
         var m = document.getElementById('try-types');
         if (!m) { m = document.createElement('div'); m.className = 'try-types'; m.id = 'try-types'; m.setAttribute('role', 'region'); m.setAttribute('aria-label', 'Report types'); slot.appendChild(m); }
-        if (!openId) openId = opts[0].id;
-        var o = D.get(openId);
+        var o = D.get(openId);              // a type's card opens only when the visitor (or the demo) chooses it
         m.innerHTML = '<h4 class="try-deliver-h">Report types</h4><ul class="try-types-l">' + opts.map(function (x) {
           return '<li class="try-type"><button type="button" class="btn ' + (x.id === openId ? 'btn-primary' : 'btn-ghost') + ' btn-sm" data-type="' + esc(x.id) + '" aria-expanded="' + (x.id === openId) + '">' + esc(x.title) + '</button><br><span class="note">' + esc(x.blurb || '') + '</span></li>';
-        }).join('') + '</ul><div class="try-type-card" id="try-type-card"><h4>' + esc(o.title) + '</h4>' + form(o) + '<div class="try-type-slot" id="try-type-slot"></div></div>';
+        }).join('') + '</ul>' + (o ? '<div class="try-type-card" id="try-type-card"><h4>' + esc(o.title) + '</h4>' + form(o) + '<div class="try-type-slot" id="try-type-slot"></div></div>' : '');
         Array.prototype.forEach.call(m.querySelectorAll('button[data-type]'), function (b) { b.addEventListener('click', function () { D.open(b.getAttribute('data-type')); }); });
+        if (!o) return;
         Array.prototype.forEach.call(m.querySelectorAll('[data-key]'), function (el) {
           el.addEventListener('change', function () { var p = {}; p[el.getAttribute('data-key')] = el.value; D.setSettings(o.id, p); o.render(document.getElementById('try-type-slot'), rep, D.settings(o.id)); });
         });
@@ -174,7 +174,6 @@
       st.textContent = (out && out.error) || 'The run is no longer loaded in this page; run the file again to build a tracker.';
       box.innerHTML = filesHtml(out, use);
       bindPick(slot, rep, settings);
-      if (window.NLSteps) window.NLSteps.set(6, 'attention', 'the tracker could not be built');
       return;
     }
     TR.last = out;

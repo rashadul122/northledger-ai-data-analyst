@@ -3324,12 +3324,12 @@ check('try-v2-ai-summaries-show-in-the-view-where-the-visitor-asks', DESK, async
     const c = document.getElementById('try-ai-report'), r = document.getElementById('try-report'), t = c.textContent;
     const a = c.querySelector('.ai-rep-wm a');
     return { before: !!(c.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING), step6: !!c.closest('#try-step-6'), text: t, src: c.querySelectorAll('.ai-rep-srcs a').length, home: a && a.href,
-      share: !!c.querySelector('#try-share'), pdf: !!c.querySelector('#try-pdf'), old: !!document.getElementById('try-ai-go') || !!document.getElementById('try-ai-ok') };
+      share: !!c.querySelector('#try-share'), pdf: !!c.querySelector('a[href="#try-deliver"]') && !!document.querySelector('#try-step-6-slot #try-pdf:not([disabled])'), old: !!document.getElementById('try-ai-go') || !!document.getElementById('try-ai-ok') };
   });
   // the workflow order (owner, 16 Oct 2026): the AI-written report is delivered in step 6, after the engine's report (step 3)
   ok(!d.before && d.step6 && await p.isVisible('#try-ai-report') && await p.isVisible('#try-report'), 'the AI report is not shown in step 6, after the engine report');
   ok(/The AI-written report/.test(d.text) && /Rent rose in the East/.test(d.text) && /Honesty check/.test(d.text), 'the AI report card lacks its heading, text or honesty note: ' + d.text.slice(0, 200));
-  ok(d.src === 1 && d.share && d.pdf, 'the AI report lacks its sources or its share and PDF actions');
+  ok(d.src === 1 && d.share && d.pdf, 'the AI report lacks its sources, its share action, or its link to the PDF in step 6');
   ok(d.home === DEMO_ORIGIN + '/index.html', 'the watermark does not link to the page\'s own address: ' + d.home);
   ok(!d.old, 'the old consent box or summary button is offered beside the AI report');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);

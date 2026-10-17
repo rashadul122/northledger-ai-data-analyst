@@ -177,6 +177,10 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # results_for_ai; and the sample ledger's recorded AI design it reads beside itself
                  "nl_dashboard.py": "nl_dashboard.py",
                  "dashboard_sample.json": "dashboard_sample.json",
+                 # step 6's report types (plan/DASHBOARD-DESIGN.md "Batch 2", CONTRACT §5.18), imported by
+                 # nl_browser.deliver_json: the monthly reporting pack (Track E); Tracks F and G add nl_sales.py and
+                 # nl_tracker.py here (nl_browser.DELIVER_MODULES names them already)
+                 "nl_pack.py": "nl_pack.py",
                  "nl_stubs/__init__.py": os.path.join("nl_stubs", "__init__.py"),
                  "nl_stubs/resource.py": os.path.join("nl_stubs", "resource.py")}
 SAMPLE = {"file": "sample-messy.csv", "as_of": "2026-09-15",

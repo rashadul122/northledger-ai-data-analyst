@@ -19,6 +19,12 @@
      {type: 'cleanfile', id, options}           clean my file, a view of the last run's cleaning: options {sha256,
                                                 rules (the visitor's edits, or null), plan_columns}
                                                 -> {type: 'cleaned', id, out: {ok, error, csv, log, summary, card}}
+     {type: 'input', id, name, buffer, options}  another file of the same run (step 1 takes several; CONTRACT §5.18): read by
+                                                the same engine run as the main file (profile, cleaning, every flagged column
+                                                withheld) and kept in this worker; options {as_of, role}
+                                                -> {type: 'input_read', id, input} (its rep.inputs[] summary)
+     {type: 'deliver', id, req, kind, settings} a step-6 report type over every file of the run (nl_browser.deliver_json)
+                                                -> {type: 'delivered', id, req, out}
      {type: 'run',  id, options}                the visitor's decisions: the same report if every
                                                 flagged column stays withheld, else a new run
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
@@ -167,6 +173,7 @@ async function onScan(m) {
     }
   }
   first = null;
+  if (nl && nl.inputs_reset) nl.inputs_reset();         // a new main file: the last run's other files go
   var report = engine(m.id, m.options || {}, {}, BEFORE);
   if (!report || !report.ok) {
     post({ type: 'scanned', id: m.id, result: { ok: false, error: (report && report.error) || 'The engine gave no answer.' } });
@@ -276,6 +283,34 @@ function onPlan(m) {
   post({ type: 'plan_json', id: m.id, steps: steps });
 }
 
+// Another file of the same run (CONTRACT §5.18): the engine reads it as it reads the main file, keeps the rows it kept
+// here, and the page gets its summary. An Excel book is converted to CSV first, like the main file.
+async function onInput(m) {
+  var out = null;
+  try {
+    if (!booted || !nl || !nl.input_json) throw new Error('the engine is not loaded');
+    var bytes = new Uint8Array(m.buffer), name = String(m.name || 'file.csv');
+    if (/\.(xlsx|xlsm)$/i.test(name)) {
+      var conv = await xlsxToCsv(bytes, name.toLowerCase());
+      bytes = new TextEncoder().encode(conv.csv);
+      name = name.replace(/\.(xlsx|xlsm)$/i, '') + '.csv';
+    }
+    var o = m.options || {}, fn = nl.input_json;
+    try { out = JSON.parse(String(fn(bytes, name, o.as_of ? String(o.as_of) : null, o.role ? String(o.role) : null))); }
+    finally { if (fn.destroy) fn.destroy(); }
+  } catch (e) {
+    out = { id: '', name: String(m.name || ''), primary: false, ok: false, error: lastLine(e) || 'the engine could not read it', role: 'other' };
+  }
+  post({ type: 'input_read', id: m.id, input: out });
+}
+function onDeliver(m) {
+  var out = null;
+  try {
+    if (booted && nl && nl.deliver_json) out = JSON.parse(String(nl.deliver_json(String(m.kind || ''), JSON.stringify(m.settings || {}))));
+  } catch (e) { out = { ok: false, error: lastLine(e) || 'the engine stopped' }; }
+  post({ type: 'delivered', id: m.id, req: m.req, out: out });
+}
+
 var queue = Promise.resolve();
 self.onmessage = function (e) {
   var m = e.data || {};
@@ -288,6 +323,8 @@ self.onmessage = function (e) {
     if (m.type === 'more') return onMore(m);
     if (m.type === 'cleanfile') return onClean(m);
     if (m.type === 'plan') return onPlan(m);
+    if (m.type === 'input') return onInput(m);
+    if (m.type === 'deliver') return onDeliver(m);
     return null;
   }).catch(function (err) {
     if (err && err.code) fail(m.id, err.code, err.message, err.detail);

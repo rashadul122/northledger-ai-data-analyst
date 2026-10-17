@@ -43,7 +43,8 @@ LIMIT = 25 * 1024 * 1024
 MAX_FILES = 100000
 REQUIRED = ["index.html", "case-study.html", "agent-demo.html", "404.html", "_headers", "_redirects", "favicon.svg",
             "favicon-32.png", "engine/worker.js", "engine/northledger-browser.zip", "engine/pack.json",
-            "engine/sample-messy.csv", "engine/sample-sales-synthetic.csv", "engine/world-110m.json"]
+            "engine/sample-messy.csv", "engine/sample-sales-synthetic.csv", "engine/sample-pack-budget-synthetic.csv",
+                 "engine/sample-pack-kpi-synthetic.csv", "engine/world-110m.json"]
 BAD_PARTS = {"tools", "src", "tests", "test", "deploy", "qa", "agent-sessions", ".git", ".work", ".cache",
              "node_modules", "__pycache__", "dist"}
 BAD_NAMES = {"build.py", "site.config.json", "verify.sh", "deploy.sh", "wrangler.jsonc", "wrangler.toml", "package.json",

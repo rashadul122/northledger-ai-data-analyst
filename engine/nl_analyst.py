@@ -1633,7 +1633,8 @@ def op_change(
             )
             st.num("blank_share", bd / (b - a), "share")
         f = f[f["g"] != ""]
-        if agg == "mean":
+        # a stock with no entity column is averaged like a level (total() reads it so), never split per entity
+        if agg == "mean" or (agg == "stock" and not ent):
             # an average: each group's own change, and its rows' share in the latest window
             pa = f[f["w"] == "prev"].groupby("g")["v"].agg(["mean", "size"])
             pb = f[f["w"] == "cur"].groupby("g")["v"].agg(["mean", "size"])

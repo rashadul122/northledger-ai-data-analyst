@@ -1415,3 +1415,50 @@ svg.nlv:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .try-deliver { margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
 .try-deliver-h { margin: 0 0 4px; font-size: 15px; color: var(--ink); }
 .try-deliver .ai-rep-actions { margin-top: 8px; }
+/* step 1 "What do you need?" and the files of the run; step 6 "Report types" (src/js/60-deliver.js, 61-pack.js) */
+.try-need { margin: 14px 0; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.try-need-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.try-need-row select { font: inherit; min-height: 40px; max-width: 100%; padding: 4px 8px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.try-need-card { margin-top: 10px; }
+.try-need-blurb { margin: 0 0 6px; }
+.try-need-list { margin: 6px 0 10px; padding-left: 22px; }
+.try-need-list li { margin: 6px 0; overflow-wrap: anywhere; }
+.tag { display: inline-block; font-size: 12px; font-weight: 650; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--hairline); color: var(--muted); }
+.dl-set { border: 1px solid var(--hairline); border-radius: 10px; padding: 8px 12px 10px; margin: 8px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 14px; min-width: 0; }
+.dl-set legend { font-weight: 650; font-size: 14px; padding: 0 4px; }
+.dl-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dl-field label { font-size: 13px; font-weight: 650; color: var(--muted); }
+.dl-field input, .dl-field select { font: inherit; min-height: 40px; padding: 4px 8px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); color: var(--ink); min-width: 0; width: 100%; box-sizing: border-box; }
+.dl-field small { font-size: 12px; }
+.dl-cols { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+.try-paste { margin-top: 10px; }
+.try-paste summary { cursor: pointer; font-weight: 650; }
+.try-paste textarea { display: block; width: 100%; box-sizing: border-box; margin: 6px 0; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 8px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.try-files { margin-top: 12px; }
+.try-files-h { margin: 0 0 6px; font-size: 15px; }
+.try-files-l { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
+.try-file { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 10px; overflow-wrap: anywhere; }
+.try-file-n { flex: 1 1 100%; }
+.try-file-bad { border-style: dashed; }
+.try-file-role select { font: inherit; min-height: 36px; margin-left: 4px; max-width: 100%; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.try-types { margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.try-types-l { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 10px; }
+.try-type-fit { font-size: 13px; font-weight: 650; }
+.fit-ok { color: var(--accent-ink); }
+.fit-no { color: var(--muted); }
+.try-type-card { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--hairline); }
+.try-type-card h4 { margin: 0 0 6px; }
+.try-type-card h5 { margin: 14px 0 6px; font-size: 14px; }
+.pk-dl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tbl-wrap { overflow-x: auto; max-width: 100%; }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+table.tbl th, table.tbl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+table.tbl thead th { font-size: 12.5px; color: var(--muted); }
+table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px solid var(--hairline); border-radius: 6px; background: var(--bg); color: var(--ink); }
+.pk-lines, .pk-notes { margin-top: 10px; }
+.pk-lines summary, .pk-notes summary { cursor: pointer; font-weight: 650; }
+@media (max-width: 600px) {
+  .try-need-row select, .try-need-row .btn { flex: 1 1 100%; }
+  .pk-dl .btn { flex: 1 1 100%; text-align: center; min-height: 44px; }
+  .dl-set { grid-template-columns: 1fr; }
+}

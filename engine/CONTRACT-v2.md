@@ -2282,3 +2282,54 @@ it derives is a column's empty cells, `completeness.n - completeness.k`. Its API
 Checks: `node tools/check_report_docx.mjs` (fixtures in `tools/fixtures/report-docx`, made by its
 `make_docx_fixtures.py` from `tools/make_ui_fixtures.py`'s reports; LibreOffice conversion when installed) and
 `tools/check_ui.js` `try-word-*`.
+
+### 5.18 Several files per run, the step-6 report types, and the monthly reporting pack (Track E, 17 October 2026)
+
+`plan/DASHBOARD-DESIGN.md` "Batch 2 shared interface AS BUILT by Track E" is the full interface; this section is the
+contract the engine keeps. Tracks F and G take 5.19 and 5.20.
+
+**rep.inputs** (added by `run_json`; the page appends each companion). One record per file of the run, the main one
+first: `{id: 'in1'|'in2'.., name, primary, sha256, ok, error, role, role_why, role_by: 'engine'|'visitor'|'recipe',
+rows, rows_kept, rows_set_aside, columns[{name, kind: date|number|text, withheld}], withheld[], months {column, first,
+last, last_date, grain} | null, scenario {column, members[{value, reads_as: actual|plan|forecast}]} | null,
+pairs[{stem, actual, plan}], own_shape?}`. Roles the engine guesses: actuals, plan, actuals_vs_plan, kpi,
+trial_balance, deals, tasks, list, other (the page lets the visitor change it; a report type may read any string).
+
+**Engine entry points** (`nl_browser.py`): `input_json(bytes, name, as_of, role)` reads a companion with the SAME
+`run()` (profile, cleaning, every flagged column withheld) and keeps its kept rows in the worker; the main run's state
+(`_LAST_ANALYST`, `_LAST_CLEAN`) is restored afterwards; the same file twice is read once (`duplicate: true`); at most
+`INPUTS_MAX` = 6 companions. A file the run reads reshaped (a long table of series, one slice) is kept in its OWN shape
+(`own_shape_rows`: the same landing, personal-data default and cleaner, no reshaping). `inputs_json()`,
+`inputs_reset()` (the worker's scan calls it: a new main file), `input_frames(roles)` -> `[{id, name, primary, role,
+df, kinds, analyst, summary}]`, `deliver_json(kind, settings)` -> `DELIVER_MODULES[kind].build(input_frames(),
+settings)` (`monthly-pack`: nl_pack; `sales-report`: nl_sales; `tracker`: nl_tracker; a missing module answers
+`{ok: false, error: "not built"}`). Worker messages `input` -> `input_read`, `deliver` -> `delivered` (engine/worker.js).
+
+**The monthly pack** (`nl_pack.build`, kind `monthly-pack`). Settings: `readers, metrics (names or parts, comma
+list), threshold (percent on the percent basis, 10 = 10%; the lines' own units on the amount basis), basis
+(percent|amount), compare (plan|forecast), fiscal_start (1-12), month (YYYY-MM or '' = the latest complete), kinds
+{line: flow|stock|level|rate}, as_of, roles {input id: role}, recipe`. Record: `{ok, error, kind, version, readers,
+threshold (a fraction on the percent basis), threshold_input, basis, compare, fiscal_start, as_of, month, prev_month,
+month_label, prev_label, month_why, ytd_months, ytd_label, lines[], watch[keys], headline[keys], inputs_used[],
+refused[{input, why}], notes {definitions[], assumptions[], wrong[], sources[]}, checklist[], recipe}`. A line:
+`{key, label, kind, kind_by, points, scale (100 for a fraction rate), cur, prev, mom, mom_pct, plan, var, var_pct,
+ytd_act, ytd_plan, ytd_var, ytd_var_pct, ytd_why, actual {input, column, how, where}, planned | null, series, gaps[],
+derived {op: minus|ratio, of[keys]} | null, watch, watch_why[], driver {of: change|variance, by, member, amount, total,
+share, method} | null, cause: "driver to be confirmed"}`.
+Rules: actual vs plan from a scenario column, paired columns or a plan-only file; a long file's line column; a trial
+balance read as debit minus credit per account. Flows summed by month; a stock at the month's latest date (added
+across that date's rows); a level or rate averaged; nothing but a flow has a year to date; a rate's change in
+percentage points (its % column is the relative change, used for the flag only); percents divide by |base|; gaps stay
+empty. The month steps back when a file of daily rows stops before its end and the analysis date is not past it.
+Gross profit and gross margin are derived only from revenue and cost of the SAME file, the margin from the sums. A line
+is on the watch list when |mom_pct| or |var_pct| (or |mom| or |var| on the amount basis) is over the threshold. `driver`
+only from the engine's own decomposition (nl_analyst `change` by a grouping column, or the variance by a grouping
+column both files carry) when one member carries at least half of the move in its direction; the cause is never
+inferred.
+
+**Page** (`src/js/60-deliver.js` window.NLDeliver; `src/js/61-pack.js` window.NLPack): `NLPack.workbook(pack)` (an
+NLX spec: Metrics with every change and variance a visible formula whose cached value is the engine's figure, Watch
+list with flags `IF(OR(IF(ISNUMBER(..),ABS(..)>$B$2,FALSE),..),"WATCH","")` against ONE threshold cell B2, Notes,
+Inputs checklist), `NLPack.cover(pack)` (an NLDocx spec, style business, one page), `NLPack.recipe`, `NLPack.checklist`,
+`NLPack.files`. Checks: `tools/test_nl_pack.py` (the workbook made by `tools/pack_files.mjs` with the page's own code,
+its formulas evaluated and compared with pandas), `tools/check_ui.js` `pack-*`, `deliver-registry-*`.

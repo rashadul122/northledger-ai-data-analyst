@@ -1164,6 +1164,26 @@ def test_a_count_prints_whole_and_a_series_figures_keep_their_published_decimals
     assert "its low 0.50 in" in txt and "low 0.5 in" not in txt, txt
 
 
+def test_a_balance_split_by_group_with_no_entity_column_is_averaged_not_a_crash():
+    """16 Oct 2026 (found by the monthly-pack track): op_change grouped a stock by its entity column even when the file has
+    none, raising KeyError 'e' and stopping the whole analyst block. A stock with no entity is averaged like a level, as
+    the step's own total already reads it."""
+    rng = np.random.default_rng(3)
+    rows = []
+    for m in pd.period_range("2024-01", "2026-09", freq="M"):
+        for r in ("East", "West", "North"):
+            for _k in range(3):
+                rows.append({"month": m.to_timestamp().strftime("%Y-%m-%d"), "region": r,
+                             "account_balance": float(1000 + rng.normal(0, 50) + (m.ordinal % 12) * 5)})
+    df = pd.DataFrame(rows)
+    out = na.explore(df, {"month": "date", "region": "text", "account_balance": "number"},
+                     {"date": "month", "primary": "account_balance"})
+    assert {m["column"]: m["kind"] for m in out["shape"]["measures"]}.get("account_balance") == "stock"
+    assert not [x for x in out.get("refused", []) if "Error" in str(x)], out.get("refused")
+    ch = [s_ for s_ in out["steps"] if s_["op"] == "change" and (s_.get("args") or {}).get("by")]
+    assert ch and all(s_.get("ok", True) for s_ in ch), [s_.get("refused") for s_ in ch]
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

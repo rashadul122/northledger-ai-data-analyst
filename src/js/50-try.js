@@ -1548,7 +1548,7 @@
     var root = document.getElementById('try');
     if (!root || !document.getElementById('try-report')) return;
     var $ = function (id) { return document.getElementById(id); };
-    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'),
+    var el = { start: $('try-start'), drop: $('try-drop'), pick: $('try-pick'), file: $('try-file'), planCard: $('try-plan-card'), sample: $('try-sample'), sample2: $('try-sample-sales'), sample3: $('try-sample-pack'),
       msg: $('try-msg'), pd: $('try-pd'), run: $('try-run'), runName: $('try-run-name'), cancel: $('try-cancel'), stages: $('try-stages'),
       note: $('try-run-note'), report: $('try-report'),
       qWrap: $('try-q-wrap'), q: $('try-q'), prev: $('try-prev') };
@@ -1565,6 +1565,19 @@
       S.onCleaned = function (out) { S.onCleaned = null; cb(out); };
       S.worker.postMessage({ type: 'cleanfile', id: S.seq, options: { sha256: (S.report.input || {}).sha256 || null, rules: rules || null,
         plan_columns: S.plan && Array.isArray(S.plan.columns) ? S.plan.columns : null } });
+    };
+    // several files in one run (step 1; CONTRACT §5.18, plan/DASHBOARD-DESIGN.md "Batch 2 shared interface"): the main file
+    // runs the whole flow; each other file (a companion) is read by the same engine run after the main report, kept in the
+    // worker, and its summary appended to the report's inputs (rep.inputs). S.files: every file of the run, the main one
+    // first, as {name, size, getBuffer}; S.waiting: the companions not read yet; S.companions: their summaries.
+    S.files = []; S.waiting = []; S.companions = []; S.onDelivered = {}; S.deliverReq = 0;
+    T.pendingFiles = function () { return S.waiting.map(function (f) { return { name: f.name, note: f.note || '' }; }); };
+    T.asOf = function () { return S.asOf || ''; };
+    T.deliver = function (kind, settings, cb) {
+      if (!S.worker || !S.report || !S.report.ok || S.busy) { cb(null); return; }
+      var req = ++S.deliverReq;
+      S.onDelivered[req] = cb;
+      S.worker.postMessage({ type: 'deliver', id: S.seq, req: req, kind: String(kind), settings: settings || {} });
     };
     var STAGE_LABEL = { load: 'Load the engine into this page', read: 'Read the file', profile: 'Profile the columns and look for personal data',
       decide: 'Apply your personal-data choices', clean: 'Clean with stated rules', analyze: 'Find and check findings',
@@ -1670,7 +1683,7 @@
       if (S.tick) { clearInterval(S.tick); S.tick = null; }
       S.t0 = {}; S.busy = false; if (el.q) el.q.disabled = false;
       el.run.hidden = true; el.pd.hidden = true;
-      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; el.pick.disabled = false;
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; el.pick.disabled = false;
     }
 
     /* ---- the worker ---- */
@@ -1724,6 +1737,13 @@
       } else if (m.type === 'cleaned') {
         // clean my file (engine/nl_cleanfile.py), asked for by T.cleanFile (src/js/59-cleanfile.js)
         if (S.onCleaned) S.onCleaned(m.out && typeof m.out === 'object' ? m.out : null);
+      } else if (m.type === 'input_read') {
+        // another file of the run, read by the engine (CONTRACT §5.18), asked for by readCompanions
+        if (S.onInput) S.onInput(m.input && typeof m.input === 'object' ? m.input : null);
+      } else if (m.type === 'delivered') {
+        // a step-6 report type's record (nl_browser.deliver_json), asked for by T.deliver (src/js/60-deliver.js)
+        var cbd = S.onDelivered && S.onDelivered[m.req];
+        if (cbd) { delete S.onDelivered[m.req]; cbd(m.out && typeof m.out === 'object' ? m.out : null); }
       } else if (m.type === 'plan_json') {
         if (S.onPlan) S.onPlan(m.id, Array.isArray(m.steps) ? m.steps : null);
       } else if (m.type === 'more_json') {
@@ -2060,7 +2080,7 @@
     // the visitor's optional edit after the run: the engine runs the edited plan (no second AI correction)
     function rerun(d) {
       S.seq += 1; S.replanned = true; S.replan = null; S.replanFail = null; S.firstRep = null; S.busy = true; S.aiReport = null;
-      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       var ar = document.getElementById('try-ai-report'); if (ar) ar.hidden = true;
       el.report.hidden = true; el.run.hidden = false;
       drawStages(); setStage('load', 'skip', null, 'already loaded'); setStage('plan', 'done', null, 'the plan that ran, as you changed it'); setStage('replan', 'skip', null, 'you edited the plan');
@@ -2386,7 +2406,7 @@
       if (!LIM.max_bytes || !LIM.max_rows) return refuse('engine', { title: 'The demo is not set up on this page', body: 'Its limits are missing from the page data.' });
       if (size > LIM.max_bytes) return refuse('big', { size: size });
       if (location.protocol === 'file:') return refuse('file');
-      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
+      S.busy = true; el.sample.disabled = true; if (el.sample2) el.sample2.disabled = true; if (el.sample3) el.sample3.disabled = true; el.pick.disabled = true; if (el.q) el.q.disabled = true;
       // the question box: typed before the run, sent as the objective the AI plans around
       S.question = (el.q && el.q.value || '').trim().slice(0, 300);
       S.objective = S.question;
@@ -2413,6 +2433,8 @@
         // a new file starts every personal-data choice again (option B): no column kept, no box ticked, and the last
         // file's AI report off the screen (it stays in "Your previous reports")
         S.kept = []; S.sendKey = ''; S.aiReport = null; S.liveAi = null; S.liveT = 0;
+        S.companions = []; S.reading = false; S.onInput = null; S.onDelivered = {};
+        if (!S.files.length || S.files[0].name !== name) { S.files = [{ name: name, size: size, getBuffer: getBuffer }]; S.waiting = []; }
         var lastAi = document.getElementById('try-ai-report');
         if (lastAi) lastAi.hidden = true;
         // the file's SHA-256 (hex): the plan cache key and nothing else, never the bytes
@@ -2440,10 +2462,62 @@
     }
     el.pick.addEventListener('click', function () { el.file.click(); });
     el.drop.addEventListener('click', function (e) { if (e.target === el.drop || (e.target.closest && !e.target.closest('button'))) { if (!S.busy) el.file.click(); } });
+    // several files at once: the largest is the main file (usually the detailed one: it is analysed in full); the others
+    // are read after it as companions (rep.inputs), and "Analyse this one in full instead" swaps them
+    function described(list) {
+      return Array.prototype.slice.call(list || []).map(function (f) { return { name: f.name, size: f.size, getBuffer: function () { return f.arrayBuffer(); } }; });
+    }
+    function startFiles(files, asOf) {
+      if (!files.length || S.busy) return;
+      var main = files[0];
+      S.files = files.slice(); S.waiting = files.slice(1).map(function (f) { return { name: f.name, size: f.size, getBuffer: f.getBuffer, note: 'read after the main file' }; });
+      start(main.name, main.size, main.getBuffer, asOf);
+      if (window.NLDeliver) window.NLDeliver.refresh();
+    }
+    function byLargest(files) { return files.slice().sort(function (a, b) { return (b.size || 0) - (a.size || 0); }); }
+    T.makeMain = function (i) {
+      var ins = (S.report && S.report.inputs) || [], f = ins[i];
+      if (!f || f.primary || S.busy) return;
+      var pick = S.files.filter(function (x) { return x.name === f.name || x.name.replace(/\.(xlsx|xlsm)$/i, '.csv') === f.name; })[0];
+      if (!pick) return;
+      startFiles([pick].concat(S.files.filter(function (x) { return x !== pick; })), S.asOf);
+    };
+    // more files for this run (step 1's "Add files to this run", or pasted figures): companions of the report on the page,
+    // or, with no report yet, a new run
+    T.addFiles = function (files) {
+      if (S.busy) return 'busy';
+      if (!S.report || !S.report.ok || !S.worker) { startFiles(byLargest(files), null); return 'main'; }
+      files.forEach(function (f) { S.files.push(f); S.waiting.push({ name: f.name, size: f.size, getBuffer: f.getBuffer, note: 'reading it now' }); });
+      readCompanions();
+      return 'companion';
+    };
+    function readCompanions() {
+      if (S.reading || !S.waiting.length || !S.worker) { if (window.NLDeliver) window.NLDeliver.refresh(); return; }
+      var f = S.waiting[0], seq = S.seq;
+      S.reading = true;
+      if (window.NLDeliver) window.NLDeliver.refresh();
+      f.getBuffer().then(function (buf) {
+        if (seq !== S.seq) { S.reading = false; return; }
+        S.onInput = function (inp) {
+          S.onInput = null; S.reading = false;
+          if (seq !== S.seq) return;
+          S.waiting.shift();
+          if (inp && !inp.duplicate) S.companions.push(inp);
+          if (S.report) S.report.inputs = ((S.report.inputs || []).filter(function (x) { return x.primary; })).concat(S.companions);
+          try { document.dispatchEvent(new CustomEvent('nl:inputs', { detail: { inputs: S.report ? S.report.inputs : [] } })); } catch (e) { /* no event */ }
+          readCompanions();
+        };
+        S.worker.postMessage({ type: 'input', id: seq, name: f.name, buffer: buf, options: { as_of: S.asOf || null } }, [buf]);
+      }).catch(function (e) {
+        S.reading = false; S.waiting.shift();
+        S.companions.push({ id: 'in' + (S.companions.length + 2), name: f.name, primary: false, ok: false, error: 'the browser could not open it (' + (e && e.message || e) + ')', role: 'other' });
+        readCompanions();
+      });
+    }
     el.file.addEventListener('change', function () {
-      var f = el.file.files && el.file.files[0];
-      if (f) start(f.name, f.size, function () { return f.arrayBuffer(); });
+      var fs = described(el.file.files);
       el.file.value = '';
+      if (fs.length) startFiles(byLargest(fs), null);
     });
     root.addEventListener('dragover', function (e) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
     root.addEventListener('drop', function (e) { e.preventDefault(); });
@@ -2451,13 +2525,11 @@
     el.drop.addEventListener('dragleave', function (e) { if (!el.drop.contains(e.relatedTarget)) el.drop.classList.remove('over'); });
     el.drop.addEventListener('drop', function (e) {
       e.preventDefault(); el.drop.classList.remove('over');
-      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f) start(f.name, f.size, function () { return f.arrayBuffer(); });
+      var fs = described(e.dataTransfer && e.dataTransfer.files);
+      if (fs.length) startFiles(byLargest(fs), null);
     });
-    function startSample(url, asOf) {
-      var name = url.split('/').pop();
-      if (location.protocol === 'file:') return refuse('file');
-      start(name, 0, function () {
+    function sampleFile(url) {
+      return { name: url.split('/').pop(), size: 0, getBuffer: function () {
         return fetch(url, { cache: 'no-cache' }).then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.arrayBuffer();
@@ -2465,12 +2537,22 @@
           if (b.byteLength > LIM.max_bytes) throw new Error('larger than the limit');
           return b;
         });
-      }, asOf || null);   // the sample's fixed analysis date, so its report does not age
+      } };
+    }
+    function startSample(url, asOf, more) {
+      if (location.protocol === 'file:') return refuse('file');
+      startFiles([sampleFile(url)].concat((more || []).map(sampleFile)), asOf || null);   // the sample's fixed analysis date, so its report does not age
     }
     el.sample.addEventListener('click', function () { startSample(CFG.sample || 'engine/sample-messy.csv', CFG.sample_as_of); });
     // the SYNTHETIC sales sample (tools/make_sample_sales.py): Ask your data's SQL demo, "Why is gross margin down in EMEA
     // this quarter?" (CONTRACT §5.16)
     if (el.sample2) el.sample2.addEventListener('click', function () { startSample(CFG.sample_sales || 'engine/sample-sales-synthetic.csv', CFG.sample_sales_as_of); });
+    // the monthly pack demo (Track E, SYNTHETIC): the sales ledger with its budget and KPI extract, three files in one run,
+    // and "Monthly reporting pack" chosen in step 1
+    if (el.sample3) el.sample3.addEventListener('click', function () {
+      if (window.NLDeliver && window.NLDeliver.get('monthly-pack')) window.NLDeliver.choose('monthly-pack');
+      startSample(CFG.sample_sales || 'engine/sample-sales-synthetic.csv', CFG.sample_sales_as_of, CFG.sample_pack || []);
+    });
     el.cancel.addEventListener('click', function () {
       killWorker();
       S.seq += 1;
@@ -2526,7 +2608,9 @@
       (rep.timings || []).forEach(function (t) { var li = stageEl(t.stage); if (li && li.className !== 'st-done') setStage(t.stage, 'done', t.seconds); });
       STAGES.forEach(function (s) { var li = stageEl(s); if (li && li.className !== 'st-done') setStage(s, 'skip'); });
       S.report = rep; S.busy = false; if (el.q) el.q.disabled = false;
-      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; el.pick.disabled = false;
+      // the run's files (CONTRACT §5.18): the engine's record of the main file, then every companion read so far
+      rep.inputs = (Array.isArray(rep.inputs) ? rep.inputs.filter(function (x) { return x && x.primary; }) : []).concat(S.companions);
+      el.sample.disabled = false; if (el.sample2) el.sample2.disabled = false; if (el.sample3) el.sample3.disabled = false; el.pick.disabled = false;
       drawPlan(rep);
       drawReport();
       el.report.hidden = false;
@@ -2534,6 +2618,7 @@
       drawFc();
       if (window.NLSteps) window.NLSteps.report(rep);
       S.engResults = null; drawDeliver();
+      if (S.waiting.length) readCompanions();
       goTo(el.report, true);
       // a local update from the step rail (NLSteps.update): the same plan, no new AI call, so no new AI report
       if (S.localUpdate) { S.localUpdate = false; var sr = stageEl('report'); if (sr) setStage('report', 'skip', null, 'a local update: the AI report was not asked again'); return; }
@@ -3305,6 +3390,7 @@
       out.appendChild(said);
       out.appendChild(a);
     }
+    T.offerFile = offerFile;
 
     // "Download Word (.docx)" and "Word + charts (.zip)" (Track D, 16 Oct 2026): the research write-up, made here by
     // src/js/46-report-docx.js from the PDF's input (reportInput: one model, two renderers), the engine's own report for

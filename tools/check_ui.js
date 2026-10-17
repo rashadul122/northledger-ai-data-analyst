@@ -4107,6 +4107,18 @@ for (const scheme of ['light', 'dark']) {
     const WF = { 'w-tot': C.waterfall.total, 'w-rise': C.waterfall.rise, 'w-fall': C.waterfall.fall };
     ok(bars.length > 0, 'no waterfall bars found');
     bars.forEach(([c, fill]) => { if (fill !== hex(WF[c])) bad.push(c + ' ' + fill + ' (want ' + WF[c] + ')'); });
+    // two periods (17 Oct 2026, spec colors.categorical): both bars solid, the earlier one orange, the latest blue
+    let pairsN = 0;
+    for (const r of recs.filter((x) => x.kind === 'hbar' && x.data && Array.isArray(x.data.series) && x.data.series.length === 2)) {
+      const pairs = await p.evaluate((id) => Array.from(document.querySelectorAll('[id="nl2c-m-' + id + '"] svg g[data-tip]'))
+        .map((g) => Array.from(g.querySelectorAll('rect')).map((e) => getComputedStyle(e).fill)).filter((x) => x.length === 2), r.id);
+      pairs.forEach(([a, b], i) => {
+        if (r.data.other === true && i === pairs.length - 1) return;
+        pairsN++;
+        if (a !== hex(C.hbar.prior_fill) || b !== hex(C.hbar.bar)) bad.push(r.__name + ' row ' + i + ' ' + a + ' / ' + b + ' (want ' + C.hbar.prior_fill + ' / ' + C.hbar.bar + ')');
+      });
+    }
+    ok(pairsN > 0, 'no two-period bars found');
     ok(!bad.length, bad.length + ' fills are not the ' + scheme + ' tokens: ' + bad.slice(0, 4).join('; '));
     const cc = await cellContrast(p);
     ok(cc.n > 0 && cc.worst >= 4.5, 'a heatmap number has contrast ' + cc.worst.toFixed(2) + ' on its cell in the ' + scheme + ' theme (' + cc.where + ')');

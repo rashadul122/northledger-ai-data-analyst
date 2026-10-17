@@ -557,7 +557,7 @@
     "bar_chart",
     "grouped_bar"
    ],
-   "draw": "a row per bar, the label left (above it when narrow), the bar from 0 to its value and its text at the end; 'other' in its own colour, last; two series: two bars a row, the first period hollow (outlined) and the latest filled, a key above, and change_text at the right"
+   "draw": "a row per bar, the label left (above it when narrow), the bar from 0 to its value and its text at the end; 'other' in its own colour, last; two series: two bars a row, both solid: the period before in colors.hbar.prior_fill (orange) and the latest in colors.hbar.bar (blue), a key above, and change_text at the right"
   },
   "multiples": {
    "data": "#/$defs/data_multiples",
@@ -2210,26 +2210,26 @@
     "text": "#16232e"
    },
    "waterfall": {
-    "total": "#24425c",
-    "rise": "#0b7366",
-    "fall": "#945400",
+    "total": "#2a78d6",
+    "rise": "#12875c",
+    "fall": "#d45a26",
     "connector": "#b9b5aa"
    },
    "dot_range": {
-    "dot": "#24425c",
-    "range": "#24425c",
-    "median": "#945400"
+    "dot": "#2a78d6",
+    "range": "#2a78d6",
+    "median": "#16232e"
    },
    "pareto": {
-    "bar": "#24425c",
+    "bar": "#2a78d6",
     "other": "#56646f",
-    "cumulative": "#945400",
+    "cumulative": "#d45a26",
     "reference_80": "#16232e",
-    "k80": "#0b7366"
+    "k80": "#16232e"
    },
    "slope": {
-    "rise": "#0b7366",
-    "fall": "#945400",
+    "rise": "#12875c",
+    "fall": "#d45a26",
     "flat": "#56646f"
    },
    "text": {
@@ -2247,11 +2247,11 @@
    },
    "lines": {
     "series": [
-     "#24425c",
-     "#0b7366",
-     "#945400",
      "#2a78d6",
-     "#d4502c"
+     "#d45a26",
+     "#12875c",
+     "#9a6a00",
+     "#c8457f"
     ],
     "dashes": [
      null,
@@ -2274,28 +2274,28 @@
       2
      ]
     ],
-    "forecast": "#0b7366",
-    "band": "#cfe5e1"
+    "forecast": "#2a78d6",
+    "band": "#d9e7f8"
    },
    "area": {
     "parts": [
-     "#24425c",
-     "#0b7366",
-     "#945400",
      "#2a78d6",
-     "#d4502c"
+     "#d45a26",
+     "#12875c",
+     "#9a6a00",
+     "#c8457f"
     ],
     "other": "#56646f",
     "edge": "#ffffff"
    },
    "hbar": {
-    "bar": "#24425c",
-    "prior_fill": "#ffffff",
-    "prior_stroke": "#24425c",
+    "bar": "#2a78d6",
+    "prior_fill": "#d45a26",
+    "prior_stroke": "#d45a26",
     "other": "#56646f"
    },
    "multiples": {
-    "line": "#24425c"
+    "line": "#2a78d6"
    },
    "timeseries": {
     "lines": [
@@ -2350,26 +2350,26 @@
     "text": "#e9eef3"
    },
    "waterfall": {
-    "total": "#b9cce0",
-    "rise": "#2bb5a3",
-    "fall": "#e3a33b",
+    "total": "#3987e5",
+    "rise": "#199e70",
+    "fall": "#d95926",
     "connector": "#3b4d60"
    },
    "dot_range": {
-    "dot": "#b9cce0",
-    "range": "#b9cce0",
-    "median": "#e3a33b"
+    "dot": "#3987e5",
+    "range": "#3987e5",
+    "median": "#e9eef3"
    },
    "pareto": {
-    "bar": "#b9cce0",
+    "bar": "#3987e5",
     "other": "#9aabb8",
-    "cumulative": "#e3a33b",
+    "cumulative": "#d95926",
     "reference_80": "#e9eef3",
-    "k80": "#2bb5a3"
+    "k80": "#e9eef3"
    },
    "slope": {
-    "rise": "#2bb5a3",
-    "fall": "#e3a33b",
+    "rise": "#199e70",
+    "fall": "#d95926",
     "flat": "#9aabb8"
    },
    "text": {
@@ -2387,11 +2387,11 @@
    },
    "lines": {
     "series": [
-     "#b9cce0",
-     "#2bb5a3",
-     "#e3a33b",
      "#3987e5",
-     "#e2507a"
+     "#d95926",
+     "#199e70",
+     "#c98500",
+     "#d55181"
     ],
     "dashes": [
      null,
@@ -2414,28 +2414,28 @@
       2
      ]
     ],
-    "forecast": "#2bb5a3",
-    "band": "#143c3f"
+    "forecast": "#3987e5",
+    "band": "#1c3959"
    },
    "area": {
     "parts": [
-     "#b9cce0",
-     "#2bb5a3",
-     "#e3a33b",
      "#3987e5",
-     "#e2507a"
+     "#d95926",
+     "#199e70",
+     "#c98500",
+     "#d55181"
     ],
     "other": "#9aabb8",
     "edge": "#121d28"
    },
    "hbar": {
-    "bar": "#b9cce0",
-    "prior_fill": "#121d28",
-    "prior_stroke": "#b9cce0",
+    "bar": "#3987e5",
+    "prior_fill": "#d95926",
+    "prior_stroke": "#d95926",
     "other": "#9aabb8"
    },
    "multiples": {
-    "line": "#b9cce0"
+    "line": "#3987e5"
    },
    "timeseries": {
     "lines": [
@@ -2452,16 +2452,17 @@
    "light": {
     "cell_text_on_tiers_min": 7.85,
     "suppressed_text_on_fill": 5.33,
-    "marks_on_surface_min": 4.21
+    "marks_on_surface_min": 3.97
    },
    "dark": {
     "cell_text_on_tiers_min": 6.76,
     "suppressed_text_on_fill": 6.09,
-    "marks_on_surface_min": 4.6
+    "marks_on_surface_min": 4.32
    }
   },
-  "batch_2": "the page draws these from the build's tokens: series, series-2, series-3, div-neg, band-red (dark: their dark values), muted for 'other', fan for the forecast band, surface for the hollow first-period bar; a line's colour is never its only channel (its dash and its end label), an area's part has its label in the key, in stacking order",
-  "timeseries_note": "The first five slots of the dataviz skill's categorical palette, stepped for contrast (validated with its validate_palette.js on the white surface and on #121d28: lightness band, chroma floor, adjacent-pair colour-vision separation, normal-vision floor, 3:1 contrast). The adjacent colour-vision separation of the light set is 6.8 (the 6 to 8 band), legal only with secondary encoding: every line also has its own dash, its own end marker and a direct label"
+  "batch_2": "the page draws these from the build's tokens: ts-1 to ts-5 (the categorical palette, dark: their dark values), ts-band for the forecast range, muted for 'other'; a line's colour is never its only channel (its dash and its end label), an area's part has its label in the key, in stacking order",
+  "timeseries_note": "The first five slots of the dataviz skill's categorical palette, stepped for contrast (validated with its validate_palette.js on the white surface and on #121d28: lightness band, chroma floor, adjacent-pair colour-vision separation, normal-vision floor, 3:1 contrast). The adjacent colour-vision separation of the light set is 6.8 (the 6 to 8 band), legal only with secondary encoding: every line also has its own dash, its own end marker and a direct label",
+  "categorical": "17 Oct 2026 (the owner: vivid, distinct colours, so a comparison reads at a glance): ONE categorical palette for every chart's marks, timeseries.lines (build.py TOKENS ts-1 to ts-5), slot order fixed, never cycled, the colour following the series, never its rank: lines.series, area.parts, the hbar's two periods, multiples and the dashboard's charts. A single series and a chart's primary mark (a bar, a dot, a total) are slot 1 (blue); two periods are the latest in slot 1 and the one before in slot 2 (orange), both solid (hbar.prior_fill = prior_stroke), with a key and their texts; a rise is slot 3 (green), a fall slot 2 (orange), a level line or median ink. Text never wears a series colour. Validated with the dataviz skill's validate_palette.js in both modes (white and #121d28): latest/prior blue against orange colour-vision separation 25.4 light, 26.8 dark; rise/fall green against orange 6.8 light (the 6 to 8 band: legal with a step's sign, its direction and its label), 9.4 dark; every mark 3:1 or more"
  },
  "accessibility": {
   "accessible_name": "title + '. ' + summary: the page's figure and svg carry it (role='img', aria-label); the share viewer the same; the PDF prints the title as the figure caption and the summary under it",

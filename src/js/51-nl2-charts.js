@@ -146,7 +146,7 @@
     // the series panel holds the data and the two window means only; its axis says what a value is
     var yTitle = d.unit === 'rows' ? 'rows a month' : /^mean of /.test(d.unit || '') ? 'average ' + String(d.unit).slice(8) + ' a month' : (d.unit || '');
     var L = 56, Rr = W - 12;
-    var lgItems = [{ mark: MK.dot('dot-s'), label: 'each month' }, { mark: MK.line('ln nl2-mean-p'), label: 'prior 12-month average' },
+    var lgItems = [{ mark: MK.dot('dot-s nl2-mon'), label: 'each month' }, { mark: MK.line('ln nl2-mean-p'), label: 'prior 12-month average' },
       { mark: MK.line('ln nl2-mean-l'), label: 'latest 12-month average' }];
     if (LF) lgItems.push({ mark: MK.line('ln nl2-lfl'), label: 'like for like' });
     // what the numbered lines mark: a change in what the file covers, a step the engine's screen found, or both
@@ -193,7 +193,7 @@
     var rad = Math.max(2.2, Math.min(3.6, step / 2.6));
     V.forEach(function (v, i) {
       if (v === null) { b += '<text class="lab nl2-gap" x="' + x(i).toFixed(1) + '" y="' + (Bt - 4) + '" text-anchor="middle"' + tip(mon(M[i]) + ': under the engine\'s rows-a-month floor, left out') + '>×</text>'; return; }
-      b += '<circle class="dot-s" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="' + rad.toFixed(1) + '"' + tip(mon(M[i]) + ': ' + vf(v) + (d.rows ? ' (' + num(d.rows[i], 0) + ' rows)' : '')) + '/>';
+      b += '<circle class="dot-s nl2-mon" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="' + rad.toFixed(1) + '"' + tip(mon(M[i]) + ': ' + vf(v) + (d.rows ? ' (' + num(d.rows[i], 0) + ' rows)' : '')) + '/>';
     });
     b += '<line x1="' + L + '" x2="' + Rr + '" y1="' + Bt + '" y2="' + Bt + '" stroke="var(--axis)"/>' + xMonths(M, x, H0 - 8) + lg.svg;
     // the change strip: the effect and its interval on their own percent axis, zero and the bar marked;
@@ -564,14 +564,15 @@
   C.histogram_windows = function (W, ch) {
     var d = ch.data, E = d.edges || [], P = d.prior || { values: [], counts: [] }, Q = d.latest || { values: [], counts: [] }, vf = vfmt(d.scale);
     var L = 44, R = W - 12;
-    var lg = legend([{ mark: MK.box('bar-s'), label: 'prior 12 months' }, { mark: MK.box('bar-a'), label: 'latest 12 months' }], L, R, 10);
+    // two periods: the latest in ts-1 (blue), the one before in ts-2 (orange), both solid (style.css .bar-prior/.bar-latest)
+    var lg = legend([{ mark: MK.box('bar-s bar-prior'), label: 'prior 12 months' }, { mark: MK.box('bar-a bar-latest'), label: 'latest 12 months' }], L, R, 10);
     var T0 = lg.h + 14, plotH = Math.max(130, Math.min(200, Math.round(W * 0.26))), Bt = T0 + plotH, H = Bt + 70;
     var k = Math.max(1, E.length - 1), mx = Math.max.apply(null, P.counts.concat(Q.counts, [1]));
     var x = U.scale(E[0], E[E.length - 1], L + 6, R - 6), y = U.scale(0, mx * 1.15, Bt, T0), b = '';
     U.ticks(0, mx * 1.15, Math.min(4, mx)).forEach(function (t) { if (Math.floor(t) === t) b += '<line class="gridl" x1="' + L + '" x2="' + R + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"/>' + U.txt(L - 6, y(t) + 4, num(t, 0), 'lab', 'end'); });
     for (var i = 0; i < k; i++) {
       var x0 = x(E[i]), x1 = x(E[i + 1]), w = (x1 - x0) * 0.4, rng = vf(E[i]) + ' to ' + vf(E[i + 1]);
-      [[P.counts[i], 'bar-s', x0 + (x1 - x0) * 0.1, 'prior'], [Q.counts[i], 'bar-a', x0 + (x1 - x0) * 0.5, 'latest']].forEach(function (s) {
+      [[P.counts[i], 'bar-s bar-prior', x0 + (x1 - x0) * 0.1, 'prior'], [Q.counts[i], 'bar-a bar-latest', x0 + (x1 - x0) * 0.5, 'latest']].forEach(function (s) {
         var c = s[0] || 0;
         b += '<g' + tip(rng + ': ' + num(c, 0) + ' of the ' + s[3] + ' months') + '><rect class="' + s[1] + '" x="' + s[2].toFixed(1) + '" y="' + y(c).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(0, Bt - y(c)).toFixed(1) + '"/>' +
           (c ? '<text class="vlab" x="' + (s[2] + w / 2).toFixed(1) + '" y="' + (y(c) - 4).toFixed(1) + '" text-anchor="middle">' + c + '</text>' : '') + '</g>';
@@ -584,7 +585,7 @@
     var edge = function (e) { return Math.abs(e) >= 1e4 ? axis(e) : num(e, edp); };
     E.forEach(function (e, i) { if (i % every === 0 || i === E.length - 1) b += U.txt(x(e), Bt + 15, edge(e), 'lab', 'middle'); });
     // every monthly value, as a rug under the bars: the months behind each bar
-    [[P.values, 'dot-s', Bt + 34, 'prior'], [Q.values, 'dot-a', Bt + 52, 'latest']].forEach(function (s) {
+    [[P.values, 'dot-s dot-prior', Bt + 34, 'prior'], [Q.values, 'dot-a dot-latest', Bt + 52, 'latest']].forEach(function (s) {
       b += U.txt(L - 6, s[2] + 4, s[3], 'lab', 'end');
       (s[0] || []).forEach(function (v) { b += '<circle class="' + s[1] + ' nl2-rug" cx="' + x(v).toFixed(1) + '" cy="' + s[2] + '" r="3"' + tip(s[3] + ' month: ' + vf(v)) + '/>'; });
     });
@@ -694,7 +695,10 @@
      and shown whole in its tooltip and in the table view. Every layout fits the width it is given (288 px on a 320-px
      phone). C.extendNLV teaches window.NLV (55-nl-viz.js) the same kinds, so the AI report's figures and the share
      viewer draw them too, with their Table button; a record of these kinds with data it cannot read is its table. */
-  var GPAL = ['var(--series)', 'var(--series-2)', 'var(--series-3)', 'var(--div-neg)', 'var(--band-red)'];
+  // the categorical palette (build.py TOKENS ts-1..ts-5, validated with the dataviz skill's validate_palette.js in both
+  // themes): slot order fixed, colour follows the series, never its rank; a series' text stays ink
+  var GPAL = ['var(--ts-1)', 'var(--ts-2)', 'var(--ts-3)', 'var(--ts-4)', 'var(--ts-5)'];
+  var GLATEST = 'var(--ts-1)', GPRIOR = 'var(--ts-2)';
   var GDASH = ['', '6 3', '2 3', '8 3 2 3', '1 2'];
   var GOTHER = 'var(--muted)';
   var GOWN = Object.prototype.hasOwnProperty;
@@ -848,7 +852,7 @@
         var ends = !F && W >= 420 && endW <= W * 0.4, R = W - (ends ? endW : 8), b = '', T = 8;
         if (!one || F) {
           var items = one ? [] : S.map(function (s, k) { return { w: 20, text: s.label, mark: gswatchLine(k) }; });
-          if (F) items.push({ w: 20, text: 'forecast, ' + F.level + '% range', mark: function (x, y) { return '<rect x="' + x + '" y="' + (y - 5) + '" width="20" height="10" style="fill:var(--fan)"/><path d="M' + x + ' ' + y + 'h20" style="fill:none;stroke:var(--series-2);stroke-width:2;stroke-dasharray:5 4"/>'; } });
+          if (F) items.push({ w: 20, text: 'forecast, ' + F.level + '% range', mark: function (x, y) { return '<rect x="' + x + '" y="' + (y - 5) + '" width="20" height="10" style="fill:var(--ts-band)"/><path d="M' + x + ' ' + y + 'h20" style="fill:none;stroke:var(--ts-1);stroke-width:2;stroke-dasharray:5 4"/>'; } });
           if (!ends && items.length) { var ky = gkey(items, 0, W, 0); b += ky.svg; T = ky.h + 8; }
         }
         var H = T + 190, Bt = H - 26, nn = n + m, X = U.scale(0, Math.max(1, nn - 1), L, R), Y = U.scale(dom[0], dom[1], Bt, T + 6);
@@ -860,12 +864,12 @@
         if (F) {
           var li = lastI[0], x0 = X(li), lv = S[0].values[li];
           var top = [[x0, Y(lv)]].concat(F.hi.map(function (v, j) { return [X(n + j), Y(v)]; })), bot = F.lo.map(function (v, j) { return [X(n + j), Y(v)]; }).reverse();
-          b += '<path d="' + U.path(top) + 'L' + bot.map(function (p) { return gf1(p[0]) + ' ' + gf1(p[1]); }).join('L') + 'Z" style="fill:var(--fan)"/>';
+          b += '<path d="' + U.path(top) + 'L' + bot.map(function (p) { return gf1(p[0]) + ' ' + gf1(p[1]); }).join('L') + 'Z" style="fill:var(--ts-band)"/>';
           b += '<line x1="' + gf1(X(n - 0.5)) + '" x2="' + gf1(X(n - 0.5)) + '" y1="' + (T + 6) + '" y2="' + Bt + '" style="stroke:var(--axis);stroke-dasharray:3 3"/>';
-          b += '<path d="' + U.path([[x0, Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; }))) + '" style="fill:none;stroke:var(--series-2);stroke-width:2;stroke-dasharray:5 4"/>';
+          b += '<path d="' + U.path([[x0, Y(lv)]].concat(F.values.map(function (v, j) { return [X(n + j), Y(v)]; }))) + '" style="fill:none;stroke:var(--ts-1);stroke-width:2;stroke-dasharray:5 4"/>';
           F.values.forEach(function (v, j) {
             var r = rec.table.rows[n + j] || [], tip = gper(F.x[j], true) + ': forecast ' + (r[r.length - 2] || '') + ', ' + F.level + '% range ' + (r[r.length - 1] || '');
-            b += '<circle cx="' + gf1(X(n + j)) + '" cy="' + gf1(Y(v)) + '" r="2.5" style="fill:var(--surface);stroke:var(--series-2);stroke-width:1.5" data-tip="' + esc(tip) + '"/>';
+            b += '<circle cx="' + gf1(X(n + j)) + '" cy="' + gf1(Y(v)) + '" r="2.5" style="fill:var(--surface);stroke:var(--ts-1);stroke-width:1.5" data-tip="' + esc(tip) + '"/>';
           });
         }
         S.forEach(function (s, k) {
@@ -882,7 +886,7 @@
             if (lastI[k] < 0) return;
             var xe = X(lastI[k]) + 6;
             if (Math.abs(ly[k] - 4 - ys[k]) > 1) b += '<path d="M' + gf1(X(lastI[k]) + 3) + ' ' + gf1(ys[k]) + 'L' + gf1(R + 4) + ' ' + gf1(ly[k] - 4) + '" style="fill:none;stroke:var(--axis)"/>';
-            b += gtxt(Math.max(xe, R + 6), ly[k], endTxt[k], { cls: 'nlv-t', maxW: W - Math.max(xe, R + 6), fill: one ? null : GPAL[k % GPAL.length] });
+            b += gtxt(Math.max(xe, R + 6), ly[k], endTxt[k], { cls: 'nlv-t', maxW: W - Math.max(xe, R + 6) });
           });
         }
         return { body: b, H: H, layout: (ends ? 'end labels' : 'key') + (F ? ', forecast' : '') };
@@ -929,7 +933,7 @@
         var d = rec.data, rows = d.rows, two = d.series.length === 2, b = '', y = 0;
         var isOther = function (i) { return d.other === true && i === rows.length - 1; };
         if (two) {
-          var ky = gkey([{ w: 14, text: d.series[0], mark: gswatchBox('var(--surface)', 'var(--series)') }, { w: 14, text: d.series[1], mark: gswatchBox('var(--series)') }], 0, W, 0);
+          var ky = gkey([{ w: 14, text: d.series[0], mark: gswatchBox(GPRIOR) }, { w: 14, text: d.series[1], mark: gswatchBox(GLATEST) }], 0, W, 0);
           b += ky.svg; y = ky.h + 6;
         }
         var all = [0]; rows.forEach(function (r) { all = all.concat(r.values); });
@@ -945,8 +949,9 @@
           var g = '<g data-tip="' + esc(tip) + '">';
           g += wide ? gtxt(LW - 8, top + (two ? bh + 6 : bh - 2), r.label, { anchor: 'end', cls: 'nlv-t', maxW: LW - 8 }) : gtxt(0, y + 13, r.label, { cls: 'nlv-t', maxW: W - cW - 4 });
           r.values.forEach(function (v, k) {
-            var yy = top + k * (bh + 4), a = Math.min(X(v), z), w = Math.max(1.5, Math.abs(X(v) - z)), hollow = two && k === 0, c = oth ? GOTHER : 'var(--series)';
-            g += '<rect x="' + gf1(a) + '" y="' + gf1(yy) + '" width="' + gf1(w) + '" height="' + bh + '" rx="2" style="fill:' + (hollow ? 'var(--surface)' : c) + (hollow ? ';stroke:' + c + ';stroke-width:1.5' : '') + '"/>';
+            var yy = top + k * (bh + 4), a = Math.min(X(v), z), w = Math.max(1.5, Math.abs(X(v) - z)), prior = two && k === 0, c = oth ? GOTHER : prior ? GPRIOR : GLATEST;
+            // two periods: both solid, the one before in orange, the latest in blue; "other" stays muted, its earlier bar lighter
+            g += '<rect x="' + gf1(a) + '" y="' + gf1(yy) + '" width="' + gf1(w) + '" height="' + bh + '" rx="2" style="fill:' + c + (oth && prior ? ';fill-opacity:0.5' : '') + '"/>';
             var tx = v < 0 ? a - 4 : a + w + 4;
             if (r.texts[k]) g += gtxt(tx, yy + bh - 2 + (two ? 0 : 0), r.texts[k], { anchor: v < 0 ? 'end' : 'start', cls: 'vlab' });
           });
@@ -977,9 +982,9 @@
           });
           b += '<line x1="' + gf1(x0) + '" x2="' + gf1(x0 + pw) + '" y1="' + (y0 + plotB) + '" y2="' + (y0 + plotB) + '" style="stroke:var(--axis)"/>';
           if (axisOk) b += gtxt(x0, y0 + plotB + 15, fl) + gtxt(x0 + pw, y0 + plotB + 15, ll, { anchor: 'end' });
-          b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--series);stroke-width:1.8"/>';
+          b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--ts-1);stroke-width:1.8"/>';
           p.values.forEach(function (v, i) {
-            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--series)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
+            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--ts-1)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
           });
         });
         var rowsN = Math.ceil(Ps.length / cols);

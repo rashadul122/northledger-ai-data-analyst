@@ -1138,6 +1138,31 @@ def test_the_corpus_checks_on_drought_and_world_co2_pass_only_on_the_fact_itself
     assert not RC.check_one(aggs, res([ranked]))[0]
 
 
+def test_a_count_prints_whole_and_a_series_figures_keep_their_published_decimals():
+    """weak2 (16 Oct 2026): "Flood leads on Deaths (648.0), then Landslide (405.0)" and, for a rate published to 2 decimals, "its
+    monthly record high was 6.00 in 2000-05 and its low 0.5 in 2009-04". A figure of the measure itself prints at the measure's
+    published decimals: a count whole, a 2-decimal rate at 2 decimals; a slope or an equal-groups figure keeps its own rule."""
+    rows = []
+    for y in range(1990, 2021):
+        for t, v in (("Flood", 648 + y % 3), ("Landslide", 405), ("Storm", 394 - y % 2), ("Quake", 20)):
+            rows.append({"Entity": t, "Year": y, "Deaths": v})
+    blk = na.explore(pd.DataFrame(rows), {"Entity": "text", "Year": "number", "Deaths": "number"})
+    drill = next(i["text"] for i in blk["insights"] if i["kind"] == "drill")
+    assert "Flood leads on Deaths (649), then Landslide (405) and Storm (394)" in drill and ".0)" not in drill, drill
+    conc = next((i["text"] for i in blk["insights"] if i["kind"] == "concentration"), "")
+    assert not conc or re.search(r"the same as \d+\.\d+ equal-sized", conc), conc
+    d = pd.date_range("2000-01-01", periods=200, freq="MS")
+    v = np.round(np.clip(4.0 + np.sin(np.arange(200) / 15.0) * 3.5, 0.25, None) * 4) / 4   # quarter points: 0.25 ... 7.50
+    v[0], v[100] = 7.75, 0.50
+    df = pd.DataFrame({"date": d.strftime("%Y-%m-%d"), "bank_rate": ["%.2f" % x for x in v]})
+    blk = na.explore(df, {"date": "date", "bank_rate": "number"})
+    tr = next(s_ for s_ in blk["steps"] if s_["op"] == "trend")
+    lo, hi = tr["numbers"].get("rec_lo"), tr["numbers"].get("rec_hi")
+    assert lo and hi and lo["text"] == "0.50" and hi["text"] == "7.75", (lo, hi)
+    txt = " ".join(i["text"] for i in blk["insights"])
+    assert "its low 0.50 in" in txt and "low 0.5 in" not in txt, txt
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

@@ -305,6 +305,17 @@ def _has(name: str, words) -> bool:
 
 
 # ----------------------------------------------------------------------------- formatting (the only way numbers print)
+def pp_body(v: float) -> str:
+    """A change in percentage points, unsigned: 2 decimals everywhere, 3 when 2 would round a nonzero change to 0.00 (weak2,
+    16 Oct 2026: "0.775" beside "3.50" and "-4.0")."""
+    a = abs(float(v))
+    for d in (2, 3):
+        s = format(a, ",.%df" % d)
+        if a == 0 or float(s.replace(",", "")) != 0:
+            return s
+    return "%.3g" % a
+
+
 def fmt_num(v: float, kind: str = "plain", signed: bool = False) -> str:
     """How a ledger number prints. kind: plain | pct (a fraction shown as %) | pp (percentage points) | share
     (a fraction shown as %) | int | r (a correlation)."""
@@ -328,7 +339,7 @@ def fmt_num(v: float, kind: str = "plain", signed: bool = False) -> str:
         s = ("%.0f" % x) if x >= 100 else ("%.1f" % x)
         return (sign if s.strip("0.") else "") + s + "%"  # never "-0.0%"
     if kind == "pp":
-        s = "%.1f" % a
+        s = pp_body(a)
         return (sign if s.strip("0.") else "") + s + " percentage points"
     if kind == "r":
         return sign + ("%.2f" % a)
@@ -352,6 +363,13 @@ def fmt_num(v: float, kind: str = "plain", signed: bool = False) -> str:
     return sign + ("%.3g" % a)
 
 
+FIGURE_DP_MAX = 4  # a measure written with more decimals than this has no published precision to keep
+# the step numbers that are figures of the measure itself (Step.num prints them at the measure's published decimals); a slope, a
+# spread, a share or a count of rows is not one
+_FIGURE_KEY = re.compile(r"^(?:prev|cur|delta|world_prev|world_cur|peak|trough|first_value|last_value|from_peak|rec_lo|rec_hi|total|"
+                         r"top\d*_value|top_delta|whole_top1_value|high_value|low_value|bottom_value|s\d+_(?:prev|cur|delta))$")
+
+
 class Step:
     """One executed step: what was asked, why, what came back, and every number it produced."""
 
@@ -359,6 +377,7 @@ class Step:
         self.id, self.round, self.op, self.args, self.why = sid, rnd, op, args, why
         self.ok, self.refused = True, ""
         self.numbers: Dict[str, Dict[str, Any]] = {}
+        self.dp: Optional[int] = None  # the step's measure's published decimals (Ctx.measure_dp): its own figures print with them
         self.table: Dict[str, Any] = {"columns": [], "rows": []}
         # the data of the chart behind the step (never serialised as is): _figure builds the registry record from it
         self.chart: Optional[Dict[str, Any]] = None
@@ -371,6 +390,13 @@ class Step:
         except (TypeError, ValueError):
             v = float("nan")
         text = fmt_num(v, kind, signed)
+        # a figure of the measure itself (a level, a total, a difference of two of its figures) prints at the measure's published
+        # decimals below 1,000 (above, it is already whole, or in millions): a count is "648", never "648.0"; a rate published to
+        # 2 decimals is "0.50" beside "6.00", never "0.5". A figure that would round to zero keeps the general rule.
+        if kind == "plain" and self.dp is not None and _FIGURE_KEY.match(key) and v == v and abs(v) < 1000:
+            body = format(abs(v), ",.%df" % self.dp)
+            if float(body.replace(",", "")) != 0 or v == 0:
+                text = (("+" if signed and v > 0 else "-" if v < 0 and float(body.replace(",", "")) else "") + body)
         self.numbers[key] = {
             "value": (v if v == v and abs(v) != float("inf") else None),
             "text": text,
@@ -1154,8 +1180,41 @@ class Ctx:
         self.order: List[str] = []
         self.refused: List[Dict[str, str]] = []
 
+    def measure_dp(self, m: Any) -> Optional[int]:
+        """The decimals a measure's figures are published with (weak2, 16 Oct 2026: "Flood leads on Deaths (648.0)", "record high
+        was 6.00 ... and its low 0.5"): the most decimals its published texts show, or for numbers the fewest decimals that write
+        every value exactly; None when that takes more than FIGURE_DP_MAX (a computed measure has no published precision)."""
+        if not isinstance(m, str) or m not in self.df.columns:
+            return None
+        memo = self.__dict__.setdefault("_dp_memo", {})
+        if m in memo:
+            return memo[m]
+        import numpy as np
+        col = self.df[m]
+        v = _num(col)
+        ok = v.notna() & np.isfinite(v.astype(float))
+        dp: Optional[int] = None
+        if ok.any():
+            if col.dtype == object:
+                t = _text(col[ok]).str.replace(",", "", regex=False)
+                frac = t.str.extract(r"^[^.eE]*\.(\d+)$", expand=False).fillna("")
+                if not t.str.contains(r"[eE]").any():
+                    dp = int(frac.str.len().max() or 0)
+            else:
+                x = v[ok].astype(float).to_numpy()
+                for d in range(0, FIGURE_DP_MAX + 1):
+                    y = x * 10.0 ** d
+                    if np.all(np.abs(y - np.round(y)) <= 1e-6 * np.maximum(1.0, np.abs(y))):
+                        dp = d
+                        break
+            if dp is not None and dp > FIGURE_DP_MAX:
+                dp = None
+        memo[m] = dp
+        return dp
+
     def new(self, rnd: int, op: str, args: Dict[str, Any], why: str) -> Step:
         st = Step("A%d" % (len(self.order) + 1), rnd, op, args, why)
+        st.dp = self.measure_dp((args or {}).get("measure"))
         self.steps[st.id] = st
         self.order.append(st.id)
         return st

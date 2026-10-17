@@ -6932,6 +6932,83 @@ def results_json(rep: Any) -> str:
     return json.dumps(results_for_ai(rep), allow_nan=False, default=str)
 
 
+def _cleaning_block(cr: Any, reasons: Dict[str, int], rules: List[Any], pub: Any) -> Dict[str, Any]:
+    """The report's `cleaning` block (CONTRACT 2.3) from one cleaner result: the run's, and the "Clean my file" view's
+    when the visitor edits a rule (one function, so the report and the cleaning log can never word or count it apart)."""
+    return {
+        "rows_in": int(cr.total_in), "rows_clean": int(cr.rows_clean),
+        "rows_quarantined": int(cr.rows_quarantined),
+        "fixes": [dict(f, what=pub(f["what"])) for f in _fix_entries(cr, rules)],
+        "quarantine_reasons": [{"reason": pub(k), "count": int(v)} for k, v in
+                               sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))],
+    }
+
+
+# The last run's cleaner record, for "Clean my file" (engine/nl_cleanfile.py): the landed table the cleaner read, its
+# result, its rules, the column names and the run's privacy choices. One entry; replaced by every run, never sent.
+_LAST_CLEAN: Dict[str, Any] = {}
+
+
+def _remember_clean(db_path: str, table: str, cr: Any, rules: List[Any], colmap: Dict[str, str], flagged: Any,
+                    lines: Optional[List[int]], pub: Any, reason_fix: Any, name: str, as_of: str, rep: Dict[str, Any],
+                    planned: bool) -> None:
+    import copy
+    import sqlite3
+    import pandas as pd
+    _LAST_CLEAN.clear()
+    try:
+        con = sqlite3.connect(db_path)
+        try:
+            raw = pd.read_sql_query("SELECT * FROM %s" % _clean_quote(table), con)
+        finally:
+            con.close()
+        if len(raw) != int(cr.total_in):
+            return
+        header_of = {str(v): str(k) for k, v in colmap.items()}
+        private = {str(f.get("column")): str(f.get("decision")) for f in flagged or []
+                   if isinstance(f, dict) and f.get("decision") in ("withhold", "code")}
+        _LAST_CLEAN.update({"raw": raw, "cr": copy.deepcopy(cr), "rules": copy.deepcopy(list(rules)),
+                            "header_of": header_of, "private": private, "lines": lines, "pub": pub,
+                            "reason_fix": reason_fix, "name": name, "as_of": as_of, "planned": bool(planned),
+                            "cleaning": copy.deepcopy(rep.get("cleaning")),
+                            "sha256": (rep.get("input") or {}).get("sha256")})
+    except Exception:  # noqa: BLE001 - the report never depends on the clean-file view
+        _LAST_CLEAN.clear()
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+
+
+def _clean_quote(table: str) -> str:
+    return '"%s"' % str(table).replace('"', '""')
+
+
+def cleanfile_json(options_json: Any = None) -> str:
+    """Clean my file (engine/nl_cleanfile.py, CONTRACT-v2 section 5.14): the last run's cleaning, as a cleaned copy of
+    the visitor's file (every row the cleaner set aside kept and flagged, every cell it emptied kept as written and
+    flagged, exact duplicates merged) and a Markdown log whose counts are the report's own `cleaning` block. With the
+    visitor's edits (options.rules) the same cleaner (northledger.clean.clean_frame) runs again on the same landed
+    table under the edited rules. options_json: {sha256, rules, plan_columns}; nothing is sent anywhere."""
+    import nl_cleanfile
+    opts: Any = options_json
+    if hasattr(opts, "to_py"):
+        opts = opts.to_py()
+    if isinstance(opts, str):
+        try:
+            opts = json.loads(opts) if opts.strip() else {}
+        except ValueError:
+            opts = {}
+    opts = dict(opts) if isinstance(opts, dict) else {}
+    L = _LAST_CLEAN
+    if not L or (opts.get("sha256") and opts.get("sha256") != L.get("sha256")):
+        return json.dumps({"ok": False, "error": "The engine no longer holds this file's cleaning; run the file again.",
+                           "csv": "", "log": "", "summary": None, "card": None})
+
+    def recount(cr2: Any, rules2: List[Any]) -> Dict[str, Any]:
+        return _cleaning_block(cr2, _ambiguous_dates(cr2, rules2), rules2, L["pub"])
+    out = nl_cleanfile.view(L, opts.get("rules"), opts.get("plan_columns"), recount)
+    return json.dumps(out, allow_nan=False, default=str)
+
+
 def _clean_plan_review(raw: Any) -> Optional[Dict[str, Any]]:
     """The visitor's review of the AI plan, kept as a record only: fixed keys, safe types, short."""
     if not isinstance(raw, dict):
@@ -12479,14 +12556,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
 
         # -- cleaning
         rules = _clean.standard_rules(th, as_of=as_of_eff)
-        rep["cleaning"] = {
-            "rows_in": int(cr.total_in), "rows_clean": int(cr.rows_clean),
-            "rows_quarantined": int(cr.rows_quarantined),
-            "fixes": [dict(f, what=pub(f["what"])) for f in _fix_entries(cr, rules)],
-            "quarantine_reasons": [{"reason": pub(k), "count": int(v)} for k, v in
-                                   sorted(reasons.items(),
-                                          key=lambda kv: (-kv[1], kv[0]))],
-        }
+        rep["cleaning"] = _cleaning_block(cr, reasons, rules, pub)
 
         # -- findings: data quality from the audit, then the business analysis
         date_withheld = r is not None and bool(r.roles.date) and r.roles.date in wh
@@ -12577,6 +12647,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             "quarantine_csv": _csv_text(cr.quarantined, withheld, reason_fix, lines),
             "ledger_json": _ledger_text(ledgers, scrub, rep["engine"]),
         }
+        # -- clean my file (CONTRACT 5.14): this cleaner's record kept for the page's "Clean my file" view
+        _remember_clean(eng.db_path, table, cr, rules, colmap, flagged, lines, pub, reason_fix, name, as_of_eff,
+                        rep, sent_rows is not None)
         # -- the engine's reading of every cell of the table it landed (ONE parser: see _engine_reading)
         reading = early_reading
         try:

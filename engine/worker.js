@@ -16,6 +16,9 @@
                                                 plan_profile_json): a withheld column absent, a
                                                 coded one only its name, type and counts, a kept
                                                 one like any column
+     {type: 'cleanfile', id, options}           clean my file, a view of the last run's cleaning: options {sha256,
+                                                rules (the visitor's edits, or null), plan_columns}
+                                                -> {type: 'cleaned', id, out: {ok, error, csv, log, summary, card}}
      {type: 'run',  id, options}                the visitor's decisions: the same report if every
                                                 flagged column stays withheld, else a new run
        options: {name, objective, decisions: {column: 'withhold'|'code'|'keep'}, as_of}
@@ -254,6 +257,17 @@ function onMore(m) {
   post({ type: 'more_json', id: m.id, out: out });
 }
 
+// Clean my file (engine/nl_cleanfile.py through nl_browser.cleanfile_json, CONTRACT §5.14): the last run's cleaning
+// (the engine's own cleaner and record) as a cleaned copy of the file and a log; with the visitor's edited rules the
+// same cleaner runs again here. Nothing leaves this worker; the reply is text the page offers as downloads.
+function onClean(m) {
+  var out = null;
+  try {
+    if (booted && nl && nl.cleanfile_json) out = JSON.parse(String(nl.cleanfile_json(JSON.stringify(m.options || {}))));
+  } catch (e) { out = { ok: false, error: lastLine(e) || 'The cleaner stopped.' }; }
+  post({ type: 'cleaned', id: m.id, out: out });
+}
+
 var queue = Promise.resolve();
 self.onmessage = function (e) {
   var m = e.data || {};
@@ -264,6 +278,7 @@ self.onmessage = function (e) {
     if (m.type === 'results') return onResults(m);
     if (m.type === 'ledger') return onLedger(m);
     if (m.type === 'more') return onMore(m);
+    if (m.type === 'cleanfile') return onClean(m);
     return null;
   }).catch(function (err) {
     if (err && err.code) fail(m.id, err.code, err.message, err.detail);

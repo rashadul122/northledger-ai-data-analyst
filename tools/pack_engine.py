@@ -29,6 +29,7 @@ The zip holds exactly what the browser needs and nothing else:
                             official aggregates (engine/nl_inference.py, wave 4 track A2)
   inference_tables.json     the trend test's simulated sizes nl_inference reads beside itself
   nl_analyst.py             the adapter's analyst loop (engine/nl_analyst.py, CONTRACT §5.10)
+  nl_cleanfile.py           clean my file: the cleaned CSV and the cleaning log (engine/nl_cleanfile.py, CONTRACT §5.14)
   context_terms.json        the fixed terms the report's web searches are built from (engine/context_terms.json)
   first_names.txt           the given names the themes and the chart registry's name checks read (engine/first_names.txt)
   nl_stubs/                 stand-ins for standard modules a WebAssembly Python may lack
@@ -158,6 +159,9 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # the analyst loop (typed analysis steps and the insights filled from their numbers,
                  # CONTRACT §5.10), imported by nl_browser.run()
                  "nl_analyst.py": "nl_analyst.py",
+                 # clean my file (track C, CONTRACT §5.14): the cleaned CSV and the cleaning log, imported by
+                 # nl_browser.cleanfile_json (engine/worker.js "cleanfile")
+                 "nl_cleanfile.py": "nl_cleanfile.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",

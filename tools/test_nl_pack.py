@@ -145,14 +145,14 @@ class Book:
         return v
 
     def eval(self, sheet, f):
-        toks = re.findall(r"'(?:[^']|'')+'!\$?[A-Z]+\$?\d+|[A-Z]+\$?\d+|\$[A-Z]+\$?\d+|\"[^\"]*\"|\d+\.?\d*(?:[eE][-+]?\d+)?|[A-Z]+(?=\()|<>|<=|>=|[-+*/(),=<>]", f)
-        keep = getattr(self, "t", None), getattr(self, "i", 0), getattr(self, "sheet", None)   # a formula of a formula
-        self.t, self.i, self.sheet = toks, 0, sheet
+        toks = re.findall(r"'(?:[^']|'')+'!\$?[A-Z]+\$?\d+|\bTRUE\b|\bFALSE\b|[A-Z]+\$?\d+|\$[A-Z]+\$?\d+|\"[^\"]*\"|\d+\.?\d*(?:[eE][-+]?\d+)?|[A-Z]+(?=\()|<>|<=|>=|[-+*/(),=<>]", f)
+        keep = getattr(self, "t", None), getattr(self, "i", 0), getattr(self, "sheet", None), self.skip   # a formula of a formula
+        self.t, self.i, self.sheet, self.skip = toks, 0, sheet, False
         try:
             v = self.comparison()
             assert self.i == len(self.t), (f, self.t[self.i:])
         finally:
-            self.t, self.i, self.sheet = keep
+            self.t, self.i, self.sheet, self.skip = keep
         return v
 
     def peek(self):
@@ -162,13 +162,25 @@ class Book:
         self.i += 1
         return self.t[self.i - 1]
 
+    # IF is lazy, as in Excel: the branch not taken is parsed with self.skip set, so nothing in it is computed
+    skip = False
+
+    @staticmethod
+    def err(*xs):
+        return next((x for x in xs if isinstance(x, str) and x.startswith("#")), None)
+
     def comparison(self):
         a = self.additive()
         while self.peek() in ("=", "<>", "<", ">", "<=", ">="):
             op = self.take()
             b = self.additive()
-            if op == "=":
-                a = (a == b) if not (a == "" and b == 0) else True
+            if self.skip:
+                continue
+            e = self.err(a, b)
+            if e:
+                a = e
+            elif op == "=":
+                a = a == b
             elif op == "<>":
                 a = a != b
             else:
@@ -179,29 +191,38 @@ class Book:
     def n(v):
         return 0 if v == "" else v
 
+    def arith(self, op, a, b):
+        if self.skip:
+            return 0
+        e = self.err(a, b)
+        if e:
+            return e
+        if isinstance(a, str) or isinstance(b, str):
+            if a != "" and isinstance(a, str) or b != "" and isinstance(b, str):
+                return "#VALUE!"
+        a, b = self.n(a), self.n(b)
+        if op == "/" and b == 0:
+            return "#DIV/0!"
+        return {"+": a + b, "-": a - b, "*": a * b, "/": a / b if op == "/" else 0}[op]
+
     def additive(self):
         a = self.term()
         while self.peek() in ("+", "-"):
             op = self.take()
-            b = self.term()
-            a = self.n(a) + self.n(b) if op == "+" else self.n(a) - self.n(b)
+            a = self.arith(op, a, self.term())
         return a
 
     def term(self):
         a = self.unary()
         while self.peek() in ("*", "/"):
             op = self.take()
-            b = self.unary()
-            if op == "/" and self.n(b) == 0:
-                a = "#DIV/0!"                          # Excel's error value (an IF branch not taken may hold one)
-                continue
-            a = "#DIV/0!" if "#DIV/0!" in (a, b) else (self.n(a) * self.n(b) if op == "*" else self.n(a) / self.n(b))
+            a = self.arith(op, a, self.unary())
         return a
 
     def unary(self):
         if self.peek() == "-":
             self.take()
-            return -self.n(self.unary())
+            return self.arith("-", 0, self.unary())
         return self.atom()
 
     def atom(self):
@@ -212,36 +233,51 @@ class Book:
             return v
         if t.startswith('"'):
             return t[1:-1]
+        if t in ("TRUE", "FALSE"):
+            return t == "TRUE"
         if re.match(r"^\d", t):
             return float(t)
         if "!" in t:
             sh, ref = t.rsplit("!", 1)
-            return self.cell(sh.strip("'").replace("''", "'"), ref)
+            return 0 if self.skip else self.cell(sh.strip("'").replace("''", "'"), ref)
         if self.peek() == "(" and t in ("IF", "OR", "AND", "ABS", "ISNUMBER"):
             self.take()
             args = []
             if t == "IF":
                 c = self.comparison()
-                self.take()
+                assert self.take() == ","
+                outer = self.skip
+                take_a = bool(c) and not (isinstance(c, str) and c.startswith("#"))
+                self.skip = outer or not take_a
                 a = self.comparison()
-                self.take()
+                assert self.take() == ","
+                self.skip = outer or take_a
                 b = self.comparison()
+                self.skip = outer
                 assert self.take() == ")"
-                return a if c else b
+                if self.skip:
+                    return 0
+                if isinstance(c, str) and c.startswith("#"):
+                    return c
+                return a if take_a else b
             while True:
                 args.append(self.comparison())
                 s = self.take()
                 if s == ")":
                     break
+            if self.skip:
+                return 0
+            err = next((x for x in args if isinstance(x, str) and x.startswith("#")), None)
             if t == "OR":
-                return any(args)
+                return err or any(args)                # Excel: an error in any argument is the result
             if t == "AND":
-                return all(args)
+                return err or all(args)
             if t == "ABS":
-                return abs(self.n(args[0]))
+                # ABS of text (a blank "" from another formula) is #VALUE! in Excel and LibreOffice, not 0
+                return "#VALUE!" if isinstance(args[0], str) else abs(args[0])
             return isinstance(args[0], (int, float)) and not isinstance(args[0], bool)
         if re.match(r"^\$?[A-Z]+\$?\d+$", t):
-            return self.cell(self.sheet, t)
+            return 0 if self.skip else self.cell(self.sheet, t)
         raise AssertionError("unknown token %r" % t)
 
 
@@ -427,6 +463,15 @@ def test_workbook_formulas():
     for i, L in enumerate(pack["lines"]):
         assert (bk.cell("Watch list", "D%d" % (6 + i)) == "WATCH") == (L["key"] in p30["watch"]), L["key"]
     assert nform >= 6 * len(pack["lines"])
+    # no formula anywhere evaluates to an error (#VALUE!, #DIV/0!), with the threshold as made
+    bk.override.clear()
+    bk.memo.clear()
+    for sh in ("Metrics", "Watch list"):
+        for row in bk.wb[sh].iter_rows():
+            for c in row:
+                if isinstance(c.value, str) and c.value.startswith("="):
+                    v = bk.cell(sh, c.coordinate)
+                    assert not (isinstance(v, str) and v.startswith("#")), (sh, c.coordinate, c.value, v)
     N = [r[0].value for r in bk.wb["Notes"].iter_rows()]
     assert "Looked wrong, please check" in N and "Assumptions" in N and "What each line is" in N
     C = bk.wb["Inputs checklist"]

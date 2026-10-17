@@ -120,7 +120,7 @@
       var r = H + i, w = 6 + i, src1 = amount ? 'E' : 'F', src2 = amount ? 'H' : 'I', f = amount ? (l.points ? '+0.0;-0.0;0.0' : '#,##0') : '+0.0%;-0.0%;0.0%';
       var a = amount ? l.mom : l.mom_pct, b = amount ? l['var'] : l.var_pct;
       wrows.push([l.label, { f: NLXref(M, src1 + r), v: isNum(a) ? a : '', fmt: f }, { f: NLXref(M, src2 + r), v: isNum(b) ? b : '', fmt: f },
-        { f: 'IF(OR(AND(ISNUMBER(B' + w + '),ABS(B' + w + ')>$B$2),AND(ISNUMBER(C' + w + '),ABS(C' + w + ')>$B$2)),"WATCH","")', v: l.watch ? 'WATCH' : '' },
+        { f: 'IF(OR(IF(ISNUMBER(B' + w + '),ABS(B' + w + ')>$B$2,FALSE),IF(ISNUMBER(C' + w + '),ABS(C' + w + ')>$B$2,FALSE)),"WATCH","")', v: l.watch ? 'WATCH' : '' },
         l.watch ? P.movedText(pack, l) : '', P.whereText(pack, l), l.watch ? l.cause : '']);
     });
     var N = pack.notes || {}, nrows = [[B('Notes')], [B('Reporting month'), mlabel(pack.month), pack.month_why || ''], [B('For'), pack.readers || '(not given)'],
@@ -139,7 +139,7 @@
       crow.push([i + 1, c.pattern, c.role, c.date, c.scenario ? c.scenario + ' (' + arr(c.scenario_members).join(', ') + ')' : '', c.line_column || '', arr(c.measures).join(', '), arr(c.groups).join(', '), c.next]);
     });
     return { title: 'Monthly reporting pack ' + (pack.month || ''), sheets: [
-      { name: 'Metrics', freeze: H - 1, widths: [26, 16, 16, 16, 13, 11, 16, 13, 11, 15, 15, 14, 12, 44], rows: rows,
+      { name: 'Metrics', freeze: H - 1, widths: [24, 17, 25, 28, 12, 11, 25, 12, 12, 14, 14, 14, 16, 60], rows: rows,
         tables: L.length ? [{ name: 'Metrics', ref: 'A' + (H - 1) + ':N' + (H - 1 + L.length) }] : [] },
       { name: 'Watch list', freeze: 5, widths: [26, 13, 13, 9, 30, 40, 24], rows: wrows },
       { name: 'Notes', widths: [26, 90, 40, 14, 20], rows: nrows },

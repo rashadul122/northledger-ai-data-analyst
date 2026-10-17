@@ -415,16 +415,18 @@ def _read_work(raw: pd.DataFrame, rules: List[Any]) -> pd.DataFrame:
 
 # ------------------------------------------------------------------ the view
 def view(last: Dict[str, Any], edits: Any = None, plan_columns: Any = None,
-         recount: Optional[Callable[[Any, List[Any]], Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """The cleaned copy and the log for the last run's cleaning (`last`: nl_browser._LAST_CLEAN). Never raises."""
+         recount: Optional[Callable[[Any, List[Any]], Dict[str, Any]]] = None, detail: bool = False) -> Dict[str, Any]:
+    """The cleaned copy and the log for the last run's cleaning (`last`: nl_browser._LAST_CLEAN). Never raises.
+    detail=True adds `detail` (_detail): the same rows as structured records with every changed cell and every merged
+    row, for a reader that builds on this view (the tracker, engine/nl_tracker.py); the CSV and the log are unchanged."""
     try:
-        return _view(last, edits, plan_columns, recount)
+        return _view(last, edits, plan_columns, recount, detail)
     except Exception as exc:  # noqa: BLE001 - the page shows the reason; nothing half-made is offered
         return {"ok": False, "error": "The file could not be cleaned (%s)." % (str(exc)[:200] or type(exc).__name__),
                 "csv": "", "log": "", "summary": None, "card": None}
 
 
-def _view(last: Dict[str, Any], edits: Any, plan_columns: Any, recount: Any) -> Dict[str, Any]:
+def _view(last: Dict[str, Any], edits: Any, plan_columns: Any, recount: Any, detail: bool = False) -> Dict[str, Any]:
     raw: pd.DataFrame = last["raw"]
     lines = last.get("lines")
     if lines is None or len(lines) != len(raw):
@@ -575,8 +577,83 @@ def _view(last: Dict[str, Any], edits: Any, plan_columns: Any, recount: Any) -> 
                "engine_rows_clean": int(cr.rows_clean), "engine_rows_set_aside": int(cr.rows_quarantined)}
     cd = card(last, rules, plan_columns, cr)
     log = _log(last, summary, cleaning, cd, notes)
-    return {"ok": True, "error": None, "version": VERSION, "csv": buf.getvalue(), "log": log, "summary": summary,
-            "card": cd, "notes": notes, "edited": bool(edited), "cleaning": cleaning}
+    out = {"ok": True, "error": None, "version": VERSION, "csv": buf.getvalue(), "log": log, "summary": summary,
+           "card": cd, "notes": notes, "edited": bool(edited), "cleaning": cleaning}
+    if detail:
+        out["detail"] = _detail(last, rules, out_cols, rows_out, kept_aside, merged_into, cd)
+    return out
+
+
+# ------------------------------------------------------------------ the structured view (for the tracker)
+def _rule_of(rules: List[Any], col: str, rv: str, v: str) -> str:
+    """The rule that turned the file's text `rv` into the cleaned `v` in column `col`: the cleaner's own rule names,
+    tried in the cleaner's order (placeholders, spaces, letter case, then the column's reader)."""
+    mine = _col_rules(rules, col)
+    general = {r.kind: r.name for r in rules if r.column in (None, "", "*")}
+    kinds = {r.kind: r.name for r in mine}
+    if v == "" and V.is_null_like(rv):
+        return kinds.get("null_like") or general.get("null_like") or "null_like"
+    if " ".join(rv.split()) == v:
+        return kinds.get("trim") or general.get("trim") or "trim"
+    if "case" in kinds and " ".join(rv.split()).lower() == v.lower():
+        return kinds["case"]
+    for k in ("date", "numeric", "boolean", "case"):
+        if k in kinds:
+            return kinds[k]
+    return "cleaner"
+
+
+def _detail(last: Dict[str, Any], rules: List[Any], out_cols: List[str], rows_out: List[Tuple[int, List[str], List[str]]],
+            kept_aside: Dict[int, Tuple[Optional[str], str]], merged_into: Dict[int, int], cd: Dict[str, Any]
+            ) -> Dict[str, Any]:
+    """This view's rows as records: {heads, kinds, rows[{line, values, flags, missing, doubtful, written}], changes[{line,
+    column, before, after, rule}], merged[{line, into, values, rule}], duplicate_rule}. `kinds` per column: date,
+    number, code (a coded column) or text, from the cleaner's reading rule; `line` is the line in the visitor's file. A withheld column is absent; a coded
+    column's text is never a `before` (its codes only)."""
+    raw: pd.DataFrame = last["raw"]
+    header_of, private, lines = last["header_of"], last["private"], last["lines"]
+    heads = [header_of.get(c, c) for c in out_cols]
+    # the visitor's own text (before the reader rewrote a date or number format the engine cannot read) when the run
+    # kept it (nl_browser._written_grid); else the landed text
+    grid = last.get("written")
+    pos = {c: j for j, c in enumerate(str(x) for x in raw.columns)}
+
+    def as_written(i: int, c: str) -> str:
+        if grid is not None and 0 <= i < len(grid) and c in pos:
+            return grid[i][pos[c]]
+        return _raw(raw.at[i, c])
+    kinds: List[str] = []
+    for c in out_cols:
+        ks = [r.kind for r in _col_rules(rules, c)]
+        kinds.append("code" if private.get(c) == "code" else "date" if "date" in ks else
+                     "number" if "numeric" in ks else "text")
+    rows: List[Dict[str, Any]] = []
+    changes: List[Dict[str, Any]] = []
+    for i, vals, flags in rows_out:
+        line = lines[i] if 0 <= i < len(lines) else i + 2
+        aside = kept_aside.get(i)
+        doubtful = []
+        for j, c in enumerate(out_cols):
+            if private.get(c):
+                continue
+            if aside is not None and aside[0] == c:
+                doubtful.append(heads[j])          # kept exactly as written: not a change
+                continue
+            rv, v = as_written(i, c), vals[j]
+            if v != rv and not (v == "" and rv.strip() == ""):
+                changes.append({"line": line, "column": heads[j], "before": rv, "after": v,
+                                "rule": _rule_of(rules, c, rv, v)})
+        rows.append({"line": line, "values": list(vals), "flags": list(flags),
+                     "missing": [h for h, x in zip(heads, vals) if x == ""], "doubtful": doubtful,
+                     "written": ["(coded)" if private.get(c) == "code" else as_written(i, c) for c in out_cols]})
+    merged = []
+    for r, k in sorted(merged_into.items()):
+        merged.append({"line": lines[r] if 0 <= r < len(lines) else r + 2,
+                       "into": lines[k] if 0 <= k < len(lines) else k + 2,
+                       "values": ["(coded)" if private.get(c) == "code" else as_written(r, c) for c in out_cols],
+                       "rule": cd["duplicates"]["words"]})
+    return {"heads": heads, "kinds": kinds, "rows": rows, "changes": changes, "merged": merged,
+            "duplicate_rule": cd["duplicates"]["words"]}
 
 
 # ------------------------------------------------------------------ the log

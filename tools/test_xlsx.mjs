@@ -3,7 +3,7 @@
 // tracker workbook): one workbook with every feature (several sheets with names that need escaping, bold frozen header,
 // widths, number, percent and date formats, formulas with cached values incl. TODAY(), COUNTIFS and SUMIFS and a
 // cross-sheet reference, a dropdown from a Lists range and an inline one, an Excel table with its autofilter, native
-// line, column, bar and area charts), then its zip entries, every XML part well-formed, and the parts that say what
+// line, column, bar and area charts, a table's calculated column), then its zip entries, every XML part well-formed, and the parts that say what
 // Excel needs. With the site's venv (../agent-demo/venv) or PY: openpyxl opens it and reads back the formulas, the
 // validations, the table and the charts.
 //     node tools/test_xlsx.mjs
@@ -40,7 +40,7 @@ const spec = {
         ['Share done', { f: 'IF(SUM(E2:E4)=0,"",SUMIFS(E2:E4,C2:C4,"Done")/SUM(E2:E4))', v: 300.5 / 1950.5, fmt: 'pct' }],
         ['Lists count', { f: NLX.ref('Lists', 'B1'), v: 3 }]],
       validations: [{ range: 'C2:C200', list: { sheet: 'Lists', col: 0, r0: 2, r1: 4 } }, { range: 'B2:B200', values: ['Ana', 'Ben', 'Cy, Jr'] }],
-      tables: [{ name: 'Tracker 1', ref: 'A1:E4' }] },
+      tables: [{ name: 'Tracker 1', ref: 'A1:E4', calc: { Cost: 'Tracker_1[[#This Row],[Cost]]*1', Nope: 'X' } }] },
     { name: 'Lists', rows: [[B('Status'), { f: 'COUNTA(A2:A4)', v: 3 }], ['Open'], ['Doing'], ['Done']] },
     { name: 'Charts/[1]', rows: [[B('Charts')], ['Month', 'A', 'B'], ['Jan', 1, 2], ['Feb', 3, null], ['Mar', 2, 5]],
       charts: ['line', 'column', 'bar', 'area'].map((t, i) => ({ type: t, title: t + ' chart', at: { col: 4, row: i * 18, cols: 8, rows: 16 },
@@ -102,7 +102,10 @@ test('dropdowns and the table', () => {
   ok(s.includes('<dataValidation type="list"') && s.includes("<formula1>'Lists'!$A$2:$A$4</formula1>") && s.includes('<formula1>&quot;Ana,Ben,Cy  Jr&quot;</formula1>'), 'validations');
   ok(s.indexOf('<dataValidations') > s.indexOf('</sheetData>') && s.indexOf('<tableParts') > s.indexOf('<dataValidations'), 'element order');
   const t = Z['xl/tables/table1.xml'];
-  ok(t.includes('name="Tracker_1"') && t.includes('<autoFilter ref="A1:E4"/>') && t.includes('<tableColumn id="5" name="Cost"/>'), t.slice(0, 300));
+  ok(t.includes('name="Tracker_1"') && t.includes('<autoFilter ref="A1:E4"/>') && t.includes('<tableColumn id="4" name="Due"/>'), t.slice(0, 300));
+  // a calculated column (the tracker's formula columns): Excel copies it into every row a visitor adds; a name the
+  // table does not hold is ignored
+  ok(t.includes('<tableColumn id="5" name="Cost"><calculatedColumnFormula>Tracker_1[[#This Row],[Cost]]*1</calculatedColumnFormula></tableColumn>') && !t.includes('>X<'), t);
   ok(Z['[Content_Types].xml'].includes('/xl/tables/table1.xml'), 'the table has no content type');
 });
 test('native charts', () => {

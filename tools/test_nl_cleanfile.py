@@ -285,6 +285,33 @@ def test_stale_run_refused():
     assert not o["ok"] and "run the file again" in o["error"]
 
 
+def test_detail_is_the_same_view_as_records():
+    """detail=True (the tracker's reader, engine/nl_tracker.py): the same rows as the CSV, as records; every changed
+    cell listed with the visitor's own text before; the CSV and the log unchanged."""
+    import nl_cleanfile
+    rep, out = _clean(_sample(), "sample-messy.csv")
+    d = nl_cleanfile.view(NB._CLEANS[rep["input"]["sha256"]], detail=True)
+    assert d["csv"] == out["csv"] and d["log"] == out["log"]
+    D = d["detail"]
+    head, rows = _rows(out["csv"])
+    assert D["heads"] == head[:-2] and len(D["rows"]) == len(rows)
+    for rec, row in zip(D["rows"], rows):
+        assert rec["values"] == row[:-2] and " | ".join(rec["flags"]) == row[-2]
+    df = _raw_frame()
+    ch = {(c["line"], c["column"]): c for c in D["changes"]}
+    n = 0
+    for rec in D["rows"]:
+        src = df.iloc[rec["line"] - 2]
+        assert rec["written"] == [src[h] for h in D["heads"]], rec["line"]
+        for h, v, w in zip(D["heads"], rec["values"], rec["written"]):
+            changed = v != w and not (v == "" and w.strip() == "") and h not in rec["doubtful"]
+            assert ((rec["line"], h) in ch) == changed, (rec["line"], h, v, w)
+            n += changed
+    assert n == len(D["changes"]) > 0
+    assert len(D["merged"]) == out["summary"]["merged"]
+    assert D["kinds"][D["heads"].index("Amount")] == "number" and "date" in D["kinds"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":

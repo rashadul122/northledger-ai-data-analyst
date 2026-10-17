@@ -17,8 +17,10 @@
          { range: 'C2:C200', list: { sheet: 'Lists', col: 0, r0: 2, r1: 6 } },
          { range: 'D2:D200', values: ['Open', 'Done'] }
        ],
-       tables: [{ name: 'Tracker', ref: 'A1:D20' }],  // Excel tables (optional): the first row of ref is the header,
-                                                     // with an autofilter; names are cleaned to letters, digits, _
+       tables: [{ name: 'Tracker', ref: 'A1:D20',      // Excel tables (optional): the first row of ref is the header,
+                  calc: { 'Days open': 'Tracker[[#This Row],[Due]]-TODAY()' } }],   // with an autofilter; names are
+                                                     // cleaned to letters, digits, _. calc: a column's calculated
+                                                     // formula (no "="), which Excel copies into each row a visitor adds
        charts: [{                                    // native Excel charts drawn on this sheet (optional)
          type: 'line' | 'area' | 'column' | 'bar',   // area is stacked, column/bar clustered
          title: 'Rent by month',
@@ -160,7 +162,9 @@
           var name = String(t.name || 'Table' + tn).replace(/[^A-Za-z0-9_]/g, '_').replace(/^[^A-Za-z_]/, '_') + (tableNames[String(t.name || '').toLowerCase()] ? tn : '');
           tableNames[name.toLowerCase()] = 1;
           tables.push({ n: tn, xml: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="' + tn + '" name="' + xe(name) + '" displayName="' + xe(name) + '" ref="' + t.ref +
-            '" totalsRowShown="0"><autoFilter ref="' + t.ref + '"/><tableColumns count="' + cols.length + '">' + cols.map(function (cn, i) { return '<tableColumn id="' + (i + 1) + '" name="' + xe(cn) + '"/>'; }).join('') +
+            '" totalsRowShown="0"><autoFilter ref="' + t.ref + '"/><tableColumns count="' + cols.length + '">' + cols.map(function (cn, i) {
+              var cf = t.calc && OWN.call(t.calc, cn) ? '<calculatedColumnFormula>' + xe(String(t.calc[cn]).replace(/^=/, '')) + '</calculatedColumnFormula>' : '';
+              return '<tableColumn id="' + (i + 1) + '" name="' + xe(cn) + '"' + (cf ? '>' + cf + '</tableColumn>' : '/>'); }).join('') +
             '</tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>' });
           rels.push('<Relationship Id="rId' + (rels.length + 1) + '" Type="' + R3 + '/table" Target="../tables/table' + tn + '.xml"/>');
           return '<tablePart r:id="rId' + rels.length + '"/>';

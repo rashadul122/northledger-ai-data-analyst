@@ -1,0 +1,29 @@
+Task ID,Task,Status,Type,Team,Date logged,Due,Completed,Est hours
+T-101,Replace lobby light fittings,done,Maintenance,Facilities,05/01/2026,12/01/2026,10/01/2026,3
+T-102,Renew fire extinguisher service,Done ,Safety,Facilities,06/01/2026,31/01/2026,28/01/2026,2
+T-103,Update tenant handbook,in progress,Admin,Front desk,08/01/2026,15/02/2026,,6
+T-104,Fix leaking tap unit 4B,complete,Maintenance,Facilities,13/01/2026,16/01/2026,15/01/2026,1.5
+T-105,Order replacement keys,open,Admin,Front desk,14/01/2026,21/01/2026,,0.5
+T-106,Repaint stairwell B,On Hold,Maintenance,Contractors,20/01/2026,28/02/2026,,16
+T-107,Quarterly boiler inspection,DONE,Safety,Contractors,22/01/2026,05/02/2026,04/02/2026,4
+T-108,Clear gutters,open,Maintenance,Facilities,27/01/2026,N/A,,2
+T-109,Reconcile petty cash,In Progress,Finance,Front desk,02/02/2026,10/02/2026,,1
+T-110,Install bike rack,done,Maintenance,Contractors,03/02/2026,20/02/2026,18/02/2026,5
+T-110,Install bike rack,done,Maintenance,Contractors,03/02/2026,20/02/2026,18/02/2026,5
+T-111,Test smoke alarms,Done,Safety,Facilities,09/02/2026,13/02/2026,12/02/2026,3
+T-112,Chase overdue invoices,open,Finance,Front desk,10/02/2026,17/02/2026,,2 hrs
+T-113,Replace broken window unit 2A,in progress,Maintenance,Contractors,16/02/2026,23/02/2026,,4
+T-114,Book elevator service,open,Safety,Contractors,18/02/2026,next tue,,1
+Task ID,Task,Status,Type,Team,Date logged,Due,Completed,Est hours
+T-115,Order cleaning supplies,done,Admin,Front desk,23/02/2026,25/02/2026,24/02/2026,0.5
+T-116,Fix parking gate sensor,open,Maintenance,Contractors,25/02/2026,06/03/2026,,3
+T-117,Annual insurance review,In progress,Finance,Front desk,02/03/2026,31/03/2026,,8
+T-118,Snow clearing contract renewal,done,Admin,Front desk,03/03/2026,10/03/2026,02/03/2026,1
+T-119,Inspect roof membrane,open,Maintenance,Contractors,05/03/2026,20/03/2026,,6
+T-120,Replace hallway carpet,cancelled,Maintenance,Contractors,09/03/2026,30/04/2026,,20
+T-121,Update emergency contact list,,Admin,Front desk,11/03/2026,18/03/2026,,1
+T-122,  Service HVAC filters ,Done,Maintenance,Facilities,12/03/2026,19/03/2026,17/03/2026,2
+T-123,Review cleaning rota,open,Admin,Facilities,16/03/2026,23/03/2026,,1
+T-124,Fix door closer unit 7C,done,Maintenance,Facilities,17/03/2026,20/03/2026,22/03/2026,1
+T-125,Audit fire exits,open,Safety,Facilities,19/03/2026,26/03/2026,,2
+T-126,Order new mailbox locks,done,Admin,Front desk,24/03/2026,31/03/2026,,1

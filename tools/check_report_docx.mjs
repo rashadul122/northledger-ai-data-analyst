@@ -31,6 +31,7 @@ const require = createRequire(import.meta.url);
 const SITE = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const PDF = require(path.join(SITE, 'src/js/45-report-pdf.js'));
 const D = require(path.join(SITE, 'src/js/46-report-docx.js'));
+const SALES = require(path.join(SITE, 'src/js/60-sales.js'));
 D.pdf = PDF;
 const FX = (f) => JSON.parse(readFileSync(path.join(SITE, 'tools/fixtures', f), 'utf8'));
 const keepAt = process.argv.indexOf('--keep') > 0 ? process.argv[process.argv.indexOf('--keep') + 1] : '';
@@ -273,7 +274,62 @@ const cases = [
     expect: [/Not from this file/, /question cannot be answered from this file/, /What data would answer it/, /no column for the vacancy rate/, /Needs at least 24 months/] }
 ];
 cases.forEach(runCase);
+
+/* ------------------------------------------------------------ the quarterly sales report (Track F, src/js/60-sales.js)
+   NLSales.doc(rep.sales) through the same writer in the business style: the parts, the serif, the one-page executive
+   summary first (a page break after it), the sections in order, one picture per chart at its aspect, every number in the
+   text one the engine wrote in its record (or a figure / section number or the date), no rep code, and LibreOffice opens it.
+   Fixture: tools/fixtures/report-docx/sales.json (the SYNTHETIC CRM sample's rep.sales, owner coded; and with a fiscal
+   year from April, a target and '$'). */
+function runSales(name, rec) {
+  console.log('- ' + name);
+  const doc = SALES.doc(rec, { paper: 'letter', created: DAY, source: 'your CRM export' });
+  const imgs = doc.blocks.filter((b) => b.type === 'image');
+  imgs.forEach((b, i) => { b.w = 680; b.h = 260 + i * 20; b.png = png(b.w, b.h, i + 2); });
+  ok(imgs.length === rec.charts.length, name + ': ' + imgs.length + ' figures for ' + rec.charts.length + ' charts');
+  const bytes = D.document(doc);
+  ok(Buffer.compare(Buffer.from(bytes), Buffer.from(D.document(doc))) === 0, name + ': the same input made different bytes');
+  const z = unzip(bytes), dx = z.get('word/document.xml').toString(), sx = z.get('word/styles.xml').toString();
+  for (const [n, d] of z) if (/\.(xml|rels)$/.test(n)) { const bad = wellFormed(d.toString('utf8')); ok(!bad, name + ': ' + n + ' is not well formed: ' + bad); }
+  ok(/w:ascii="Georgia"/.test(sx) && /<w:sz w:val="20"\/>/.test(sx), name + ': not the business style (Georgia, 10 pt)');
+  ok([...z.keys()].filter((n) => /^word\/media\/image\d+\.png$/.test(n)).length === imgs.length, name + ': not one PNG per chart');
+  const ext = [...dx.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"/g)].map((m) => Number(m[1]) / Number(m[2]));
+  ext.forEach((r, i) => ok(Math.abs(r - imgs[i].w / imgs[i].h) < 0.01, name + ': figure ' + (i + 1) + ' is drawn at the wrong aspect'));
+  const T = paraTexts(dx), all = T.join('\n');
+  const heads = ['Executive summary', '1. Won revenue: more deals or bigger deals?', '2. By segment', '3. Sales cycle', '4. Pipeline on ' + rec.pipeline.as_of,
+    '5. Top reps in ' + rec.quarter.label, '6. What is working and what needs to change', 'How this report was made'];
+  let last = -1;
+  heads.forEach((h) => { const at = T.indexOf(h); ok(at > last, name + ': section "' + h + '" missing or out of order'); last = at; });
+  const brk = dx.indexOf('w:type="page"');
+  ok(brk > dx.indexOf('Executive summary') && brk < dx.indexOf('1. Won revenue'), name + ': the executive summary is not a page of its own');
+  ok(all.indexOf(rec.summary.headline) >= 0 && all.indexOf(rec.growth.text) >= 0, name + ': the engine\'s headline or growth sentence is missing');
+  // every number in the text is one the engine wrote (its record's strings and values), a figure or section number, or the date
+  const src = new Set();
+  const walk = (v) => { if (v === null || v === undefined) return; if (typeof v === 'number') src.add(String(v)); else if (typeof v === 'string') (v.match(/\d[\d,]*(?:\.\d+)?/g) || []).forEach((x) => src.add(x.replace(/,/g, ''))); else if (typeof v === 'object') Object.values(v).forEach(walk); };
+  walk(rec);
+  const extra = new Set(['1', '2', '3', '4', '5', '6', String(DAY.getFullYear())]);
+  const loose = [];
+  T.forEach((t) => (t.match(/\d[\d,]*(?:\.\d+)?/g) || []).forEach((x) => { const k = x.replace(/,/g, '').replace(/\.$/, ''); if (!src.has(k) && !extra.has(k)) loose.push(x + ' in "' + t.slice(0, 60) + '"'); }));
+  ok(!loose.length, name + ': ' + loose.length + ' number(s) not from the engine: ' + loose.slice(0, 5).join(' | '));
+  ok(!/rdc_/.test(all) && /Rep A/.test(all), name + ': a coded rep is shown by its code, or not as Rep A');
+  ok(/driver to be confirmed/.test(all), name + ': no "driver to be confirmed"');
+  if (soffice) {
+    const file = path.join(TMP, name + '.docx'); writeFileSync(file, bytes);
+    const r = spawnSync(soffice, ['--headless', '--convert-to', 'pdf', '--outdir', TMP, file], { timeout: 180000, encoding: 'utf8' });
+    const pdf = file.replace(/\.docx$/, '.pdf');
+    ok(r.status === 0 && existsSync(pdf), name + ': LibreOffice could not convert it');
+    if (existsSync(pdf)) {
+      const pages = Number((execFileSync('pdfinfo', [pdf]).toString().match(/Pages:\s+(\d+)/) || [])[1] || 0);
+      const txt = execFileSync('pdftotext', ['-layout', pdf, '-']).toString(), p1 = txt.split('\f')[0];
+      ok(pages >= 3 && /Executive summary/.test(p1) && !/1\. Won revenue: more deals/.test(p1) && /Page 1 of \d+/.test(txt), name + ': LibreOffice\'s layout: ' + pages + ' pages, or the summary is not page 1 alone');
+      console.log('  ' + pages + ' pages in LibreOffice');
+    }
+  }
+}
+const salesFx = FX('report-docx/sales.json');
+runSales('sales-report-coded', salesFx.coded);
+runSales('sales-report-fiscal-target', salesFx.fiscal);
 if (!soffice) console.log('  (LibreOffice is not installed: the conversion checks did not run)');
 if (!keepAt) rmSync(TMP, { recursive: true, force: true });
-console.log((fails ? 'FAIL' : 'OK') + ': ' + passes + ' checks passed, ' + fails + ' failed (' + cases.length + ' write-ups' + (soffice ? ', each opened in LibreOffice' : '') + ')');
+console.log((fails ? 'FAIL' : 'OK') + ': ' + passes + ' checks passed, ' + fails + ' failed (' + cases.length + ' write-ups and 2 sales reports' + (soffice ? ', each opened in LibreOffice' : '') + ')');
 process.exit(fails ? 1 : 0);

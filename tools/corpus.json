@@ -308,9 +308,10 @@
           "why": "the latest year"
         },
         {
-          "ledger_value": 0.0132,
-          "tol": 0.004,
-          "why": "world CO2 2023 to 2024 +1.3% (World row 38,094 to 38,599 Mt)"
+          "ledger_value": 0.01324,
+          "key": "world_change",
+          "tol": 0.0005,
+          "why": "world CO2 2023 to 2024 +1.3% from the World row (pandas: 38,094.039 to 38,598.578 Mt, +1.324%); the countries' own +1.07% (37,003 to 37,398) no longer passes"
         }
       ]
     },
@@ -632,10 +633,11 @@
           "why": "it is the sum of the other types"
         },
         {
-          "insight_mentions_any": [
-            "Drought"
+          "insight_kind": "drill",
+          "contains": [
+            "Over the whole record (1900 to 2017), Drought accounts for the most Deaths (11.7 million, 36.0% of the total)"
           ],
-          "why": "the deadliest type over 1900-2017 (11.7 million deaths)"
+          "why": "the deadliest type over the whole record, stated as such (pandas: Drought 11,731,294 of 32,607,144 deaths 1900-2017, 36.0%); an outlier line naming Drought no longer passes"
         },
         {
           "insight_mentions_any": [

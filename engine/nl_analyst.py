@@ -45,6 +45,8 @@ MAX_DIMS = 6  # dimensions a driver round compares
 MAX_MEASURES = 8  # measures a relationship round compares
 DIM_MIN_LEVELS, DIM_MAX_LEVELS = 2, 60
 MIN_GROUP_ROWS = 5  # a group smaller than this is not ranked on its own
+WHOLE_TYPES_MAX = 25  # a panel of at most this many entries is a breakdown by type: its whole-record totals are said
+WHOLE_MIN_PERIODS = 10  # ... over a record of at least this many years
 OUTLIER_Z = 3.5  # robust z (median and MAD) beyond which a row is far from the rest
 # OPS (every op a step may name) is defined with the executor's table, _OP_FN, below.
 
@@ -1425,6 +1427,7 @@ def op_change(
                     st.num("world_prev", wa_)
                     st.num("world_cur", wb_)
                     st.num("world_change", (wb_ - wa_) / abs(wa_), "pct", signed=True)
+                    st.word("world_direction", "rose" if wb_ > wa_ else "fell" if wb_ < wa_ else "held level")
     st.numbers["direction"] = {
         "value": None,
         "text": "rose" if b > a else "fell" if b < a else "held level",
@@ -2554,6 +2557,18 @@ def op_rank_entities(ctx: Ctx, st: Step, measure: str, years: int = 10) -> Step:
     if additive and now.sum() > 0:
         st.num("top1_share", now.iloc[0] / now.sum(), "share")
         st.num("top5_share", now.head(5).sum() / now.sum(), "share")
+    # totals by type over the whole record (disasters_panel, 16 Oct 2026: the deadliest type over 1900-2017, Drought with 11.7
+    # million deaths, was said only by an outlier line about one year): a flow that adds up across time, broken down into a few
+    # types (WHOLE_TYPES_MAX entries at most: a panel of 200 countries is not a breakdown by type, and its cumulative sum is not the
+    # question), over WHOLE_MIN_PERIODS periods or more, says which type holds the most of the whole record and its share
+    if sh.mkind.get(measure, "flow") == "flow":
+        tot = f.groupby("e")["v"].sum().sort_values(ascending=False)
+        if 3 <= len(tot) <= WHOLE_TYPES_MAX and f["y"].nunique() >= WHOLE_MIN_PERIODS and tot.sum() > 0 and tot.iloc[0] > 0:
+            st.word("whole_first", str(int(f["y"].min())))
+            st.word("whole_last", str(int(f["y"].max())))
+            st.word("whole_top1", tot.index[0])
+            st.num("whole_top1_value", tot.iloc[0])
+            st.num("whole_top1_share", tot.iloc[0] / tot.sum(), "share")
     then_y = last_y - years
     then = f[f["y"] == then_y].groupby("e")["v"].agg(agg)
     both = pd.concat([then.rename("then"), now.rename("now")], axis=1).dropna()
@@ -4696,8 +4711,9 @@ def explore(
                     H=head,
                 )
                 + agg_note(head)
-                + (_ids("; the file's own grand-total row, which also counts what no entry holds, went from {H.world_prev} to {H.world_cur} "
-                          "({H.world_change})", H=head)
+                # the total row named as what it is (16 Oct 2026: "the file's own grand-total row" left the reader to guess which row)
+                + (_ids("; {H.world_name} (the file's own total row, which also counts what no entry holds) {H.world_direction} "
+                        "{H.world_change} ({H.world_prev} to {H.world_cur})", H=head)
                    if "world_cur" in head.numbers else "")
                 + ".",
                 [head.id],
@@ -5036,6 +5052,11 @@ def explore(
                 if "top5_share" in rk.numbers:
                     tm += "; the top five hold {R.top5_share} of the total across {R.entries} entries"
                 parts.append(tm)
+            if "whole_top1" in rk.numbers:
+                parts.append(
+                    "Over the whole record ({R.whole_first} to {R.whole_last}), {R.whole_top1} accounts for the most "
+                    "{R.measure} ({R.whole_top1_value}, {R.whole_top1_share} of the total)"
+                )
             if "riser" in rk.numbers:
                 parts.append(
                     "Since {R.then_year}, {R.riser} grew most ({R.riser_growth}) and {R.faller} least "

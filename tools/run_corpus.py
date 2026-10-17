@@ -33,7 +33,9 @@ Assertion keys (one main key per assertion, plus "why" for the scorecard):
                                               ("case": true makes _any case-sensitive)
   insight_mentions_none                       words no insight may say
   insight_order: [a, b, c] (+ contains_any)   one insight (that says one of contains_any) names these in order
-  aggregates_excluded: [names]                never in an insight, nor a row of a ranking step's table
+  aggregates_excluded: [names]                never in an insight as an entry, nor a row of a ranking step's table;
+                                              named as the total ("World (the file's own total row)") outside a
+                                              ranking of the members, it is allowed
   no_text_matches: regex                      no insight or headline matches (case-insensitive)
   max_seconds: n                              the scored run took at most n seconds
   no_percent_change_for_zero_crossing: [cols] no %-change of these measures reaches an insight
@@ -86,6 +88,10 @@ _AGG_NOTE = re.compile(
     r"\((?:[^()]|\([^()]*\))*aggregate(?:[^()]|\([^()]*\))*\)", re.I
 )  # "(95 aggregate entries such as ASEAN (Ember) are left out ...)", one level of nesting
 _RANK_OPS = {"rank_entities", "panel_change", "change", "breakdown", "rank_labels"}
+_RANK_KINDS = {"drill", "concentration", "driver"}  # insights that rank the members: a total named there is counted as an entry
+_TOTAL_LABEL = re.compile(
+    r"\((?:[^()]|\([^()]*\))*\b(?:total row|grand total|aggregate)\b(?:[^()]|\([^()]*\))*\)", re.I
+)  # "World (the file's own total row, which also counts what no entry holds)": the name labelled as the total
 
 
 def fetch(ds: dict) -> bytes:
@@ -291,9 +297,15 @@ def check_one(a: dict, res: dict) -> tuple:
         found = set()
         for nm in a["aggregates_excluded"]:
             pat = re.compile(r"(?<![\w&])" + re.escape(nm) + r"(?![\w&(])")
-            # the parenthesis saying the aggregates are left out names them on purpose
-            if any(pat.search(_AGG_NOTE.sub("", t)) for t in texts):
-                found.add(nm)
+            # an aggregate the sentence labels as the total ("World (the file's own total row) rose +1.3%") is named correctly,
+            # except inside a ranking of the members (a drill or a concentration line), where a total is never an entry
+            labelled = re.compile(r"(?<![\w&])" + re.escape(nm) + r"\s*" + _TOTAL_LABEL.pattern, re.I)
+            for i in ins:
+                t = _AGG_NOTE.sub("", i.get("text") or "")  # the parenthesis saying the aggregates are left out names them on purpose
+                if i.get("kind") not in _RANK_KINDS:
+                    t = labelled.sub("", t)
+                if pat.search(t):
+                    found.add(nm)
             for st in _steps(rep).values():
                 if st.get("op") not in _RANK_OPS:
                     continue

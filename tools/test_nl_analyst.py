@@ -311,7 +311,10 @@ def test_a_panels_world_row_change_is_stated_and_zeros_do_not_turn_a_percent_int
     w = df[df["Country"] == "World"].set_index("Year")["co2"]
     assert abs(n["world_change"]["value"] - (w[2020] / w[2019] - 1)) < 1e-12, n.get("world_change")
     text = blk["insights"][0]["text"]
-    assert "grand-total row" in text and "World" not in text.split("grand-total row")[1], text
+    # the total row is named as what it is: "World (the file's own total row, ...) rose +x% (a to b)" (16 Oct 2026)
+    said = "World (the file's own total row, which also counts what no entry holds) rose %s (%s to %s)" % (
+        n["world_change"]["text"], n["world_prev"]["text"], n["world_cur"]["text"])
+    assert said in text and n["world_change"]["text"].startswith("+"), text
 
 
 def test_a_rate_changes_in_points_and_a_level_is_never_summed():
@@ -1064,6 +1067,69 @@ def test_the_story_leads_with_key_numbers_each_a_printed_ledger_value_of_its_own
     assert len({k["step"] for k in tiles}) == len(tiles), tiles
     # one "of the change came from" tile, however deep the drill goes
     assert sum("of the change came from" in k["label"] for k in tiles) <= 1, tiles
+
+
+def test_a_breakdown_by_type_says_which_type_holds_the_most_of_the_whole_record():
+    """disasters_panel (16 Oct 2026): the deadliest type over 1900-2017 (Drought, 11.7 million deaths) was named only by an outlier
+    line about 1965; the corpus check passed by accident. A flow broken down into a few types, over 10 or more years, now says which
+    type holds the most of the whole record, its total and share, recomputed here; the latest year's leader is still said, and a
+    panel of many entries (countries) gets no whole-record line."""
+    rows = []
+    for y in range(1990, 2021):
+        for t, v in (("Drought", 900 if y < 1995 else 5), ("Flood", 60), ("Storm", 40 + y - 1990), ("Quake", 20), ("Fire", 3)):
+            rows.append({"Entity": t, "Year": y, "Deaths": float(v)})
+    df = pd.DataFrame(rows)
+    blk = na.explore(df, {"Entity": "text", "Year": "number", "Deaths": "number"})
+    rk = next(s_ for s_ in blk["steps"] if s_["op"] == "rank_entities")
+    n = rk["numbers"]
+    tot = df.groupby("Entity")["Deaths"].sum()
+    assert n["whole_top1"]["text"] == tot.idxmax() == "Drought", n.get("whole_top1")
+    assert abs(n["whole_top1_value"]["value"] - tot.max()) < 1e-9 and abs(n["whole_top1_share"]["value"] - tot.max() / tot.sum()) < 1e-12
+    assert n["top1"]["text"] == "Storm", n["top1"]           # 2020's leader is another type
+    drill = [i["text"] for i in blk["insights"] if i["kind"] == "drill"]
+    assert drill and "Over the whole record (1990 to 2020), Drought accounts for the most Deaths (%s, %s of the total)" % (
+        n["whole_top1_value"]["text"], n["whole_top1_share"]["text"]) in drill[0], drill
+    # forty countries are no breakdown by type: no whole-record line
+    rows = [{"Country": "C%02d" % c, "Year": y, "co2": float(c + 1)} for c in range(40) for y in range(1990, 2021)]
+    blk = na.explore(pd.DataFrame(rows), {"Country": "text", "Year": "number", "co2": "number"})
+    rk = next(s_ for s_ in blk["steps"] if s_["op"] == "rank_entities")
+    assert "whole_top1" not in rk["numbers"], rk["numbers"].keys()
+
+
+def test_the_corpus_checks_on_drought_and_world_co2_pass_only_on_the_fact_itself():
+    """tools/corpus.json (16 Oct 2026): disasters_panel's "Drought" passed because an outlier line named it, and co2_panel's world
+    +1.3% passed on the countries' +1.1% within its tolerance, while the scorer forbade the sentence to call World by its name. The
+    tightened checks, run through run_corpus.check_one on made-up reports: each passes only on the fact, a total row named as the
+    total passes the aggregates rule, and an aggregate inside a ranking of the members still fails it."""
+    import run_corpus as RC
+
+    with open(os.path.join(SITE, "tools", "corpus.json")) as fh:
+        man = {d["id"]: d for d in json.load(fh)["datasets"]}
+    drought = next(a for a in man["disasters_panel"]["expect"] if "Drought" in json.dumps(a))
+    world = next(a for a in man["co2_panel"]["expect"] if "ledger_value" in a)
+    aggs = next(a for a in man["co2_panel"]["expect"] if "aggregates_excluded" in a)
+
+    def res(insights, steps=()):
+        return {"rep": {"ok": True, "analyst": {"insights": insights, "steps": list(steps)}}, "secs": 1.0}
+    outlier = {"kind": "robustness", "text": "117 of 666 relative changes ... (Drought 1965-12-31) against a median of -0.7%.", "steps": []}
+    assert not RC.check_one(drought, res([outlier]))[0]
+    said = {"kind": "drill", "steps": [], "text": "In 2017, Flood leads on Deaths (648.0). Over the whole record (1900 to 2017), Drought "
+            "accounts for the most Deaths (11.7 million, 36.0% of the total)."}
+    assert RC.check_one(drought, res([outlier, said]))[0]
+    num = lambda v, t: {"value": v, "text": t, "kind": "pct"}  # noqa: E731
+    countries = {"id": "A1", "op": "change", "numbers": {"change": num(0.010675, "+1.1%")}}
+    both = {"id": "A1", "op": "change", "numbers": {"change": num(0.010675, "+1.1%"), "world_change": num(0.013245, "+1.3%")}}
+    head1 = {"kind": "headline", "steps": ["A1"], "text": "The total of co2 rose from 37,003 in 2023 to 37,398 in 2024 (+1.1%)."}
+    assert not RC.check_one(world, res([head1], [countries]))[0]
+    head2 = {"kind": "headline", "steps": ["A1"], "text": "The total of co2 rose from 37,003 to 37,398 (+1.1%) (37 aggregate entries such "
+             "as Africa are left out of every total); World (the file's own total row, which also counts what no entry holds) rose "
+             "+1.3% (38,094 to 38,599)."}
+    assert RC.check_one(world, res([head2], [both]))[0]
+    assert RC.check_one(aggs, res([head2], [both]))[0], RC.check_one(aggs, res([head2], [both]))
+    bare = {"kind": "headline", "steps": [], "text": "World rose +1.3%."}
+    assert not RC.check_one(aggs, res([bare]))[0]
+    ranked = {"kind": "drill", "steps": [], "text": "In 2024, World (the file's own total row) leads on co2, then China and India."}
+    assert not RC.check_one(aggs, res([ranked]))[0]
 
 
 def main() -> int:

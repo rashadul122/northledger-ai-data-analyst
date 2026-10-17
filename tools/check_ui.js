@@ -4626,6 +4626,40 @@ check('ask-sql-answer-desktop', DESK, async (ctx) => { await askSqlChecks(ctx, '
 check('ask-sql-answer-phone', PHONE, async (ctx) => { await askSqlChecks(ctx, 'phone-light'); }, { mobile: true });
 check('ask-sql-answer-dark', DESK, async (ctx) => { await askSqlChecks(ctx, 'desktop-dark'); }, { colorScheme: 'dark' });
 
+// The same question through the REAL engine (the packed zip in the page's own Pyodide, engine/worker.js), the AI off: the sales
+// sample's report, then the example question planned by the engine (the worker's 'plan' message) and run by the analyst loop
+// ('more'). The answers must be the native engine's own sentences (made here with python), word for word; the SQL panel shows
+// the engine's query and its 12 quarters. Prints the measured browser time of the question.
+check('ask-sql-through-the-real-engine', DESK, async (ctx) => {
+  const why = await cdnReachable();
+  if (why) throw new Skip(why + ', so the real engine cannot load');
+  const native = salesReport().__more.insights.map((i) => i.text);
+  const p = await openTry(ctx, { proxy: 'unset' });
+  await p.click('#try-sample-sales');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
+  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
+  ok(await p.isVisible('#try-report'), 'no report from the real engine: ' + (await p.textContent('#try-msg')));
+  const ex = '#try-report form.nla-ask [data-ask-example]';
+  ok(await p.isVisible(ex), 'no example question for the sales sample');
+  await p.evaluate(() => { window.__t0 = performance.now(); });
+  await p.click(ex);
+  try {
+    await p.waitForFunction(() => /Answered with|none gave|could not|found no/.test((document.querySelector('#try-report .nla-ask-status') || {}).textContent || ''), null, { timeout: 120000 });
+  } catch (e) { throw new Error('no answer: status "' + (await p.evaluate(() => (document.querySelector('#try-report .nla-ask-status') || {}).textContent)) + '"'); }
+  const r = await p.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), status: document.querySelector('#try-report .nla-ask-status').textContent,
+    texts: Array.from(document.querySelectorAll('#try-report .nla-ins .nla-text')).map((x) => x.textContent),
+    sql: (document.querySelector('#try-report .nla-ins .nla-sql-q') || {}).textContent || '',
+    rows: Array.from(document.querySelectorAll('#try-report .nla-ins > .nla-tbl tbody tr')).map((tr) => tr.firstChild.textContent),
+    pins: document.querySelectorAll('#try-report .nla-pin').length }));
+  console.log('UI INFO ask-sql-through-the-real-engine: the question took ' + r.ms + ' ms in the browser (plan + 4 steps in Pyodide + redraw)');
+  ok(/Answered with 4 new findings/.test(r.status), 'status: ' + r.status);
+  ok(native.every((t) => r.texts.indexOf(t) >= 0), 'an answer differs from the native engine\'s: ' + native.filter((t) => r.texts.indexOf(t) < 0)[0]);
+  ok(/^SELECT /.test(r.sql) && /FROM kept_rows/.test(r.sql) && /"region" = 'EMEA'/.test(r.sql), 'the SQL panel: ' + r.sql.slice(0, 80));
+  ok(r.rows.length === 12 && r.rows[11] === '2026-Q3', 'the result table: ' + r.rows.join(' '));
+  ok(r.pins === 3, r.pins + ' pin buttons');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
 (async () => {
   const browser = await playwright.chromium.launch({ executablePath: CHROME, headless: true });
   let failed = 0, ran = 0, skipped = 0;

@@ -6831,6 +6831,8 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
         # report holds them (every figure in one is a figure a step recorded), in the loop's order, at most
         # ANALYST_INSIGHTS_MAX; descriptive, never graded. One that names a withheld column is never sent.
         "analyst_insights": _analyst_insights_for_ai(rep.get("analyst"), safe, scrub),
+        "latest_reading": next((safe(x.get("text"), 300) for x in (rep.get("summary") or {}).get("lines") or []
+                                if isinstance(x, dict) and x.get("kind") == "latest" and x.get("text")), ""),
     }
     # what answers the visitor's question, as the engine decided it (rep.answer, _answer): the report's title, first bullet and headline
     # state it; and each rate whose change the report states in percentage points (rep.rates, _rate_points)

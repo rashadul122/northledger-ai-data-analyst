@@ -2672,7 +2672,7 @@
     // engine for the figures the story needs (where the measure stands now and a year earlier, its turning points, how recent years compare,
     // who leads); the engine runs those checks on the rows and their figures join the analyst block, which results_for_ai hands the writer.
     // Every figure is still the engine's. It uses one of the file's AI rounds; on any failure or after INVESTIGATE_MS the writer goes ahead.
-    var INVESTIGATE_MS = 60000;
+    var INVESTIGATE_MS = 75000;
     var INVESTIGATE_BRIEF = 'Investigate this file for the written report on that question. Compute the figures its story needs: where the main measure stands ' +
       'in the latest period and the same period a year earlier; its highest and lowest points and when; its sharpest rise or fall; how recent ' +
       'years compare with earlier ones; and, if the file has groups, which lead and which lag. Prefer exact read-only SQL.';
@@ -2800,7 +2800,7 @@
     // tells what the planner may see (ledger_for_ai: the steps so far with their printed figures, never a row); the
     // worker's /analyst picks up to four typed steps; the engine runs them on the file's rows, checking each again;
     // their insights join the analyst's card. On any failure the card stays as it was and the box says why.
-    var ASK_ROUNDS = 3, ASK_MAX = 20, ASK_ABORT_MS = 35000;   // the Worker waits 25 s for the model (PROTOCOL.md "Timeouts")
+    var ASK_ROUNDS = 3, ASK_MAX = 20, ASK_ABORT_MS = 65000;   // the Worker waits 55 s for the model (PROTOCOL.md "Timeouts")
     function askData(question, say) {
       var rep = S.report, b = rep && rep.analyst;
       if (!b) { say('This file has no analysis to ask about.', false); return; }

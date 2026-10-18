@@ -1702,7 +1702,17 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
         if f is None:
             return str(v)
         return _fmt_num(f, kind) if kind in ("pct", "money") else _nfmt(f)
-    per_c = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|year|quarter|month|date|time_period)", c.strip().lower())}
+    # a column of dates is a period: shown at its own grain (2010-01-01 ... every 1 January is 2010; every 1st of a month is 2010-03)
+    date_c = set()
+    for i in range(len(cols)):
+        vals = [str(r[i]) for r in rows if i < len(r) and r[i] is not None]
+        if vals and all(re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:[ T]00:00:00)?", v) for v in vals):
+            date_c.add(i)
+            cut = 4 if all(v[5:10] == "01-01" for v in vals) else 7 if all(v[8:10] == "01" for v in vals) else 10
+            for r in rows:
+                if i < len(r) and r[i] is not None:
+                    r[i] = str(r[i])[:cut]
+    per_c = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|year|quarter|month|date|time_period)", c.strip().lower())} | date_c
     shown = [[fmt(c) if _num_or_none(c) is not None and i not in per_c else str(c) for i, c in enumerate(r)] for r in rows[:20]]
     # the column headers in words: the measure's name for "value", the table's word for "place"
     if last.get("label"):
@@ -1717,7 +1727,7 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
         text = "No rows match this question in the file."
     else:
         # a period column (1960, 2025-Q3) is a label, never a figure: never "1,960"
-        per_i = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|year|quarter|month|date|time_period)", c.strip().lower())}
+        per_i = set(per_c)
         num_i = [i for i in range(len(cols)) if i not in per_i and
                  all(_num_or_none(r[i]) is not None for r in rows if i < len(r) and r[i] is not None)]
         lab_i = [i for i in range(len(cols)) if i not in num_i]
@@ -1725,8 +1735,17 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
         pinned = re.findall(r"\"[^\"]+\"\s*=\s*'((?:[^']|'')+)'", str((st.get("args") or {}).get("sql") or ""))
         if pinned and subject:
             subject = "%s (%s)" % (subject, ", ".join(x.replace("''", "'") for x in pinned[:2]))      # Population (China)
-        ranked = bool(re.search(r"\bLIMIT\s+\d+\s*$", str((st.get("args") or {}).get("sql") or ""), re.I)) and lab_i and num_i and \
-            not (set(lab_i) & per_i)
+        sql_t = str((st.get("args") or {}).get("sql") or "")
+        # the outer query's ORDER BY (quoted or bare): the column the visitor's answer is ordered by, and which way
+        obs = re.findall(r'ORDER\s+BY\s+(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_]*))\s*(ASC|DESC)?', sql_t, re.I)
+        o_col, o_dir = None, ""
+        if obs:
+            q_, b_, d_ = obs[-1]
+            o_name = (q_ or b_).replace('""', '"')
+            o_col = next((i for i, c in enumerate(cols) if c.lower() == o_name.lower()), None)
+            o_dir = (d_ or "ASC").upper()
+        ranked = lab_i and num_i and not (set(lab_i) & per_i) and (
+            bool(re.search(r"\bLIMIT\s+\d+\s*$", sql_t, re.I)) or (o_col is not None and o_col in num_i))
         figs = [i for i in num_i if cols[i] != "row_count" and not cols[i].lower().startswith("average_")] or num_i
         n_i = cols.index("row_count") if "row_count" in cols else None
         if len(rows) == 1 and per_i and figs:
@@ -1757,6 +1776,11 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
                 (p0, v0), (p1, v1) = pts[0], pts[-1]
                 hi = max(pts, key=lambda x: x[1])
                 base_c = re.sub(r"^(?:average|total)_", "", cols[vi].lower())
+                # a rate selected under another name ("Unemployment (%...)" AS spain_unemployment) is still a rate
+                for src_q, src_b, al_q, al_b in re.findall(r'(?:"((?:[^"]|"")+)"|\b([A-Za-z_][A-Za-z0-9_]*))\s+AS\s+(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_]*))',
+                                                           sql_t, re.I):
+                    if (al_q or al_b).lower() == cols[vi].lower():
+                        base_c = (src_q or src_b).lower()
                 if any(re.sub(r"[^a-z0-9]", "", base_c) == re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in (rate_cols or set())):
                     ch = " (%+.1f percentage points)" % (v1 - v0)          # a rate's change, never a percent of a percent
                 else:
@@ -1769,13 +1793,14 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
         elif ranked:
             # a ranking query (ORDER BY ... LIMIT): the members in its order, first three named
             li, vi = lab_i[0], num_i[0]
-            om = re.search(r'ORDER BY\s+"((?:[^"]|"")+)"', str((st.get("args") or {}).get("sql") or ""), re.I)
-            if om and om.group(1).replace('""', '"') in cols and cols.index(om.group(1).replace('""', '"')) in num_i:
-                vi = cols.index(om.group(1).replace('""', '"'))          # the column the ranking is ordered by (gross margin, not revenue)
+            if o_col is not None and o_col in num_i:
+                vi = o_col                                    # the column the ranking is ordered by (net score, gross margin; not a count)
                 if not last.get("label"):
                     subject = cols[vi].replace("_", " ")
             top = ["%s (%s)" % (r[li], fmt(r[vi])) for r in rows[:3] if _num_or_none(r[vi]) is not None]
-            text = "%s: %s%s." % (_short(str(subject), 120), top[0], (", then " + " and ".join(top[1:])) if len(top) > 1 else "") \
+            low = o_col == vi and o_dir == "ASC"
+            text = "%s%s: %s%s." % (_short(str(subject), 120), ", lowest first" if low else "", top[0],
+                                    (", then " + " and ".join(top[1:])) if len(top) > 1 else "") \
                 if top else "%s rows; see the table." % format(len(rows), ",")
         elif lab_i and num_i:
             li, vi = lab_i[0], num_i[0]

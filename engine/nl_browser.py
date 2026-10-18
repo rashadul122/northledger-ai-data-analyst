@@ -7240,6 +7240,10 @@ def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> s
                             rate_cols={str(c) for c, k in mk.items() if k == "rate"})
         if ans is not None:
             if _LAST_NAMES:
+                for ins in out.get("insights") or []:     # the findings under the answer name it the same way
+                    if isinstance(ins, dict) and isinstance(ins.get("text"), str):
+                        ins["text"] = _rename_text(re.sub(r"\bThe (average|total) of ", r"The \1 of ", ins["text"]), _LAST_NAMES)
+            if _LAST_NAMES:
                 # a series named by a code is named in the answer as in the report ("average_corestickm159sfrbatl" reads "average US core
                 # sticky-price inflation (12-month %)"); the query keeps the columns' real names
                 ans["text"] = _rename_text(re.sub(r"\b(average|total)_", r"\1 ", str(ans.get("text") or "")), _LAST_NAMES)

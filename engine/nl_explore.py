@@ -1773,8 +1773,8 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             r0 = rows[0]
             pi = sorted(per_i)[0]
             n0 = _num_or_none(r0[n_i]) if n_i is not None else None
-            text = "%s in %s: %s%s." % (_short(str(subject), 120), r0[pi], "; ".join(
-                ("%s %s" % (cols[i], fmt(r0[i])) if len(figs) > 1 else fmt(r0[i])) for i in figs if r0[i] is not None),
+            text = "%s %s: %s%s." % (("In" if str(subject) in cols and len(figs) > 1 else _short(str(subject), 120) + " in"), r0[pi], "; ".join(
+                ("%s %s" % (cols[i].replace("_", " "), fmt(r0[i])) if len(figs) > 1 else fmt(r0[i])) for i in figs if r0[i] is not None),
                 (" (the total of its %s rows)" % format(int(n0), ",")) if n0 and n0 > 1 else "")
         elif len(rows) == 1 and str(subject) in cols:
             # one row of named figures: each in words ("latest reading 2.78; avg last 12m 2.92"), never "latest_reading: latest_reading"

@@ -1712,7 +1712,11 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             for r in rows:
                 if i < len(r) and r[i] is not None:
                     r[i] = str(r[i])[:cut]
-    per_c = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|year|quarter|month|date|time_period)", c.strip().lower())} | date_c
+    # a period by its name (period, yr, year, month_label ...), or a column of dates that comes first (the row's own date); a date
+    # column further right is one more fact about the row (last_month_below_now), shown at its grain but never the row's period
+    name_per = {i for i, c in enumerate(cols) if re.fullmatch(r"(period|yr|year|years|quarter|month|date|time_period|obs_date|observation_date|"
+                                                            r"year_month|month_label|year_label|fiscal_year|d|dt)", c.strip().lower())}
+    per_c = name_per | ({0} & date_c)
     shown = [[fmt(c) if _num_or_none(c) is not None and i not in per_c else str(c) for i, c in enumerate(r)] for r in rows[:20]]
     # the column headers in words: the measure's name for "value", the table's word for "place"
     if last.get("label"):
@@ -1743,12 +1747,28 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             q_, b_, d_ = obs[-1]
             o_name = (q_ or b_).replace('""', '"')
             o_col = next((i for i, c in enumerate(cols) if c.lower() == o_name.lower()), None)
+            if o_col is None:
+                # ordered by the source column the query shows under another name ("X" AS inflation)
+                for src_q, src_b, al_q, al_b in re.findall(
+                        r'(?:"((?:[^"]|"")+)"|\b([A-Za-z_][A-Za-z0-9_]*))\s+AS\s+(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_]*))', sql_t, re.I):
+                    if (src_q or src_b).replace('""', '"').lower() == o_name.lower():
+                        o_col = next((i for i, c in enumerate(cols) if c.lower() == (al_q or al_b).replace('""', '"').lower()), None)
+                        if o_col is not None:
+                            break
             o_dir = (d_ or "ASC").upper()
         ranked = lab_i and num_i and not (set(lab_i) & per_i) and (
             bool(re.search(r"\bLIMIT\s+\d+\s*$", sql_t, re.I)) or (o_col is not None and o_col in num_i))
         figs = [i for i in num_i if cols[i] != "row_count" and not cols[i].lower().startswith("average_")] or num_i
         n_i = cols.index("row_count") if "row_count" in cols else None
-        if len(rows) == 1 and per_i and figs:
+        kv = lab_i and num_i and re.fullmatch(r"(metric|measure|statistic|stat|item|key|label|name|indicator|what)",
+                                              cols[lab_i[0]].strip().lower())
+        if kv:
+            # a table of named figures (metric, value): each named in words, the first five
+            li, vi = lab_i[0], (o_col if o_col in num_i else num_i[0])
+            parts_kv = ["%s %s" % (str(r[li]).replace("_", " "), fmt(r[vi])) for r in rows[:5] if _num_or_none(r[vi]) is not None]
+            text = ("; ".join(parts_kv) + ".") if parts_kv else "%s rows; see the table." % format(len(rows), ",")
+            text = text[:1].upper() + text[1:]
+        elif len(rows) == 1 and per_i and figs:
             # one period, one figure: "Population in 1990: 5.28B (the total of its 217 rows)."
             r0 = rows[0]
             pi = sorted(per_i)[0]
@@ -1756,16 +1776,22 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             text = "%s in %s: %s%s." % (_short(str(subject), 120), r0[pi], "; ".join(
                 ("%s %s" % (cols[i], fmt(r0[i])) if len(figs) > 1 else fmt(r0[i])) for i in figs if r0[i] is not None),
                 (" (the total of its %s rows)" % format(int(n0), ",")) if n0 and n0 > 1 else "")
+        elif len(rows) == 1 and str(subject) in cols:
+            # one row of named figures: each in words ("latest reading 2.78; avg last 12m 2.92"), never "latest_reading: latest_reading"
+            text = "; ".join("%s %s" % (cols[i].replace("_", " "), fmt(rows[0][i]) if i not in per_c else rows[0][i])
+                             for i in range(len(cols)) if rows[0][i] is not None and cols[i] != "row_count") + "."
+            text = text[:1].upper() + text[1:]
         elif len(rows) == 1:
             text = "%s: %s." % (_short(str(subject), 120) if subject else "The answer",
                                 "; ".join("%s %s" % (cols[i], fmt(rows[0][i]) if i not in per_i else rows[0][i])
                                           for i in range(len(cols)) if rows[0][i] is not None and cols[i] != "row_count"))
-        elif per_i and figs and set(lab_i) <= per_i and re.search(r"ORDER BY\s+\"(?:[^\"]|\"\")+\"\s+(?:DESC|ASC)\s+LIMIT\s+\d+\s*$",
-                                                                  str((st.get("args") or {}).get("sql") or ""), re.I):
-            # the dates of one series ranked (when was it highest): the top readings and when
-            pi, vi = sorted(per_i)[0], figs[0]
+        elif per_i and figs and set(lab_i) <= per_i and o_col in num_i and re.search(r"\bLIMIT\s+\d+\s*$", sql_t, re.I):
+            # the dates of one series ranked (when was it highest): the top readings and when, by the column the query orders by
+            pi, vi = sorted(per_i)[0], o_col
+            if not last.get("label"):
+                subject = cols[vi].replace("_", " ")
             top = ["%s in %s" % (fmt(r[vi]), r[pi]) for r in rows[:3] if _num_or_none(r[vi]) is not None]
-            low = bool(re.search(r"\bASC\s+LIMIT", str((st.get("args") or {}).get("sql") or ""), re.I))
+            low = o_dir == "ASC"
             text = "%s, %s: %s%s." % (_short(str(subject), 120), "lowest" if low else "highest", top[0],
                                       (", then " + " and ".join(top[1:])) if len(top) > 1 else "") if top else "%s rows; see the table." % len(rows)
         elif per_i and figs and set(lab_i) <= per_i:

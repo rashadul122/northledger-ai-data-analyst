@@ -515,6 +515,22 @@ def test_one_series_is_asked_about_by_its_own_rows_never_quarters_hidden_as_smal
     assert ns._natural_grain(st) == "M"
 
 
+def test_answers_to_the_ais_own_queries_read_as_a_person_would_say_them():
+    import nl_explore as nx
+    def say(sql, cols, rows, **k):
+        return nx.answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql}, "table": {"columns": cols, "rows": rows}}], **k)["text"]
+    assert say("SELECT yr, avg_u FROM y ORDER BY avg_u DESC LIMIT 10", ["yr", "avg_u"], [[1982, 9.71], [2010, 9.61]]) == \
+        "avg u, highest: 9.71 in 1982, then 9.61 in 2010."                                  # a year, never "1,982"
+    assert say("SELECT a FROM l", ["latest_reading", "avg_last_12m", "last_month_below_now"], [[2.78, 2.92, "2026-08-01"]]) == \
+        "Latest reading 2.78; avg last 12m 2.92; last month below now 2026-08."
+    assert say("SELECT metric, value FROM m", ["metric", "value"], [["latest", 4.2], ["reference_year_average", 3.68]]) == \
+        "Latest 4.2; reference year average 3.68."
+    assert say('SELECT "observation_date", "X" AS inflation FROM t ORDER BY "X" DESC LIMIT 10', ["observation_date", "inflation"],
+               [["1980-06-01", 15.77], ["1980-05-01", 15.12]]) == "inflation, highest: 15.77 in 1980-06, then 15.12 in 1980-05."
+    assert say("SELECT c, known, net_score FROM t ORDER BY net_score DESC", ["character", "known", "net_score"],
+               [["Han", 814, 1.67], ["Luke", 825, 1.58]]).startswith("net score: Han (1.67)")
+
+
 def main() -> int:
     tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)]
     bad = 0

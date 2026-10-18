@@ -309,6 +309,8 @@ def pp_body(v: float) -> str:
     """A change in percentage points, unsigned: 2 decimals everywhere, 3 when 2 would round a nonzero change to 0.00 (weak2,
     16 Oct 2026: "0.775" beside "3.50" and "-4.0")."""
     a = abs(float(v))
+    if a < 1e-9:
+        return "0.00"                     # floating-point dust (2.08e-15), never printed as a change
     for d in (2, 3):
         s = format(a, ",.%df" % d)
         if a == 0 or float(s.replace(",", "")) != 0:
@@ -2657,7 +2659,8 @@ def op_rate_mix(ctx: Ctx, st: Step, measure: str, denominator: str, by: str, les
     st.num("rate", parts["rate"], ckind, signed=True)
     st.num("mix", parts["mix"], ckind, signed=True)
     st.numbers["direction"] = {"value": None, "kind": "word",
-                               "text": "rose" if parts["R1"] > parts["R0"] else "fell" if parts["R1"] < parts["R0"] else "held level"}
+                               "text": "held level" if abs(parts["R1"] - parts["R0"]) < 1e-9 * max(1.0, abs(parts["R0"]))
+                               else "rose" if parts["R1"] > parts["R0"] else "fell"}
     st.num("rows_prev", int(cnt.xs(p0, level="p").sum()) if len(cnt) else 0, "int")
     st.num("rows_cur", int(cnt.xs(p1, level="p").sum()) if len(cnt) else 0, "int")
     if small:

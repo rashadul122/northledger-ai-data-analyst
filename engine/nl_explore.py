@@ -1851,5 +1851,13 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
                 text = "%s rows; see the table." % format(len(rows), ",")
         else:
             text = "%s rows match; see the table." % format(len(rows), ",")
+    # a short alias the query gave a column ("CORESTICK..." AS v): the answer names the column itself
+    sql_a = str((st.get("args") or {}).get("sql") or "")
+    for src_q, src_b, al_q, al_b in re.findall(r'(?:"((?:[^"]|"")+)"|\b([A-Za-z_][A-Za-z0-9_]*))\s+AS\s+(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_]*))',
+                                               sql_a, re.I):
+        al, src = (al_q or al_b), (src_q or src_b).replace('""', '"')
+        if len(al) <= 3 and al in cols and src and len(src) > len(al) and not re.fullmatch(r"(?i)[a-z]{1,3}", src):
+            text = re.sub(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(al), src, text)
+            cols = [src if c == al else c for c in cols]
     return {"question": str(question)[:300], "text": text, "columns": cols[:12], "rows": [r[:12] for r in shown], "bars": bars,
             "rows_total": len(rows), "sql": str((st.get("args") or {}).get("sql") or "")[:4000], "step": st.get("id")}

@@ -730,6 +730,12 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
         # one series, one reading a date (a FRED download): its own rows, never sums of three months hidden as small cells
         fmt_d = {"Y": "%Y", "M": "%Y-%m"}.get(_natural_grain(state), "%Y-%m-%d")
         per = _period_cond(d, rq.get("period"))
+        if per is None and re.search(r"\b(now|currently|current|latest|today|stand|stands|recent|recently)\b", " " + question.lower() + " "):
+            # "where does it stand now": the last two years of the series, never its first rows
+            import pandas as pd
+            last = pd.to_datetime(state["df"][date], errors="coerce").max()
+            if pd.notna(last):
+                per = "%s >= %s" % (d, _lit((last - pd.DateOffset(years=2)).strftime("%Y-%m-%d")))
         rk = rq.get("rank")
         sel_s = "SELECT strftime('%s', %s) AS period,\n       %s\nFROM %s%s" % (fmt_d, d, v, TABLE,
                                                                              ("\nWHERE " + per) if per else "")

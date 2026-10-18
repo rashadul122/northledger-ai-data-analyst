@@ -1292,7 +1292,8 @@ def test_f10_a_daily_or_weekly_file_is_compared_over_whole_months_never_a_month_
         (led.get("measure.amount.total.last12"), led.get("measure.amount.total.prior12"), lat, pri)
     # the repro of seed 34 (a daily file whose first month is partial too: the comparison is refused as too short, never made over a partial month)
     r34 = run_file("f11_seed34_daily_partial_month.csv")
-    assert "12 months to Nov 2023" not in headline(r34) and ("too short" in headline(r34) or "Oct 2023" in headline(r34)), headline(r34)
+    assert "12 months to Nov 2023" not in headline(r34) and "2023-11" not in headline(r34) and \
+        ("too short" in headline(r34) or "Oct 2023" in headline(r34) or "2023-10" in headline(r34)), headline(r34)
     # negatives: a daily file that ends on the last day of a month is not trimmed; a monthly file is untouched
     whole_file = _daily_ledger(lambda d: d.isoformat(), days=365 + 365 + 31 + 28)                  # 2021-01-01 .. 2023-02-28
     assert NB.ledger_tidy(whole_file) is None

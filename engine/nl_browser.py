@@ -7246,6 +7246,10 @@ def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> s
                 ans["columns"] = [_rename_text(re.sub(r"^(average|total)_", r"\1 ", str(c)), _LAST_NAMES) for c in ans.get("columns") or []]
             if held:
                 ans["text"] = held + " " + str(ans.get("text") or "")
+            if _LAST_LATEST.get("text") and _NOW_ASKED.search(str(question or "")) and \
+                    not str(ans.get("text") or "").startswith(_LAST_LATEST["text"][:40]):
+                # "where does it stand now": the series' latest reading first, in the report's words, then the query's figures
+                ans["text"] = _LAST_LATEST["text"] + " " + str(ans.get("text") or "")
             out["answer"] = json.loads(json.dumps(ans, allow_nan=False, default=str))
         elif held:
             out["answer"] = {"question": str(question or "")[:300], "text": held, "columns": [], "rows": [], "bars": None, "rows_total": 0,
@@ -12688,6 +12692,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _LOOKED_UP.clear()
     if not (isinstance(decisions, dict) and "__structure_inner__" in decisions):
         _LAST_NAMES.clear()                        # the last file's names never name this one's answers
+        _LAST_LATEST.clear()
     try:
         data = _as_bytes(csv_bytes)
     except Refusal as exc:
@@ -13550,6 +13555,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _series_names(rep, ai_plan)
         if structure_inner is None:
             _latest_headline(rep, ai_plan, goal)   # a table read by its structure leads with its estimand, never this
+            _short_history_lead(rep)
         _data_note(rep, rowno_note)
         _remember_sentences(rep)
         rep["ok"] = True
@@ -13692,6 +13698,8 @@ def _rename_tree(obj: Any, subs: List[Tuple[Any, str]], key: str = "") -> Any:
 
 
 _LAST_NAMES: List[Tuple[Any, str]] = []
+_LAST_LATEST: Dict[str, str] = {}               # the last run's latest-value sentence (one series a date), for Ask's "where is it now"
+_NOW_ASKED = re.compile(r"(?i)\b(now|currently|current|latest|today|at present|stand|stands|standing|these days|recent|recently)\b")
 
 
 def _series_names(rep: Dict[str, Any], plan: Any) -> None:
@@ -13827,10 +13835,43 @@ def _latest_headline(rep: Dict[str, Any], plan: Any = None, goal: str = "") -> N
         if since and daily:
             since = re.sub(r"since ([A-Z][a-z]+) (\d{4})$", lambda m: "since %s %s" % (m.group(1), m.group(2)), since)
         st["headline"] = "%s was %s %s, %s%s." % (label, lv(v1), when, how, since)
+        _LAST_LATEST["text"] = st["headline"]
         # the page's bottom line reads summary.lines: where the series stands leads them (after the answer to a whole-period question)
         sm = rep.setdefault("summary", {"lines": [], "labels": {}, "monitoring": []})
         sm["lines"] = [{"kind": "latest", "text": st["headline"], "finding_ids": []}] + \
             [x for x in sm.get("lines") or [] if not (isinstance(x, dict) and x.get("kind") == "latest")]
+    except Exception:  # noqa: BLE001 - the engine's headline stands
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+
+
+_SHORT_HEAD = re.compile(r"^\d[\d,]* (?:months?|quarters?|weeks?|days?) of history \(.*too short", re.I)
+
+
+def _short_history_lead(rep: Dict[str, Any]) -> None:
+    """A file too short for the twelve-month test (a supermarket's three months) led with what it could not test. Its bottom line
+    leads with what the analyst described instead: the latest period against the one before, who carried the change, who holds the
+    most; the too-short sentence follows as the caveat. Described, never graded. The report stands without it."""
+    try:
+        st = rep.get("story") if isinstance(rep.get("story"), dict) else None
+        if st is None or not _SHORT_HEAD.match(str(st.get("headline") or "")):
+            return
+        sm = rep.setdefault("summary", {"lines": [], "labels": {}, "monitoring": []})
+        if sm.get("lines"):
+            return
+        ins = [i for i in ((rep.get("analyst") or {}).get("insights") or []) if isinstance(i, dict) and i.get("text")]
+        pick = []
+        for kind in ("headline", "driver", "concentration"):
+            x = next((i for i in ins if i.get("kind") == kind), None)
+            if x is not None:
+                t = re.sub(r"^The (total|average) of (Total|Sales|Revenue|Amount)\b", r"\2", str(x["text"]))
+                pick.append(re.sub(r"\bof the total (Total|Sales|Revenue|Amount)\b", "of the total", t))
+        if not pick:
+            return
+        caveat = str(st["headline"])
+        sm["lines"] = [{"kind": "described", "text": t, "finding_ids": []} for t in pick] + \
+            [{"kind": "note", "text": caveat, "finding_ids": []}]
+        st["headline"] = pick[0]
     except Exception:  # noqa: BLE001 - the engine's headline stands
         if os.environ.get("NL_BROWSER_STRICT"):
             raise

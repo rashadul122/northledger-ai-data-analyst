@@ -2715,6 +2715,12 @@
       };
       clearInterval(AI_STAT.timer);
       paint();
+      // the step rail says the same: step 6 (Deliver) holds the AI-written report, so it waits while the AI writes
+      if (window.NLSteps && window.NLSteps.set) {
+        if (phase === 'investigate' || phase === 'write') window.NLSteps.set(6, 'waiting', 'the AI is writing the report');
+        else if (phase === 'done') window.NLSteps.set(6, 'ready', 'the AI-written report is ready');
+        else window.NLSteps.set(6, 'ready', 'the engine\'s report; the AI-written one could not be made this time');
+      }
       if (phase === 'investigate' || phase === 'write') AI_STAT.timer = setInterval(function () { if (document.getElementById('try-ai-status') === box) paint(); else clearInterval(AI_STAT.timer); }, 1000);
     }
     var INVESTIGATE_MS = 75000;

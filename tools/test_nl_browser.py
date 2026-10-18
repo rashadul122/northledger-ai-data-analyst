@@ -6614,6 +6614,24 @@ def test_a_world_bank_panel_replaces_the_one_members_story_everywhere_the_writer
     assert "IDA & IBRD total" not in blob, re.search(r".{80}IDA & IBRD total.{40}", blob).group(0)
 
 
+
+def test_a_short_file_leads_with_what_it_describes_and_a_now_question_with_the_latest_reading():
+    import random
+    rnd = random.Random(5)
+    rows = ["Date,Product line,Total"] + ["2019-%02d-%02d,%s,%.2f" % (1 + i % 3, 1 + i % 28, ("Food", "Home", "Sports")[i % 3],
+                                                                       100 + rnd.random() * 50 + (30 if i % 3 == 2 and i % 3 == 1 else 0))
+                                          for i in range(300)]
+    rep = NB.run("\n".join(rows).encode(), "s.csv", "", None, "2019-04-10")
+    lines = [l["text"] for l in rep["summary"]["lines"]]
+    assert not rep["story"]["headline"].startswith("3 months of history"), rep["story"]["headline"]
+    assert lines and lines[-1].startswith("3 months of history"), lines
+    series = "observation_date,UNRATEX\n" + "\n".join("%04d-%02d-01,%.1f" % (2000 + i // 12, i % 12 + 1, 4 + (i % 9) / 10.0) for i in range(300))
+    NB.run(series.encode(), "u.csv", "", None, "2025-02-01")
+    q = "Where does it stand now?"
+    a = json.loads(NB.analyst_more_json(NB.analyst_plan_json(q), "[]", q))["answer"]["text"]
+    assert a.startswith("UNRATEX was 4.20 in December 2024"), a
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

@@ -506,6 +506,20 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
     cost = next((c for c in nums if _COST.search(_words(c).replace(" ", "_")) or _COST.search(_words(c))), None)
     units = next((c for c in nums if _UNITS.search(_words(c))), None)
     named = [c for c in nums if _mentions(q, c)]
+    if not named:
+        # a measure named in other words ("drivers in fatal collisions per billion miles" for "Number of drivers involved in fatal
+        # collisions per billion miles"): the number column sharing the most content words with the question, two at least
+        stop = {"the", "of", "in", "and", "or", "per", "for", "who", "were", "was", "which", "what", "has", "have", "had", "most",
+                "least", "highest", "lowest", "with", "by", "a", "an", "are", "is", "do", "does", "than", "that", "this"}
+        qw = {w[:6] for w in re.findall(r"[a-z]+", q) if len(w) > 2 and w not in stop}
+        best, sc = None, 1
+        for c in nums:
+            cw = {w[:6] for w in re.findall(r"[a-z]+", _words(c)) if len(w) > 2 and w not in stop}
+            k = len(qw & cw) - 0.05 * len(cw - qw)
+            if k > sc:
+                best, sc = c, k
+        if best is not None:
+            named = [best]
     measure: Optional[Dict[str, Any]] = None
     if "margin" in q and rev and cost:
         measure = {"kind": "ratio", "label": "gross margin", "num": [rev, cost], "num_sign": [1, -1], "den": rev,
@@ -669,6 +683,20 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
     rq = read_question(state, question)
     m = rq["measure"]
     date = _date_col(state)
+    rk0 = rq.get("rank")
+    if m and not date and rk0 and rk0.get("by") and len(m["num"]) == 1 and m["den"] in (None, "__rows__"):
+        # a table with no dates (a state a row): the members ranked by the measure, their own rows when each is one row
+        df = state["df"]
+        by_c = rk0["by"]
+        conds = ["%s = %s" % (_q(c), _lit(v)) for c, v in rq["slice"].items()]
+        where = ("\nWHERE " + " AND ".join(conds)) if conds else ""
+        n = max(1, min(20, int(rk0["n"])))
+        if by_c in df.columns and not df[by_c].astype(str).duplicated().any():
+            return "SELECT %s,\n       %s\nFROM %s%s\nORDER BY %s %s\nLIMIT %d" % (_q(by_c), _q(m["num"][0]), TABLE, where, _q(m["num"][0]),
+                                                                          "DESC" if rk0["desc"] else "ASC", n)
+        agg = "ROUND(AVG(%s), 4)" % _q(m["num"][0]) if m["den"] == "__rows__" else "SUM(%s)" % _q(m["num"][0])
+        return ("SELECT %s,\n       %s AS %s,\n       COUNT(*) AS row_count\nFROM %s%s\nGROUP BY %s\nORDER BY 2 %s\nLIMIT %d"
+                % (_q(by_c), agg, _q(m["num"][0]), TABLE, where, _q(by_c), "DESC" if rk0["desc"] else "ASC", n))
     if not m or not date:
         return None
     d = _q(date)

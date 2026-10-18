@@ -492,9 +492,12 @@ def _idlike(name: str, s, n: int) -> bool:
         bool(((v - v.round()).abs() < 1e-9).all()) if v.dtype.kind in "fi" else False
     )
     low = re.sub(r"[^a-z0-9]", "", str(name).lower())
+    # "Number of drivers ... per billion miles" is a measure (17 Oct 2026, a live run: the AI never saw the bad-drivers file's
+    # headline rate): a name that counts or divides, or values with decimals, is never an id by its words
+    measure_words = bool(re.search(r"(?i)\b(number|no\.?) of\b|\bper\b|percent|%|\brate\b|\$|\bshare\b", str(name)))
     if (
         _has(name, _ID_WORDS) or low.endswith(("id", "code", "number", "uuid"))
-    ) and uniq > 0.5:
+    ) and uniq > 0.5 and not measure_words and (integral or v.dtype.kind == "O"):
         return True
     if v.dtype.kind == "O":
         return uniq > 0.98 and n > 20

@@ -153,6 +153,10 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # a table that is not a time series (universal track, 17 Oct 2026): an indicator table compared one measure at a
                  # time across its places, imported by nl_browser._explore
                  "nl_explore.py": "nl_explore.py",
+                 # places on a map (18 Oct 2026): US metro and micro areas (Census 2024 CBSA points) and states, projected for the
+                 # map drawer (src/js/54-nl-geo.js), imported by nl_explore when a table's members are places
+                 "nl_geo.py": "nl_geo.py",
+                 "geo_us.json": "geo_us.json",
                  # the semantic layer of a statistical table (WAVE 4, track A1: CONTRACT §5.10), imported by nl_browser.run(),
                  # profile_for_ai, _validate_plan, nl_scenarios.build_structure and nl_viz
                  "nl_structure.py": "nl_structure.py",

@@ -5657,6 +5657,47 @@ check('pack-through-the-real-engine', DESK, async (ctx) => {
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
+check('map-of-us-metros-recolours-by-year-in-the-report-and-on-the-dashboard', DESK, async (ctx) => {
+  // 18 Oct 2026, the owner: a metro table (FRED, months as columns) gets a US map, each metro where it is, a year control that recolours
+  // it on one legend; on the dashboard too. A small real file through the real engine.
+  const why = await cdnReachable();
+  if (why) throw new Skip(why + ', so the real engine cannot load');
+  const metros = [['Abilene, TX', '10180'], ['Akron, OH', '10420'], ['Albany, GA', '10500'], ['Albuquerque, NM', '10740'], ['Anchorage, AK', '11260'],
+    ['Austin-Round Rock-San Marcos, TX', '12420'], ['Boise City, ID', '14260'], ['Cleveland-Elyria, OH', '17460'], ['Detroit-Warren-Dearborn, MI', '19820'],
+    ['El Centro, CA', '20940'], ['Urban Honolulu, HI', '46520'], ['Yuma, AZ', '49740']];
+  const months = []; for (let y = 2015; y <= 2020; y++) for (let m = 1; m <= 12; m++) months.push(y + '-' + String(m).padStart(2, '0') + '-01');
+  const rows = ['Series ID,Series Name,Units,Region Name,Region Code,' + months.join(',')].concat(metros.map(([n, c], i) =>
+    'S' + i + 'UR,Unemployment Rate by Metropolitan Statistical Area,Percent,"' + n + '",' + c + ',' +
+    months.map((m, k) => (3 + i * 0.7 + (m.startsWith('2020') ? 4 : 0) + (k % 5) * 0.1).toFixed(1)).join(',')));
+  const file = { name: 'metros.csv', mimeType: 'text/csv', buffer: Buffer.from(rows.join('\n') + '\n') };
+  const p = await openTry(ctx, { proxy: 'unset' });
+  await p.setInputFiles('#try-file', file);
+  await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
+  if (await p.isVisible('#try-pd')) {
+    await p.$eval('#try-pd', (pd) => { const b = pd.querySelector('#try-pd-noai') || pd.querySelector('#try-pd-go'); b.click(); });
+    await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000);
+  }
+  ok(await p.isVisible('#try-report'), 'no report: ' + (await p.textContent('#try-msg')));
+  await p.waitForSelector('#try-report .nlgeo svg circle.nlgeo-p', { timeout: 30000 });
+  const a = await p.evaluate(() => {
+    const g = document.querySelector('#try-report .nlgeo');
+    return { dots: g.querySelectorAll('circle.nlgeo-p').length, year: g.querySelector('.nlgeo-y').textContent,
+      fills: Array.from(g.querySelectorAll('circle.nlgeo-p')).map((c) => c.getAttribute('fill')).join('|'), sum: g.querySelector('.nlgeo-sum').textContent };
+  });
+  ok(a.dots === 12 && a.year === '2020', 'the map does not place the 12 metros at the latest year: ' + JSON.stringify(a));
+  await p.$eval('#try-report .nlgeo [data-geo-step="-1"]', (x) => x.click());
+  const b = await p.evaluate(() => {
+    const g = document.querySelector('#try-report .nlgeo');
+    return { year: g.querySelector('.nlgeo-y').textContent, fills: Array.from(g.querySelectorAll('circle.nlgeo-p')).map((c) => c.getAttribute('fill')).join('|'),
+      sum: g.querySelector('.nlgeo-sum').textContent, tip: g.querySelector('circle.nlgeo-p').getAttribute('data-tip') };
+  });
+  ok(b.year === '2019' && b.fills !== a.fills && /2019/.test(b.sum) && /\(2019\)/.test(b.tip), 'the year control does not recolour the map: ' + JSON.stringify([a.year, b]));
+  await p.$eval('#nl2-tab-d', (x) => x.click());
+  await p.waitForSelector('#nl2-dash .nld-map .nlgeo svg', { timeout: 20000 });
+  ok(await p.$$eval('#nl2-dash .nld-map circle.nlgeo-p', (x) => x.length) === 12, 'the dashboard map does not place the metros');
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
 (async () => {
   const browser = await playwright.chromium.launch({ executablePath: CHROME, headless: true });
   let failed = 0, ran = 0, skipped = 0;

@@ -1576,3 +1576,13 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .ai-status-bar span { display: block; height: 100%; width: 30%; background: var(--accent, #2a78d6); border-radius: 2px; animation: ai-status-slide 1.6s ease-in-out infinite; }
 @keyframes ai-status-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .ai-status-bar span { animation: none; width: 100%; opacity: .5; } }
+
+/* the map (54-nl-geo.js): the year control above it, the dots and states, the legend under it */
+.nlgeo-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 8px; }
+.nlgeo-yr { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 220px; }
+.nlgeo-yr input[type=range] { flex: 1 1 160px; min-width: 120px; accent-color: var(--accent, #2a78d6); }
+.nlgeo-y { min-width: 3.5em; font-variant-numeric: tabular-nums; }
+.nlgeo svg circle.nlgeo-p:hover, .nlgeo svg circle.nlgeo-p:focus { stroke: var(--ink, #111); stroke-width: 1.6; outline: none; }
+.nlgeo svg path.nlgeo-a:hover, .nlgeo svg path.nlgeo-a:focus { stroke: var(--ink, #111); stroke-width: 1.6; outline: none; }
+.nld-map { padding: 14px 16px; margin: 12px 0; }
+.nld-map-h { margin: 0 0 4px; }

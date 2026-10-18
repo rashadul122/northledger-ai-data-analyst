@@ -5734,6 +5734,18 @@ def _profile_facts_of(R: "_Reading", headers: List[str], hidden: Iterable[str] =
             info["groups"] = int((vc >= COMPARE_MIN_GROUP).sum())
             if 12 < info["distinct"]:
                 info["values"] = sorted(str(x)[:60] for x in f.unique())
+        if n_f and kind != "number" and info["short"] and 8 <= info["distinct"] <= 2000:
+            # what the values are, read against the gazetteer here (nl_geo): US states or US metro areas, a kind and two counts,
+            # never a value. A column of 334 metro areas is past the 300 values listed above, so without this the plan saw only
+            # "Region Name" and read FRED's US metros as Canada's regions (18 Oct 2026)
+            try:
+                import nl_geo as _ng
+                pl = _ng.place([str(x) for x in f.unique()][:2000])
+                if pl is not None:
+                    info["places"] = {"kind": "us_state" if pl["mode"] == "areas" else "us_metro",
+                                      "matched": len(pl["at"]), "of": int(info["distinct"])}
+            except Exception:  # noqa: BLE001 - the profile stands without it
+                pass
         if kind == "date":
             d = dts[np.asarray(R.kept, bool)].dropna()
             if len(d):
@@ -5969,6 +5981,8 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
                     # every value of a category column (countries, regions, products) so the AI can tell the
                     # members from the aggregates (World, Asia, High-income countries) mixed in with them
                     info["values"] = list(f["values"])
+            if not looks and f.get("places"):
+                info["places"] = dict(f["places"])
             info["looks_personal"] = looks
         if f["rows"] > f["filled"]:
             info["blank"] = int(f["rows"] - f["filled"])
@@ -13530,6 +13544,11 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["analyst"] = _analyst(reading, cr, hidden_land, ai_plan, layout, topic=_topic_words(name, goal),
                                   personal=[f for f in flagged if isinstance(f, dict) and f.get("column")],
                                   structure=structure_inner)
+        if rep.get("explore") is None and wide_info is not None and structure_inner is None and \
+                not (isinstance(rep.get("structure"), dict) and rep["structure"].get("kind") in ("cube", "cube_incomplete")):
+            # a table of periods as columns the structure layer declined (FRED's metro unemployment: a code column beside the names):
+            # read whole, as members by year, as the World Bank's tables are (18 Oct 2026)
+            _wide_year_panel(rep, sent, wide_info, None, ai_plan)
         if (rep.get("explore") or {}).get("kind") == "indicator_table" and isinstance(rep.get("analyst"), dict):
             # an indicator table: the loop's own steps total or correlate a value column across rows that measure different things;
             # its frame stays for Ask (step 4), where a question names the measure it is about
@@ -14835,6 +14854,9 @@ def _explore(rep: Dict[str, Any], reading: Any, raw: Any, flagged: Any, plan: An
             if not out.get("records"):
                 return None
         viz["charts"] = []
+        if panel_src is not None:
+            # the row-level reading's charts (rows by month) say nothing about a table of members by period: only the plan's own stay
+            before = [c for c in before if str(c.get("chosen_by") or "") == "ai"]
         # the AI plan's own charts first: the engine's reading of the table comes after what the visitor's plan chose
         ai_first = [c for c in before if str(c.get("chosen_by") or "") == "ai"]
         before = [c for c in before if c not in ai_first]
@@ -14952,26 +14974,60 @@ def _wide_year_panel(inner: Dict[str, Any], long_csv: bytes, wide_info: Optional
     nl_explore.py build_panel): the total (World) over the years, the members ranked in the latest year, who changed most, groups
     kept out of the rankings. In place of the one member's two-year change; the slice's run stands when the panel cannot be read."""
     try:
-        if not wide_info or wide_info.get("family") != "year" or not isinstance(inner, dict):
+        fam = str((wide_info or {}).get("family") or "")
+        if fam not in ("year", "month", "quarter") or not isinstance(inner, dict):
             return
+        S = S if isinstance(S, dict) else {}
         dims = [d for d in S.get("dims") or [] if isinstance(d, dict)]
-        if len(dims) != 1 or dims[0].get("role") != "single":
+        if S and (len(dims) != 1 or dims[0].get("role") != "single"):
             return                                    # a verified total, or more than one grouping: the structure's reading stands
         import pandas as _pd
         f = _pd.read_csv(io.BytesIO(long_csv), dtype=str, keep_default_na=False, encoding="utf-8-sig")
-        drop = {str(m.get("column")) for m in S.get("metadata") or [] if isinstance(m, dict)
-                and m.get("class") in ("constant", "empty")}
-        meas = S.get("measure") or {}
+        if S:
+            drop = {str(m.get("column")) for m in S.get("metadata") or [] if isinstance(m, dict)
+                    and m.get("class") in ("constant", "empty")}
+        else:
+            # no structure reading (a table the layer declined: FRED's metro unemployment, a code column beside the names): the columns
+            # holding one value throughout are the series' description
+            drop = {c for c in f.columns if c not in ("TIME_PERIOD", "OBS_VALUE") and f[c].astype(str).str.strip().nunique() <= 1}
+        meas = dict(S.get("measure") or {})
+        const = {c: str(f[c].iloc[0]).strip() for c in drop if len(f) and str(f[c].iloc[0]).strip()}
+        units = next((v for c, v in const.items() if re.search(r"(?i)^units?$|unit of measure|^uom$", c)), "")
+        if not meas.get("type") and re.search(r"(?i)^percent|percentage|\brate\b", units + " " + " ".join(const.values())):
+            meas["type"] = "rate"
         # the indicator's whole name, from the file's own constant column (the structure's hint is cut at a length)
-        named = next((str(f[c].iloc[0]).strip() for c in f.columns if c in drop and re.search(r"(?i)indicator.?name|series.?name", c)
-                      and len(f) and str(f[c].iloc[0]).strip()), "")
+        named = next((v for c, v in const.items() if re.search(r"(?i)indicator.?name|series.?name|^title$|^series$", c)), "")
+        by_m = re.search(r"(?i)\s+by\s+(metropolitan statistical area|county|state|country|region|msa|city)\b", named)
+        ent_noun = {"metropolitan statistical area": "Metro area", "msa": "Metro area", "county": "County", "state": "State",
+                    "country": "Country", "region": "Region", "city": "City"}.get(by_m.group(1).lower(), "") if by_m else ""
+        named = re.sub(r"(?i)\s+by\s+(metropolitan statistical area|county|state|country|region|msa|city)\b.*$", "", named)
         f = f[[c for c in f.columns if c not in drop]]
         label = _short_indicator(named or str(meas.get("label_hint") or "")) or "Value"
+        if re.fullmatch(r"(?:[A-Z][a-z]+\s?)+", label.strip()) and len(label.split()) > 1:
+            label = label[:1] + label[1:].lower()          # FRED's "Unemployment Rate" in a sentence: "Unemployment rate"
+        if re.search(r"(?i)^percent", units) and "%" not in label:
+            label += " (%)"
+        if fam in ("month", "quarter"):
+            # a month a column: each member's yearly average (a rate, a level) is what the years compare; a year with fewer than six
+            # months is left out of the yearly figures (Ask still reads every month)
+            f_month = f.copy()
+            f = f.assign(_v=_pd.to_numeric(f["OBS_VALUE"].astype(str).str.replace(",", "", regex=False), errors="coerce"),
+                         TIME_PERIOD=f["TIME_PERIOD"].astype(str).str[:4])
+            keys = [c for c in f.columns if c not in ("OBS_VALUE", "_v")]
+            g = f.groupby(keys, dropna=False)["_v"].agg(["mean", "count"]).reset_index()
+            need = 6 if fam == "month" else 2
+            g = g[g["count"] >= need]
+            f = g.drop(columns=["count"]).rename(columns={"mean": "OBS_VALUE"})
+            f["OBS_VALUE"] = f["OBS_VALUE"].round(4).astype(str)
+        else:
+            f_month = None
         header_of = {c: c for c in f.columns}
         header_of.update({"TIME_PERIOD": "Year", "OBS_VALUE": label})
         import nl_explore as _nx
         pan = _nx.detect_panel(f, header_of, str((inner.get("input") or {}).get("name") or ""))
-        if pan is None or pan.get("entity") != dims[0].get("column"):
+        if pan is not None and not S and ent_noun:
+            header_of[pan["entity"]] = ent_noun            # "Metro area", from "... by Metropolitan Statistical Area"
+        if pan is None or (dims and pan.get("entity") != dims[0].get("column")):
             return
         if str(meas.get("type") or "") == "rate":
             pan["rate"] = True                        # unemployment (% of labour force): its changes in percentage points
@@ -14987,13 +15043,29 @@ def _wide_year_panel(inner: Dict[str, Any], long_csv: bytes, wide_info: Optional
             inner.pop("answer", None)
             inner["period"] = None
             inner["estimand"] = None
-            one = str((S.get("default") or ((S.get("slice") or {}).get("where")) or {}).get(pan["entity"]) or "")
+            one = str((S.get("default") or ((S.get("slice") or {}).get("where")) or {}).get(pan["entity"]) or "") if S else ""
             if one:
                 # the structure's notes about reading that one member are not this report's
                 inner["limitations"] = [x for x in inner.get("limitations") or []
                                         if not (isinstance(x, dict) and one in str(x.get("text") or ""))]
             inner["scenarios"] = {"basis": None, "items": [], "refused": [], "note": "The what-if scenarios read one series; this table is read "
                                   "as all its members by year, so none is offered."}
+            # the row-level run read the long table (a member a row, a month a row) as one dated series, so its forecast, trend windows,
+            # month-by-year grids and benchmark are about how many rows each month has (335 metro areas a month, forecast as 335): none
+            # is about the measure (18 Oct 2026, a visitor's run on FRED's metro unemployment)
+            fc = inner.get("forecast") if isinstance(inner.get("forecast"), dict) else {}
+            if fc.get("available"):
+                # the whole no-forecast shape the page's contract reads (an annual table's: backtest an object of nulls, never None)
+                inner["forecast"] = dict(fc, available=False, verdict=None, champion=None, baseline_won=None, series=[], forecast=[],
+                                         backtest={"mape": None, "mase": None, "coverage": None}, band=None, coverage=None,
+                                         baseline_test=None, models=[], **{"break": None}, interventions=[], forecastability=None,
+                                         decision_edge=None, audit=None, trusted=None, row_forecast_dropped=None, frequency="year",
+                                         reason="No forecast is shown: the table is many %s by year, read side by side; "
+                                         "the forecast reads one series only." % _nx._plural_of(humane_entity(header_of.get(pan["entity"],
+                                                                                                                            pan["entity"])).lower()))
+            row_level = ("trend.", "dist.", "fan.", "replay.", "models.", "season.", "benchmark")
+            inner["charts"] = [c for c in inner.get("charts") or [] if not (isinstance(c, dict) and c.get("rule") != "V" and
+                                                                            str(c.get("id") or "").startswith(row_level))]
             years = sorted({int(y) for y in _pd.to_numeric(f[pan["year"]], errors="coerce").dropna()})
             span = ("%d to %d" % (years[0], years[-1])) if len(years) > 1 else ""
             pub = "the World Bank's World Development Indicators" if S.get("publisher") == "worldbank" else ""
@@ -15012,9 +15084,10 @@ def _wide_year_panel(inner: Dict[str, Any], long_csv: bytes, wide_info: Optional
             import nl_analyst as _na
             ent, yc, vc = pan["entity"], pan["year"], pan["measures"][0]
             factor = float(meas.get("factor") or 1.0)
-            keep = f[~f[ent].astype(str).isin(set(pan.get("aggregates") or ()))]
-            yrs = _pd.to_numeric(keep[yc], errors="coerce")
-            df = _pd.DataFrame({"Year": _pd.to_datetime(yrs.astype("Int64").astype(str) + "-01-01", errors="coerce"),
+            src = f_month if f_month is not None else f      # Ask reads every month when the file has months
+            keep = src[~src[ent].astype(str).isin(set(pan.get("aggregates") or ()))]
+            when = keep[yc].astype(str) + ("-01" if f_month is not None else "-01-01")
+            df = _pd.DataFrame({"Year": _pd.to_datetime(when.str[:10], errors="coerce"),
                                 str(header_of.get(ent, ent)): keep[ent].astype(str).str.strip(),
                                 label: _pd.to_numeric(keep[vc].astype(str).str.replace(",", "", regex=False), errors="coerce") * factor})
             df = df[df["Year"].notna()].reset_index(drop=True)

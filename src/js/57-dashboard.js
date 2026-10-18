@@ -512,9 +512,21 @@
   /* ------------------------------------------------------------ the tab in the report (52-nl2-report.js select) */
   // the visitor's filters and definition edits survive a re-run when their columns and ids still exist
   var KEEP = { F: null, edits: null, dims: null };
+  // the report's map (chart geo_map, 54-nl-geo.js), first on the dashboard: where each place stands, a year at a time on one legend
+  function mapCard(rep, panel) {
+    var v = (rep && rep.viz && rep.viz.charts) || [], g = v.filter(function (c) { return c && c.kind === 'geo'; })[0];
+    if (!g || !window.NLV || !window.NLV.draw) return '';
+    var W = Math.max(300, Math.min(980, (panel.clientWidth || 900) - 40));
+    var o = window.NLV.draw(g, W);
+    return '<section class="tr-card nld-map" aria-label="' + esc(g.title || 'Map') + '"><h4 class="nld-map-h">' + esc(g.title || 'Map') + '</h4>' + o.html + '</section>';
+  }
   NLD.show = function (panel, rep) {
     var D = rep.dashboard;
-    if (!D || !D.ok) { panel.innerHTML = '<p class="note">' + esc((D && D.why) || 'No dashboard for this file.') + '</p>'; return; }
+    if (!D || !D.ok) {
+      var m0 = mapCard(rep, panel);
+      panel.innerHTML = m0 + '<p class="note">' + esc((D && D.why) || 'No dashboard for this file.') + '</p>';
+      return;
+    }
     if (panel.__nldRep === rep) return;
     panel.__nldRep = rep;
     NLD.cardHost = document.getElementById('try-counts');
@@ -539,6 +551,8 @@
     }
     loadCols(D);
     panel.innerHTML = NLD.html(D, false);
+    var mc = mapCard(rep, panel);
+    if (mc) { var head0 = panel.querySelector('.nld-head'); if (head0) head0.insertAdjacentHTML('afterend', mc); else panel.insertAdjacentHTML('afterbegin', mc); }
     NLD.mount(panel, D, { F: F, onHtml: function (D2, F2) { NLD.saveHtml(D2, F2, rep.input && rep.input.name); }, onXlsx: function (D2, F2) { NLD.saveXlsx(D2, F2, rep.input && rep.input.name); } });
     var fs = panel.querySelector('select[data-nld-f="from"]'), ts = panel.querySelector('select[data-nld-f="to"]');
     if (fs && F.from) fs.value = F.from; if (ts && F.to) ts.value = F.to;

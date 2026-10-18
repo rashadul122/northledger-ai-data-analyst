@@ -611,6 +611,7 @@ def _embedded_share(R: Any, land: str) -> float:
 # one row per series and period before anything else reads it; a cell's embedded flag (":" , "123.4 p") stays in the value cell,
 # where the structure layer strips it and counts it by the publisher's vocabulary (engine/flag_vocab.json).
 _WIDE_MONTH = re.compile(r"^(\d{4})\s*[-_/M]\s*(0?[1-9]|1[0-2])$")
+_WIDE_FIRST_DAY = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])-01(?:[ T]00:00(?::00)?)?$")
 WIDE_MIN_PERIODS = 6
 WIDE_MIN_YEARS = 5
 
@@ -626,6 +627,11 @@ def _header_period(h: str) -> Optional[Tuple[str, str]]:
     m = _WIDE_MONTH.match(t)
     if m:
         return "month", "%s-%02d" % (m.group(1), int(m.group(2)))
+    # a month written as its first day (FRED's regional downloads: 2001-08-01, 2001-09-01 ...): the month (18 Oct 2026, a visitor's
+    # metro unemployment table was read as 300 measures named by dates)
+    d1 = _WIDE_FIRST_DAY.match(t)
+    if d1:
+        return "month", "%s-%02d" % (d1.group(1), int(d1.group(2)))
     if _Q_A.match(t) or _Q_B.match(t):
         return "quarter", t
     if _H_A.match(t):

@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "d7a1b0e73489712cf4b43e833f40019a31c1d2038bad966e57e5b3ac3d398517",
-  "bytes": 1021740
+  "sha256": "b26ddb4f4367b19511aaed0708299676708f79f6f588e806c68d1b2b247a23a6",
+  "bytes": 1046989
  },
  "files": [
   {
@@ -144,6 +144,12 @@
    "source": "portfolio-website/engine/fred_series.json"
   },
   {
+   "path": "geo_us.json",
+   "sha256": "63c9604e9f191deac679fddf0184045754a0e0d95fcee3a3dc31b2d19528b9be",
+   "bytes": 40824,
+   "source": "portfolio-website/engine/geo_us.json"
+  },
+  {
    "path": "inference_tables.json",
    "sha256": "b0ef8b77b63961125e39989a446cb9bb83d024a96306c6f1d785cb41900baba9",
    "bytes": 12261,
@@ -157,8 +163,8 @@
   },
   {
    "path": "nl_browser.py",
-   "sha256": "013e41017b7ec1025565599eee8ef276976266affabb4966c6c95987e1adace7",
-   "bytes": 969939,
+   "sha256": "a66d296bbd1df2be25061530d28681fc1b6dd4adbf8b62d1f994f2b1691595c0",
+   "bytes": 976389,
    "source": "portfolio-website/engine/nl_browser.py"
   },
   {
@@ -175,9 +181,15 @@
   },
   {
    "path": "nl_explore.py",
-   "sha256": "55023799d258949c4cd220c36bc91e8f2fa011766f57fe202d8c878c38c099ba",
-   "bytes": 107749,
+   "sha256": "3ac08b4fa97be0561a1f1209a0c23015edeb62e58405a041fcd78c1aa456afab",
+   "bytes": 113227,
    "source": "portfolio-website/engine/nl_explore.py"
+  },
+  {
+   "path": "nl_geo.py",
+   "sha256": "c6231f0d68e99bf0c40c3e641878c6b62b13c06060567829f0a298249a5d7fe3",
+   "bytes": 10343,
+   "source": "portfolio-website/engine/nl_geo.py"
   },
   {
    "path": "nl_inference.py",
@@ -205,14 +217,14 @@
   },
   {
    "path": "nl_sql.py",
-   "sha256": "0a1b402e54a307d2f456798a6174776a68b90210a55ebf1062c9b16b37dcd93a",
-   "bytes": 47333,
+   "sha256": "af705bbac70bc1b888809bf63d94f39e33e2e76d550bf81815d6ff7fc8561ac1",
+   "bytes": 50241,
    "source": "portfolio-website/engine/nl_sql.py"
   },
   {
    "path": "nl_structure.py",
-   "sha256": "1231273c07e77730a43475ac74f3de73e4d0bfcc715c55678d3619d8926479e3",
-   "bytes": 297971,
+   "sha256": "6bd1d8af089d5bc8ecf2dfec3bb4fb4c984600366dadb75286396adfa875ed4a",
+   "bytes": 298372,
    "source": "portfolio-website/engine/nl_structure.py"
   },
   {
@@ -235,8 +247,8 @@
   },
   {
    "path": "nl_viz.py",
-   "sha256": "af0ff10bbb9cb67c09cf6590c5ae0101ea48c1294524ab666fc9bb31f770ac9b",
-   "bytes": 305102,
+   "sha256": "09b3cfbe23c9389cf16a6233bfb85aa3f8fcc084da9972232615f2a79eb8c2a8",
+   "bytes": 305845,
    "source": "portfolio-website/engine/nl_viz.py"
   }
  ],

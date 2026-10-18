@@ -585,6 +585,16 @@ def read_question(state: Dict[str, Any], question: str) -> Dict[str, Any]:
             if re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(v2.lower()), q):
                 if best is None or len(v2) > len(best):
                     best = v2
+        if best is None:
+            # a member named by its first place ("Detroit" for "Detroit-Warren-Dearborn, MI"): the only value whose first name the question says
+            heads = {}
+            for v in vals.unique():
+                h = re.split(r"[-,/(]", str(v).strip(), maxsplit=1)[0].strip().lower()
+                if len(h) >= 4 and re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(h), q):
+                    heads.setdefault(h, []).append(str(v).strip())
+            one = [vs[0] for vs in heads.values() if len(set(vs)) == 1]
+            if len(one) == 1:
+                best = one[0]
         if best is not None:
             sl[c] = best
     # a ranking (which country, the largest, the top 10, the lowest): the members of a grouping column the question did not
@@ -704,6 +714,8 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
           "M": "strftime('%%Y-%%m', %s)" % d, "Y": "strftime('%%Y', %s)" % d}[rq["grain"]]
     sel = ["%s AS period" % pe]
     for c in dict.fromkeys(m["num"] + ([m["den"]] if m["den"] and m["den"] != "__rows__" else [])):
+        if m["den"] == "__rows__" and re.search(r"%|\brate\b|percent|\bshare\b|\bratio\b", str(c), re.I):
+            continue                          # a rate's average (unemployment %): never its sum beside it; a count's sum (population) stays
         sel.append("SUM(%s) AS %s" % (_q(c), _q(c)))
     num = " ".join(("%s SUM(%s)" % ("+" if sg > 0 else "-", _q(c))) for c, sg in zip(m["num"], m["num_sign"])).lstrip("+ ")
     name = re.sub(r"[^a-z0-9]+", "_", m["label"].lower()).strip("_")
@@ -781,6 +793,27 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
             _one_row_each(state, list(rq["slice"]), rq["grain"], rq["slice"]):
         # one row a period in the asked slice (China's population each year): its rows, never an aggregate of one row
         return ("SELECT %s AS period,\n       %s\nFROM %s\nWHERE %s\nORDER BY period" % (pe, _q(m["num"][0]), TABLE, where))
+    if rq["slice"] and len(m["num"]) == 1 and m["den"] in (None, "__rows__") and \
+            _one_row_each(state, list(rq["slice"]), "D", rq["slice"]):
+        # one row a date in the asked slice (Detroit's rate each month): its own months, never quarters of three rows hidden as small cells
+        import pandas as pd
+        dd = pd.to_datetime(state["df"][date], errors="coerce").dropna()
+        fm = "%Y" if bool(((dd.dt.month == 1) & (dd.dt.day == 1)).all()) else "%Y-%m" if bool((dd.dt.day == 1).all()) else "%Y-%m-%d"
+        conds2 = list(conds)
+        if not per and re.search(r"\b(now|currently|current|latest|today|stand|stands|recent|recently)\b", " " + question.lower() + " "):
+            conds2.append("%s >= %s" % (d, _lit((dd.max() - pd.DateOffset(years=2)).strftime("%Y-%m-%d"))))
+        f0 = state["df"]
+        for c, v in rq["slice"].items():
+            f0 = f0[f0[c].astype(str).str.strip() == str(v)]
+        n_rows = int((pd.to_datetime(f0[date], errors="coerce") >= (pd.to_datetime(str(rq.get("period") or "")[6:] or "1900", errors="coerce")
+                                                                      if str(rq.get("period") or "").startswith("since:") else pd.Timestamp("1900-01-01"))).sum())
+        if fm != "%Y" and n_rows > 120 and len(conds2) == len(conds):
+            # a long run of months (Detroit since 2008): its yearly averages, so the answer covers every year, never the first 200 months
+            agg = "ROUND(AVG(%s), 4)" % _q(m["num"][0]) if m["den"] == "__rows__" else "SUM(%s)" % _q(m["num"][0])
+            return ("SELECT strftime('%%Y', %s) AS period,\n       %s AS %s,\n       COUNT(*) AS row_count\nFROM %s\nWHERE %s\nGROUP BY period\n"
+                    "ORDER BY period" % (d, agg, _q(m["num"][0]), TABLE, " AND ".join(conds2)))
+        return ("SELECT strftime('%s', %s) AS period,\n       %s\nFROM %s\nWHERE %s\nORDER BY period" % (fm, d, _q(m["num"][0]), TABLE,
+                                                                                         " AND ".join(conds2)))
     return ("SELECT " + ",\n       ".join(sel) + "\nFROM " + TABLE + ("\nWHERE " + where if where else "") +
             "\nGROUP BY period\nORDER BY period")
 

@@ -1015,12 +1015,28 @@ def build_table(t: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
         if got is not None:
             recs.append(got)
     lab_w = humane(t["header_of"].get(t["label"], t["label"])) if t["label"] else "record"
+    # rows that are US places (a state a row): the lead measure on the map, before the rankings
+    if t["label"]:
+        try:
+            import nl_geo
+            import pandas as pd
+            fr = t["frame"]
+            sv = pd.DataFrame({"l": fr[t["label"]].astype(str).str.strip(), "v": _is_num(fr[key])}).dropna().drop_duplicates("l")
+            mh0 = _human(t["header_of"].get(key, key))
+            geo = nl_geo.map_record(list(sv["l"]), None, [""], {r.l: [float(r.v)] for r in sv.itertuples()}, mh0,
+                                    "%" if re.search(r"(?i)percent|%|\brate\b|share", mh0) and float(sv["v"].max()) <= 100 else "",
+                                    False, lab_w, fmt=_nfmt)
+            if geo is not None:
+                recs.insert(0, (geo, geo.get("summary") or ""))
+                recs = recs[:limit]
+        except Exception:  # noqa: BLE001 - the table stands without its map
+            pass
     about = "Each row is one %s: %s rows, %d measure%s%s. No column holds dates, so this report compares the rows rather than " \
             "following a change over time." % (
                 lab_w, format(t["n"], ","), len(ms), "" if len(ms) == 1 else "s",
                 (" and %d categor%s (%s)" % (len(cats), "y" if len(cats) == 1 else "ies",
                                              ", ".join(_human(t["header_of"].get(c, c)).lower() for c in cats[:4]))) if cats else "")
-    sentences = [s for _r, s in recs]
+    sentences = [s for r, s in recs if s and r.get("kind") != "geo"]
     return {"version": VERSION, "kind": "table", "records": [r for r, _s in recs], "sentences": sentences,
             "headline": sentences[0] if sentences else about, "about": about, "entity": lab_w, "indicator": "measure",
             "entity_column": t["header_of"].get(t["label"], t["label"]) if t["label"] else None, "indicator_column": None,
@@ -1171,7 +1187,16 @@ def detect_panel(frame: Any, header_of: Dict[str, str], name_hint: str = "") -> 
         aggs.add(total)
     if not total:
         total = next((m for m in members if m.casefold() == "world"), None)
-    return {"kind": "panel", "year": year, "entity": ent, "dim": dim, "dim_level": (lv if dim is not None else None),
+    # a column of place codes beside the names (a Census CBSA code, a FIPS code): one code per member, for the map
+    codes = None
+    for c in f.columns:
+        if c in (year, ent, dim) or c in measures:
+            continue
+        sub = f[[ent, c]].astype(str).drop_duplicates()
+        if len(sub) and sub[c].str.fullmatch(r"\d{1,5}(\.0)?").mean() >= 0.95 and sub.groupby(ent)[c].nunique().max() == 1:
+            codes = dict(zip(sub[ent], sub[c]))
+            break
+    return {"kind": "panel", "year": year, "entity": ent, "dim": dim, "dim_level": (lv if dim is not None else None), "codes": codes,
             "measures": measures, "aggregates": aggs, "total": total, "frame": f, "full": frame, "header_of": header_of,
             "hint": hint, "n": len(f)}
 
@@ -1247,6 +1272,15 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
     lines = []
     if p["total"] and p["total"] in wide.columns:
         lines.append(p["total"])
+    elif len(members) >= 10:
+        # no row is the whole (FRED's metro areas, no national line): the median member each year is the reference line, a figure of
+        # the file itself, never a total that is not there (18 Oct 2026)
+        rep_n = int(wide[members].notna().sum(axis=1).max())
+        med_name = "Median of %s %s" % (format(rep_n, ","), _plural_of(eh))
+        wide = wide.assign(**{med_name: wide[members].median(axis=1, skipna=True).where(
+            wide[members].notna().sum(axis=1) >= 0.5 * rep_n)})
+        p["median_line"] = med_name
+        lines.append(med_name)
     if last is not None:
         lead = wide.loc[last, members].dropna().sort_values(ascending=False)
         lines += [m for m in lead.index[:PANEL_LINES - len(lines)]]
@@ -1260,7 +1294,8 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
         a, b = (have[0], have[-1]) if len(have) >= 2 else (show_years[0], show_years[-1])
         va, vb = wide.loc[a, ref], wide.loc[b, ref]
         if not (_m.isnan(float(va)) or _m.isnan(float(vb))) and float(va) != 0:
-            who = ("%s %s" % (ref, mh[:1].lower() + mh[1:])) if ref == p["total"] else ("%s for %s" % (mh, ref))  # World population
+            who = ("%s %s" % (ref, mh[:1].lower() + mh[1:])) if ref == p["total"] else \
+                ("The median %s's %s" % (eh, mh[:1].lower() + mh[1:])) if ref == p.get("median_line") else ("%s for %s" % (mh, ref))
             ratio = float(vb) / float(va)
             how = ("%+.0f%%" % (100.0 * (ratio - 1.0))) if -1.0 < ratio - 1.0 <= 9.99 or float(va) < 0 else \
                 "%s times as much" % format(round(ratio), ",")                 # 9.31 to 38,599 is "4,146 times as much", never +414671%
@@ -1270,7 +1305,7 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
         else:
             sent = "%s over %d to %d, for %s." % (mh, a, b, ", ".join(lines))
         recs.append(_record("line_chart", "%s, %d to %d" % (mh, show_years[0], show_years[-1]),
-                            ("%s and the %d highest %s in %d" % (p["total"], len(lines) - 1, _plural_of(eh), last)) if p["total"] in lines
+                            ("%s and the %d highest %s in %d" % (lines[0], len(lines) - 1, _plural_of(eh), last)) if (p["total"] in lines or p.get("median_line") in lines)
                             else "The %d highest %s in %d" % (len(lines), _plural_of(eh), last),
                             {"label": mh, "unit": "", "kind": "amount"},
                             {"x": [str(y) for y in show_years], "grain": "year", "x_label": "Year", "series": series, "forecast": None},
@@ -1336,6 +1371,17 @@ def build_panel(p: Dict[str, Any], primary: Optional[str] = None, limit: int = 8
         if got is not None:
             recs.append(got[0])
             sents.append(got[1].replace("rows", "%s in %d" % (_plural_of(eh), last), 1))
+    # 5. where each member is (US metro areas, states): a map, one year at a time on one legend, leading the charts
+    try:
+        import nl_geo
+        span_years = [y for y in years if last is None or y <= last]
+        mvals = {m: [None if _m.isnan(float(wide.loc[y, m])) else float(wide.loc[y, m]) for y in span_years] for m in members}
+        geo = nl_geo.map_record(members, p.get("codes"), [str(y) for y in span_years], mvals, mh, "%" if "%" in mh else "",
+                                bool(p.get("rate")), eh, fmt=_nfmt)
+        if geo is not None:
+            recs.insert(0, geo)
+    except Exception:  # noqa: BLE001 - the panel stands without its map
+        pass
     about = ("Each row is one %s in one year%s: %s rows, %d to %d, %d measure%s%s. A %s that is the total or a group of others (%s) is "
              "read as the line the others are compared with, never ranked beside them." % (
                  eh, (" and one %s (the rows of its total, %s, are used)" % (_human(p["header_of"].get(p["dim"])).lower(), p["dim_level"]))
@@ -1775,7 +1821,8 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             n0 = _num_or_none(r0[n_i]) if n_i is not None else None
             text = "%s %s: %s%s." % (("In" if str(subject) in cols and len(figs) > 1 else _short(str(subject), 120) + " in"), r0[pi], "; ".join(
                 ("%s %s" % (cols[i].replace("_", " "), fmt(r0[i])) if len(figs) > 1 else fmt(r0[i])) for i in figs if r0[i] is not None),
-                (" (the total of its %s rows)" % format(int(n0), ",")) if n0 and n0 > 1 else "")
+                (" (the %s of its %s rows)" % ("average" if re.search(r"(?i)\bAVG\(", sql_t) or "average" in cols[figs[0]].lower() else "total",
+                                              format(int(n0), ","))) if n0 and n0 > 1 else "")
         elif len(rows) == 1 and str(subject) in cols:
             # one row of named figures: each in words ("latest reading 2.78; avg last 12m 2.92"), never "latest_reading: latest_reading"
             text = "; ".join("%s %s" % (cols[i].replace("_", " "), fmt(rows[0][i]) if i not in per_c else rows[0][i])
@@ -1798,7 +1845,24 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             # a figure by period: where it started, where it ended, its peak
             pi, vi = sorted(per_i)[0], figs[0]
             pts = [(r[pi], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
-            if len(pts) >= 2:
+            # the years the question names frame the sentence ("from 2008 to 2026"), when the rows hold them: a query that returned
+            # every year otherwise answered "from 2001" (18 Oct 2026, a visitor's Ask on FRED's metro unemployment)
+            asked = sorted({int(y) for y in re.findall(r"\b(1[89]\d\d|20\d\d)\b", str(question or ""))})
+            if len(asked) >= 2:
+                yr = lambda p: int(str(p)[:4]) if re.match(r"^\d{4}", str(p)) else None  # noqa: E731
+                inside = [x for x in pts if yr(x[0]) is not None and asked[0] <= yr(x[0]) <= asked[-1]]
+                if len(inside) >= 2 and yr(inside[0][0]) == asked[0] and yr(inside[-1][0]) == asked[-1]:
+                    pts = inside
+            # the step's table keeps its first rows (nl_analyst.SQL_TABLE_ROWS); its "rows" number counts them all. A cut list's last
+            # row is not where the series ends, and its peak may lie past the cut (18 Oct 2026: Detroit "to 4.8 in 2024-08")
+            n_all = ((st.get("numbers") or {}).get("rows") or {}).get("value")
+            cut = isinstance(n_all, (int, float)) and n_all == n_all and int(n_all) > len(rows)
+            if len(pts) >= 2 and cut:
+                (p0, v0), (p1, v1) = pts[0], pts[-1]
+                text = "%s was %s in %s and %s in %s, the last of the first %s rows the query returned (of %s); ask for yearly " \
+                       "averages to see every year." % (_short(str(subject), 120), fmt(v0), p0, fmt(v1), p1, format(len(rows), ","),
+                                                        format(int(n_all), ","))
+            elif len(pts) >= 2:
                 (p0, v0), (p1, v1) = pts[0], pts[-1]
                 hi = max(pts, key=lambda x: x[1])
                 base_c = re.sub(r"^(?:average|total)_", "", cols[vi].lower())
@@ -1833,7 +1897,17 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             vals = [(r[li], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
             tot = (ix or {}).get("total")
             members = [(lb, v) for lb, v in vals if str(lb) != str(tot)]
-            if len(members) == 1:
+            lim = re.search(r"\bLIMIT\s+(\d+)\s*$", sql_t, re.I)
+            if lim and len(rows) >= int(lim.group(1)) and members:
+                # the first rows of a longer list (the top readings of 2020, LIMIT 20): its last row is not the lowest of anything;
+                # the readings in the query's own order, with their period (18 Oct 2026, "lowest in Monroe, MI (25.4)")
+                pc = sorted(per_i)[0] if per_i else None
+                top = ["%s (%s%s)" % (r[li], fmt(r[vi]), (", %s" % r[pc]) if pc is not None else "") for r in rows[:3]
+                       if _num_or_none(r[vi]) is not None]
+                low = o_col == vi and o_dir == "ASC"
+                text = "%s, %s: %s%s." % (_short(str(subject), 120), "lowest" if low else "highest", top[0],
+                                          (", then " + " and ".join(top[1:])) if len(top) > 1 else "")
+            elif len(members) == 1:
                 tv = next((v for lb, v in vals if str(lb) == str(tot)), None)
                 text = "%s: %s %s%s." % (_short(str(subject), 120), members[0][0], fmt(members[0][1]),
                                           ("; %s as a whole: %s" % (tot, fmt(tv))) if tv is not None else "")

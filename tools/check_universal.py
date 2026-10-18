@@ -33,10 +33,41 @@ PLACEHOLDER = ("The monthly change test did not run", "No column holds dates", "
 NODE_CHECK = r"""
 global.window = { NLU: {} }; global.document = { readyState: 'complete', addEventListener() {} };
 require(process.argv[1] + '/src/js/55-nl-viz.js');
+require(process.argv[1] + '/src/js/54-nl-geo.js');
 const fs = require('fs'); const recs = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const out = recs.map(r => { let k = 'table'; try { k = window.NLV.kindOf(r); } catch (e) {} return k; });
 process.stdout.write(JSON.stringify(out));
 """
+
+
+# the page's own report contract (50-try.js NLTry.validate): a report it refuses shows the visitor nothing at all (18 Oct 2026: a
+# forecast.backtest of None on FRED's metro unemployment passed every engine test and blanked the page)
+NODE_CONTRACT = r"""
+const el = () => new Proxy(function () {}, { get: (t, k) => (k === 'length' ? 0 : el()), apply: () => el() });
+global.window = global; global.navigator = { userAgent: 'node' }; global.location = { hash: '', search: '' };
+global.document = { readyState: 'loading', addEventListener() {}, getElementById() { return null; }, querySelector() { return null; },
+                    querySelectorAll() { return []; }, createElement: () => el() };
+require(process.argv[1] + '/src/js/50-try.js');
+const rep = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(window.NLTry.validate(rep) || []));
+"""
+
+
+def nl_json(rep: dict) -> str:
+    """The report as the page receives it (nl_browser.run_json: the run plus its inputs list, no NaN allowed)."""
+    return json.dumps(dict(rep, inputs=rep.get("inputs") or []), allow_nan=False)
+
+
+def contract(rep: dict) -> list:
+    """What the page's contract check says is wrong with this report ([] when the page draws it)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        fh.write(nl_json(rep))
+        path = fh.name
+    try:
+        r = subprocess.run(["node", "-e", NODE_CONTRACT, SITE, path], capture_output=True, text=True, timeout=60)
+        return json.loads(r.stdout) if r.returncode == 0 and r.stdout else ["the contract check did not run: " + r.stderr[-200:]]
+    finally:
+        os.unlink(path)
 
 
 def drawable(records: list) -> list:
@@ -111,9 +142,12 @@ def one(entry: dict) -> dict:
     fails = []
     if rep.get("error"):
         fails.append("error: " + str(rep["error"])[:200])
+    for b in contract(rep)[:3]:
+        fails.append("the page refuses the report: " + str(b)[:160])
     if not head or head.startswith(PLACEHOLDER):
         fails.append("placeholder headline: " + head[:120])
-    lost = [c.get("title") for c, k, s in zip(recs, kinds, share_kinds) if k != "table" and s == "table"]
+    # the map (kind geo) is the page's and the dashboard's: a shared report carries its table (the worker's chart byte cap), by design
+    lost = [c.get("title") for c, k, s in zip(recs, kinds, share_kinds) if k != "table" and s == "table" and k != "geo"]
     if lost:
         fails.append("%d chart(s) drawn on the page become tables in a shared report: %s" % (len(lost), "; ".join(map(str, lost[:3]))))
     # a published series named by a code (FRED, a census): the headline and the bottom line name it in words, and a title says what it is
@@ -138,6 +172,12 @@ def one(entry: dict) -> dict:
         bad = re.search(ck["text_not_re"], blob)
         if bad:
             fails.append("the report says %r" % bad.group(0)[:80])
+    if ck.get("map"):
+        g = next((c for c in recs if c.get("kind") == "geo"), None)
+        if g is None:
+            fails.append("no map, though its members are places")
+        elif len((g.get("data") or {}).get("items") or []) < int(ck["map"]):
+            fails.append("the map places %d, fewer than %s" % (len(g["data"]["items"]), ck["map"]))
     if ck.get("title_lookup") and ((rep.get("title") or {}).get("lookup") or {}).get("id") != ck["title_lookup"]:
         fails.append("no offer to look %s up on FRED" % ck["title_lookup"])
     for qa in ck.get("ask") or []:

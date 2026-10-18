@@ -1725,6 +1725,16 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 @keyframes ai-status-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .ai-status-bar span { animation: none; width: 100%; opacity: .5; } }
 
+/* the map (54-nl-geo.js): the year control above it, the dots and states, the legend under it */
+.nlgeo-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 8px; }
+.nlgeo-yr { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 220px; }
+.nlgeo-yr input[type=range] { flex: 1 1 160px; min-width: 120px; accent-color: var(--accent, #2a78d6); }
+.nlgeo-y { min-width: 3.5em; font-variant-numeric: tabular-nums; }
+.nlgeo svg circle.nlgeo-p:hover, .nlgeo svg circle.nlgeo-p:focus { stroke: var(--ink, #111); stroke-width: 1.6; outline: none; }
+.nlgeo svg path.nlgeo-a:hover, .nlgeo svg path.nlgeo-a:focus { stroke: var(--ink, #111); stroke-width: 1.6; outline: none; }
+.nld-map { padding: 14px 16px; margin: 12px 0; }
+.nld-map-h { margin: 0 0 4px; }
+
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
 .cs h2 { font-size: 20px; margin: 28px 0 8px; color: var(--ink); }
@@ -1741,7 +1751,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-18 05:19:38 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-18 12:06:52 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

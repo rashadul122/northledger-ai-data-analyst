@@ -531,6 +531,41 @@ def test_answers_to_the_ais_own_queries_read_as_a_person_would_say_them():
                [["Han", 814, 1.67], ["Luke", 825, 1.58]]).startswith("net score: Han (1.67)")
 
 
+def test_the_years_a_question_names_frame_the_answer_when_the_rows_hold_them():
+    import nl_explore as nx
+    rows = [[y, v] for y, v in ((2001, 5.66), (2007, 7.31), (2008, 8.58), (2009, 14.57), (2019, 4.24), (2026, 5.23))]
+    def say(q, rows=rows):
+        return nx.answer_of(q, [{"op": "sql", "ok": True, "args": {"sql": "SELECT yr, detroit_rate FROM t ORDER BY yr"},
+                                 "table": {"columns": ["yr", "detroit_rate"], "rows": rows}}])["text"]
+    # the visitor's own question (18 Oct 2026): from 2008, never from the first row the query happened to return
+    assert say("How did Detroit change from 2008 to 2026?").startswith("detroit_rate went from 8.58 in 2008 to 5.23 in 2026"), say("x 2008 to 2026")
+    assert "peaked at 14.57 in 2009" in say("How did Detroit change from 2008 to 2026?")
+    # no years named, or a year the rows do not hold: the rows' own first and last, never a year the table lacks
+    assert say("How did Detroit change?").startswith("detroit_rate went from 5.66 in 2001")
+    assert say("How did Detroit change from 1990 to 2026?").startswith("detroit_rate went from 5.66 in 2001")
+
+
+def test_a_cut_off_top_list_never_names_its_last_row_the_lowest():
+    import nl_explore as nx
+    rows = [["Las Vegas-Henderson-North Las Vegas, NV", "2020-04", 34.1], ["Elkhart-Goshen, IN", "2020-04", 33.0],
+            ["Atlantic City-Hammonton, NJ", "2020-05", 30.7], ["Monroe, MI", "2020-04", 25.4]]
+    sql = 'SELECT "Metro area", "Year", "Unemployment rate (%)" FROM t ORDER BY "Unemployment rate (%)" DESC LIMIT 4'
+    t = nx.answer_of("Which metro had the highest unemployment in 2020?", [{"op": "sql", "ok": True, "args": {"sql": sql},
+                     "table": {"columns": ["Metro area", "Year", "Unemployment rate (%)"], "rows": rows}}])["text"]
+    # the visitor's Ask (18 Oct 2026): Monroe is the 4th of a top list, never "the lowest"
+    assert "lowest" not in t and t.startswith("Unemployment rate (%), highest: Las Vegas-Henderson-North Las Vegas, NV (34.1, 2020-04)"), t
+
+
+def test_a_cut_off_series_never_ends_at_the_cut():
+    import nl_explore as nx
+    rows = [["2008-01", 7.4], ["2009-06", 15.6], ["2024-08", 4.8]]
+    t = nx.answer_of("How did Detroit change from 2008 to 2026?", [{"op": "sql", "ok": True, "args": {"sql": "SELECT m, r FROM t"},
+                     "numbers": {"rows": {"value": 220, "text": "220", "kind": "int"}},
+                     "table": {"columns": ["Year", "Unemployment rate (%)"], "rows": rows}}])["text"]
+    # 220 months, 200 kept (18 Oct 2026): never "went from ... to 4.8 in 2024-08" as if the series ended there, never a peak past the cut
+    assert "went from" not in t and "peaked" not in t and "of 220" in t, t
+
+
 def main() -> int:
     tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)]
     bad = 0

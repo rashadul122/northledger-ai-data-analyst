@@ -165,6 +165,13 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "limit_needs": "needs a total over two 12-month windows and a category of 2 to 12 levels"},
     # Batch 2, the chart grammar (14 October 2026): the line, the stacked area, the bar, the grouped bar and small
     # multiples, on Batch 1's rules (the rows the engine kept, no flagged column, no point or bar on fewer than 5 rows)
+    "geo_map": {
+        "kind": "geo", "section": "other", "section_if_not_primary": "other",
+        "args": [("measure", True), ("category", True)], "args_text": "[measure, place]",
+        "what": "each place where it is on a map of the United States (metro and micro areas as dots by their Census code or "
+                "name, states shaded), coloured by the measure, with a year control when the file has years",
+        "limit_needs": "needs a column whose values are US places (metro areas such as 'Abilene, TX', a CBSA code, or states) "
+                       "for most of its rows"},
     "line_chart": {
         "kind": "lines", "section": "headline", "section_if_not_primary": "other",
         "args": [("measure", True), ("category", True)], "args_text": "[measure?, category?]",
@@ -197,7 +204,8 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "what": "a published table's series as lines over time (the lead and the biggest movers), gaps left as gaps",
         "limit_needs": "needs a long statistical table: one published figure a period for each of its series"},
 }
-MENU = tuple(REGISTRY)
+# the map (geo_map) is placed by the readers that know its places (nl_explore panels and tables), never ranked here
+MENU = tuple(c for c in REGISTRY if c != "geo_map")
 
 # auto_rank (spec.json "auto_rank"): 0-9 by plan.kind, plus bonuses
 RANK_KINDS = ("time_series_panel", "event_log", "transactions", "survey", "cross_section", "text_corpus",

@@ -2672,6 +2672,51 @@
     // engine for the figures the story needs (where the measure stands now and a year earlier, its turning points, how recent years compare,
     // who leads); the engine runs those checks on the rows and their figures join the analyst block, which results_for_ai hands the writer.
     // Every figure is still the engine's. It uses one of the file's AI rounds; on any failure or after INVESTIGATE_MS the writer goes ahead.
+    // the AI phase's progress, on the report itself (owner, 17 Oct 2026: a longer wait is fine while the visitor sees progress). The
+    // run panel and its bar hide once the engine's report shows, and the AI-written report lands in step 6: this card, first in the
+    // report, names each phase, its elapsed time, and when it is ready, a way to it.
+    var AI_STAT = { t0: 0, timer: null, phase: '' };
+    function aiStatus(phase, why) {
+      var r = el.report;
+      if (!r) return;
+      var box = document.getElementById('try-ai-status');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'try-ai-status'; box.className = 'tr-card ai-status'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite');
+        r.insertBefore(box, r.firstChild);
+      }
+      if (phase === 'investigate') { AI_STAT.t0 = Date.now(); AI_STAT.inv = ''; }
+      else if (phase === 'write' && (!AI_STAT.t0 || AI_STAT.phase === 'done' || AI_STAT.phase === 'failed')) { AI_STAT.t0 = Date.now(); AI_STAT.inv = 'skipped'; }
+      AI_STAT.phase = phase;
+      var mark = function (p) {
+        var order = ['investigate', 'write', 'done'], at = order.indexOf(phase), me = order.indexOf(p);
+        if (p === 'investigate' && AI_STAT.inv === 'skipped' && phase !== 'investigate') return '\u2013';
+        if (phase === 'failed') return p === 'investigate' && AI_STAT.inv === 'done' ? '\u2713' : '\u2013';
+        return me < at ? '\u2713' : me === at ? '\u25CF' : '\u25CB';
+      };
+      var clock = function () {
+        var sec = Math.max(0, Math.round((Date.now() - AI_STAT.t0) / 1000));
+        return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+      };
+      var paint = function () {
+        var busy = phase === 'investigate' || phase === 'write';
+        box.className = 'tr-card ai-status' + (busy ? ' ai-status-busy' : phase === 'done' ? ' ai-status-done' : ' ai-status-off');
+        box.innerHTML = '<p class="kicker">The AI-written report</p>' +
+          (busy ? '<div class="ai-status-bar" aria-hidden="true"><span></span></div>' : '') +
+          '<ol class="ai-status-steps">' +
+          '<li class="st-done">\u2713 The engine analysed your file (the report below)</li>' +
+          '<li>' + mark('investigate') + ' The AI asks the engine for the figures its story needs; the engine computes them on your rows' +
+          (AI_STAT.inv === 'skipped' && phase !== 'investigate' ? ' <span class="note">(not this time: the AI did not answer in time or found nothing to add)</span>' : '') + '</li>' +
+          '<li>' + mark('write') + ' The AI writes the report; every figure is checked against the engine\'s results</li></ol>' +
+          (busy ? '<p class="note">Working: ' + clock() + ' so far; this usually takes 1 to 3 minutes. You can read the report below meanwhile.</p>' :
+            phase === 'done' ? '<p><button type="button" class="btn btn-primary btn-sm" data-act="to-ai-report">Read the AI-written report</button> ' +
+              '<span class="note">Ready after ' + clock() + '.</span></p>' :
+            '<p class="note">' + esc(why || 'The AI-written report could not be written this time; the engine\'s report below stands.') + '</p>');
+      };
+      clearInterval(AI_STAT.timer);
+      paint();
+      if (phase === 'investigate' || phase === 'write') AI_STAT.timer = setInterval(function () { if (document.getElementById('try-ai-status') === box) paint(); else clearInterval(AI_STAT.timer); }, 1000);
+    }
     var INVESTIGATE_MS = 75000;
     var INVESTIGATE_BRIEF = 'Investigate this file for the written report on that question. Compute the figures its story needs: where the main measure stands ' +
       'in the latest period and the same period a year earlier; its highest and lowest points and when; its sharpest rise or fall; how recent ' +
@@ -2683,12 +2728,14 @@
       function done() {
         if (finished) return;
         finished = true; S.investigating = false; clearTimeout(timer);
+        AI_STAT.inv = b.investigated ? 'done' : 'skipped';
         if (S.onLedger && S.onLedger.inv) S.onLedger = null;
         if (S.onMore && S.onMore.inv) S.onMore = null;
         if (seq === S.seq) then();
       }
       timer = setTimeout(done, INVESTIGATE_MS);
       S.investigating = true;
+      aiStatus('investigate');
       b.ai_rounds = (b.ai_rounds || 0) + 1;
       el.note.textContent = 'The engine finished. The AI is asking it for the figures the report needs\u2026';
       var onLedger = function (gotId, steps) {
@@ -2738,6 +2785,7 @@
       var ctrl = window.AbortController ? new AbortController() : null;
       var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, REPORT_ABORT_MS);
       setStage('report', 'start');
+      aiStatus('write');
       el.note.textContent = 'The engine finished. The AI is writing the full report\u2026';
       var payload;
       // the distilled results come from the engine worker itself (results_for_ai, packed in the
@@ -2774,6 +2822,7 @@
             j.goal = (rep && rep.ai_plan && rep.ai_plan.goal) || S.objective || '';   // the question it answers (its PDF, its link)
             S.aiReport = j; S.liveAi = j;             // liveAi: the AI report of the engine report on the page (the analyst line)
             drawAiReport(j);
+            aiStatus('done');
             savePrev(j);
             setStage('report', 'done');
             el.note.textContent = 'Done: the report is below.';
@@ -2784,6 +2833,7 @@
             if (seq !== S.seq) return;
             setStage('report', 'skip', null, String(e && e.message ? e.message : 'the AI report was not written'));
             el.note.textContent = 'The engine\'s checked report is below; the AI-written report could not be written this time.';
+            aiStatus('failed', 'The AI-written report could not be written this time (' + String(e && e.message ? e.message : 'no answer').slice(0, 80) + '); the engine\'s report below stands.');
             drawBar();
           });
       }
@@ -4002,6 +4052,9 @@
         aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
       } else if (act === 'series-lookup') {
         seriesLookup(b);
+      } else if (act === 'to-ai-report') {
+        var ar2 = document.getElementById('try-ai-report');
+        if (ar2) { ar2.setAttribute('tabindex', '-1'); ar2.scrollIntoView({ block: 'start' }); ar2.focus({ preventScroll: true }); }
       } else if (act === 'again') {
         el.report.hidden = true; clearMsg();
         goTo(el.start);

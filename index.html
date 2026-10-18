@@ -1714,6 +1714,17 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 /* the AI summaries card is shown once it holds something (an empty card was a blank box under the bottom line) */
 .nl2-aicard:empty { display: none; }
 
+/* the AI phase's progress card, first in the report (50-try.js aiStatus) */
+.ai-status { padding: 14px 18px; border-left: 4px solid var(--accent, #2a78d6); }
+.ai-status-done { border-left-color: var(--ts-1, #0e8a7a); }
+.ai-status-off { border-left-color: var(--muted, #888); }
+.ai-status-steps { list-style: none; margin: 6px 0 8px; padding: 0; }
+.ai-status-steps li { margin: 3px 0; }
+.ai-status-bar { height: 4px; border-radius: 2px; background: var(--hairline, rgba(127,127,127,.25)); overflow: hidden; margin: 4px 0 8px; }
+.ai-status-bar span { display: block; height: 100%; width: 30%; background: var(--accent, #2a78d6); border-radius: 2px; animation: ai-status-slide 1.6s ease-in-out infinite; }
+@keyframes ai-status-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .ai-status-bar span { animation: none; width: 100%; opacity: .5; } }
+
 </style>
 </head>
 <body>
@@ -1738,7 +1749,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-18 01:18:01 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-18 02:03:45 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2485,7 +2496,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-18 01:18:01 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-18 02:03:45 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -10233,6 +10244,51 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // engine for the figures the story needs (where the measure stands now and a year earlier, its turning points, how recent years compare,
     // who leads); the engine runs those checks on the rows and their figures join the analyst block, which results_for_ai hands the writer.
     // Every figure is still the engine's. It uses one of the file's AI rounds; on any failure or after INVESTIGATE_MS the writer goes ahead.
+    // the AI phase's progress, on the report itself (owner, 17 Oct 2026: a longer wait is fine while the visitor sees progress). The
+    // run panel and its bar hide once the engine's report shows, and the AI-written report lands in step 6: this card, first in the
+    // report, names each phase, its elapsed time, and when it is ready, a way to it.
+    var AI_STAT = { t0: 0, timer: null, phase: '' };
+    function aiStatus(phase, why) {
+      var r = el.report;
+      if (!r) return;
+      var box = document.getElementById('try-ai-status');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'try-ai-status'; box.className = 'tr-card ai-status'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite');
+        r.insertBefore(box, r.firstChild);
+      }
+      if (phase === 'investigate') { AI_STAT.t0 = Date.now(); AI_STAT.inv = ''; }
+      else if (phase === 'write' && (!AI_STAT.t0 || AI_STAT.phase === 'done' || AI_STAT.phase === 'failed')) { AI_STAT.t0 = Date.now(); AI_STAT.inv = 'skipped'; }
+      AI_STAT.phase = phase;
+      var mark = function (p) {
+        var order = ['investigate', 'write', 'done'], at = order.indexOf(phase), me = order.indexOf(p);
+        if (p === 'investigate' && AI_STAT.inv === 'skipped' && phase !== 'investigate') return '\u2013';
+        if (phase === 'failed') return p === 'investigate' && AI_STAT.inv === 'done' ? '\u2713' : '\u2013';
+        return me < at ? '\u2713' : me === at ? '\u25CF' : '\u25CB';
+      };
+      var clock = function () {
+        var sec = Math.max(0, Math.round((Date.now() - AI_STAT.t0) / 1000));
+        return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+      };
+      var paint = function () {
+        var busy = phase === 'investigate' || phase === 'write';
+        box.className = 'tr-card ai-status' + (busy ? ' ai-status-busy' : phase === 'done' ? ' ai-status-done' : ' ai-status-off');
+        box.innerHTML = '<p class="kicker">The AI-written report</p>' +
+          (busy ? '<div class="ai-status-bar" aria-hidden="true"><span></span></div>' : '') +
+          '<ol class="ai-status-steps">' +
+          '<li class="st-done">\u2713 The engine analysed your file (the report below)</li>' +
+          '<li>' + mark('investigate') + ' The AI asks the engine for the figures its story needs; the engine computes them on your rows' +
+          (AI_STAT.inv === 'skipped' && phase !== 'investigate' ? ' <span class="note">(not this time: the AI did not answer in time or found nothing to add)</span>' : '') + '</li>' +
+          '<li>' + mark('write') + ' The AI writes the report; every figure is checked against the engine\'s results</li></ol>' +
+          (busy ? '<p class="note">Working: ' + clock() + ' so far; this usually takes 1 to 3 minutes. You can read the report below meanwhile.</p>' :
+            phase === 'done' ? '<p><button type="button" class="btn btn-primary btn-sm" data-act="to-ai-report">Read the AI-written report</button> ' +
+              '<span class="note">Ready after ' + clock() + '.</span></p>' :
+            '<p class="note">' + esc(why || 'The AI-written report could not be written this time; the engine\'s report below stands.') + '</p>');
+      };
+      clearInterval(AI_STAT.timer);
+      paint();
+      if (phase === 'investigate' || phase === 'write') AI_STAT.timer = setInterval(function () { if (document.getElementById('try-ai-status') === box) paint(); else clearInterval(AI_STAT.timer); }, 1000);
+    }
     var INVESTIGATE_MS = 75000;
     var INVESTIGATE_BRIEF = 'Investigate this file for the written report on that question. Compute the figures its story needs: where the main measure stands ' +
       'in the latest period and the same period a year earlier; its highest and lowest points and when; its sharpest rise or fall; how recent ' +
@@ -10244,12 +10300,14 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       function done() {
         if (finished) return;
         finished = true; S.investigating = false; clearTimeout(timer);
+        AI_STAT.inv = b.investigated ? 'done' : 'skipped';
         if (S.onLedger && S.onLedger.inv) S.onLedger = null;
         if (S.onMore && S.onMore.inv) S.onMore = null;
         if (seq === S.seq) then();
       }
       timer = setTimeout(done, INVESTIGATE_MS);
       S.investigating = true;
+      aiStatus('investigate');
       b.ai_rounds = (b.ai_rounds || 0) + 1;
       el.note.textContent = 'The engine finished. The AI is asking it for the figures the report needs\u2026';
       var onLedger = function (gotId, steps) {
@@ -10299,6 +10357,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var ctrl = window.AbortController ? new AbortController() : null;
       var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, REPORT_ABORT_MS);
       setStage('report', 'start');
+      aiStatus('write');
       el.note.textContent = 'The engine finished. The AI is writing the full report\u2026';
       var payload;
       // the distilled results come from the engine worker itself (results_for_ai, packed in the
@@ -10335,6 +10394,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             j.goal = (rep && rep.ai_plan && rep.ai_plan.goal) || S.objective || '';   // the question it answers (its PDF, its link)
             S.aiReport = j; S.liveAi = j;             // liveAi: the AI report of the engine report on the page (the analyst line)
             drawAiReport(j);
+            aiStatus('done');
             savePrev(j);
             setStage('report', 'done');
             el.note.textContent = 'Done: the report is below.';
@@ -10345,6 +10405,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
             if (seq !== S.seq) return;
             setStage('report', 'skip', null, String(e && e.message ? e.message : 'the AI report was not written'));
             el.note.textContent = 'The engine\'s checked report is below; the AI-written report could not be written this time.';
+            aiStatus('failed', 'The AI-written report could not be written this time (' + String(e && e.message ? e.message : 'no answer').slice(0, 80) + '); the engine\'s report below stands.');
             drawBar();
           });
       }
@@ -11563,6 +11624,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         aiSwitch(act === 'ai-analyst' ? 'analyst' : 'manager');
       } else if (act === 'series-lookup') {
         seriesLookup(b);
+      } else if (act === 'to-ai-report') {
+        var ar2 = document.getElementById('try-ai-report');
+        if (ar2) { ar2.setAttribute('tabindex', '-1'); ar2.scrollIntoView({ block: 'start' }); ar2.focus({ preventScroll: true }); }
       } else if (act === 'again') {
         el.report.hidden = true; clearMsg();
         goTo(el.start);

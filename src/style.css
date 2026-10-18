@@ -1565,3 +1565,14 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 
 /* the AI summaries card is shown once it holds something (an empty card was a blank box under the bottom line) */
 .nl2-aicard:empty { display: none; }
+
+/* the AI phase's progress card, first in the report (50-try.js aiStatus) */
+.ai-status { padding: 14px 18px; border-left: 4px solid var(--accent, #2a78d6); }
+.ai-status-done { border-left-color: var(--ts-1, #0e8a7a); }
+.ai-status-off { border-left-color: var(--muted, #888); }
+.ai-status-steps { list-style: none; margin: 6px 0 8px; padding: 0; }
+.ai-status-steps li { margin: 3px 0; }
+.ai-status-bar { height: 4px; border-radius: 2px; background: var(--hairline, rgba(127,127,127,.25)); overflow: hidden; margin: 4px 0 8px; }
+.ai-status-bar span { display: block; height: 100%; width: 30%; background: var(--accent, #2a78d6); border-radius: 2px; animation: ai-status-slide 1.6s ease-in-out infinite; }
+@keyframes ai-status-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .ai-status-bar span { animation: none; width: 100%; opacity: .5; } }

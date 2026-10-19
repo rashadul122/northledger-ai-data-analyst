@@ -829,15 +829,18 @@
   }
   function gcell(rec, i, k) { var r = rec.table && rec.table.rows && rec.table.rows[i]; return r && r[1 + k] !== undefined ? String(r[1 + k]) : ''; }
   function gvalues(list, n) { return gArr(list) && list.length === n && list.every(gNumN); }
-  function gtimeOk(d, key, nmin, nmax) {
-    return gObj(d) && gArr(d.x) && d.x.length >= 2 && d.x.length <= 30 && d.x.every(gStr) && gStr(d.x_label) && gArr(d[key]) &&
+  // a time chart's periods: 30 (spec POINTS_MAX); a line may hold a long published series, one point a period (the dashboard's yearly
+  // series: 87 years of federal debt fell back to its table at 30, 19 Oct 2026), its dots smaller and its axis labels thinned to fit
+  var GLONG = 240;
+  function gtimeOk(d, key, nmin, nmax, xmax) {
+    return gObj(d) && gArr(d.x) && d.x.length >= 2 && d.x.length <= (xmax || 30) && d.x.every(gStr) && gStr(d.x_label) && gArr(d[key]) &&
       d[key].length >= nmin && d[key].length <= nmax && d[key].every(function (s) { return gObj(s) && gStr(s.label) && gvalues(s.values, d.x.length); });
   }
   var GK = {
     lines: {
       ok: function (rec) {
         var d = rec.data, f = d && d.forecast;
-        return gtimeOk(d, 'series', 1, 5) && d.series.some(function (s) { return s.values.some(gNum); }) && (f === null || f === undefined ||
+        return gtimeOk(d, 'series', 1, 5, f ? 30 : GLONG) && d.series.some(function (s) { return s.values.some(gNum); }) && (f === null || f === undefined ||
           (gObj(f) && gArr(f.x) && f.x.length >= 1 && f.x.length <= 24 && ['values', 'lo', 'hi'].every(function (k) { return gArr(f[k]) && f[k].length === f.x.length && f[k].every(gNum); })));
       },
       draw: function (rec, W) {
@@ -877,7 +880,7 @@
           b += '<path d="' + U.path(s.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:' + c + ';stroke-width:2' + (GDASH[k] ? ';stroke-dasharray:' + GDASH[k] : '') + '"/>';
           s.values.forEach(function (v, i) {
             if (!gNum(v)) return;
-            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
+            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 120 ? 1.2 : n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
           });
         });
         if (ends) {

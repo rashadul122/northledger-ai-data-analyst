@@ -4941,7 +4941,7 @@ check('dashboard-exports-html-works-offline-and-xlsx-has-native-charts', DESK, a
   ok(off.figs >= 4 && /Category is RENT/.test(off.act) && off.cat === 'RENT', 'the saved dashboard does not draw with its filters: ' + JSON.stringify(off));
   await p2.selectOption('select[data-key="d1"]', '');
   await p2.waitForTimeout(100);
-  ok(/No filter/.test(await p2.textContent('#nld-active')) && !errs.length, 'the saved dashboard\'s filters do not work offline: ' + errs[0]);
+  ok(/Showing everything/.test(await p2.textContent('#nld-active')) && !errs.length, 'the saved dashboard\'s filters do not work offline: ' + errs[0]);
   await p2.close();
   fs.unlinkSync(hp + '.html');
   await p.click('#nl2-dash [data-nld="clear"]');

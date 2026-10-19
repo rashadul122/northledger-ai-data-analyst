@@ -15145,12 +15145,38 @@ def _dashboard(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, g
         import nl_dashboard as _nd
         return _nd.build(rep, {"r": r, "reading": reading, "plan": plan if isinstance(plan, dict) else None,
                                "pub": pub, "goal": goal, "names": names, "names_by": names_by or {},
-                               "pins": list(pins or [])})
+                               "pins": list(pins or []), "plain_names": _plain_names(rep, plan),
+                               "plain_units": _plain_units(rep)})
     except Exception as exc:  # noqa: BLE001 - the report stands without the dashboard, and says so
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
         return {"version": "", "ok": False, "chosen_by": "none",
                 "why": "the dashboard could not be built for this file (%s)" % type(exc).__name__}
+
+
+def _plain_names(rep: Dict[str, Any], plan: Any) -> Dict[str, str]:
+    """{header: the name the report prints} for the dashboard (_column_names); none when it cannot be read."""
+    try:
+        return _column_names(rep, plan if isinstance(plan, dict) else None)
+    except Exception:  # noqa: BLE001 - the file's own headers then
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return {}
+
+
+def _plain_units(rep: Dict[str, Any]) -> Dict[str, str]:
+    """{header: "%"} for a FRED rate whose name says it is a percentage (engine/fred_series.json), so the dashboard says "%" and a
+    change in points; a plan's unit or the file's own sign still wins (nl_dashboard.Read)."""
+    out: Dict[str, str] = {}
+    try:
+        for h in _report_headers(rep):
+            f = fred_lookup(h)
+            if f and f.get("kind") == "rate" and "%" in str(f.get("label") or ""):
+                out[h] = "%"
+    except Exception:  # noqa: BLE001
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+    return out
 
 
 # The last run's kept rows for the quarterly sales report (engine/nl_sales.py), so the visitor's settings (the fiscal

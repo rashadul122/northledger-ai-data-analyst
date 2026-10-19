@@ -186,6 +186,26 @@
    "Stock market volatility index (VIX)",
    "CBOE volatility index, daily close",
    "index"
+  ],
+  "GFDGDPA188S": [
+   "US gross federal debt as a share of GDP (%)",
+   "Gross federal debt as a percent of gross domestic product, annual (US Office of Management and Budget)",
+   "rate"
+  ],
+  "GFDEGDQ188S": [
+   "US total public debt as a share of GDP (%)",
+   "Federal debt: total public debt as a percent of gross domestic product, quarterly, seasonally adjusted",
+   "rate"
+  ],
+  "FYFSGDA188S": [
+   "US federal surplus or deficit as a share of GDP (%)",
+   "Federal surplus or deficit (a deficit is negative) as a percent of gross domestic product, annual",
+   "rate"
+  ],
+  "GFDEBTN": [
+   "US federal debt: total public debt (millions of dollars)",
+   "Federal debt: total public debt, quarterly, in millions of dollars (US Treasury)",
+   "level"
   ]
  },
  "prefixes": {

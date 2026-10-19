@@ -29,6 +29,13 @@
   function periodOf(ym, grain) { return grain === 'month' ? ym : grain === 'quarter' ? ym.slice(0, 4) + '-Q' + (Math.floor((+ym.slice(5, 7) - 1) / 3) + 1) : ym.slice(0, 4); }
   function periodWord(p) { return /^\d{4}-\d{2}$/.test(p) ? monthWord(p) : /^\d{4}-Q\d$/.test(p) ? p.slice(5) + ' ' + p.slice(0, 4) : p; }
   NLD.grainOf = function (nMonths) { return nMonths <= PMAX ? 'month' : Math.ceil(nMonths / 3) <= PMAX ? 'quarter' : 'year'; };
+  var GRANK = { month: 0, quarter: 1, year: 2 };
+  // the step a chart reads: the span's (grainOf), never finer than the data's own (cube.grain: a yearly series is never shown by month)
+  function grainFor(D, nMonths) { var a = NLD.grainOf(nMonths), b = (D.cube && D.cube.grain) || 'month'; return GRANK[b] > GRANK[a] ? b : a; }
+  function nativeOf(D) { return (D.cube && D.cube.grain) || 'month'; }
+  // the fewest rows a figure may rest on: 5 for a file of records, 1 for a table of published figures (nl_dashboard.observation_table)
+  function smallOf(D) { var k = D.cube && D.cube.small; return typeof k === 'number' && k >= 1 ? k : SMALL; }
+  NLD.periodWord = periodWord;
 
   /* ------------------------------------------------------------ numbers (the only formatting: a recomputed figure) */
   function fmt(v, unit) {
@@ -67,12 +74,56 @@
   function agg(D, cells, mkey, how) {
     var nd = D.cube.dims.length, rows = 0, s = 0, k = 0, j = mkey ? measIdx(D, mkey) : -1;
     cells.forEach(function (c) { rows += c[1 + nd]; if (j >= 0) { s += c[2 + nd + 2 * j]; k += c[3 + nd + 2 * j]; } });
-    if (j < 0 || how === 'count') return { v: rows >= SMALL ? rows : null, n: rows };
-    if (k < SMALL) return { v: null, n: k };
+    var small = smallOf(D);
+    if (j < 0 || how === 'count') return { v: rows >= small ? rows : null, n: rows };
+    if (k < small) return { v: null, n: k };
     return { v: how === 'average' ? s / k : s, n: k };
+  }
+  // [{p, v, n}] in time order at a step (the data's own by default): a flow's total, a level's average, the rows (no measure); a period
+  // on fewer rows than the floor has v null (nl_dashboard.period_values)
+  function periodValues(D, cells, mkey, grain) {
+    var nd = D.cube.dims.length, j = mkey ? measIdx(D, mkey) : -1, flow = j >= 0 && D.cube.measures[j].flow, by = {}, small = smallOf(D);
+    grain = grain || nativeOf(D);
+    cells.forEach(function (c) {
+      if (c[0] < 0) return;
+      var p = periodOf(D.cube.months[c[0]], grain), a = by[p] || (by[p] = { s: 0, k: 0 });
+      if (j < 0) a.k += c[1 + nd]; else { a.s += c[2 + nd + 2 * j]; a.k += c[3 + nd + 2 * j]; }
+    });
+    return Object.keys(by).sort().map(function (p) {
+      var a = by[p];
+      return { p: p, n: a.k, v: a.k < small ? null : j < 0 ? a.k : flow ? a.s : a.s / a.k };
+    });
+  }
+  NLD.periodValues = periodValues;
+  function yearBack(p, grain) { return grain === 'year' ? String(+p.slice(0, 4) - 1) : (+p.slice(0, 4) - 1) + p.slice(4); }
+  function firstMonth(D, p, grain) { for (var i = 0; i < D.cube.months.length; i++) if (periodOf(D.cube.months[i], grain) === p) return D.cube.months[i]; return null; }
+  // a tile that reads its measure period by period (nl_dashboard._series_kpi): latest, change (from the period before, or vs 'year'),
+  // peak and low, each with its period
+  function seriesKpi(D, K, cells) {
+    var g = nativeOf(D), pv = periodValues(D, cells, K.mkey, g), have = pv.filter(function (x) { return x.v !== null; });
+    var none = { value: null, n: pv.reduce(function (a, x) { return a + x.n; }, 0), suppressed: !!pv.length && !have.length, month: null, period: null, base: null, base_period: null, pct: null };
+    if (!have.length) return none;
+    if (K.agg === 'peak' || K.agg === 'low') {
+      var b = null;
+      have.forEach(function (x) { if (!b || (K.agg === 'peak' ? x.v >= b.v : x.v <= b.v)) b = x; });
+      return Object.assign(none, { value: b.v, n: b.n, suppressed: false, period: b.p, month: firstMonth(D, b.p, g) });
+    }
+    var last = pv[pv.length - 1];
+    if (last.v === null) return Object.assign(none, { n: last.n, suppressed: true, period: last.p, month: firstMonth(D, last.p, g) });
+    if (K.agg === 'latest') return Object.assign(none, { value: last.v, n: last.n, suppressed: false, period: last.p, month: firstMonth(D, last.p, g) });
+    var want = K.vs === 'year' ? yearBack(last.p, g) : null, prev = null;
+    for (var i = pv.length - 2; i >= 0; i--) {
+      if (want !== null && pv[i].p !== want) { if (pv[i].p < want) break; continue; }
+      prev = pv[i]; break;
+    }
+    if (!prev || prev.v === null) return Object.assign(none, { n: last.n, period: last.p, month: firstMonth(D, last.p, g) });
+    var d = last.v - prev.v;
+    return Object.assign(none, { value: d, n: last.n + prev.n, suppressed: false, period: last.p, month: firstMonth(D, last.p, g),
+      base: prev.v, base_period: prev.p, pct: prev.v ? d / Math.abs(prev.v) * 100 : null });
   }
   NLD.kpi = function (D, K, F) {
     var cells = pick(D, F || {}, K.where), month = null, how = K.agg;
+    if ((how === 'latest' || how === 'change' || how === 'peak' || how === 'low') && K.mkey) return seriesKpi(D, K, cells);
     if (how === 'latest') {
       var last = -1; cells.forEach(function (c) { if (c[0] > last) last = c[0]; });
       cells = last < 0 ? [] : cells.filter(function (c) { return c[0] === last; });
@@ -81,14 +132,14 @@
       how = mj >= 0 && !D.cube.measures[mj].flow ? 'average' : 'sum';
     }
     var r = agg(D, cells, K.agg === 'count' ? null : K.mkey, K.agg === 'count' ? 'count' : how);
-    return { value: r.v, n: r.n, suppressed: r.n > 0 && r.n < SMALL, month: month };
+    return { value: r.v, n: r.n, suppressed: r.n > 0 && r.n < smallOf(D), month: month };
   };
   // the filtered span's months (the data's own months inside the date range), and the grain it is shown at
   function span(D, cells) {
     var lo = Infinity, hi = -1;
     cells.forEach(function (c) { if (c[0] >= 0) { if (c[0] < lo) lo = c[0]; if (c[0] > hi) hi = c[0]; } });
     if (hi < 0) return null;
-    var ms = mrange(D.cube.months[lo], D.cube.months[hi]), g = NLD.grainOf(ms.length), ps = [];
+    var ms = mrange(D.cube.months[lo], D.cube.months[hi]), g = grainFor(D, ms.length), ps = [];
     ms.forEach(function (m) { var p = periodOf(m, g); if (ps.indexOf(p) < 0) ps.push(p); });
     return { months: ms, grain: g, periods: ps };
   }
@@ -110,8 +161,16 @@
 
   /* ------------------------------------------------------------ chart-registry records from the cube */
   function unitOf(D, X) { var j = X.mkey ? measIdx(D, X.mkey) : -1; return X.unit_word || (j >= 0 ? D.cube.measures[j].unit : '') || ''; }
-  function whatOf(D, X) { return X.mkey ? (X.agg === 'average' ? 'Average ' : 'Total ') + X.measure : (D.grain && D.grain.noun) || 'Rows'; }
+  // a series' name: "Average X" / "Total X", or X alone when each point is one published figure (plain)
+  function whatOf(D, X, plain) { return X.mkey ? (plain ? '' : X.agg === 'average' ? 'Average ' : 'Total ') + X.measure : (D.grain && D.grain.noun) || 'Rows'; }
   function textOf(v, n, unit) { return v === null ? (n > 0 ? '<5' : 'no rows') : fmt(v, unit); }
+  // a change, signed: "+1.2 pp" for a percentage, "+1,240" otherwise
+  function fmtChange(v, unit) {
+    if (v === null || v === undefined || !isFinite(v)) return '';
+    var s = (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v), unit === '%' ? '' : unit);
+    return unit === '%' ? s + ' pp' : s;
+  }
+  NLD.fmtChange = fmtChange;
   function base(X, kind, D) {
     return { kind: kind, chart: X.chart, id: 'dash.' + X.id, title: X.title, chosen_by: D.chosen_by === 'engine' ? 'engine' : 'ai', why: X.why || '',
       section: 'other', source: 'Recomputed in this browser from the engine\'s aggregate of the rows it kept, under the filters shown' };
@@ -119,6 +178,7 @@
   NLD.record = function (D, X, F) {
     var cells = pick(D, F || {}, X.where), unit = unitOf(D, X), how = X.agg, sup = 0, i;
     if (X.draw === 'bar' || X.draw === 'grouped') return barRecord(D, X, cells, unit);
+    if (X.draw === 'change' || X.draw === 'periods') return ownRecord(D, X, cells, unit);
     var sp = span(D, cells);
     if (!sp) return { kind: 'table', chart: X.chart, title: X.title, summary: 'No rows match the filters.', table: { cols: ['Period'], rows: [] }, empty: true };
     var P = byPeriod(D, cells, sp), x = sp.periods, xl = { month: 'Month', quarter: 'Quarter', year: 'Year' }[sp.grain];
@@ -152,11 +212,12 @@
         if (r.v === null && r.n > 0) sup++;
         vals.push(r.v); texts.push(r.zero ? fmt(0, unit) : textOf(r.v, r.n, unit));
       });
-      return { label: g === null ? whatOf(D, X) : g === 'rest' ? 'other' : L[g], values: vals, texts: texts };
+      return { label: g === null ? whatOf(D, X, D.observations && sp.grain === nativeOf(D)) : g === 'rest' ? 'other' : L[g], values: vals, texts: texts };
     }); }
     if (X.draw === 'area') { S = S.filter(function (s) { return s.label !== 'other' || s.values.some(function (v) { return v; }); }); }
     // a quarter or year the range covers only in part (its first or last): said beside it, never scaled or filled
-    var full = sp.grain === 'quarter' ? 3 : sp.grain === 'year' ? 12 : 1, held = {};
+    // (only when months are put together: a yearly series' own years are whole)
+    var coarse = sp.grain !== nativeOf(D), full = !coarse ? 0 : sp.grain === 'quarter' ? 3 : sp.grain === 'year' ? 12 : 1, held = {};
     sp.months.forEach(function (m) { var p = periodOf(m, sp.grain); held[p] = (held[p] || 0) + 1; });
     var part = x.filter(function (p) { return held[p] < full; });
     var pw = function (p) { return periodWord(p) + (held[p] < full ? ' (' + held[p] + ' of ' + full + ' months)' : ''); };
@@ -171,7 +232,7 @@
       cols.push('Total'); rows.forEach(function (r, k) { r.push(textOf(tot[k].v, tot[k].n, unit)); });
     }
     rec.table = { cols: cols, rows: rows };
-    var sub = sp.grain !== 'month' ? 'By ' + sp.grain + ': the range holds ' + sp.months.length + ' months. ' : '';
+    var sub = coarse ? 'By ' + sp.grain + ': the range holds ' + sp.months.length + ' months. ' : '';
     if (part.length) sub += part.map(function (p) { return periodWord(p) + ' holds ' + held[p] + ' of its ' + full + ' months'; }).join('; ') + ' in this range: ' + (part.length === 1 ? 'its figure is' : 'their figures are') + ' not comparable with a whole ' + sp.grain + '. ';
     if (X.draw === 'area' && X.bkey && S.some(function (s) { return s.label === 'other'; })) sub += 'Groups with a ' + sp.grain + ' on fewer than 5 rows are counted in \u201cother\u201d. ';
     if (gaps.length) sub += gaps.length + ' ' + (gaps.length === 1 ? sp.grain : sp.grain + 's') + ' with no rows ' + (gaps.length === 1 ? 'is' : 'are') + ' left as ' + (gaps.length === 1 ? 'a gap' : 'gaps') + '. ';
@@ -180,6 +241,55 @@
     rec.summary = (X.why ? X.why.replace(/\.?$/, '. ') : '') + periodWord(x[0]) + ' to ' + periodWord(x[x.length - 1]) + '.';
     return rec;
   };
+  // a measure's change from each period to the next ('change'), and its average (a level) or total (a flow) by decade, or by year
+  // for a shorter range ('periods'), in time order (nl_dashboard OWN_CHARTS): a line for a long run of changes, bars for up to 20
+  function ownRecord(D, X, cells, unit) {
+    var sp = span(D, cells);
+    if (!sp) return { kind: 'table', chart: X.chart, title: X.title, summary: 'No rows match the filters.', table: { cols: ['Period'], rows: [] }, empty: true };
+    var rec = base(X, 'hbar', D), g = sp.grain, xl = { month: 'Month', quarter: 'Quarter', year: 'Year' }[g];
+    if (X.draw === 'change') {
+      var pv = periodValues(D, cells, X.mkey, g), ch = [];
+      for (var i = 1; i < pv.length; i++) ch.push({ p: pv[i].p, v: pv[i].v !== null && pv[i - 1].v !== null ? pv[i].v - pv[i - 1].v : null });
+      if (ch.length < 2) return { kind: 'table', chart: X.chart, title: X.title, empty: true, summary: 'A change needs three ' + g + 's or more in the range.', table: { cols: [xl], rows: [] } };
+      var label = 'Change from the ' + g + ' before';
+      rec.table = { cols: [xl, label], rows: ch.map(function (c) { return [periodWord(c.p), c.v === null ? 'no figure' : fmtChange(c.v, unit)]; }) };
+      if (ch.length <= 20 && ch.every(function (c) { return c.v !== null; })) {
+        rec.data = { series: [label], rows: ch.map(function (c) { return { label: periodWord(c.p), values: [c.v], texts: [fmtChange(c.v, unit)] }; }), order: 'given' };
+        rec.levels = ch.map(function (c) { return periodWord(c.p); });
+      } else {
+        rec.kind = 'lines';
+        rec.data = { x: ch.map(function (c) { return c.p; }), x_label: xl, grain: g, series: [{ label: label, values: ch.map(function (c) { return c.v; }) }] };
+      }
+      var up = ch.filter(function (c) { return c.v > 0; }).length, dn = ch.filter(function (c) { return c.v < 0; }).length;
+      rec.subtitle = 'Rose in ' + up + ' and fell in ' + dn + ' of ' + ch.length + ' ' + g + 's' + (unit === '%' ? '; a change of a percentage is in percentage points (pp)' : '') + '.';
+      rec.summary = (X.why ? X.why.replace(/\.?$/, '. ') : '') + periodWord(ch[0].p) + ' to ' + periodWord(ch[ch.length - 1].p) + '.';
+      return rec;
+    }
+    // by decade when the range spans 20 years or more, else by year
+    var years = sp.months.length / 12, dec = years >= 20, flow = (function () { var j = measIdx(D, X.mkey); return j >= 0 && D.cube.measures[j].flow; })();
+    var nd = D.cube.dims.length, j = measIdx(D, X.mkey), by = {}, small = smallOf(D);
+    cells.forEach(function (c) {
+      if (c[0] < 0) return;
+      var y = +D.cube.months[c[0]].slice(0, 4), key = dec ? String(Math.floor(y / 10) * 10) : String(y), a = by[key] || (by[key] = { s: 0, k: 0, ys: {} });
+      a.s += c[2 + nd + 2 * j]; a.k += c[3 + nd + 2 * j]; a.ys[y] = 1;
+    });
+    var keys = Object.keys(by).sort().slice(-20), out = [], off = [];
+    keys.forEach(function (k) {
+      var a = by[k], lab = dec ? k + 's' : k, held = Object.keys(a.ys).length;
+      if (a.k < small) { off.push(lab); return; }
+      var v = flow ? a.s : a.s / a.k;
+      out.push({ label: lab + (dec && held < 10 ? ' (' + held + ' of 10 years)' : ''), values: [v], texts: [fmt(v, unit)] });
+    });
+    if (!out.length) return { kind: 'table', chart: X.chart, title: X.title, empty: true, summary: 'No ' + (dec ? 'decade' : 'year') + ' has enough rows under these filters.', table: { cols: [dec ? 'Decade' : 'Year'], rows: [] } };
+    var what = (flow ? 'Total ' : 'Average ') + X.measure;
+    rec.data = { series: [what], rows: out, order: 'given' };
+    rec.levels = out.map(function (r) { return r.label; });
+    rec.table = { cols: [dec ? 'Decade' : 'Year', what], rows: out.map(function (r) { return [r.label, r.texts[0]]; }).concat(off.map(function (l) { return [l, '<' + small]; })) };
+    var part = out.filter(function (r) { return / of 10 years\)$/.test(r.label); });
+    rec.subtitle = (dec ? 'Each decade\'s ' : 'Each year\'s ') + (flow ? 'total' : 'average') + ', in time order' + (part.length ? '; a decade the data cover only in part says how many of its years it holds' : '') + '.';
+    rec.summary = X.why ? X.why.replace(/\.?$/, '.') : '';
+    return rec;
+  }
   function barRecord(D, X, cells, unit) {
     var rec = base(X, 'hbar', D), lv = levelsBy(D, cells, X.bkey, X.mkey, X.agg), j = dimIdx(D, X.bkey), out = [], off = [], two = X.draw === 'grouped';
     if (two) {
@@ -214,6 +324,111 @@
     rec.summary = X.why ? X.why.replace(/\.?$/, '.') : '';
     if (!out.length) { rec.kind = 'table'; rec.empty = true; rec.summary = 'No group has 5 or more rows under these filters.'; }
     return rec;
+  }
+
+  /* ------------------------------------------------------------ what stands out (computed here, under the filters) */
+  // Sentences the engine's rules write from the cube for the headline measure (and its split, and how the measures move together),
+  // recomputed on every filter: where it is now and its last move, its high and low, its change over the range, its largest rise
+  // and fall from one period to the next, a run of rises or falls, the recent average against the whole range's. No AI writes a figure.
+  function pctW(v) { return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1) + '%'; }
+  // the series the sentences read: the first tile or time chart of a measure, else a time chart of the rows (a count)
+  function lead(D) {
+    var xs = D.kpis.concat(D.charts).filter(function (x) { return x.mkey && x.draw !== 'static' && x.draw !== 'bar' && x.draw !== 'grouped'; });
+    if (xs[0]) return xs[0];
+    return D.charts.filter(function (x) { return x.draw === 'line' && !x.mkey && !x.bkey; })[0] || null;
+  }
+  NLD.insights = function (D, F) {
+    var out = [], X = lead(D), g = null;
+    if (X && D.cube.months.length) seriesSay(D, F, X, out, function (gg) { g = gg; });
+    splitSay(D, F, out);
+    if (g) togetherSay(D, F, g, out);
+    reportSay(D, out);
+    return out.slice(0, 10);
+  };
+  function seriesSay(D, F, X, out, setG) {
+    var cells = pick(D, F || {}, X.where), sp = span(D, cells);
+    if (!sp) return;
+    setG(sp.grain);
+    var unit = X.mkey ? unitOf(D, X) : '', g = sp.grain, gs = g + 's', nat = g === nativeOf(D);
+    var name = !X.mkey ? 'the number of ' + String((D.grain && D.grain.noun) || 'rows').toLowerCase() :
+      unit === '%' ? String(X.measure).replace(/\s*\(%\)$/, '') : X.measure;      // the name ends "(%)", the figure says "%"
+    var pv = periodValues(D, cells, X.mkey, g).filter(function (x) { return x.v !== null; });
+    if (pv.length >= 2) {
+      var a = pv[pv.length - 2], b = pv[pv.length - 1], d = b.v - a.v;
+      out.push((nat ? '' : 'By ' + g + ': ') + 'In ' + periodWord(b.p) + ', ' + name + ' was ' + fmt(b.v, unit) + ', ' +
+        (d === 0 ? 'unchanged from ' + periodWord(a.p) : (d > 0 ? 'up ' : 'down ') + fmtChange(Math.abs(d), unit).replace(/^\+/, '') + ' from ' + periodWord(a.p) +
+          (unit !== '%' && a.v ? ' (' + pctW(d / Math.abs(a.v) * 100) + ')' : '')) + '.');
+    }
+    if (pv.length >= 3) {
+      var hi = pv[0], lo = pv[0], last = pv[pv.length - 1], first = pv[0];
+      pv.forEach(function (x) { if (x.v >= hi.v) hi = x; if (x.v <= lo.v) lo = x; });
+      out.push((hi === last ? 'The latest ' + g + ' is the highest in the range shown: ' : 'Highest: ') + fmt(hi.v, unit) + ' in ' + periodWord(hi.p) +
+        (lo === last ? '; the latest is also the lowest.' : '. Lowest: ' + fmt(lo.v, unit) + ' in ' + periodWord(lo.p) + '.'));
+      var tot = last.v - first.v;
+      out.push('From ' + periodWord(first.p) + ' to ' + periodWord(last.p) + ' it ' + (tot > 0 ? 'rose ' : tot < 0 ? 'fell ' : 'ended where it began, ') +
+        (tot ? fmtChange(Math.abs(tot), unit).replace(/^\+/, '') + (unit !== '%' && first.v ? ' (' + pctW(tot / Math.abs(first.v) * 100) + ')' : '') : '') +
+        ', over ' + pv.length + ' ' + gs + ' with a figure.');
+      var steps = [];
+      for (var i = 1; i < pv.length; i++) steps.push({ p: pv[i].p, q: pv[i - 1].p, d: pv[i].v - pv[i - 1].v });
+      var up = steps.reduce(function (m, s) { return !m || s.d > m.d ? s : m; }, null), dn = steps.reduce(function (m, s) { return !m || s.d < m.d ? s : m; }, null);
+      if (up && up.d > 0) out.push('Largest rise from one ' + g + ' to the next: ' + fmtChange(up.d, unit) + ' in ' + periodWord(up.p) + (dn && dn.d < 0 ? '; largest fall: ' + fmtChange(dn.d, unit) + ' in ' + periodWord(dn.p) : '') + '.');
+      else if (dn && dn.d < 0) out.push('Largest fall from one ' + g + ' to the next: ' + fmtChange(dn.d, unit) + ' in ' + periodWord(dn.p) + '.');
+      var run = 0, sg = 0;
+      for (var k = steps.length - 1; k >= 0; k--) { var t = steps[k].d > 0 ? 1 : steps[k].d < 0 ? -1 : 0; if (!t || (sg && t !== sg)) break; sg = t; run++; }
+      if (run >= 3) out.push('It has ' + (sg > 0 ? 'risen' : 'fallen') + ' ' + run + ' ' + gs + ' in a row, up to ' + periodWord(last.p) + '.');
+      if (pv.length >= 20) {
+        var rec10 = pv.slice(-10), avg = function (xs) { return xs.reduce(function (s, x) { return s + x.v; }, 0) / xs.length; };
+        out.push('The last 10 ' + gs + ' averaged ' + fmt(avg(rec10), unit) + ', against ' + fmt(avg(pv), unit) + ' over all ' + pv.length + '.');
+      }
+    }
+  }
+  // the split: the group with the most and the least (the dashboard's first two bar charts)
+  function splitSay(D, F, out) {
+    D.charts.filter(function (c) { return c.draw === 'bar' && c.bkey; }).slice(0, 2).forEach(function (B) {
+      var r = barRecord(D, B, pick(D, F || {}, B.where), unitOf(D, B)), rows = (r.data && r.data.rows || []).filter(function (x) { return x.label !== 'other' && x.label !== '(blank)'; });
+      if (rows.length < 2) return;
+      var tot = B.agg === 'sum' ? rows.reduce(function (s, x) { return s + x.values[0]; }, 0) : 0, top = rows[0], bot = rows[rows.length - 1];
+      var cnt = B.agg === 'count' || !B.mkey, share = cnt ? rows.reduce(function (s, x) { return s + x.values[0]; }, 0) : tot;
+      out.push(B.by + ': ' + top.label + ' has the ' + (B.agg === 'sum' ? 'largest total' : cnt ? 'most ' + String((D.grain && D.grain.noun) || 'rows').toLowerCase() : 'highest average') + ', ' + top.texts[0] +
+        (share > 0 && (B.agg === 'sum' || cnt) ? ' (' + (top.values[0] / share * 100).toFixed(1) + '% of the groups shown)' : '') + '; ' + bot.label + ' the ' + (B.agg === 'sum' ? 'smallest' : cnt ? 'fewest' : 'lowest') + ', ' + bot.texts[0] + '.');
+    });
+  }
+  // the report's own ranking charts on the tab (not filtered): their top and bottom, as the report computed them
+  function reportSay(D, out) {
+    D.charts.filter(function (c) { return c.draw === 'static' && c.record && c.record.kind === 'hbar'; }).slice(0, 2).forEach(function (X) {
+      var d = X.record.data || {}, rows = (d.rows || []).filter(function (r) { return r && r.label !== 'other' && r.texts && r.texts[0] && r.values && typeof r.values[0] === 'number'; });
+      // a ranking only: a histogram's bins ("5 to 5.5") have no highest or lowest member
+      if (rows.length < 3 || (d.series || []).length !== 1 || rows.every(function (r) { return /^[−-]?[\d.,]+ to [−-]?[\d.,]+$/.test(r.label); })) return;
+      var hi = rows[0], lo = rows[0];
+      rows.forEach(function (r) { if (r.values[0] > hi.values[0]) hi = r; if (r.values[0] < lo.values[0]) lo = r; });
+      out.push(X.title + ' (every row, not filtered): highest ' + hi.label + ', ' + hi.texts[0] + '; lowest ' + lo.label + ', ' + lo.texts[0] + '.');
+    });
+  }
+  // how the measures move together: the correlation of their changes from one period to the next (never of their levels: two
+  // trending series always look related)
+  function togetherSay(D, F, g, out) {
+    var gs = g + 's';
+    var ms = []; D.kpis.concat(D.charts).forEach(function (x) { if (x.mkey && x.draw !== 'static' && ms.map(function (m) { return m.mkey; }).indexOf(x.mkey) < 0) ms.push(x); });
+    for (var i2 = 0; i2 < ms.length && i2 < 3; i2++) for (var j2 = i2 + 1; j2 < ms.length && j2 < 3; j2++) {
+      var A = periodValues(D, pick(D, F || {}, null), ms[i2].mkey, g), Bv = periodValues(D, pick(D, F || {}, null), ms[j2].mkey, g), byB = {};
+      Bv.forEach(function (x) { byB[x.p] = x.v; });
+      var da = [], db = [];
+      for (var q = 1; q < A.length; q++) {
+        var p0 = A[q - 1].p, p1 = A[q].p;
+        if (A[q].v === null || A[q - 1].v === null || byB[p1] === undefined || byB[p0] === undefined || byB[p1] === null || byB[p0] === null) continue;
+        da.push(A[q].v - A[q - 1].v); db.push(byB[p1] - byB[p0]);
+      }
+      if (da.length < 10) continue;
+      var mA = da.reduce(function (s, v) { return s + v; }, 0) / da.length, mB = db.reduce(function (s, v) { return s + v; }, 0) / db.length, sab = 0, saa = 0, sbb = 0;
+      da.forEach(function (v, z) { sab += (v - mA) * (db[z] - mB); saa += (v - mA) * (v - mA); sbb += (db[z] - mB) * (db[z] - mB); });
+      var rr = saa && sbb ? sab / Math.sqrt(saa * sbb) : 0;
+      if (Math.abs(rr) >= 0.5) out.push(ms[i2].measure + ' and ' + ms[j2].measure + ': their changes from one ' + g + ' to the next ' + (rr > 0 ? 'move together' : 'move in opposite directions') +
+        ' (correlation ' + rr.toFixed(2) + ' over ' + da.length + ' ' + gs + '). Moving together is not proof that one drives the other.');
+    }
+  }
+  function insightsCard() {
+    return '<section class="tr-card nld-insights" aria-labelledby="nld-ins-h"><h4 id="nld-ins-h">What stands out</h4><ul data-nld="insights"></ul>' +
+      '<p class="note">Computed in this browser from the engine\'s aggregate, under the filters shown; no AI wrote these figures.</p></section>';
   }
 
   /* ------------------------------------------------------------ the tab */
@@ -259,23 +474,41 @@
     var h = '<form class="nld-filters" aria-label="Filters" onsubmit="return false">', ms = D.cube.months;
     D.filters.forEach(function (f) {
       if (f.kind === 'date' && ms.length) {
-        var o = function (sel) { return ms.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + esc(monthWord(m)) + '</option>'; }).join(''); };
-        h += '<fieldset class="nld-date"><legend>' + esc(f.column) + ' range</legend><label>From <select data-nld-f="from">' + o(ms[0]) + '</select></label>' +
+        var o = function (sel) { return ms.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + esc(periodWord(periodOf(m, nativeOf(D)))) + '</option>'; }).join(''); };
+        h += '<fieldset class="nld-date"><legend>' + esc(f.label ? f.label + ' (' + f.column + ')' : f.column + ' range') + '</legend><label>From <select data-nld-f="from">' + o(ms[0]) + '</select></label>' +
           '<label>To <select data-nld-f="to">' + o(ms[ms.length - 1]) + '</select></label></fieldset>';
       } else if (f.kind === 'category') {
         var j = dimIdx(D, f.key);
         if (j < 0) return;
-        h += '<label class="nld-cat">' + esc(f.column) + ' <select data-nld-f="cat" data-key="' + esc(f.key) + '"><option value="">All</option>' +
+        h += '<label class="nld-cat">' + esc(f.label || f.column) + ' <select data-nld-f="cat" data-key="' + esc(f.key) + '"><option value="">All</option>' +
           D.cube.dims[j].levels.map(function (l) { return '<option value="' + esc(l) + '">' + esc(l) + '</option>'; }).join('') + '</select></label>';
       }
     });
     return h + '<button type="button" class="tb" data-nld="clear">Clear filters</button><p class="nld-active note" id="nld-active" role="status" aria-live="polite"></p></form>';
   }
   function tileHtml(D, K, F) {
-    var r = NLD.kpi(D, K, F), unit = unitOf(D, K), v = r.value === null ? (r.n > 0 ? '<5' : '–') : fmt(r.value, K.agg === 'count' ? '' : unit);
-    var sub = r.value === null ? (r.n > 0 ? 'fewer than 5 rows: not shown' : 'no rows under these filters') :
-      (K.agg === 'latest' ? 'in ' + monthWord(r.month) + ', ' : '') + r.n.toLocaleString('en-US') + (K.agg === 'count' ? ' rows' : ' values');
+    var r = NLD.kpi(D, K, F), unit = unitOf(D, K), small = smallOf(D);
+    var v = r.value === null ? (r.n > 0 && r.suppressed ? '<' + small : '–') : K.agg === 'change' ? fmtChange(r.value, unit) : fmt(r.value, K.agg === 'count' ? '' : unit);
+    var sub = tileSub(D, K, r, unit, small);
     return '<div class="tr-kpi nld-kpi" id="nld-x-' + esc(K.id) + '" tabindex="-1"><span class="k-lab">' + esc(K.label) + '</span><span class="k-val">' + esc(v) + '</span><span class="k-sub">' + esc(sub) + '</span></div>';
+  }
+  // the words under a tile's figure: when it is from, against what, on how many rows
+  function tileSub(D, K, r, unit, small) {
+    if (r.value === null) {
+      if (r.suppressed) return 'fewer than ' + small + ' rows: not shown';
+      if (K.agg === 'change' && r.period) return periodWord(r.period) + ': no earlier ' + nativeOf(D) + ' to compare with';
+      return 'no rows under these filters';
+    }
+    var vals = r.n.toLocaleString('en-US') + (K.agg === 'count' ? ' rows' : r.n === 1 ? ' value' : ' values');
+    if (K.agg === 'change') {
+      var pct = r.pct !== null && r.pct !== undefined && isFinite(r.pct) && unit !== '%' ? ' (' + (r.pct >= 0 ? '+' : '−') + Math.abs(r.pct).toFixed(1) + '%)' : '';
+      return periodWord(r.period) + ' against ' + periodWord(r.base_period) + ' (' + fmt(r.base, unit) + ')' + pct;
+    }
+    if (K.agg === 'latest' || K.agg === 'peak' || K.agg === 'low') {
+      var when = r.period ? periodWord(r.period) : monthWord(r.month);
+      return 'in ' + when + (D.observations ? '' : ', ' + vals);
+    }
+    return vals;
   }
   function figHtml(X) {
     var st = X.draw === 'static';
@@ -310,7 +543,7 @@
       ((R.detail || []).length ? '<details class="more nld-fold"><summary>Data quality detail (' + R.detail.length + ' lines from the health check)</summary><ul>' + R.detail.map(li).join('') + '</ul></details>' : '') +
       ((R.design || []).length ? '<details class="more nld-fold"><summary>About this design (' + R.design.length + ' changed or left out)</summary><ul>' + R.design.map(li).join('') + '</ul></details>' : '');
   }
-  function shownRange(D, F) { var ms = D.cube.months; return ms.length ? monthWord(F.from || ms[0]) + ' to ' + monthWord(F.to || ms[ms.length - 1]) : 'no dates'; }
+  function shownRange(D, F) { var ms = D.cube.months, w = function (m) { return periodWord(periodOf(m, nativeOf(D))); }; return ms.length ? w(F.from || ms[0]) + ' to ' + w(F.to || ms[ms.length - 1]) : 'no dates'; }
   function activeWords(D, F) {
     var out = [], ms = D.cube.months;
     if (ms.length && ((F.from && F.from !== ms[0]) || (F.to && F.to !== ms[ms.length - 1]))) out.push('dates ' + shownRange(D, F));
@@ -331,7 +564,7 @@
       if (cs.length) body += '<div class="nld-row">' + cs.map(function (i) { return figHtml(I[i]); }).join('') + '</div>';
     });
     var card = NLD.cardHost && !local ? '<p class="nld-counts-link note">What this dashboard counts: <a href="#nld-counts-h">what each column means and what one row is</a> (step 1, editable).</p>' : countsCard(D);
-    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + body + notes(D, {}, local) + exportsBar(local) + '</div>';
+    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + insightsCard() + body + notes(D, {}, local) + exportsBar(local) + '</div>';
   };
   NLD.countsCard = countsCard;
 
@@ -368,8 +601,15 @@
         else if (U.draw) U.draw(id);
         else el.innerHTML = draw(X, el.clientWidth || 600).html || '';
       });
+      var ins = box.querySelector('[data-nld="insights"]');
+      if (ins) {
+        var said = NLD.insights(D, F);
+        ins.innerHTML = said.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('');
+        var card0 = ins.closest ? ins.closest('.nld-insights') : null;
+        if (card0) card0.hidden = !said.length;                   // nothing the engine can say under these filters: no empty card
+      }
       var a = activeWords(D, F), ac = box.querySelector('#nld-active');
-      if (ac) ac.textContent = a ? 'Filtered: ' + a + '.' : 'No filter: every row the engine kept.';
+      if (ac) ac.textContent = a ? 'Filtered: ' + a + '.' : 'Showing everything: ' + shownRange(D, F) + '.';
       var sh = box.querySelector('[data-nld="shown"]'); if (sh) sh.textContent = shownRange(D, F);
       var fl = box.querySelector('[data-nld="filters"]'); if (fl) fl.textContent = a || 'None: every row the engine kept.';
       Array.prototype.forEach.call(box.querySelectorAll('select[data-nld-f="cat"]'), function (s) { var v = (F.cats[s.getAttribute('data-key')] || [])[0] || ''; if (s.value !== v) s.value = v; });
@@ -428,8 +668,9 @@
     function aggOptions(X) {
       var j = X.mkey ? measIdx(D, X.mkey) : -1, flow = j >= 0 && D.cube.measures[j].flow;
       var list = j < 0 ? ['count'] : (flow ? ['sum', 'average', 'count'] : ['average', 'count']);
-      if (j >= 0 && !X.draw && D.cube.months.length) list.push('latest');
-      var words = { sum: 'total (added up)', average: 'average', count: 'number of rows', latest: 'latest month' };
+      if (j >= 0 && !X.draw && D.cube.months.length) list.push('latest', 'change', 'peak', 'low');
+      var g = nativeOf(D), words = { sum: 'total (added up)', average: 'average', count: 'number of rows', latest: 'latest ' + g,
+        change: 'change from the ' + g + ' before', peak: 'highest ' + g, low: 'lowest ' + g };
       return list.map(function (a) { return '<option value="' + a + '"' + (a === X.agg ? ' selected' : '') + '>' + words[a] + '</option>'; }).join('');
     }
     function fillEdit() {
@@ -472,7 +713,8 @@
       var s2 = c2.querySelector('#nld-e-el'); if (s2) { s2.value = X.id; NLD.__fill(); }
     }
     function defWords(X) {
-      var j = X.mkey ? measIdx(D, X.mkey) : -1, w = { sum: 'The total of ', average: 'The average of ', latest: 'The latest month\'s value of ' }[X.agg];
+      var g = nativeOf(D), j = X.mkey ? measIdx(D, X.mkey) : -1, w = { sum: 'The total of ', average: 'The average of ', latest: 'The latest ' + g + '\'s value of ',
+        change: 'The change from the ' + g + ' before in ', peak: 'The highest ' + g + '\'s value of ', low: 'The lowest ' + g + '\'s value of ' }[X.agg];
       var s = X.agg === 'count' || j < 0 ? 'The number of ' + ((D.grain.noun || 'rows').toLowerCase()) : w + X.measure;
       if (X.where) s += ' over the rows where ' + X.where.column + ' is ' + (X.where.exclude ? 'not ' : '') + X.where.values.join(', ');
       if (X.by) s += ', by ' + X.by;
@@ -648,7 +890,7 @@
     D.kpis.forEach(function (K) {
       var r = NLD.kpi(D, K, F);
       put([K.label, r.value === null ? null : { v: r.value, fmt: Math.abs(r.value) >= 100 || K.agg === 'count' ? 'int' : 'num2' }, { v: r.n, fmt: 'int' },
-        r.value === null ? (r.n > 0 ? '<5: fewer than 5 rows' : 'no rows') : (K.agg === 'latest' ? 'in ' + monthWord(r.month) : ''), K.definition || '']);
+        r.value === null ? (r.suppressed ? '<' + smallOf(D) + ': fewer than ' + smallOf(D) + ' rows' : 'no rows') : (K.agg === 'latest' || K.agg === 'peak' || K.agg === 'low' ? 'in ' + (r.period ? periodWord(r.period) : monthWord(r.month)) : K.agg === 'change' ? periodWord(r.period) + ' against ' + periodWord(r.base_period) : ''), K.definition || '']);
     });
     D.charts.forEach(function (X) {
       put(null);
@@ -662,9 +904,9 @@
       var rec = NLD.record(D, X, F), unit = unitOf(D, X);
       if (rec.empty) { put([rec.summary]); return; }
       var d = rec.data, head, r0, r1, S, fmtV = function (v) { return v === null ? null : { v: v, fmt: Math.abs(v) >= 100 ? 'int' : 'num2' }; };
-      if (X.draw === 'bar' || X.draw === 'grouped') {
+      if (X.draw === 'bar' || X.draw === 'grouped' || rec.kind === 'hbar') {
         var two = d.series.length === 2;
-        head = put([B(X.by)].concat(d.series.map(function (s) { return B(s + (unit ? ' (' + unit + ')' : '')); })).concat(two ? [B('Change')] : []).concat([B('Note')]));
+        head = put([B(X.by || rec.table.cols[0])].concat(d.series.map(function (s) { return B(s + (unit ? ' (' + unit + ')' : '')); })).concat(two ? [B('Change')] : []).concat([B('Note')]));
         r0 = rows.length + 1;
         d.rows.forEach(function (r) {
           var at = rows.length + 1, row = [r.label].concat(r.values.map(fmtV));

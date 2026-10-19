@@ -357,6 +357,180 @@ def test_one_unit_word_per_measure():
     assert [m["unit"] for m in s["cube"]["measures"]] == ["$"], s["cube"]["measures"]
 
 
+# ----------------------------------------------------------------------------- published series (19 Oct 2026)
+# A visitor's FRED download (GFDGDPA188S, federal debt as a share of GDP, one row a year since 1939) showed every figure as "<5" and
+# its line as a table: the dashboard read months only, and held each year's single row to the five-row rule meant for records.
+def yearly_csv(code: str = "GFDGDPA188S", first: int = 1939, last: int = 2025) -> bytes:
+    rnd = random.Random(11)
+    v, rows = 50.0, ["observation_date,%s" % code]
+    for y in range(first, last + 1):
+        v = max(20.0, v + rnd.uniform(-6, 7))
+        rows.append("%d-01-01,%.5f" % (y, v))
+    return ("\n".join(rows) + "\n").encode()
+
+
+def series_values(data: bytes) -> list:
+    lines = data.decode().strip().split("\n")[1:]
+    return [(ln.split(",")[0][:4], float(ln.split(",")[1])) for ln in lines]
+
+
+def test_yearly_series_reads_years_and_shows_every_value():
+    data = yearly_csv()
+    d = NB.run(data, "GFDGDPA188S.csv", "", None, "2026-10-19")["dashboard"]
+    assert d["ok"] and d["observations"] is True and d["suppress_below"] == 1, (d.get("why"), d.get("observations"))
+    cube = d["cube"]
+    assert cube["grain"] == "year" and cube["small"] == 1, (cube["grain"], cube["small"])
+    assert d["title"].startswith("US gross federal debt"), d["title"]           # the FRED list names the code
+    vals = series_values(data)
+    ys = [v for _y, v in vals]
+    k = {x["id"]: d["defaults"]["kpis"][x["id"]] for x in d["kpis"]}
+    assert set(k) == {"now", "chg", "peak", "low"}, list(k)
+    assert abs(k["now"]["value"] - ys[-1]) < 1e-4 and k["now"]["period"] == "2025", k["now"]
+    assert abs(k["chg"]["value"] - (ys[-1] - ys[-2])) < 1e-4 and k["chg"]["base_period"] == "2024", k["chg"]
+    hi = max(range(len(ys)), key=lambda i: (ys[i], i))
+    lo = min(range(len(ys)), key=lambda i: (ys[i], -i))
+    assert k["peak"]["period"] == vals[hi][0] and abs(k["peak"]["value"] - ys[hi]) < 1e-4, (k["peak"], vals[hi])
+    assert k["low"]["period"] == vals[lo][0] and abs(k["low"]["value"] - ys[lo]) < 1e-4, (k["low"], vals[lo])
+    assert not any(x["suppressed"] for x in k.values())
+    assert all(x["unit_word"] == "%" for x in d["kpis"]), [x["unit_word"] for x in d["kpis"]]
+    draws = [c["draw"] for c in d["charts"]]
+    assert draws[:3] == ["line", "change", "periods"], draws
+    assert "by year" in d["charts"][0]["title"] and "month" not in d["charts"][0]["title"], d["charts"][0]["title"]
+    chk = json.dumps(d["remarks"]["needs_check"])
+    assert "Months with" not in chk and "<5" not in chk, chk                    # no 946 empty months, no thin months
+    assert d["remarks"]["data_range_text"] == "1939 to 2025", d["remarks"]["data_range_text"]
+    assert d["filters"][0]["grain"] == "year" and d["filters"][0]["label"] == "Years", d["filters"]
+    assert not any("<5" in r for r in d["rules"]), d["rules"]
+
+
+def test_a_missing_year_is_a_gap_in_years():
+    data = yearly_csv(first=1990, last=2020).decode().split("\n")
+    data = "\n".join(x for x in data if not x.startswith("2005-")).encode()
+    d = NB.run(data, "GFDGDPA188S.csv", "", None, "2026-10-19")["dashboard"]
+    chk = " ".join(x["text"] for x in d["remarks"]["needs_check"])
+    assert "Years with no rows" in chk and "2005" in chk and "Months" not in chk, chk
+
+
+def test_quarterly_series_reads_quarters():
+    rows, v = ["observation_date,GFDEGDQ188S"], 60.0
+    for y in range(2000, 2026):
+        for q in (1, 4, 7, 10):
+            v += 0.4
+            rows.append("%d-%02d-01,%.3f" % (y, q, v))
+    d = NB.run(("\n".join(rows) + "\n").encode(), "debt-q.csv", "", None, "2026-10-19")["dashboard"]
+    assert d["cube"]["grain"] == "quarter" and d["observations"], d["cube"]["grain"]
+    k = d["defaults"]["kpis"]
+    assert k["now"]["period"] == "2025-Q4" and k["chg"]["base_period"] == "2025-Q3", (k["now"], k["chg"])
+    assert k["yoy"]["base_period"] == "2024-Q4" and abs(k["yoy"]["value"] - 1.6) < 1e-6, k["yoy"]
+
+
+def test_records_keep_the_small_cell_rule():
+    # one row a date, but a personal column: the rule stays (the store ledger's email column)
+    d = synth_rep(None)["dashboard"]
+    assert d["observations"] is False and d["cube"]["small"] == 5 and d["suppress_below"] == 5, d.get("observations")
+    rows = ["date,patient_email,visits"]
+    for i in range(60):
+        rows.append("2024-%02d-%02d,p%d@mail.example.com,%d" % (1 + i // 28, 1 + i % 28, i, 1 + i % 3))
+    d2 = NB.run(("\n".join(rows) + "\n").encode(), "visits.csv", "", None, "2026-01-15")["dashboard"]
+    assert d2.get("ok") is False or d2["cube"]["small"] == 5, d2.get("cube", {}).get("small")
+
+
+def test_an_event_log_keeps_the_rule():
+    # one row a date, no personal column, but irregular dates (rare events): records, not published figures
+    rnd, rows, day = random.Random(9), ["date,ward,cost"], 0
+    import datetime as _dt
+    for i in range(80):
+        day += rnd.choice([1, 2, 5, 9, 13, 20, 33])
+        rows.append("%s,%s,%.2f" % ((_dt.date(2020, 1, 1) + _dt.timedelta(days=day)).isoformat(), rnd.choice(["A", "B", "C"]), rnd.random() * 900))
+    d = NB.run(("\n".join(rows) + "\n").encode(), "events.csv", "", None, "2026-01-15")["dashboard"]
+    assert d["ok"] and d["observations"] is False and d["cube"]["small"] == 5, (d.get("observations"), d["cube"].get("small"))
+    # timestamps are events too, even one a day
+    rows2 = ["when,amount"] + ["2024-%02d-%02dT%02d:15:00,%d" % (1 + i // 28, 1 + i % 28, 8 + i % 9, 10 + i) for i in range(84)]
+    d2 = NB.run(("\n".join(rows2) + "\n").encode(), "calls.csv", "", None, "2026-01-15")["dashboard"]
+    assert d2.get("ok") is False or d2["cube"]["small"] == 5, d2.get("cube", {}).get("small")
+    assert ND.regular_dates(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"])   # weekdays
+    assert ND.regular_dates(["%d-01-01" % y for y in range(1990, 2000)])
+    assert not ND.regular_dates(["2024-01-01", "2024-01-09", "2024-02-20", "2024-02-21", "2024-05-30"])
+
+
+def test_a_long_table_of_published_figures():
+    # one row per year and region, no personal column: every region's single row a year is shown
+    rows, rnd = ["year,region,rate"], random.Random(3)
+    for y in range(2000, 2025):
+        for r in ("North", "South", "East", "West"):
+            rows.append("%d-01-01,%s,%.2f" % (y, r, 3 + rnd.random() * 5))
+    d = NB.run(("\n".join(rows) + "\n").encode(), "rates.csv", "", None, "2026-01-15")["dashboard"]
+    assert d["observations"] and d["cube"]["small"] == 1 and d["cube"]["grain"] == "year", (d.get("observations"), d["cube"]["grain"])
+    reg = next(x for x in d["cube"]["dims"] if x["column"] == "region")
+    k = next(x for x in d["kpis"] if x["agg"] == "latest")
+    one = ND.query_kpi(d["cube"], k, {"cats": {reg["key"]: ["North"]}})
+    assert one["value"] is not None and not one["suppressed"] and one["n"] == 1, one
+
+
+def test_browser_computes_the_same_series_tiles():
+    """57-dashboard.js NLD.kpi equals nl_dashboard.query_kpi on every tile, filtered and not (Node)."""
+    import subprocess
+    import tempfile
+    d = NB.run(yearly_csv(), "GFDGDPA188S.csv", "", None, "2026-10-19")["dashboard"]
+    filts = [{}, {"from": "1950-01", "to": "1990-01"}, {"from": "2010-01"}]
+    want = [[ND.query_kpi(d["cube"], k, f) for k in d["kpis"]] for f in filts]
+    js = ("global.window={NLU:{}};global.document={readyState:'complete',addEventListener(){}};require(process.argv[1]);"
+          "const D=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));const F=JSON.parse(process.argv[3]);"
+          "process.stdout.write(JSON.stringify(F.map(f=>D.kpis.map(k=>window.NLD.kpi(D,k,f)))));")
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        json.dump(d, fh)
+    try:
+        r = subprocess.run(["node", "-e", js, os.path.join(SITE, "src", "js", "57-dashboard.js"), fh.name, json.dumps(filts)],
+                           capture_output=True, text=True, timeout=60)
+    finally:
+        os.unlink(fh.name)
+    assert r.returncode == 0, r.stderr[-800:]
+    got = json.loads(r.stdout)
+    for wf, gf in zip(want, got):
+        for w, g in zip(wf, gf):
+            for key in ("period", "base_period", "suppressed"):
+                assert w.get(key) == g.get(key), (key, w, g)
+            for key in ("value", "base"):
+                if w.get(key) is None:
+                    assert g.get(key) is None, (key, w, g)
+                else:
+                    assert abs(w[key] - g[key]) < 1e-6, (key, w, g)
+
+
+def test_ai_design_with_the_series_menu():
+    plan = {"goal": "Where does federal debt stand?", "kind": "series", "understanding": "",
+            "columns": [{"name": "GFDGDPA188S", "semantic_type": "percentage", "role": "target", "unit": "%",
+                         "label": "Gross federal debt (% of GDP)"},
+                        {"name": "observation_date", "semantic_type": "date", "role": "date"}],
+            "operations": [], "analyses": [], "primary": "GFDGDPA188S",
+            "dashboard": {"audience": "Budget watchers",
+                          "kpis": [{"id": "now", "measure": "GFDGDPA188S", "agg": "latest", "label": "Debt now"},
+                                   {"id": "yoy", "measure": "GFDGDPA188S", "agg": "change", "vs": "year", "label": "Change"},
+                                   {"id": "hi", "measure": "GFDGDPA188S", "agg": "peak", "label": "Record"}],
+                          "charts": [{"id": "ch", "chart": "change_chart", "args": ["GFDGDPA188S"], "title": "Year on year"},
+                                     {"id": "dec", "chart": "period_chart", "args": [], "title": "Decade averages"}],
+                          "filters": [{"kind": "date"}],
+                          "questions": [{"q": "Is debt at a record?", "answered_by": ["now", "hi"]}]}}
+    d = NB.run(yearly_csv(), "GFDGDPA188S.csv", "", {"__plan__": plan}, "2026-10-19")["dashboard"]
+    assert d["chosen_by"] == "ai" and not d["refused"], d["refused"]
+    assert [k["agg"] for k in d["kpis"]] == ["latest", "change", "peak"], d["kpis"]
+    assert d["kpis"][1]["vs"] == "previous"                    # a yearly series: a year earlier is the year before
+    assert [c["draw"] for c in d["charts"]] == ["change", "periods"], d["charts"]
+    assert d["title"] == "Gross federal debt (% of GDP)" and d["kpis"][0]["measure"] == "Gross federal debt (% of GDP)", d["title"]
+
+
+def test_undated_table_gets_the_reports_charts():
+    rows, rnd = ["state,score,rate"], random.Random(5)
+    for st in ("Alabama Alaska Arizona Arkansas California Colorado Connecticut Delaware Florida Georgia Hawaii Idaho "
+               "Illinois Indiana Iowa Kansas Kentucky Louisiana Maine Maryland").split():
+        rows.append("%s,%.1f,%.2f" % (st, 40 + rnd.random() * 50, rnd.random() * 9))
+    d = NB.run(("\n".join(rows) + "\n").encode(), "states.csv", "", None, "2026-01-15")["dashboard"]
+    assert d["ok"], d.get("why")
+    st = [c for c in d["charts"] if c["draw"] == "static"]
+    assert len(d["charts"]) >= 2 and st, [c["draw"] for c in d["charts"]]
+    assert all(c.get("record") and c.get("definition", "").startswith("The report's own chart") for c in st), st[0].get("definition")
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

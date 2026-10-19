@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import nl_browser as NB
 import nl_viz as NV
 
-VERSION = "2026-10-16.1"
-SMALL = 5                     # no figure rests on fewer rows
+VERSION = "2026-10-19.1"
+SMALL = 5                     # no figure rests on fewer rows (a file of records); see observation_table for the exception
 KPI_MAX = 6
 CHART_MAX = 6
 QUESTION_MAX = 6
@@ -48,10 +48,18 @@ TEXT_MAX = {"audience": 160, "q": 160, "label": 60, "title": 90, "why": 200, "un
 ID_RX = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
 YEAR_RX = re.compile(r"(?<!\d)(?:1[89]\d\d|20\d\d)(?!\d)")
 UNIT_RX = re.compile(r"^[^\W\d_]+(?:[ /.-][^\W\d_]+)*$|^[$€£¥%]$|^[A-Z]{3}$")
-AGGS = ("sum", "average", "count", "latest")
+AGGS = ("sum", "average", "count", "latest", "change", "peak", "low")
+# the tiles that read a measure period by period at the data's own step (period_values): the latest period's value, its change
+# from the period before (or from a year earlier: vs "year"), and the highest and lowest period with when
+SERIES_AGGS = ("latest", "change", "peak", "low")
 # the menu charts the dashboard recomputes under its filters, and what it draws for each
 DRAWN = {"line_chart": "line", "area_chart": "area", "bar_chart": "bar", "grouped_bar": "grouped",
          "small_multiples": "multiples"}
+# charts only the dashboard computes (not on nl_viz's menu): a measure's change from one period to the next, and its average
+# (a level) or total (a flow) by decade or by year, in time order
+OWN_CHARTS = {"change_chart": "change", "period_chart": "periods"}
+GRAIN_WORD = {"month": "month", "quarter": "quarter", "year": "year"}
+_LY = {"month": "monthly", "quarter": "quarterly", "year": "yearly"}
 OTHER = "other"
 BLANK = "(blank)"
 RECORDED_FILE = "dashboard_sample.json"     # the sample ledger's recorded AI design (beside this file, in the pack)
@@ -77,6 +85,93 @@ def _text(s: Any, n: int) -> str:
 def has_figure(s: Any) -> bool:
     """A digit outside a 4-digit year from 1800 to 2099 (the worker's rule on AI strings, kept here too)."""
     return bool(re.search(r"\d", YEAR_RX.sub("", str(s or ""))))
+
+
+def native_grain(months: List[str]) -> str:
+    """The step the data are recorded at, from its months ("YYYY-MM", sorted, distinct): "year" when every row falls in the same
+    month of its year (FRED's annual series are dated 1 January), "quarter" when every row falls in the same month of its
+    quarter, else "month". A chart never shows a finer step than this: a yearly series by month is eleven gaps a year."""
+    if len(months) < 2:
+        return "month"
+    idx = [int(m[:4]) * 12 + int(m[5:7]) - 1 for m in months]
+    steps = [b - a for a, b in zip(idx, idx[1:])]
+    if all(s % 12 == 0 for s in steps) and len({m[5:7] for m in months}) == 1:
+        return "year"
+    if all(s % 3 == 0 for s in steps) and len({(int(m[5:7]) - 1) % 3 for m in months}) == 1:
+        return "quarter"
+    return "month"
+
+
+OBS_UNIQUE = 0.98             # the share of rows that must be alone on their date (and category) for a table of published figures
+OBS_LEVELS_MAX = 1000         # a category with more values does not count towards a row's key (a free-text column would make every row unique);
+                              # a panel's entity (200 countries, 400 metros) does
+
+
+def observation_table(c: Any) -> bool:
+    """True when each row is already a published figure, not a record about someone: one row per date (per date and category in a
+    long table: country x year) and no column of the file flagged as personal. The small-cell rule (no figure on fewer than SMALL
+    rows) protects the people behind a count; a yearly series has one row a year and no person behind it, and the rule hid every
+    value of it (a visitor's FRED federal-debt-to-GDP file showed "<5" for all 87 years, 19 Oct 2026). Any personal column, kept,
+    coded or withheld, or rows that share a date, keep the rule."""
+    import pandas as pd
+    if c.date is None or c.flagged or c.frame is None or len(c.frame) < 2:
+        return False
+    if not regular_dates(c.frame[c.date]):
+        return False
+    keys = {"_d": c.frame[c.date].astype(str).values}
+    for j, d in enumerate(c.dims):
+        if c.role_ok(d, "category") == "" and len(c.levels_all(d)) <= OBS_LEVELS_MAX:
+            keys["_k%d" % j] = c.texts(d).astype(str).values
+    sizes = pd.DataFrame(keys).groupby(list(keys), sort=False).size()
+    return float(sizes[sizes == 1].sum()) / float(len(c.frame)) >= OBS_UNIQUE
+
+
+REGULAR_SHARE = 0.80          # the share of steps between dates that must be the series' own step
+
+
+def regular_dates(col: Any) -> bool:
+    """True when the dates are a published series' calendar: no time of day (a timestamp is an event: a visit, a call, a sale), and
+    the steps between the distinct dates are one regular step (a day, allowing weekends and holidays; a week; a month; a quarter; a
+    year) for REGULAR_SHARE of them. An event log is irregular, so it keeps the small-cell rule even when no two rows share a date
+    (review of the 19 Oct change: a log of rare events, one a day, read as a table of published figures would print single events)."""
+    import pandas as pd
+    t = pd.to_datetime(pd.Series(col).astype(str), errors="coerce")
+    t = t.dropna()
+    if len(t) < 3:
+        return False
+    if ((t.dt.hour != 0) | (t.dt.minute != 0) | (t.dt.second != 0)).any():
+        return False
+    days = sorted(set(t.dt.normalize()))
+    if len(days) < 3:
+        return False
+    steps = [(b - a).days for a, b in zip(days, days[1:])]
+
+    def kind(d: int) -> str:
+        return ("day" if d <= 4 else "week" if d == 7 else "month" if 28 <= d <= 31 else "quarter" if 89 <= d <= 92
+                else "year" if 365 <= d <= 366 else "other")
+    counts: Dict[str, int] = {}
+    for d in steps:
+        k = kind(d)
+        counts[k] = counts.get(k, 0) + 1
+    best = max((v for k, v in counts.items() if k != "other"), default=0)
+    return best >= REGULAR_SHARE * len(steps)
+
+
+def _period(ym: str, grain: str) -> str:
+    """A month's period at a grain: "2025-01", "2025-Q1" or "2025" (57-dashboard.js periodOf)."""
+    if grain == "quarter":
+        return "%s-Q%d" % (ym[:4], (int(ym[5:7]) - 1) // 3 + 1)
+    return ym[:4] if grain == "year" else ym
+
+
+def period_word(p: Optional[str]) -> str:
+    """A period as the page prints it: "Jan 2025", "Q1 2025", "2025" (57-dashboard.js periodWord)."""
+    p = str(p or "")
+    if re.fullmatch(r"\d{4}-\d{2}", p):
+        return _month_word(p)
+    if re.fullmatch(r"\d{4}-Q\d", p):
+        return "%s %s" % (p[5:], p[:4])
+    return p
 
 
 def _plural_noun(noun: str) -> str:
@@ -111,6 +206,25 @@ class Read:
         self.units = measure_units(self.ctx, ctx_in.get("reading"))
         plan_unit = self.ctx.unit
         self.ctx.unit = lambda land: (self.units[land] if land and land in self.units else plan_unit(land))
+        # a code-like column's name in words (the plan's label, else the FRED list's: nl_browser._column_names), for every
+        # word the dashboard prints; the cube and the filters keep the file's header as their key
+        self.plain = {str(k): str(v) for k, v in dict(ctx_in.get("plain_names") or {}).items() if k and v}
+        for land in self.ctx.columns:                     # a FRED percentage the plan gives no unit: "%" (nl_browser._plain_units)
+            pu = dict(ctx_in.get("plain_units") or {})
+            u = pu.get(str(land)) or pu.get(self.ctx.header(land))
+            if u and land not in self.units and not plan_unit(land):
+                self.units[land] = u
+        self.grain = native_grain(sorted(str(m) for m in self.ctx.month.dropna().unique())) \
+            if self.ctx.date is not None and self.ctx.month is not None else "month"
+        self.obs = observation_table(self.ctx)
+        self.small = 1 if self.obs else SMALL
+
+    def name(self, land: Optional[str]) -> str:
+        """The column's name as the dashboard prints it."""
+        if not land:
+            return ""
+        h = self.ctx.header(land)
+        return self.plain.get(h) or self.plain.get(str(land)) or h
 
     def refuse(self, element: str, why: str) -> None:
         if why == R_PERSONAL:              # never echo what the AI called it (its label may name the column)
@@ -229,7 +343,7 @@ def _agg_for(R: Read, land: Optional[str], agg: Any, element: str, has_date: boo
     if a == "sum" and not flow:
         R.refuse(element, R_LEVEL_SUM % c.header(land))
         a = "average"
-    if a == "latest" and not has_date:
+    if a in SERIES_AGGS and not has_date:
         R.refuse(element, R_NO_DATE)
         a = "sum" if flow else "average"
     return a
@@ -267,9 +381,12 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         wh = _where(R, k.get("where"), el) if k.get("where") is not None else None
         if k.get("where") is not None and wh is None:
             continue
-        out["kpis"].append({"id": kid, "measure": land, "agg": agg, "where": wh,
-                            "label": R.words(k.get("label"), "label", el, ai) or "",
-                            "unit_word": _unit(R, k.get("unit_word"), el, ai, land)})
+        item = {"id": kid, "measure": land, "agg": agg, "where": wh,
+                "label": R.words(k.get("label"), "label", el, ai) or "",
+                "unit_word": _unit(R, k.get("unit_word"), el, ai, land)}
+        if agg == "change":
+            item["vs"] = "year" if str(k.get("vs") or "") == "year" and R.grain != "year" else "previous"
+        out["kpis"].append(item)
     raw_c = block.get("charts") if isinstance(block.get("charts"), list) else []
     lim = NV.run_limits(c)
     for i, ch in enumerate(raw_c[:CHART_MAX + 4]):
@@ -279,6 +396,32 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         el = "chart %s" % _text(ch.get("title") or name or i + 1, 60)
         if len(out["charts"]) >= CHART_MAX:
             R.refuse(el, "at most %d charts" % CHART_MAX)
+            continue
+        if name in OWN_CHARTS:
+            if not has_date:
+                R.refuse(el, R_NO_DATE)
+                continue
+            args = ch.get("args") if isinstance(ch.get("args"), list) else (ch.get("columns") or [])
+            m = args[0] if args else ch.get("measure")
+            if m is None:
+                has, pm = c.primary_measure()
+                land = pm if has else None
+            else:
+                land = R.column(m, el, "measure")
+            if land is None:
+                if m is None:
+                    R.refuse(el, "the file has no measure to chart")
+                continue
+            wh = None
+            if ch.get("where") is not None:
+                wh = _where(R, ch.get("where"), el)
+                if wh is None:
+                    continue
+            out["charts"].append({"id": _ident(ch.get("id"), "c", i, seen, R, el), "chart": name, "draw": OWN_CHARTS[name],
+                                  "measure": land, "agg": "sum" if c.is_flow(land) else "average", "by": None, "where": wh,
+                                  "title": R.words(ch.get("title"), "title", el, ai) or "",
+                                  "why": R.words(ch.get("why"), "why", el, ai) or "",
+                                  "unit_word": _unit(R, ch.get("unit_word"), el, ai, land)})
             continue
         if name not in NV.REGISTRY:
             R.refuse(el, R_MENU)
@@ -409,12 +552,14 @@ def _drawn_args(R: Read, name: str, lands: List[str], el: str) -> Optional[Dict[
 
 def _layout(raw: Any, out: Dict[str, Any]) -> List[List[str]]:
     ids = [k["id"] for k in out["kpis"]] + [x["id"] for x in out["charts"]]
+    tiles = {k["id"] for k in out["kpis"]}
     rows: List[List[str]] = []
     used: set = set()
     for row in raw if isinstance(raw, list) else []:
         if not isinstance(row, list):
             continue
-        r = [str(x) for x in row if str(x) in ids and str(x) not in used][:4]
+        r = [str(x) for x in row if str(x) in ids and str(x) not in used]
+        r = r[:KPI_MAX] if r and all(x in tiles for x in r) else r[:4]       # a row of tiles holds them all; charts go 4 to a row
         used.update(r)
         if r:
             rows.append(r)
@@ -427,6 +572,71 @@ def _layout(raw: Any, out: Dict[str, Any]) -> List[List[str]]:
     return rows
 
 
+PERIOD_CHART_MIN = {"year": 20, "quarter": 12, "month": 36}   # periods of history before a by-decade / by-year chart says anything
+
+
+def series_design(R: Read, pm: str) -> Dict[str, Any]:
+    """The engine's own dashboard for a table of published figures (observation_table): where the headline measure stands now,
+    how it moved from the period before (and from a year earlier, for a monthly or quarterly series), its highest and lowest
+    period, its line, its change period by period and its average (a level) or total (a flow) by decade or by year; up to two
+    further measures each on their own line (their units differ); a long table's categories as a split and as filters."""
+    c = R.ctx
+    g = GRAIN_WORD[R.grain]
+    nm = R.name(pm)
+    flow = c.is_flow(pm)
+    base = "sum" if flow else "average"
+    u = c.unit(pm)
+    months = sorted(str(m) for m in c.month.dropna().unique())
+    periods = len({_period(m, R.grain) for m in months})
+    out: Dict[str, Any] = {"audience": "Anyone who follows %s: the engine's own design for a published series, without the AI" % nm,
+                           "questions": [], "kpis": [], "charts": [], "filters": [], "layout": []}
+    k = out["kpis"]
+    k.append({"id": "now", "measure": pm, "agg": "latest", "where": None, "label": "Latest", "unit_word": u})
+    k.append({"id": "chg", "measure": pm, "agg": "change", "vs": "previous", "where": None,
+              "label": "Change from the %s before" % g, "unit_word": u})
+    if R.grain != "year":
+        k.append({"id": "yoy", "measure": pm, "agg": "change", "vs": "year", "where": None,
+                  "label": "Change from a year earlier", "unit_word": u})
+    k.append({"id": "peak", "measure": pm, "agg": "peak", "where": None, "label": "Highest %s" % g, "unit_word": u})
+    k.append({"id": "low", "measure": pm, "agg": "low", "where": None, "label": "Lowest %s" % g, "unit_word": u})
+    ch = out["charts"]
+    ch.append({"id": "trend", "chart": "line_chart", "draw": "line", "measure": pm, "agg": base, "by": None, "where": None,
+               "title": "", "why": "Chosen by the engine: the whole series in one line, so its peaks and turning points show",
+               "unit_word": u})
+    ch.append({"id": "change", "chart": "change_chart", "draw": "change", "measure": pm, "agg": base, "by": None, "where": None,
+               "title": "", "why": "Chosen by the engine: how much it moved each %s, up or down" % g, "unit_word": u})
+    if periods >= PERIOD_CHART_MIN[R.grain]:
+        ch.append({"id": "eras", "chart": "period_chart", "draw": "periods", "measure": pm, "agg": base, "by": None, "where": None,
+                   "title": "", "why": "Chosen by the engine: the %s %s era by era, in time order" % (
+                       "total of" if flow else "average of", nm), "unit_word": u})
+    for m in [x for x in c.measures if x != pm][:2]:
+        ch.append({"id": "m_%s" % _slug(m)[:20], "chart": "line_chart", "draw": "line", "measure": m,
+                   "agg": "sum" if c.is_flow(m) else "average", "by": None, "where": None, "title": "",
+                   "why": "Chosen by the engine: a further measure of the file, on its own scale", "unit_word": c.unit(m)})
+    dims = [d for d in c.dims if c.role_ok(d, "category") == "" and 2 <= len(c.levels_all(d)) <= 60
+            and not NB._looks_like_names(c.levels_all(d), c.header(d))]
+    for d in dims[:1]:
+        ch.append({"id": "by_%s" % _slug(d)[:18], "chart": "bar_chart", "draw": "bar", "measure": pm, "agg": base, "by": d,
+                   "where": None, "title": "", "why": NV.ENGINE_WHY + NV.REGISTRY["bar_chart"]["what"], "unit_word": u})
+    out["filters"].append({"kind": "date", "dim": None})
+    for d in dims[:FILTER_CATS]:
+        out["filters"].append({"kind": "category", "dim": d})
+    q = out["questions"]
+    q.append({"q": "Where does %s stand now, and which way is it moving?" % nm,
+              "answered_by": [x["id"] for x in k if x["agg"] in ("latest", "change")] + ["trend"]})
+    q.append({"q": "When was it highest, and when lowest?", "answered_by": ["peak", "low", "trend"]})
+    q.append({"q": "How much did it move %s by %s?" % (g, g), "answered_by": ["change"]})
+    if any(x["id"] == "eras" for x in ch):
+        q.append({"q": "How does one era compare with another?", "answered_by": ["eras"]})
+    lay = [[x["id"] for x in k]]
+    lay.append(["trend"])
+    rest = [x["id"] for x in ch if x["id"] != "trend"]
+    for j in range(0, len(rest), 2):
+        lay.append(rest[j:j + 2])
+    out["layout"] = _layout(lay, out)
+    return out
+
+
 def default_design(R: Read) -> Dict[str, Any]:
     """The engine's own dashboard when no AI designed one: what each row counts and the headline measure, its line by
     month, and its split by the categories the engine reads, with the date range and up to 3 category filters."""
@@ -434,7 +644,9 @@ def default_design(R: Read) -> Dict[str, Any]:
     plural, _sing = row_noun(rep)
     labels = (rep.get("summary") or {}).get("labels") or {}
     has, pm = c.primary_measure()
-    pm = pm if has else (c.measures[0] if c.measures else None)
+    pm = (pm if has else None) or (c.measures[0] if c.measures else None)
+    if R.obs and pm and c.date is not None:
+        return series_design(R, pm)
     fid = str((rep.get("primary_metric") or {}).get("finding_id") or "")
     split = (c.claims.get(fid) or {}).get("kind_split") if fid else None
     out: Dict[str, Any] = {"audience": "Anyone who reads this file: the engine's own design from its columns, without the AI",
@@ -553,7 +765,7 @@ def area_other_share(R: Read, x: Dict[str, Any]) -> Optional[float]:
             continue
         k = pd.Series(1, index=per[lv == level].index).groupby(per[lv == level]).sum()
         shown += 1
-        if ((k > 0) & (k < SMALL)).any():
+        if ((k > 0) & (k < R.small)).any():
             continue
         named += float(t)
     return 1.0 - named / total
@@ -672,7 +884,9 @@ def make_cube(R: Read, design: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
     cube = {"months": months, "dims": [{k: v for k, v in d.items() if k != "land"} for d in dim_rec],
             "measures": [{k: v for k, v in m.items() if k != "land"} for m in mrec], "cells": cells,
             "layout": "cell = [month index (-1: no date), a level index per dim, rows, then sum and filled count per measure]",
-            "rows": int(n), "no_date_rows": int((mi < 0).sum()) if n else 0}
+            "rows": int(n), "no_date_rows": int((mi < 0).sum()) if n else 0,
+            # the data's own step (native_grain): no chart or tile reads a finer one; and the fewest rows a figure may rest on
+            "grain": R.grain, "small": R.small}
     return cube, {d["land"]: d["key"] for d in dim_rec}, {m["land"]: m["key"] for m in mrec}
 
 
@@ -716,8 +930,11 @@ def query_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], filt: Optional[Dict[str
     filt = filt or {}
     nd = len(cube["dims"])
     keys = [m["key"] for m in cube["measures"]]
+    small = int(cube.get("small") or SMALL)
     cells = [x for x in cube["cells"] if _cell_ok(cube, x, filt, kpi.get("where"))]
     month = None
+    if kpi["agg"] in SERIES_AGGS and kpi.get("mkey") is not None:
+        return _series_kpi(cube, kpi, cells)
     if kpi["agg"] == "latest":
         ms = [x[0] for x in cells if x[0] >= 0]
         if ms:
@@ -739,9 +956,102 @@ def query_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], filt: Optional[Dict[str
             v = s / k if k else None
         else:
             v = s if k else None
-    sup = n < SMALL
-    return {"value": None if sup or v is None else _num(v), "n": int(n), "suppressed": bool(0 < n < SMALL),
+    sup = n < small
+    return {"value": None if sup or v is None else _num(v), "n": int(n), "suppressed": bool(0 < n < small),
             "month": month}
+
+
+def period_values(cube: Dict[str, Any], cells: List[List[Any]], j: Optional[int], flow: bool,
+                  grain: Optional[str] = None) -> List[Tuple[str, Optional[float], int]]:
+    """[(period, value or None, rows)] in time order at the data's own step: a flow's total, a level's average, or the rows
+    (j None). A period on fewer rows than the cube's small-cell floor has no value (57-dashboard.js periodValues)."""
+    nd = len(cube["dims"])
+    grain = grain or cube.get("grain") or "month"
+    small = int(cube.get("small") or SMALL)
+    by: Dict[str, List[Any]] = {}
+    for x in cells:
+        if x[0] < 0:
+            continue
+        p = _period(cube["months"][x[0]], grain)
+        acc = by.setdefault(p, [[], 0, 0])
+        if j is None:
+            acc[1] += x[1 + nd]
+        else:
+            acc[0].append(x[2 + nd + 2 * j])
+            acc[1] += x[3 + nd + 2 * j]
+        acc[2] += x[1 + nd]
+    out: List[Tuple[str, Optional[float], int]] = []
+    for p in sorted(by):
+        parts, k, rows = by[p]
+        if k < small:
+            out.append((p, None, k))
+        elif j is None:
+            out.append((p, float(k), k))
+        else:
+            s = math.fsum(parts)
+            out.append((p, s if flow else s / k, k))
+    return out
+
+
+def _year_back(p: str, grain: str) -> str:
+    """The same period a year earlier."""
+    if grain == "quarter":
+        return "%04d-%s" % (int(p[:4]) - 1, p[5:])
+    if grain == "month":
+        return "%04d-%s" % (int(p[:4]) - 1, p[5:])
+    return "%04d" % (int(p[:4]) - 1)
+
+
+def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]]) -> Dict[str, Any]:
+    """A tile that reads its measure period by period (SERIES_AGGS): {value, n, suppressed, month, period, base, base_period, pct}.
+    latest: the last period with a value; change: that value less the period before's (vs "year": the same period a year earlier),
+    with pct its relative change; peak / low: the highest / lowest period in the range (the latest one on a tie)."""
+    keys = [m["key"] for m in cube["measures"]]
+    j = keys.index(kpi["mkey"])
+    flow = bool(cube["measures"][j]["flow"])
+    grain = cube.get("grain") or "month"
+    pv = period_values(cube, cells, j, flow, grain)
+    have = [(p, v, k) for p, v, k in pv if v is not None]
+    none = {"value": None, "n": int(sum(k for _p, _v, k in pv)), "suppressed": bool(pv) and not have, "month": None,
+            "period": None, "base": None, "base_period": None, "pct": None}
+    if not have:
+        return none
+    agg = kpi["agg"]
+    if agg in ("peak", "low"):
+        best = None
+        for p, v, k in have:
+            if best is None or (v >= best[1] if agg == "peak" else v <= best[1]):
+                best = (p, v, k)
+        p, v, k = best
+        return dict(none, value=_num(v), n=int(k), suppressed=False, period=p, month=_first_month(cube, p, grain))
+    p, v, k = pv[-1]
+    if v is None:                       # the last period rests on too few rows: shown as "<5", never an earlier period instead
+        return dict(none, n=int(k), suppressed=True, period=p, month=_first_month(cube, p, grain))
+    if agg == "latest":
+        return dict(none, value=_num(v), n=int(k), suppressed=False, period=p, month=_first_month(cube, p, grain))
+    want = _year_back(p, grain) if kpi.get("vs") == "year" else None
+    prev = None
+    for q, w, kq in reversed(pv[:pv.index((p, v, k))]):
+        if want is not None and q != want:
+            if q < want:
+                break
+            continue
+        prev = (q, w, kq)
+        break
+    if prev is None or prev[1] is None:
+        return dict(none, n=int(k), period=p, month=_first_month(cube, p, grain))
+    d = v - prev[1]
+    pct = (d / abs(prev[1]) * 100.0) if prev[1] else None
+    return dict(none, value=_num(d), n=int(k + prev[2]), suppressed=False, period=p, month=_first_month(cube, p, grain),
+                base=_num(prev[1]), base_period=prev[0], pct=None if pct is None else _num(round(pct, 6)))
+
+
+def _first_month(cube: Dict[str, Any], p: str, grain: str) -> Optional[str]:
+    """The first month of the cube that falls in a period (the tile's month, as "latest" always gave it)."""
+    for m in cube["months"]:
+        if _period(m, grain) == p:
+            return m
+    return None
 
 
 def query_series(cube: Dict[str, Any], ch: Dict[str, Any], filt: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -755,13 +1065,15 @@ def query_series(cube: Dict[str, Any], ch: Dict[str, Any], filt: Optional[Dict[s
     j = keys.index(ch["mkey"]) if ch.get("mkey") else None
     bj = [d["key"] for d in cube["dims"]].index(ch["bkey"]) if ch.get("bkey") else None
 
+    small = int(cube.get("small") or SMALL)
+
     def val(cs: List[List[Any]]) -> Tuple[Optional[float], int]:
         rows = sum(x[1 + nd] for x in cs)
         if j is None:
-            return (float(rows) if rows >= SMALL else None), rows
+            return (float(rows) if rows >= small else None), rows
         s = math.fsum(x[2 + nd + 2 * j] for x in cs)
         k = sum(x[3 + nd + 2 * j] for x in cs)
-        if k < SMALL:
+        if k < small:
             return None, k
         return (s if ch["agg"] == "sum" else s / k), k
 
@@ -796,7 +1108,8 @@ def query_series(cube: Dict[str, Any], ch: Dict[str, Any], filt: Optional[Dict[s
 
 
 # ----------------------------------------------------------------------------- the notes
-AGG_WORDS = {"sum": "the total of", "average": "the average of", "count": "the number of", "latest": "the latest month's"}
+AGG_WORDS = {"sum": "the total of", "average": "the average of", "count": "the number of", "latest": "the latest month's",
+             "change": "the change in", "peak": "the highest", "low": "the lowest"}
 
 
 STATIC_DIMS = ("category", "category_or_rating", "segment", "text", "rating")
@@ -865,25 +1178,44 @@ def _and(xs: List[str]) -> str:
 
 def definition(R: Read, x: Dict[str, Any], plural: str, measures: Dict[str, Dict[str, Any]]) -> str:
     c = R.ctx
+    if x.get("draw") == "static" and isinstance(x.get("static"), dict) and x["static"].get("from_report"):
+        say = str(x["static"].get("say") or "")
+        return NV._cut(("The report's own chart: %s " % say.rstrip(".") + ".") if say else "The report's own chart.", 300) + \
+            " Over every row the engine kept: the filters do not change it."
     if x.get("draw") == "static" and isinstance(x.get("static"), dict):
         return static_definition(R, x["static"], plural)
     m = x.get("measure")
     agg = x.get("agg") or ("count" if m is None else "sum")
+    g = GRAIN_WORD[R.grain]
+    one = "total" if m is not None and c.is_flow(m) else "average"
     if m is None:
         what = "the number of %s" % plural.lower()
     elif agg == "latest":
-        what = "%s %s of %s" % (AGG_WORDS["latest"], "total" if c.is_flow(m) else "average", c.header(m))
+        if R.obs:
+            what = "the latest %s's value of %s" % (g, R.name(m))
+        else:
+            what = "the latest %s's %s of %s" % (g, one, R.name(m))
+    elif agg == "change":
+        what = "the change in %s from %s to the latest %s" % (
+            R.name(m), "the same %s a year earlier" % g if x.get("vs") == "year" else "the %s before" % g, g)
+    elif agg in ("peak", "low"):
+        what = "the %s %s %s of %s in the range shown, and when" % ("highest" if agg == "peak" else "lowest", _LY[g],
+                                                                   "value" if R.obs else one, R.name(m))
     elif agg == "count":
         what = "the number of %s" % plural.lower()
+    elif x.get("draw") == "change":
+        what = "the change in %s from each %s to the next" % (R.name(m), g)
+    elif x.get("draw") == "periods":
+        what = "the %s of %s by decade (or by year, for a short range), in time order" % (one, R.name(m))
     else:
-        what = "%s %s" % (AGG_WORDS[agg], c.header(m))
+        what = "%s %s" % (AGG_WORDS[agg], R.name(m))
     wh = x.get("where")
     if wh:
         vals = ", ".join(wh["values"])
-        what += " over the rows where %s is %s%s" % (c.header(wh["dim"]), "not " if wh.get("exclude") else "", vals)
+        what += " over the rows where %s is %s%s" % (R.name(wh["dim"]), "not " if wh.get("exclude") else "", vals)
     if x.get("by"):
-        what += ", by %s" % c.header(x["by"])
-    if m is not None and agg != "count":
+        what += ", by %s" % R.name(x["by"])
+    if m is not None and agg != "count" and not (R.obs and (agg in SERIES_AGGS or x.get("draw") == "change")):
         what += "; %s" % ("a flow: added up" if c.is_flow(m) else "a level: averaged, never added up over time")
         u = x.get("unit_word") or c.unit(m)
         if u:
@@ -968,20 +1300,31 @@ def remarks(R: Read, cube: Dict[str, Any], plural: str) -> Dict[str, Any]:
                                      "them blank and guessed nothing." % (NV._count(n), h),
                              "rule": "%s_numeric" % m.group(1), "column": h, "count": n, "where": "blank"})
     months = cube["months"]
+    grain = cube.get("grain") or "month"
+    small = int(cube.get("small") or SMALL)
     if months:
         span = NB._month_range(months[0], months[-1])
-        have = set(months)
-        gaps = [m for m in span if m not in have]
-        if gaps:
-            need.append({"text": "Months with no rows, left as gaps on every chart (never filled): %s." % "; ".join(_ranges(gaps)[:12]),
-                         "rule": "", "column": None, "count": len(gaps), "where": "months"})
+        if grain == "month":
+            have = set(months)
+            gaps = [m for m in span if m not in have]
+            if gaps:
+                need.append({"text": "Months with no rows, left as gaps on every chart (never filled): %s." % "; ".join(_ranges(gaps)[:12]),
+                             "rule": "", "column": None, "count": len(gaps), "where": "months"})
+        else:                               # a yearly or quarterly series: a gap is a missing year or quarter, never the months between
+            have_p = {_period(m, grain) for m in months}
+            span_p = list(dict.fromkeys(_period(m, grain) for m in span))
+            gaps_p = [p for p in span_p if p not in have_p]
+            if gaps_p:
+                need.append({"text": "%ss with no rows, left as gaps on every chart (never filled): %s." % (
+                    grain.capitalize(), ", ".join(period_word(p) for p in gaps_p[:24])), "rule": "", "column": None,
+                    "count": len(gaps_p), "where": "months"})
         nd = len(cube["dims"])
         by_m: Dict[int, int] = {}
         for x in cube["cells"]:
             if x[0] >= 0:
                 by_m[x[0]] = by_m.get(x[0], 0) + x[1 + nd]
-        thin = [months[i] for i, k in sorted(by_m.items()) if k < SMALL]
-        if thin:
+        thin = [months[i] for i, k in sorted(by_m.items()) if k < small]
+        if thin and small > 1 and grain == "month":
             need.append({"text": "Months with fewer than %d rows (their figures show as “<5”): %s." % (SMALL, "; ".join(_ranges(thin)[:12])),
                          "rule": "", "column": None, "count": len(thin), "where": "months"})
     if cube.get("no_date_rows"):
@@ -1012,7 +1355,8 @@ def remarks(R: Read, cube: Dict[str, Any], plural: str) -> Dict[str, Any]:
     # about the design: what the engine refused or changed in it
     design = ["%s: %s." % (r_["element"][0].upper() + r_["element"][1:], r_["why"].rstrip(".")) for r_ in R.refused]
     return {"data_range": [months[0], months[-1]] if months else None,
-            "data_range_text": ("%s to %s" % (_month_word(months[0]), _month_word(months[-1]))) if months else
+            "data_range_text": ("%s to %s" % (period_word(_period(months[0], grain)), period_word(_period(months[-1], grain))))
+            if months else
             "the file has no date the engine reads",
             "rows": {"in": rows_in, "kept": kept, "set_aside": max(0, rows_in - kept) if rows_in else 0,
                      "reasons": reasons},
@@ -1079,6 +1423,8 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
             seen.add(pid)
             design["charts"].append(dict(ch, id=pid, pinned=True))
             design["layout"].append([pid])
+    if chosen == "engine":                    # an AI's or the recorded design is its own: the engine adds no chart to it
+        _add_report_charts(R, design)
     _area_check(R, design)
     cube, dkey, mkey = make_cube(R, design)
     plural, sing = row_noun(rep)
@@ -1093,7 +1439,7 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
         y["mkey"] = mkey.get(y["measure"]) if y.get("measure") else None
         y["bkey"] = dkey.get(y["by"]) if y.get("by") else None
         if y.get("where"):
-            y["where"] = dict(y["where"], key=dkey[y["where"]["dim"]], column=c.header(y["where"]["dim"]))
+            y["where"] = dict(y["where"], key=dkey[y["where"]["dim"]], column=R.name(y["where"]["dim"]))
             y["where"].pop("dim", None)
             lv = next(d["levels"] for d in cube["dims"] if d["key"] == y["where"]["key"])
             gone = [v for v in y["where"]["values"] if v not in lv]
@@ -1104,8 +1450,8 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
                 return False
         y["definition"] = definition(R, x, plural, measures)
         y.pop("static", None)
-        y["measure"] = c.header(x["measure"]) if x.get("measure") else None
-        y["by"] = c.header(x["by"]) if x.get("by") else None
+        y["measure"] = R.name(x["measure"]) if x.get("measure") else None
+        y["by"] = R.name(x["by"]) if x.get("by") else None
         return y
 
     kpis, charts = [], []
@@ -1132,14 +1478,15 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
         else:
             y.pop("record", None)
         if not y.get("title"):
-            y["title"] = _title(c, y, plural)
+            y["title"] = _title(c, y, plural, R.grain)
         charts.append(y)
     filters = []
     for f in design["filters"]:
         if f["kind"] == "date":
-            filters.append({"kind": "date", "column": c.header(c.date)})
+            filters.append({"kind": "date", "column": c.header(c.date), "grain": R.grain,
+                            "label": {"year": "Years", "quarter": "Quarters", "month": "Months"}[R.grain]})
         elif f["dim"] in dkey:
-            filters.append({"kind": "category", "key": dkey[f["dim"]], "column": c.header(f["dim"])})
+            filters.append({"kind": "category", "key": dkey[f["dim"]], "column": c.header(f["dim"]), "label": R.name(f["dim"])})
     ids = {k["id"] for k in kpis} | {x["id"] for x in charts}
     questions = [dict(q, answered_by=[i for i in q["answered_by"] if i in ids]) for q in design["questions"]]
     questions = [q for q in questions if q["answered_by"]]
@@ -1147,27 +1494,85 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
     layout = [r for r in layout if r]
     defaults = {"kpis": {k["id"]: query_kpi(cube, k) for k in kpis}}
     dims_used = [c.header(d) for d in c.dims]
-    grain = {"text": "One row is one %s: %s." % (sing, _grain_words(c)), "noun": plural, "by": "engine"}
-    columns = _column_meanings(c)
+    if R.obs:
+        ms = [R.name(m) for m in c.measures[:3]]
+        dims = [R.name(d) for d in c.dims if c.role_ok(d, "category") == ""][:2]
+        gtext = "One row is one %s's published figure%s of %s%s." % (
+            GRAIN_WORD[R.grain], "s" if len(ms) > 1 else "", _and(ms) or "the series",
+            (", for one " + _and(dims)) if dims else "")
+    else:
+        gtext = "One row is one %s: %s." % (sing, _grain_words(c))
+    grain = {"text": gtext, "noun": plural, "by": "engine"}
+    columns = _column_meanings(c, R.grain)
     out = {"version": VERSION, "ok": True, "chosen_by": chosen,
            "recorded": recorded if chosen == "recorded" else "",
            "audience": design["audience"], "questions": questions, "grain": grain, "columns": columns, "kpis": kpis, "charts": charts,
            "filters": filters, "layout": layout, "cube": cube, "defaults": defaults,
-           "remarks": remarks(R, cube, plural), "refused": list(R.refused), "suppress_below": SMALL,
+           "remarks": remarks(R, cube, plural), "refused": list(R.refused), "suppress_below": R.small,
+           "observations": bool(R.obs),
            "rules": ["Flows are added up; levels, rates and balances are averaged, never added up over time.",
-                     "A figure that rests on fewer than %d rows is shown as “<5”, after every filter." % SMALL,
-                     "A month with no rows is a gap: nothing is filled, smoothed or interpolated.",
+                     ("A figure that rests on fewer than %d rows is shown as “<5”, after every filter." % SMALL) if R.small > 1 else
+                     ("Every row is a published figure (one a %s%s) and no column holds personal data, so no figure is hidden "
+                      "for resting on few rows." % (GRAIN_WORD[R.grain], " for each category" if c.dims else "")),
+                     "A %s with no rows is a gap: nothing is filled, smoothed or interpolated." % GRAIN_WORD[R.grain],
                      "Columns you withheld or coded are never a filter, a label or a group."],
-           "title": "%s dashboard" % (NV._cut(str((rep.get("input") or {}).get("name") or "Data"), 60))}
+           "title": _dash_title(R, rep)}
     del dims_used
     return out
 
 
-def _column_meanings(c: Any) -> List[Dict[str, str]]:
+REPORT_CHARTS_MIN = 2           # a dashboard with fewer charts that follow the filters also carries the report's own
+
+
+def _add_report_charts(R: Read, design: Dict[str, Any]) -> None:
+    """A table of things with no date (states, schools, wines) left the dashboard with tiles and no chart (the universal corpus, 19
+    Oct 2026), while its report drew a ranking, a spread and how the measures move together. When the design holds fewer than
+    REPORT_CHARTS_MIN charts that follow the filters, the report's own chart records (rep.viz, under the same privacy rules; the
+    map is the tab's own, so never twice) are added as engine charts, marked not filtered."""
+    import copy
+    live = [x for x in design["charts"] if x.get("draw") != "static"]
+    if len(live) >= REPORT_CHARTS_MIN:
+        return
+    seen = {x["id"] for x in design["kpis"]} | {x["id"] for x in design["charts"]}
+    titles = {str(x.get("title") or "") for x in design["charts"]}
+    added: List[str] = []
+    for rec in ((R.rep.get("viz") or {}).get("charts") or []):
+        if len(design["charts"]) >= CHART_MAX:
+            break
+        if not isinstance(rec, dict) or rec.get("kind") in (None, "geo", "table") or str(rec.get("title") or "") in titles:
+            continue
+        cid = "r%d" % (len(added) + 1)
+        while cid in seen:
+            cid += "_"
+        seen.add(cid)
+        titles.add(str(rec.get("title") or ""))
+        design["charts"].append({"id": cid, "chart": str(rec.get("chart") or rec.get("kind")), "draw": "static",
+                                 "record": copy.deepcopy(rec), "measure": None, "agg": None, "by": None, "where": None,
+                                 "title": NV._cut(str(rec.get("title") or ""), 90), "why": NV._cut(str(rec.get("why") or ""), 200),
+                                 "unit_word": "", "static": {"from_report": True, "say": " ".join(
+                                     str(rec.get("summary") or rec.get("subtitle") or "").split())[:240]}})
+        added.append(cid)
+    for j in range(0, len(added), 2):
+        design["layout"].append(added[j:j + 2])
+    if added and not design["questions"]:
+        design["questions"].append({"q": "Which stand out, and how do the measures relate?", "answered_by": added[:4]})
+
+
+def _dash_title(R: Read, rep: Dict[str, Any]) -> str:
+    """The tab's title: the headline measure's name in words when the file names it by a code, else the file's name."""
+    c = R.ctx
+    has, pm = c.primary_measure()
+    pm = pm if has else (c.measures[0] if c.measures else None)
+    if pm and R.name(pm) != c.header(pm):
+        return NV._cut(R.name(pm), 90)
+    return "%s dashboard" % NV._cut(str((rep.get("input") or {}).get("name") or "Data"), 60)
+
+
+def _column_meanings(c: Any, grain: str = "month") -> List[Dict[str, str]]:
     """What the engine reads each column it kept as (never a flagged column): the step-1 card's list."""
     out = []
     if c.date:
-        out.append({"column": c.header(c.date), "reads_as": "the date (months)", "unit": ""})
+        out.append({"column": c.header(c.date), "reads_as": "the date (%ss)" % GRAIN_WORD.get(grain, "month"), "unit": ""})
     for m in c.measures:
         out.append({"column": c.header(m), "reads_as": "a number: a flow, added up" if c.is_flow(m) else
                     "a number: a level, averaged (never added up over time)", "unit": c.unit(m)})
@@ -1189,21 +1594,26 @@ def _grain_words(c: Any) -> str:
     return " ".join(parts) or "a record of the file"
 
 
-def _title(c: Any, y: Dict[str, Any], plural: str) -> str:
+def _title(c: Any, y: Dict[str, Any], plural: str, grain: str = "month") -> str:
     what = y["measure"] or plural
+    step = "by %s" % GRAIN_WORD.get(grain, "month")
     if y.get("where"):
         what += " (%s %s)" % ("not" if y["where"].get("exclude") else "", ", ".join(y["where"]["values"][:3]))
         what = what.replace("( ", "(")
     if y["draw"] == "line":
-        return NV._cut("%s by month%s" % (what, (", by " + y["by"]) if y.get("by") else ""), 90)
+        return NV._cut("%s %s%s" % (what, step, (", by " + y["by"]) if y.get("by") else ""), 90)
+    if y["draw"] == "change":
+        return NV._cut("%s: change from the %s before" % (what, GRAIN_WORD.get(grain, "month")), 90)
+    if y["draw"] == "periods":
+        return NV._cut("%s by decade" % what if grain == "year" else "%s by year" % what, 90)
     if y["draw"] == "area":
-        return NV._cut("%s by month, split by %s" % (what, y["by"]), 90)
+        return NV._cut("%s %s, split by %s" % (what, step, y["by"]), 90)
     if y["draw"] == "bar":
         return NV._cut("%s by %s" % (what, y["by"]), 90)
     if y["draw"] == "grouped":
         return NV._cut("%s by %s: the latest 12 months against the 12 before" % (what, y["by"]), 90)
     if y["draw"] == "multiples":
-        return NV._cut("%s by month, one panel for each %s" % (what, y["by"]), 90)
+        return NV._cut("%s %s, one panel for each %s" % (what, step, y["by"]), 90)
     rec = y.get("record") or {}
     return NV._cut(str(rec.get("title") or y["chart"].replace("_", " ")), 90)
 

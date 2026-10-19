@@ -48,7 +48,7 @@ rules the report draws from the data's roles:
 Each <name>.profile.json is what the page would send the AI planner before its own filter, and
 <name>.landed.json the map the worker sends beside it ({header: the engine's landed name}): the adapter's
 plan_profile_json with the scan's flags and the visitor's choices, as engine/worker.js asks for it after
-those choices. orders-private is profiled under PRIVATE_CHOICES (code, withhold, keep), the choices its checks
+those choices. orders-private is profiled under PRIVATE_CHOICES (code, keep, keep), the choices its checks
 make; every other file under the default (every flagged column withheld). Each carries time,
 analysis_limits and each column's looks_personal and privacy_flag.
 
@@ -222,7 +222,9 @@ PRIVATE_PLAN = {
                 {"indicator": "retail sales", "region": "Dana Whitfield"},
                 {"sector": "buyer01@example.org", "indicator": "retail sales"}, {"indicator": "Marco Bellini"}],
     "context_queries": ["Dana Whitfield sales 2024"]}
-PRIVATE_CHOICES = {"customer_email": "code", "notes": "withhold", "staff_name": "keep"}
+# the choices the page sends after the one acknowledgement (owner's decisions, 18 and 19 Oct 2026): every flagged column kept but the
+# email the engine coded as it arrived
+PRIVATE_CHOICES = {"customer_email": "code", "notes": "keep", "staff_name": "keep"}
 
 # The AI plan the sales-ledger-charts run is given: the chart menu's names with the ledger's columns in each chart's
 # argument order (spec.json menu), and one chart the file cannot support (it has no free-text column), so the engine

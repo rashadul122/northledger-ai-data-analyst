@@ -1259,6 +1259,20 @@
       if (d === 'keep') { delete o.privacy_flag; o.looks_personal = false; }   // the adapter's own mark (CONTRACT-v2 5.4)
       return o;
     });
+    // the rows the AI reads (profile.sample, 19 Oct 2026): never a withheld or coded column's cells
+    if (profile.sample && Array.isArray(profile.sample.columns) && Array.isArray(profile.sample.rows)) {
+      var keepI = [];
+      profile.sample.columns.forEach(function (n, i) { if (typeof n === 'string' && !named(n, sp.withheld) && !named(n, sp.coded)) keepI.push(i); });
+      out.sample = keepI.length ? { columns: keepI.map(function (i) { return profile.sample.columns[i]; }),
+        rows: profile.sample.rows.map(function (r) { return keepI.map(function (i) { return Array.isArray(r) ? r[i] : ''; }); }), of: profile.sample.of } : undefined;
+      if (!out.sample) delete out.sample;
+    }
+    if (profile.shape && typeof profile.shape === 'object') {
+      var sh = {}; Object.keys(profile.shape).forEach(function (k) { sh[k] = profile.shape[k]; });
+      if (typeof sh.date === 'string' && (named(sh.date, sp.withheld) || named(sh.date, sp.coded))) { delete sh.date; delete sh.step; delete sh.one_row_per; }
+      if (Array.isArray(sh.one_row_per)) sh.one_row_per = sh.one_row_per.filter(function (n) { return !named(n, sp.withheld) && !named(n, sp.coded); });
+      out.shape = sh;
+    }
     var t = profile.time;
     if (t && typeof t === 'object' && !(typeof t.column === 'string' && (named(t.column, sp.withheld) || named(t.column, sp.coded)))) out.time = t;
     else if (t !== undefined) out.time = null;
@@ -1282,7 +1296,9 @@
     return { goal: unname(pp.goal || '', w), kind: pp.kind, primary: hit(pp.primary) ? '' : pp.primary,
       operations: (pp.operations || []).filter(function (o) { return o && !hit(o.column) && !any(o.columns); }),
       analyses: (pp.analyses || []).filter(function (a) { return a && !any(a.columns) && !hit(a.by); }),
-      columns: (pp.columns || []).filter(function (c) { return c && !hit(c.name); }).map(function (c) { return { name: c.name, semantic_type: c.semantic_type, role: c.role }; }) };
+      columns: (pp.columns || []).filter(function (c) { return c && !hit(c.name); }).map(function (c) { return { name: c.name, semantic_type: c.semantic_type, role: c.role }; }),
+      // the dashboard it designed, so a dashboard signal can be fixed (the worker checks it again: planDashboard)
+      dashboard: pp.dashboard && typeof pp.dashboard === 'object' && !T.namesWithheld(JSON.stringify(pp.dashboard), w) ? pp.dashboard : undefined };
   };
   // what the plan cache key is made from when a choice differs from the default (withhold): the file's hash
   // and each such choice, sorted; '' when every flagged column is withheld (the key is then the file's hash)
@@ -1743,8 +1759,7 @@
         // one consent for the whole file (owner's decision, 18 Oct 2026): no column is withheld or chosen one by one; every
         // column is read, and with the AI every column goes to it once the visitor ticks the one box
         setStage('decide', 'skip', null, 'every column used');
-        if (!CFG.ai_proxy_url) sendRun(keepAll(flagged));
-        else askConsent(flagged);
+        askConsent(flagged);              // nothing runs, with or without the AI, until the visitor acknowledges (owner, 19 Oct 2026)
       } else if (m.type === 'profiled') {
         // the column summary the adapter built under the visitor's choices, asked for by askProfile
         if (S.onProfile) S.onProfile(m.profile || null, m.landed || null);
@@ -1794,35 +1809,34 @@
       return d;
     }
     // the one box (owner's decision, 18 Oct 2026): the visitor agrees, once, that the whole dataset is sent to the AI
-    var CONSENT_WORDS = 'I agree that my dataset is sent to the AI: every column, with its values, including any personal data in it ' +
-      '(names, for example). It goes to DeepSeek, a company based in China, through this site\'s proxy, and what the AI writes may ' +
-      'quote it in the report and in any link I share.';
+    // (19 Oct 2026, owner: "just a notice that the AI can read the dataset ... the test only runs when they acknowledge")
+    var CONSENT_WORDS = 'I understand that the AI reads my dataset, including any personal or sensitive information in it (names, ' +
+      'contact details, health or money details). Rows of it go to DeepSeek, a company based in China, through this site\'s proxy, ' +
+      'and what the AI writes may quote it in the report and in any link I share.';
     function askConsent(flagged) {
       var d = keepAll(flagged), seq = S.seq;
-      el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' +
-        '<p>The AI reads every column of your file and chooses what to analyse; the engine computes every figure on all your rows ' +
-        'in this browser. Without the AI, nothing leaves this browser.</p>' +
+      el.pd.innerHTML = '<h3 id="try-pd-h">The AI reads your dataset</h3>' +
+        '<p>The AI reads your file (a sample of its rows and a summary of every column), decides what to analyse and designs the ' +
+        'dashboard; the engine computes every figure on all your rows in this browser. If the file holds personal or sensitive ' +
+        'information, the AI can read it.</p>' +
         '<p class="pd-send-ok"><input type="checkbox" id="try-pd-send-ok" required aria-required="true"> ' +
         '<label for="try-pd-send-ok">' + esc(CONSENT_WORDS) + '</label></p>' +
-        '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go" disabled aria-describedby="try-pd-why">Continue with the AI</button> ' +
-        '<button type="button" class="btn btn-ghost" id="try-pd-noai">Continue without AI</button>' +
-        '<p class="note pd-why" id="try-pd-why">Continue with the AI is off until you tick the box above. Continue without AI sends nothing.</p></div>';
+        '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go" disabled aria-describedby="try-pd-why">Run the analysis</button>' +
+        '<p class="note pd-why" id="try-pd-why">The analysis runs only after you tick the box above. Without it, nothing runs and nothing is sent.</p></div>';
       el.pd.hidden = false;
       var box = $('try-pd-send-ok'), go = $('try-pd-go'), why = $('try-pd-why');
       box.addEventListener('change', function () {
         go.disabled = !box.checked; why.hidden = box.checked;
         if (box.checked) go.removeAttribute('aria-describedby'); else go.setAttribute('aria-describedby', 'try-pd-why');
       });
-      [[go, true], [$('try-pd-noai'), false]].forEach(function (b) {
-        b[0].addEventListener('click', function () {
-          if (seq !== S.seq) return;
-          if (b[1] && !box.checked) { box.focus(); return; }   // the gate holds whatever the button says
-          S.useAi = b[1];
-          // every flagged column the AI may now read (the plan card's record and the share warning); none without the AI
-          S.kept = b[1] ? Object.keys(d).filter(function (k) { return d[k] === 'keep'; }) : [];
-          el.pd.hidden = true;
-          sendRun(d);
-        });
+      go.addEventListener('click', function () {
+        if (seq !== S.seq) return;
+        if (!box.checked) { box.focus(); return; }            // the gate holds: no run without the acknowledgement
+        S.useAi = !!CFG.ai_proxy_url;
+        // every flagged column the AI may now read (the plan card's record and the share warning)
+        S.kept = Object.keys(d).filter(function (k) { return d[k] === 'keep'; });
+        el.pd.hidden = true;
+        sendRun(d);
       });
       goTo($('try-pd-h'));
       try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
@@ -1860,7 +1874,8 @@
       var timer = setTimeout(function () { late = true; if (ctrl) ctrl.abort(); }, feedback ? REPLAN_ABORT_MS : PLAN_ABORT_MS);
       S.planFail = '';
       return waited.then(function (key) { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined }),
+        body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined,
+          consent: 'dataset' }),                  // the visitor ticked "the AI reads my dataset" (askConsent): the worker keeps profile.sample
         credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
         .then(function (r) {
           if (r.ok) return r.json();
@@ -2252,7 +2267,7 @@
     // the visitor's opt-in (option B), stated once in plain words where every AI run says what it did: the plan card
     // (drawn whenever the AI was used, with the plan or with the reason there is none)
     function optinHtml() {
-      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You agreed to send the whole dataset to the AI, these columns flagged as possibly personal included: ' + S.kept.join(', ') + '.') + '</p>' : '';
+      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You acknowledged that the AI reads your dataset, including these columns flagged as possibly personal: ' + S.kept.join(', ') + '.') + '</p>' : '';
     }
     // the AI plan's steps that set rows aside, as the adapter disclosed them (rep.ai_plan.row_drops)
     function rowDrops(p) {
@@ -3612,7 +3627,7 @@
         // report v2: one line for the file, the rest folded, so the bottom line is on a phone's first screen
         // (fixer round, 24 Sep 2026: at 390 px the first screen held only the file's metadata)
         return '<article class="tr-card tr-head tr-head-compact"><p class="tr-meta tr-meta-1"><span class="kicker">Your report</span><span><b>' + esc(r.input.name) + '</b></span><span>' + num(r.input.rows, 0) + ' rows × ' + num(r.input.columns, 0) + ' columns</span><span>Nothing was uploaded</span></p>' +
-          (S.objective ? '<p class="tr-q"><span class="muted">Your question, used only if you choose AI summaries below:</span> ' + esc(S.objective) + '</p>' : '') +
+          (S.objective ? '<p class="tr-q"><span class="muted">Your question, for the AI:</span> ' + esc(S.objective) + '</p>' : '') +
           '<details class="more tr-times"><summary>File, engine and time by stage</summary>' +
           '<p class="tr-meta"><span>' + bytes(r.input.bytes) + '</span><span>sha256 <code title="' + esc(r.input.sha256) + '">' + esc(r.input.sha256.slice(0, 12)) + '</code></span></p>' +
           '<p class="tr-meta"><span>Engine <code>' + esc(r.engine.snapshot) + '</code> ' + esc(r.engine.version) + '</span><span>' + secs(total) + ' of engine time, in your browser</span></p>' +
@@ -3620,7 +3635,7 @@
             r.timings.map(function (t) { return [esc(STAGE_LABEL[t.stage] || t.stage), esc(Number(t.seconds).toFixed(2))]; })) + '</details></article>';
       }
       return '<article class="tr-card tr-head"><p class="kicker">Your report</p>' + (withHeadline ? '<h3 class="tr-headline">' + esc(r.story.headline) + '</h3>' : '') +
-        (S.objective ? '<p class="tr-q"><span class="muted">Your question, used only if you choose AI summaries below:</span> ' + esc(S.objective) + '</p>' : '') +
+        (S.objective ? '<p class="tr-q"><span class="muted">Your question, for the AI:</span> ' + esc(S.objective) + '</p>' : '') +
         '<p class="tr-meta"><span><b>' + esc(r.input.name) + '</b></span><span>' + num(r.input.rows, 0) + ' rows × ' + num(r.input.columns, 0) + ' columns</span><span>' + bytes(r.input.bytes) + '</span>' +
         '<span>sha256 <code title="' + esc(r.input.sha256) + '">' + esc(r.input.sha256.slice(0, 12)) + '</code></span></p>' +
         '<p class="tr-meta"><span>Engine <code>' + esc(r.engine.snapshot) + '</code> ' + esc(r.engine.version) + '</span><span>' + secs(total) + ' of engine time, in your browser</span><span>Nothing was uploaded</span></p>' +

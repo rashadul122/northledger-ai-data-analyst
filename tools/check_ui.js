@@ -1247,12 +1247,12 @@ async function runStub(p) {
   await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])');
   ok(await p.isVisible('#try-report'), 'no report: ' + (await p.textContent('#try-msg')));
 }
-// the one consent step (owner's decision, 18 Oct 2026): with an AI configured, "Use the AI on this file?" and one box; with none,
-// the file runs straight away. ai: tick the box and continue with the AI; otherwise continue without AI
-async function passConsent(p, ai) {
+// the one acknowledgement (owner's decisions, 18 and 19 Oct 2026): "The AI reads your dataset", one box, one Run button; nothing runs
+// until the box is ticked, with or without an AI configured. The second argument is kept for the callers; every run ticks the box
+async function passConsent(p, _ai) {
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden]), #try-plan:not([hidden])');
   if (!(await p.isVisible('#try-pd'))) return;
-  if (ai) { await p.check('#try-pd-send-ok'); await p.check('#try-pd-send-ok'); await p.click('#try-pd-go'); } else await p.click('#try-pd-noai');
+  await p.check('#try-pd-send-ok'); await p.click('#try-pd-go');
 }
 // the page's own formatting, to compare what it prints with the report it was given
 const fmt = (v, dp) => (v === null || v === undefined || !isFinite(v)) ? 'n/a' : Number(v).toLocaleString('en-US', { maximumFractionDigits: dp === undefined ? 2 : dp });
@@ -1358,21 +1358,19 @@ check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
   const posts = (c, tail) => proxyReqs(c).filter((r) => r.method === 'POST' && r.url === PROXY_URL + tail);
   let p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
   ok((await p.evaluate(() => window.NL.try.ai_proxy_url)) === PROXY_URL, 'the page did not pick up ai_proxy_url');
-  // 1. with personal columns flagged: the two buttons and the plain paragraph, and nothing sent while they are on screen
+  // 1. with personal columns flagged: the one notice, the box and the Run button; nothing sent while they are on screen
   await p.click('#try-sample');
   await tryUntil(p, '#try-pd:not([hidden])');
   const t = await p.textContent('#try-pd');
-  ok(/Continue with the AI/.test(t) && /Continue without AI/.test(t) && !/Continue with these choices/.test(t), 'the personal-data step lacks the two-button choice');
-  ok(/DeepSeek/.test(t) && /this site's proxy/.test(t) && /Never rows\./.test(t) && /A column you withhold is left out and never named/.test(t) && /public sources on the web/.test(t) && /nothing leaves this browser/.test(t), 'the choice does not say what is sent and to whom: ' + t.slice(0, 400));
-  ok(!/never columns flagged as personal/.test(t), 'the choice still says no flagged column is sent (a coded column\'s name and type are)');
+  ok(/The AI reads your dataset/.test(t) && /Run the analysis/.test(t) && !/Continue without AI/.test(t), 'the step is not the one acknowledgement');
+  ok(/DeepSeek/.test(t) && /this site's proxy/.test(t) && /personal or sensitive/.test(t) && /nothing runs and nothing is sent/.test(t), 'the notice does not say what is sent and to whom: ' + t.slice(0, 400));
   await p.waitForTimeout(300);
-  ok(!proxyReqs(ctx).length, 'the proxy was contacted before the visitor chose');
-  // 2. without the AI: the engine report, and zero requests to the proxy origin
-  await p.click('#try-pd-noai');
-  await tryUntil(p, '#try-report:not([hidden])');
+  ok(!proxyReqs(ctx).length, 'the proxy was contacted before the visitor acknowledged');
+  // 2. no acknowledgement, no run: the button is off, and a forced click starts nothing
+  ok(await p.isDisabled('#try-pd-go'), 'Run the analysis is on before the box is ticked');
+  await p.evaluate(() => { const b = document.getElementById('try-pd-go'); b.disabled = false; b.click(); });
   await p.waitForTimeout(500);
-  ok(!proxyReqs(ctx).length, 'a request reached the proxy after "Continue without AI": ' + JSON.stringify(proxyReqs(ctx).map((r) => r.url)));
-  ok(!(await p.isVisible('#try-ai-report')) && !(await p.isVisible('#try-plan-card')), 'AI output is shown after the visitor chose no AI');
+  ok(!proxyReqs(ctx).length && await p.isVisible('#try-pd') && !(await p.isVisible('#try-report')), 'a run started, or a request left, without the acknowledgement');
   await p.close();
   // 3. with the AI: /plan only after the click, only the allowed fields; the plan runs at once (no review gate); the visitor may change it afterwards
   const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
@@ -1387,9 +1385,10 @@ check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
     const plans = posts(c2, 'plan');
     ok(plans.length === 1, plans.length + ' /plan calls after one click');
     const pb = JSON.parse(plans[0].body);
-    ok(Object.keys(pb).every((k) => ['objective', 'profile', 'profile_hash'].indexOf(k) >= 0) && !pb.objective, 'the /plan body carries more than {objective, profile, profile_hash}, or a question asked before the analysis: ' + Object.keys(pb) + ' ' + pb.objective);
-    ok(!/customer_email/.test(plans[0].body) && pb.profile.columns.length === 3 && pb.profile.time && pb.profile.time.column === 'order_date' && pb.profile.analysis_limits.length === 2,
-      'the /plan profile names the withheld customer_email, or lost the other columns, the time block or the limits: ' + plans[0].body.slice(0, 400));
+    ok(Object.keys(pb).every((k) => ['objective', 'profile', 'profile_hash', 'consent'].indexOf(k) >= 0) && !pb.objective && pb.consent === 'dataset', 'the /plan body carries more than {objective, profile, profile_hash, consent}, a question asked before the analysis, or no acknowledgement: ' + Object.keys(pb) + ' ' + pb.objective);
+    // after the acknowledgement every column is read (owner's decisions, 18 and 19 Oct 2026): the flagged customer_email goes too
+    ok(pb.profile.columns.length === 4 && pb.profile.columns.some((c) => c.name === 'customer_email') && pb.profile.time && pb.profile.time.column === 'order_date' && pb.profile.analysis_limits.length === 2,
+      'the /plan profile lost a column, the time block or the limits after the acknowledgement: ' + plans[0].body.slice(0, 400));
     await p.click('#try-plan-edit');
     await tryUntil(p, '#try-review-go');
     const rv = await p.textContent('#try-plan-card');
@@ -1433,13 +1432,9 @@ check('try-ai-consent-payload-guard-and-fallbacks', DESK, async (ctx) => {
     p = await openTry(c3, { stubReport: clean, proxy: 'set', proxyReply: reply });
     await p.click('#try-sample');
     await tryUntil(p, '#try-pd:not([hidden])');
-    ok(/Continue with the AI/.test(await p.textContent('#try-pd')) && /Continue without AI/.test(await p.textContent('#try-pd')), 'with nothing flagged the choice is not shown');
+    ok(/The AI reads your dataset/.test(await p.textContent('#try-pd')) && await p.isDisabled('#try-pd-go'), 'with nothing flagged the acknowledgement is not asked');
     await p.waitForTimeout(300);
-    ok(!proxyReqs(c3).length, 'the proxy was contacted with nothing flagged, before the choice');
-    await p.click('#try-pd-noai');
-    await tryUntil(p, '#try-report:not([hidden])');
-    await p.waitForTimeout(300);
-    ok(!proxyReqs(c3).length, 'the proxy was contacted after "Continue without AI" with nothing flagged');
+    ok(!proxyReqs(c3).length && !(await p.isVisible('#try-report')), 'the proxy was contacted, or the run started, with nothing flagged, before the acknowledgement');
   } finally { await c3.close(); }
 });
 
@@ -1597,14 +1592,16 @@ check('try-the-ai-corrects-its-plan-once-when-the-engine-finds-a-problem', DESK,
     ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
     await p.close();
   } finally { await c2.close(); }
-  // (3) without the AI: zero proxy requests
+  // (3) a copy with no AI configured: the acknowledgement still gates the run, and nothing reaches a proxy
   const c3 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
   try {
     const bad = stubReport(); bad.__profile = true; bad.__signals = [{ kind: 'contract_failed', column: 'x', detail: 'd' }];
-    p = await openTry(c3, { stubReport: bad, proxy: 'set', proxyReply: reply });
-    await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])'); await p.click('#try-pd-noai');
+    p = await openTry(c3, { stubReport: bad, proxy: 'off', proxyReply: reply });
+    await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])');
+    ok(await p.isDisabled('#try-pd-go'), 'with no AI configured the run starts without the acknowledgement');
+    await p.check('#try-pd-send-ok'); await p.click('#try-pd-go');
     await tryUntil(p, '#try-report:not([hidden])'); await p.waitForTimeout(400);
-    ok(!c3.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'a proxy request was made after "Continue without AI"');
+    ok(!c3.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'a proxy request was made with no AI configured');
   } finally { await c3.close(); }
 });
 
@@ -1815,11 +1812,11 @@ check('try-a-replan-that-keeps-the-plan-says-so', DESK, async (ctx) => {
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
-// the one consent (owner's decision, 18 Oct 2026): one box for the whole file, every column included; nothing reaches the proxy
-// before it is ticked, and Continue without AI sends nothing at all
-const CONSENT_BOX = 'I agree that my dataset is sent to the AI: every column, with its values, including any personal data in it (names, ' +
-  'for example). It goes to DeepSeek, a company based in China, through this site\'s proxy, and what the AI writes may quote it in the ' +
-  'report and in any link I share.';
+// the one acknowledgement (owner's decisions, 18 and 19 Oct 2026): one box for the whole file; nothing runs and nothing reaches the
+// proxy before it is ticked
+const CONSENT_BOX = 'I understand that the AI reads my dataset, including any personal or sensitive information in it (names, ' +
+  'contact details, health or money details). Rows of it go to DeepSeek, a company based in China, through this site\'s proxy, ' +
+  'and what the AI writes may quote it in the report and in any link I share.';
 check('try-consent-text-states-the-privacy-promise', DESK, async (ctx) => {
   for (const flagged of [true, false]) {
     const rep = stubReport(); rep.__profile = true;
@@ -1828,18 +1825,15 @@ check('try-consent-text-states-the-privacy-promise', DESK, async (ctx) => {
     await p.click('#try-sample'); await tryUntil(p, '#try-pd:not([hidden])');
     const lab = (await p.textContent('label[for="try-pd-send-ok"]')).replace(/\s+/g, ' ').trim();
     ok(lab === CONSENT_BOX, 'the box does not say what is sent and to whom: ' + lab);
-    ok(/Without the AI, nothing leaves this browser/.test(await p.textContent('#try-pd')), 'the step does not say that without the AI nothing leaves');
+    ok(/nothing runs and nothing is sent/.test(await p.textContent('#try-pd')), 'the step does not say that nothing runs without the acknowledgement');
     ok(!(await p.$('#try-pd input[type=radio]')), 'a per-column choice is still on the step');
     ok(!(await p.isChecked('#try-pd-send-ok')) && await p.getAttribute('#try-pd-send-ok', 'required') !== null, 'the box is ticked already, or not required');
-    ok(await p.isDisabled('#try-pd-go') && !(await p.isDisabled('#try-pd-noai')), 'Continue with the AI is on before the tick, or Continue without AI is off');
+    ok(await p.isDisabled('#try-pd-go') && !(await p.$('#try-pd-noai')), 'Run the analysis is on before the tick, or a way round the acknowledgement is offered');
     // a forced click before the tick sends nothing and keeps the step open
     await p.evaluate(() => { const b = document.getElementById('try-pd-go'); b.disabled = false; b.click(); });
     await p.waitForTimeout(300);
     ok(!ctx.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0) && await p.isVisible('#try-pd'), 'a request left, or the step closed, before the box was ticked');
-    await p.click('#try-pd-noai');
-    await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])');
-    await p.waitForTimeout(300);
-    ok(!ctx.__reqs.some((r) => r.url.indexOf(PROXY_URL) === 0), 'Continue without AI contacted the proxy');
+    ok(!(await p.isVisible('#try-report')), 'the run started before the box was ticked');
     await p.close();
   }
 });
@@ -1890,33 +1884,36 @@ check('try-plan-profile-keeps-the-privacy-promise', DESK, async (ctx) => {
   await p.waitForFunction(() => /asked it to correct itself/.test(document.getElementById('try-plan-card').textContent), null, { timeout: 20000 });
   const bodies = ctx.__reqs.filter((r) => r.url === PROXY_URL + 'plan' && r.method === 'POST').map((r) => r.body);
   ok(bodies.length === 2, bodies.length + ' /plan requests (want 2: the plan and its one correction)');
-  const withheld = ['notes', 'visit_date', 'Mystery'], values = ['call Ann Lee', 'ann@example.com', 'bo@example.com', '2019-03-02', 'Zed Quill'];
+  // after the acknowledgement (owner's decisions, 18 and 19 Oct 2026) every flagged column goes like any other, except a column the
+  // engine coded as it arrived (an email): its name, type and counts only, and never one of its values
+  // (Mystery: flagged by the adapter but not in the page's list, so no decision covers it: the page's second layer withholds it)
+  const coded = ['ann@example.com', 'bo@example.com', 'Zed Quill'];
   bodies.forEach((B, i) => {
-    ok(!namesIn(B, withheld).length, '/plan ' + (i + 1) + ' names a withheld column: ' + JSON.stringify(namesIn(B, withheld)));
-    ok(!values.some((v) => B.indexOf(v) >= 0), '/plan ' + (i + 1) + ' carries a value of a withheld or coded column: ' + JSON.stringify(values.filter((v) => B.indexOf(v) >= 0)));
+    ok(!coded.some((v) => B.indexOf(v) >= 0), '/plan ' + (i + 1) + ' carries a value of the coded column: ' + JSON.stringify(coded.filter((v) => B.indexOf(v) >= 0)));
+    ok(JSON.parse(B).consent === 'dataset', '/plan ' + (i + 1) + ' does not say the visitor acknowledged');
   });
   const pr = JSON.parse(bodies[0]).profile, col = (n) => pr.columns.filter((c) => c.name === n)[0];
   // the file's name never goes (final review, 29 Sep 2026): the placeholder /report uses stands in
   ok(pr.name === '[your file]' && !bodies.some((B) => /orders\.csv|sample-messy/.test(B)), 'the /plan body carries the file\'s name: ' + JSON.stringify(pr.name));
-  ok(JSON.stringify(pr.columns.map((c) => c.name)) === JSON.stringify(['order_date', 'amount', 'customer_email', 'Staff Name']), 'the columns sent: ' + JSON.stringify(pr.columns.map((c) => c.name)));
+  ok(JSON.stringify(pr.columns.map((c) => c.name)) === JSON.stringify(['order_date', 'amount', 'customer_email', 'Notes', 'Staff Name', 'visit_date']), 'the columns sent: ' + JSON.stringify(pr.columns.map((c) => c.name)));
   const ce = col('customer_email');
   ok(Object.keys(ce).every((k) => PERSONAL_KEEP_UI.indexOf(k) >= 0) && ce.looks_personal === true && ce.distinct === 60, 'the coded column goes with more than its name, type and counts: ' + JSON.stringify(ce));
-  const sn = col('Staff Name');
-  ok(sn && !('privacy_flag' in sn) && JSON.stringify(sn.top_values) === JSON.stringify(['Dana Whitfield', 'Marco Bellini']), 'the kept column does not go like any other: ' + JSON.stringify(sn));
+  ok(!namesIn(bodies.join(' '), ['Mystery']).length, 'the column no decision covers was named');
+  ['Notes', 'Staff Name', 'visit_date'].forEach((n) => {
+    const c = col(n);
+    ok(c && !('privacy_flag' in c) && c.looks_personal === false && Array.isArray(c.top_values), 'the acknowledged column ' + n + ' does not go like any other: ' + JSON.stringify(c));
+  });
   ok(JSON.stringify(col('amount')) === JSON.stringify(rep.__profile.columns[1]), 'an unflagged column was changed');
-  ok(pr.time === null, 'profile.time read from a withheld column was sent: ' + JSON.stringify(pr.time));
-  const why = pr.analysis_limits.map((e) => e.why);
-  ok(why[0] === 'needs 8 or more complete years of values; its date column (withheld) is flagged as personal, so its span is not shown' && why[1] === 'needs a free-text column with 20 or more texts; (withheld) has 12' &&
-    why[2] === rep.__profile.analysis_limits[2].why, 'the analysis_limits texts name a withheld column, or a kept one was changed: ' + JSON.stringify(why));
+  ok(pr.time && pr.time.column === 'visit_date', 'profile.time was not sent: ' + JSON.stringify(pr.time));
   const fb = JSON.parse(bodies[1]).feedback;
-  ok(JSON.stringify(fb.signals.map((x) => x.column || x.detail)) === JSON.stringify(['amount', 'customer_email']), 'the re-plan sent a signal about a withheld column, or dropped another: ' + JSON.stringify(fb.signals));
+  const sent = fb.signals.map((x) => x.column || x.detail);
+  ok(['Notes', 'amount', 'customer_email'].every((c) => sent.indexOf(c) >= 0), 'the re-plan dropped a signal: ' + JSON.stringify(fb.signals));
   const pp = fb.previous_plan;
-  ok(pp.goal === 'Spend by month and by (withheld)' && pp.primary === 'amount' && JSON.stringify(pp.columns.map((c) => c.name)) === '["amount"]' &&
-    JSON.stringify(pp.operations) === JSON.stringify([{ op: 'exclude_blank', column: 'amount' }]) && JSON.stringify(pp.analyses) === JSON.stringify([{ type: 'distribution', columns: ['amount'] }]),
-    'the re-plan sent back the parts of the plan that name a withheld column, or lost the others: ' + JSON.stringify(pp));
+  ok(pp.goal === 'Spend by month and by Notes' && pp.primary === 'amount' && pp.operations.length === 2 && pp.analyses.length === 3,
+    'the re-plan did not send back the plan that ran: ' + JSON.stringify(pp));
   // the Data tests card: the engine's words as given; "the AI was asked to look again" only where it was
   const rows = await p.evaluate(() => Array.from(document.querySelectorAll('#try-plan-card table.try-contracts tbody tr')).map((tr) => [tr.children[0].textContent, tr.children[4].textContent]));
-  const want = rep.__contracts.tests.map((x) => [x.column, x.action + (x.column === 'Notes' ? '' : '; the AI was asked to look again')]);
+  const want = rep.__contracts.tests.map((x) => [x.column, x.action + '; the AI was asked to look again']);
   ok(JSON.stringify(rows) === JSON.stringify(want), 'the Data tests card does not show the engine\'s words as given: ' + JSON.stringify(rows));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
@@ -2006,7 +2003,7 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   ok(emails.length > 10 && notes.length > 10, 'the fixture lost its personal values');
   ok(prof.columns.some((c) => c.name === 'staff_name') && prof.analysis_limits && prof.analysis_limits.length && 'time' in prof, 'the adapter profile lacks time, analysis_limits or the columns: ' + JSON.stringify(prof).slice(0, 300));
   rep.__profile = prof; rep.__results = true; rep.__contracts = rep.contracts; rep.__signals = rep.plan_signals || [];
-  rep.__landed = fixtureLanded('orders-private'); rep.__profileDecisions = { customer_email: 'code', notes: 'withhold', staff_name: 'keep' };
+  rep.__landed = fixtureLanded('orders-private'); rep.__profileDecisions = { customer_email: 'code', notes: 'keep', staff_name: 'keep' };
   // the web searches (final review, 30 Sep 2026): the adapter built only the item whose terms are all on its list; the
   // items naming the kept staff or a buyer, and the old free-text list, left nothing; the page sends exactly that list
   const cq = (rep.ai_plan || {}).context_queries;
@@ -2024,11 +2021,12 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   await tryUntil(p, '#try-plan-card table.try-contracts');
   const bodies = ctx.__reqs.filter((r) => r.url === PROXY_URL + 'plan' && r.method === 'POST').map((r) => r.body);
   ok(bodies.length >= 1, 'no /plan request');
+  // after the acknowledgement the notes go like any other column; the email the engine coded as it arrived never does
   bodies.forEach((B, i) => {
-    ok(!namesIn(B, ['notes']).length, '/plan ' + (i + 1) + ' names the withheld notes column');
-    const leak = emails.concat(notes).filter((v) => B.indexOf(v) >= 0);
-    ok(!leak.length, '/plan ' + (i + 1) + ' carries a value of a withheld or coded column: ' + JSON.stringify(leak.slice(0, 3)));
+    const leak = emails.filter((v) => B.indexOf(v) >= 0);
+    ok(!leak.length, '/plan ' + (i + 1) + ' carries a value of the coded email column: ' + JSON.stringify(leak.slice(0, 3)));
   });
+  ok(JSON.parse(bodies[0]).profile.columns.some((c) => c.name === 'notes' && !c.looks_personal), 'the acknowledged notes column was not sent like any other');
   const pr = JSON.parse(bodies[0]).profile, ce = pr.columns.filter((c) => c.name === 'customer_email')[0], sn = pr.columns.filter((c) => c.name === 'staff_name')[0];
   ok(ce && ce.looks_personal === true && Object.keys(ce).every((k) => PERSONAL_KEEP_UI.indexOf(k) >= 0), 'the coded email goes with more than its name, type and counts: ' + JSON.stringify(ce));
   ok(sn && !('privacy_flag' in sn), 'the kept staff_name still goes as flagged: ' + JSON.stringify(sn));
@@ -2036,16 +2034,15 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   const asked = (t) => (t.signal || t.misread) && sent.some((x) => x.kind === 'contract_failed' && x.column === t.column);
   const rows = await p.evaluate(() => Array.from(document.querySelectorAll('#try-plan-card table.try-contracts tbody tr')).map((tr) => tr.children[4].textContent));
   ok(JSON.stringify(rows) === JSON.stringify(k.tests.map((t) => String(t.action || '') + (asked(t) ? '; the AI was asked to look again' : ''))), 'the Data tests card does not show the adapter\'s words as given: ' + JSON.stringify(rows).slice(0, 400));
-  ok(!sent.some((x) => x.column === 'notes'), 'the re-plan told the AI about the withheld notes column');
   const card = await p.textContent('#try-plan-card');
-  const cardLeak = emails.concat(notes).filter((v) => card.indexOf(v) >= 0);
-  ok(!cardLeak.length, 'the Data tests card shows a value of a withheld or coded column: ' + JSON.stringify(cardLeak.slice(0, 3)));
+  const cardLeak = emails.filter((v) => card.indexOf(v) >= 0);
+  ok(!cardLeak.length, 'the Data tests card shows a value of the coded email column: ' + JSON.stringify(cardLeak.slice(0, 3)));
   ok(new RegExp('Cells the data tests flagged \\(' + k.cells_flagged + '\\) CSV').test(card), 'the flagged-cells button does not say what it holds: ' + card.slice(-300));
   const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#try-plan-card [data-dl="contract_flagged_csv"]')]);
   const text = fs.readFileSync(await dl.path(), 'utf8');
   ok(text === rep.downloads.contract_flagged_csv, 'the flagged-cells download is not the adapter\'s text');
-  const dlLeak = emails.concat(notes).filter((v) => text.indexOf(v) >= 0);
-  ok(!dlLeak.length, 'the adapter\'s flagged-cells download holds a value of a withheld or coded column: ' + JSON.stringify(dlLeak.slice(0, 3)));
+  const dlLeak = emails.filter((v) => text.indexOf(v) >= 0);
+  ok(!dlLeak.length, 'the adapter\'s flagged-cells download holds a value of the coded email column: ' + JSON.stringify(dlLeak.slice(0, 3)));
   for (let i = 0; i < 40 && !ctx.__reqs.some((r) => r.url === PROXY_URL + 'report' && r.method === 'POST'); i++) await p.waitForTimeout(250);
   const rb = ctx.__reqs.filter((r) => r.url === PROXY_URL + 'report' && r.method === 'POST').map((r) => JSON.parse(r.body));
   ok(rb.length >= 1 && rb.every((b) => JSON.stringify(b.context_queries) === JSON.stringify(cq)), '/report was not sent the adapter\'s web searches: ' + JSON.stringify(rb.map((b) => b.context_queries)));
@@ -2054,7 +2051,11 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
 }, { acceptDownloads: true });
 
 // names only in the example: an email or a phone number is coded as it arrives and cannot be kept
-const OPTIN_RECORD = (names) => 'You agreed to send the whole dataset to the AI, these columns flagged as possibly personal included: ' + names.join(', ') + '.';
+const OPTIN_RECORD = (names) => 'You acknowledged that the AI reads your dataset, including these columns flagged as possibly personal: ' + names.join(', ') + '.';
+// every flagged column the stand-in flags, kept after the one acknowledgement (its email is not coded as it arrived)
+const OPTIN_KEPT = ['customer_email', 'notes', 'staff_name'];
+// the same report with nothing flagged: nothing personal kept, so the share step warns in general words
+function optinReportNoFlags() { const r = optinReport(); r.privacy.flagged = []; return r; }
 // a share link always warns (29 Sep 2026 review): in general words when nothing personal was kept
 const SHARE_WARNING = 'This report may contain personal values (people\'s names, for example). Anyone with the link can see them.';
 const SHARE_WARNING_GENERAL = 'This report is built from your file and may contain values from it. Anyone with the link can see them.';
@@ -2106,7 +2107,7 @@ check('try-optin-the-report-records-the-columns-sent', DESK, async (ctx) => {
   const p = await openTry(ctx, { stubReport: optinReport(), proxy: 'set', proxyReply: optinReply() });
   await keptRun(p, ['staff_name', 'notes']);
   const t = await p.evaluate(() => document.getElementById('try').innerText.replace(/\s+/g, ' '));
-  const rec = OPTIN_RECORD(['notes', 'staff_name']);
+  const rec = OPTIN_RECORD(OPTIN_KEPT);
   ok(t.split(rec).length === 2, 'the report does not state the choice exactly once (' + (t.split(rec).length - 1) + ' times): ' + rec);
   ok((await p.textContent('#try-plan-card')).indexOf(rec) >= 0, 'the record is not on the plan card');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
@@ -2137,7 +2138,7 @@ check('try-share-always-warns-and-cancel-makes-no-link', DESK, async (ctx) => {
   // nothing kept: the link still warns, in general words (any report is built from the file), and is made on yes
   const c2 = await ctx.browser().newContext({ viewport: DESK, reducedMotion: 'reduce' });
   try {
-    p = await openTry(c2, { stubReport: optinReport(), proxy: 'set', proxyReply: optinReply() });
+    p = await openTry(c2, { stubReport: optinReportNoFlags(), proxy: 'set', proxyReply: optinReply() });
     await optinStep(p); await p.check('#try-pd-send-ok'); await p.click('#try-pd-go');
     await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
     await p.click('#try-share');
@@ -2154,7 +2155,7 @@ check('try-share-always-warns-and-cancel-makes-no-link', DESK, async (ctx) => {
 
 check('try-share-body-names-no-file', DESK, async (ctx) => {
   const shares = [];
-  const p = await openTry(ctx, { stubReport: optinReport(), proxy: 'set', proxyReply: optinReply(shares) });
+  const p = await openTry(ctx, { stubReport: optinReportNoFlags(), proxy: 'set', proxyReply: optinReply(shares) });
   await optinStep(p); await p.check('#try-pd-send-ok'); await p.click('#try-pd-go');
   await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
   ok(/Dana Whitfield sold most in sample-messy\.csv/.test(await p.textContent('#try-ai-report .ai-rep-body')), 'the report on screen does not put the file\'s name back');
@@ -2210,7 +2211,7 @@ check('try-pdf-downloads-in-this-browser-with-no-share-request', DESK, async (ct
   ok(/^Revenue rose 18\.7 on 1\.3 fewer orders/.test(d.name) && d.name.endsWith(' - ' + today + '.pdf') && !/NorthLedger report/.test(d.name), 'the download is not named for the report title: ' + JSON.stringify(d.name));
   ok(toProxy(ctx).length === before && !proxyPosts(ctx, 'share').length, 'Download PDF sent a request: ' + JSON.stringify(toProxy(ctx).slice(before).map((r) => r.url)));
   // the cover says the visitor sent a personal column, and names it
-  ok(/PERSONAL COLUMNS/.test(w.text) && /Sent to the AI at the reader's choice: staff_name/.test(w.text), 'the cover does not say which personal columns were sent: ' + w.text.slice(0, 600));
+  ok(/PERSONAL COLUMNS/.test(w.text) && /Sent to the AI at the reader's choice: customer_email, notes, staff_name/.test(w.text), 'the cover does not say which personal columns were sent: ' + w.text.slice(0, 600));
   ok(/Page 1 of \d+/.test(w.text) && /EXECUTIVE SUMMARY/.test(w.text) && /PART 3 . SCENARIOS/.test(w.text) && /RUN RATE, A YEAR/.test(w.text), 'the PDF lacks its footer, sections or scenario cards');
   ok(!/sample-messy/.test(w.text) && !/sample-messy/.test(d.bytes.toString('latin1')), 'the PDF names the file without the visitor asking');
   ok(/Saved as .Revenue rose 18\.7 on 1\.3 fewer orders/.test(await p.textContent('#try-deliver-out')) && /nothing was sent/.test(await p.textContent('#try-deliver-out')), 'the page does not say the PDF was saved and nothing sent');
@@ -2508,7 +2509,7 @@ check('try-share-body-carries-what-the-shared-pdf-needs', DESK, async (ctx) => {
   const B = proxyPosts(ctx, 'share').map((r) => r.body);
   ok(B.length === 1, B.length + ' /share requests');
   const b = JSON.parse(B[0]), resp = pdfFixture('ship2-response-v2.json');
-  ok(b.repaired === resp.repaired && JSON.stringify(b.kept) === JSON.stringify(['staff_name']), 'the body lacks the honesty check\'s count or the kept columns: ' + JSON.stringify({ repaired: b.repaired, kept: b.kept }));
+  ok(b.repaired === resp.repaired && JSON.stringify(b.kept) === JSON.stringify(OPTIN_KEPT), 'the body lacks the honesty check\'s count or the kept columns: ' + JSON.stringify({ repaired: b.repaired, kept: b.kept }));
   const R = b.results, bytes = Buffer.byteLength(JSON.stringify(R || null), 'utf8');
   ok(R && R.partial === true && R.scenarios && R.scenarios.items.length > 0 && R.scenarios.items.length <= 60 && bytes <= 20000 && !('charts' in R) && !('tables' in R),
     'the body\'s results are not the trimmed key figures and scenario items (' + bytes + ' bytes): ' + JSON.stringify(R).slice(0, 200));
@@ -2796,7 +2797,8 @@ check('try-sample-through-the-real-engine', DESK, async (ctx) => {
     else {
       const lines = text.split(/\r?\n/).filter((l) => l);
       ok(lines.length - 1 === (k === 'clean_csv' ? rep.cleaning.rows_clean : rep.cleaning.rows_quarantined), k + ' has ' + (lines.length - 1) + ' rows, the report says otherwise');
-      ok(!/(^|,)notes(,|$)/i.test(lines[0]), 'the withheld notes column is in ' + k);
+      // the sample's flagged Notes is read after the one acknowledgement (owner's decisions, 18 and 19 Oct 2026)
+      ok(/(^|,)notes(,|$)/i.test(lines[0]), 'the acknowledged Notes column is missing from ' + k + ': ' + lines[0]);
     }
   }
   // clean my file through the real engine in Pyodide (nl_browser.cleanfile_json): the cleaned copy keeps every row but
@@ -2806,7 +2808,7 @@ check('try-sample-through-the-real-engine', DESK, async (ctx) => {
   const [cd] = await Promise.all([p.waitForEvent('download'), p.click('#try-clean [data-clean-dl="csv"]')]);
   const clines = fs.readFileSync(await cd.path(), 'utf8').split('\n').filter((l) => l);
   const dupN = rep.cleaning.quarantine_reasons.filter((q) => /^exact_duplicates/.test(q.reason)).reduce((a, q) => a + q.count, 0);
-  ok(clines[0] === 'Date,Property,Unit,Category,Amount,Paid?,Vendor,nl_flag,nl_missing' && clines.length - 1 === rep.cleaning.rows_in - dupN,
+  ok(clines[0] === 'Date,Property,Unit,Category,Amount,Paid?,Vendor,Notes,nl_flag,nl_missing' && clines.length - 1 === rep.cleaning.rows_in - dupN,
     'the real cleaned copy: ' + clines[0] + ', ' + (clines.length - 1) + ' rows');
   const other = ctx.__reqs.filter((r) => !/^(blob|data):/.test(r.url) && ['nl-site.test', 'cdn.jsdelivr.net'].indexOf(new URL(r.url).host) < 0);
   ok(!other.length, 'a request went to ' + (other[0] || {}).url);
@@ -2831,9 +2833,14 @@ check('try-sample-profile-through-the-real-engine-after-the-choices', DESK, asyn
   const bodies = ctx.__reqs.filter((r) => r.url === PROXY_URL + 'plan' && r.method === 'POST').map((r) => r.body);
   ok(bodies.length === 1, bodies.length + ' /plan requests (want 1)');
   const pr = JSON.parse(bodies[0]).profile, names = pr.columns.map((c) => c.name);
+  // after the acknowledgement the flagged Notes goes like any other column, and the AI reads rows of the file (19 Oct 2026)
   const notes = pr.columns.filter((c) => c.name === 'Notes')[0];
-  ok(notes && notes.looks_personal === true && typeof notes.privacy_flag === 'string' && Object.keys(notes).every((k) => PERSONAL_KEEP_UI.indexOf(k) >= 0),
-    'the coded Notes goes with more than its name, type and counts, or not at all: ' + JSON.stringify(notes));
+  ok(notes && notes.looks_personal === false && !('privacy_flag' in notes), 'the acknowledged Notes does not go like any other column: ' + JSON.stringify(notes));
+  ok(JSON.parse(bodies[0]).consent === 'dataset', '/plan does not say the visitor acknowledged');
+  const sm = pr.sample;
+  ok(sm && Array.isArray(sm.rows) && sm.rows.length >= 20 && sm.columns.indexOf('Notes') >= 0 && sm.columns.indexOf('Amount') >= 0 && bodies[0].length < 96000,
+    'the real engine sent no sample of rows, or one without the acknowledged Notes, or too big a body: ' + JSON.stringify(sm && { cols: sm.columns, n: sm.rows.length }));
+  ok(pr.shape && pr.shape.rows_are === 'records' && pr.shape.date === 'Date' && pr.shape.step === 'month', 'the real engine sent no shape, or misread the ledger: ' + JSON.stringify(pr.shape));
   ok(['Date', 'Property', 'Amount'].every((n) => names.indexOf(n) >= 0), 'the unflagged columns sent: ' + JSON.stringify(names));
   const prop = pr.columns.filter((c) => c.name === 'Property')[0];
   ok(prop && (prop.top_values || []).length && prop.looks_personal === false, 'an unflagged column lost its values: ' + JSON.stringify(prop));
@@ -2842,8 +2849,7 @@ check('try-sample-profile-through-the-real-engine-after-the-choices', DESK, asyn
   // or more, so a note is never mistaken for a one-word value of another column
   const vals = Array.from(new Set(csv.map((l) => { const m = l.match(/,([^,]*)$/); return m ? m[1].trim().replace(/^"|"$/g, '') : ''; }).filter((v) => v.indexOf(' ') > 0)));
   ok(vals.length > 3, 'the sample lost its notes');
-  const leak = vals.filter((v) => bodies[0].indexOf(v) >= 0);
-  ok(!leak.length, '/plan carries a note: ' + JSON.stringify(leak.slice(0, 3)));
+  ok(vals.some((v) => bodies[0].indexOf(v) >= 0), '/plan carries none of the acknowledged notes');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
@@ -5200,7 +5206,7 @@ async function packRun(ctx, tag) {
   // the demo: three files in one run
   await p.click('#try-sample-pack');
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])');
-  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-noai').catch(() => p.click('#try-pd-go')); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])'); }
+  if (await p.isVisible('#try-pd')) { await p.check('#try-pd-send-ok'); await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])'); }
   ok(await p.isVisible('#try-report'), 'no report: ' + (await p.textContent('#try-msg')));
   await p.waitForFunction(() => window.NLDeliver.inputs().length === 3 && document.querySelector('#try-type-card #pk-out .pk-dl'), null, { timeout: 20000 })
     .catch(async () => { throw new Error('the pack card did not appear: ' + await p.evaluate(() => JSON.stringify([window.NLDeliver.inputs().length, (document.getElementById('try-type-card') || {}).textContent]).slice(0, 300))); });
@@ -5371,7 +5377,7 @@ check('pack-through-the-real-engine', DESK, async (ctx) => {
   await p.evaluate(() => { window.__t0 = performance.now(); });
   await p.click('#try-sample-pack');
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
-  if (await p.isVisible('#try-pd')) { await p.click('#try-pd-noai'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
+  if (await p.isVisible('#try-pd')) { await p.check('#try-pd-send-ok'); await p.click('#try-pd-go'); await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000); }
   ok(await p.isVisible('#try-report'), 'no report from the real engine: ' + (await p.textContent('#try-msg')));
   await p.waitForFunction(() => window.NLPack && window.NLPack.lastPack && window.NLPack.lastPack.inputs_used && window.NLPack.lastPack.inputs_used.length === 3 && document.querySelector('#pk-out .pk-dl'), null, { timeout: 120000 });
   ok(await p.evaluate(() => window.NLDeliver.inputs().length) === 3, 'the pack was made before every file was read');
@@ -5403,7 +5409,7 @@ check('map-of-us-metros-recolours-by-year-in-the-report-and-on-the-dashboard', D
   await p.setInputFiles('#try-file', file);
   await tryUntil(p, '#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', 240000);
   if (await p.isVisible('#try-pd')) {
-    await p.$eval('#try-pd', (pd) => { const b = pd.querySelector('#try-pd-noai') || pd.querySelector('#try-pd-go'); b.click(); });
+    await p.$eval('#try-pd', (pd) => { const x = pd.querySelector('#try-pd-send-ok'); if (x && !x.checked) x.click(); pd.querySelector('#try-pd-go').click(); });
     await tryUntil(p, '#try-report:not([hidden]), #try-msg:not([hidden])', 240000);
   }
   ok(await p.isVisible('#try-report'), 'no report: ' + (await p.textContent('#try-msg')));

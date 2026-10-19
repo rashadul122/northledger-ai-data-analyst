@@ -5925,8 +5925,8 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
     PLACEHOLDER_ZERO_TYPES; typed an amount or a count, 0 stays a real 0)
     and, for a text or date column of at most 300 distinct short values (median 60 characters or
     fewer), its 12 commonest values and, when it has more than 12, every one of them (each cut at 60
-    characters): the page's consent says exactly this (src/js/50-try.js AI_CONSENT). Never rows, and never the
-    file's name (FILE_WORD stands in for it).
+    characters), and since 19 Oct 2026 a sample of the file's rows and its shape (sample_and_shape), after the visitor
+    acknowledged that the AI reads the dataset (src/js/50-try.js askConsent). Never the file's name (FILE_WORD stands in for it).
     The visitor's privacy decisions (flagged, decisions: see _profile_privacy) decide each flagged column:
       withheld (the default): absent. Never named, never counted in a reason, never the time column.
       coded: its name, its type (the numeric and date shares, whole numbers, a % sign), its counts and
@@ -6053,6 +6053,71 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
         except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
             if os.environ.get("NL_BROWSER_STRICT"):
                 raise
+    # the AI reads the data (owner's decision, 19 Oct 2026: one acknowledgement that the AI reads the dataset): a sample of
+    # the file's own rows, and the shape the engine measures (sample_and_shape). The page asks for the profile only after the
+    # visitor ticked the box; a column coded on arrival (an email, a phone number) keeps its codes out of the sample
+    try:
+        out.update(sample_and_shape(data, cols, out.get("time"), bool(priv)))
+    except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+    return out
+
+
+SAMPLE_ROWS = 60             # rows of the file the AI reads (spread over the file: its first, its last, and evenly between)
+SAMPLE_COLS = 60
+SAMPLE_CELL = 60             # characters a cell keeps
+SAMPLE_BYTES = 24000         # the sample's JSON; fewer rows when the cells are wide
+
+
+def sample_and_shape(data: bytes, cols: List[Dict[str, Any]], time: Any, any_flagged: bool) -> Dict[str, Any]:
+    """{"sample": {columns, rows, of}, "shape": {...}} for the planner. The sample: up to SAMPLE_ROWS rows of the columns the profile
+    shows (never one marked looks_personal: a coded column's codes say nothing), spread from the first row to the last, each cell
+    cut at SAMPLE_CELL characters, the whole at most SAMPLE_BYTES. The shape, measured on the file (nl_dashboard's rules): the date
+    column's step (year, quarter, month), whether its dates are a regular calendar, and whether each row is one published figure
+    (one row per date, or per date and category) or a record; the columns that pick out one row."""
+    import nl_dashboard as _nd
+    import pandas as pd
+    raw = _raw_frame(data)
+    if raw is None or not len(raw):
+        return {}
+    names = [c["name"] for c in cols if isinstance(c, dict) and c.get("name") in raw.columns and not c.get("looks_personal")][:SAMPLE_COLS]
+    out: Dict[str, Any] = {}
+    if names:
+        n = len(raw)
+        k = min(SAMPLE_ROWS, n)
+        idx = sorted({int(round(i * (n - 1) / max(1, k - 1))) for i in range(k)}) if k > 1 else [0]
+        rows = [[str(raw.iloc[i][c])[:SAMPLE_CELL] for c in names] for i in idx]
+        while rows and len(json.dumps(rows)) > SAMPLE_BYTES:
+            rows = rows[::2] if len(rows) > 4 else rows[:-1]
+        if rows:
+            out["sample"] = {"columns": names, "rows": rows, "of": int(n)}
+    tcol = time.get("column") if isinstance(time, dict) else None
+    shape: Dict[str, Any] = {"rows": int(len(raw))}
+    if tcol and tcol in raw.columns:
+        t = pd.to_datetime(raw[tcol].astype(str), errors="coerce")
+        months = sorted({"%04d-%02d" % (d.year, d.month) for d in t.dropna()})
+        shape["date"] = tcol
+        shape["step"] = _nd.native_grain(months)
+        shape["regular_dates"] = bool(_nd.regular_dates(raw[tcol]))
+        cats = [c["name"] for c in cols if isinstance(c, dict) and c.get("name") in raw.columns and c["name"] != tcol
+                and not c.get("looks_personal") and isinstance(c.get("distinct"), (int, float)) and 2 <= c["distinct"] <= 1000
+                and (c.get("numeric_share") or 0) < 0.5]
+        keys = [tcol]
+        size = raw.groupby([tcol], sort=False).size()
+        for cname in cats:
+            if float(size[size == 1].sum()) >= 0.98 * len(raw):
+                break
+            keys.append(cname)
+            size = raw.groupby(keys, sort=False).size()
+            if len(keys) >= 3:
+                break
+        unique = float(size[size == 1].sum()) >= 0.98 * len(raw)
+        shape["one_row_per"] = keys if unique else None
+        shape["rows_are"] = "published figures" if unique and shape["regular_dates"] and not any_flagged else "records"
+    else:
+        shape["rows_are"] = "a table of things (no date)"
+    out["shape"] = shape
     return out
 
 
@@ -13570,6 +13635,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # checked and computed over the rows the engine kept; the plan's raw block then leaves rep.ai_plan
         rep["dashboard"] = _dashboard(rep, r if not date_withheld else None, reading, ai_plan, pub, goal,
                                       scrub.flag_tokens, scrub.flag_tokens_by, dash_pins)
+        # the AI looks at its own dashboard (19 Oct 2026): what the engine refused or could not draw goes back with the plan's other
+        # signals, so the one self-correction can redesign it (nl_dashboard.signals; nothing for the engine's own design)
+        if isinstance(rep.get("plan_signals"), list) and rep.get("plan_signals") is not None and isinstance(ai_plan, dict):
+            try:
+                import nl_dashboard as _ndb
+                rep["plan_signals"] = (rep["plan_signals"] + _ndb.signals(rep.get("dashboard")))[:20]
+            except Exception:  # noqa: BLE001 - the report stands without the dashboard's signals
+                if os.environ.get("NL_BROWSER_STRICT"):
+                    raise
         if isinstance(ai_plan, dict):
             ai_plan.pop("dashboard", None)
         # the quarterly sales report (engine/nl_sales.py, CONTRACT 5.19): computed when the file reads as a CRM deals

@@ -1627,3 +1627,45 @@ def for_ai(d: Any) -> Optional[Dict[str, Any]]:
                      for k in d.get("kpis") or []][:KPI_MAX],
             "charts": [{"id": x["id"], "chart": x.get("chart"), "title": x.get("title")} for x in d.get("charts") or []][:CHART_MAX],
             "refused": len(d.get("refused") or [])}
+
+
+# ----------------------------------------------------------------------------- the AI's look at its own dashboard
+SIGNALS_MAX = 8
+
+
+def signals(d: Any) -> List[Dict[str, str]]:
+    """What went wrong with an AI-designed dashboard, for the planner's one self-correction (nl_browser._plan_signals'
+    feedback, kind "dashboard"), in the engine's words and never a figure: elements the engine refused, tiles that show no
+    figure, charts with nothing to draw, and a design that reads a table of published figures as records (no latest, change,
+    peak or low tile). Nothing for the engine's or the recorded design."""
+    if not isinstance(d, dict) or not d.get("ok") or d.get("chosen_by") != "ai":
+        return []
+    out: List[Dict[str, str]] = []
+
+    def add(t: str) -> None:
+        if len(out) < SIGNALS_MAX:
+            out.append({"kind": "dashboard", "detail": _text(t, 200)})
+    for r in d.get("refused") or []:
+        add("%s was refused: %s" % (r.get("element"), r.get("why")))
+    cube = d.get("cube") or {}
+    for k in d.get("kpis") or []:
+        v = ((d.get("defaults") or {}).get("kpis") or {}).get(k["id"]) or {}
+        if v.get("value") is None:
+            add("tile %s shows no figure (%s)" % (k.get("label") or k["id"],
+                                                  "it rests on too few rows" if v.get("suppressed") else "no rows for it"))
+    for x in d.get("charts") or []:
+        if x.get("draw") in ("line", "area", "multiples", "bar"):
+            try:
+                q = query_series(cube, x)
+            except Exception:  # noqa: BLE001 - a chart the check cannot read is not a signal
+                continue
+            pts = [p for s in q.get("series") or [] for p in s.get("points") or []] if "series" in q else \
+                [b.get("value") for b in q.get("bars") or []]
+            if not any(p is not None for p in pts):
+                add("chart %s has nothing to draw: every point rests on too few rows or is empty" % (x.get("title") or x["id"]))
+    if d.get("observations") and not any(k.get("agg") in SERIES_AGGS for k in d.get("kpis") or []):
+        add("each row is a published figure (one a %s): lead with latest, change, peak and low tiles, and a change_chart, not totals "
+            "or averages over the whole range" % GRAIN_WORD.get(cube.get("grain") or "month", "month"))
+    if not d.get("charts"):
+        add("the dashboard has no chart")
+    return out

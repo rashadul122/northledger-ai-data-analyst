@@ -1317,19 +1317,21 @@ def blocks(I, R, D, pbip, examples):
     B["offers"] = "".join(offers)
 
     # ---------------- the demo's AI note (only when the owner has set ai_proxy_url)
-    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> The AI is used only if you choose \"Continue with the AI\". It plans from a summary of your "
-                        "columns, never rows; a column you withhold is never sent or named, and a personal column you keep is sent only if you tick "
-                        "the box that names it. The engine runs the plan and computes every figure; the AI "
-                        "corrects its plan once if the engine finds a problem, then writes the report from the engine's results.</span>"
+    # one acknowledgement (owner's decisions, 18 and 19 Oct 2026): the AI reads the dataset; nothing runs until the box is ticked
+    B["try_ai_note"] = ("<span class=\"try-ai-note\" data-needs-ai> The demo runs only after you tick one box: that the AI reads your dataset, "
+                        "including any personal or sensitive information in it. It reads a sample of your rows and a summary of every column "
+                        "(an email or a phone number is coded as it arrives and never sent), plans the analysis and designs the dashboard. "
+                        "The engine runs the plan and computes every figure; the AI corrects its plan and its dashboard once if the engine "
+                        "finds a problem, then writes the report from the engine's results.</span>"
                         if try_proxy(I["config"])[0] else "")
     # ---------------- the receipts' privacy sentence: what the page fetches, and when
     B["receipts_requests"] = (
         "No trackers and no analytics. While you read, the page makes no request to another address. The one "
         "exception starts only when you start the Try-it demo: it fetches the engine's Python runtime (Pyodide) from "
         "cdn.jsdelivr.net, and the engine itself from this site" +
-        (", and, only if you choose \"Continue with the AI\", it sends a summary of your columns (never rows, never a column "
-         "you withhold) and then the engine's results to the owner's AI proxy, which passes them to DeepSeek" if try_proxy(I["config"])[0] else "") +
-        ". Your file itself is never sent anywhere.")
+        (", and, after you tick the box that the AI reads your dataset, it sends a sample of your rows and a summary "
+         "of every column, then the engine's results, to the owner's AI proxy, which passes them to DeepSeek" if try_proxy(I["config"])[0] else "") +
+        ". Your whole file is never uploaded: the engine reads it in your browser.")
 
     # ---------------- research collaboration: the invitation emails contact_email (site.config.json)
     cfg = I["config"]

@@ -519,6 +519,25 @@ def test_ai_design_with_the_series_menu():
     assert d["title"] == "Gross federal debt (% of GDP)" and d["kpis"][0]["measure"] == "Gross federal debt (% of GDP)", d["title"]
 
 
+def test_a_weak_ai_design_goes_back_as_signals():
+    # the live miss: an AI design that averaged a yearly series and charted it by month goes back to the planner
+    plan = {"goal": "Debt", "kind": "series", "understanding": "",
+            "columns": [{"name": "GFDGDPA188S", "semantic_type": "percentage", "role": "target", "unit": "%"},
+                        {"name": "observation_date", "semantic_type": "date", "role": "date"}],
+            "operations": [], "analyses": [], "primary": "GFDGDPA188S",
+            "dashboard": {"kpis": [{"id": "avg", "measure": "GFDGDPA188S", "agg": "average", "label": "Average"},
+                                   {"id": "ghost", "measure": "profit", "agg": "sum", "label": "Profit"}],
+                          "charts": [{"id": "l", "chart": "line_chart", "args": ["GFDGDPA188S"], "title": "Debt"}]}}
+    rep = NB.run(yearly_csv(), "GFDGDPA188S.csv", "", {"__plan__": plan}, "2026-10-19")
+    sig = [x for x in rep.get("plan_signals") or [] if x.get("kind") == "dashboard"]
+    text = " ".join(x["detail"] for x in sig)
+    assert "published figure" in text and "latest, change, peak and low" in text, sig
+    assert "refused" in text, sig                                       # the tile on a column the file does not have
+    assert not any(ch.isdigit() for x in sig for ch in x["detail"].replace("GFDGDPA188S", "")), sig
+    # the engine's own design sends nothing
+    assert ND.signals(NB.run(yearly_csv(), "GFDGDPA188S.csv", "", None, "2026-10-19")["dashboard"]) == []
+
+
 def test_undated_table_gets_the_reports_charts():
     rows, rnd = ["state,score,rate"], random.Random(5)
     for st in ("Alabama Alaska Arizona Arkansas California Colorado Connecticut Delaware Florida Georgia Hawaii Idaho "

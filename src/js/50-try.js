@@ -1176,7 +1176,8 @@
   //   kept:     sent like any column (its privacy flag goes, it is marked looks_personal: false, as the adapter
   //             marks it, so the proxy keeps its values; they stay as the engine profiled them). Under option B
   //             (owner's decision, 29 Sep 2026) the page asks for the profile only after the visitor has ticked
-  //             the box that names every kept column (syncSend, wireAiChoice).
+  //             the box that names every kept column. Since 18 Oct 2026 (owner's decision) the page keeps every column
+  //             and asks once, for the whole file (askConsent); withheld and coded stay for a coded-on-arrival column.
   // The adapter already builds the profile that way, after the visitor's choices (engine/worker.js
   // "profile", nl_browser.plan_profile_json); this is the second layer, so a profile that slipped (an older
   // adapter, a stand-in) still leaves as promised. A flagged column with no decision is withheld, as the
@@ -1737,11 +1738,13 @@
         var flagged = (r.flagged || []).filter(function (f) { return f && typeof f.column === 'string'; });
         S.flagged = flagged;
         // the categories the engine reads as categories, not personal data (privacy.released): shown on the step, each
-        // with Withhold still on offer (the lead's amendment AM1)
+        // (privacy.released; since 18 Oct 2026 read as categories with no choice to make)
         S.released = (r.released || []).filter(function (x) { return x && typeof x.column === 'string' && x.column; });
-        if (flagged.length || S.released.length) askPersonal(flagged);
-        else if (!CFG.ai_proxy_url) { setStage('decide', 'skip', null, 'no personal data flagged'); sendRun({}); }
-        else { setStage('decide', 'skip', null, 'no personal data flagged'); askAiChoice(); }
+        // one consent for the whole file (owner's decision, 18 Oct 2026): no column is withheld or chosen one by one; every
+        // column is read, and with the AI every column goes to it once the visitor ticks the one box
+        setStage('decide', 'skip', null, 'every column used');
+        if (!CFG.ai_proxy_url) sendRun(keepAll(flagged));
+        else askConsent(flagged);
       } else if (m.type === 'profiled') {
         // the column summary the adapter built under the visitor's choices, asked for by askProfile
         if (S.onProfile) S.onProfile(m.profile || null, m.landed || null);
@@ -1782,169 +1785,47 @@
       }
     }
 
-    /* ---- the personal-data step ---- */
-    // What each choice does (the promise of 29 Sep 2026; T.planProfile keeps it for /plan, the adapter for
-    // the analyses, the downloads and what the report writer and a share link receive)
-    // Withhold, literally (final review, 29 Sep 2026): each value is landed as a code no cleaning rule reads, one
-    // code per value exactly as the file writes it (engine/nl_browser.py _neutralize_withheld), so the column's
-    // only part in the exact-duplicate check is to keep rows that differ in it apart, as in the file
-    // Keep, under option B (owner's decision, 29 Sep 2026): the AI may read a kept column's real values, but only
-    // after the visitor ticks the box that names it (syncSend); with no AI on this page the words say nothing of one
-    var CHOICES = [['withhold', 'Withhold', 'never sent to an AI or put in a share link, not even its name; its values are never shown, downloaded or used in the business analysis. No cleaning rule reads or changes them, so they never set a row aside; they only keep otherwise-identical rows apart, as they are in your file. The data-health findings on this page still name it and count its empty cells'],
-      ['code', 'Code', 'each value replaced with a code in the downloads; the analyses leave the column out, and an AI is told only its name, type and counts, never its values or range'],
-      ['keep', 'Keep', 'used like any other column: its values can appear in the findings, the story and the downloads' + (CFG.ai_proxy_url ? ', and go to the AI only if you tick the box that names it' : '')]];
-    // the one convenience control (option B): every flagged column that can be kept, set to Keep where the visitor sees it
-    var KEEP_ALL = CFG.ai_proxy_url ? 'Keep all: let the analysis and the AI read these columns' : 'Keep all: let the analysis read these columns';
-    // the box a kept column puts on the step (option B): required, unticked, and naming the columns it sends
-    function sendWords(kept) {
-      return esc('Send these personal columns to the AI: ') + kept.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(', ') +
-        esc('. Their values (for example people\'s names) go to DeepSeek, a company based in China, through this site\'s proxy, and may appear in the AI\'s report and in any link you share.');
+    /* ---- the AI consent step (owner's decision, 18 Oct 2026: one box for the whole file, no column withheld) ---- */
+    // every flagged column kept (a column the engine coded as it arrived, an email or a phone number, stays coded: the core
+    // engine codes it before any choice is read)
+    function keepAll(flagged) {
+      var d = {};
+      (flagged || []).forEach(function (f) { d[f.column] = String(f.kind || '').indexOf(CODED) >= 0 ? 'code' : 'keep'; });
+      return d;
     }
-    // The visitor's AI choice (26 Sep 2026 flow, consent restored 29 Sep 2026): nothing reaches the proxy unless
-    // they press "Continue with the AI". Shown on the personal-data step, or alone when nothing was flagged.
-    // the key sentences, one per promise (tools/check_ui.js reads them back from the page). The summary is the
-    // adapter's (engine/nl_browser.py profile_for_ai): a number column's min, median and max, profile.time's
-    // first and last month, and for a text or date column of at most 300 distinct short values its commonest
-    // values and every value; never the file's name (T.planProfile)
-    var AI_CONSENT = ['Nothing goes to an AI unless you choose "Continue with the AI".',
-      'Then a summary of your columns goes to DeepSeek through this site\'s proxy to plan the analysis: each column\'s name, type and counts; for a column not flagged as personal, or one you keep, also its range (lowest, middle and highest number; first and last month of the date column) and, for text or dates with at most 300 different short values, those values. For a table whose rows each measure something different (a census profile: a measure in each row, for each place), also the names of up to 60 of its measures, so the AI can choose which to compare.',
-      'Never rows.',
-      'A column you withhold is left out and never named; for a coded column the AI is told only its name, type and counts, never its values or range.',
-      'A flagged column you keep is sent like any other column, values included, but only after you tick the box that names it.',
-      'The page flags columns that look personal and can miss some (for example people\'s names under a heading like "Stylist"); if your file has such a column, continue without the AI.',
-      'The engine runs the plan straight away, and the AI corrects its plan once if the engine finds a problem a new plan could fix (never when it had to set aside too many rows); you can change the plan afterwards.',
-      'The engine\'s results (findings, figures and tables; never rows) then go back for the AI to write the report, which may look up public sources on the web.',
-      'The web searches use only general terms such as an indicator, a sector, a country and years, never anything from your file.',
-      'Without the AI, nothing leaves this browser.'];
-    // the consent box sits right after the Keep choices (on a phone the long AI note used to push it a screen
-    // below them), with a polite live note that says it appeared and where (review of 29 Sep 2026)
-    function sendBoxHtml() {
-      return '<div class="pd-send" id="try-pd-send" hidden></div><p class="sr" id="try-pd-send-said" role="status" aria-live="polite"></p>';
-    }
-    function aiChoiceHtml(withBox) {
-      return (withBox ? sendBoxHtml() : '') + '<p class="pd-ai-note">' + esc(AI_CONSENT.join(' ')) + '</p>' +
-        '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with the AI</button> ' +
+    // the one box (owner's decision, 18 Oct 2026): the visitor agrees, once, that the whole dataset is sent to the AI
+    var CONSENT_WORDS = 'I agree that my dataset is sent to the AI: every column, with its values, including any personal data in it ' +
+      '(names, for example). It goes to DeepSeek, a company based in China, through this site\'s proxy, and what the AI writes may ' +
+      'quote it in the report and in any link I share.';
+    function askConsent(flagged) {
+      var d = keepAll(flagged), seq = S.seq;
+      el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' +
+        '<p>The AI reads every column of your file and chooses what to analyse; the engine computes every figure on all your rows ' +
+        'in this browser. Without the AI, nothing leaves this browser.</p>' +
+        '<p class="pd-send-ok"><input type="checkbox" id="try-pd-send-ok" required aria-required="true"> ' +
+        '<label for="try-pd-send-ok">' + esc(CONSENT_WORDS) + '</label></p>' +
+        '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go" disabled aria-describedby="try-pd-why">Continue with the AI</button> ' +
         '<button type="button" class="btn btn-ghost" id="try-pd-noai">Continue without AI</button>' +
-        '<p class="note pd-why" id="try-pd-why" hidden>Continue with the AI is off until you tick the box above. Continue without AI sends nothing.</p></div>';
-    }
-    // the flagged columns set to Keep on the step, in the step's order
-    function keptCols() {
-      return Array.prototype.map.call(el.pd.querySelectorAll('input[type=radio][value="keep"]:checked'), function (x) { return x.getAttribute('data-col'); });
-    }
-    function sendOk() { var t = $('try-pd-send-ok'); return !keptCols().length || !!(t && t.checked); }
-    // The consent gate (option B): while a flagged column is set to Keep, the step shows a required, unticked box
-    // that names every kept column, and "Continue with the AI" stays off until it is ticked. The box is drawn again,
-    // unticked, whenever the list changes: an agreement covers the columns it names, no others.
-    function syncSend() {
-      var box = $('try-pd-send'), go = $('try-pd-go'), why = $('try-pd-why');
-      if (!box || !go) return;
-      var kept = keptCols(), key = kept.join('\n');
-      if (key !== S.sendKey) {
-        var was = !!S.sendKey;
-        S.sendKey = key;
-        box.innerHTML = kept.length ? '<p class="pd-send-ok"><input type="checkbox" id="try-pd-send-ok" required aria-required="true">' +
-          '<label for="try-pd-send-ok">' + sendWords(kept) + '</label></p>' : '';
-        var said = $('try-pd-send-said');
-        if (said) said.textContent = kept.length ? (was ? 'The box to tick now names: ' : 'A box to tick appeared right below these choices: to send ') + kept.join(', ') + (was ? '.' : ' to the AI, tick it before you continue with the AI.') : (was ? 'No column is kept now, so no box needs ticking.' : '');
-      }
-      box.hidden = !kept.length;
-      var ok = sendOk();
-      go.disabled = !ok;
-      if (why) why.hidden = ok;
-      if (ok) go.removeAttribute('aria-describedby'); else go.setAttribute('aria-describedby', 'try-pd-why');
-    }
-    el.pd.addEventListener('change', function (e) {
-      var t = e.target;
-      if (t && (t.type === 'radio' || t.id === 'try-pd-send-ok')) syncSend();
-    });
-    function wireAiChoice(getDecisions) {
-      var seq = S.seq;
-      [['try-pd-go', true], ['try-pd-noai', false]].forEach(function (b) {
-        $(b[0]).addEventListener('click', function () {
+        '<p class="note pd-why" id="try-pd-why">Continue with the AI is off until you tick the box above. Continue without AI sends nothing.</p></div>';
+      el.pd.hidden = false;
+      var box = $('try-pd-send-ok'), go = $('try-pd-go'), why = $('try-pd-why');
+      box.addEventListener('change', function () {
+        go.disabled = !box.checked; why.hidden = box.checked;
+        if (box.checked) go.removeAttribute('aria-describedby'); else go.setAttribute('aria-describedby', 'try-pd-why');
+      });
+      [[go, true], [$('try-pd-noai'), false]].forEach(function (b) {
+        b[0].addEventListener('click', function () {
           if (seq !== S.seq) return;
-          // the gate holds whatever the button says: no request leaves while a kept column's box is unticked
-          if (b[1] && !sendOk()) { syncSend(); var t = $('try-pd-send-ok'); if (t) t.focus(); return; }
-          var d = getDecisions();
+          if (b[1] && !box.checked) { box.focus(); return; }   // the gate holds whatever the button says
           S.useAi = b[1];
-          // what the visitor agreed to send (the plan card's record, and the share warning); nothing without the AI
-          S.kept = b[1] ? keptCols() : [];
+          // every flagged column the AI may now read (the plan card's record and the share warning); none without the AI
+          S.kept = b[1] ? Object.keys(d).filter(function (k) { return d[k] === 'keep'; }) : [];
           el.pd.hidden = true;
-          if (d) setStage('decide', 'start');
-          sendRun(d || {});
+          sendRun(d);
         });
       });
-    }
-    function askAiChoice() {
-      S.sendKey = '';
-      el.pd.innerHTML = '<h3 id="try-pd-h">Use the AI on this file?</h3>' + aiChoiceHtml(true);
-      el.pd.hidden = false;
-      syncSend();
-      wireAiChoice(function () { return null; });
       goTo($('try-pd-h'));
-      try { $('try-pd-go').focus({ preventScroll: true }); } catch (e) { $('try-pd-go').focus(); }
-    }
-    // a released category (privacy.released): read like any column unless the visitor withholds it
-    var RELEASED_CHOICES = [['use', 'Use', 'read as a category like any other column: its labels can appear in the findings, the charts and the downloads' + (CFG.ai_proxy_url ? ', and in what the AI reads' : '')],
-      ['withhold', 'Withhold', 'treat it as personal after all: never sent to an AI or put in a share link, its values never shown, downloaded or used in the analysis']];
-    function releasedHtml(rel) {
-      if (!rel.length) return '';
-      var cats = rel.filter(function (x) { return !isMeasureRelease(x); }), meas = rel.filter(function (x) { return isMeasureRelease(x) && !x.series; }),
-        ser = rel.filter(function (x) { return isMeasureRelease(x) && x.series; });
-      return (cats.length ? '<p class="note pd-rel-note">The engine reads ' + (cats.length === 1 ? 'this column' : 'these columns') + ' as categories, not personal data: a scan flags any column of many different wordy values, and ' + (cats.length === 1 ? 'this one holds' : 'these hold') + ' a short list of labels, each repeated, with no personal shape and no sensitive name. You can still withhold ' + (cats.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
-        (meas.length ? '<p class="note pd-rel-note">The table\'s own value column (' + meas.map(function (x) { return esc(String(x.header || x.column)); }).join(', ') + ') holds the figures it publishes: every cell is a number, and a count of nine or more digits has the shape of an ID number without being one here. The engine reads it as the measure, not as personal data. You can still withhold it; the table then cannot be read.</p>' : '') +
-        // a long statistical table's series (engine/nl_browser.py _release_value_column, series): a word in an agency's series name ("notes")
-        // flagged it, never its numbers
-        (ser.length ? '<p class="note pd-rel-note">' + (ser.length === 1 ? 'This series of the agency\'s table' : 'These series of the agency\'s table') + ' (' + ser.map(function (x) { return esc(String(x.header || x.column)); }).join(', ') + ') ' + (ser.length === 1 ? 'holds' : 'hold') + ' the figures it publishes: every cell is a number, and a word in a series\' name (such as "notes") does not make it a person\'s data. The engine reads ' + (ser.length === 1 ? 'it' : 'them') + ' as measures. You can still withhold ' + (ser.length === 1 ? 'it' : 'any of them') + '.</p>' : '') +
-        rel.map(function (x, i) {
-          var words = isMeasureRelease(x) ? String(x.text) : 'Read as a category, not personal data: ' + String(x.header || x.column) + ' (' + Number(x.distinct || 0).toLocaleString('en-US') + ' labels)';
-          return '<fieldset class="pd-col pd-rel"><legend><code>' + esc(x.header || x.column) + '</code> <span class="pd-kind">' + esc(words) + '</span></legend><div class="pd-opts">' +
-            RELEASED_CHOICES.map(function (c) {
-              return '<label class="pd-opt"><input type="radio" name="pd-rel-' + i + '" value="' + c[0] + '"' + (c[0] === 'use' ? ' checked' : '') + ' data-col="' + esc(x.column) + '" data-rel="1"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
-            }).join('') + '</div></fieldset>';
-        }).join('');
-    }
-    function askPersonal(flagged) {
-      setStage('decide', 'wait');
-      S.sendKey = '';                                // a new step: no box, nothing ticked, every column withheld
-      var rel = S.released || [];
-      var keepable = flagged.some(function (f) { return String(f.kind || '').indexOf(CODED) < 0; });
-      el.pd.innerHTML = '<h3 id="try-pd-h">Personal data: you decide</h3>' +
-        (flagged.length ? '<p>The engine flagged ' + plural(flagged.length, 'column', 'columns') + ' as possibly personal. Withhold is chosen for each; change it only if the column is safe to use. Your file stays in this browser whatever you pick.</p>'
-          : '<p>No column was flagged as personal. Your file stays in this browser whatever you pick.</p>') +
-        '<p class="note">The scan reads column names and the shape of values. A column of names under a neutral heading (a stylist or a vendor, say) can be missed, and is then used as it is.</p>' +
-        (keepable ? '<p class="pd-all"><button type="button" class="btn btn-ghost btn-sm" id="try-pd-all">' + esc(KEEP_ALL) + '</button>' +
-          '<span class="pd-all-said note" id="try-pd-all-said" role="status"></span></p>' : '') +
-        flagged.map(function (f, i) {
-          var coded = String(f.kind || '').indexOf(CODED) >= 0;
-          return '<fieldset class="pd-col"><legend><code>' + esc(f.column) + '</code> <span class="pd-kind">flagged: ' + esc(f.kind || 'possibly personal') + '</span></legend><div class="pd-opts">' +
-            CHOICES.map(function (c) {
-              var off = coded && c[0] === 'keep';
-              return '<label class="pd-opt"><input type="radio" name="pd-' + i + '" value="' + c[0] + '"' + (c[0] === 'withhold' ? ' checked' : '') + (off ? ' disabled' : '') + ' data-col="' + esc(f.column) + '"><span><b>' + c[1] + '</b><small>' + c[2] + '</small></span></label>';
-            }).join('') + '</div>' + (coded ? '<p class="pd-note">Already coded as it arrived: an email address or phone number cannot be kept as it is, so Keep is not offered.</p>' : '') + '</fieldset>';
-        }).join('') + releasedHtml(rel) +
-        (CFG.ai_proxy_url ? aiChoiceHtml(true) : '<div class="pd-go"><button type="button" class="btn btn-primary" id="try-pd-go">Continue with these choices</button></div>');
-      el.pd.hidden = false;
-      var pdDecisions = function () {
-        var d = {};
-        Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio]:checked'), function (x) {
-          // a released category counts only when withheld: "use" is the engine's own reading, no choice to send
-          if (x.getAttribute('data-rel') && x.value !== 'withhold') return;
-          d[x.getAttribute('data-col')] = x.value;
-        });
-        return d;
-      };
-      if (CFG.ai_proxy_url) { syncSend(); wireAiChoice(pdDecisions); }
-      else $('try-pd-go').addEventListener('click', function () { var d = pdDecisions(); el.pd.hidden = true; S.kept = []; setStage('decide', 'start'); sendRun(d); });
-      var all = $('try-pd-all');
-      if (all) all.addEventListener('click', function () {
-        Array.prototype.forEach.call(el.pd.querySelectorAll('input[type=radio][value="keep"]'), function (x) { if (!x.disabled) x.checked = true; });
-        syncSend();
-        $('try-pd-all-said').textContent = 'Keep is now chosen for every column that can be kept; change any one back below.' +
-          (CFG.ai_proxy_url ? ' Nothing goes to the AI until you tick the box that names them.' : '');
-      });
-      goTo($('try-pd-h'));
-      var first = el.pd.querySelector('input[type=radio]:checked');
-      if (first) { try { first.focus({ preventScroll: true }); } catch (e) { first.focus(); } }
+      try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
     }
     // One integrated flow (owner's ask, 26 Sep 2026): the AI plans and the engine computes in a
     // single run. AI is on only when the proxy is configured AND the visitor chose "Continue with the AI" for this run.
@@ -2371,7 +2252,7 @@
     // the visitor's opt-in (option B), stated once in plain words where every AI run says what it did: the plan card
     // (drawn whenever the AI was used, with the plan or with the reason there is none)
     function optinHtml() {
-      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You chose to send these personal columns to the AI: ' + S.kept.join(', ') + '.') + '</p>' : '';
+      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You agreed to send the whole dataset to the AI, these columns flagged as possibly personal included: ' + S.kept.join(', ') + '.') + '</p>' : '';
     }
     // the AI plan's steps that set rows aside, as the adapter disclosed them (rep.ai_plan.row_drops)
     function rowDrops(p) {

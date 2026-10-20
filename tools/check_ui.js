@@ -4559,6 +4559,16 @@ check('dashboard-phase-d-trend-drill-decomposition', DESK, async (ctx) => {
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
   const t = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-dash .nld-kpi')).map((k) => ({ spark: !!k.querySelector('svg.k-spark polyline'), v: (k.querySelector('.k-var') || {}).textContent || '' })));
   ok(t.some((x) => x.spark) && t.some((x) => /(above|below|level with) /.test(x.v)), 'no tile carries its trend: ' + JSON.stringify(t).slice(0, 300));
+  // an average tile's last period is that period's average (the engine's own rule), never its total
+  const avg = await p.evaluate(() => { const D = window.NLD.current.D, K = D.kpis.find((k) => k.agg === 'average' && k.mkey); if (!K) return null;
+    const v = (document.querySelector('#nld-x-' + K.id + ' .k-var') || {}).textContent || ''; const pv = window.NLD.periodValues(D, D.cube.cells, K.mkey);
+    return { v, j: D.cube.measures.findIndex((m) => m.key === K.mkey), K: K.id }; });
+  if (avg && avg.v) {
+    const probe = await p.evaluate((id) => { const D = window.NLD.current.D, K = D.kpis.find((k) => k.id === id), r = window.NLD.kpi(D, K, {});
+      const m = /: ([^,(]+)/.exec(document.querySelector('#nld-x-' + id + ' .k-var').textContent); return { tile: r.value, last: m && m[1] }; }, avg.K);
+    const num = (s) => parseFloat(String(s).replace(/[^0-9.\-]/g, ''));
+    ok(probe.last && num(probe.last) < 20 * Math.abs(probe.tile) + 1, 'an average tile\'s last period reads like a total: ' + JSON.stringify(probe));
+  }
   // the drill control
   const drill = await p.$('#nl2-dash select[data-nld-f="grain"]');
   ok(drill, 'no drill control on a dashboard with a time chart');

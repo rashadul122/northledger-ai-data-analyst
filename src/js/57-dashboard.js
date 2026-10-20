@@ -585,7 +585,9 @@
     var out = { spark: '', var: '' };
     if (!D.cube.months.length || (K.mkey && measIdx(D, K.mkey) < 0) || (!K.mkey && K.agg !== 'count')) return out;
     var cells = pick(D, F || {}, K.where), g = tileGrain(D, cells);
-    var pv = periodValues(D, cells, K.agg === 'count' ? null : K.mkey, g);
+    var pv = periodValues(D, cells, K.agg === 'count' ? null : K.mkey, g), mj = K.mkey ? measIdx(D, K.mkey) : -1;
+    // an average tile of a flow reads each period's average, never its total (20 Oct 2026: "Average helpful votes: 2022: 922")
+    if (K.agg === 'average' && mj >= 0 && D.cube.measures[mj].flow) pv = pv.map(function (x) { return { p: x.p, n: x.n, v: x.v === null || !x.n ? null : x.v / x.n }; });
     var held = heldMonths(D, cells, g), lastM = null;
     cells.forEach(function (c) { if (c[0] >= 0 && (lastM === null || D.cube.months[c[0]] > lastM)) lastM = D.cube.months[c[0]]; });
     // the data's last month still filling (cube.last_month_full: data to the 15th): its period is not compared or drawn

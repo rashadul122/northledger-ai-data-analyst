@@ -627,6 +627,48 @@ def test_a_small_first_to_last_change_is_said_to_be_within_the_usual_swing():
         assert "within its normal swing" in said[0], said
 
 
+def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
+    """engine/nl_vega.py (AI Analyst v2 phase C): the AI's query runs on the analysis frame, its spec draws only the result's
+    columns; data, transforms and addresses of its own are refused, and every refusal is a signal for the self-correction."""
+    import nl_vega as NV
+    rows = ["order_date,region,channel,revenue,units"] + ["2024-%02d-%02d,%s,%s,%d,%d" % (1 + i % 12, 1 + i % 28, "NESW"[i % 4], "AB"[(i // 4) % 2], 100 + i, 1 + i % 7)
+                                                          for i in range(400)]
+    ok_spec = {"mark": "bar", "encoding": {"x": {"field": "region", "type": "nominal", "sort": "-y"},
+                                          "y": {"field": "revenue", "type": "quantitative", "axis": {"format": "$,.0f"}},
+                                          "color": {"field": "channel", "type": "nominal"}}}
+    plan = {"goal": "revenue", "dashboard": {"kpis": [{"id": "rev", "measure": "revenue", "agg": "sum", "label": "Revenue"}], "visuals": [
+        {"id": "mix", "title": "Revenue by region and channel", "why": "where it comes from",
+         "sql": "SELECT region, channel, SUM(revenue) revenue FROM kept_rows GROUP BY region, channel", "spec": ok_spec},
+        {"id": "pulled", "title": "Pulled in", "sql": "SELECT region FROM kept_rows", "spec": {"data": {"url": "https://x.example/a.csv"}, "mark": "bar",
+                                                                                              "encoding": {"x": {"field": "region", "type": "nominal"}}}},
+        {"id": "wrong", "title": "Units", "sql": "SELECT region, SUM(units) AS u FROM kept_rows GROUP BY 1",
+         "spec": {"mark": "bar", "encoding": {"x": {"field": "units", "type": "quantitative"}}}},
+        {"id": "nope", "title": "Nothing", "sql": "SELECT region FROM kept_rows WHERE region = 'Q'", "spec": ok_spec}]}}
+    rep = NB.run(("\n".join(rows) + "\n").encode(), "o.csv", "", {"__plan__": plan}, "2026-10-20")
+    d = rep["dashboard"]
+    assert [v["id"] for v in d.get("visuals") or []] == ["mix"], d.get("visuals")
+    v = d["visuals"][0]
+    assert v["columns"] == ["region", "channel", "revenue"] and len(v["rows"]) == 8, v
+    import pandas as pd
+    df = pd.read_csv(io.StringIO("\n".join(rows)))
+    want = df.groupby(["region", "channel"])["revenue"].sum().to_dict()
+    got = {(r[0], r[1]): r[2] for r in v["rows"]}
+    assert all(abs(got[k] - want[k]) < 1e-6 for k in want), (got, want)
+    why = " | ".join(r["why"] for r in d.get("refused") or [])
+    for w in ("carries data", "does not return: units", "returned no rows"):
+        assert w in why, why
+    sig = " | ".join(s_["detail"] for s_ in rep.get("plan_signals") or [] if s_.get("kind") == "dashboard")
+    assert "visual Pulled in was refused" in sig, sig
+    # the grammar on its own: an expression, an unknown channel, an address, an unknown mark
+    for bad in ({"mark": "bar", "encoding": {"x": {"field": "a", "type": "nominal"}}, "transform": [{"calculate": "1", "as": "b"}]},
+                {"mark": "bar", "encoding": {"href": {"field": "a", "type": "nominal"}}},
+                {"mark": "image", "encoding": {"x": {"field": "a", "type": "nominal"}}},
+                {"mark": "text", "encoding": {"text": {"value": "javascript:alert(1)"}}}):
+        assert NV.validate_spec(bad, ["a"])[0] is None, bad
+    clean, _ = NV.validate_spec({"mark": {"type": "line", "point": True, "color": "red"}, "encoding": {"x": {"field": "a", "type": "temporal"}}}, ["a"])
+    assert clean == {"mark": {"type": "line", "point": True}, "encoding": {"x": {"field": "a", "type": "temporal"}}}, clean
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

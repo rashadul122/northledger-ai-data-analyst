@@ -40,7 +40,9 @@ PAGES = ["index.html", "case-study.html", "agent-demo.html"]
 RUNTIME_FILES = ["engine/worker.js", "engine/northledger-browser.zip", "engine/pack.json",
                  "engine/sample-messy.csv", "engine/sample-sales-synthetic.csv", "engine/sample-crm-deals-synthetic.csv", "engine/sample-pack-budget-synthetic.csv",
                  "engine/sample-pack-kpi-synthetic.csv", "engine/world-110m.json",
-            "engine/sample-tracker-tasks-a-synthetic.csv", "engine/sample-tracker-tasks-b-synthetic.csv"]
+            "engine/sample-tracker-tasks-a-synthetic.csv", "engine/sample-tracker-tasks-b-synthetic.csv",
+            # the AI's dashboard visuals (src/js/64-vega.js loads them by name): vega 5.30.0, vega-lite 5.21.0, vega-interpreter 1.0.5
+            "engine/vendor/vega.min.js", "engine/vendor/vega-lite.min.js", "engine/vendor/vega-interpreter.min.js"]
 ALWAYS = ["favicon.svg", "favicon-32.png"]
 LIMIT = 25 * 1024 * 1024
 LINK_ATTRS = {"a": "href", "link": "href", "script": "src", "img": "src", "source": "src", "iframe": "src",

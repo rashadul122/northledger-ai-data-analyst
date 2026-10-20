@@ -1586,3 +1586,10 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nlgeo svg path.nlgeo-a:hover, .nlgeo svg path.nlgeo-a:focus { stroke: var(--ink, #111); stroke-width: 1.6; outline: none; }
 .nld-map { padding: 14px 16px; margin: 12px 0; }
 .nld-map-h { margin: 0 0 4px; }
+
+/* the AI's own dashboard visuals (src/js/64-vega.js) */
+.nld-visuals{margin-top:16px}
+.nld-vg{overflow-x:auto;min-height:120px}
+.nld-vg svg{max-width:none;height:auto;display:block}
+.nld-why{margin:0 0 6px}
+.nld-sql{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:8px 0 0}

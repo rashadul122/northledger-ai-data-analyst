@@ -4517,6 +4517,39 @@ async function noSideways(p) {
     out: Array.from(document.querySelectorAll('#nl2-dash svg, #nl2-dash .tr-kpi, #nl2-dash select, #try-rail')).filter((e) => e.offsetParent && e.getBoundingClientRect().right > document.documentElement.clientWidth + 0.5).length }));
   ok(d.sw <= d.vw + 1 && d.out === 0, 'sideways scroll on the dashboard: ' + JSON.stringify(d));
 }
+// the AI's own visuals (engine/nl_vega.py, src/js/64-vega.js; AI Analyst v2 phase C, 20 Oct 2026): the engine's query result drawn
+// with the AI's Vega-Lite spec by the self-hosted library under the page's CSP (no eval: the expression interpreter), its table and
+// query beside it, its dates labelled in local time, and the saved HTML file carrying the drawing (no chart library offline)
+async function visualsChecks(ctx, phone) {
+  const rep = sampleDashReport();
+  rep.dashboard.visuals = [
+    { id: 'vmix', title: 'Ledger lines by category', why: 'which kinds of entry the ledger holds', sql: 'SELECT Category, COUNT(*) AS n FROM kept_rows GROUP BY Category',
+      columns: ['Category', 'n'], rows: [['RENT', 1200], ['FEE', 640], ['REPAIR', 300], ['DEPOSIT', 180]], rows_total: 4, truncated: false,
+      spec: { mark: 'bar', encoding: { y: { field: 'Category', type: 'nominal', sort: '-x' }, x: { field: 'n', type: 'quantitative', title: 'Lines' } } } },
+    { id: 'vtime', title: 'Lines by month', why: '', sql: 'SELECT substr(Date,1,7) || \'-01\' AS month, COUNT(*) AS n FROM kept_rows GROUP BY 1',
+      columns: ['month', 'n'], rows: [['2024-01-01', 10], ['2024-02-01', 12], ['2024-03-01', 9]], rows_total: 3, truncated: false,
+      spec: { mark: { type: 'line', point: true }, encoding: { x: { field: 'month', type: 'temporal', timeUnit: 'yearmonth', title: null }, y: { field: 'n', type: 'quantitative' } } } }];
+  const { p } = await openV2(ctx, 'sample-dashboard', rep);
+  await p.click('#nl2-tab-d');
+  await p.waitForSelector('#nl2-dash .nld-vg[data-drawn] svg', { timeout: 20000 });
+  await p.waitForFunction(() => document.querySelectorAll('#nl2-dash .nld-vg[data-drawn] svg').length === 2, null, { timeout: 20000 });
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  const g = await p.evaluate(() => {
+    const f = Array.from(document.querySelectorAll('#nl2-dash figure.nld-vis'));
+    return { n: f.length, labels: f.map((x) => x.querySelector('.nld-vg').getAttribute('aria-label')), bars: f[0].querySelectorAll('svg path[aria-roledescription="bar"], svg .mark-rect path').length,
+      tableRows: f[0].querySelectorAll('table.data tbody tr').length, sql: (f[0].querySelector('.nld-sql') || {}).textContent || '', note: (f[0].querySelector('.nld-static') || {}).textContent || '',
+      ticks: Array.from(f[1].querySelectorAll('svg text')).map((t) => t.textContent).join('|'), defs: (document.querySelector('#nl2-dash .nld-notes') || {}).textContent || '' };
+  });
+  ok(g.n === 2 && g.labels.every((l) => l && l.length > 6), 'the visuals are not drawn with accessible names: ' + JSON.stringify(g.labels));
+  ok(g.bars >= 4 && g.tableRows === 4 && /GROUP BY Category/.test(g.sql) && /Not filtered/.test(g.note), 'a visual lacks its bars, its table or its query: ' + JSON.stringify(g).slice(0, 300));
+  ok(/Jan 2024|January/.test(g.ticks) && !/Dec 2023/.test(g.ticks), 'a date drew a day early (UTC parsing): ' + g.ticks.slice(0, 200));
+  ok(/the AI's query over every row/.test(g.defs), 'the notes do not define the visuals');
+  if (phone) await noSideways(p);
+  const file = await p.evaluate(() => window.NLD.htmlFile(window.NLD.current.D, window.NLD.state()));
+  ok(file && /vis:vmix/.test(file) && /64-vega\.js/.test(file), 'the saved dashboard file does not carry the drawn visuals');
+}
+check('dashboard-ai-visuals-vega', DESK, async (ctx) => { await visualsChecks(ctx, false); });
+check('dashboard-ai-visuals-vega-phone-dark', PHONE, async (ctx) => { await visualsChecks(ctx, true); }, { colorScheme: 'dark' });
 check('dashboard-tab-tiles-charts-filters-and-notes', DESK, async (ctx) => {
   const { p, D } = await dashPage(ctx);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);

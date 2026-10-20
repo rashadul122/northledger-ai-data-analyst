@@ -142,6 +142,16 @@ def check_sql(sql: Any, columns: List[str], hidden: Optional[List[str]] = None) 
                     for q in range(i + 2, j):
                         if low[q][0] in ("word", "qid"):
                             defined.add(_ident(low[q][0], toks[q][1]).lower())
+    # implicit column aliases (20 Oct 2026: an AI's "SUM(units) u" was refused as an unknown column): a name right after an
+    # expression's end (a closing bracket, a literal, a column) and before a comma, FROM or the end names the result column
+    for i, (k, t) in enumerate(low):
+        if k not in ("word", "qid") or i == 0 or (k == "word" and (t in KEYWORDS or t in FUNCTIONS)):
+            continue
+        prev = low[i - 1]
+        nxt = low[i + 1] if i + 1 < len(low) else ("end", "")
+        after_expr = prev == ("op", ")") or prev[0] in ("num", "str") or (prev[0] in ("word", "qid") and _ident(prev[0], toks[i - 1][1]).lower() in cols)
+        if after_expr and (nxt in (("op", ","), ("word", "from"), ("op", ")")) or nxt[0] == "end"):
+            defined.add(_ident(k, toks[i][1]).lower())
     # table aliases: FROM/JOIN <table or cte> [AS] alias
     for i, (k, t) in enumerate(low):
         if (k, t) in (("word", "from"), ("word", "join")):

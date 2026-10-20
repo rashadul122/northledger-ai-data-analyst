@@ -580,5 +580,13 @@ def main() -> int:
     return 1 if bad else 0
 
 
+
+def test_an_implicit_column_alias_is_the_querys_own_name():
+    """20 Oct 2026: an AI's "SUM(units) u" was refused as an unknown column (the worker's checkSql agrees)."""
+    cols = ["region", "units"]
+    assert ns.check_sql("SELECT region, SUM(units) u FROM kept_rows GROUP BY 1 ORDER BY u DESC", cols)["ok"]
+    assert ns.check_sql("SELECT region r FROM kept_rows", cols)["ok"]
+    assert not ns.check_sql("SELECT nope FROM kept_rows", cols)["ok"]
+
 if __name__ == "__main__":
     sys.exit(main())

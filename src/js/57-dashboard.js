@@ -582,7 +582,7 @@
   }
   function notes(D, F, local) {
     var R = D.remarks, rows = R.rows, act = activeWords(D, F);
-    var defs = D.kpis.concat(D.charts).map(function (x) { return '<li><strong>' + esc(x.label || x.title) + ':</strong> ' + esc(x.definition || (x.draw === 'static' ? 'the engine\'s own chart record, over every row it kept (not filtered).' : '')) + '</li>'; }).join('');
+    var defs = D.kpis.concat(D.charts, (D.visuals || []).map(function (V) { return { title: V.title, definition: 'the AI\'s query over every row the engine kept (not filtered), drawn with its own Vega-Lite design: ' + V.sql }; })).map(function (x) { return '<li><strong>' + esc(x.label || x.title) + ':</strong> ' + esc(x.definition || (x.draw === 'static' ? 'the engine\'s own chart record, over every row it kept (not filtered).' : '')) + '</li>'; }).join('');
     return '<section class="tr-card nld-notes" aria-labelledby="nld-notes-h"><h4 id="nld-notes-h">Notes</h4>' +
       '<h5>Definitions</h5><ul>' + defs + '</ul>' +
       '<h5>Dates</h5><p>Shown: <span data-nld="shown">' + esc(shownRange(D, F)) + '</span>. The data run from ' + esc(R.data_range_text) + '.</p>' +
@@ -628,7 +628,8 @@
       if (cs.length) body += '<div class="nld-row">' + cs.map(function (i) { return figHtml(I[i]); }).join('') + '</div>';
     });
     var card = NLD.cardHost && !local ? '<p class="nld-counts-link note">What this dashboard counts: <a href="#nld-counts-h">what each column means and what one row is</a> (step 1, editable).</p>' : countsCard(D);
-    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + insightsCard() + body + notes(D, {}, local) + exportsBar(local) + '</div>';
+    var vis = window.NLVG && D.visuals && D.visuals.length ? window.NLVG.html(D) : '';   // the AI's own visuals (64-vega.js): not filtered
+    return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + insightsCard() + body + vis + notes(D, {}, local) + exportsBar(local) + '</div>';
   };
   NLD.countsCard = countsCard;
 
@@ -795,6 +796,7 @@
     NLD.__fill = fillEdit; NLD.__rebuild = rebuild;
     fillEdit();
     render();
+    if (window.NLVG && D.visuals && D.visuals.length) window.NLVG.drawAll(box, D, { local: !!opts.local, snapshot: opts.snapshot });
   };
   /* ------------------------------------------------------------ the shared column card (step 1): window.NLColumns */
   // What each column means, as the engine read it and as the visitor corrected it; one card for every step (Track C reads
@@ -915,13 +917,14 @@
   }
   NLD.htmlFile = function (D, F) {
     var css = Array.prototype.map.call(document.querySelectorAll('style'), function (s) { return s.textContent; }).join('\n');
-    var js = sources(['00-core.js', '51-nl2-charts.js', '55-nl-viz.js', '57-dashboard.js']);
-    if (js.length < 4) return null;
+    var js = sources(['00-core.js', '51-nl2-charts.js', '55-nl-viz.js', '57-dashboard.js', '64-vega.js']);
+    if (js.length < 5) return null;
     var snap = {};
     D.charts.forEach(function (X) {     // a chart the filters do not change is carried as it is drawn now
       if (X.draw !== 'static') return;
       var el = document.getElementById('nld-v-' + X.id); if (el) snap[X.id] = el.innerHTML;
     });
+    if (window.NLVG) window.NLVG.snapshot(document, D, snap);   // the AI's visuals, as drawn now (a saved file loads no chart library)
     var data = JSON.stringify({ D: D, F: F, snap: snap }).replace(/</g, '\\u003c');
     var title = D.title || 'Dashboard';
     return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +

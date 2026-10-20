@@ -1728,6 +1728,6 @@ def signals(d: Any) -> List[Dict[str, str]]:
     if d.get("observations") and not any(k.get("agg") in SERIES_AGGS for k in d.get("kpis") or []):
         add("each row is a published figure (one a %s): lead with latest, change, peak and low tiles, and a change_chart, not totals "
             "or averages over the whole range" % GRAIN_WORD.get(cube.get("grain") or "month", "month"))
-    if not d.get("charts"):
+    if not d.get("charts") and not d.get("visuals"):
         add("the dashboard has no chart")
     return out

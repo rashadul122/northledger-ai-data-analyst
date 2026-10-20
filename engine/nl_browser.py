@@ -13758,6 +13758,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # checked and computed over the rows the engine kept; the plan's raw block then leaves rep.ai_plan
         rep["dashboard"] = _dashboard(rep, r if not date_withheld else None, reading, ai_plan, pub, goal,
                                       scrub.flag_tokens, scrub.flag_tokens_by, dash_pins)
+        _dashboard_visuals(rep, ai_plan)
         # the AI looks at its own dashboard (19 Oct 2026): what the engine refused or could not draw goes back with the plan's other
         # signals, so the one self-correction can redesign it (nl_dashboard.signals; nothing for the engine's own design)
         if isinstance(rep.get("plan_signals"), list) and rep.get("plan_signals") is not None and isinstance(ai_plan, dict):
@@ -15357,6 +15358,49 @@ def _dashboard(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, g
             raise
         return {"version": "", "ok": False, "chosen_by": "none",
                 "why": "the dashboard could not be built for this file (%s)" % type(exc).__name__}
+
+
+def _dashboard_visuals(rep: Dict[str, Any], plan: Any) -> None:
+    """The visuals the AI designed for the Dashboard tab (engine/nl_vega.py, AI Analyst v2 phase C): each query run with the
+    analyst's `sql` op on the frame the loop read (_LAST_ANALYST: the same rows as every other figure), each spec checked. A visual
+    the engine refuses joins the dashboard's refused elements, so its signals reach the one self-correction. The report and the
+    dashboard stand without them."""
+    d = rep.get("dashboard") if isinstance(rep.get("dashboard"), dict) else None
+    block = plan.get("dashboard") if isinstance(plan, dict) and isinstance(plan.get("dashboard"), dict) else None
+    raw = block.get("visuals") if block else None
+    if not d or not d.get("ok") or not isinstance(raw, list) or not raw:
+        return
+    try:
+        import nl_analyst as _na
+        import nl_vega as _nv
+
+        def run_sql(sql: str) -> Dict[str, Any]:
+            if not _LAST_ANALYST:
+                return {"ok": False, "error": "the engine has no analysis frame for this file"}
+            out = _na.run_steps(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"],
+                                [{"op": "sql", "args": {"sql": sql}, "why": "a dashboard visual"}], _LAST_ANALYST["hint"])
+            st = (out.get("steps") or [None])[0]
+            if not isinstance(st, dict):
+                why = "; ".join(str(r.get("why") or "") for r in out.get("refused") or [] if isinstance(r, dict))
+                return {"ok": False, "error": why or "the query was refused"}
+            if not st.get("ok"):
+                return {"ok": False, "error": st.get("refused") or "the query was refused"}
+            t = st.get("table") or {}
+            n = ((st.get("numbers") or {}).get("rows") or {}).get("value")
+            return {"ok": True, "columns": t.get("columns") or [], "rows": t.get("rows") or [],
+                    "rows_total": int(n) if isinstance(n, (int, float)) else len(t.get("rows") or [])}
+        taken = [x.get("id") for x in (d.get("kpis") or []) + (d.get("charts") or []) if isinstance(x, dict)]
+        got = _nv.build(raw, run_sql, taken)
+        d["visuals"] = got["visuals"]
+        if got["refused"]:
+            d["refused"] = list(d.get("refused") or []) + got["refused"]
+            rm = d.get("remarks") if isinstance(d.get("remarks"), dict) else None
+            if rm is not None:
+                rm["design"] = (list(rm.get("design") or []) + ["%s: %s." % (r_["element"][0].upper() + r_["element"][1:], r_["why"].rstrip("."))
+                                                              for r_ in got["refused"]])[:30]
+    except Exception:  # noqa: BLE001 - the dashboard stands without the AI's visuals
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
 
 
 def _series_period_words(rep: Dict[str, Any]) -> None:

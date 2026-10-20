@@ -104,11 +104,16 @@ try {
 
   // ---- 3. the whole demo under the policy
   const t0 = Date.now();
+  // the one acknowledgement (owner, 19 Oct 2026): every run ticks the box, so the page calls the AI proxy (its connect-src
+  // allows it); this check answers for the proxy (unavailable) so no AI call is made and the run goes on with the engine's rules
+  await page.route(PROXY + '/**', (r) => r.fulfill({ status: r.request().method() === 'OPTIONS' ? 204 : 503,
+    headers: { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'POST', 'Content-Type': 'application/json' },
+    body: r.request().method() === 'OPTIONS' ? '' : '{"error":"not_configured"}' }));
   await page.goto(base + '/#try', { waitUntil: 'load' });
   await page.evaluate(() => { window.__csp.length = 0; });
   await page.click('#try-sample');
   await page.waitForSelector('#try-pd:not([hidden]), #try-report:not([hidden]), #try-msg:not([hidden])', { timeout: 240000 });
-  if (await page.isVisible('#try-pd')) await page.click('#try-pd-noai');
+  if (await page.isVisible('#try-pd')) { await page.check('#try-pd-send-ok'); await page.click('#try-pd-go'); }
   await page.waitForSelector('#try-report:not([hidden]), #try-msg:not([hidden])', { timeout: 240000 });
   const msgShown = await page.isVisible('#try-msg');
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -120,8 +125,8 @@ try {
   rec('zero securitypolicyviolation events in the page', viol.length === 0, JSON.stringify(viol.slice(0, 4)));
   rec('zero CSP-blocked requests (the worker included)', !failed.some((f) => /BLOCKED_BY_CSP|BLOCKED/.test(f)), JSON.stringify(failed.slice(0, 4)));
   rec('zero CSP messages in the console, zero page errors', consoleMsgs.length === 0 && pageErrs.length === 0, JSON.stringify(consoleMsgs.concat(pageErrs).slice(0, 3)));
-  const outside = reqs.filter((u) => !/^(data|blob):/.test(u) && new URL(u).origin !== origin);
-  rec('every request of the run is same-origin (no CDN, no AI proxy)', outside.length === 0, JSON.stringify(outside.slice(0, 4)));
+  const outside = reqs.filter((u) => !/^(data|blob):/.test(u) && new URL(u).origin !== origin && new URL(u).origin !== new URL(PROXY).origin);
+  rec('every request of the run is same-origin or the AI proxy (no CDN)', outside.length === 0, JSON.stringify(outside.slice(0, 4)));
   if (mode === 'self') {
     const pre = '/engine/pyodide/' + pins.tag + '/';
     const got = new Set(reqs.filter((u) => u.startsWith(base + pre)).map((u) => u.slice((base + pre).length)));

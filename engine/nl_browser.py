@@ -6612,6 +6612,29 @@ def _structure_for_ai(st: Any, safe: Any) -> Optional[Dict[str, Any]]:
 
 
 def results_for_ai(rep: Any) -> Dict[str, Any]:
+    """_results_for_ai, with a yearly or quarterly series' window phrases in its own period (rep.period_words: the engine's
+    "the latest 12 months against the 12 before" reached the AI writer about a yearly FRED series, 19 Oct 2026)."""
+    if isinstance(rep, str):
+        try:
+            rep = json.loads(rep)
+        except ValueError:
+            return {"ok": False, "error": "the report is not JSON"}
+    out = _results_for_ai(rep)
+    per = rep.get("period_words") if isinstance(rep, dict) else None
+    if isinstance(per, dict) and int(per.get("step") or 1) != 1:
+        def walk(o: Any, key: str = "") -> Any:
+            if isinstance(o, str):
+                return _window_phrases(o, per) if key not in ("id", "column", "columns", "slug", "unit", "kind") else o
+            if isinstance(o, list):
+                return [walk(x, key) for x in o]
+            if isinstance(o, dict):
+                return {k: walk(v, str(k)) for k, v in o.items()}
+            return o
+        out = walk(out)
+    return out
+
+
+def _results_for_ai(rep: Any) -> Dict[str, Any]:
     """The engine's own report distilled for the AI report writer (the /report route): every figure
     the writer may quote, nothing else. The writer never sees a row; it sees the goal, the graded
     claims with their values and intervals, the AI-named analyses with their tables, the story,
@@ -15360,6 +15383,7 @@ def _series_period_words(rep: Dict[str, Any]) -> None:
         per = NS._period_of(sorted(t.dt.strftime("%Y-%m-%d")))
         if int(per.get("step") or 1) == 1 or per.get("cadence"):
             return
+        rep["period_words"] = {k: per.get(k) for k in ("noun", "nouns", "step", "window", "adjective", "kind")}
         drawn = [c for c in rep.get("charts") or [] if isinstance(c, dict) and c.get("type") in ("heatmap", "trend", "fan", "replay")]
         if drawn:
             rep["charts"] = [c for c in rep["charts"] if c not in drawn]

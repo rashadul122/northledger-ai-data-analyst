@@ -483,7 +483,13 @@ class Ctx:
         self.pub: Callable[[Any], Any] = ctx.get("pub") or (lambda x: x)
         self.goal = str(ctx.get("goal") or "")
         self.flagged = [f for f in (rep.get("privacy") or {}).get("flagged") or [] if isinstance(f, dict)]
-        self.flag_land = {str(f.get("column")) for f in self.flagged if f.get("column")}
+        # a kept column the engine reads as a number (a salary, an amount) may be a measure after the visitor acknowledged that the
+        # AI reads the dataset (owner, 19 Oct 2026: Chicago's payroll dashboard refused 6 of the AI's 8 elements because
+        # Annual Salary is "named like personal data"): it is only ever added up or averaged, under the small-cell rule; a kept
+        # text (a name, a note) stays out, and no label ever prints a flagged column's value (_label_ok)
+        kept_num = {str(f.get("column")) for f in self.flagged if f.get("decision") == "keep"} & \
+            {str(x) for x in (rep.get("roles") or {}).get("measures") or []}
+        self.flag_land = {str(f.get("column")) for f in self.flagged if f.get("column")} - kept_num
         self.withheld_land = {str(f.get("column")) for f in self.flagged if f.get("decision") == "withhold"}
         self.frame = NB._download_frame((rep.get("downloads") or {}).get("clean_csv") or "", self.flag_land)
         cols = list(self.frame.columns) if self.frame is not None else []

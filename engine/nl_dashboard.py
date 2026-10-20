@@ -993,6 +993,26 @@ def period_values(cube: Dict[str, Any], cells: List[List[Any]], j: Optional[int]
     return out
 
 
+PMAX = 30                      # periods a time chart shows (57-dashboard.js PMAX): a longer span by quarter or year
+_GRANK = {"month": 0, "quarter": 1, "year": 2}
+
+
+def tile_grain(cube: Dict[str, Any], cells: List[List[Any]]) -> str:
+    """The step a series tile reads: a table of published figures, its own (one figure a period); a file of records, the step its
+    charts show over these cells (57-dashboard.js grainFor: up to PMAX months by month, then by quarter, then by year), never finer
+    than its own (19 Oct 2026: Amazon reviews' "vs the year before" compared September 2023's 3 reviews with August's)."""
+    native = cube.get("grain") or "month"
+    if int(cube.get("small") or SMALL) == 1:
+        return native
+    ms = [cube["months"][x[0]] for x in cells if x[0] >= 0]
+    if not ms:
+        return native
+    a, b = min(ms), max(ms)
+    n = (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7]) + 1
+    span = "month" if n <= PMAX else "quarter" if -(-n // 3) <= PMAX else "year"
+    return span if _GRANK[span] > _GRANK[native] else native
+
+
 def _year_back(p: str, grain: str) -> str:
     """The same period a year earlier."""
     if grain == "quarter":
@@ -1009,7 +1029,7 @@ def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]
     keys = [m["key"] for m in cube["measures"]]
     j = keys.index(kpi["mkey"])
     flow = bool(cube["measures"][j]["flow"])
-    grain = cube.get("grain") or "month"
+    grain = tile_grain(cube, cells)
     pv = period_values(cube, cells, j, flow, grain)
     have = [(p, v, k) for p, v, k in pv if v is not None]
     none = {"value": None, "n": int(sum(k for _p, _v, k in pv)), "suppressed": bool(pv) and not have, "month": None,
@@ -1027,8 +1047,9 @@ def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]
     p, v, k = pv[-1]
     if v is None:                       # the last period rests on too few rows: shown as "<5", never an earlier period instead
         return dict(none, n=int(k), suppressed=True, period=p, month=_first_month(cube, p, grain))
+    held = _held_months(cube, cells, p, grain)
     if agg == "latest":
-        return dict(none, value=_num(v), n=int(k), suppressed=False, period=p, month=_first_month(cube, p, grain))
+        return dict(none, value=_num(v), n=int(k), suppressed=False, period=p, month=_first_month(cube, p, grain), held=held)
     want = _year_back(p, grain) if kpi.get("vs") == "year" else None
     prev = None
     for q, w, kq in reversed(pv[:pv.index((p, v, k))]):
@@ -1043,7 +1064,20 @@ def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]
     d = v - prev[1]
     pct = (d / abs(prev[1]) * 100.0) if prev[1] else None
     return dict(none, value=_num(d), n=int(k + prev[2]), suppressed=False, period=p, month=_first_month(cube, p, grain),
-                base=_num(prev[1]), base_period=prev[0], pct=None if pct is None else _num(round(pct, 6)))
+                base=_num(prev[1]), base_period=prev[0], pct=None if pct is None else _num(round(pct, 6)), held=held)
+
+
+def _held_months(cube: Dict[str, Any], cells: List[List[Any]], p: str, grain: str) -> Optional[int]:
+    """How many of a quarter's or a year's months the data reach in the latest period, when they do not all (else None): the
+    tile says so, a part of a year beside a whole one (57-dashboard.js heldMonths)."""
+    if grain == "month" or int(cube.get("small") or SMALL) == 1:
+        return None
+    last = max((cube["months"][x[0]] for x in cells if x[0] >= 0), default=None)
+    if not last:
+        return None
+    full = 3 if grain == "quarter" else 12
+    held = (int(last[5:7]) - 1) % full + 1
+    return held if held < full else None
 
 
 def _first_month(cube: Dict[str, Any], p: str, grain: str) -> Optional[str]:

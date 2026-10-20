@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "250f4b93748f87730c17882591675ee4e605cae29184340c9fc4f64435a5e85d",
-  "bytes": 1059254
+  "sha256": "96e7f6bc85ed1974c49456cafe3dc45d10a23ae32a6e7440d583e3a30544d4cb",
+  "bytes": 1060472
  },
  "files": [
   {
@@ -157,14 +157,14 @@
   },
   {
    "path": "nl_analyst.py",
-   "sha256": "5ad5f2796a8d75aad39ebca7a67a2b7be44fa9eae84e06dab4f4261366f31373",
-   "bytes": 258763,
+   "sha256": "ca24f26bc0b97fb12a1d1dd00e2bf55ffcb32e55abd049207c88fbc47691b8c9",
+   "bytes": 259075,
    "source": "portfolio-website/engine/nl_analyst.py"
   },
   {
    "path": "nl_browser.py",
-   "sha256": "752fe1451dc9caf1a685a13c8de80189fead345a4c18e6a9ebf81bbf6129494a",
-   "bytes": 991486,
+   "sha256": "ca142e7ae34103fafc8d26b1540d65be42e1843435210283c5bd426a768a5c72",
+   "bytes": 992675,
    "source": "portfolio-website/engine/nl_browser.py"
   },
   {
@@ -175,8 +175,8 @@
   },
   {
    "path": "nl_dashboard.py",
-   "sha256": "da797de5a9a6cfe9c55dbb5f4b98822ab5f4ed0d5c39894501ad9cfd21d2c1a9",
-   "bytes": 87999,
+   "sha256": "226f5e23c6f3ed7e108c090d9d2378fd8a9c902123d6835384cf7a7a5167d815",
+   "bytes": 89777,
    "source": "portfolio-website/engine/nl_dashboard.py"
   },
   {
@@ -247,8 +247,8 @@
   },
   {
    "path": "nl_viz.py",
-   "sha256": "09b3cfbe23c9389cf16a6233bfb85aa3f8fcc084da9972232615f2a79eb8c2a8",
-   "bytes": 305845,
+   "sha256": "80fed917ce0c86a989de2a796eaebe0ffa60308aba7dc330c960d4d65354eb4b",
+   "bytes": 306518,
    "source": "portfolio-website/engine/nl_viz.py"
   }
  ],

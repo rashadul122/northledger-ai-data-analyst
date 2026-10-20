@@ -99,8 +99,23 @@
   function firstMonth(D, p, grain) { for (var i = 0; i < D.cube.months.length; i++) if (periodOf(D.cube.months[i], grain) === p) return D.cube.months[i]; return null; }
   // a tile that reads its measure period by period (nl_dashboard._series_kpi): latest, change (from the period before, or vs 'year'),
   // peak and low, each with its period
+  // the step a tile reads (nl_dashboard.tile_grain): a published series its own; records the step their charts show
+  function tileGrain(D, cells) {
+    if (smallOf(D) === 1) return nativeOf(D);
+    var lo = null, hi = null;
+    cells.forEach(function (c) { if (c[0] >= 0) { var m = D.cube.months[c[0]]; if (lo === null || m < lo) lo = m; if (hi === null || m > hi) hi = m; } });
+    if (lo === null) return nativeOf(D);
+    return grainFor(D, (+hi.slice(0, 4) - +lo.slice(0, 4)) * 12 + (+hi.slice(5, 7) - +lo.slice(5, 7)) + 1);
+  }
+  function heldMonths(D, cells, g) {
+    if (g === 'month' || smallOf(D) === 1) return null;
+    var last = null; cells.forEach(function (c) { if (c[0] >= 0) { var m = D.cube.months[c[0]]; if (last === null || m > last) last = m; } });
+    if (!last) return null;
+    var full = g === 'quarter' ? 3 : 12, held = (+last.slice(5, 7) - 1) % full + 1;
+    return held < full ? held : null;
+  }
   function seriesKpi(D, K, cells) {
-    var g = nativeOf(D), pv = periodValues(D, cells, K.mkey, g), have = pv.filter(function (x) { return x.v !== null; });
+    var g = tileGrain(D, cells), pv = periodValues(D, cells, K.mkey, g), have = pv.filter(function (x) { return x.v !== null; });
     var none = { value: null, n: pv.reduce(function (a, x) { return a + x.n; }, 0), suppressed: !!pv.length && !have.length, month: null, period: null, base: null, base_period: null, pct: null };
     if (!have.length) return none;
     if (K.agg === 'peak' || K.agg === 'low') {
@@ -110,7 +125,8 @@
     }
     var last = pv[pv.length - 1];
     if (last.v === null) return Object.assign(none, { n: last.n, suppressed: true, period: last.p, month: firstMonth(D, last.p, g) });
-    if (K.agg === 'latest') return Object.assign(none, { value: last.v, n: last.n, suppressed: false, period: last.p, month: firstMonth(D, last.p, g) });
+    var held = heldMonths(D, cells, g);
+    if (K.agg === 'latest') return Object.assign(none, { value: last.v, n: last.n, suppressed: false, period: last.p, month: firstMonth(D, last.p, g), held: held });
     var want = K.vs === 'year' ? yearBack(last.p, g) : null, prev = null;
     for (var i = pv.length - 2; i >= 0; i--) {
       if (want !== null && pv[i].p !== want) { if (pv[i].p < want) break; continue; }
@@ -119,7 +135,7 @@
     if (!prev || prev.v === null) return Object.assign(none, { n: last.n, period: last.p, month: firstMonth(D, last.p, g) });
     var d = last.v - prev.v;
     return Object.assign(none, { value: d, n: last.n + prev.n, suppressed: false, period: last.p, month: firstMonth(D, last.p, g),
-      base: prev.v, base_period: prev.p, pct: prev.v ? d / Math.abs(prev.v) * 100 : null });
+      base: prev.v, base_period: prev.p, pct: prev.v ? d / Math.abs(prev.v) * 100 : null, held: held });
   }
   NLD.kpi = function (D, K, F) {
     var cells = pick(D, F || {}, K.where), month = null, how = K.agg;
@@ -215,10 +231,19 @@
       return { label: g === null ? whatOf(D, X, D.observations && sp.grain === nativeOf(D)) : g === 'rest' ? 'other' : L[g], values: vals, texts: texts };
     }); }
     if (X.draw === 'area') { S = S.filter(function (s) { return s.label !== 'other' || s.values.some(function (v) { return v; }); }); }
+    // every part folded into "other" (each group has a thin period somewhere): no split is left to stack, so the total is drawn as a
+    // line, and said (19 Oct 2026: Amazon review volume by department fell back to its table)
+    var asLine = false;
+    if (X.draw === 'area' && S.length < 2) {
+      asLine = true;
+      var totS = x.map(function (p) { return agg(D, P[p], X.mkey, how); });
+      S = [{ label: whatOf(D, X), values: totS.map(function (t) { return t.v; }), texts: totS.map(function (t) { return textOf(t.v, t.n, unit); }) }];
+      rec.kind = 'lines';
+    }
     // a stacked area cannot draw a hole: the first and last periods where a part rests on too few rows are left off the chart (and
     // said), never filled (19 Oct 2026: Amazon reviews by category from 1999 fell back to their table on the thin early years)
     var cut0 = 0, cut1 = 0;
-    if (X.draw === 'area') {
+    if (X.draw === 'area' && !asLine) {
       var holed = function (i) { return S.some(function (s) { return s.values[i] === null; }); };
       while (cut0 < x.length && holed(cut0)) cut0++;
       while (cut1 < x.length - cut0 && holed(x.length - 1 - cut1)) cut1++;
@@ -247,6 +272,7 @@
     rec.table = { cols: cols, rows: rows };
     var sub = coarse ? 'By ' + sp.grain + ': the range holds ' + sp.months.length + ' months. ' : '';
     if (part.length) sub += part.map(function (p) { return periodWord(p) + ' holds ' + held[p] + ' of its ' + full + ' months'; }).join('; ') + ' in this range: ' + (part.length === 1 ? 'its figure is' : 'their figures are') + ' not comparable with a whole ' + sp.grain + '. ';
+    if (asLine) sub += 'Drawn as the total: every ' + (X.by || 'group') + ' has a ' + sp.grain + ' on too few rows to stack. ';
     if (cut0 || cut1) sub += 'Shown ' + periodWord(x[0]) + ' to ' + periodWord(x[x.length - 1]) + ': the ' + sp.grain + 's outside rest on too few rows in a part. ';
     if (X.draw === 'area' && X.bkey && S.some(function (s) { return s.label === 'other'; })) sub += 'Groups with a ' + sp.grain + ' on fewer than 5 rows are counted in \u201cother\u201d. ';
     if (gaps.length) sub += gaps.length + ' ' + (gaps.length === 1 ? sp.grain : sp.grain + 's') + ' with no rows ' + (gaps.length === 1 ? 'is' : 'are') + ' left as ' + (gaps.length === 1 ? 'a gap' : 'gaps') + '. ';
@@ -525,10 +551,10 @@
     var vals = r.n.toLocaleString('en-US') + (K.agg === 'count' ? ' rows' : r.n === 1 ? ' value' : ' values');
     if (K.agg === 'change') {
       var pct = r.pct !== null && r.pct !== undefined && isFinite(r.pct) && unit !== '%' ? ' (' + (r.pct >= 0 ? '+' : '−') + Math.abs(r.pct).toFixed(1) + '%)' : '';
-      return periodWord(r.period) + ' against ' + periodWord(r.base_period) + ' (' + fmt(r.base, unit) + ')' + pct;
+      return periodWord(r.period) + (r.held ? ' (' + r.held + ' of its ' + (r.period.length === 4 ? 12 : 3) + ' months)' : '') + ' against ' + periodWord(r.base_period) + ' (' + fmt(r.base, unit) + ')' + pct;
     }
     if (K.agg === 'latest' || K.agg === 'peak' || K.agg === 'low') {
-      var when = r.period ? periodWord(r.period) : monthWord(r.month);
+      var when = r.period ? periodWord(r.period) + (r.held ? ' (' + r.held + ' of its ' + (r.period.length === 4 ? 12 : 3) + ' months)' : '') : monthWord(r.month);
       return 'in ' + when + (D.observations ? '' : ', ' + vals);
     }
     return vals;

@@ -395,7 +395,10 @@ class Step:
         # a figure of the measure itself (a level, a total, a difference of two of its figures) prints at the measure's published
         # decimals below 1,000 (above, it is already whole, or in millions): a count is "648", never "648.0"; a rate published to
         # 2 decimals is "0.50" beside "6.00", never "0.5". A figure that would round to zero keeps the general rule.
-        if kind == "plain" and self.dp is not None and _FIGURE_KEY.match(key) and v == v and abs(v) < 1000:
+        # (never when the measure's decimals would move the figure by more than half a percent: an average of whole-star ratings,
+        # 4.2165, is not "4"; 19 Oct 2026, Amazon reviews "peaked at 4 in 2014" beside a chart of 4.22)
+        if kind == "plain" and self.dp is not None and _FIGURE_KEY.match(key) and v == v and abs(v) < 1000 and \
+                abs(v - round(v, self.dp)) <= 0.005 * max(abs(v), 1e-9):
             body = format(abs(v), ",.%df" % self.dp)
             if float(body.replace(",", "")) != 0 or v == 0:
                 text = (("+" if signed and v > 0 else "-" if v < 0 and float(body.replace(",", "")) else "") + body)

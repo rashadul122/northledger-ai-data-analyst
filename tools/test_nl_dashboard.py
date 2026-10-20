@@ -691,6 +691,27 @@ def test_key_influencers_are_intervals_that_exclude_zero_and_a_partial_last_mont
     assert d["cube"]["last_day"] == "2024-09-09" and d["cube"]["last_month_full"] is False, (d["cube"]["last_day"], d["cube"]["last_month_full"])
 
 
+def test_a_records_files_tiles_read_the_step_its_charts_show_and_skip_a_month_still_filling():
+    """20 Oct 2026: phase A's row floor of 1 made every records file's tiles read month by month (Amazon's 24 years compared 27 reviews
+    in August with July); a published series is told by the engine's reading (cube.series). And a records file whose data stop on the
+    9th compares its last whole month, never the 9 days."""
+    rnd = random.Random(3)
+    rows = ["review_id,review_date,rating"] + ["R%05d,%d-%02d-%02d,%.1f" % (i, 2010 + i % 12, 1 + (i // 12) % 12, 1 + i % 27, rnd.uniform(1, 5))
+                                               for i in range(3000)]
+    plan = {"dashboard": {"kpis": [{"id": "chg", "measure": "rating", "agg": "change", "label": "Rating change"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "r.csv", "", {"__plan__": plan}, "2026-10-20")["dashboard"]
+    k = d["defaults"]["kpis"]["chg"]
+    assert d["cube"]["series"] is False and k["period"] and len(k["period"]) == 4, k            # by year, not "2021-12"
+    rows = ["order_id,order_date,amount"] + ["O%04d,2024-%02d-%02d,%.2f" % (i, 1 + i % 6, 1 + i % 28, 10 + rnd.uniform(0, 7)) for i in range(600)] + \
+        ["P%04d,2024-07-%02d,10" % (i, 1 + i % 9) for i in range(20)]
+    plan = {"dashboard": {"kpis": [{"id": "chg", "measure": "amount", "agg": "change", "label": "Amount change"},
+                                   {"id": "lo", "measure": "amount", "agg": "low", "label": "Lowest month"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "o.csv", "", {"__plan__": plan}, "2026-10-20")["dashboard"]
+    k, lo = d["defaults"]["kpis"]["chg"], d["defaults"]["kpis"]["lo"]
+    assert d["cube"]["last_month_full"] is False and k["period"] == "2024-06" and k["base_period"] == "2024-05", k
+    assert lo["period"] != "2024-07", lo                                                          # 9 days are never the "lowest month"
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

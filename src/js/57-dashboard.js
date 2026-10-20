@@ -34,6 +34,9 @@
   function grainFor(D, nMonths) { var a = NLD.grainOf(nMonths), b = (D.cube && D.cube.grain) || 'month'; return GRANK[b] > GRANK[a] ? b : a; }
   function nativeOf(D) { return (D.cube && D.cube.grain) || 'month'; }
   // the fewest rows a figure may rest on: 5 for a file of records, 1 for a table of published figures (nl_dashboard.observation_table)
+  // a table of published figures (nl_dashboard.observation_table): its tiles read its own step; told by the engine's reading, never
+  // by the row floor (1 for every file since phase A)
+  function isSeries(D) { return !!((D.cube && D.cube.series) || (D.cube && D.cube.series === undefined && D.observations)); }
   function smallOf(D) { var k = D.cube && D.cube.small; return typeof k === 'number' && k >= 1 ? k : SMALL; }
   NLD.periodWord = periodWord;
 
@@ -101,21 +104,25 @@
   // peak and low, each with its period
   // the step a tile reads (nl_dashboard.tile_grain): a published series its own; records the step their charts show
   function tileGrain(D, cells) {
-    if (smallOf(D) === 1) return nativeOf(D);
+    if (isSeries(D)) return nativeOf(D);
     var lo = null, hi = null;
     cells.forEach(function (c) { if (c[0] >= 0) { var m = D.cube.months[c[0]]; if (lo === null || m < lo) lo = m; if (hi === null || m > hi) hi = m; } });
     if (lo === null) return nativeOf(D);
     return grainFor(D, (+hi.slice(0, 4) - +lo.slice(0, 4)) * 12 + (+hi.slice(5, 7) - +lo.slice(5, 7)) + 1);
   }
   function heldMonths(D, cells, g) {
-    if (g === 'month' || smallOf(D) === 1) return null;
+    if (g === 'month' || isSeries(D)) return null;
     var last = null; cells.forEach(function (c) { if (c[0] >= 0) { var m = D.cube.months[c[0]]; if (last === null || m > last) last = m; } });
     if (!last) return null;
     var full = g === 'quarter' ? 3 : 12, held = (+last.slice(5, 7) - 1) % full + 1;
     return held < full ? held : null;
   }
+  // nl_dashboard._partial_last: a records file's last month, read by month, still filling
+  function partialLast(D, pv, g) { var ms = D.cube.months; return g === 'month' && !isSeries(D) && D.cube.last_month_full === false && pv.length > 0 && pv[pv.length - 1].p === ms[ms.length - 1]; }
   function seriesKpi(D, K, cells) {
-    var g = tileGrain(D, cells), pv = periodValues(D, cells, K.mkey, g), have = pv.filter(function (x) { return x.v !== null; });
+    var g = tileGrain(D, cells), pv = periodValues(D, cells, K.mkey, g), mj0 = measIdx(D, K.mkey);
+    if (partialLast(D, pv, g) && (K.agg === 'change' || K.agg === 'peak' || K.agg === 'low' || (mj0 >= 0 && D.cube.measures[mj0].flow))) pv = pv.slice(0, -1);
+    var have = pv.filter(function (x) { return x.v !== null; });
     var none = { value: null, n: pv.reduce(function (a, x) { return a + x.n; }, 0), suppressed: !!pv.length && !have.length, month: null, period: null, base: null, base_period: null, pct: null };
     if (!have.length) return none;
     if (K.agg === 'peak' || K.agg === 'low') {
@@ -597,7 +604,7 @@
       if (a.v !== null && b.v !== null) {
         var u = K.agg === 'count' ? '' : unit, d = b.v - a.v, pct = a.v ? d / Math.abs(a.v) * 100 : null;
         var arrow = d > 0 ? '\u25B2 ' : d < 0 ? '\u25BC ' : '';
-        out.var = periodWord(b.p) + ': ' + fmt(b.v, u) + ', ' + arrow + (pct !== null && isFinite(pct) && u !== '%' ? Math.abs(pct).toFixed(1) + '%' : fmtChange(d, u).replace(/^[+−]/, '')) +
+        out.var = periodWord(b.p) + ': ' + fmt(b.v, u) + (K.agg === 'average' ? ' (' + b.n.toLocaleString('en-US') + ' values)' : '') + ', ' + arrow + (pct !== null && isFinite(pct) && u !== '%' ? Math.abs(pct).toFixed(1) + '%' : fmtChange(d, u).replace(/^[+−]/, '')) +
           ' ' + (d > 0 ? 'above' : d < 0 ? 'below' : 'level with') + ' ' + periodWord(a.p);
       }
     }
@@ -717,7 +724,7 @@
     var parts = L.map(function (l, i) { return { level: l, a: a[i], b: b[i], d: b[i] - a[i] }; }).filter(function (x) { return x.a || x.b; })
       .sort(function (x, y) { return Math.abs(y.d) - Math.abs(x.d); });
     var ta = a.reduce(function (s, v) { return s + v; }, 0), tb = b.reduce(function (s, v) { return s + v; }, 0);
-    return { measure: K ? K.label || K.measure : 'Rows', unit: K ? unitOf(D, K) : '', pa: pa, pb: pb, ta: ta, tb: tb, parts: parts };
+    return { measure: K ? 'Total ' + K.measure : 'Rows', unit: K ? unitOf(D, K) : '', pa: pa, pb: pb, ta: ta, tb: tb, parts: parts };
   };
   function decompHtml(D, r) {
     if (!r) return '<p class="note">Not enough whole periods under these filters to compare.</p>';

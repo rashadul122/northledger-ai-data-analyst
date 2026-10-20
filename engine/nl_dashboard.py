@@ -914,7 +914,7 @@ def make_cube(R: Read, design: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
             "layout": "cell = [month index (-1: no date), a level index per dim, rows, then sum and filled count per measure]",
             "rows": int(n), "no_date_rows": int((mi < 0).sum()) if n else 0,
             # the data's own step (native_grain): no chart or tile reads a finer one; and the fewest rows a figure may rest on
-            "grain": R.grain, "small": R.small}
+            "grain": R.grain, "small": R.small, "series": bool(R.obs)}
     # the last day the data reach, and whether its month is whole (20 Oct 2026, phase D: a tile's variance never compares a month
     # still filling, data to the 15th, with a whole one): whole when the last date is within 3 days of the month's end, or the
     # dates are month starts (a monthly series dated on the 1st)
@@ -1044,7 +1044,9 @@ def tile_grain(cube: Dict[str, Any], cells: List[List[Any]]) -> str:
     charts show over these cells (57-dashboard.js grainFor: up to PMAX months by month, then by quarter, then by year), never finer
     than its own (19 Oct 2026: Amazon reviews' "vs the year before" compared September 2023's 3 reviews with August's)."""
     native = cube.get("grain") or "month"
-    if int(cube.get("small") or SMALL) == 1:
+    # a table of published figures is told by the engine's reading (cube.series: observation_table), never by the row floor, which
+    # is 1 for every file since phase A (20 Oct 2026: that made every records file's tiles read month by month again)
+    if cube.get("series"):
         return native
     ms = [cube["months"][x[0]] for x in cells if x[0] >= 0]
     if not ms:
@@ -1064,6 +1066,12 @@ def _year_back(p: str, grain: str) -> str:
     return "%04d" % (int(p[:4]) - 1)
 
 
+def _partial_last(cube: Dict[str, Any], pv: List[Any], grain: str) -> bool:
+    """The last period of a records file read by month is the data's last month and that month is not whole (cube.last_month_full)."""
+    return bool(grain == "month" and not cube.get("series") and cube.get("last_month_full") is False and pv
+                and cube.get("months") and pv[-1][0] == cube["months"][-1])
+
+
 def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]]) -> Dict[str, Any]:
     """A tile that reads its measure period by period (SERIES_AGGS): {value, n, suppressed, month, period, base, base_period, pct}.
     latest: the last period with a value; change: that value less the period before's (vs "year": the same period a year earlier),
@@ -1073,6 +1081,8 @@ def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]
     flow = bool(cube["measures"][j]["flow"])
     grain = tile_grain(cube, cells)
     pv = period_values(cube, cells, j, flow, grain)
+    if _partial_last(cube, pv, grain) and (kpi["agg"] in ("change", "peak", "low") or flow):
+        pv = pv[:-1]                    # a month still filling (data to the 9th) is neither compared nor a low (20 Oct 2026)
     have = [(p, v, k) for p, v, k in pv if v is not None]
     none = {"value": None, "n": int(sum(k for _p, _v, k in pv)), "suppressed": bool(pv) and not have, "month": None,
             "period": None, "base": None, "base_period": None, "pct": None}
@@ -1599,6 +1609,7 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
 
 INFL_MIN_ROWS = 30              # a level's rows before its average is compared (and the rest's)
 INFL_MAX = 6
+INFL_PER_COLUMN = 3
 
 
 def key_influencers(R: Read, design: Dict[str, Any], dkey: Dict[str, str]) -> Dict[str, Any]:
@@ -1659,6 +1670,13 @@ def key_influencers(R: Read, design: Dict[str, Any], dkey: Dict[str, str]) -> Di
                       "diff": _num(k["d"]), "lo": _num(lo), "hi": _num(hi), "ratio": _num(k["mean"] / k["rest_mean"]) if k["rest_mean"] else None,
                       "rows": k["rows"], "rest_rows": k["rest_rows"]})
     items.sort(key=lambda z_: -abs(z_["diff"]))
+    per: Dict[str, int] = {}
+    kept: List[Dict[str, Any]] = []
+    for z_ in items:                      # at most INFL_PER_COLUMN a column: a thousand job titles do not crowd out every other column
+        if per.get(z_["column"], 0) < INFL_PER_COLUMN:
+            per[z_["column"]] = per.get(z_["column"], 0) + 1
+            kept.append(z_)
+    items = kept
     return {"measure": c.header(m),          # its unit is the cube's for that measure (57-dashboard.js reads D.cube.measures)
             "items": items[:INFL_MAX], "rows_min": INFL_MIN_ROWS, "tests": m_tests,
             "note": "Over every row the engine kept, not filtered. An association, not a cause: a group may differ because of something "

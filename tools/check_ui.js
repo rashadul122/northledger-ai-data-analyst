@@ -4556,7 +4556,8 @@ check('dashboard-tab-tiles-charts-filters-and-notes', DESK, async (ctx) => {
   await p.selectOption('#nl2-dash select[data-nld-f="to"]', small);
   await p.waitForTimeout(150);
   const u = await tileText(p, 'unpaid');
-  ok(u.val === '<5' && /fewer than 5 rows/.test(u.sub), 'a tile on fewer than 5 rows is not suppressed after filtering: ' + JSON.stringify(u));
+  // phase A (owner, 19 Oct 2026): a figure on few rows is shown, with its row count, never hidden
+  ok(u.val !== '<5' && /\d/.test(u.val) && /rows?\b/.test(u.sub), 'a tile on few rows is hidden, or does not say its rows, after filtering: ' + JSON.stringify(u));
   const act = await p.textContent('#nld-active');
   ok(/Property is Danforth Triplex/.test(act) && /dates/.test(act), 'the active filters are not stated: ' + act);
   await p.click('#nl2-dash [data-nld="clear"]');

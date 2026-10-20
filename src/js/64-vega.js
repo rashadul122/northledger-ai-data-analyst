@@ -101,6 +101,12 @@
     s.config = NLVG.theme();
     if (faceted(s)) { s.width = CELL; s.height = Math.round(CELL * 0.75); }
     else { s.width = Math.max(200, Math.floor(width || 560) - 16); s.height = HEIGHT; s.autosize = { type: 'fit', contains: 'padding' }; }
+    // short band labels (star ratings, codes) stand upright; the theme's slant is for long names
+    var ex = (s.encoding || {}).x;
+    if (ex && ex.field && (ex.type === 'nominal' || ex.type === 'ordinal') && !(ex.axis && ex.axis.labelAngle !== undefined)) {
+      var longest = values.reduce(function (m, o) { return Math.max(m, String(o[ex.field] === null || o[ex.field] === undefined ? '' : o[ex.field]).length); }, 0);
+      if (longest <= 6 && values.length <= 24) s.config.axisXBand = { labelAngle: 0, labelAlign: 'center', labelBaseline: 'top' };
+    }
     s.description = (V.title || '') + (V.why ? ': ' + V.why : '');
     return s;
   };

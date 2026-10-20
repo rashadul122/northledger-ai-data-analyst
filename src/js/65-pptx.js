@@ -86,7 +86,7 @@
         (f.caption ? sp(5, 'Caption', M, H - 48 * EMU, W - 2 * M, 40 * EMU, para(cut(f.caption, 220), { sz: 1100, color: '555555' })) : '')), img: n });
     });
     if ((d.methods || []).length) slides.push({ xml: bulletsSlide('Methods: how every figure was computed', d.methods.map(function (t) { return cut(t, 200); })) });
-    if ((d.sources || []).length) slides.push({ xml: bulletsSlide('Sources', d.sources.map(function (s, i) { return '[' + (i + 1) + '] ' + (s.title || '') + (s.link ? ' — ' + s.link : ''); })) });
+    if ((d.sources || []).length) slides.push({ xml: bulletsSlide('Sources', d.sources.map(function (s, i) { return '[' + (i + 1) + '] ' + (s.title || '') + (s.link ? ': ' + s.link : ''); })) });
 
     var files = [], ct = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>',

@@ -482,7 +482,15 @@ def _kept_categories(rep: Dict[str, Any], flagged: List[Dict[str, Any]]) -> set:
     except Exception:  # noqa: BLE001 - unreadable: they stay out, as before
         return set()
     cap = max(KEPT_CAT_MAX, int(0.05 * len(fr)))
-    return {c for c in fr.columns if 0 < fr[c].replace("", None).dropna().nunique() <= cap}
+    out = set()
+    for c in fr.columns:
+        vals = fr[c].replace("", None).dropna()
+        if not (0 < vals.nunique() <= cap):
+            continue
+        if NB._looks_like_names(sorted(set(vals.astype(str))), c):
+            continue                         # a few customers are still people: their names never become a group
+        out.add(c)
+    return out
 
 
 class Ctx:

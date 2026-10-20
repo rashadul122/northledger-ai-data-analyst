@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "898725478a0cc03b0556c03fa3a5e0ce399c4d15f302ec07f6f0d5f3017ca37f",
-  "bytes": 1070878
+  "sha256": "30a4a26c2fb60cf63e92e57e25834fd27c7021c0cf5049b24424fee7cb25fe2a",
+  "bytes": 1076373
  },
  "files": [
   {
@@ -163,8 +163,8 @@
   },
   {
    "path": "nl_browser.py",
-   "sha256": "3bd1f1820ebdef22981940110abe9e888c29a08a6aea54035d067d3335e8a493",
-   "bytes": 996582,
+   "sha256": "102ed15a4eeffe964be3a5a04ebf666deb0e34d5257d6f43ed4e04b1fc180be6",
+   "bytes": 1003969,
    "source": "portfolio-website/engine/nl_browser.py"
   },
   {
@@ -202,6 +202,12 @@
    "sha256": "5ee8358107f61d8028b0bde6f1a4f66e1979eca0a82fe00163fc2de44fa4510a",
    "bytes": 39234,
    "source": "portfolio-website/engine/nl_pack.py"
+  },
+  {
+   "path": "nl_period_forecast.py",
+   "sha256": "70fc983e7c47bb79a22c5bd9f202a27dc09fcb48acbf5c67a87baf1f8e3cccc8",
+   "bytes": 8618,
+   "source": "portfolio-website/engine/nl_period_forecast.py"
   },
   {
    "path": "nl_sales.py",

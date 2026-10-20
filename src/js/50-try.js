@@ -3108,7 +3108,10 @@
         li.push('<li><strong>' + esc(String(st.op).replace(/_/g, ' ')) + '</strong>' + (cols ? ' (' + esc(cols.slice(0, 200)) + ')' : '') + (st.why ? ': ' + esc(String(st.why).slice(0, 200)) : '') +
           (st.ok === false ? ' <span class="note">(not run: ' + esc(String(st.refused || '').slice(0, 160)) + ')</span>' : '') + sql + '</li>');
       });
-      vis.forEach(function (V) { li.push('<li><strong>visual</strong> ' + esc(V.title) + ': its query over every row kept, ' + Number(V.rows_total || 0).toLocaleString('en-US') + ' result rows<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></li>'); });
+      vis.forEach(function (V) {
+        if (V.by === 'engine') { li.push('<li><strong>forecast</strong> ' + esc(V.title) + ': ' + esc(V.why) + '</li>'); return; }
+        li.push('<li><strong>visual</strong> ' + esc(V.title) + ': its query over every row kept, ' + Number(V.rows_total || 0).toLocaleString('en-US') + ' result rows<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></li>');
+      });
       if (!li.length) return '';
       var rows = rep.input && rep.input.rows ? Number(rep.input.rows).toLocaleString('en-US') + ' rows read. ' : '';
       return '<details class="more ai-methods"><summary>Methods: how every figure was computed (' + li.length + ' calculations)</summary><p class="note">' + rows +

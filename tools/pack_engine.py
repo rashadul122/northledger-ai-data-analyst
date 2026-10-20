@@ -180,6 +180,7 @@ ADAPTER_FILES = {"nl_browser.py": "nl_browser.py",
                  # nl_analyst's sql step and nl_browser.analyst_plan_json
                  "nl_sql.py": "nl_sql.py",
                  "nl_vega.py": "nl_vega.py",
+                 "nl_period_forecast.py": "nl_period_forecast.py",
                  # the only terms a web search for the AI report may hold (nl_browser._context_queries reads it
                  # beside itself; final review, 30 Sep 2026)
                  "context_terms.json": "context_terms.json",

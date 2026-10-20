@@ -124,8 +124,8 @@
       '<figcaption>' + esc(V.title) + '</figcaption>' +
       (V.why ? '<p class="note nld-why">' + esc(V.why) + '</p>' : '') +
       '<div class="viz nld-vg" id="' + pre + '-g-' + esc(V.id) + '" role="img" aria-label="' + esc(V.title + (V.why ? ': ' + V.why : '')) + '"><p class="note">Drawing…</p></div>' +
-      '<p class="note nld-static">Not filtered: designed by the AI, computed by the engine from every row it kept' + (V.truncated ? ' (its first ' + V.rows.length + ' result rows drawn)' : '') + '.</p>' +
-      '<details class="more nld-fold"><summary>Table and query</summary>' + table(V) + '<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></details></figure>';
+      '<p class="note nld-static">' + (V.by === 'engine' ? 'Not filtered: the engine\u2019s own forecast, from every row it kept.' : 'Not filtered: designed by the AI, computed by the engine from every row it kept' + (V.truncated ? ' (its first ' + V.rows.length + ' result rows drawn)' : '') + '.') + '</p>' +
+      '<details class="more nld-fold"><summary>' + (V.sql ? 'Table and query' : 'Table') + '</summary>' + table(V) + (V.sql ? '<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre>' : '') + '</details></figure>';
   };
   NLVG.html = function (D) {
     var vs = (D && D.visuals) || [];

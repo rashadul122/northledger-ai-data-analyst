@@ -6634,6 +6634,19 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     vis = _visual_cards(rep)
     if vis and isinstance(out, dict) and out.get("ok") is not False:
         out["visuals"] = vis
+    pf = rep.get("period_forecast") if isinstance(rep, dict) and isinstance(rep.get("period_forecast"), dict) else None
+    if pf and pf.get("ok") and isinstance(out, dict) and out.get("ok") is not False:
+        f2 = lambda x: None if x is None else round(float(x), 2)  # noqa: E731
+        out["period_forecast"] = {
+            "grain": pf["grain"], "measure": str(pf.get("measure") or "")[:80], "method": pf["model_words"], "level": pf["level"],
+            "points": [{"period": q["period"], "value": f2(q["value"]), "lo": f2(q["lo"]), "hi": f2(q["hi"]),
+                        "text": "%s: %s%s" % (q["period"], "{:,.2f}".format(q["value"]),
+                                              "" if q["lo"] is None else " (%d%% band %s to %s)" % (pf["level"], "{:,.2f}".format(q["lo"]), "{:,.2f}".format(q["hi"])))}
+                       for q in pf["points"]],
+            "audit_label": pf["audit"]["label"], "trusted": bool(pf["trusted"]), "note": pf["note"],
+            "what_if": [{"label": w["label"], "assumption": "%+.2f%% a %s on the forecast path" % (w["per_period_pct"], pf["grain"]),
+                         "text": "; ".join("%s: %s" % (q["period"], "{:,.2f}".format(q["value"])) for q in w["points"])}
+                        for w in pf.get("what_if") or []]}
     return out
 
 
@@ -7828,6 +7841,9 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
     # checks every element again against the rows the engine kept, and the block leaves rep.ai_plan once it is read
     if isinstance(plan.get("dashboard"), dict):
         out["dashboard"] = plan["dashboard"]
+    # the planner's what-ifs on a yearly or quarterly forecast (phase F; nl_period_forecast.what_if checks each again)
+    if isinstance(plan.get("what_if"), list):
+        out["what_if"] = [w for w in plan["what_if"][:3] if isinstance(w, dict)]
     return out, refused
 
 
@@ -13795,6 +13811,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         rep["sales"] = _sales(rep, reading, ai_plan, as_of)
         if structure_inner is None:
             _series_period_words(rep)            # a yearly or quarterly series: the engine's sentences say years or quarters
+            _period_forecast(rep, ai_plan)       # and its own forecast, back-tested on its past (phase F)
         _series_names(rep, ai_plan)
         # the dashboard's title: the report's own (the AI's, or the series' name) over the file's name (19 Oct 2026: Amazon reviews'
         # dashboard was "amazon-video-games-reviews.csv dashboard" under an AI title)
@@ -15421,6 +15438,86 @@ def _dashboard_visuals(rep: Dict[str, Any], plan: Any) -> None:
     except Exception:  # noqa: BLE001 - the dashboard stands without the AI's visuals
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
+
+
+def _period_forecast(rep: Dict[str, Any], plan: Any) -> None:
+    """A yearly or quarterly series (rep.period_words, one row a date) gets the forecast of engine/nl_period_forecast.py for its
+    primary measure: rep["period_forecast"], the monthly forecast's reason pointed at it, and the dashboard's own engine-drawn visual
+    of the history with the forecast and its band (AI Analyst v2 phase F, 20 Oct 2026). The report stands without it."""
+    per = rep.get("period_words") if isinstance(rep.get("period_words"), dict) else None
+    if not per or int(per.get("step") or 1) not in (3, 12):
+        return
+    try:
+        import nl_period_forecast as NPF
+        import pandas as pd
+        step = int(per["step"])
+        date = (rep.get("roles") or {}).get("date")
+        ms = list((rep.get("roles") or {}).get("measures") or [])
+        prim = (plan or {}).get("primary") if isinstance(plan, dict) else None
+        m = prim if prim in ms else (ms[0] if ms else None)
+        csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
+        if not date or not m or not csv_text:
+            return
+        fr = pd.read_csv(io.StringIO(csv_text), dtype=str, keep_default_na=False, usecols=lambda c: c in (date, m))
+        t = pd.to_datetime(fr[date], errors="coerce")
+        v = pd.to_numeric(fr[m].str.replace(",", "", regex=False), errors="coerce")
+        ok = t.notna() & v.notna()
+        t, v = t[ok], v[ok]
+        if not len(t) or t.duplicated().any():
+            return
+        lab = t.dt.year.astype(str) if step == 12 else t.dt.year.astype(str) + "-Q" + ((t.dt.month - 1) // 3 + 1).astype(str)
+        s_ = pd.Series(v.values, index=lab.values).sort_index()
+        if s_.index.duplicated().any():
+            return
+        out = NPF.forecast(list(s_.index), list(s_.values), step)
+        if not out.get("ok"):
+            rep["period_forecast"] = {"ok": False, "why": out.get("why")}
+            return
+        names = _plain_names(rep, plan)
+        out["measure"] = names.get(m) or m
+        wi = NPF.what_if(out, (plan or {}).get("what_if") if isinstance(plan, dict) else None)
+        if wi:
+            out["what_if"] = wi
+        rep["period_forecast"] = out
+        fc = rep.get("forecast") if isinstance(rep.get("forecast"), dict) else None
+        if fc is not None:
+            adj = per.get("adjective") or out["grain"] + "ly"
+            fc["reason"] = ("The monthly forecast does not apply to %s %s series; the engine's %s forecast below is its own, back-tested "
+                            "on the series' past %ss (%s)." % ("an" if adj[:1].lower() in "aeiou" else "a", adj, out["grain"] + "ly",
+                                                              out["grain"], out["audit"]["label"]))
+        d = rep.get("dashboard") if isinstance(rep.get("dashboard"), dict) else None
+        if d and d.get("ok"):
+            d["visuals"] = list(d.get("visuals") or []) + [_forecast_visual(out, list(s_.index), list(s_.values), step)]
+    except Exception:  # noqa: BLE001 - the report stands without the period forecast
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+
+
+def _forecast_visual(fc: Dict[str, Any], periods: List[str], values: List[float], step: int) -> Dict[str, Any]:
+    """The forecast as an engine-drawn visual (src/js/64-vega.js draws it like the AI's own): the last 40 periods, the forecast
+    from the last value on, and its band. Not the AI's design: by "engine"."""
+    start = lambda p: "%s-01-01" % p[:4] if step == 12 else "%s-%02d-01" % (p[:4], (int(p[-1]) - 1) * 3 + 1)  # noqa: E731
+    rows = [[start(p), "actual", round(float(x), 6), None, None] for p, x in zip(periods[-40:], values[-40:])]
+    rows.append([start(fc["last_period"]), "forecast", round(float(fc["last_value"]), 6), round(float(fc["last_value"]), 6), round(float(fc["last_value"]), 6)])
+    for q in fc["points"]:
+        rows.append([start(q["period"]), "forecast", round(q["value"], 6), None if q["lo"] is None else round(q["lo"], 6),
+                     None if q["hi"] is None else round(q["hi"], 6)])
+    meas = str(fc.get("measure") or "value")
+    x = {"field": "period", "type": "temporal", "timeUnit": "year" if step == 12 else "yearquarter", "title": None}
+    spec = {"layer": [
+        {"mark": {"type": "area", "opacity": 0.25}, "encoding": {"x": x, "y": {"field": "lo", "type": "quantitative", "title": meas},
+                                                                  "y2": {"field": "hi"}}},
+        {"mark": {"type": "line", "point": True, "strokeWidth": 2},
+         "encoding": {"x": x, "y": {"field": "value", "type": "quantitative", "title": meas},
+                      "color": {"field": "kind", "type": "nominal", "title": None, "legend": {"orient": "top", "title": None}},
+                      "strokeDash": {"field": "kind", "type": "nominal", "legend": None},
+                      "tooltip": [{"field": "period", "type": "temporal", "timeUnit": x["timeUnit"]}, {"field": "kind", "type": "nominal"},
+                                  {"field": "value", "type": "quantitative", "format": ",.2f"},
+                                  {"field": "lo", "type": "quantitative", "format": ",.2f"}, {"field": "hi", "type": "quantitative", "format": ",.2f"}]}}]}
+    return {"id": "forecast", "by": "engine", "title": "%s: the next %d %ss" % (meas, len(fc["points"]), fc["grain"]),
+            "why": "%s; %s%s." % (fc["model_words"][0].upper() + fc["model_words"][1:], fc["audit"]["label"],
+                                  "" if fc["trusted"] else " (not shown usable: the band did not hold as often as it should)"),
+            "sql": "", "spec": spec, "columns": ["period", "kind", "value", "lo", "hi"], "rows": rows, "rows_total": len(rows), "truncated": False}
 
 
 def _series_period_words(rep: Dict[str, Any]) -> None:

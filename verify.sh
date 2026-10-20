@@ -92,6 +92,15 @@ else
   record forecast FAIL "data/forecast_lab.json missing (run: tools/fetch_fred.py then build_forecast.py)"
 fi
 
+# 1b) the engine's own test suites (tools/test_nl_*.py), two at a time (each holds pandas; 20 Oct 2026: no deploy ran them, each was
+#     run by hand)
+ENG_LOG="$TMPD/engine-tests"; mkdir -p "$ENG_LOG"
+ls "$DIR"/tools/test_nl_*.py | xargs -P 2 -I{} sh -c 'n=$(basename "$1" .py); if PYTHONWARNINGS=ignore "$2" "$1" > "$3/$n.log" 2>&1; then echo PASS > "$3/$n.status"; else echo FAIL > "$3/$n.status"; fi' _ {} "$PY" "$ENG_LOG"
+ENG_BAD=$(grep -l FAIL "$ENG_LOG"/*.status 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.status$//' | tr '\n' ' ')
+ENG_N=$(ls "$ENG_LOG"/*.status 2>/dev/null | wc -l | tr -d ' ')
+if [ -z "$ENG_BAD" ] && [ "$ENG_N" -gt 0 ]; then record engine PASS "$ENG_N engine suites (tools/test_nl_*.py) pass"
+else record engine FAIL "engine suites failed: ${ENG_BAD:-none ran} (logs in $ENG_LOG)"; fi
+
 # 2) the replay page is the sanitizer's output
 if [ -f "$DIR/../agent-demo/agent-demo.html" ]; then
   if "$PY" "$DIR/tools/sanitize_agent_demo.py" --check; then record replays PASS "agent-demo.html rebuilds from the recorded sessions"

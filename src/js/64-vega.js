@@ -96,7 +96,7 @@
     var tf = temporalFields(V.spec || {});
     var values = (V.rows || []).map(function (r) { var o = {}; V.columns.forEach(function (c, i) { var v = Array.isArray(r) ? r[i] : r[c]; o[c] = tf[c] ? localDate(v) : v; }); return o; });
     var s = JSON.parse(JSON.stringify(V.spec || {}));
-    s.$schema = 'https://vega.github.io/schema/vega-lite/v5.json';
+    delete s.$schema;                     // compiled here, never fetched
     s.data = { values: values };
     s.config = NLVG.theme();
     if (faceted(s)) { s.width = CELL; s.height = Math.round(CELL * 0.75); }

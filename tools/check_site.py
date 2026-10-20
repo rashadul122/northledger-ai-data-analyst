@@ -626,9 +626,32 @@ def _embedded_texts(blob: bytes):
     return out
 
 
+# Third-party libraries served as published (src/js/64-vega.js loads them for the AI's dashboard visuals), pinned by sha256.
+# Their minified text holds URL-shaped strings it never requests (schema ids, issue links, a file:// constant), so the
+# shipped and requests scans skip a vendored file only while its bytes are exactly the pinned release; a changed byte is
+# scanned like any other file and fails. The page never hands them an address: engine/nl_vega.py refuses data and url.
+VENDOR = {
+    "engine/vendor/vega.min.js": "e432c751a6363f4a61da62920cc7d7ebd13cf09d82949f8f486248f8071dc3ce",            # vega 5.30.0
+    "engine/vendor/vega-lite.min.js": "cd32314b1e76e7d879dc9f0534b62be714df03554486c7ca2381abfd0a92d2f4",       # vega-lite 5.21.0
+    "engine/vendor/vega-interpreter.min.js": "53be81f6c7fb5d30aa32dc61bf938d37d43299f1ad9dd16957077fb01f72240a",  # vega-interpreter 1.0.5
+}
+
+
+def _pinned_vendor(site: Site, rel: str) -> bool:
+    want = VENDOR.get(rel.replace(os.sep, "/"))
+    if not want:
+        return False
+    import hashlib
+    with open(os.path.join(site.root, rel), "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest() == want
+
+
 def check_shipped(site: Site) -> Result:
     r = Result("shipped")
-    files = site.served_files()
+    files = [f for f in site.served_files() if not _pinned_vendor(site, f)]
+    vend = [f for f in site.served_files() if _pinned_vendor(site, f)]
+    if vend:
+        r.note("%d pinned third-party file(s) matched their sha256 and were not scanned: %s" % (len(vend), ", ".join(sorted(vend))))
     embedded = 0
     for rel in files:
         text = open(os.path.join(site.root, rel), encoding="utf-8", errors="replace").read()
@@ -1043,7 +1066,7 @@ def check_requests(site: Site) -> Result:
 
     for rel in site.served_files():
         low = rel.lower()
-        if not low.endswith((".js", ".css")):
+        if not low.endswith((".js", ".css")) or _pinned_vendor(site, rel):
             continue
         text = open(os.path.join(site.root, rel), encoding="utf-8", errors="replace").read()
         for u in _urls_in_code(text):

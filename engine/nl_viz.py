@@ -466,6 +466,25 @@ def _grid_table(row_label: str, rows: List[str], cols: List[str], text: List[Lis
 
 
 # ----------------------------------------------------------------------------- the rows a chart reads
+KEPT_CAT_MAX = 50
+
+
+def _kept_categories(rep: Dict[str, Any], flagged: List[Dict[str, Any]]) -> set:
+    """The kept, flagged text columns that are categories: at most max(KEPT_CAT_MAX, 5% of the rows) distinct values."""
+    cols = [str(f.get("column")) for f in flagged if f.get("column")]
+    csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
+    if not cols or not csv_text:
+        return set()
+    try:
+        import io as _io
+        import pandas as pd
+        fr = pd.read_csv(_io.StringIO(csv_text), dtype=str, keep_default_na=False, usecols=lambda c: c in cols)
+    except Exception:  # noqa: BLE001 - unreadable: they stay out, as before
+        return set()
+    cap = max(KEPT_CAT_MAX, int(0.05 * len(fr)))
+    return {c for c in fr.columns if 0 < fr[c].replace("", None).dropna().nunique() <= cap}
+
+
 class Ctx:
     """What every chart reads: the rows the engine kept exactly as the visitor downloads them (downloads.clean_csv,
     text cells, the frame the engine's own charts are computed from), without EVERY flagged column (withheld, coded
@@ -492,7 +511,13 @@ class Ctx:
         # values) is never a chart's label or group, the plan's protection: a chart of 32,000 names helps nobody
         kept_num = {str(f.get("column")) for f in self.flagged if f.get("decision") == "keep"} & \
             {str(x) for x in (rep.get("roles") or {}).get("measures") or []}
-        self.flag_land = {str(f.get("column")) for f in self.flagged if f.get("column")} - kept_num
+        # a kept category (20 Oct 2026: penguins' "sex", flagged by its header, was refused on every chart): a group the reader
+        # can read, never a list of people. It joins when it holds few values (KEPT_CAT_MAX, or 5% of the rows) and is not
+        # emails or phone numbers; a kept name column, with a value a row, stays out
+        kept_cat = _kept_categories(rep, [f for f in self.flagged if f.get("decision") == "keep"
+                                          and str(f.get("column")) not in kept_num
+                                          and not re.search(r"(?i)e-?mail|phone|coded", str(f.get("kind") or ""))])
+        self.flag_land = {str(f.get("column")) for f in self.flagged if f.get("column")} - kept_num - kept_cat
         self.withheld_land = {str(f.get("column")) for f in self.flagged if f.get("decision") == "withhold"}
         self.frame = NB._download_frame((rep.get("downloads") or {}).get("clean_csv") or "", self.flag_land)
         cols = list(self.frame.columns) if self.frame is not None else []

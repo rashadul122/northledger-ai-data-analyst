@@ -484,6 +484,9 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
             out["filters"].append({"kind": "category", "dim": land})
     ids = {k["id"] for k in out["kpis"]} | {x["id"] for x in out["charts"]}
     raw_q = block.get("questions") if isinstance(block.get("questions"), list) else []
+    # a question may be answered by the AI's own visuals, built after this check (nl_browser._dashboard_visuals prunes the ids of a
+    # visual it then refuses; 20 Oct 2026: penguins' questions about its visuals were refused as answering nothing)
+    vis_ids = {str(v.get("id")) for v in block.get("visuals") or [] if isinstance(v, dict) and isinstance(v.get("id"), str)}
     for q in raw_q[:QUESTION_MAX + 4]:
         if not isinstance(q, dict) or len(out["questions"]) >= QUESTION_MAX:
             continue
@@ -491,7 +494,8 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         t = R.words(q.get("q"), "q", el, ai)
         if not t:
             continue
-        ab = [str(x) for x in (q.get("answered_by") or []) if str(x) in ids] if isinstance(q.get("answered_by"), list) else []
+        ab = [str(x) for x in (q.get("answered_by") or []) if str(x) in ids or str(x) in vis_ids] \
+            if isinstance(q.get("answered_by"), list) else []
         if not ab:
             R.refuse("the question “%s”" % _text(t, 60), R_ANSWERS)
             continue
@@ -1574,6 +1578,8 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
         elif f["dim"] in dkey:
             filters.append({"kind": "category", "key": dkey[f["dim"]], "column": c.header(f["dim"]), "label": R.name(f["dim"])})
     ids = {k["id"] for k in kpis} | {x["id"] for x in charts}
+    if block is not None:                    # the AI's visuals are drawn after the build (nl_browser._dashboard_visuals prunes them)
+        ids |= {str(v.get("id")) for v in block.get("visuals") or [] if isinstance(v, dict) and isinstance(v.get("id"), str)}
     questions = [dict(q, answered_by=[i for i in q["answered_by"] if i in ids]) for q in design["questions"]]
     questions = [q for q in questions if q["answered_by"]]
     layout = [[i for i in row if i in ids] for row in design["layout"]]

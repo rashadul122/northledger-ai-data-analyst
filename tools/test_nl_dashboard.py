@@ -646,7 +646,12 @@ def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
         {"id": "nope", "title": "Nothing", "sql": "SELECT region FROM kept_rows WHERE region = 'Q'", "spec": ok_spec},
         {"id": "raw", "title": "Every order", "sql": "SELECT revenue FROM kept_rows",
          "spec": {"mark": "bar", "encoding": {"x": {"field": "revenue", "type": "quantitative", "bin": True}, "y": {"aggregate": "count"}}}}]}}
-    rep = NB.run(("\n".join(rows) + "\n").encode(), "o.csv", "", {"__plan__": plan}, "2026-10-20")
+    cap = NV.ROWS_MAX
+    NV.ROWS_MAX = 300                       # a 400-row result is over the cap here (the real cap, 2,000, lets a scatter of a small file draw)
+    try:
+        rep = NB.run(("\n".join(rows) + "\n").encode(), "o.csv", "", {"__plan__": plan}, "2026-10-20")
+    finally:
+        NV.ROWS_MAX = cap
     d = rep["dashboard"]
     assert [v["id"] for v in d.get("visuals") or []] == ["mix"], d.get("visuals")
     v = d["visuals"][0]
@@ -657,7 +662,7 @@ def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
     got = {(r[0], r[1]): r[2] for r in v["rows"]}
     assert all(abs(got[k] - want[k]) < 1e-6 for k in want), (got, want)
     why = " | ".join(r["why"] for r in d.get("refused") or [])
-    for w in ("carries data", "does not return: units", "returned no rows", "returned 400 rows and a visual draws at most 200"):
+    for w in ("carries data", "does not return: units", "returned no rows", "returned 400 rows and a visual draws at most 300"):
         assert w in why, why
     ra = NB.results_for_ai(rep)                                                   # phase E: the writer sees each visual as a card
     kn = ra.get("key_numbers") or []                                              # phase G: and the dashboard's tiles in the page's words
@@ -714,6 +719,29 @@ def test_a_records_files_tiles_read_the_step_its_charts_show_and_skip_a_month_st
     k, lo = d["defaults"]["kpis"]["chg"], d["defaults"]["kpis"]["lo"]
     assert d["cube"]["last_month_full"] is False and k["period"] == "2024-06" and k["base_period"] == "2024-05", k
     assert lo["period"] != "2024-07", lo                                                          # 9 days are never the "lowest month"
+
+
+def test_a_kept_category_a_scatter_and_questions_on_visuals():
+    """20 Oct 2026, live on penguins: a kept "sex" column (flagged by its header) was refused on every chart; a 344-point scatter was
+    refused at 200 rows; questions answered by the AI's visuals were refused as answering nothing. A refused visual's question goes."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "palmer-penguins.csv"), "rb").read()
+    sc = {"mark": "point", "encoding": {"x": {"field": "flipper_length_mm", "type": "quantitative"},
+                                        "y": {"field": "body_mass_g", "type": "quantitative"}, "color": {"field": "species", "type": "nominal"}}}
+    plan = {"goal": "penguins", "kind": "other", "dashboard": {
+        "kpis": [{"id": "n", "measure": "rows", "agg": "count", "label": "Penguins"}],
+        "questions": [{"q": "How do flippers relate to mass?", "answered_by": ["scat"]}, {"q": "Which sex is heavier?", "answered_by": ["bysex"]},
+                      {"q": "What of the ghost?", "answered_by": ["ghost"]}],
+        "charts": [{"id": "bysex", "chart": "bar_chart", "args": ["sex", "body_mass_g"], "title": "Mass by sex"}],
+        "visuals": [{"id": "scat", "title": "Flipper length against body mass", "sql": "SELECT flipper_length_mm, body_mass_g, species FROM kept_rows", "spec": sc},
+                    {"id": "ghost", "title": "Bad", "sql": "SELECT nope FROM kept_rows", "spec": {"mark": "bar", "encoding": {"x": {"field": "nope", "type": "nominal"}}}}]}}
+    d = NB.run(data, "p.csv", "", {"sex": "keep", "__plan__": plan}, None)["dashboard"]
+    assert [c["id"] for c in d["charts"]] == ["bysex"], d["refused"]
+    assert [(v["id"], v["rows_total"]) for v in d["visuals"]] == [("scat", 344)], d.get("visuals")
+    assert [q["answered_by"] for q in d["questions"]] == [["scat"], ["bysex"]], d["questions"]
+    assert any("ghost" in r["element"] for r in d["refused"]), d["refused"]
+    # withheld, the same column stays out
+    d2 = NB.run(data, "p.csv", "", {"sex": "withhold", "__plan__": plan}, None)["dashboard"]
+    assert not any(c["id"] == "bysex" for c in d2["charts"]), d2["charts"]
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

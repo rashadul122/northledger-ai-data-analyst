@@ -15439,21 +15439,26 @@ def _dashboard_visuals(rep: Dict[str, Any], plan: Any) -> None:
         def run_sql(sql: str) -> Dict[str, Any]:
             if not _LAST_ANALYST:
                 return {"ok": False, "error": "the engine has no analysis frame for this file"}
-            out = _na.run_steps(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"],
-                                [{"op": "sql", "args": {"sql": sql}, "why": "a dashboard visual"}], _LAST_ANALYST["hint"])
-            st = (out.get("steps") or [None])[0]
-            if not isinstance(st, dict):
-                why = "; ".join(str(r.get("why") or "") for r in out.get("refused") or [] if isinstance(r, dict))
-                return {"ok": False, "error": why or "the query was refused"}
-            if not st.get("ok"):
-                return {"ok": False, "error": st.get("refused") or "the query was refused"}
-            t = st.get("table") or {}
-            n = ((st.get("numbers") or {}).get("rows") or {}).get("value")
-            return {"ok": True, "columns": t.get("columns") or [], "rows": t.get("rows") or [],
-                    "rows_total": int(n) if isinstance(n, (int, float)) else len(t.get("rows") or [])}
+            out = _na.sql_result(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"], _LAST_ANALYST["hint"], sql)
+            if not out.get("ok"):
+                return {"ok": False, "error": out.get("error") or "the query was refused"}
+            return {"ok": True, "columns": out.get("columns") or [], "rows": out.get("rows") or [],
+                    "rows_total": int(out.get("row_count") or len(out.get("rows") or []))}
         taken = [x.get("id") for x in (d.get("kpis") or []) + (d.get("charts") or []) if isinstance(x, dict)]
         got = _nv.build(raw, run_sql, taken)
         d["visuals"] = got["visuals"]
+        # a question answered only by a visual the engine refused answers nothing now
+        declared = {str(v.get("id")) for v in raw if isinstance(v, dict)}
+        kept_ids = {v["id"] for v in got["visuals"]}
+        qs = []
+        for q in d.get("questions") or []:
+            ab = [x for x in q.get("answered_by") or [] if x not in declared or x in kept_ids]
+            if ab:
+                qs.append(dict(q, answered_by=ab))
+            else:
+                got["refused"].append({"element": "the question “%s”" % str(q.get("q") or "")[:60],
+                                       "why": "it answers nothing on this dashboard (its visuals were refused)"})
+        d["questions"] = qs
         if got["refused"]:
             d["refused"] = list(d.get("refused") or []) + got["refused"]
             rm = d.get("remarks") if isinstance(d.get("remarks"), dict) else None

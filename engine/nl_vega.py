@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 VISUALS_MAX = 4
 SPEC_BYTES_MAX = 6000
 SQL_MAX = 1500
-ROWS_MAX = 200                 # the rows a visual draws (nl_analyst.SQL_TABLE_ROWS: a step's table keeps 200)
+ROWS_MAX = 2000                # the rows a visual draws (a scatter of every row of a small file; 20 Oct 2026: 342 penguins were refused at 200)
 LAYERS_MAX = 3
 TOOLTIP_MAX = 6
 TEXT_MAX = {"title": 90, "why": 200, "axis": 60}

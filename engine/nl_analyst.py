@@ -2737,6 +2737,28 @@ def op_sql(ctx: Ctx, st: Step, sql: str) -> Step:
     (an authorizer allowing reads of kept_rows only, a function allowlist, PRAGMA query_only), a row cap and a time
     cap; a result row resting on fewer than 5 rows is hidden when the engine can count them, and the step says so when
     it cannot. Its table is the result; its sentence counts rows, never reads a cell."""
+    out = _run_sql_on(ctx, sql)
+    if not out.get("ok"):
+        return st.refuse(str(out.get("error") or "the query did not run")[:300])
+    st.num("rows", out["row_count"], "int")
+    st.num("columns", len(out["columns"]), "int")
+    sc = out.get("small_cells") or {}
+    st.num("hidden", int(sc.get("hidden") or 0), "int")
+    st.word("small_note", sc.get("note") or "")
+    st.word("cap_note", " %s" % out["note"] if out.get("note") else "")
+    st.table = {"columns": [str(c) for c in out["columns"]], "rows": out["rows"][:SQL_TABLE_ROWS]}
+    return st
+
+
+def sql_result(df, kinds: Dict[str, str], hint: Optional[Dict[str, Any]], sql: str) -> Dict[str, Any]:
+    """The same fenced query as the `sql` op, on the same frame, with every result row nl_sql returns (its ROW_CAP): the dashboard's
+    visuals draw a scatter of a few hundred points, which the op's table (SQL_TABLE_ROWS) would cut (20 Oct 2026)."""
+    ctx = Ctx(df, shape_of(df, kinds, hint))
+    ctx.hint = dict(hint or {})
+    return _run_sql_on(ctx, sql)
+
+
+def _run_sql_on(ctx: "Ctx", sql: str) -> Dict[str, Any]:
     import nl_sql
 
     free = set(getattr(ctx.sh, "free", ()) or ())
@@ -2762,17 +2784,7 @@ def op_sql(ctx: Ctx, st: Step, sql: str) -> Step:
         _SQL_STATE.clear()
     _SQL_STATE.update(df=df, kinds=kinds, key=id(ctx.df),
                       hidden=list((getattr(ctx, "hint", None) or {}).get("withheld") or []))
-    out = nl_sql.run_sql(_SQL_STATE, sql)
-    if not out.get("ok"):
-        return st.refuse(str(out.get("error") or "the query did not run")[:300])
-    st.num("rows", out["row_count"], "int")
-    st.num("columns", len(out["columns"]), "int")
-    sc = out.get("small_cells") or {}
-    st.num("hidden", int(sc.get("hidden") or 0), "int")
-    st.word("small_note", sc.get("note") or "")
-    st.word("cap_note", " %s" % out["note"] if out.get("note") else "")
-    st.table = {"columns": [str(c) for c in out["columns"]], "rows": out["rows"][:SQL_TABLE_ROWS]}
-    return st
+    return nl_sql.run_sql(_SQL_STATE, sql)
 
 
 _SQL_STATE: Dict[str, Any] = {}

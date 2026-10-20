@@ -5310,10 +5310,17 @@ check('pack-step1-to-step6-desktop', DESK, async (ctx) => {
   rec.settings.readers = 'the audit committee';
   const f = path.join(require('os').tmpdir(), 'nl-pack-recipe-' + process.pid + '.json');
   fs.writeFileSync(f, JSON.stringify(rec));
-  await p.setInputFiles('#try-recipe-file', f);
+  // a pack run returning redraws step 6's card, and a file set on the input it replaces is lost: set it on the current
+  // input, up to three times (each miss is recorded; three misses fail)
+  let loaded = false, misses = 0;
+  for (let i = 0; i < 3 && !loaded; i++) {
+    await p.setInputFiles('#try-recipe-file', f);
+    loaded = await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 10000 }).then(() => true, () => false);
+    if (!loaded) misses++;
+  }
   fs.unlinkSync(f);
-  await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 30000 })
-    .catch(async () => { throw new Error('the recipe did not load: ' + await p.evaluate(() => ((document.getElementById('try-recipe-out') || {}).textContent || '').slice(0, 300))); });
+  ok(loaded, 'the recipe did not load after 3 tries: ' + await p.evaluate(() => ((document.getElementById('try-recipe-out') || {}).textContent || '').slice(0, 300)));
+  if (misses) console.log('  note: pack-step1-to-step6: the recipe input was redrawn under the file ' + misses + ' time(s)');
   ok(await p.inputValue('#try-need [data-scope="need"] [data-key="readers"]') === 'the audit committee', 'the recipe\'s reader is not in the form');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });

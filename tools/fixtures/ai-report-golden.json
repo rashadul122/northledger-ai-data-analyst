@@ -1,0 +1,15 @@
+{
+ "GFDGDPA188S.csv": [
+  {"fact": "the latest reading: 121.5% of GDP in 2025", "rx": "121\\.[45]\\d*\\s*%?.{0,80}2025|2025.{0,80}121\\.[45]"},
+  {"fact": "the record high: 125.9% in 2020", "rx": "125\\.9.{0,120}2020|2020.{0,120}125\\.9"},
+  {"fact": "a forecast for the next years with its band", "rx": "2026.{0,40}\\d+\\.\\d+.{0,40}band|band.{0,80}2026"}
+ ],
+ "chicago-employee-salaries.csv": [
+  {"fact": "the average salaried pay, about 116,244 USD", "rx": "116[,.]2\\d*\\s*(k|USD|,\\d{3})|116,244"},
+  {"fact": "the payroll's size as the engine kept it: 32,011 with every column kept (exact duplicates set aside), 32,021 with pay withheld", "rx": "32,0[12]1|32\\.0k"}
+ ],
+ "amazon-video-games-reviews.csv": [
+  {"fact": "the average rating, 4.05 stars", "rx": "4\\.05"},
+  {"fact": "the reviews read, about 20,100 (20,107 in the file; a plan's cleaning may set a few aside)", "rx": "20,1\\d\\d|20\\.1k"}
+ ]
+}

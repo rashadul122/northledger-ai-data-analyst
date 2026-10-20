@@ -3430,6 +3430,7 @@
         '<button type="button" class="btn btn-ghost" id="try-pdf" aria-describedby="try-pdf-note"' + (ai ? '' : ' disabled') + '>Download PDF</button>' +
         (W ? '<button type="button" class="btn btn-ghost" id="try-docx" aria-describedby="try-docx-note">Download Word (.docx)</button>' +
           '<button type="button" class="btn btn-ghost" id="try-docx-zip" aria-describedby="try-docx-note" title="A browser cannot save a file next to your data file. This zip holds the Word write-up and its chart pictures: unzip it beside your file to keep them together.">Word + charts (.zip)</button>' : '') +
+        (window.NLPptx && window.NLX ? '<button type="button" class="btn btn-ghost" id="try-pptx"' + (ai ? '' : ' disabled') + ' title="A slide deck of the AI-written report: its sections, its charts and the analyst\'s visuals, its methods and sources. Made in this browser.">PowerPoint (.pptx)</button>' : '') +
         '<span class="try-share-out" id="try-deliver-out" hidden></span></div>' +
         '<fieldset class="ai-pdf-opts"><legend>' + (W ? 'PDF and Word options' : 'PDF options') + '</legend>' +
           '<span class="ai-pdf-paper" role="radiogroup" aria-label="Paper size"><span class="ai-pdf-lab" aria-hidden="true">Paper</span>' +
@@ -3446,6 +3447,8 @@
       var docx = document.getElementById('try-docx'), docxZip = document.getElementById('try-docx-zip');
       if (docx) docx.addEventListener('click', function () { doWord(false); });
       if (docxZip) docxZip.addEventListener('click', function () { doWord(true); });
+      var pptx = document.getElementById('try-pptx');
+      if (pptx) pptx.addEventListener('click', function () { doPptx(); });
       Array.prototype.forEach.call(box.querySelectorAll('input[name="try-pdf-paper"]'), function (r) {
         r.addEventListener('change', function () { if (r.checked) S.pdfPaper = r.value; });
       });
@@ -3551,6 +3554,35 @@
         go({ report: '', sources: [], results: R, charts: R.charts || [], tables: R.tables || [], kept: (S.kept || []).slice(), name: S.prevFile || S.name || '', showName: named,
           date: new Date(), goal: reportGoal(null), engineOnly: true }, S.report);
       });
+    }
+
+    // "PowerPoint (.pptx)" (AI Analyst v2 phase G, 20 Oct 2026): the AI report as a deck (src/js/65-pptx.js), its text cut into slides,
+    // never rewritten; each figure the report card shows (the analyst's visuals, the forecast, the engine's charts) as a picture of its
+    // own drawing, in the light theme; the methods appendix and the sources. Nothing is sent.
+    var pptxBusy = false;
+    function doPptx() {
+      var out = document.getElementById('try-deliver-out'), rep = S.aiReport, card = document.getElementById('try-ai-report');
+      if (!out || !rep || !window.NLPptx || !window.NLDocx || pptxBusy) return;
+      pptxBusy = true;
+      out.hidden = false; out.textContent = 'Making the slide deck in this browser\u2026';
+      var named = !!($('try-pdf-name') && $('try-pdf-name').checked);
+      var fr = window.NLPptx.fromReport(String(rep.report || '').split(FILE_WORD).join(named ? (S.prevFile || S.name || FILE_WORD) : 'your file'));
+      var figs = card ? Array.prototype.slice.call(card.querySelectorAll('figure.nld-vis, figure.ai-rep-figure')).filter(function (f) { return f.querySelector('svg'); }).slice(0, 8) : [];
+      var methods = card ? Array.prototype.map.call(card.querySelectorAll('.ai-methods ol > li'), function (li) { return li.textContent.replace(/\s+/g, ' ').trim(); }).slice(0, 14) : [];
+      var date = new Date(), q = reportGoal(rep);
+      Promise.all(figs.map(function (f) {
+        var svg = f.querySelector('.nld-vg svg') || f.querySelector('svg'), cap = f.querySelector('.nld-why, .ai-rep-figure-cap');
+        return window.NLDocx.svgToPng(svg, { scale: 2 }).then(function (r) { return { title: (f.querySelector('figcaption') || {}).textContent || 'Figure', caption: cap ? cap.textContent : '', png: r.png, w: r.w, h: r.h }; },
+          function () { return null; });
+      })).then(function (pics) {
+        var bytes = window.NLPptx.deck({ title: fr.title || (q ? 'Research write-up: ' + q : 'Research write-up'),
+          subtitle: [q, named && (S.prevFile || S.name) ? 'File: ' + (S.prevFile || S.name) : '', date.toISOString().slice(0, 10)].filter(Boolean).join(' \u00b7 '),
+          sections: fr.sections, figures: pics.filter(Boolean), methods: methods, sources: rep.sources || [] });
+        var name = window.NLDocx.fileName(date, named ? (S.prevFile || S.name) : '', fr.title, '.pptx');
+        offerFile(out, bytes, name, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'slide deck');
+      }).catch(function (e) {
+        out.hidden = false; out.textContent = 'The slide deck could not be made in this browser (' + String(e && e.message ? e.message : e) + ').';
+      }).then(function () { pptxBusy = false; });
     }
 
     // what a visitor can do about the reasons rows were set aside (plain steps, no figures)

@@ -1800,6 +1800,50 @@ def for_ai(d: Any) -> Optional[Dict[str, Any]]:
             "refused": len(d.get("refused") or [])}
 
 
+def _fmt(v: float, unit: str) -> str:
+    """A tile's figure as the page prints it (57-dashboard.js fmt): 0 decimals from 1,000, 1 from 10, else 2; a sign before, % after,
+    a word after."""
+    a = abs(v)
+    dp = 0 if a >= 1000 else 1 if a >= 10 else 2
+    s = ("{:,.%df}" % dp).format(a)
+    if dp and "." in s:
+        s = s.rstrip("0").rstrip(".")
+    neg = "-" if v < 0 else ""
+    if unit in ("$", "€", "£", "¥"):
+        return neg + unit + s
+    if unit == "%":
+        return neg + s + "%"
+    return neg + s + (" " + unit if unit else "")
+
+
+def key_numbers(d: Any) -> List[Dict[str, Any]]:
+    """The dashboard's tiles as the report writer reads them (AI Analyst v2 phase G, 20 Oct 2026: a salary report never stated the
+    average salary, a reviews report never the average rating): each tile's label and its figure in the page's words, the rows it
+    rests on, and the period a latest, change, peak or low tile reads. Every figure is the engine's (D.defaults)."""
+    if not isinstance(d, dict) or not d.get("ok"):
+        return []
+    units = {m.get("key"): m.get("unit") or "" for m in (d.get("cube") or {}).get("measures") or []}
+    out: List[Dict[str, Any]] = []
+    for k in d.get("kpis") or []:
+        v = ((d.get("defaults") or {}).get("kpis") or {}).get(k.get("id")) or {}
+        if v.get("value") is None:
+            continue
+        unit = "" if k.get("agg") == "count" else (k.get("unit_word") or units.get(k.get("mkey")) or "")
+        val = float(v["value"])
+        if k.get("agg") == "change":
+            fig = ("+" if val > 0 else "") + (_fmt(val, "" if unit == "%" else unit) + (" pp" if unit == "%" else ""))
+            when = " (%s against %s)" % (period_word(v.get("period")), period_word(v.get("base_period"))) if v.get("base_period") else ""
+        else:
+            fig = _fmt(val, unit)
+            when = " in %s" % period_word(v.get("period")) if k.get("agg") in ("latest", "peak", "low") and v.get("period") else ""
+        n = int(v.get("n") or 0)
+        rows = "" if d.get("observations") or k.get("agg") in ("latest", "change", "peak", "low", "count") else \
+            ", on %s %s" % ("{:,}".format(n), "rows" if k.get("agg") == "count" else "values")
+        out.append({"label": str(k.get("label") or "")[:60], "text": "%s: %s%s%s" % (str(k.get("label") or "")[:60], fig, when, rows),
+                    "agg": k.get("agg")})
+    return out[:KPI_MAX]
+
+
 # ----------------------------------------------------------------------------- the AI's look at its own dashboard
 SIGNALS_MAX = 8
 

@@ -34,7 +34,9 @@ ORIGIN = "https://northledger.halosyncs.com"
 
 def post(url: str, body: dict, timeout: int = 200) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "Origin": ORIGIN})
+                                 headers={"Content-Type": "application/json", "Origin": ORIGIN,
+                                          # Cloudflare refuses Python's own user agent (error 1010) before the worker sees it
+                                          "User-Agent": "NorthLedger-eval/1.0 (+https://northledger.halosyncs.com)"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode() or "{}")
@@ -57,11 +59,23 @@ def score(rep: dict, shape: dict) -> dict:
             "signals": [s["detail"] for s in sig]}
 
 
+
+def page_decisions(data: bytes, name: str):
+    """The decisions the page sends after the visitor's acknowledgement (src/js/50-try.js keepAll): the scan's flagged columns, every one
+    kept, a column the engine coded as it arrived (an email, a phone) coded. Without them a salary column stays withheld and the AI
+    reads a payroll with no pay in it (20 Oct 2026)."""
+    import nl_browser as NB
+    scan = NB.run(data, name, "", None, None)
+    flagged = ((scan.get("privacy") or {}).get("flagged") or []) if isinstance(scan, dict) else []
+    flagged = [f for f in flagged if isinstance(f, dict) and f.get("column")]
+    return flagged, {f["column"]: ("code" if "coded" in str(f.get("kind") or "") else "keep") for f in flagged}
+
 def one(entry: dict, worker: str, replan: bool) -> dict:
     import nl_browser as NB
     with open(os.path.join(CORPUS, entry["file"]), "rb") as fh:
         data = fh.read()
-    prof = NB.profile_for_ai(data, entry["file"], decisions=None)
+    flagged, dec = page_decisions(data, entry["file"])
+    prof = NB.profile_for_ai(data, entry["file"], flagged=flagged, decisions=dec)
     if not prof.get("ok"):
         return {"file": entry["file"], "status": "no_profile"}
     prof = {k: v for k, v in prof.items() if k != "ok"}
@@ -71,7 +85,7 @@ def one(entry: dict, worker: str, replan: bool) -> dict:
     if not isinstance(a.get("plan"), dict):
         return {"file": entry["file"], "status": "plan_failed", "why": a.get("error") or a.get("status")}
     plan = a["plan"]
-    rep = NB.run(data, entry["file"], "", {"__plan__": plan}, None)
+    rep = NB.run(data, entry["file"], "", dict(dec, __plan__=plan), None)
     first = score(rep, prof.get("shape"))
     out = {"file": entry["file"], "status": "ok", "first": first, "secs": round(time.time() - t0, 1)}
     if replan and first["signals"]:
@@ -79,7 +93,7 @@ def one(entry: dict, worker: str, replan: bool) -> dict:
         prev = {k: plan.get(k) for k in ("goal", "kind", "primary", "columns", "operations", "analyses", "charts", "dashboard")}
         b = post(worker.rstrip("/") + "/plan", dict(body, profile_hash=None, feedback={"attempt": 1, "previous_plan": prev, "signals": sigs}))
         if isinstance(b.get("plan"), dict):
-            rep2 = NB.run(data, entry["file"], "", {"__plan__": b["plan"]}, None)
+            rep2 = NB.run(data, entry["file"], "", dict(dec, __plan__=b["plan"]), None)
             out["revised"] = score(rep2, prof.get("shape"))
         else:
             out["revised"] = {"error": b.get("error") or b.get("status")}

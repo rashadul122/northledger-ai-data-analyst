@@ -6634,6 +6634,16 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
     vis = _visual_cards(rep)
     if vis and isinstance(out, dict) and out.get("ok") is not False:
         out["visuals"] = vis
+    try:
+        import nl_dashboard as _ndk
+        kn = _ndk.key_numbers(rep.get("dashboard")) if isinstance(rep, dict) else []
+    except Exception:  # noqa: BLE001 - the writer works without the tiles
+        kn = []
+    if kn and isinstance(out, dict) and out.get("ok") is not False:
+        out["key_numbers"] = kn
+    per = rep.get("period_words") if isinstance(rep, dict) and isinstance(rep.get("period_words"), dict) else None
+    if per and int(per.get("step") or 1) in (3, 12) and isinstance(out, dict) and out.get("ok") is not False:
+        out["period"] = {"noun": "year" if int(per["step"]) == 12 else "quarter", "step": int(per["step"])}
     pf = rep.get("period_forecast") if isinstance(rep, dict) and isinstance(rep.get("period_forecast"), dict) else None
     if pf and pf.get("ok") and isinstance(out, dict) and out.get("ok") is not False:
         f2 = lambda x: None if x is None else round(float(x), 2)  # noqa: E731

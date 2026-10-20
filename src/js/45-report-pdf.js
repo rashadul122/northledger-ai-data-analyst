@@ -2361,16 +2361,20 @@
       lags.sort(function (a, b) { return b - a; });
       var hi = function (lg, part) { return item('history_range.m' + lg + '.' + part); };
       var hcards = [], hsays = [], hzero = '';
+      // a yearly or quarterly series (results.period): its windows in its own words, never months (20 Oct 2026: "12-MONTH" cards on FRED)
+      var perN = R && R.period && /^(year|quarter)$/.test(R.period.noun) ? R.period.noun : null, perStep = perN === 'year' ? 12 : perN === 'quarter' ? 3 : 0;
+      var lagWord = function (lg) { return perStep && lg % perStep === 0 ? (lg / perStep) + '-' + perN : lg + '-month'; };
+      var avgWord = perN ? 'the ' + perN + 'ly value' : 'the monthly average';
       lags.forEach(function (lg) {
         var win = hi(lg, 'windows'), rose = hi(lg, 'rose');
-        var of = win ? 'the ' + String(win.text) + ' past windows' : 'the past ' + lg + '-month windows';
+        var of = win ? 'the ' + String(win.text) + ' past windows' : 'the past ' + lagWord(lg) + ' windows';
         // the overlapping windows are worth fewer independent ones: "the 104 past windows (about 13 independent)"
         var ne = hi(lg, 'n_eff');
         if (win && ne) of = 'the ' + String(win.text) + ' past windows (about ' + String(ne.text) + ' independent)';
         [['p10', '1 in 10 lower', '; 1 in 10 of ' + of + ' was lower'], ['p50', 'Middle', ', the middle of ' + of + (rose ? '; it rose in ' + String(rose.text) + ' of them' : '')],
           ['p90', '1 in 10 higher', '; 1 in 10 of ' + of + ' was higher']].forEach(function (pp) {
           var x = hi(lg, pp[0]);
-          if (x) hcards.push({ name: lg + '-month: ' + pp[1], value: String(x.text), unit: 'The change in the monthly average' + pp[2], assumption: '', grade: '', parent: '', tag: 'history' });
+          if (x) hcards.push({ name: lagWord(lg) + ': ' + pp[1], value: String(x.text), unit: 'The change in ' + avgWord + pp[2], assumption: '', grade: '', parent: '', tag: 'history' });
         });
         if (win && win.label) hsays.push(sentence(win.label));
         // the non-overlapping alternative: one window each year (or each quarter), none counted twice
@@ -2378,7 +2382,7 @@
         if (no.n && no.min && no.max) {
           [['nonoverlap.min', 'lowest'], ['nonoverlap.median', 'middle'], ['nonoverlap.max', 'highest']].forEach(function (pp) {
             var x = hi(lg, pp[0]);
-            if (x) hcards.push({ name: lg + '-month, spaced: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lg + '-month changes in the monthly average', assumption: '', grade: '', parent: '', tag: 'history' });
+            if (x) hcards.push({ name: lagWord(lg) + ', spaced: ' + pp[1], value: String(x.text), unit: 'The ' + pp[1] + ' of the ' + String(no.n.text) + ' non-overlapping ' + lagWord(lg) + ' changes in ' + avgWord, assumption: '', grade: '', parent: '', tag: 'history' });
           });
         }
       });
@@ -2390,7 +2394,16 @@
     }
     if (any) append(p3, hb);
     if (any && sc && sc.note) p3.push({ type: 'p', engine: true, text: sc.note, wide: true, size: 7.5, lead: 10.5, font: 'I', color: COL.muted, after: 10 });
-    if (!any) {
+    // a yearly or quarterly series' own forecast (engine/nl_period_forecast.py, phase F): its table, never "No scenarios" beside it
+    var pf = R && R.period_forecast && Array.isArray(R.period_forecast.points) && R.period_forecast.points.length ? R.period_forecast : null;
+    if (!any && pf) {
+      var pcap = pf.grain === 'quarter' ? 'Quarter' : 'Year', f2 = function (v) { return v === null || v === undefined ? '' : Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      p3.push({ type: 'h2', num: '', text: 'The engine\'s forecast' + (pf.trusted ? '' : ' (not shown usable)'), id: 'sc-pfc', engine: true });
+      p3.push({ type: 'table', engine: true, table: { title: pf.measure || 'Forecast', cols: [pcap, 'Forecast', pf.level + '% band, low', pf.level + '% band, high'],
+        rows: pf.points.map(function (q) { return [q.period, f2(q.value), f2(q.lo), f2(q.hi)]; }) },
+        source: 'Source: NorthLedger engine forecast, ' + (pf.method || '') + '; ' + (pf.audit_label || '') + '. Each row is the level in that ' + pf.grain + ', never a sum.' });
+      append(p3, hb);
+    } else if (!any) {
       var seenWhy = {}, why = sc && Array.isArray(sc.refused) && sc.refused.length ? sc.refused.filter(function (x) { return !LEFT_OUT.test(String(x)); }).map(function (x) { return cap1(String(x).replace(/[.\s]+$/, '')) + '.'; })
         .filter(function (x) { if (seenWhy[x]) return false; seenWhy[x] = true; return true; }).join(' ') : '';
       if (!why) { var nf = findings.filter(function (x) { return x.kind === 'forecast' && gradeOf(x.verdict) === 'INSUFFICIENT'; })[0]; if (nf && nf.why) why = 'No forecast: ' + nf.why; }

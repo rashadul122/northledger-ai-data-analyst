@@ -2428,6 +2428,26 @@ check('try-ai-report-visuals-confidence-and-methods', DESK, async (ctx) => {
   ok(!d.literal, 'a [VISUAL:...] marker shows as text');
   ok(d.conf.length === 2 && /^described\|Confidence: Described, not tested/.test(d.conf[0]) && /^high\|Confidence: High/.test(d.conf[1]), 'the confidence lines are not labelled: ' + JSON.stringify(d.conf));
   ok(/Methods: how every figure was computed/.test(d.methods) && /GROUP BY Category/.test(d.methods), 'the methods appendix does not list the visual\'s query: ' + d.methods.slice(0, 200));
+  // the slide deck (phase G, src/js/65-pptx.js): every part well-formed XML, a slide per section, the visual as a picture
+  await p.click('#try-pptx');
+  await p.waitForSelector('#try-deliver-out a[download$=".pptx"]', { timeout: 20000 });
+  const deck = await p.evaluate(async () => {
+    const a = document.querySelector('#try-deliver-out a[download$=".pptx"]'), b = new Uint8Array(await (await fetch(a.href)).arrayBuffer());
+    const dv = new DataView(b.buffer), parts = {}; let i = 0;
+    while (i + 30 < b.length && dv.getUint32(i, true) === 0x04034b50) {
+      const n = dv.getUint16(i + 26, true), x = dv.getUint16(i + 28, true), size = dv.getUint32(i + 18, true);
+      const name = new TextDecoder().decode(b.slice(i + 30, i + 30 + n)); parts[name] = b.slice(i + 30 + n + x, i + 30 + n + x + size); i += 30 + n + x + size;
+    }
+    const bad = Object.keys(parts).filter((k) => /\.(xml|rels)$/.test(k)).filter((k) => new DOMParser().parseFromString(new TextDecoder().decode(parts[k]), 'application/xml').getElementsByTagName('parsererror').length);
+    const slides = Object.keys(parts).filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k));
+    const text = slides.map((k) => new TextDecoder().decode(parts[k])).join(' ');
+    return { name: a.download, n: Object.keys(parts).length, bad, slides: slides.length, pngs: Object.keys(parts).filter((k) => /^ppt\/media\/.*\.png$/.test(k)).length,
+      hasHeadline: /rent leads the ledger/.test(text), hasConf: /Confidence: Described, not tested/.test(text), hasMethods: /Methods: how every figure was computed/.test(text),
+      b64: btoa(Array.from(b, (c) => String.fromCharCode(c)).join('')) };
+  });
+  if (process.env.NL_UI_PPTX_OUT) fs.writeFileSync(process.env.NL_UI_PPTX_OUT, Buffer.from(deck.b64, 'base64'));
+  ok(deck.n > 10 && !deck.bad.length && deck.slides >= 5 && deck.pngs >= 1 && deck.hasHeadline && deck.hasConf && deck.hasMethods,
+    'the slide deck is not a well-formed deck of the report: ' + JSON.stringify(Object.assign({}, deck, { b64: undefined })));
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 

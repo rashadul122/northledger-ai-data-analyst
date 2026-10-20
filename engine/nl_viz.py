@@ -35,7 +35,7 @@ VERSION = "2026-09-30.1"
 VIZ_MAX = 8                 # charts a report, and items kept from plan.charts
 VIZ_AUTO = 4                # the engine's own picks when no AI chart is built
 HEAT_MAX = 3                # heatmaps a report
-SMALL_CELL = 5              # no printed figure rests on fewer rows
+SMALL_CELL = 5              # no printed figure rests on fewer rows (the chart spec's contract with the worker and the page; kept in phase A)
 AI_CHARTS_MAX = 10          # charts in results_for_ai (the analyses' and these together)
 CHART_BYTES = 6000          # one record as JSON.stringify writes it, in UTF-8 bytes
 HEATMAP_BYTES = 12000       # ... a heatmap's (the owner's decision on the spec's byte-cap conflict, 30 Sep 2026)
@@ -487,6 +487,9 @@ class Ctx:
         # AI reads the dataset (owner, 19 Oct 2026: Chicago's payroll dashboard refused 6 of the AI's 8 elements because
         # Annual Salary is "named like personal data"): it is only ever added up or averaged, under the small-cell rule; a kept
         # text (a name, a note) stays out, and no label ever prints a flagged column's value (_label_ok)
+        # a kept column the engine reads as a number (a salary, an amount) is read like any other after the visitor acknowledged that
+        # the AI reads the dataset (owner, 19 Oct 2026); a kept text column (a name, an email, a note: flagged by its header or its
+        # values) is never a chart's label or group, the plan's protection: a chart of 32,000 names helps nobody
         kept_num = {str(f.get("column")) for f in self.flagged if f.get("decision") == "keep"} & \
             {str(x) for x in (rep.get("roles") or {}).get("measures") or []}
         self.flag_land = {str(f.get("column")) for f in self.flagged if f.get("column")} - kept_num

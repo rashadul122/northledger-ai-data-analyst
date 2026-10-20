@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "66ff01a8e4fb157c19f06a5e6d7047f6f88a6fcee6fef3532a9307acc920c3fe",
-  "bytes": 1060920
+  "sha256": "4ef0fc2e08ae922fe231eaf566f5f149f475d212c2f3f88bbcbae93a05a60502",
+  "bytes": 1061219
  },
  "files": [
   {
@@ -157,8 +157,8 @@
   },
   {
    "path": "nl_analyst.py",
-   "sha256": "ca24f26bc0b97fb12a1d1dd00e2bf55ffcb32e55abd049207c88fbc47691b8c9",
-   "bytes": 259075,
+   "sha256": "594031f93d8bd8f7a571f72700df495cd83ab9b3b7d9fdb00d6c240d9032e61b",
+   "bytes": 259232,
    "source": "portfolio-website/engine/nl_analyst.py"
   },
   {
@@ -175,8 +175,8 @@
   },
   {
    "path": "nl_dashboard.py",
-   "sha256": "0544ba9e2d97e8c891a2b8ba0208087024a42a87d5817d513959738215ec2698",
-   "bytes": 90916,
+   "sha256": "738eaa00eac897f0e60de822aa352719eced85970f0d3a75926106d2a81a0d99",
+   "bytes": 90851,
    "source": "portfolio-website/engine/nl_dashboard.py"
   },
   {
@@ -205,8 +205,8 @@
   },
   {
    "path": "nl_sales.py",
-   "sha256": "90d870abd632741839578ea479b0c0fce06dcaa9588493476b17e5d4458912d1",
-   "bytes": 75001,
+   "sha256": "e71816dd0d5f6042f097f64eee836ffcf10c071935f85fd34a2fa41f4748697e",
+   "bytes": 75017,
    "source": "portfolio-website/engine/nl_sales.py"
   },
   {
@@ -217,8 +217,8 @@
   },
   {
    "path": "nl_sql.py",
-   "sha256": "af705bbac70bc1b888809bf63d94f39e33e2e76d550bf81815d6ff7fc8561ac1",
-   "bytes": 50241,
+   "sha256": "a01e38f8c405307c13daf203e236a60e234a11fbb5d1a61197f94c8b6ea54fdd",
+   "bytes": 50443,
    "source": "portfolio-website/engine/nl_sql.py"
   },
   {
@@ -247,8 +247,8 @@
   },
   {
    "path": "nl_viz.py",
-   "sha256": "80fed917ce0c86a989de2a796eaebe0ffa60308aba7dc330c960d4d65354eb4b",
-   "bytes": 306518,
+   "sha256": "877674a62dd4143da9a14e347d680623cc311d971474e722f8567b224ecee0cc",
+   "bytes": 306971,
    "source": "portfolio-website/engine/nl_viz.py"
   }
  ],

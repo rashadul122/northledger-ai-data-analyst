@@ -202,15 +202,14 @@ def test_suppression_after_filter():
     kpi = {"agg": "sum", "mkey": next(m["key"] for m in cube["measures"] if m["column"] == "sales"), "where": None}
     full = ND.query_kpi(cube, kpi)
     assert full["value"] is not None and not full["suppressed"]
+    # phase A (owner, 19 Oct 2026): a figure on few rows is shown, with its row count
     thin = ND.query_kpi(cube, kpi, {"from": "2024-09", "to": "2024-09"})     # 3 rows that month
-    assert thin["value"] is None and thin["suppressed"] and thin["n"] == 3, thin
+    assert thin["value"] is not None and not thin["suppressed"] and thin["n"] == 3, thin
     store = next(x for x in cube["dims"] if x["column"] == "store")
-    one = ND.query_kpi(cube, kpi, {"from": "2024-09", "to": "2024-09", "cats": {store["key"]: ["Alder"]}})
-    assert one["value"] is None and one["n"] < 5, one
     ok = ND.query_kpi(cube, kpi, {"from": "2024-08", "to": "2024-08", "cats": {store["key"]: ["Alder"]}})
     assert ok["value"] is not None and ok["n"] == 6, ok                     # 6 rows of Alder that month
     rows = ND.query_kpi(cube, {"agg": "count", "mkey": None, "where": None}, {"from": "2024-09", "to": "2024-09"})
-    assert rows["value"] is None and rows["suppressed"], rows
+    assert rows["value"] == 3 and not rows["suppressed"], rows
 
 
 def test_gaps_not_filled():
@@ -222,12 +221,12 @@ def test_gaps_not_filled():
     assert s["series"][0]["points"][i] is None, s["series"][0]["points"][i - 1:i + 2]
     assert "2024-05" in s["gaps"], s["gaps"]
     j = s["months"].index("2024-09")
-    assert s["series"][0]["points"][j] is None                              # 3 rows: suppressed, a gap too
+    assert s["series"][0]["points"][j] is not None                          # 3 rows: shown (phase A)
     assert s["series"][0]["points"][i - 1] is not None and s["series"][0]["points"][i + 1] is not None
     assert "2024-05" not in d["cube"]["months"]
     chk = " ".join(x["text"] for x in d["remarks"]["needs_check"])
     assert "May 2024" in chk and "left as gaps" in chk, chk
-    assert "Sep 2024" in chk and "fewer than 5 rows" in chk, chk
+    assert "fewer than 5 rows" not in chk, chk
 
 
 def test_no_withheld_column_anywhere():
@@ -424,18 +423,18 @@ def test_quarterly_series_reads_quarters():
     assert k["yoy"]["base_period"] == "2024-Q4" and abs(k["yoy"]["value"] - 1.6) < 1e-6, k["yoy"]
 
 
-def test_records_keep_the_small_cell_rule():
-    # one row a date, but a personal column: the rule stays (the store ledger's email column)
+def test_records_are_read_as_records_and_nothing_is_hidden():
+    # phase A (owner, 19 Oct 2026): the small-cell rule is off everywhere; a file of records is still read as records (its design)
     d = synth_rep(None)["dashboard"]
-    assert d["observations"] is False and d["cube"]["small"] == 5 and d["suppress_below"] == 5, d.get("observations")
+    assert d["observations"] is False and d["cube"]["small"] == 1 and d["suppress_below"] == 1, d.get("observations")
     rows = ["date,patient_email,visits"]
     for i in range(60):
         rows.append("2024-%02d-%02d,p%d@mail.example.com,%d" % (1 + i // 28, 1 + i % 28, i, 1 + i % 3))
     d2 = NB.run(("\n".join(rows) + "\n").encode(), "visits.csv", "", None, "2026-01-15")["dashboard"]
-    assert d2.get("ok") is False or d2["cube"]["small"] == 5, d2.get("cube", {}).get("small")
+    assert d2.get("ok") is False or d2["observations"] is False, d2.get("observations")
 
 
-def test_an_event_log_keeps_the_rule():
+def test_an_event_log_is_read_as_records():
     # one row a date, no personal column, but irregular dates (rare events): records, not published figures
     rnd, rows, day = random.Random(9), ["date,ward,cost"], 0
     import datetime as _dt
@@ -443,11 +442,11 @@ def test_an_event_log_keeps_the_rule():
         day += rnd.choice([1, 2, 5, 9, 13, 20, 33])
         rows.append("%s,%s,%.2f" % ((_dt.date(2020, 1, 1) + _dt.timedelta(days=day)).isoformat(), rnd.choice(["A", "B", "C"]), rnd.random() * 900))
     d = NB.run(("\n".join(rows) + "\n").encode(), "events.csv", "", None, "2026-01-15")["dashboard"]
-    assert d["ok"] and d["observations"] is False and d["cube"]["small"] == 5, (d.get("observations"), d["cube"].get("small"))
+    assert d["ok"] and d["observations"] is False, d.get("observations")
     # timestamps are events too, even one a day
     rows2 = ["when,amount"] + ["2024-%02d-%02dT%02d:15:00,%d" % (1 + i // 28, 1 + i % 28, 8 + i % 9, 10 + i) for i in range(84)]
     d2 = NB.run(("\n".join(rows2) + "\n").encode(), "calls.csv", "", None, "2026-01-15")["dashboard"]
-    assert d2.get("ok") is False or d2["cube"]["small"] == 5, d2.get("cube", {}).get("small")
+    assert d2.get("ok") is False or d2["observations"] is False, d2.get("observations")
     assert ND.regular_dates(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"])   # weekdays
     assert ND.regular_dates(["%d-01-01" % y for y in range(1990, 2000)])
     assert not ND.regular_dates(["2024-01-01", "2024-01-09", "2024-02-20", "2024-02-21", "2024-05-30"])

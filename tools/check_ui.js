@@ -2051,7 +2051,7 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
 }, { acceptDownloads: true });
 
 // names only in the example: an email or a phone number is coded as it arrives and cannot be kept
-const OPTIN_RECORD = (names) => 'You acknowledged that the AI reads your dataset, including these columns flagged as possibly personal: ' + names.join(', ') + '.';
+const OPTIN_RECORD = (names) => 'You acknowledged that the AI reads your dataset, every column included (' + names.join(', ') + ' among them).';
 // every flagged column the stand-in flags, kept after the one acknowledgement (its email is not coded as it arrived)
 const OPTIN_KEPT = ['customer_email', 'notes', 'staff_name'];
 // the same report with nothing flagged: nothing personal kept, so the share step warns in general words

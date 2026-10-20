@@ -173,13 +173,13 @@ def test_small_cells_are_hidden_or_said_plainly():
     out = ns.run_sql(st, q)
     e = d[(d.region == "EMEA") & (d.order_date >= "2026-07-01")]
     n = e.groupby(["country", "product_line", "channel"]).size()
-    assert out["ok"] and out["small_cells"]["state"] == "applied", out["small_cells"]
-    assert out["small_cells"]["hidden"] == int((n < 5).sum()) > 0, (out["small_cells"], int((n < 5).sum()))
-    assert out["row_count"] == int((n >= 5).sum())
+    # owner's decision (19 Oct 2026, AI Analyst v2 phase A): no result row is hidden for its row count
+    assert out["ok"] and out["small_cells"]["state"] == "applied" and out["small_cells"]["hidden"] == 0, out["small_cells"]
+    assert out["row_count"] == len(n)
     shown = {tuple(r[:3]) for r in out["rows"]}
-    assert shown == {k for k, v in n.items() if v >= 5}
+    assert shown == set(n.index)
     sub = ns.run_sql(st, "SELECT AVG(r) FROM (SELECT country, SUM(revenue) AS r FROM kept_rows GROUP BY country)")
-    assert sub["ok"] and sub["small_cells"]["state"] == "not_feasible" and "not" in sub["small_cells"]["note"], sub
+    assert sub["ok"] and sub["small_cells"]["hidden"] == 0, sub
 
 
 # ----------------------------------------------------------------------------------------------- the analyst steps

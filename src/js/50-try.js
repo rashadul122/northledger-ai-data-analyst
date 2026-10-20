@@ -2267,7 +2267,7 @@
     // the visitor's opt-in (option B), stated once in plain words where every AI run says what it did: the plan card
     // (drawn whenever the AI was used, with the plan or with the reason there is none)
     function optinHtml() {
-      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You acknowledged that the AI reads your dataset, including these columns flagged as possibly personal: ' + S.kept.join(', ') + '.') + '</p>' : '';
+      return S.useAi && S.kept && S.kept.length ? '<p class="try-plan-optin" role="note">' + esc('You acknowledged that the AI reads your dataset, every column included (' + S.kept.join(', ') + ' among them).') + '</p>' : '';
     }
     // the AI plan's steps that set rows aside, as the adapter disclosed them (rep.ai_plan.row_drops)
     function rowDrops(p) {

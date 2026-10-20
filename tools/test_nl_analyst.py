@@ -1033,21 +1033,19 @@ def test_an_insight_carries_the_chart_that_shows_it_and_the_chart_registry_accep
         assert "email" not in json.dumps(f), f["id"]  # a withheld column never reaches a chart
 
 
-def test_a_bar_resting_on_fewer_than_five_rows_is_never_drawn():
+def test_a_small_group_is_drawn_and_never_hidden():
+    # owner's decision (19 Oct 2026, AI Analyst v2 phase A): no figure is hidden for its row count; a group of three rows is drawn
     blk = _explore(_orders())
     for i in blk["insights"]:
         f = i.get("figure")
         if f and f["kind"] == "lines":
-            for row, v in zip(f["table"]["rows"], f["data"]["series"][0]["values"]):
-                assert (v is None) == (row[1] in ("<5", "")), row
-    # a group of three rows: its bar is left out of the chart
+            for row in f["table"]["rows"]:
+                assert row[1] != "<5", row
     df = _orders()
     tiny = df.head(3).assign(region="Tiny")
     blk2 = _explore(pd.concat([df, tiny], ignore_index=True))
-    for i in blk2["insights"]:
-        f = i.get("figure")
-        if f and f["kind"] == "hbar":
-            assert all(r["label"] != "Tiny" for r in f["data"]["rows"]), f["id"]
+    bars = [r["label"] for i in blk2["insights"] for f in [i.get("figure")] if f and f["kind"] == "hbar" for r in f["data"]["rows"]]
+    assert not bars or "Tiny" in bars or len(bars) >= 12, bars
 
 
 def test_the_story_leads_with_key_numbers_each_a_printed_ledger_value_of_its_own_step():

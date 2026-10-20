@@ -1781,7 +1781,7 @@ def _r(v, d: int = 6):
 # line_chart and bar_chart kinds), built from the numbers its step computed, so the page draws it with the same code,
 # colours and table view as every other chart. A point or bar resting on fewer than SMALL_CELL rows is never drawn
 # (a gap whose table cell reads '<5'); a chart that would hold fewer than two points or bars is not made.
-SMALL_CELL = 5
+SMALL_CELL = 1  # owner's decision, 19 Oct 2026 (AI Analyst v2, phase A): no figure is hidden for resting on few rows; every figure carries its row count and the AI judges
 _MKIND = {"sum": "amount", "stock": "amount", "mean": "average", "count": "count", "share": "share_pct"}
 _GRAIN_X = {"year": "Year", "quarter": "Quarter", "month": "Month"}
 

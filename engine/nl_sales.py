@@ -40,7 +40,7 @@ import nl_browser as NB
 import nl_scenarios as NS
 
 VERSION = "2026-10-17.1"
-SMALL = 5                          # the engine's small-cell rule: a figure rests on 5 or more deals
+SMALL = 1                          # no figure hidden for its deal count (owner, 19 Oct 2026, AI Analyst v2 phase A)
 STALL_DAYS = 30                    # an open deal with no stage change for longer is stalled (visitor's setting)
 WIN_MOVE_PP = 5.0                  # a win-rate move worth a finding, in percentage points
 CYCLE_MOVE = 0.10                  # a cycle-length move worth a finding (10% of the quarter before)

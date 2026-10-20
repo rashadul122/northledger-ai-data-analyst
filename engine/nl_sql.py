@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional, Tuple
 TABLE = "kept_rows"
 ROW_CAP = 5000              # result rows returned at most
 TIME_CAP_S = 3.0            # a query running longer is interrupted
-SMALL_CELL = 5              # a result row over fewer source rows is hidden; a group with fewer rows is pooled
+SMALL_CELL = 1              # nothing hidden or pooled for its row count (owner, 19 Oct 2026, AI Analyst v2 phase A)
 MAX_SQL_CHARS = 4000
 MAX_GROUPS = 50             # a grouping column with more distinct values is not split (an id, a free text)
 TOP_DRIVERS = 5
@@ -459,10 +459,12 @@ def run_sql(state: Dict[str, Any], sql: str) -> Dict[str, Any]:
                     small = {"state": "applied", "hidden": gone,
                              "note": ("%d result %s rested on fewer than %d of your rows and %s hidden." %
                                       (gone, "row" if gone == 1 else "rows", SMALL_CELL, "is" if gone == 1 else "are"))
-                             if gone else "Every result row rests on %d or more of your rows." % SMALL_CELL}
+                             if gone else ("" if SMALL_CELL <= 1 else "Every result row rests on %d or more of your rows." % SMALL_CELL)}
             except sqlite3.DatabaseError:
                 ok_count = False
-        if not ok_count:
+        if not ok_count and SMALL_CELL <= 1:
+            small = {"state": "applied", "hidden": 0, "note": ""}       # nothing is hidden for its row count (phase A)
+        elif not ok_count:
             small = {"state": "not_feasible", "hidden": 0,
                      "note": "The engine could not count the rows behind each result row of this query (it reads "
                              "through a subquery, a join or a compound), so groups of fewer than %d rows are not "

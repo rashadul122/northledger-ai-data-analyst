@@ -34,7 +34,7 @@ import nl_browser as NB
 import nl_viz as NV
 
 VERSION = "2026-10-19.1"
-SMALL = 5                     # no figure rests on fewer rows (a file of records); see observation_table for the exception
+SMALL = 1                     # no figure is hidden for its row count (owner, 19 Oct 2026, AI Analyst v2 phase A): each figure carries its rows
 KPI_MAX = 6
 CHART_MAX = 6
 QUESTION_MAX = 6
@@ -217,7 +217,7 @@ class Read:
         self.grain = native_grain(sorted(str(m) for m in self.ctx.month.dropna().unique())) \
             if self.ctx.date is not None and self.ctx.month is not None else "month"
         self.obs = observation_table(self.ctx)
-        self.small = 1 if self.obs else SMALL
+        self.small = SMALL
 
     def name(self, land: Optional[str]) -> str:
         """The column's name as the dashboard prints it."""
@@ -1574,8 +1574,8 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
            "observations": bool(R.obs),
            "rules": ["Flows are added up; levels, rates and balances are averaged, never added up over time.",
                      ("A figure that rests on fewer than %d rows is shown as “<5”, after every filter." % SMALL) if R.small > 1 else
-                     ("Every row is a published figure (one a %s%s) and no column holds personal data, so no figure is hidden "
-                      "for resting on few rows." % (GRAIN_WORD[R.grain], " for each category" if c.dims else "")),
+                     "No figure is hidden for resting on few rows: each tile says how many rows or values it rests on, so read a "
+                     "small one with care.",
                      "A %s with no rows is a gap: nothing is filled, smoothed or interpolated." % GRAIN_WORD[R.grain],
                      "Columns you withheld or coded are never a filter, a label or a group."],
            "title": _dash_title(R, rep)}

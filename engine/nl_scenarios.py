@@ -1169,7 +1169,13 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
     if len(ms) < HISTORY_MIN_MONTHS or len(NB._month_range(ms[0], ms[-1])) < HISTORY_MIN_MONTHS:
         return [], ["no historical range of %s: it has %d months with a value, fewer than the %d (3 years) it needs"
                     % (what, len(ms), HISTORY_MIN_MONTHS)]
-    span = "%s to %s" % (NB._mon(ms[0]), NB._mon(ms[-1]))
+    # the data's own step: a yearly series has one month a year, so a 12-month change ends once a year and no two share a month
+    # (19 Oct 2026: FRED debt to GDP read "86 past 12-month windows ... they overlap, one ending each month, ... about 37 independent")
+    ixs = [int(x[:4]) * 12 + int(x[5:7]) - 1 for x in ms]
+    step = min((b - a for a, b in zip(ixs, ixs[1:])), default=1)
+    span = ("%s to %s" % (ms[0][:4], ms[-1][:4])) if step >= 12 else "%s to %s" % (NB._mon(ms[0]), NB._mon(ms[-1]))
+    if step >= 12:                                # one value a year: its "monthly average" is the year's own value
+        what = re.sub(r"^the monthly average of ", "", what)
     cols = [c for c in (date_col, m) if c]
     items: List[Dict[str, Any]] = []
     import nl_inference as _ni
@@ -1183,7 +1189,8 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
         arr = np.asarray(ch, dtype=float)
         # T3 (wave 4): overlapping windows share months, so n of them are worth about n_eff independent ones; with
         # fewer than HISTORY_NEFF_MIN the 10th and 90th percentiles are not estimable and the extremes are stated
-        neff = _ni.n_eff_overlapping(ch, lag)
+        apart = step >= lag                       # one change a period, none sharing a month: each one counts
+        neff = float(n) if apart else _ni.n_eff_overlapping(ch, lag)
         m_ind = max(1, int(round(neff)))
         wide = neff >= HISTORY_NEFF_MIN
         lo_k, hi_k = ("p10", "p90") if wide else ("min", "max")
@@ -1211,17 +1218,25 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
         # one sentence within the writer's 400-character label cap (the longer one that also stated the non-overlapping
         # changes reached the report writer cut mid-sentence, "the 9 changes ran from"; they are items of their own:
         # .nonoverlap.n, .min, .median, .max)
-        sentence = ("In the %s (%s; they overlap, one ending each month, so they are worth about %d independent "
-                    "ones), the change in %s ran from %s (%s) to %s (%s); the middle was %s, and it rose in %d of the "
-                    "%d. This is history, not a forecast." % (
-                        wins, span, m_ind, what, txt[lo_k], "1 in 10 lower" if wide else "the lowest",
-                        txt[hi_k], "1 in 10 higher" if wide else "the highest", txt["p50"], rose_k, n))
+        if apart:
+            wins = "%d past year-to-year changes" % n if lag == 12 else "%d past changes over %d months" % (n, lag)
+            of = "%s: the %%s of its changes over the %s%%s, %s" % (esc(NB._cap(what)), esc(wins), esc(tail))
+            sentence = ("In the %s (%s; one a %s, none overlapping), the change in %s ran from %s (%s) to %s (%s); the middle "
+                        "was %s, and it rose in %d of the %d. This is history, not a forecast." % (
+                            wins, span, "year" if lag == 12 else "window", what, txt[lo_k], "1 in 10 lower" if wide else "the lowest",
+                            txt[hi_k], "1 in 10 higher" if wide else "the highest", txt["p50"], rose_k, n))
+        else:
+            sentence = ("In the %s (%s; they overlap, one ending each month, so they are worth about %d independent "
+                        "ones), the change in %s ran from %s (%s) to %s (%s); the middle was %s, and it rose in %d of the "
+                        "%d. This is history, not a forecast." % (
+                            wins, span, m_ind, what, txt[lo_k], "1 in 10 lower" if wide else "the lowest",
+                            txt[hi_k], "1 in 10 higher" if wide else "the highest", txt["p50"], rose_k, n))
         lo_words = ("10th percentile", " (1 in 10 was lower)") if wide else ("lowest", "")
         hi_words = ("90th percentile", " (1 in 10 was higher)") if wide else ("highest", "")
         got = [
             _item(base + ".windows", "history_range", sentence, float(n), "count", "", None, cols, "history",
                   "count of %d-month windows" % lag, assumes=note),
-            _item(base + ".n_eff", "history_range",
+            None if apart else _item(base + ".n_eff", "history_range",
                   "About how many independent windows the %s are worth (they overlap: n / (1 + 2 x the changes' "
                   "autocorrelations up to lag %d)), %s" % (wins, lag - 1, tail), float(m_ind), "count", "", None,
                   cols, "history", "effective count of %d-month windows" % lag, assumes=note),
@@ -1236,7 +1251,8 @@ def _history_range(rep: Dict[str, Any], frame: Any, date_col: str, months: Any, 
                   float(rose_k), "count", "", None, cols, "history", "count of %d-month windows that rose" % lag,
                   assumes=note),
         ]
-        if nv:
+        got = [g for g in got if g is not None]
+        if nv and not apart:                      # (one change a period: the non-overlapping ones are the same changes)
             nlab = "the %d non-overlapping %d-month changes (%s)" % (len(nov), lag, every)
             got += [
                 _item(base + ".nonoverlap.n", "history_range", "The number of %s, %s" % (nlab, tail), float(len(nov)),

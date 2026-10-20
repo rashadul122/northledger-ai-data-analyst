@@ -2978,6 +2978,11 @@ def _period_text(text: str, per: Dict[str, Any]) -> str:
     adj = str(per.get("adjective") or "monthly")
     keep = "ZZKEEPZZ"
     text = text.replace("reads monthly series only", keep)             # the forecast's own reason is about monthly series
+    # phrases that name the engine's monthly method, or say the series is not monthly: their "monthly" is the point (19 Oct 2026:
+    # "the engine's monthly change test does not apply" read "the engine's annual change test does not apply")
+    held = ["monthly change test", "not a monthly series", "a monthly series", "monthly series only", "monthly test"]
+    for j, ph in enumerate(held):
+        text = text.replace(ph, "ZZHELD%dZZ" % j)
     # a sentence of the core's change test about a window it could not fill
     text = re.sub(r"only (\d+) of the latest 12 months and (\d+) of the 12 before hold a usable value; the test needs at least "
                   r"(\d+) in each; the file holds no values for [^.;]*",
@@ -2988,6 +2993,8 @@ def _period_text(text: str, per: Dict[str, Any]) -> str:
                       (r"\bmonthly\b", adj), (r"\bMonthly\b", cap(adj)), (r"\bmonths\b", nouns), (r"\bMonths\b", cap(nouns)),
                       (r"\bmonth\b", noun), (r"\bMonth\b", cap(noun))):
         text = re.sub(pat, rep_, text)
+    for j, ph in enumerate(held):
+        text = text.replace("ZZHELD%dZZ" % j, ph)
     return text.replace(keep, "reads monthly series only")
 
 
@@ -5809,6 +5816,11 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         import nl_viz as _nv
         out = {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap, "released": released,
                "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
+        try:
+            out["sample_rows"] = _sample_rows(R, hidden, lambda t: public_text(_scrub.clean(t), res.table, name))
+        except Exception:  # noqa: BLE001 - no sample, the planner reads the column summaries
+            if os.environ.get("NL_BROWSER_STRICT"):
+                raise
         if structure and STRUCTURE_ON:
             fail: Dict[str, Any] = {}
             S = _structure_detect(R, hidden, wide, fail=fail)
@@ -6057,11 +6069,58 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
     # the file's own rows, and the shape the engine measures (sample_and_shape). The page asks for the profile only after the
     # visitor ticked the box; a column coded on arrival (an email, a phone number) keeps its codes out of the sample
     try:
-        out.update(sample_and_shape(data, cols, out.get("time"), bool(priv)))
+        out.update(sample_and_shape(data, cols, out.get("time"), bool(priv), got.get("sample_rows")))
     except Exception:  # noqa: BLE001 - the profile is an aid; the planner still gets the columns
         if os.environ.get("NL_BROWSER_STRICT"):
             raise
     return out
+
+
+def _sample_rows(R: Any, hidden: Any, pub: Any) -> Dict[str, Any]:
+    """{columns: [file headers], rows: [[cell text]], of} from the engine's reading under the visitor's decisions: never a
+    withheld or coded column (hidden), every cell through the run's scrub (pub: a withheld value, an email, a phone number or a
+    person's name the engine found, wherever it stands, is replaced as in every text that leaves; 19 Oct 2026 review: the first
+    sample read the raw file and carried "awaiting Zelda Vanterpool" from a status column)."""
+    T = R.texts
+    hid = {str(h) for h in (hidden or ())}
+    cols = [c for c in T.columns if c not in hid and R.header(c) not in hid and c != "source_line"][:SAMPLE_COLS]
+    # the rows the cleaner kept, as the column summaries read them: a row it set aside (an unreadable date that holds a note
+    # with a name in it) never goes
+    # a number or a date column goes as the engine read it (the number, the date), never its text: a revenue cell that reads
+    # "ask Marisol" is a blank number, as the column's min/median/max treat it; only a text column goes as text, scrubbed
+    try:
+        import numpy as np
+        keep = np.asarray(R.kept, bool)
+        T, V = T[keep], R.values[keep]
+    except Exception:  # noqa: BLE001 - without the kept mask no sample goes
+        return {}
+    n = len(T)
+    if not cols or not n:
+        return {}
+    kinds = {c: R.kind(c) for c in cols}
+
+    def cell(i: int, c: str) -> str:
+        if kinds[c] in ("number", "date"):
+            v = V.iloc[i][c]
+            if v is None or (isinstance(v, float) and v != v):
+                return ""
+            if kinds[c] == "date":
+                try:
+                    return str(v)[:10]
+                except Exception:  # noqa: BLE001
+                    return ""
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return ""
+            return ("%d" % f) if f == int(f) and abs(f) < 1e15 else ("%.6g" % f)
+        v = T.iloc[i][c]
+        t = "" if v is None or (isinstance(v, float) and v != v) else str(v)
+        return pub(t)[:SAMPLE_CELL] if t else ""
+    k = min(SAMPLE_ROWS, n)
+    idx = sorted({int(round(i * (n - 1) / max(1, k - 1))) for i in range(k)}) if k > 1 else [0]
+    rows = [[cell(i, c) for c in cols] for i in idx]
+    return {"columns": [R.header(c) for c in cols], "rows": rows, "of": int(n)}
 
 
 SAMPLE_ROWS = 60             # rows of the file the AI reads (spread over the file: its first, its last, and evenly between)
@@ -6070,7 +6129,7 @@ SAMPLE_CELL = 60             # characters a cell keeps
 SAMPLE_BYTES = 24000         # the sample's JSON; fewer rows when the cells are wide
 
 
-def sample_and_shape(data: bytes, cols: List[Dict[str, Any]], time: Any, any_flagged: bool) -> Dict[str, Any]:
+def sample_and_shape(data: bytes, cols: List[Dict[str, Any]], time: Any, any_flagged: bool, engine_sample: Any = None) -> Dict[str, Any]:
     """{"sample": {columns, rows, of}, "shape": {...}} for the planner. The sample: up to SAMPLE_ROWS rows of the columns the profile
     shows (never one marked looks_personal: a coded column's codes say nothing), spread from the first row to the last, each cell
     cut at SAMPLE_CELL characters, the whole at most SAMPLE_BYTES. The shape, measured on the file (nl_dashboard's rules): the date
@@ -6081,17 +6140,18 @@ def sample_and_shape(data: bytes, cols: List[Dict[str, Any]], time: Any, any_fla
     raw = _raw_frame(data)
     if raw is None or not len(raw):
         return {}
-    names = [c["name"] for c in cols if isinstance(c, dict) and c.get("name") in raw.columns and not c.get("looks_personal")][:SAMPLE_COLS]
+    # the sample: the engine's own reading, scrubbed (_sample_rows), cut to the columns the profile shows that are not personal;
+    # never the raw file
     out: Dict[str, Any] = {}
-    if names:
-        n = len(raw)
-        k = min(SAMPLE_ROWS, n)
-        idx = sorted({int(round(i * (n - 1) / max(1, k - 1))) for i in range(k)}) if k > 1 else [0]
-        rows = [[str(raw.iloc[i][c])[:SAMPLE_CELL] for c in names] for i in idx]
+    es = engine_sample if isinstance(engine_sample, dict) else {}
+    shown = {c["name"] for c in cols if isinstance(c, dict) and not c.get("looks_personal")}
+    keep = [i for i, h in enumerate(es.get("columns") or []) if h in shown]
+    if keep:
+        rows = [[r[i] for i in keep] for r in es.get("rows") or []]
         while rows and len(json.dumps(rows)) > SAMPLE_BYTES:
             rows = rows[::2] if len(rows) > 4 else rows[:-1]
         if rows:
-            out["sample"] = {"columns": names, "rows": rows, "of": int(n)}
+            out["sample"] = {"columns": [es["columns"][i] for i in keep], "rows": rows, "of": int(es.get("of") or len(raw))}
     tcol = time.get("column") if isinstance(time, dict) else None
     shape: Dict[str, Any] = {"rows": int(len(raw))}
     if tcol and tcol in raw.columns:
@@ -7924,6 +7984,27 @@ def _row_drops(drops: List[Dict[str, Any]], private: Any) -> List[Dict[str, Any]
     return out
 
 
+RATIO_ABOVE_MAX = 0.25         # a percentage whose values pass 100 on at most this share of rows (and never go below 0) reads as a ratio
+MERGE_ROWS_MIN = 20             # rows a column set-aside may make identical before it is refused
+
+
+def _merges_rows(df: Any, cols: List[str]) -> str:
+    """Why setting `cols` aside would be wrong, or "": the rows that differ only in them would read as exact duplicates and the
+    engine's duplicate check would set them aside (19 Oct 2026: a plan kept 6 of Chicago's 8 employee columns, without the name;
+    27,453 of 32,022 employees became "duplicates" and the run was refused)."""
+    if not cols or len(cols) >= len(df.columns):
+        return ""
+    try:
+        before = int(df.duplicated().sum())
+        after = int(df.drop(columns=cols).duplicated().sum())
+    except Exception:  # noqa: BLE001 - a frame the check cannot read is not refused for it
+        return ""
+    if after - before < MERGE_ROWS_MIN:
+        return ""
+    return ("setting aside %s would make %s rows that differ in it look identical, and the duplicate check would set them aside"
+            % (", ".join(cols[:4]) + (" and %d more" % (len(cols) - 4) if len(cols) > 4 else ""), format(after - before, ",")))
+
+
 def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any], Optional[Dict[str, Any]]]:
     """Run the plan's operations on the file. Returns the bytes, what was applied (and refused), and
     the long-table layout when long_to_wide ran."""
@@ -7952,10 +8033,18 @@ def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any
                     refused.append("keep_columns: fewer than two columns named, so every column was kept")
                     continue
                 dropped = [c for c in df.columns if c not in keep]
+                why = _merges_rows(df, dropped)
+                if why:
+                    refused.append("keep_columns: %s, so every column was kept" % why)
+                    continue
                 df = df[keep]
                 applied.append("kept the %d columns the goal needs, set aside %d others" % (len(keep), len(dropped)))
             elif kind == "set_aside":
                 cols = [c for c in op.get("columns", []) if c in df.columns]
+                why = _merges_rows(df, cols) if cols else ""
+                if why:
+                    refused.append("set_aside: %s, so they were kept" % why)
+                    continue
                 if cols:
                     df = df.drop(columns=cols)
                     applied.append("set aside %s" % ", ".join(cols))
@@ -8377,6 +8466,9 @@ def _run_contracts(df: Any, plan: Dict[str, Any], off: Any = (), reading: Option
                 t["test"] = ("between 0 and 1 (fractions: at least 95% of the values written without a % sign lie "
                              "between 0 and 1)" if hi == 1 else "between 0 and 100")
                 t["scale"] = hi
+                # a ratio that can pass 100 (debt to GDP, a growth rate): values above 100 and none below 0 (19 Oct 2026: FRED's
+                # federal debt at 121% of GDP was "probably not a percentage", and the AI's correction retyped it as a level)
+                t["above_only"] = bool(hi == 100 and pr["high"].any() and not pr["low"].any())
                 masks["out_of_range"] = pr["out"]
                 rng = _either(("below 0", pr["low"].any()), ("above %d" % hi, pr["high"].any()))
                 if pr["mixed"]:
@@ -8399,6 +8491,11 @@ def _run_contracts(df: Any, plan: Dict[str, Any], off: Any = (), reading: Option
                 hi = 5 if float((v <= 5).mean()) >= 0.9 else int(math.ceil(float(v.max())))
                 t["test"] = "a whole number from %d to %d (a %d-%d scale, read from the file)" % (lo, hi, lo, hi)
                 out_m, frac = ok & ((nv < lo) | (nv > hi)), ok & ~whole
+                # mostly fractions on the scale: an average of ratings (a product's 4.3 stars), not a misread (19 Oct 2026: Amazon's
+                # product_avg_rating, "18,707 of 19,792 values are fractional, so it may not be a rating")
+                if float(frac.sum()) > 0.5 * max(1, int(ok.sum())):
+                    t["test"] = "a value from %d to %d (an average of ratings on a %d-%d scale, read from the file)" % (lo, hi, lo, hi)
+                    frac = np.zeros_like(frac)
                 masks["out_of_range"] = out_m | frac
                 rng = _either(("outside the %d to %d scale" % (lo, hi), out_m.any()), ("fractional", frac.any()))
         elif st == "identifier":
@@ -8615,7 +8712,10 @@ def _finish_contracts(tests: List[Dict[str, Any]], aux: Dict[str, Any], engine: 
                 np.flatnonzero(m["unreadable"]), engine, "count the unreadable %s as missing" % ("one" if u == 1 else "ones"))
         else:
             head = "%s %s %s" % (_n_values(o), "is" if o == 1 else "are", a.get("range"))
-        if o and not t["signal"] and o / float(n) > OUT_OF_RANGE_SIGNAL:
+        if o and t.get("above_only") and not u and OUT_OF_RANGE_SIGNAL < o / float(n) <= RATIO_ABOVE_MAX:
+            head = "%s %s above 100: read as a ratio that can pass 100 (debt to GDP, a growth rate), not a share of a whole" % (
+                _n_values(o), "is" if o == 1 else "are")
+        elif o and not t["signal"] and o / float(n) > OUT_OF_RANGE_SIGNAL:
             t["signal"] = True
             t["problem"] = "%s of %s values are %s, so it may not be %s" % (
                 format(o, ","), format(n, ","), a.get("range"),
@@ -10114,7 +10214,7 @@ def _a_distribution(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any
     if len(v) < DISTRIBUTION_MIN_VALUES:
         return {"refused": "distribution: fewer than %d values in %s" % (DISTRIBUTION_MIN_VALUES, col)}
     q = np.percentile(v, [10, 25, 50, 75, 90])
-    text = ("%s: half the %s values lie between %s and %s (median %s); one in ten is below %s and one in ten above %s."
+    text = ("%s: half the %s values lie between %s and %s (median %s); one in ten is at or below %s and one in ten at or above %s."
             % (col, format(len(v), ","), _amt(q[1], unit, tail=False), _amt(q[3], unit), _amt(q[2], unit, tail=False),
                _amt(q[0], unit, tail=False), _amt(q[4], unit, tail=False)))
     if st == "log_scale":
@@ -13649,7 +13749,15 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         # the quarterly sales report (engine/nl_sales.py, CONTRACT 5.19): computed when the file reads as a CRM deals
         # export, else only what it would need (step 6's report menu reads rep.sales.fit)
         rep["sales"] = _sales(rep, reading, ai_plan, as_of)
+        if structure_inner is None:
+            _series_period_words(rep)            # a yearly or quarterly series: the engine's sentences say years or quarters
         _series_names(rep, ai_plan)
+        # the dashboard's title: the report's own (the AI's, or the series' name) over the file's name (19 Oct 2026: Amazon reviews'
+        # dashboard was "amazon-video-games-reviews.csv dashboard" under an AI title)
+        dt = rep.get("dashboard") if isinstance(rep.get("dashboard"), dict) else None
+        tt = rep.get("title") if isinstance(rep.get("title"), dict) else None
+        if dt and dt.get("ok") and tt and tt.get("title") and str(dt.get("title") or "").endswith(" dashboard"):
+            dt["title"] = str(tt["title"])[:90]
         if structure_inner is None:
             _latest_headline(rep, ai_plan, goal)   # a table read by its structure leads with its estimand, never this
             _short_history_lead(rep)
@@ -15226,6 +15334,45 @@ def _dashboard(rep: Dict[str, Any], r: Any, reading: Any, plan: Any, pub: Any, g
             raise
         return {"version": "", "ok": False, "chosen_by": "none",
                 "why": "the dashboard could not be built for this file (%s)" % type(exc).__name__}
+
+
+def _series_period_words(rep: Dict[str, Any]) -> None:
+    """A file read without its structure layer whose dates come once a quarter or once a year (a FRED annual download) gets the
+    rewrite the structure path gives a quarterly or an annual table: the charts that draw a year as 12 months go, and the engine's
+    sentences say quarters or years ("the latest year against the year before", not "the latest 12 months against the 12
+    before" on 2 rows; 19 Oct 2026). The numbers are not changed. The report stands without it."""
+    try:
+        import nl_structure as NS
+        date = (rep.get("roles") or {}).get("date")
+        csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
+        if not date or not csv_text:
+            return
+        import pandas as pd
+        fr = pd.read_csv(io.StringIO(csv_text), dtype=str, keep_default_na=False, usecols=lambda c: c == date)
+        if date not in fr.columns:
+            return
+        t = pd.to_datetime(fr[date], errors="coerce").dropna()
+        if t.duplicated().any() or len(t) < 4:           # one row a date only: a series, not records
+            return
+        per = NS._period_of(sorted(t.dt.strftime("%Y-%m-%d")))
+        if int(per.get("step") or 1) == 1 or per.get("cadence"):
+            return
+        drawn = [c for c in rep.get("charts") or [] if isinstance(c, dict) and c.get("type") in ("heatmap", "trend", "fan", "replay")]
+        if drawn:
+            rep["charts"] = [c for c in rep["charts"] if c not in drawn]
+            sup = rep.setdefault("charts_suppressed", [])
+            for c in drawn:
+                sup.append({"rule": "period", "type": str(c.get("type")), "why": "the chart reads monthly values; this series is %s"
+                            % per.get("adjective")})
+        for k in ("story", "summary", "findings", "methods", "limitations", "charts", "forecast", "cleaning"):
+            if k in rep:
+                rep[k] = _period_rewrite(rep[k], per)
+        for k in ("scenarios", "viz", "charts", "summary"):
+            if k in rep:
+                rep[k] = _window_rewrite(rep[k], per)
+    except Exception:  # noqa: BLE001 - the report stands with the engine's month words
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
 
 
 def _plain_names(rep: Dict[str, Any], plan: Any) -> Dict[str, str]:

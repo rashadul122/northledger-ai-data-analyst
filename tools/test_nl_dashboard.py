@@ -550,6 +550,52 @@ def test_undated_table_gets_the_reports_charts():
     assert all(c.get("record") and c.get("definition", "").startswith("The report's own chart") for c in st), st[0].get("definition")
 
 
+# ----------------------------------------------------------------------------- the live test of 19 Oct 2026
+def test_a_column_cut_that_merges_rows_is_refused():
+    # Chicago's employees: the plan kept 6 of 8 columns without the name, 27,453 of 32,022 rows became "duplicates"
+    rows = ["Name,Job,Dept,Salary"] + ["P%d,CLERK,WATER,%d" % (i, 50000 + (i % 3)) for i in range(300)]
+    plan = {"goal": "pay", "kind": "other", "understanding": "", "primary": "Salary", "analyses": [],
+            "columns": [{"name": "Salary", "semantic_type": "flow_amount", "role": "target"}],
+            "operations": [{"op": "keep_columns", "columns": ["Job", "Dept", "Salary"]}]}
+    rep = NB.run(("\n".join(rows) + "\n").encode(), "pay.csv", "", {"__plan__": plan}, "2026-10-19")
+    assert rep["ok"], rep.get("error")
+    ref = " ".join((rep.get("ai_plan") or {}).get("refused") or [])
+    assert "look identical" in ref and rep["cleaning"]["rows_clean"] == 300, (ref, rep["cleaning"]["rows_clean"])
+
+
+def test_a_ratio_above_100_and_an_average_rating_are_not_misreads():
+    plan = {"goal": "debt", "kind": "series", "understanding": "", "primary": "GFDGDPA188S", "operations": [], "analyses": [],
+            "columns": [{"name": "GFDGDPA188S", "semantic_type": "percentage", "role": "target"},
+                        {"name": "observation_date", "semantic_type": "date", "role": "date"}]}
+    rep = NB.run(yearly_csv(), "GFDGDPA188S.csv", "", {"__plan__": plan}, "2026-10-19")
+    data = yearly_csv().decode().split("\n")
+    t = [x for x in (rep.get("contracts") or {}).get("tests") or [] if x.get("column") == "GFDGDPA188S"]
+    over = sum(1 for ln in data[1:] if ln and float(ln.split(",")[1]) > 100)
+    if over:
+        assert t and not t[0].get("signal"), t
+    rows = ["product,avg_rating,reviews"] + ["P%d,%.1f,%d" % (i, 3 + (i % 20) / 10.0, 10 + i) for i in range(80)]
+    plan2 = {"goal": "ratings", "kind": "other", "understanding": "", "primary": "avg_rating", "operations": [], "analyses": [],
+             "columns": [{"name": "avg_rating", "semantic_type": "rating", "role": "target"}]}
+    rep2 = NB.run(("\n".join(rows) + "\n").encode(), "r.csv", "", {"__plan__": plan2}, "2026-10-19")
+    t2 = [x for x in (rep2.get("contracts") or {}).get("tests") or [] if x.get("column") == "avg_rating"]
+    assert t2 and not t2[0].get("signal") and "average of ratings" in t2[0].get("test", ""), t2
+
+
+def test_a_yearly_series_reads_its_years_in_the_report():
+    rep = NB.run(yearly_csv(), "GFDGDPA188S.csv", "", None, "2026-10-19")
+    blob = json.dumps({k: rep.get(k) for k in ("story", "summary", "scenarios")})
+    assert "one ending each month" not in blob and "independent" not in blob, blob[blob.find("independent") - 200:][:300]
+    assert "the latest 12 months against the 12 before" not in blob
+
+
+def test_the_row_sample_reads_the_engines_kept_rows_only():
+    rows = ["order_date,status,amount", "awaiting Zelda Vanterpool,open,10"] + \
+        ["2024-%02d-%02d,open,%d" % (1 + i // 28, 1 + i % 28, 10 + i) for i in range(90)]
+    p = NB.profile_for_ai(("\n".join(rows) + "\n").encode(), "o.csv")
+    sm = p.get("sample") or {}
+    assert sm.get("rows") and "Zelda" not in json.dumps(sm), sm
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

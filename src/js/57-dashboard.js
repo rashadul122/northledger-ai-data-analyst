@@ -215,6 +215,19 @@
       return { label: g === null ? whatOf(D, X, D.observations && sp.grain === nativeOf(D)) : g === 'rest' ? 'other' : L[g], values: vals, texts: texts };
     }); }
     if (X.draw === 'area') { S = S.filter(function (s) { return s.label !== 'other' || s.values.some(function (v) { return v; }); }); }
+    // a stacked area cannot draw a hole: the first and last periods where a part rests on too few rows are left off the chart (and
+    // said), never filled (19 Oct 2026: Amazon reviews by category from 1999 fell back to their table on the thin early years)
+    var cut0 = 0, cut1 = 0;
+    if (X.draw === 'area') {
+      var holed = function (i) { return S.some(function (s) { return s.values[i] === null; }); };
+      while (cut0 < x.length && holed(cut0)) cut0++;
+      while (cut1 < x.length - cut0 && holed(x.length - 1 - cut1)) cut1++;
+      if ((cut0 || cut1) && x.length - cut0 - cut1 >= 2) {
+        var keepI = function (a) { return a.slice(cut0, a.length - cut1); };
+        S.forEach(function (s) { s.values = keepI(s.values); s.texts = keepI(s.texts); });
+        x = keepI(x);
+      } else { cut0 = cut1 = 0; }
+    }
     // a quarter or year the range covers only in part (its first or last): said beside it, never scaled or filled
     // (only when months are put together: a yearly series' own years are whole)
     var coarse = sp.grain !== nativeOf(D), full = !coarse ? 0 : sp.grain === 'quarter' ? 3 : sp.grain === 'year' ? 12 : 1, held = {};
@@ -234,6 +247,7 @@
     rec.table = { cols: cols, rows: rows };
     var sub = coarse ? 'By ' + sp.grain + ': the range holds ' + sp.months.length + ' months. ' : '';
     if (part.length) sub += part.map(function (p) { return periodWord(p) + ' holds ' + held[p] + ' of its ' + full + ' months'; }).join('; ') + ' in this range: ' + (part.length === 1 ? 'its figure is' : 'their figures are') + ' not comparable with a whole ' + sp.grain + '. ';
+    if (cut0 || cut1) sub += 'Shown ' + periodWord(x[0]) + ' to ' + periodWord(x[x.length - 1]) + ': the ' + sp.grain + 's outside rest on too few rows in a part. ';
     if (X.draw === 'area' && X.bkey && S.some(function (s) { return s.label === 'other'; })) sub += 'Groups with a ' + sp.grain + ' on fewer than 5 rows are counted in \u201cother\u201d. ';
     if (gaps.length) sub += gaps.length + ' ' + (gaps.length === 1 ? sp.grain : sp.grain + 's') + ' with no rows ' + (gaps.length === 1 ? 'is' : 'are') + ' left as ' + (gaps.length === 1 ? 'a gap' : 'gaps') + '. ';
     if (sup) { sub += 'A point on fewer than 5 rows is not drawn (“<5” in the table).'; rec.suppressed = { cells: sup, why: 'Points that rest on fewer than 5 rows are not drawn: the table shows “<5”.' }; }
@@ -312,7 +326,7 @@
       lv.forEach(function (z) {
         var r = agg(D, cells.filter(function (c) { return c[1 + j] === z.i; }), X.mkey, X.agg);
         if (r.v === null) { off.push(z.level); return; }
-        out.push({ label: z.level, values: [r.v], texts: [fmt(r.v, unit)] });
+        out.push({ label: z.level, values: [r.v], texts: [fmt(r.v, unit)], n: r.n });
       });
       out.sort(function (a, b) { return (a.label === 'other') - (b.label === 'other') || b.values[0] - a.values[0]; });
       rec.table = { cols: [X.by, whatOf(D, X)], rows: out.map(function (r) { return [r.label, r.texts[0]]; }).concat(off.map(function (l) { return [l, '<5']; })) };
@@ -389,8 +403,10 @@
       if (rows.length < 2) return;
       var tot = B.agg === 'sum' ? rows.reduce(function (s, x) { return s + x.values[0]; }, 0) : 0, top = rows[0], bot = rows[rows.length - 1];
       var cnt = B.agg === 'count' || !B.mkey, share = cnt ? rows.reduce(function (s, x) { return s + x.values[0]; }, 0) : tot;
-      out.push(B.by + ': ' + top.label + ' has the ' + (B.agg === 'sum' ? 'largest total' : cnt ? 'most ' + String((D.grain && D.grain.noun) || 'rows').toLowerCase() : 'highest average') + ', ' + top.texts[0] +
-        (share > 0 && (B.agg === 'sum' || cnt) ? ' (' + (top.values[0] / share * 100).toFixed(1) + '% of the groups shown)' : '') + '; ' + bot.label + ' the ' + (B.agg === 'sum' ? 'smallest' : cnt ? 'fewest' : 'lowest') + ', ' + bot.texts[0] + '.');
+      // an average names its rows: a top group on 42 of 19,789 reviews is not the market's verdict
+      var nOf = function (x) { return !cnt && x.n ? ' (' + x.n.toLocaleString('en-US') + ' rows)' : ''; };
+      out.push(B.by + ': ' + top.label + ' has the ' + (B.agg === 'sum' ? 'largest total' : cnt ? 'most ' + String((D.grain && D.grain.noun) || 'rows').toLowerCase() : 'highest average') + ', ' + top.texts[0] + nOf(top) +
+        (share > 0 && (B.agg === 'sum' || cnt) ? ' (' + (top.values[0] / share * 100).toFixed(1) + '% of the groups shown)' : '') + '; ' + bot.label + ' the ' + (B.agg === 'sum' ? 'smallest' : cnt ? 'fewest' : 'lowest') + ', ' + bot.texts[0] + nOf(bot) + '.');
     });
   }
   // the report's own ranking charts on the tab (not filtered): their top and bottom, as the report computed them
@@ -474,9 +490,16 @@
     var h = '<form class="nld-filters" aria-label="Filters" onsubmit="return false">', ms = D.cube.months;
     D.filters.forEach(function (f) {
       if (f.kind === 'date' && ms.length) {
-        var o = function (sel) { return ms.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + esc(periodWord(periodOf(m, nativeOf(D)))) + '</option>'; }).join(''); };
-        h += '<fieldset class="nld-date"><legend>' + esc(f.label ? f.label + ' (' + f.column + ')' : f.column + ' range') + '</legend><label>From <select data-nld-f="from">' + o(ms[0]) + '</select></label>' +
-          '<label>To <select data-nld-f="to">' + o(ms[ms.length - 1]) + '</select></label></fieldset>';
+        // past five years of months the lists hold years (a 24-year review file listed 287 months; 19 Oct 2026): From takes a year's
+        // first month in the data, To its last
+        var byYear = nativeOf(D) === 'month' && ms.length > 60, firstOf = {}, lastOf = {};
+        ms.forEach(function (m) { var y = m.slice(0, 4); if (!firstOf[y]) firstOf[y] = m; lastOf[y] = m; });
+        var o = function (sel, end) {
+          if (byYear) return Object.keys(firstOf).sort().map(function (y) { var v = end ? lastOf[y] : firstOf[y]; return '<option value="' + v + '"' + (v === sel ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+          return ms.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + esc(periodWord(periodOf(m, nativeOf(D)))) + '</option>'; }).join('');
+        };
+        h += '<fieldset class="nld-date"><legend>' + esc(f.label ? (byYear ? 'Years' : f.label) + ' (' + f.column + ')' : f.column + ' range') + '</legend><label>From <select data-nld-f="from">' + o(ms[0], false) + '</select></label>' +
+          '<label>To <select data-nld-f="to">' + o(ms[ms.length - 1], true) + '</select></label></fieldset>';
       } else if (f.kind === 'category') {
         var j = dimIdx(D, f.key);
         if (j < 0) return;

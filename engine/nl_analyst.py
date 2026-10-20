@@ -2108,6 +2108,17 @@ def op_trend(ctx: Ctx, st: Step, measure: str) -> Step:
         if len(s) > 2
         else float("nan")
     )
+    # one period follows from the last (a debt ratio, a price level): the residuals run in long waves and the plain standard
+    # error treats 87 linked years as 87 independent draws. Its range is widened by the residuals' lag-1 autocorrelation
+    # (variance factor (1 + r) / (1 - r)), so "a clear straight-line trend" agrees with the report's own trend test
+    # (19 Oct 2026: FRED debt to GDP, "+0.426 a year (95% range +0.216 to +0.636)" beside "the trend is not settled")
+    if len(res) > 4 and math.isfinite(se):
+        a0, a1 = res[:-1] - res[:-1].mean(), res[1:] - res[1:].mean()
+        den = math.sqrt(float((a0 ** 2).sum()) * float((a1 ** 2).sum()))
+        r1 = float((a0 * a1).sum()) / den if den > 0 else 0.0
+        if r1 > 0:
+            r1 = min(r1, 0.95)
+            se *= math.sqrt((1 + r1) / (1 - r1))
     unit = {"year": "year", "quarter": "quarter", "month": "month"}[grain]
     st.word("measure", measure)
     st.word("unit", unit)
@@ -5523,7 +5534,7 @@ def explore(
             say(
                 "driver",
                 _ids(
-                    "By {S.by_word}, the largest move was in {S.top} ({S.top_delta}); {S.same_way} of "
+                    "By {S.by_word}, the largest move was " + ("among the rows " if str((st.numbers.get("top") or {}).get("text") or "").startswith(("with ", "without ")) else "in ") + "{S.top} ({S.top_delta}); {S.same_way} of "
                     "{S.groups} groups moved the same way as the whole.",
                     S=st,
                 ),

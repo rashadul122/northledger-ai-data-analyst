@@ -5292,22 +5292,28 @@ check('pack-step1-to-step6-desktop', DESK, async (ctx) => {
   const { p, pack } = await packRun(ctx, 'desktop-light');
   const rec = await packDownloads(p, pack);
   // a setting changed in the card goes to the engine (the stand-in echoes it): the threshold, as typed
-  await p.evaluate(() => { const T = window.NLTry, f = T.deliver; window.__sent = []; T.deliver = function (k, s, cb) { window.__sent.push(s); return f(k, s, cb); }; });
+  await p.evaluate(() => { const T = window.NLTry, f = T.deliver; window.__sent = []; window.__done = 0; T.deliver = function (k, s, cb) { window.__sent.push(s); return f(k, s, function () { window.__done++; return cb && cb.apply(this, arguments); }); }; });
   await p.fill('#try-type-card [data-key="threshold"]', '30');
   await p.dispatchEvent('#try-type-card [data-key="threshold"]', 'change');
-  await p.waitForFunction(() => window.__sent.length && document.querySelector('#pk-out .pk-dl'), null, { timeout: 30000 });
+  await p.waitForFunction(() => window.__sent.length && document.querySelector('#pk-out .pk-dl'), null, { timeout: 30000 })
+    .catch(async () => { throw new Error('the changed threshold did not re-run the pack: ' + JSON.stringify(await p.evaluate(() => ({ sent: window.__sent.length, dl: !!document.querySelector('#pk-out .pk-dl'), out: ((document.getElementById('pk-out') || {}).textContent || '').slice(0, 200), msg: ((document.getElementById('try-msg') || {}).textContent || '').slice(0, 200) })))); });
   const sent = await p.evaluate(() => window.__sent[window.__sent.length - 1]);
   ok(sent.threshold === 30 && sent.as_of === '2026-10-01' && sent.readers === 'the board', 'the settings sent to the engine: ' + JSON.stringify(sent));
   // a role changed in step 1 goes with the next pack (settings.roles)
   await p.selectOption('#try-files select[data-input="in3"]', 'kpi');
   await p.waitForFunction(() => window.__sent.some((s) => s.roles && s.roles.in3 === 'kpi'), null, { timeout: 30000 }).catch(() => { throw new Error('the role the visitor chose did not reach the engine'); });
+  // the run the role change started redraws step 6's card when it returns (a new recipe input): load the recipe after it
+  // (20 Oct 2026: under a full verify run the file landed on the input that redraw then replaced, and nothing loaded)
+  await p.waitForFunction(() => window.__done >= window.__sent.length, null, { timeout: 30000 }).catch(() => { throw new Error('the pack run after the role change did not return'); });
+  await p.waitForTimeout(150);
   // Load a recipe: its settings come back into the form
   rec.settings.readers = 'the audit committee';
   const f = path.join(require('os').tmpdir(), 'nl-pack-recipe-' + process.pid + '.json');
   fs.writeFileSync(f, JSON.stringify(rec));
   await p.setInputFiles('#try-recipe-file', f);
   fs.unlinkSync(f);
-  await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 30000 });
+  await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 30000 })
+    .catch(async () => { throw new Error('the recipe did not load: ' + await p.evaluate(() => ((document.getElementById('try-recipe-out') || {}).textContent || '').slice(0, 300))); });
   ok(await p.inputValue('#try-need [data-scope="need"] [data-key="readers"]') === 'the audit committee', 'the recipe\'s reader is not in the form');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });

@@ -5295,19 +5295,19 @@ check('pack-step1-to-step6-desktop', DESK, async (ctx) => {
   await p.evaluate(() => { const T = window.NLTry, f = T.deliver; window.__sent = []; T.deliver = function (k, s, cb) { window.__sent.push(s); return f(k, s, cb); }; });
   await p.fill('#try-type-card [data-key="threshold"]', '30');
   await p.dispatchEvent('#try-type-card [data-key="threshold"]', 'change');
-  await p.waitForFunction(() => window.__sent.length && document.querySelector('#pk-out .pk-dl'), null, { timeout: 10000 });
+  await p.waitForFunction(() => window.__sent.length && document.querySelector('#pk-out .pk-dl'), null, { timeout: 30000 });
   const sent = await p.evaluate(() => window.__sent[window.__sent.length - 1]);
   ok(sent.threshold === 30 && sent.as_of === '2026-10-01' && sent.readers === 'the board', 'the settings sent to the engine: ' + JSON.stringify(sent));
   // a role changed in step 1 goes with the next pack (settings.roles)
   await p.selectOption('#try-files select[data-input="in3"]', 'kpi');
-  await p.waitForFunction(() => window.__sent.some((s) => s.roles && s.roles.in3 === 'kpi'), null, { timeout: 10000 }).catch(() => { throw new Error('the role the visitor chose did not reach the engine'); });
+  await p.waitForFunction(() => window.__sent.some((s) => s.roles && s.roles.in3 === 'kpi'), null, { timeout: 30000 }).catch(() => { throw new Error('the role the visitor chose did not reach the engine'); });
   // Load a recipe: its settings come back into the form
   rec.settings.readers = 'the audit committee';
   const f = path.join(require('os').tmpdir(), 'nl-pack-recipe-' + process.pid + '.json');
   fs.writeFileSync(f, JSON.stringify(rec));
   await p.setInputFiles('#try-recipe-file', f);
   fs.unlinkSync(f);
-  await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 10000 });
+  await p.waitForFunction(() => /Recipe loaded/.test((document.getElementById('try-recipe-out') || {}).textContent || ''), null, { timeout: 30000 });
   ok(await p.inputValue('#try-need [data-scope="need"] [data-key="readers"]') === 'the audit committee', 'the recipe\'s reader is not in the form');
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });

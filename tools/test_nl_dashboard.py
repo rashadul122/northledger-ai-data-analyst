@@ -643,7 +643,9 @@ def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
                                                                                               "encoding": {"x": {"field": "region", "type": "nominal"}}}},
         {"id": "wrong", "title": "Units", "sql": "SELECT region, SUM(units) AS u FROM kept_rows GROUP BY 1",
          "spec": {"mark": "bar", "encoding": {"x": {"field": "units", "type": "quantitative"}}}},
-        {"id": "nope", "title": "Nothing", "sql": "SELECT region FROM kept_rows WHERE region = 'Q'", "spec": ok_spec}]}}
+        {"id": "nope", "title": "Nothing", "sql": "SELECT region FROM kept_rows WHERE region = 'Q'", "spec": ok_spec},
+        {"id": "raw", "title": "Every order", "sql": "SELECT revenue FROM kept_rows",
+         "spec": {"mark": "bar", "encoding": {"x": {"field": "revenue", "type": "quantitative", "bin": True}, "y": {"aggregate": "count"}}}}]}}
     rep = NB.run(("\n".join(rows) + "\n").encode(), "o.csv", "", {"__plan__": plan}, "2026-10-20")
     d = rep["dashboard"]
     assert [v["id"] for v in d.get("visuals") or []] == ["mix"], d.get("visuals")
@@ -655,7 +657,7 @@ def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
     got = {(r[0], r[1]): r[2] for r in v["rows"]}
     assert all(abs(got[k] - want[k]) < 1e-6 for k in want), (got, want)
     why = " | ".join(r["why"] for r in d.get("refused") or [])
-    for w in ("carries data", "does not return: units", "returned no rows"):
+    for w in ("carries data", "does not return: units", "returned no rows", "returned 400 rows and a visual draws at most 200"):
         assert w in why, why
     sig = " | ".join(s_["detail"] for s_ in rep.get("plan_signals") or [] if s_.get("kind") == "dashboard")
     assert "visual Pulled in was refused" in sig, sig

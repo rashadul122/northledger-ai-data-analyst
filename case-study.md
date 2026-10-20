@@ -2,7 +2,7 @@
 
 *Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure
 below was filled in by build.py from the data files in data/; none was typed. City data to
-2026-09-21 (latest evaluation in the file); built 2026-10-20 04:45:11 UTC.*
+2026-09-21 (latest evaluation in the file); built 2026-10-20 06:04:11 UTC.*
 
 ## The client question
 

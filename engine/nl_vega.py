@@ -354,6 +354,10 @@ def build(raw: Any, run_sql: Callable[[str], Dict[str, Any]], taken: Any = ()) -
         if not title:
             refused.append({"element": el, "why": "it has no title in plain words (only a 4-digit year may appear)"})
             continue
+        bad = _forbidden(v.get("spec")) if isinstance(v.get("spec"), dict) else "its spec is not an object"
+        if bad:                                       # no query runs for a spec that would bring its own data or code
+            refused.append({"element": el, "why": "its spec was refused: %s" % bad})
+            continue
         res = run_sql(sql)
         if not res.get("ok"):
             refused.append({"element": el, "why": "its query did not run: %s" % str(res.get("error") or "")[:160]})
@@ -362,6 +366,14 @@ def build(raw: Any, run_sql: Callable[[str], Dict[str, Any]], taken: Any = ()) -
         rows = list(res.get("rows") or [])
         if not rows:
             refused.append({"element": el, "why": "its query returned no rows"})
+            continue
+        total = int(res.get("rows_total") or len(rows))
+        if total > ROWS_MAX:
+            # a chart of the first rows of a longer result is a chart of an arbitrary part (20 Oct 2026: a histogram of salaries
+            # drew 200 of 5,000 people as the whole): the query must group or bin to at most ROWS_MAX rows
+            refused.append({"element": el, "why": "its query returned %d rows and a visual draws at most %d: group, bin or rank in the "
+                                                  "query (GROUP BY, a band such as CAST(x / 10000 AS INTEGER) * 10000, LIMIT after "
+                                                  "ORDER BY)" % (total, ROWS_MAX)})
             continue
         spec, why = validate_spec(v.get("spec"), cols)
         if spec is None:
@@ -372,8 +384,7 @@ def build(raw: Any, run_sql: Callable[[str], Dict[str, Any]], taken: Any = ()) -
             refused.append({"element": el, "why": "its spec reads none of the query's columns"})
             continue
         seen.add(vid)
-        total = int(res.get("rows_total") or len(rows))
         visuals.append({"id": vid, "title": title, "why": _words(v.get("why"), TEXT_MAX["why"]), "sql": sql.strip(),
                         "spec": spec, "columns": cols, "rows": [list(r) if isinstance(r, (list, tuple)) else r for r in rows[:ROWS_MAX]],
-                        "rows_total": total, "truncated": total > ROWS_MAX})
+                        "rows_total": total, "truncated": False})
     return {"visuals": visuals, "refused": refused}

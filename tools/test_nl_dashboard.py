@@ -659,6 +659,8 @@ def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
     why = " | ".join(r["why"] for r in d.get("refused") or [])
     for w in ("carries data", "does not return: units", "returned no rows", "returned 400 rows and a visual draws at most 200"):
         assert w in why, why
+    ra = NB.results_for_ai(rep)                                                   # phase E: the writer sees each visual as a card
+    assert [x["id"] for x in ra.get("visuals") or []] == ["mix"] and len(ra["visuals"][0]["rows"]) == 8, ra.get("visuals")
     sig = " | ".join(s_["detail"] for s_ in rep.get("plan_signals") or [] if s_.get("kind") == "dashboard")
     assert "visual Pulled in was refused" in sig, sig
     # the grammar on its own: an expression, an unknown channel, an address, an unknown mark

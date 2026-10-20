@@ -1755,6 +1755,14 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nld-fig svg circle.nld-pick{r:5px;stroke:var(--ink);stroke-width:2px}
 .nld-fig svg rect.nld-pick{fill:var(--ts-band)!important;fill-opacity:.5}
 .nld-fig svg [data-x]{cursor:pointer}
+.ai-conf{margin:-4px 0 14px;font-size:13px;color:var(--muted)}
+.ai-conf-k{display:inline-block;font-weight:600;color:var(--ink);border:1px solid var(--hairline);border-radius:999px;padding:1px 8px;margin-right:4px}
+.ai-conf[data-level="high"] .ai-conf-k{border-color:var(--ts-3)}
+.ai-conf[data-level="medium"] .ai-conf-k{border-color:var(--ts-2)}
+.ai-conf[data-level="low"] .ai-conf-k{border-color:var(--div-neg)}
+.ai-methods{margin:16px 0}
+.ai-methods ol{padding-left:20px}
+.ai-methods li{margin:6px 0}
 
 </style>
 </head>
@@ -1780,7 +1788,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-20 12:09:39 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-20 12:26:56 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2527,7 +2535,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-20 12:09:39 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-20 12:26:56 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -6218,6 +6226,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
   function append(a, b) { for (var i = 0; i < b.length; i++) a.push(b[i]); return a; }
   function model(inp) {
     inp = inp || {};
+    // the report's [VISUAL:id] lines are drawn live on the page (64-vega.js); an exported file keeps the engine's charts and drops them
+    if (inp.report) inp = Object.assign({}, inp, { report: String(inp.report).replace(/^[ \t]*\[VISUAL:[a-z][a-z0-9_]{0,23}\][ \t]*\n?/gm, '') });
     var date = inp.date instanceof Date ? inp.date : new Date(inp.date || Date.now());
     var showName = inp.showName === true && !!inp.name, fileWord = showName ? String(inp.name) : 'your file';
     var sub = function (s) { return String(s === null || s === undefined ? '' : s).split(FILE_WORD).join(fileWord); };
@@ -7269,6 +7279,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
 
   NLDocx.pickCharts = function (inp, max) {
     inp = inp || {};
+    // the report's [VISUAL:id] lines are drawn live on the page (64-vega.js); an exported file keeps the engine's charts and drops them
+    if (inp.report) inp = Object.assign({}, inp, { report: String(inp.report).replace(/^[ \t]*\[VISUAL:[a-z][a-z0-9_]{0,23}\][ \t]*\n?/gm, '') });
     max = max || 3;
     var R = isObj(inp.results) ? inp.results : {}, charts = arr(R.charts).length ? R.charts : arr(inp.charts);
     var q = words(inp.goal || R.goal || ''), report = str(inp.report);
@@ -7310,6 +7322,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
 
   NLDocx.writeup = function (inp, figures, opts) {
     inp = inp || {};
+    // the report's [VISUAL:id] lines are drawn live on the page (64-vega.js); an exported file keeps the engine's charts and drops them
+    if (inp.report) inp = Object.assign({}, inp, { report: String(inp.report).replace(/^[ \t]*\[VISUAL:[a-z][a-z0-9_]{0,23}\][ \t]*\n?/gm, '') });
     opts = opts || {};
     var W = pdfWriter();
     if (!W || typeof W.model !== 'function') throw new Error('the report model (NLReportPdf) is not loaded');
@@ -10530,7 +10544,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       card.innerHTML = '<div class="ai-rep-head"><h3>The AI-written report</h3>' +
         '<p class="note">Figures by the engine or quoted from the sources it cites [S1]\u2026, words by ' + esc(j.model || 'the AI') + '; every figure was checked against the engine\'s results or the source cited beside it.</p></div>' +
         trust +
-        '<div class="ai-rep-body">' + html + '</div>' +
+        '<div class="ai-rep-body">' + html + '</div>' + methodsHtml(S.report) +
         (srcs.length ? '<div class="ai-rep-srcs"><b>Sources</b><ol>' + srcs.map(function (s, i) {
           return '<li><a href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.title || ('Source ' + (i + 1))) + '</a></li>';
         }).join('') + '</ol></div>' : '') +
@@ -10541,6 +10555,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
       mountAiFigs(card);
+      if (window.NLVG && S.aiVisuals && S.aiVisuals.length) window.NLVG.drawAll(card, { visuals: S.aiVisuals }, { pre: 'airv' });
       var share = document.getElementById('try-share');
       if (share) share.addEventListener('click', function () { doShare(); });
       var toDl = document.getElementById('try-to-deliver');
@@ -10571,6 +10586,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     // markdown-lite, the same rendering the shared viewer uses (headings, bullets, tables)
     function aiReportHtml(text) {
       var esc2 = esc;
+      S.aiVisuals = [];
       var out = [], open = null, tbl = [];
       var close = function () { if (open) { out.push('</' + open + '>'); open = null; } };
       var flush = function () {
@@ -10592,6 +10608,17 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var isScen = function (hd) { return window.NLReportPdf && window.NLReportPdf.sectionKind ? window.NLReportPdf.sectionKind(hd) === 'scen' : /^scenarios?\b/i.test(hd); };
       var endScen = function () { if (inScen) { close(); if (tbl.length) flush(); if (!scenDone) out.push(scenHtml()); scenDone = true; inScen = false; } };
       String(text || '').split(/\n/).forEach(function (L) {
+        // an AI visual (64-vega.js): the dashboard's own, drawn here again under the sentence it shows
+        var vk = L.trim().match(/^\[VISUAL:([a-z][a-z0-9_]{0,23})\]$/);
+        if (vk) {
+          close();
+          var VV = ((S.report && S.report.dashboard && S.report.dashboard.visuals) || []).filter(function (x) { return x.id === vk[1]; })[0];
+          if (VV && window.NLVG && S.aiVisuals.indexOf(VV) < 0) { S.aiVisuals.push(VV); out.push(window.NLVG.figHtml(VV, 'airv')); }
+          return;
+        }
+        // a finding's confidence (the worker calibrates it to the engine's grade): a labelled line, never colour alone
+        var cf = L.trim().match(/^Confidence:\s*(High|Medium|Low|Described, not tested)\b(.*)$/);
+        if (cf) { close(); out.push('<p class="ai-conf" data-level="' + esc2(cf[1].split(',')[0].toLowerCase()) + '"><span class="ai-conf-k">Confidence: ' + esc2(cf[1]) + '</span>' + esc2(cf[2]) + '</p>'); return; }
         var mk = L.trim().match(/^\[(CHART|TABLE):(\d+)\]$/);
         if (mk) {
           close();
@@ -10685,6 +10712,24 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           return { svg: anaChart(ch, W), table: legacyTable(ch) };
         });
       });
+    }
+    // the methods appendix (AI Analyst v2 phase E): every calculation behind the report, from the engine's own records, never the
+    // AI's words: the analyst's steps (each op, its reason, its query when it is one), the AI's visuals' queries, and the rows read
+    function methodsHtml(rep) {
+      if (!rep || !rep.ok) return '';
+      var li = [], steps = (rep.analyst && rep.analyst.steps) || [], vis = (rep.dashboard && rep.dashboard.visuals) || [];
+      steps.forEach(function (st) {
+        if (!st || !st.op) return;
+        var a = st.args || {}, sql = st.op === 'sql' && a.sql ? '<pre class="nld-sql"><code>' + esc(a.sql) + '</code></pre>' : '';
+        var cols = Object.keys(a).filter(function (k) { return k !== 'sql'; }).map(function (k) { return k + ': ' + (Array.isArray(a[k]) ? a[k].join(', ') : a[k]); }).join('; ');
+        li.push('<li><strong>' + esc(String(st.op).replace(/_/g, ' ')) + '</strong>' + (cols ? ' (' + esc(cols.slice(0, 200)) + ')' : '') + (st.why ? ': ' + esc(String(st.why).slice(0, 200)) : '') +
+          (st.ok === false ? ' <span class="note">(not run: ' + esc(String(st.refused || '').slice(0, 160)) + ')</span>' : '') + sql + '</li>');
+      });
+      vis.forEach(function (V) { li.push('<li><strong>visual</strong> ' + esc(V.title) + ': its query over every row kept, ' + Number(V.rows_total || 0).toLocaleString('en-US') + ' result rows<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></li>'); });
+      if (!li.length) return '';
+      var rows = rep.input && rep.input.rows ? Number(rep.input.rows).toLocaleString('en-US') + ' rows read. ' : '';
+      return '<details class="more ai-methods"><summary>Methods: how every figure was computed (' + li.length + ' calculations)</summary><p class="note">' + rows +
+        'Each calculation ran in this browser on the rows the engine kept; the AI chose them and wrote the words, and never typed a figure.</p><ol>' + li.join('') + '</ol></details>';
     }
     // the engine's own analysis table a [TABLE:n] marker becomes (regression coefficients,
     // correlations, rankings: the numbers the engine computed, not the AI)
@@ -18123,18 +18168,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
       rows.map(function (r) { return '<tr>' + V.columns.map(function (c, i) { var v = Array.isArray(r) ? r[i] : r[c]; return '<td>' + esc(typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v) + '</td>'; }).join('') + '</tr>'; }).join('') +
       '</tbody></table></div>';
   }
-  NLVG.figHtml = function (V) {
-    return '<figure class="visual nld-fig nld-vis" id="nld-x-' + esc(V.id) + '" tabindex="-1" data-draw="vega" data-vis="' + esc(V.id) + '">' +
+  // pre: the ids' prefix (the dashboard's "nld"; the report's own copy "airv", so both can be on the page at once)
+  NLVG.figHtml = function (V, pre) {
+    pre = pre || 'nld';
+    return '<figure class="visual nld-fig nld-vis" id="' + pre + '-x-' + esc(V.id) + '" tabindex="-1" data-draw="vega" data-vis="' + esc(V.id) + '">' +
       '<figcaption>' + esc(V.title) + '</figcaption>' +
       (V.why ? '<p class="note nld-why">' + esc(V.why) + '</p>' : '') +
-      '<div class="viz nld-vg" id="nld-g-' + esc(V.id) + '" role="img" aria-label="' + esc(V.title + (V.why ? ': ' + V.why : '')) + '"><p class="note">Drawing…</p></div>' +
+      '<div class="viz nld-vg" id="' + pre + '-g-' + esc(V.id) + '" role="img" aria-label="' + esc(V.title + (V.why ? ': ' + V.why : '')) + '"><p class="note">Drawing…</p></div>' +
       '<p class="note nld-static">Not filtered: designed by the AI, computed by the engine from every row it kept' + (V.truncated ? ' (its first ' + V.rows.length + ' result rows drawn)' : '') + '.</p>' +
       '<details class="more nld-fold"><summary>Table and query</summary>' + table(V) + '<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></details></figure>';
   };
   NLVG.html = function (D) {
     var vs = (D && D.visuals) || [];
     if (!vs.length) return '';
-    return '<section class="nld-visuals" aria-labelledby="nld-vis-h"><h4 id="nld-vis-h">The analyst’s visuals</h4><div class="nld-row">' + vs.map(NLVG.figHtml).join('') + '</div></section>';
+    return '<section class="nld-visuals" aria-labelledby="nld-vis-h"><h4 id="nld-vis-h">The analyst’s visuals</h4><div class="nld-row">' + vs.map(function (V) { return NLVG.figHtml(V, 'nld'); }).join('') + '</div></section>';
   };
   // one visual into its box: SVG, so it prints, saves into the HTML file and the PDF; a failure leaves its table
   function drawOne(V, el) {
@@ -18147,23 +18194,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = (typeof wi
   NLVG.views = {};
   NLVG.drawAll = function (box, D, opts) {
     opts = opts || {};
-    var vs = (D && D.visuals) || [];
+    var vs = (D && D.visuals) || [], pre = opts.pre || 'nld';
     if (!vs.length || !box) return Promise.resolve();
     var fail = function (el, why) { if (el) el.innerHTML = '<p class="note">This visual could not be drawn here (' + esc(why) + '); its table and query are below.</p>'; };
     if (opts.local) {
-      vs.forEach(function (V) { var el = box.querySelector('#nld-g-' + V.id); var s = opts.snapshot && opts.snapshot['vis:' + V.id]; if (el) { if (s) el.innerHTML = s; else fail(el, 'a saved file draws only the snapshot taken when it was saved'); } });
+      vs.forEach(function (V) { var el = box.querySelector('#' + pre + '-g-' + V.id); var s = opts.snapshot && opts.snapshot['vis:' + V.id]; if (el) { if (s) el.innerHTML = s; else fail(el, 'a saved file draws only the snapshot taken when it was saved'); } });
       return Promise.resolve();
     }
     return NLVG.load().then(function () {
       return Promise.all(vs.map(function (V) {
-        var el = box.querySelector('#nld-g-' + V.id);
+        var el = box.querySelector('#' + pre + '-g-' + V.id);
         if (!el) return null;
         if (NLVG.views[V.id]) { try { NLVG.views[V.id].finalize(); } catch (e) { /* a view already gone */ } }
         el.innerHTML = '';
         return drawOne(V, el).then(function (view) { NLVG.views[V.id] = view; }, function (e) { fail(el, String(e && e.message || e).slice(0, 120)); });
       }));
     }, function (e) {
-      vs.forEach(function (V) { fail(box.querySelector('#nld-g-' + V.id), String(e && e.message || e).slice(0, 120)); });
+      vs.forEach(function (V) { fail(box.querySelector('#' + pre + '-g-' + V.id), String(e && e.message || e).slice(0, 120)); });
     });
   };
   // the drawn SVG of each visual, for the saved HTML file (NLD.saveHtml's snapshot)

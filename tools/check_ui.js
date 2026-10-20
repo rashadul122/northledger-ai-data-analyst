@@ -2401,6 +2401,36 @@ check('try-ai-report-says-how-many-sentences-were-removed', DESK, async (ctx) =>
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 });
 
+// AI Analyst v2 phase E (20 Oct 2026): the report places the analyst's own visuals ([VISUAL:id], drawn here with 64-vega.js under the
+// sentence they show, never one the run does not hold), each finding's confidence as a labelled line, and a methods appendix built
+// from the engine's records (the visuals' queries), never from the AI's words
+check('try-ai-report-visuals-confidence-and-methods', DESK, async (ctx) => {
+  const rep = fixture('sample'); rep.__profile = true; rep.__results = true;
+  if (!rep.dashboard || !rep.dashboard.ok) throw new Skip('the sample fixture has no dashboard');
+  rep.dashboard.visuals = [{ id: 'vmix', title: 'Lines by category', why: 'which kinds of entry the ledger holds', sql: 'SELECT Category, COUNT(*) AS n FROM kept_rows GROUP BY Category',
+    columns: ['Category', 'n'], rows: [['RENT', 1200], ['FEE', 640], ['REPAIR', 300]], rows_total: 3, truncated: false,
+    spec: { mark: 'bar', encoding: { y: { field: 'Category', type: 'nominal', sort: '-x' }, x: { field: 'n', type: 'quantitative' } } } }];
+  const plan = { goal: 'What does the ledger hold?', understanding: 'A ledger.', quality_risks: [], operations: [], analyses: [] };
+  const text = 'The ledger is mostly rent\n\n## Executive summary\n- Rent leads.\n\n## The headline: rent leads the ledger\nRent lines lead the ledger.\n[VISUAL:vmix]\n' +
+    'Confidence: Described, not tested (counts of the rows kept)\n\n## Other findings: fees follow\nFees come second.\n[VISUAL:ghost]\nConfidence: High (the engine graded it CONFIRMED)';
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: (b) => b.profile ? { status: 200, json: { plan } }
+    : { status: 200, json: { report: text, sources: [], model: 'check', repaired: 0 } } });
+  await p.click('#try-sample');
+  await tryUntil(p, '#try-pd:not([hidden]), #try-msg:not([hidden])');
+  await p.check('#try-pd-send-ok'); await p.click('#try-pd-go');
+  await tryUntil(p, '#try-ai-report:not([hidden]) .ai-rep-body', 20000);
+  await p.waitForSelector('#try-ai-report #airv-g-vmix[data-drawn] svg', { timeout: 20000 });
+  const d = await p.evaluate(() => { const b = document.querySelector('#try-ai-report .ai-rep-body');
+    return { figs: b.querySelectorAll('figure.nld-vis').length, after: (b.querySelector('figure.nld-vis') || {}).previousElementSibling ? b.querySelector('figure.nld-vis').previousElementSibling.textContent : '',
+      conf: Array.from(b.querySelectorAll('p.ai-conf')).map((x) => x.getAttribute('data-level') + '|' + x.textContent), literal: /\[VISUAL:/.test(b.textContent),
+      methods: (document.querySelector('#try-ai-report .ai-methods') || {}).textContent || '' }; });
+  ok(d.figs === 1 && /Rent lines lead/.test(d.after), 'the visual is not drawn under its sentence (or a visual the run lacks was drawn): ' + JSON.stringify(d).slice(0, 300));
+  ok(!d.literal, 'a [VISUAL:...] marker shows as text');
+  ok(d.conf.length === 2 && /^described\|Confidence: Described, not tested/.test(d.conf[0]) && /^high\|Confidence: High/.test(d.conf[1]), 'the confidence lines are not labelled: ' + JSON.stringify(d.conf));
+  ok(/Methods: how every figure was computed/.test(d.methods) && /GROUP BY Category/.test(d.methods), 'the methods appendix does not list the visual\'s query: ' + d.methods.slice(0, 200));
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
+
 // the web searches /report may run (final review, 30 Sep 2026): exactly the adapter's list, built from fixed terms
 // (engine/nl_browser.py _context_queries), always an array: [] when the engine sent none; never the plan's own words
 check('try-report-sends-the-adapter-vetted-searches', DESK, async (ctx) => {

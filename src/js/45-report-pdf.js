@@ -2102,6 +2102,8 @@
   function append(a, b) { for (var i = 0; i < b.length; i++) a.push(b[i]); return a; }
   function model(inp) {
     inp = inp || {};
+    // the report's [VISUAL:id] lines are drawn live on the page (64-vega.js); an exported file keeps the engine's charts and drops them
+    if (inp.report) inp = Object.assign({}, inp, { report: String(inp.report).replace(/^[ \t]*\[VISUAL:[a-z][a-z0-9_]{0,23}\][ \t]*\n?/gm, '') });
     var date = inp.date instanceof Date ? inp.date : new Date(inp.date || Date.now());
     var showName = inp.showName === true && !!inp.name, fileWord = showName ? String(inp.name) : 'your file';
     var sub = function (s) { return String(s === null || s === undefined ? '' : s).split(FILE_WORD).join(fileWord); };

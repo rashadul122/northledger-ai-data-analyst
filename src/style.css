@@ -1607,3 +1607,11 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nld-fig svg circle.nld-pick{r:5px;stroke:var(--ink);stroke-width:2px}
 .nld-fig svg rect.nld-pick{fill:var(--ts-band)!important;fill-opacity:.5}
 .nld-fig svg [data-x]{cursor:pointer}
+.ai-conf{margin:-4px 0 14px;font-size:13px;color:var(--muted)}
+.ai-conf-k{display:inline-block;font-weight:600;color:var(--ink);border:1px solid var(--hairline);border-radius:999px;padding:1px 8px;margin-right:4px}
+.ai-conf[data-level="high"] .ai-conf-k{border-color:var(--ts-3)}
+.ai-conf[data-level="medium"] .ai-conf-k{border-color:var(--ts-2)}
+.ai-conf[data-level="low"] .ai-conf-k{border-color:var(--div-neg)}
+.ai-methods{margin:16px 0}
+.ai-methods ol{padding-left:20px}
+.ai-methods li{margin:6px 0}

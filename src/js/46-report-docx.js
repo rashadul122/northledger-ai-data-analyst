@@ -403,6 +403,8 @@
 
   NLDocx.pickCharts = function (inp, max) {
     inp = inp || {};
+    // the report's [VISUAL:id] lines are drawn live on the page (64-vega.js); an exported file keeps the engine's charts and drops them
+    if (inp.report) inp = Object.assign({}, inp, { report: String(inp.report).replace(/^[ \t]*\[VISUAL:[a-z][a-z0-9_]{0,23}\][ \t]*\n?/gm, '') });
     max = max || 3;
     var R = isObj(inp.results) ? inp.results : {}, charts = arr(R.charts).length ? R.charts : arr(inp.charts);
     var q = words(inp.goal || R.goal || ''), report = str(inp.report);
@@ -444,6 +446,8 @@
 
   NLDocx.writeup = function (inp, figures, opts) {
     inp = inp || {};
+    // the report's [VISUAL:id] lines are drawn live on the page (64-vega.js); an exported file keeps the engine's charts and drops them
+    if (inp.report) inp = Object.assign({}, inp, { report: String(inp.report).replace(/^[ \t]*\[VISUAL:[a-z][a-z0-9_]{0,23}\][ \t]*\n?/gm, '') });
     opts = opts || {};
     var W = pdfWriter();
     if (!W || typeof W.model !== 'function') throw new Error('the report model (NLReportPdf) is not loaded');

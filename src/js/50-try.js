@@ -2927,7 +2927,7 @@
       card.innerHTML = '<div class="ai-rep-head"><h3>The AI-written report</h3>' +
         '<p class="note">Figures by the engine or quoted from the sources it cites [S1]\u2026, words by ' + esc(j.model || 'the AI') + '; every figure was checked against the engine\'s results or the source cited beside it.</p></div>' +
         trust +
-        '<div class="ai-rep-body">' + html + '</div>' +
+        '<div class="ai-rep-body">' + html + '</div>' + methodsHtml(S.report) +
         (srcs.length ? '<div class="ai-rep-srcs"><b>Sources</b><ol>' + srcs.map(function (s, i) {
           return '<li><a href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.title || ('Source ' + (i + 1))) + '</a></li>';
         }).join('') + '</ol></div>' : '') +
@@ -2938,6 +2938,7 @@
         '<div class="ai-rep-wm"><a href="' + esc(location.origin + location.pathname) + '" target="_blank" rel="noopener">NorthLedger</a></div>';
       card.hidden = false;
       mountAiFigs(card);
+      if (window.NLVG && S.aiVisuals && S.aiVisuals.length) window.NLVG.drawAll(card, { visuals: S.aiVisuals }, { pre: 'airv' });
       var share = document.getElementById('try-share');
       if (share) share.addEventListener('click', function () { doShare(); });
       var toDl = document.getElementById('try-to-deliver');
@@ -2968,6 +2969,7 @@
     // markdown-lite, the same rendering the shared viewer uses (headings, bullets, tables)
     function aiReportHtml(text) {
       var esc2 = esc;
+      S.aiVisuals = [];
       var out = [], open = null, tbl = [];
       var close = function () { if (open) { out.push('</' + open + '>'); open = null; } };
       var flush = function () {
@@ -2989,6 +2991,17 @@
       var isScen = function (hd) { return window.NLReportPdf && window.NLReportPdf.sectionKind ? window.NLReportPdf.sectionKind(hd) === 'scen' : /^scenarios?\b/i.test(hd); };
       var endScen = function () { if (inScen) { close(); if (tbl.length) flush(); if (!scenDone) out.push(scenHtml()); scenDone = true; inScen = false; } };
       String(text || '').split(/\n/).forEach(function (L) {
+        // an AI visual (64-vega.js): the dashboard's own, drawn here again under the sentence it shows
+        var vk = L.trim().match(/^\[VISUAL:([a-z][a-z0-9_]{0,23})\]$/);
+        if (vk) {
+          close();
+          var VV = ((S.report && S.report.dashboard && S.report.dashboard.visuals) || []).filter(function (x) { return x.id === vk[1]; })[0];
+          if (VV && window.NLVG && S.aiVisuals.indexOf(VV) < 0) { S.aiVisuals.push(VV); out.push(window.NLVG.figHtml(VV, 'airv')); }
+          return;
+        }
+        // a finding's confidence (the worker calibrates it to the engine's grade): a labelled line, never colour alone
+        var cf = L.trim().match(/^Confidence:\s*(High|Medium|Low|Described, not tested)\b(.*)$/);
+        if (cf) { close(); out.push('<p class="ai-conf" data-level="' + esc2(cf[1].split(',')[0].toLowerCase()) + '"><span class="ai-conf-k">Confidence: ' + esc2(cf[1]) + '</span>' + esc2(cf[2]) + '</p>'); return; }
         var mk = L.trim().match(/^\[(CHART|TABLE):(\d+)\]$/);
         if (mk) {
           close();
@@ -3082,6 +3095,24 @@
           return { svg: anaChart(ch, W), table: legacyTable(ch) };
         });
       });
+    }
+    // the methods appendix (AI Analyst v2 phase E): every calculation behind the report, from the engine's own records, never the
+    // AI's words: the analyst's steps (each op, its reason, its query when it is one), the AI's visuals' queries, and the rows read
+    function methodsHtml(rep) {
+      if (!rep || !rep.ok) return '';
+      var li = [], steps = (rep.analyst && rep.analyst.steps) || [], vis = (rep.dashboard && rep.dashboard.visuals) || [];
+      steps.forEach(function (st) {
+        if (!st || !st.op) return;
+        var a = st.args || {}, sql = st.op === 'sql' && a.sql ? '<pre class="nld-sql"><code>' + esc(a.sql) + '</code></pre>' : '';
+        var cols = Object.keys(a).filter(function (k) { return k !== 'sql'; }).map(function (k) { return k + ': ' + (Array.isArray(a[k]) ? a[k].join(', ') : a[k]); }).join('; ');
+        li.push('<li><strong>' + esc(String(st.op).replace(/_/g, ' ')) + '</strong>' + (cols ? ' (' + esc(cols.slice(0, 200)) + ')' : '') + (st.why ? ': ' + esc(String(st.why).slice(0, 200)) : '') +
+          (st.ok === false ? ' <span class="note">(not run: ' + esc(String(st.refused || '').slice(0, 160)) + ')</span>' : '') + sql + '</li>');
+      });
+      vis.forEach(function (V) { li.push('<li><strong>visual</strong> ' + esc(V.title) + ': its query over every row kept, ' + Number(V.rows_total || 0).toLocaleString('en-US') + ' result rows<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></li>'); });
+      if (!li.length) return '';
+      var rows = rep.input && rep.input.rows ? Number(rep.input.rows).toLocaleString('en-US') + ' rows read. ' : '';
+      return '<details class="more ai-methods"><summary>Methods: how every figure was computed (' + li.length + ' calculations)</summary><p class="note">' + rows +
+        'Each calculation ran in this browser on the rows the engine kept; the AI chose them and wrote the words, and never typed a figure.</p><ol>' + li.join('') + '</ol></details>';
     }
     // the engine's own analysis table a [TABLE:n] marker becomes (regression coefficients,
     // correlations, rankings: the numbers the engine computed, not the AI)

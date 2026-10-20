@@ -117,18 +117,20 @@
       rows.map(function (r) { return '<tr>' + V.columns.map(function (c, i) { var v = Array.isArray(r) ? r[i] : r[c]; return '<td>' + esc(typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v) + '</td>'; }).join('') + '</tr>'; }).join('') +
       '</tbody></table></div>';
   }
-  NLVG.figHtml = function (V) {
-    return '<figure class="visual nld-fig nld-vis" id="nld-x-' + esc(V.id) + '" tabindex="-1" data-draw="vega" data-vis="' + esc(V.id) + '">' +
+  // pre: the ids' prefix (the dashboard's "nld"; the report's own copy "airv", so both can be on the page at once)
+  NLVG.figHtml = function (V, pre) {
+    pre = pre || 'nld';
+    return '<figure class="visual nld-fig nld-vis" id="' + pre + '-x-' + esc(V.id) + '" tabindex="-1" data-draw="vega" data-vis="' + esc(V.id) + '">' +
       '<figcaption>' + esc(V.title) + '</figcaption>' +
       (V.why ? '<p class="note nld-why">' + esc(V.why) + '</p>' : '') +
-      '<div class="viz nld-vg" id="nld-g-' + esc(V.id) + '" role="img" aria-label="' + esc(V.title + (V.why ? ': ' + V.why : '')) + '"><p class="note">Drawing…</p></div>' +
+      '<div class="viz nld-vg" id="' + pre + '-g-' + esc(V.id) + '" role="img" aria-label="' + esc(V.title + (V.why ? ': ' + V.why : '')) + '"><p class="note">Drawing…</p></div>' +
       '<p class="note nld-static">Not filtered: designed by the AI, computed by the engine from every row it kept' + (V.truncated ? ' (its first ' + V.rows.length + ' result rows drawn)' : '') + '.</p>' +
       '<details class="more nld-fold"><summary>Table and query</summary>' + table(V) + '<pre class="nld-sql"><code>' + esc(V.sql) + '</code></pre></details></figure>';
   };
   NLVG.html = function (D) {
     var vs = (D && D.visuals) || [];
     if (!vs.length) return '';
-    return '<section class="nld-visuals" aria-labelledby="nld-vis-h"><h4 id="nld-vis-h">The analyst’s visuals</h4><div class="nld-row">' + vs.map(NLVG.figHtml).join('') + '</div></section>';
+    return '<section class="nld-visuals" aria-labelledby="nld-vis-h"><h4 id="nld-vis-h">The analyst’s visuals</h4><div class="nld-row">' + vs.map(function (V) { return NLVG.figHtml(V, 'nld'); }).join('') + '</div></section>';
   };
   // one visual into its box: SVG, so it prints, saves into the HTML file and the PDF; a failure leaves its table
   function drawOne(V, el) {
@@ -141,23 +143,23 @@
   NLVG.views = {};
   NLVG.drawAll = function (box, D, opts) {
     opts = opts || {};
-    var vs = (D && D.visuals) || [];
+    var vs = (D && D.visuals) || [], pre = opts.pre || 'nld';
     if (!vs.length || !box) return Promise.resolve();
     var fail = function (el, why) { if (el) el.innerHTML = '<p class="note">This visual could not be drawn here (' + esc(why) + '); its table and query are below.</p>'; };
     if (opts.local) {
-      vs.forEach(function (V) { var el = box.querySelector('#nld-g-' + V.id); var s = opts.snapshot && opts.snapshot['vis:' + V.id]; if (el) { if (s) el.innerHTML = s; else fail(el, 'a saved file draws only the snapshot taken when it was saved'); } });
+      vs.forEach(function (V) { var el = box.querySelector('#' + pre + '-g-' + V.id); var s = opts.snapshot && opts.snapshot['vis:' + V.id]; if (el) { if (s) el.innerHTML = s; else fail(el, 'a saved file draws only the snapshot taken when it was saved'); } });
       return Promise.resolve();
     }
     return NLVG.load().then(function () {
       return Promise.all(vs.map(function (V) {
-        var el = box.querySelector('#nld-g-' + V.id);
+        var el = box.querySelector('#' + pre + '-g-' + V.id);
         if (!el) return null;
         if (NLVG.views[V.id]) { try { NLVG.views[V.id].finalize(); } catch (e) { /* a view already gone */ } }
         el.innerHTML = '';
         return drawOne(V, el).then(function (view) { NLVG.views[V.id] = view; }, function (e) { fail(el, String(e && e.message || e).slice(0, 120)); });
       }));
     }, function (e) {
-      vs.forEach(function (V) { fail(box.querySelector('#nld-g-' + V.id), String(e && e.message || e).slice(0, 120)); });
+      vs.forEach(function (V) { fail(box.querySelector('#' + pre + '-g-' + V.id), String(e && e.message || e).slice(0, 120)); });
     });
   };
   // the drawn SVG of each visual, for the saved HTML file (NLD.saveHtml's snapshot)

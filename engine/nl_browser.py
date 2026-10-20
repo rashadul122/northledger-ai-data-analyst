@@ -6631,6 +6631,26 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
                 return {k: walk(v, str(k)) for k, v in o.items()}
             return o
         out = walk(out)
+    vis = _visual_cards(rep)
+    if vis and isinstance(out, dict) and out.get("ok") is not False:
+        out["visuals"] = vis
+    return out
+
+
+VISUAL_CARD_ROWS = 12
+
+
+def _visual_cards(rep: Any) -> List[Dict[str, Any]]:
+    """The AI's dashboard visuals as the report writer sees them (AI Analyst v2 phase E): id, title, why, the query's columns and its
+    first rows, so a [VISUAL:id] marker can sit under the sentence it shows and every figure it quotes is the engine's."""
+    d = rep.get("dashboard") if isinstance(rep, dict) and isinstance(rep.get("dashboard"), dict) else None
+    out: List[Dict[str, Any]] = []
+    for v in (d or {}).get("visuals") or []:
+        if not isinstance(v, dict) or not v.get("id"):
+            continue
+        out.append({"id": str(v["id"]), "title": str(v.get("title") or "")[:90], "why": str(v.get("why") or "")[:200],
+                    "columns": [str(c) for c in v.get("columns") or []][:8],
+                    "rows": [list(r)[:8] for r in (v.get("rows") or [])[:VISUAL_CARD_ROWS]], "rows_total": int(v.get("rows_total") or 0)})
     return out
 
 

@@ -1755,6 +1755,14 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nld-fig svg circle.nld-pick{r:5px;stroke:var(--ink);stroke-width:2px}
 .nld-fig svg rect.nld-pick{fill:var(--ts-band)!important;fill-opacity:.5}
 .nld-fig svg [data-x]{cursor:pointer}
+.ai-conf{margin:-4px 0 14px;font-size:13px;color:var(--muted)}
+.ai-conf-k{display:inline-block;font-weight:600;color:var(--ink);border:1px solid var(--hairline);border-radius:999px;padding:1px 8px;margin-right:4px}
+.ai-conf[data-level="high"] .ai-conf-k{border-color:var(--ts-3)}
+.ai-conf[data-level="medium"] .ai-conf-k{border-color:var(--ts-2)}
+.ai-conf[data-level="low"] .ai-conf-k{border-color:var(--div-neg)}
+.ai-methods{margin:16px 0}
+.ai-methods ol{padding-left:20px}
+.ai-methods li{margin:6px 0}
 
 .cs { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
 .cs h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 8px 0 12px; color: var(--ink); }
@@ -1772,7 +1780,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch between light and dark theme"><span aria-hidden="true" class="ti"></span></button></div></header>
 <main id="main"><article class="cs">
 <h1>Case study: RentSafeTO Building Health</h1>
-<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-20 12:09:39 UTC</span>.</em></p>
+<p><em>Rashadul Islam Roman, NorthLedger Insights, Toronto. Sample work on public data. Every figure below was filled in by build.py from the data files in data/; none was typed. City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file); built <span data-fact="site_build:display.built_at_label">2026-10-20 12:26:56 UTC</span>.</em></p>
 <h2>The client question</h2>
 <p>A Toronto operator of older purpose-built rental buildings asks: how do our buildings compare on the City's RentSafeTO evaluations, which fixes are worth the most points, and can we see a lost green sign coming?</p>
 <h2>What the data is</h2>

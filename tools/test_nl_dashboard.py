@@ -744,6 +744,23 @@ def test_a_kept_category_a_scatter_and_questions_on_visuals():
     assert not any(c["id"] == "bysex" for c in d2["charts"]), d2["charts"]
 
 
+def test_a_trend_that_names_the_files_own_date_draws_the_row_count():
+    """20 Oct 2026, live on NYC 311 and Chicago crimes: "requests per month" passed the date column as the line's measure and was
+    refused, so two daily files had no trend at all. The file's own date is the time axis; with nothing else the line counts rows."""
+    import random
+    import datetime as _d
+    random.seed(3)
+    rows = ["created_date,agency,complaint"]
+    for _i in range(900):
+        day = _d.date(2023, 1, 1) + _d.timedelta(days=random.randrange(730))
+        rows.append("%s,%s,%s" % (day.isoformat(), random.choice(["NYPD", "DOT", "HPD"]), random.choice(["Noise", "Heat", "Parking"])))
+    plan = {"goal": "requests", "kind": "other", "dashboard": {
+        "kpis": [{"id": "n", "measure": "rows", "agg": "count", "label": "Requests"}],
+        "charts": [{"id": "trend", "chart": "line_chart", "args": ["created_date"], "title": "Requests per month"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "r.csv", "", {"__plan__": plan}, None)["dashboard"]
+    assert [c["id"] for c in d["charts"]] == ["trend"], d["refused"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

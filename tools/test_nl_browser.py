@@ -6632,6 +6632,20 @@ def test_a_short_file_leads_with_what_it_describes_and_a_now_question_with_the_l
     assert a.startswith("UNRATEX was 4.20 in December 2024"), a
 
 
+def test_a_semicolon_file_keeps_its_columns_under_an_ai_plan():
+    """20 Oct 2026, live on the UCI wine file (;-separated): under any AI plan the plan's steps read it with commas and it
+    collapsed to one column, so every tile was refused. The file is rewritten with commas first; a ; inside quotes does not count."""
+    assert NB._comma_csv(b"a;b;c\n1;2;3\n") == b"a,b,c\n1,2,3\n"
+    assert NB._comma_csv(b"a\tb\n1\t2\n") == b"a,b\n1,2\n"
+    same = b'id,"x;y;z"\n1,2\n'
+    assert NB._comma_csv(same) == same
+    assert NB._comma_csv(b"a,b\n1,2\n") == b"a,b\n1,2\n"
+    rows = ["fixed acidity;quality"] + ["%s;%d" % (7 + i % 5 * 0.1, 5 + i % 3) for i in range(60)]
+    plan = {"goal": "wine", "kind": "other", "dashboard": {"kpis": [{"id": "q", "measure": "quality", "agg": "average", "label": "Quality"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "w.csv", "", {"__plan__": plan}, None)["dashboard"]
+    assert [k["id"] for k in d["kpis"]] == ["q"], d["refused"]
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

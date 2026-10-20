@@ -428,6 +428,10 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
             continue
         args = ch.get("args") if isinstance(ch.get("args"), list) else (ch.get("columns") or [])
         args = [str(a) for a in args if isinstance(a, (str, int, float))][:12]
+        if name in ("line_chart", "area_chart", "grouped_bar", "small_multiples") and c.date is not None:
+            # the time axis is the file's own date: naming it is "over time", never a measure (20 Oct 2026: NYC 311's and Chicago's
+            # "requests per month" passed the date and were refused, so two daily files had no trend at all)
+            args = [a for a in args if c.landed(a) != c.date]
         if any(c.is_flagged(a) for a in args):
             R.refuse(el, R_PERSONAL)
             continue

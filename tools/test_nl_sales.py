@@ -436,6 +436,21 @@ def the_registry_engine_call_form():
     assert not nsl.build([], {})["ok"]
 
 
+@test
+def an_old_export_is_read_as_of_its_last_activity_not_today():
+    """20 Oct 2026, live: the sample (last activity 4 Jan 2026) read on 20 Oct 2026 reported "2026 Q1 down 98.7%" (two deals cut off by
+    the export) and every open deal stalled. The export date is read off the deals; a date the visitor chose stands."""
+    d = pd.read_csv(SAMPLE, dtype=str, keep_default_na=False)
+    s = nsl.build(d, {c: c for c in d.columns}, "2026-10-20", {})
+    assert s["ok"] and s["as_of"] == "2026-01-04" and s["quarter"]["label"] == "2025 Q4", (s.get("as_of"), s.get("quarter"))
+    assert s["notes"][0].startswith("The export appears to date from 2026-01-04"), s["notes"][0]
+    assert s["growth"]["cur"] > s["growth"]["prev"], s["growth"]
+    chosen = nsl.build(d, {c: c for c in d.columns}, "2026-10-20", {"as_of": "2026-10-20"})
+    assert chosen["as_of"] == "2026-10-20" and "as_of_read" not in chosen
+    fresh = nsl.build(d, {c: c for c in d.columns}, AS_OF, {})
+    assert fresh["as_of"] == AS_OF and "as_of_read" not in fresh
+
+
 if __name__ == "__main__":
     print("%d failed" % len(FAILS) if FAILS else "ALL PASS")
     sys.exit(1 if FAILS else 0)

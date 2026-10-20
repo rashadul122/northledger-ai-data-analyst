@@ -2721,10 +2721,22 @@
         if (pl && Array.isArray(pl.tables)) S.aiTables = pl.tables;
         // the results the report is written from, kept for this report's PDF (built in this browser, 45-report-pdf.js)
         S.aiResults = pl || null;
-        fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: S.objective, results: pl, context_queries: T.contextQueries(rep) }),
-          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+        // one more try after an upstream 502 or 503 (20 Oct 2026: a census report was lost to one passing 502 the next call answered);
+        // a 504 already waited out the model's time, so it is not tried again
+        var postReport = function (tries) {
+          return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/report', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ objective: S.objective, results: pl, context_queries: T.contextQueries(rep) }),
+            credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+            .then(function (r) {
+              if ((r.status === 502 || r.status === 503) && tries > 0 && seq === S.seq) {
+                aiStatus('write');
+                return new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postReport(tries - 1); });
+              }
+              return r;
+            });
+        };
+        postReport(1)
           .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j && j.error ? j.error : ('HTTP ' + r.status)); }); })
           .then(function (j) {
             clearTimeout(timer);

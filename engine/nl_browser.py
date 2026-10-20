@@ -8089,6 +8089,27 @@ def _merges_rows(df: Any, cols: List[str]) -> str:
             % (", ".join(cols[:4]) + (" and %d more" % (len(cols) - 4) if len(cols) > 4 else ""), format(after - before, ",")))
 
 
+def _comma_csv(data: bytes) -> bytes:
+    """A file whose header line is split by ; or a tab or | (European Excel, a database export) written again with commas, quoting
+    as the csv module does, so the plan's steps (pandas' default comma) read its columns. A comma file, or one the csv module
+    cannot read, is returned unchanged."""
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data
+    first = re.sub(r'"[^"]*"', "", text[:8192].split("\n", 1)[0])  # a delimiter inside a quoted header does not count
+    sep = max(",;\t|", key=lambda c: (first.count(c), c == ","))
+    if sep == "," or first.count(sep) == 0:
+        return data
+    try:
+        rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=sep))
+    except csv.Error:
+        return data
+    out = io.StringIO()
+    csv.writer(out, lineterminator="\n").writerows(rows)
+    return out.getvalue().encode("utf-8")
+
+
 def _apply_plan(data: bytes, plan: Dict[str, Any]) -> Tuple[bytes, Dict[str, Any], Optional[Dict[str, Any]]]:
     """Run the plan's operations on the file. Returns the bytes, what was applied (and refused), and
     the long-table layout when long_to_wide ran."""
@@ -13108,6 +13129,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if isinstance(decisions, dict) and isinstance(decisions.get("__plan__"), dict):
             decisions = dict(decisions)
             raw_plan = decisions.pop("__plan__")
+            data = _comma_csv(data)              # the plan's steps read commas (20 Oct 2026: a semicolon file became one column)
             raw_context = raw_plan.get("context")    # never its old free-text context_queries
             try:
                 import pandas as _pd
@@ -15436,10 +15458,35 @@ def _dashboard_visuals(rep: Dict[str, Any], plan: Any) -> None:
         import nl_analyst as _na
         import nl_vega as _nv
 
+        full: Dict[str, Any] = {}
+
+        def kept_frame() -> Optional[Tuple[Any, Dict[str, str]]]:
+            """Every kept column under its own header (a table read by its structure keeps a 3-column analysis frame: date, member,
+            measure; 20 Oct 2026: OWID's visuals asked for year and gdp and were refused)."""
+            if "df" not in full:
+                full["df"] = None
+                try:
+                    import nl_viz as _nvz
+                    cx = _nvz.Ctx(rep, {})
+                    if cx.frame is not None and len(cx.frame.columns):
+                        df = cx.frame.rename(columns={c: str(cx.header(c)) for c in cx.frame.columns})
+                        kinds = {str(cx.header(c)): ("date" if c == cx.date else "number" if c in cx.measures else "text") for c in cx.frame.columns}
+                        full["df"], full["kinds"] = df, kinds
+                except Exception:  # noqa: BLE001 - the analysis frame alone then
+                    if os.environ.get("NL_BROWSER_STRICT"):
+                        raise
+            return (full["df"], full["kinds"]) if full.get("df") is not None else None
+
         def run_sql(sql: str) -> Dict[str, Any]:
             if not _LAST_ANALYST:
                 return {"ok": False, "error": "the engine has no analysis frame for this file"}
             out = _na.sql_result(_LAST_ANALYST["df"], _LAST_ANALYST["kinds"], _LAST_ANALYST["hint"], sql)
+            if not out.get("ok") and "is not a column of" in str(out.get("error") or ""):
+                kf = kept_frame()
+                if kf is not None:
+                    out2 = _na.sql_result(kf[0], kf[1], {}, sql)
+                    if out2.get("ok"):
+                        out = out2
             if not out.get("ok"):
                 return {"ok": False, "error": out.get("error") or "the query was refused"}
             return {"ok": True, "columns": out.get("columns") or [], "rows": out.get("rows") or [],

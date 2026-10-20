@@ -575,7 +575,9 @@ class Ctx:
         n = str(name)
         if self.reading is not None:
             got = self.reading.landed(n)
-            if got is not None:
+            # the reading's name only when the kept rows hold it (20 Oct 2026: a semicolon-separated wine file's reading named
+            # columns the cleaned file did not have, and every tile the AI designed was refused as "a column the file does not have")
+            if got is not None and (not self.columns or got in self.columns):
                 return got
         if n in self.columns:
             return n

@@ -514,6 +514,9 @@ def build(frame: Any, header_of: Any = None, as_of: Any = None, settings: Option
         return blank("the sales report could not be built for this file (%s)" % type(exc).__name__)
 
 
+STALE_EXPORT_DAYS = 45  # an export whose last activity is older than this is read as of that day, not today
+
+
 def blank(why: str) -> Dict[str, Any]:
     return {"version": VERSION, "ok": False, "why": why, "fit": {"ok": False, "why": why, "missing": []},
             "mapping": [], "cannot": [], "needs": NEEDS}
@@ -598,6 +601,20 @@ def _build(frame: Any, header_of: Dict[str, str], as_of: Any, raw: Dict[str, Any
         st["currency"] = u if re.match(r"^[$\u20ac\u00a3\u00a5]$|^[A-Z]{3}$", u) else ""
         rec["settings"]["currency"] = st["currency"]
     deals, skipped = _deals(frame, roles)
+    # an export pulled long ago reads as if pulled today unless the export date is read off the deals: the last day
+    # anything happened (a close, a stage change, a new deal). Today's date would put every open deal "past due" and
+    # the last quarter "down 99%" when it is only cut off. A date the visitor chose stands.
+    if not raw.get("as_of"):
+        seen = [d[k] for d in deals for k in ("changed", "created") if d.get(k) and d[k] <= AS_OF]
+        seen += [d["close"] for d in deals if d["outcome"] in ("won", "lost") and d["close"] and d["close"] <= AS_OF]
+        last = max(seen) if seen else None
+        if last and (AS_OF - last).days > STALE_EXPORT_DAYS:
+            rec["as_of_read"] = {"from": AS_OF.isoformat(), "to": last.isoformat(),
+                                 "text": "The export appears to date from %s: nothing in it happened after that day "
+                                         "(no close, stage change or new deal), so the report is as of %s, not "
+                                         "today (%s)." % (last.isoformat(), last.isoformat(), AS_OF.isoformat())}
+            AS_OF = last
+            rec["as_of"] = AS_OF.isoformat()
     R = Report(deals, st, AS_OF)
     cur = R.cur
     closed = [d for d in deals if d["outcome"] in ("won", "lost") and d["close"]]
@@ -1102,6 +1119,8 @@ def _notes(rec: Dict[str, Any], roles: Dict[str, Any], skipped: Dict[str, int], 
         "No figure rests on fewer than 5 deals: such a figure is shown as “<5”."]
     if q.get("note"):
         out.insert(0, q["note"])
+    if rec.get("as_of_read"):
+        out.insert(0, rec["as_of_read"]["text"])
     if n.get("closed_other"):
         out.append("%s closed neither won nor lost (a closed stage without won or lost in it) %s left out of the win "
                    "rates." % (_plural(n["closed_other"], "deal"), "is" if n["closed_other"] == 1 else "are"))

@@ -1741,6 +1741,20 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
 .nld-vg svg{max-width:none;height:auto;display:block}
 .nld-why{margin:0 0 6px}
 .nld-sql{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:8px 0 0}
+.nld-kpi .k-var{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.nld-kpi .k-spark{display:block;margin-top:6px;max-width:100%;height:auto}
+.nld-drivers{margin-top:16px}
+.nld-infl,.nld-dc{list-style:none;padding:0;margin:8px 0}
+.nld-infl li{margin:0 0 10px}
+.nld-infl-b,.nld-dc-b{display:block;height:6px;background:var(--grid);border-radius:3px;overflow:hidden;margin-top:4px}
+.nld-infl-b span,.nld-dc-b span{display:block;height:100%}
+.nld-dc li{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(60px,2fr) auto;gap:8px;align-items:center;margin:4px 0}
+.nld-dc-l{overflow-wrap:anywhere}
+.nld-dc-b{margin-top:0}
+.nld-dc-v{font-variant-numeric:tabular-nums;white-space:nowrap}
+.nld-fig svg circle.nld-pick{r:5px;stroke:var(--ink);stroke-width:2px}
+.nld-fig svg rect.nld-pick{fill:var(--ts-band)!important;fill-opacity:.5}
+.nld-fig svg [data-x]{cursor:pointer}
 
 </style>
 </head>
@@ -1766,7 +1780,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-20 06:18:03 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-20 06:26:18 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2513,7 +2527,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-20 06:18:03 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-20 06:26:18 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -12469,7 +12483,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           b += '<path d="' + U.path(s.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:' + c + ';stroke-width:2' + (GDASH[k] ? ';stroke-dasharray:' + GDASH[k] : '') + '"/>';
           s.values.forEach(function (v, i) {
             if (!gNum(v)) return;
-            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 120 ? 1.2 : n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
+            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 120 ? 1.2 : n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-x="' + esc(d.x[i]) + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
           });
         });
         if (ends) {
@@ -12510,7 +12524,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var cw = n > 1 ? (X(1) - X(0)) : (R - L);
         d.x.forEach(function (p, i) {
           var tip = gper(p, true) + ': total ' + gcell(rec, i, P.length) + '; ' + P.map(function (q, k) { return q.label + ' ' + gcell(rec, i, k); }).join(', ');
-          b += '<rect x="' + gf1(Math.max(L, X(i) - cw / 2)) + '" y="' + (T + 4) + '" width="' + gf1(Math.min(cw, R - L)) + '" height="' + gf1(Bt - T - 4) + '" style="fill:transparent" data-tip="' + esc(tip) + '"/>';
+          b += '<rect x="' + gf1(Math.max(L, X(i) - cw / 2)) + '" y="' + (T + 4) + '" width="' + gf1(Math.min(cw, R - L)) + '" height="' + gf1(Bt - T - 4) + '" style="fill:transparent" data-x="' + esc(p) + '" data-tip="' + esc(tip) + '"/>';
         });
         return { body: b, H: H, layout: 'stacked, key above' };
       }
@@ -12576,7 +12590,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           if (axisOk) b += gtxt(x0, y0 + plotB + 15, fl) + gtxt(x0 + pw, y0 + plotB + 15, ll, { anchor: 'end' });
           b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--ts-1);stroke-width:1.8"/>';
           p.values.forEach(function (v, i) {
-            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--ts-1)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
+            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--ts-1)" data-x="' + esc(d.x[i]) + '" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
           });
         });
         var rowsN = Math.ceil(Ps.length / cols);
@@ -15209,11 +15223,18 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return { value: r.v, n: r.n, suppressed: r.n > 0 && r.n < smallOf(D), month: month };
   };
   // the filtered span's months (the data's own months inside the date range), and the grain it is shown at
-  function span(D, cells) {
+  // `want`: the reader's drill choice (F.grain: year, quarter or month), never finer than the data's own step, and by month only
+  // while the span fits a long line (GLONG, 240 points in 51-nl2-charts.js); otherwise the span's own step
+  var DRILL_MAX = { month: 240, quarter: 240, year: 400 };
+  function span(D, cells, want) {
     var lo = Infinity, hi = -1;
     cells.forEach(function (c) { if (c[0] >= 0) { if (c[0] < lo) lo = c[0]; if (c[0] > hi) hi = c[0]; } });
     if (hi < 0) return null;
     var ms = mrange(D.cube.months[lo], D.cube.months[hi]), g = grainFor(D, ms.length), ps = [];
+    if (want && OWN.call(GRANK, want) && GRANK[want] >= GRANK[nativeOf(D)]) {
+      var n = want === 'month' ? ms.length : want === 'quarter' ? Math.ceil(ms.length / 3) : Math.ceil(ms.length / 12);
+      if (n <= DRILL_MAX[want]) g = want;
+    }
     ms.forEach(function (m) { var p = periodOf(m, g); if (ps.indexOf(p) < 0) ps.push(p); });
     return { months: ms, grain: g, periods: ps };
   }
@@ -15253,7 +15274,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var cells = pick(D, F || {}, X.where), unit = unitOf(D, X), how = X.agg, sup = 0, i;
     if (X.draw === 'bar' || X.draw === 'grouped') return barRecord(D, X, cells, unit);
     if (X.draw === 'change' || X.draw === 'periods') return ownRecord(D, X, cells, unit);
-    var sp = span(D, cells);
+    var sp = span(D, cells, F && F.grain);
     if (!sp) return { kind: 'table', chart: X.chart, title: X.title, summary: 'No rows match the filters.', table: { cols: ['Period'], rows: [] }, empty: true };
     var P = byPeriod(D, cells, sp), x = sp.periods, xl = { month: 'Month', quarter: 'Quarter', year: 'Year' }[sp.grain];
     var gaps = x.filter(function (p) { return !P[p].length; });
@@ -15444,7 +15465,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     return out.slice(0, 10);
   };
   function seriesSay(D, F, X, out, setG) {
-    var cells = pick(D, F || {}, X.where), sp = span(D, cells);
+    var cells = pick(D, F || {}, X.where), sp = span(D, cells, F && F.grain);
     if (!sp) return;
     setG(sp.grain);
     var unit = X.mkey ? unitOf(D, X) : '', g = sp.grain, gs = g + 's', nat = g === nativeOf(D);
@@ -15606,13 +15627,53 @@ table &#x27;RentSafeTO Evaluation View&#x27;
           D.cube.dims[j].levels.map(function (l) { return '<option value="' + esc(l) + '">' + esc(l) + '</option>'; }).join('') + '</select></label>';
       }
     });
+    // drill: the step the time charts read (Power BI's drill up and down); Auto is the span's own
+    if (ms.length > 1 && D.charts.some(function (X) { return X.draw === 'line' || X.draw === 'area' || X.draw === 'multiples'; })) {
+      var gs = ['year', 'quarter', 'month'].filter(function (g) { return GRANK[g] >= GRANK[nativeOf(D)]; });
+      if (gs.length > 1) h += '<label class="nld-cat nld-drill">Time by <select data-nld-f="grain"><option value="">Auto</option>' +
+        gs.map(function (g) { return '<option value="' + g + '">' + g.charAt(0).toUpperCase() + g.slice(1) + '</option>'; }).join('') + '</select></label>';
+    }
     return h + '<button type="button" class="tb" data-nld="clear">Clear filters</button><p class="nld-active note" id="nld-active" role="status" aria-live="polite"></p></form>';
   }
   function tileHtml(D, K, F) {
     var r = NLD.kpi(D, K, F), unit = unitOf(D, K), small = smallOf(D);
     var v = r.value === null ? (r.n > 0 && r.suppressed ? '<' + small : '–') : K.agg === 'change' ? fmtChange(r.value, unit) : fmt(r.value, K.agg === 'count' ? '' : unit);
-    var sub = tileSub(D, K, r, unit, small);
-    return '<div class="tr-kpi nld-kpi" id="nld-x-' + esc(K.id) + '" tabindex="-1"><span class="k-lab">' + esc(K.label) + '</span><span class="k-val">' + esc(v) + '</span><span class="k-sub">' + esc(sub) + '</span></div>';
+    var sub = tileSub(D, K, r, unit, small), tr = tileTrend(D, K, F, unit);
+    return '<div class="tr-kpi nld-kpi" id="nld-x-' + esc(K.id) + '" tabindex="-1"><span class="k-lab">' + esc(K.label) + '</span><span class="k-val">' + esc(v) + '</span><span class="k-sub">' + esc(sub) + '</span>' +
+      (tr.var ? '<span class="k-var">' + esc(tr.var) + '</span>' : '') + tr.spark + '</div>';
+  }
+  // a tile's trend (Power BI's KPI card): its measure period by period as a sparkline, and for a total, average or count its last
+  // complete period against the one before. The arrow carries no colour: whether up is good depends on the measure. A period still
+  // filling (a year of 9 months) is not compared. The sparkline is decoration; the variance line says the same in words.
+  var SPARK_N = 24;
+  function tileTrend(D, K, F, unit) {
+    var out = { spark: '', var: '' };
+    if (!D.cube.months.length || (K.mkey && measIdx(D, K.mkey) < 0) || (!K.mkey && K.agg !== 'count')) return out;
+    var cells = pick(D, F || {}, K.where), g = tileGrain(D, cells);
+    var pv = periodValues(D, cells, K.agg === 'count' ? null : K.mkey, g);
+    var held = heldMonths(D, cells, g), lastM = null;
+    cells.forEach(function (c) { if (c[0] >= 0 && (lastM === null || D.cube.months[c[0]] > lastM)) lastM = D.cube.months[c[0]]; });
+    // the data's last month still filling (cube.last_month_full: data to the 15th): its period is not compared or drawn
+    var partial = D.cube.last_month_full === false && lastM === D.cube.months[D.cube.months.length - 1];
+    if ((held || partial) && pv.length) pv = pv.slice(0, -1);
+    var have = pv.filter(function (x) { return x.v !== null; }).slice(-SPARK_N);
+    if (have.length >= 3) {
+      var lo = Math.min.apply(null, have.map(function (x) { return x.v; })), hi = Math.max.apply(null, have.map(function (x) { return x.v; }));
+      var W = 120, H = 26, k = have.length - 1, sy = hi > lo ? (H - 4) / (hi - lo) : 0;
+      var pts = have.map(function (x, i) { return (i * W / k).toFixed(1) + ',' + (H - 2 - (sy ? (x.v - lo) * sy : (H - 4) / 2)).toFixed(1); });
+      out.spark = '<svg class="k-spark" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" aria-hidden="true" focusable="false"><polyline points="' + pts.join(' ') +
+        '" fill="none" stroke="var(--ts-1)" stroke-width="1.6" stroke-linejoin="round"/><circle cx="' + pts[k].split(',')[0] + '" cy="' + pts[k].split(',')[1] + '" r="2.2" fill="var(--ts-1)"/></svg>';
+    }
+    if ((K.agg === 'sum' || K.agg === 'average' || K.agg === 'count') && pv.length >= 2) {
+      var a = pv[pv.length - 2], b = pv[pv.length - 1];
+      if (a.v !== null && b.v !== null) {
+        var u = K.agg === 'count' ? '' : unit, d = b.v - a.v, pct = a.v ? d / Math.abs(a.v) * 100 : null;
+        var arrow = d > 0 ? '\u25B2 ' : d < 0 ? '\u25BC ' : '';
+        out.var = periodWord(b.p) + ': ' + fmt(b.v, u) + ', ' + arrow + (pct !== null && isFinite(pct) && u !== '%' ? Math.abs(pct).toFixed(1) + '%' : fmtChange(d, u).replace(/^[+−]/, '')) +
+          ' ' + (d > 0 ? 'above' : d < 0 ? 'below' : 'level with') + ' ' + periodWord(a.p);
+      }
+    }
+    return out;
   }
   // the words under a tile's figure: when it is from, against what, on how many rows
   function tileSub(D, K, r, unit, small) {
@@ -15678,6 +15739,67 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       '<p class="note">' + (local ? 'A dashboard saved from NorthLedger: the filters work in this file, offline; nothing is sent anywhere.' :
         'Both files are written in this browser, with the filters as set now; nothing is uploaded. The HTML file keeps the filters working offline.') + '</p></div>';
   }
+  /* ------------------------------------------------------------ what drives it (AI Analyst v2 phase D): key influencers and a decomposition */
+  // the measure a decomposition splits: the first tile's flow measure (a total adds up across groups), else the rows
+  function decompMeasure(D) {
+    for (var i = 0; i < D.kpis.length; i++) { var j = D.kpis[i].mkey ? measIdx(D, D.kpis[i].mkey) : -1; if (j >= 0 && D.cube.measures[j].flow) return D.kpis[i]; }
+    return null;
+  }
+  function driversHtml(D) {
+    var inf = D.influencers && D.influencers.items && D.influencers.items.length ? D.influencers : null;
+    var canSplit = D.cube.months.length > 1 && D.cube.dims.length;
+    if (!inf && !canSplit) return '';
+    var h = '<section class="tr-card nld-drivers" aria-labelledby="nld-drv-h"><h4 id="nld-drv-h">What drives it</h4>';
+    if (canSplit) {
+      h += '<h5>What made up the last change</h5><p class="note">The change in the last whole ' + esc(nativeOf(D)) + ' against the one before, split by a column; ' +
+        'the parts add up to the change. It follows the filters.</p><label class="nld-cat">Split by <select data-nld-f="split">' +
+        D.cube.dims.map(function (d) { return '<option value="' + esc(d.key) + '">' + esc(d.column) + '</option>'; }).join('') + '</select></label>' +
+        '<div data-nld="decomp" aria-live="polite"></div>';
+    }
+    if (inf) {
+      var j = -1; D.cube.measures.forEach(function (m, i) { if (m.column === inf.measure) j = i; });
+      var u = j >= 0 ? D.cube.measures[j].unit || '' : '', big = Math.max.apply(null, inf.items.map(function (x) { return Math.abs(x.diff); }));
+      h += '<h5>Key influencers of ' + esc(inf.measure) + '</h5><p class="note">' + esc(inf.note) + ' Each group on ' + inf.rows_min + ' rows or more; only a difference whose 95% interval excludes zero is listed, the interval widened for the ' + (inf.tests || 1) + ' groups compared (Bonferroni).</p><ul class="nld-infl">' +
+        inf.items.map(function (x) {
+          var w = big ? Math.max(2, Math.round(Math.abs(x.diff) / big * 100)) : 0;
+          return '<li><span class="nld-infl-t">When <strong>' + esc(x.column) + '</strong> is <strong>' + esc(x.level) + '</strong>, the average ' + esc(inf.measure) + ' is ' + esc(fmt(x.mean, u)) +
+            (x.ratio ? ' (' + x.ratio.toFixed(2) + '\u00d7 the rest\u2019s ' + esc(fmt(x.rest_mean, u)) + ')' : ' (the rest\u2019s: ' + esc(fmt(x.rest_mean, u)) + ')') +
+            '; difference ' + esc(fmtChange(x.diff, u)) + ', 95% interval ' + esc(fmtChange(x.lo, u)) + ' to ' + esc(fmtChange(x.hi, u)) + '; ' + x.rows.toLocaleString('en-US') + ' rows.</span>' +
+            '<span class="nld-infl-b" aria-hidden="true"><span style="width:' + w + '%;background:' + (x.diff >= 0 ? 'var(--div-pos)' : 'var(--div-neg)') + '"></span></span></li>';
+        }).join('') + '</ul>';
+    }
+    return h + '</section>';
+  }
+  // the decomposition under the filters: [{level, a, b, d}] for the last whole period against the one before
+  NLD.decomp = function (D, F, dimKey) {
+    var K = decompMeasure(D), j = dimIdx(D, dimKey);
+    if (j < 0) return null;
+    var cells = pick(D, F || {}, null), g = tileGrain(D, cells), nd = D.cube.dims.length, mj = K ? measIdx(D, K.mkey) : -1;
+    var ps = {}; cells.forEach(function (c) { if (c[0] >= 0) ps[periodOf(D.cube.months[c[0]], g)] = 1; });
+    var order = Object.keys(ps).sort(), lastM = null;
+    cells.forEach(function (c) { if (c[0] >= 0 && (lastM === null || D.cube.months[c[0]] > lastM)) lastM = D.cube.months[c[0]]; });
+    if (heldMonths(D, cells, g) || (D.cube.last_month_full === false && lastM === D.cube.months[D.cube.months.length - 1])) order = order.slice(0, -1);
+    if (order.length < 2) return null;
+    var pa = order[order.length - 2], pb = order[order.length - 1], L = D.cube.dims[j].levels, a = L.map(function () { return 0; }), b = L.map(function () { return 0; });
+    cells.forEach(function (c) {
+      if (c[0] < 0) return;
+      var p = periodOf(D.cube.months[c[0]], g), v = mj >= 0 ? c[2 + nd + 2 * mj] : c[1 + nd];
+      if (p === pa) a[c[1 + j]] += v; else if (p === pb) b[c[1 + j]] += v;
+    });
+    var parts = L.map(function (l, i) { return { level: l, a: a[i], b: b[i], d: b[i] - a[i] }; }).filter(function (x) { return x.a || x.b; })
+      .sort(function (x, y) { return Math.abs(y.d) - Math.abs(x.d); });
+    var ta = a.reduce(function (s, v) { return s + v; }, 0), tb = b.reduce(function (s, v) { return s + v; }, 0);
+    return { measure: K ? K.label || K.measure : 'Rows', unit: K ? unitOf(D, K) : '', pa: pa, pb: pb, ta: ta, tb: tb, parts: parts };
+  };
+  function decompHtml(D, r) {
+    if (!r) return '<p class="note">Not enough whole periods under these filters to compare.</p>';
+    var big = Math.max.apply(null, r.parts.map(function (x) { return Math.abs(x.d); }).concat([1e-12])), u = r.unit, top = r.parts.slice(0, 8), rest = r.parts.slice(8);
+    var restD = rest.reduce(function (s, x) { return s + x.d; }, 0);
+    var row = function (lab, d) { var w = Math.max(1, Math.round(Math.abs(d) / big * 100)); return '<li><span class="nld-dc-l">' + esc(lab) + '</span><span class="nld-dc-b" aria-hidden="true"><span style="width:' + w + '%;background:' + (d >= 0 ? 'var(--div-pos)' : 'var(--div-neg)') + '"></span></span><span class="nld-dc-v">' + esc(fmtChange(d, u) || '0') + '</span></li>'; };
+    return '<p><strong>' + esc(r.measure) + '</strong>: ' + esc(fmt(r.ta, u)) + ' in ' + esc(periodWord(r.pa)) + ', ' + esc(fmt(r.tb, u)) + ' in ' + esc(periodWord(r.pb)) +
+      ' (' + esc(fmtChange(r.tb - r.ta, u) || 'no change') + ').</p><ul class="nld-dc">' + top.map(function (x) { return row(x.level, x.d); }).join('') +
+      (rest.length ? row(rest.length + ' more', restD) : '') + '</ul>';
+  }
   NLD.html = function (D, local) {
     var I = ids(D), body = '';
     D.layout.forEach(function (row) {
@@ -15687,6 +15809,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     });
     var card = NLD.cardHost && !local ? '<p class="nld-counts-link note">What this dashboard counts: <a href="#nld-counts-h">what each column means and what one row is</a> (step 1, editable).</p>' : countsCard(D);
     var vis = window.NLVG && D.visuals && D.visuals.length ? window.NLVG.html(D) : '';   // the AI's own visuals (64-vega.js): not filtered
+    vis += driversHtml(D);
     return '<div class="nld" data-v="' + esc(D.version) + '">' + head(D) + card + filtersBar(D) + insightsCard() + body + vis + notes(D, {}, local) + exportsBar(local) + '</div>';
   };
   NLD.countsCard = countsCard;
@@ -15702,7 +15825,9 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     var F = opts.F || { cats: {} };
     var draw = function (X, W) {
       var V = window.NLV;
-      var rec = X.draw === 'static' ? X.record : NLD.record(D, X, F);
+      // the time chart a period was picked on keeps every period (the pick is highlighted, not filtered away: Power BI's cross-highlight)
+      var FX = F.src === X.id ? Object.assign({}, F, { from: undefined, to: undefined }) : F;
+      var rec = X.draw === 'static' ? X.record : NLD.record(D, X, FX);
       if (X.draw === 'static' && opts.snapshot && opts.snapshot[X.id]) return { html: opts.snapshot[X.id] };
       if (!V || !V.draw) return { html: '<p class="note">Charts could not be drawn here.</p>' };
       if (rec.empty) return { html: '<p class="note">' + esc(rec.summary) + '</p>' };
@@ -15724,6 +15849,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         else if (U.draw) U.draw(id);
         else el.innerHTML = draw(X, el.clientWidth || 600).html || '';
       });
+      Array.prototype.forEach.call(box.querySelectorAll('figure.nld-fig svg [data-x].nld-pick'), function (e) { e.classList.remove('nld-pick'); });
+      if (F.src && F.pick) Array.prototype.forEach.call(box.querySelectorAll('#nld-x-' + cssId(F.src) + ' svg [data-x="' + F.pick + '"]'), function (e) { e.classList.add('nld-pick'); });
       var ins = box.querySelector('[data-nld="insights"]');
       if (ins) {
         var said = NLD.insights(D, F);
@@ -15731,6 +15858,8 @@ table &#x27;RentSafeTO Evaluation View&#x27;
         var card0 = ins.closest ? ins.closest('.nld-insights') : null;
         if (card0) card0.hidden = !said.length;                   // nothing the engine can say under these filters: no empty card
       }
+      var dc = box.querySelector('[data-nld="decomp"]'), ds = box.querySelector('select[data-nld-f="split"]');
+      if (dc && ds) dc.innerHTML = decompHtml(D, NLD.decomp(D, F, ds.value));
       var a = activeWords(D, F), ac = box.querySelector('#nld-active');
       if (ac) ac.textContent = a ? 'Filtered: ' + a + '.' : 'Showing everything: ' + shownRange(D, F) + '.';
       var sh = box.querySelector('[data-nld="shown"]'); if (sh) sh.textContent = shownRange(D, F);
@@ -15739,14 +15868,16 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (U.markScrollers) U.markScrollers();
     }
     NLD.state = function () { return F; };
-    NLD.setFilter = function (f) { F = { from: f.from, to: f.to, cats: f.cats || {} }; render(); };
+    NLD.setFilter = function (f) { F = { from: f.from, to: f.to, cats: f.cats || {}, grain: f.grain }; var gs = box.querySelector('select[data-nld-f="grain"]'); if (gs) gs.value = f.grain || ''; render(); };
     box.addEventListener('change', function (e) {
       var s = e.target, k = s.getAttribute && s.getAttribute('data-nld-f');
       if (k === 'from' || k === 'to') {
-        F[k] = s.value;
+        F[k] = s.value; delete F.src; delete F.pick;
         if (F.from && F.to && F.from > F.to) { var t = F.from; F.from = F.to; F.to = t; box.querySelector('select[data-nld-f="from"]').value = F.from; box.querySelector('select[data-nld-f="to"]').value = F.to; }
         render();
       } else if (k === 'cat') { F.cats[s.getAttribute('data-key')] = s.value ? [s.value] : []; render(); }
+      else if (k === 'grain') { F.grain = s.value || undefined; render(); }
+      else if (k === 'split') render();
       else if (s.id === 'nld-e-el') fillEdit();
       else if (s.getAttribute && s.getAttribute('data-nld-col') && window.NLColumns) window.NLColumns.set(s.getAttribute('data-nld-col'), { note: s.value.replace(/\s+/g, ' ').trim() });
     });
@@ -15754,6 +15885,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var b = e.target.closest && e.target.closest('button'), act = b && b.getAttribute('data-nld');
       if (act === 'clear') {
         F = { cats: {} };
+        Array.prototype.forEach.call(box.querySelectorAll('select[data-nld-f="grain"]'), function (s) { s.value = ''; });
         Array.prototype.forEach.call(box.querySelectorAll('select[data-nld-f="from"]'), function (s) { s.selectedIndex = 0; });
         Array.prototype.forEach.call(box.querySelectorAll('select[data-nld-f="to"]'), function (s) { s.selectedIndex = s.options.length - 1; });
         render(); return;
@@ -15762,6 +15894,10 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       if (act === 'html' && opts.onHtml) return opts.onHtml(D, F);
       if (act === 'xlsx' && opts.onXlsx) return opts.onXlsx(D, F);
       if (b && b.getAttribute('data-nld-x')) { crossFilter(b.getAttribute('data-nld-x'), b.getAttribute('data-level')); return; }
+      // a click on a point of a time chart filters every tile and chart to that period (again: back to every date); the date lists
+      // stay the keyboard's way to the same filter
+      var pt = e.target.closest && e.target.closest('figure.nld-fig svg [data-x]');
+      if (pt && /^(line|area|multiples)$/.test(pt.closest('figure').getAttribute('data-draw') || '')) { periodFilter(pt.getAttribute('data-x'), pt.closest('figure').id.slice(6)); return; }
       // a click on a bar (or its row) filters every tile and chart by that group
       var g = e.target.closest && e.target.closest('figure.nld-fig[data-draw="bar"] svg g[data-tip]');
       if (g) {
@@ -15781,6 +15917,20 @@ table &#x27;RentSafeTO Evaluation View&#x27;
     box.addEventListener('keydown', function (e) {
       if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('figure.nld-fig[data-draw="bar"] svg g[data-tip]')) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
     });
+    function periodFilter(p, xid) {
+      var g = /^\d{4}-\d{2}$/.test(p) ? 'month' : /^\d{4}-Q\d$/.test(p) ? 'quarter' : /^\d{4}$/.test(p) ? 'year' : null;
+      if (!g) return;
+      var ms = D.cube.months.filter(function (m) { return periodOf(m, g) === p; });
+      if (!ms.length) return;
+      var all = D.cube.months, same = F.from === ms[0] && F.to === ms[ms.length - 1];
+      F.from = same ? all[0] : ms[0]; F.to = same ? all[all.length - 1] : ms[ms.length - 1];
+      if (same) { delete F.src; delete F.pick; } else { F.src = xid; F.pick = p; }
+      Array.prototype.forEach.call(box.querySelectorAll('select[data-nld-f="from"], select[data-nld-f="to"]'), function (sel) {
+        var v = sel.getAttribute('data-nld-f') === 'from' ? F.from : F.to;
+        if (Array.prototype.some.call(sel.options, function (o) { return o.value === v; })) sel.value = v;
+      });
+      render();
+    }
     function crossFilter(xid, level) {
       var X = ids(D)[xid];
       if (!X || !X.bkey || level === 'other') return;

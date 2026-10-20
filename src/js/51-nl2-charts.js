@@ -880,7 +880,7 @@
           b += '<path d="' + U.path(s.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:' + c + ';stroke-width:2' + (GDASH[k] ? ';stroke-dasharray:' + GDASH[k] : '') + '"/>';
           s.values.forEach(function (v, i) {
             if (!gNum(v)) return;
-            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 120 ? 1.2 : n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
+            b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (n > 120 ? 1.2 : n > 40 ? 1.8 : 2.6) + '" style="fill:' + c + '" data-x="' + esc(d.x[i]) + '" data-tip="' + esc((one ? '' : s.label + ', ') + gper(d.x[i], true) + ': ' + gcell(rec, i, k)) + '"/>';
           });
         });
         if (ends) {
@@ -921,7 +921,7 @@
         var cw = n > 1 ? (X(1) - X(0)) : (R - L);
         d.x.forEach(function (p, i) {
           var tip = gper(p, true) + ': total ' + gcell(rec, i, P.length) + '; ' + P.map(function (q, k) { return q.label + ' ' + gcell(rec, i, k); }).join(', ');
-          b += '<rect x="' + gf1(Math.max(L, X(i) - cw / 2)) + '" y="' + (T + 4) + '" width="' + gf1(Math.min(cw, R - L)) + '" height="' + gf1(Bt - T - 4) + '" style="fill:transparent" data-tip="' + esc(tip) + '"/>';
+          b += '<rect x="' + gf1(Math.max(L, X(i) - cw / 2)) + '" y="' + (T + 4) + '" width="' + gf1(Math.min(cw, R - L)) + '" height="' + gf1(Bt - T - 4) + '" style="fill:transparent" data-x="' + esc(p) + '" data-tip="' + esc(tip) + '"/>';
         });
         return { body: b, H: H, layout: 'stacked, key above' };
       }
@@ -987,7 +987,7 @@
           if (axisOk) b += gtxt(x0, y0 + plotB + 15, fl) + gtxt(x0 + pw, y0 + plotB + 15, ll, { anchor: 'end' });
           b += '<path d="' + U.path(p.values.map(function (v, i) { return gNum(v) ? [X(i), Y(v)] : null; })) + '" style="fill:none;stroke:var(--ts-1);stroke-width:1.8"/>';
           p.values.forEach(function (v, i) {
-            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--ts-1)" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
+            if (gNum(v)) b += '<circle cx="' + gf1(X(i)) + '" cy="' + gf1(Y(v)) + '" r="' + (i === li ? 3 : 1.6) + '" style="fill:var(--ts-1)" data-x="' + esc(d.x[i]) + '" data-tip="' + esc(p.label + ', ' + gper(d.x[i], true) + ': ' + gcell(rec, i, j)) + '"/>';
           });
         });
         var rowsN = Math.ceil(Ps.length / cols);

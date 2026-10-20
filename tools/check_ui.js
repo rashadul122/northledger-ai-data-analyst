@@ -4550,6 +4550,49 @@ async function visualsChecks(ctx, phone) {
 }
 check('dashboard-ai-visuals-vega', DESK, async (ctx) => { await visualsChecks(ctx, false); });
 check('dashboard-ai-visuals-vega-phone-dark', PHONE, async (ctx) => { await visualsChecks(ctx, true); }, { colorScheme: 'dark' });
+// Power BI-level reading (AI Analyst v2 phase D, 20 Oct 2026): each tile's sparkline and its last whole period against the one before;
+// the drill control (time by year, quarter or month) that every time chart follows; a click on a line's point filters the dashboard to
+// that period and a second click clears it; the decomposition whose parts add up to the change, following the filters; the key
+// influencers with their intervals
+check('dashboard-phase-d-trend-drill-decomposition', DESK, async (ctx) => {
+  const { p, D } = await dashPage(ctx);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  const t = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-dash .nld-kpi')).map((k) => ({ spark: !!k.querySelector('svg.k-spark polyline'), v: (k.querySelector('.k-var') || {}).textContent || '' })));
+  ok(t.some((x) => x.spark) && t.some((x) => /(above|below|level with) /.test(x.v)), 'no tile carries its trend: ' + JSON.stringify(t).slice(0, 300));
+  // the drill control
+  const drill = await p.$('#nl2-dash select[data-nld-f="grain"]');
+  ok(drill, 'no drill control on a dashboard with a time chart');
+  const lineFig = await p.evaluate(() => { const f = document.querySelector('#nl2-dash figure.nld-fig[data-draw="line"], #nl2-dash figure.nld-fig[data-draw="area"]'); return f ? f.id : null; });
+  ok(lineFig, 'the sample dashboard has no time chart');
+  const pts = async () => p.evaluate((id) => Array.from(document.querySelectorAll('#' + id + ' svg [data-x]')).map((e) => e.getAttribute('data-x')), lineFig);
+  await drill.selectOption('quarter'); await p.waitForTimeout(250);
+  const q = await pts();
+  ok(q.length && q.every((x) => /^\d{4}-Q\d$/.test(x)), 'drilling to quarters did not redraw by quarter: ' + q.slice(0, 5));
+  await drill.selectOption('year'); await p.waitForTimeout(250);
+  const y = await pts();
+  ok(y.length && y.every((x) => /^\d{4}$/.test(x)) && y.length < q.length, 'drilling to years did not redraw by year: ' + y.slice(0, 5));
+  // a click on a point filters to that year, a second clears it
+  const first = y[0];
+  await p.evaluate(([id, x]) => document.querySelector('#' + id + ' svg [data-x="' + x + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true })), [lineFig, first]);
+  await p.waitForTimeout(250);
+  const act = await p.textContent('#nld-active');
+  ok(/Filtered: dates/.test(act) && act.indexOf(first) >= 0, 'a click on a point did not filter to its period: ' + act);
+  await p.evaluate(([id, x]) => { const e = document.querySelector('#' + id + ' svg [data-x="' + x + '"]'); e.dispatchEvent(new MouseEvent('click', { bubbles: true })); }, [lineFig, first]);
+  await p.waitForTimeout(250);
+  ok(/Showing everything/.test(await p.textContent('#nld-active')), 'a second click did not clear the period');
+  // the decomposition: its parts add up to the change
+  const dc = await p.evaluate(() => { const D = window.NLD.current.D, s = document.querySelector('#nl2-dash select[data-nld-f="split"]'); if (!s) return null;
+    const r = window.NLD.decomp(D, window.NLD.state(), s.value); return r && { sum: r.parts.reduce((a, x) => a + x.d, 0), d: r.tb - r.ta, items: document.querySelectorAll('#nl2-dash .nld-dc li').length }; });
+  ok(dc && Math.abs(dc.sum - dc.d) < 1e-6 * Math.max(1, Math.abs(dc.d)) && dc.items >= 1, 'the decomposition does not add up to the change: ' + JSON.stringify(dc));
+  const infl = await p.evaluate(() => Array.from(document.querySelectorAll('#nl2-dash .nld-infl li')).map((l) => l.textContent));
+  const want = (D.influencers && D.influencers.items || []).length;
+  ok(infl.length === want && infl.every((x) => /95% interval/.test(x)), 'the key influencers are not shown with their intervals: ' + infl.length + ' of ' + want);
+});
+check('dashboard-phase-d-phone-dark', PHONE, async (ctx) => {
+  const { p } = await dashPage(ctx);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+  await noSideways(p);
+}, { colorScheme: 'dark' });
 check('dashboard-tab-tiles-charts-filters-and-notes', DESK, async (ctx) => {
   const { p, D } = await dashPage(ctx);
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);

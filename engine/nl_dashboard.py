@@ -915,6 +915,20 @@ def make_cube(R: Read, design: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
             "rows": int(n), "no_date_rows": int((mi < 0).sum()) if n else 0,
             # the data's own step (native_grain): no chart or tile reads a finer one; and the fewest rows a figure may rest on
             "grain": R.grain, "small": R.small}
+    # the last day the data reach, and whether its month is whole (20 Oct 2026, phase D: a tile's variance never compares a month
+    # still filling, data to the 15th, with a whole one): whole when the last date is within 3 days of the month's end, or the
+    # dates are month starts (a monthly series dated on the 1st)
+    cube["last_day"], cube["last_month_full"] = None, True
+    if c.date is not None and months:
+        try:
+            t = pd.to_datetime(frame[c.date], errors="coerce").dropna()
+            if len(t):
+                last = t.max()
+                cube["last_day"] = last.strftime("%Y-%m-%d")
+                firsts = bool((t.dt.day == 1).mean() >= 0.95)
+                cube["last_month_full"] = bool(firsts or last.day >= last.days_in_month - 3)
+        except Exception:  # noqa: BLE001 - unknown: treated as whole, as before
+            pass
     return cube, {d["land"]: d["key"] for d in dim_rec}, {m["land"]: m["key"] for m in mrec}
 
 
@@ -1569,7 +1583,7 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
     out = {"version": VERSION, "ok": True, "chosen_by": chosen,
            "recorded": recorded if chosen == "recorded" else "",
            "audience": design["audience"], "questions": questions, "grain": grain, "columns": columns, "kpis": kpis, "charts": charts,
-           "filters": filters, "layout": layout, "cube": cube, "defaults": defaults,
+           "filters": filters, "layout": layout, "cube": cube, "defaults": defaults, "influencers": _influencers_or_none(R, design, dkey),
            "remarks": remarks(R, cube, plural), "refused": list(R.refused), "suppress_below": R.small,
            "observations": bool(R.obs),
            "rules": ["Flows are added up; levels, rates and balances are averaged, never added up over time.",
@@ -1581,6 +1595,83 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
            "title": _dash_title(R, rep)}
     del dims_used
     return out
+
+
+INFL_MIN_ROWS = 30              # a level's rows before its average is compared (and the rest's)
+INFL_MAX = 6
+
+
+def key_influencers(R: Read, design: Dict[str, Any], dkey: Dict[str, str]) -> Dict[str, Any]:
+    """Power BI's key influencers, kept honest (AI Analyst v2 phase D, 20 Oct 2026): for the dashboard's lead measure (its first tile's
+    measure, else the engine's lead) and each category column the dashboard filters or splits by, the levels whose average differs
+    from the average of every other row, by Welch's 95% interval on the difference; only a level on INFL_MIN_ROWS rows or more, and
+    only an interval that excludes zero. Over every row the engine kept (not filtered). An association, never a cause: a level may
+    differ because of something else that comes with it."""
+    import math
+    import pandas as pd
+    c = R.ctx
+    frame = c.frame
+    m = next((k.get("measure") for k in design.get("kpis") or [] if k.get("measure") and k.get("measure") in c.measures), None) \
+        or lead_measure(R)
+    if not m or frame is None or m not in frame.columns or not dkey:
+        return {"measure": None, "items": []}
+    v = pd.to_numeric(frame[m], errors="coerce")
+    items: List[Dict[str, Any]] = []
+    cands: List[Dict[str, Any]] = []
+    for land in dkey:
+        if land not in frame.columns:
+            continue
+        g = frame[land].astype(str)
+        ok = v.notna() & frame[land].notna()
+        vv, gg = v[ok], g[ok]
+        if len(vv) < 2 * INFL_MIN_ROWS:
+            continue
+        two = gg.nunique() == 2              # a two-level column: its levels mirror each other, so one finding, not two
+        c0 = float(vv.mean())                    # centred first: sums of squares of large values (salaries) lose their digits
+        w = vv - c0
+        st = w.groupby(gg).agg(["count", "sum"])
+        st["sq"] = (w * w).groupby(gg).sum()
+        N, S, Q = float(len(w)), float(w.sum()), float((w * w).sum())
+        for lev, r_ in st.iterrows():            # the rest's mean and variance from the totals: one pass, any number of levels
+            n1, s1, q1 = float(r_["count"]), float(r_["sum"]), float(r_["sq"])
+            n2, s2, q2 = N - n1, S - s1, Q - q1
+            if n1 < INFL_MIN_ROWS or n2 < INFL_MIN_ROWS:
+                continue
+            if two and any(z_["column"] == c.header(land) for z_ in cands):
+                break
+            a, b = s1 / n1, s2 / n2
+            va, vb = max(0.0, (q1 - n1 * a * a) / (n1 - 1)), max(0.0, (q2 - n2 * b * b) / (n2 - 1))
+            a, b = a + c0, b + c0
+            se = math.sqrt(va / n1 + vb / n2)
+            if not (se > 0) or not math.isfinite(se):
+                continue
+            cands.append({"column": c.header(land), "level": str(lev)[:60], "mean": a, "rest_mean": b, "d": a - b, "se": se,
+                          "rows": int(n1), "rest_rows": int(n2)})
+    # every comparison made counts (Bonferroni): with dozens of groups, a 95% interval each would list noise as an influencer
+    from statistics import NormalDist
+    m_tests = max(1, len(cands))
+    z = NormalDist().inv_cdf(1 - 0.025 / m_tests)
+    for k in cands:
+        lo, hi = k["d"] - z * k["se"], k["d"] + z * k["se"]
+        if lo <= 0 <= hi:
+            continue
+        items.append({"column": k["column"], "level": k["level"], "mean": _num(k["mean"]), "rest_mean": _num(k["rest_mean"]),
+                      "diff": _num(k["d"]), "lo": _num(lo), "hi": _num(hi), "ratio": _num(k["mean"] / k["rest_mean"]) if k["rest_mean"] else None,
+                      "rows": k["rows"], "rest_rows": k["rest_rows"]})
+    items.sort(key=lambda z_: -abs(z_["diff"]))
+    return {"measure": c.header(m),          # its unit is the cube's for that measure (57-dashboard.js reads D.cube.measures)
+            "items": items[:INFL_MAX], "rows_min": INFL_MIN_ROWS, "tests": m_tests,
+            "note": "Over every row the engine kept, not filtered. An association, not a cause: a group may differ because of something "
+                    "else that comes with it."}
+
+
+def _influencers_or_none(R: Read, design: Dict[str, Any], dkey: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    try:
+        return key_influencers(R, design, dkey)
+    except Exception:  # noqa: BLE001 - the dashboard stands without its influencers
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return None
 
 
 REPORT_CHARTS_MIN = 2           # a dashboard with fewer charts that follow the filters also carries the report's own

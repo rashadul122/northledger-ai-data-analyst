@@ -671,6 +671,26 @@ def test_the_ais_visuals_are_run_by_the_engine_and_their_specs_checked():
     assert clean == {"mark": {"type": "line", "point": True}, "encoding": {"x": {"field": "a", "type": "temporal"}}}, clean
 
 
+def test_key_influencers_are_intervals_that_exclude_zero_and_a_partial_last_month_is_marked():
+    """Phase D (20 Oct 2026): a group whose average truly differs is found with its Welch interval; noise is not; a two-level column
+    is one finding, not its mirror; data that stop on the 9th mark their last month as not whole."""
+    rnd = random.Random(7)
+    rows = ["order_date,channel,region,revenue"]
+    for i in range(600):
+        ch = "Online" if i % 2 else "Store"
+        rg = "NESW"[rnd.randrange(4)]
+        rev = (150 if ch == "Online" else 100) + rnd.gauss(0, 20)
+        day = "2024-%02d-%02d" % (1 + i % 9, 1 + i % 28) if i % 9 != 8 else "2024-09-%02d" % (1 + i % 9)
+        rows.append("%s,%s,%s,%.2f" % (day, ch, rg, rev))
+    d = NB.run(("\n".join(rows) + "\n").encode(), "o.csv", "", None, "2026-10-20")["dashboard"]
+    inf = d.get("influencers") or {}
+    assert inf.get("measure") == "revenue", inf
+    chans = [x for x in inf["items"] if x["column"] == "channel"]
+    assert len(chans) == 1 and abs(abs(chans[0]["diff"]) - 50) < 8 and chans[0]["lo"] * chans[0]["hi"] > 0, chans
+    assert not any(x["column"] == "region" for x in inf["items"]), inf["items"]          # random regions: no finding
+    assert d["cube"]["last_day"] == "2024-09-09" and d["cube"]["last_month_full"] is False, (d["cube"]["last_day"], d["cube"]["last_month_full"])
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

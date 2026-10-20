@@ -2619,12 +2619,18 @@
       }
       if (phase === 'investigate' || phase === 'write') AI_STAT.timer = setInterval(function () { if (document.getElementById('try-ai-status') === box) paint(); else clearInterval(AI_STAT.timer); }, 1000);
     }
-    var INVESTIGATE_MS = 75000;
+    var INVESTIGATE_MS = 130000;
     var INVESTIGATE_BRIEF = 'Investigate this file for the written report on that question. Compute the figures its story needs: where the main measure stands ' +
       'in the latest period and the same period a year earlier; its highest and lowest points and when; its sharpest rise or fall; how recent ' +
       'years compare with earlier ones; and, if the file has groups, which lead and which lag. Prefer exact read-only SQL.';
+    // the AI's review round (AI Analyst v2 phase B, 20 Oct 2026): it reads every figure so far as a senior analyst would, and asks the
+    // engine to test the ones the story will lead with that look doubtful or rest on few rows
+    var REVIEW_BRIEF = 'Review the figures computed so far before the report is written. For each figure the story will lead with, judge whether it ' +
+      'is plausible (its sign, size and unit against the file) and how sure it is (the rows behind it, whether its interval includes no change). ' +
+      'Test the doubtful ones: recount with SQL, check inside a group or over another period. Set done if every figure that matters is sound.';
+    var REVIEW_ROUNDS = 2;                  // the investigate round, then one review round
     function investigate(rep, then) {
-      var b = rep && rep.analyst, w = worker(), seq = S.seq, id = seq, finished = false, timer = null;
+      var b = rep && rep.analyst, w = worker(), seq = S.seq, id = seq, finished = false, timer = null, t0 = Date.now();
       if (!b || !planOn() || CFG.ask_data !== true || (b.ai_rounds || 0) >= ASK_ROUNDS) return then();
       var goal = String((rep.ai_plan && rep.ai_plan.goal) || '').slice(0, 300);
       function done() {
@@ -2638,45 +2644,55 @@
       timer = setTimeout(done, INVESTIGATE_MS);
       S.investigating = true;
       aiStatus('investigate');
-      b.ai_rounds = (b.ai_rounds || 0) + 1;
-      el.note.textContent = 'The engine finished. The AI is asking it for the figures the report needs\u2026';
-      var onLedger = function (gotId, steps) {
-        if (gotId !== id) return;
-        S.onLedger = null;
-        if (!steps || seq !== S.seq || finished) return done();
-        fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: (goal || 'What does this file show?') + ' ' + INVESTIGATE_BRIEF, shape: b.shape, steps_so_far: steps, round: b.ai_rounds }),
-          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
-          .then(function (res) { return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; }); })
-          .then(function (x) {
-            var j = x.j || {};
-            if (finished || seq !== S.seq || x.status !== 200 || !Array.isArray(j.steps) || !j.steps.length) return done();
-            var onMore = function (gotId2, out) {
-              if (gotId2 !== id) return;
-              S.onMore = null;
-              if (!finished && seq === S.seq && out && Array.isArray(out.steps)) {
-                var ins = (out.insights || []).filter(function (i) { return i && typeof i.text === 'string' && i.text.trim() && !/^The read-only query returned /.test(i.text); });
-                b.steps = (b.steps || []).concat(out.steps);
-                if (out.answer && typeof out.answer.text === 'string' && !/^No rows match/.test(out.answer.text)) ins = [{ id: 'investigated', text: out.answer.text }].concat(ins);
-                b.insights = (b.insights || []).concat(ins);
-                b.refused = (b.refused || []).concat(out.refused || []);
-                b.chosen_by = 'engine+ai';
-                b.investigated = ins.length;
-                if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, null);
-              }
-              done();
-            };
-            onMore.inv = true;
-            S.onMore = onMore;
-            w.postMessage({ type: 'more', id: id, steps: j.steps.slice(0, 4), prior: b.steps || [], question: goal || 'the report' });
-          })
-          .catch(done);
-      };
-      onLedger.inv = true;
-      S.onLedger = onLedger;
-      // the engine lists its steps at once; with no answer in 5 s the writer goes ahead (never held for INVESTIGATE_MS by a silent engine)
-      setTimeout(function () { if (S.onLedger === onLedger) done(); }, 5000);
-      w.postMessage({ type: 'ledger', id: id, block: b });
+      el.note.textContent = 'The engine finished. The AI is asking it for the figures the report needs…';
+      function round(k) {
+        if (finished) return;
+        b.ai_rounds = (b.ai_rounds || 0) + 1;
+        var brief = k === 0 ? INVESTIGATE_BRIEF : REVIEW_BRIEF;
+        if (k > 0) el.note.textContent = 'The AI is checking the figures before it writes, and asking the engine to test the doubtful ones…';
+        var onLedger = function (gotId, steps) {
+          if (gotId !== id) return;
+          S.onLedger = null;
+          if (!steps || seq !== S.seq || finished) return done();
+          fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ objective: (goal || 'What does this file show?') + ' ' + brief, shape: b.shape, steps_so_far: steps, round: b.ai_rounds }),
+            credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
+            .then(function (res) { return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; }); })
+            .then(function (x) {
+              var j = x.j || {};
+              if (finished || seq !== S.seq || x.status !== 200 || !Array.isArray(j.steps) || !j.steps.length) return done();
+              var onMore = function (gotId2, out) {
+                if (gotId2 !== id) return;
+                S.onMore = null;
+                if (!finished && seq === S.seq && out && Array.isArray(out.steps)) {
+                  var ins = (out.insights || []).filter(function (i) { return i && typeof i.text === 'string' && i.text.trim() && !/^The read-only query returned /.test(i.text); });
+                  b.steps = (b.steps || []).concat(out.steps);
+                  if (out.answer && typeof out.answer.text === 'string' && !/^No rows match/.test(out.answer.text)) ins = [{ id: k ? 'reviewed' : 'investigated', text: out.answer.text }].concat(ins);
+                  b.insights = (b.insights || []).concat(ins);
+                  b.refused = (b.refused || []).concat(out.refused || []);
+                  b.chosen_by = 'engine+ai';
+                  b.investigated = (b.investigated || 0) + ins.length;
+                  if (k) b.reviewed = (b.reviewed || 0) + ins.length;
+                  if (window.NLA && window.NLA.refresh) window.NLA.refresh(el.report, rep, null);
+                }
+                // one more round while the AI is not done, rounds and time are left (a review round needs about 40 s)
+                if (!finished && seq === S.seq && k + 1 < REVIEW_ROUNDS && j.done !== true && (b.ai_rounds || 0) < ASK_ROUNDS &&
+                    Date.now() - t0 < INVESTIGATE_MS - 45000) return round(k + 1);
+                done();
+              };
+              onMore.inv = true;
+              S.onMore = onMore;
+              w.postMessage({ type: 'more', id: id, steps: j.steps.slice(0, 4), prior: b.steps || [], question: goal || 'the report' });
+            })
+            .catch(done);
+        };
+        onLedger.inv = true;
+        S.onLedger = onLedger;
+        // the engine lists its steps at once; with no answer in 5 s the writer goes ahead (never held for INVESTIGATE_MS by a silent engine)
+        setTimeout(function () { if (S.onLedger === onLedger) done(); }, 5000);
+        w.postMessage({ type: 'ledger', id: id, block: b });
+      }
+      round(0);
     }
 
     // POST /report with the engine's results_for_ai payload; on success draw the AI report card

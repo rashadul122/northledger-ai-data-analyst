@@ -6657,6 +6657,21 @@ def results_for_ai(rep: Any) -> Dict[str, Any]:
             "what_if": [{"label": w["label"], "assumption": "%+.2f%% a %s on the forecast path" % (w["per_period_pct"], pf["grain"]),
                          "text": "; ".join("%s: %s" % (q["period"], "{:,.2f}".format(q["value"])) for q in w["points"])}
                         for w in pf.get("what_if") or []]}
+    # the additions above came after _results_for_ai's own cap: keep the whole within RESULTS_MAX_BYTES, the visuals' rows trimmed
+    # first, then the visuals, the forecast's what-ifs and the key numbers (20 Oct 2026: a rich run passed the cap the worker enforces)
+    if isinstance(out, dict):
+        size = lambda: len(json.dumps(out, allow_nan=False, default=str))  # noqa: E731
+        for v in out.get("visuals") or []:
+            if size() <= RESULTS_MAX_BYTES:
+                break
+            v["rows"] = v["rows"][:4]
+        for k in ("visuals", "key_numbers"):
+            if size() > RESULTS_MAX_BYTES:
+                out.pop(k, None)
+        if size() > RESULTS_MAX_BYTES and isinstance(out.get("period_forecast"), dict):
+            out["period_forecast"].pop("what_if", None)
+        if size() > RESULTS_MAX_BYTES:
+            out.pop("period_forecast", None)
     return out
 
 

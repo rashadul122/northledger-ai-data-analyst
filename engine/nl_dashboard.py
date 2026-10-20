@@ -1829,6 +1829,8 @@ def key_numbers(d: Any) -> List[Dict[str, Any]]:
         if v.get("value") is None:
             continue
         unit = "" if k.get("agg") == "count" else (k.get("unit_word") or units.get(k.get("mkey")) or "")
+        if re.fullmatch(r"(?i)currency( units?)?|units?", unit or ""):
+            unit = ""                       # a placeholder, never printed as if it named the currency
         val = float(v["value"])
         if k.get("agg") == "change":
             fig = ("+" if val > 0 else "") + (_fmt(val, "" if unit == "%" else unit) + (" pp" if unit == "%" else ""))

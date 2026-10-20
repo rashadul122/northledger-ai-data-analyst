@@ -9388,6 +9388,18 @@ def _who(name: Any, decision: Optional[str]) -> str:
     return "a column you withheld" if decision == "withhold" else "%s (coded as personal data)" % name
 
 
+def _rank_like(name: Any, values: Any) -> bool:
+    """A column of ranks (Rank 1..173 in the college majors file): a place in an order, never a quantity to average (20 Oct 2026,
+    live: the engine's own dashboard tiled "Rank 87"). Its name ends in rank or ranking and it holds whole numbers from 1, nearly
+    all different. The core's own label rules (measure._label_number) have no rank word; this adapter rule leaves the core as it is."""
+    import pandas as pd
+    toks = [t for t in re.split(r"[^a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(name)).lower()) if t]
+    if not toks or toks[-1] not in ("rank", "ranking", "ranked"):
+        return False
+    v = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    return len(v) >= 3 and bool((v == v.round()).all()) and float(v.min()) >= 1 and v.nunique() >= 0.8 * len(v)
+
+
 def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Dict[str, Any]]):
     """The rows the engine kept, as it read them: (frame, date column, entity column, why there is no date
     column, info). The frame is the engine's cleaned table (the rows behind downloads.clean_csv) under the
@@ -9422,7 +9434,8 @@ def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[
         from northledger.measure import _label_number
         cols = list(df.columns)
         for h in cols:
-            if info["kinds"].get(h) == "number" and re.search(r"code or key|coordinate", _label_number(h, df[h], cols)):
+            if info["kinds"].get(h) == "number" and (re.search(r"code or key|coordinate", _label_number(h, df[h], cols))
+                                                     or _rank_like(h, df[h])):
                 info["kinds"][h] = "text"
                 info["unread"].pop(h, None)
                 df[h] = df[h].map(lambda v: None if pd.isna(v) else ("%d" % v if float(v).is_integer() else str(v)))
@@ -13571,6 +13584,14 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
             rep["roles"] = {"date": r.roles.date or None, "measures": list(r.roles.measures),
                             "dimensions": list(r.roles.dimensions),
                             "excluded": dict(r.roles.excluded)}
+            try:
+                cf = getattr(cr, "clean", cr)
+                ranks = [m for m in rep["roles"]["measures"] if m in getattr(cf, "columns", ()) and _rank_like(m, cf[m])]
+            except Exception:  # noqa: BLE001 - the roles stand as the engine gave them
+                ranks = []
+            for m in ranks:
+                rep["roles"]["measures"].remove(m)
+                rep["roles"]["excluded"][m] = "a rank (a place in an order), not a quantity"
             rep["forecast"] = _forecast_block(r, eng.db_path, story["whats_next"], layout)
             if rep["forecast"].get("frequency"):
                 story["whats_next"] = [rep["forecast"]["reason"]]

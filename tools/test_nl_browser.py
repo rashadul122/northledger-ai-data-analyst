@@ -6665,6 +6665,19 @@ def test_a_zip_code_or_a_district_is_a_label_to_the_analyst_never_a_total():
     assert not ({"incident_zip", "police_district"} & measured), sh
     assert "incident_zip" not in words and "police_district" not in words, words[:300]
 
+def test_a_rank_column_is_a_place_in_an_order_never_a_measure():
+    """20 Oct 2026, live on the college majors file: the engine's own dashboard tiled "Rank 87", the average of the ranks 1 to 173.
+    A column named Rank holding whole numbers from 1, nearly all different, is excluded from the measures and is no analyst number;
+    a column of scores that merely ends in rank-like words elsewhere, or a repeated small rating, is untouched."""
+    f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "college-majors-earnings-ranked.csv")
+    rep = NB.run(open(f, "rb").read(), "c.csv", "", {"__plan__": {"goal": "read it", "kind": "other"}}, None)
+    assert "rank" not in rep["roles"]["measures"] and "rank" in rep["roles"]["excluded"], rep["roles"]
+    assert not any(k["label"] == "Rank" for k in rep["dashboard"]["kpis"]), rep["dashboard"]["kpis"]
+    measured = [m.get("column") if isinstance(m, dict) else m for m in (rep["analyst"].get("shape") or {}).get("measures") or []]
+    assert "Rank" not in measured and "Total" in measured, measured
+    assert NB._rank_like("Rank", range(1, 50)) and not NB._rank_like("Rank", [1, 2, 2, 3, 3, 3, 1, 2]) and not NB._rank_like("Score", range(1, 50))
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

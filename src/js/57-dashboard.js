@@ -425,14 +425,23 @@
   // the split: the group with the most and the least (the dashboard's first two bar charts)
   function splitSay(D, F, out) {
     D.charts.filter(function (c) { return c.draw === 'bar' && c.bkey; }).slice(0, 2).forEach(function (B) {
-      var r = barRecord(D, B, pick(D, F || {}, B.where), unitOf(D, B)), rows = (r.data && r.data.rows || []).filter(function (x) { return x.label !== 'other' && x.label !== '(blank)'; });
+      var r = barRecord(D, B, pick(D, F || {}, B.where), unitOf(D, B)), all = (r.data && r.data.rows) || [], rows = all.filter(function (x) { return x.label !== 'other' && x.label !== '(blank)'; });
       if (rows.length < 2) return;
-      var tot = B.agg === 'sum' ? rows.reduce(function (s, x) { return s + x.values[0]; }, 0) : 0, top = rows[0], bot = rows[rows.length - 1];
-      var cnt = B.agg === 'count' || !B.mkey, share = cnt ? rows.reduce(function (s, x) { return s + x.values[0]; }, 0) : tot;
-      // an average names its rows: a top group on 42 of 19,789 reviews is not the market's verdict
-      var nOf = function (x) { return !cnt && x.n ? ' (' + x.n.toLocaleString('en-US') + ' rows)' : ''; };
-      out.push(B.by + ': ' + top.label + ' has the ' + (B.agg === 'sum' ? 'largest total' : cnt ? 'most ' + String((D.grain && D.grain.noun) || 'rows').toLowerCase() : 'highest average') + ', ' + top.texts[0] + nOf(top) +
-        (share > 0 && (B.agg === 'sum' || cnt) ? ' (' + (top.values[0] / share * 100).toFixed(1) + '% of the groups shown)' : '') + '; ' + bot.label + ' the ' + (B.agg === 'sum' ? 'smallest' : cnt ? 'fewest' : 'lowest') + ', ' + bot.texts[0] + nOf(bot) + '.');
+      // a share is of the whole (every group, "other" and blanks included): Chicago's police read "56.8% of the groups shown" beside
+      // the report's 49.8% of the salary bill (19 Oct 2026)
+      var cellsB = pick(D, F || {}, B.where), wholeV = agg(D, cellsB, B.agg === 'count' || !B.mkey ? null : B.mkey, B.agg === 'count' || !B.mkey ? 'count' : 'sum').v;
+      var whole = function () { return wholeV || 0; };
+      var tot = B.agg === 'sum' ? whole() : 0, top = rows[0], bot = rows[rows.length - 1];
+      var cnt = B.agg === 'count' || !B.mkey, share = cnt ? whole() : tot;
+      // an average names its rows: a top group on 42 of 19,789 reviews is not the market's verdict; a total or a count says its share
+      var note = function (x, first) {
+        var bits = [];
+        if (!cnt && x.n) bits.push(x.n.toLocaleString('en-US') + ' rows');
+        if (first && share > 0 && (B.agg === 'sum' || cnt)) bits.push((x.values[0] / share * 100).toFixed(1) + '% of the total');
+        return bits.length ? ' (' + bits.join(', ') + ')' : '';
+      };
+      out.push(B.by + ': ' + top.label + ' has the ' + (B.agg === 'sum' ? 'largest total' : cnt ? 'most ' + String((D.grain && D.grain.noun) || 'rows').toLowerCase() : 'highest average') + ', ' + top.texts[0] + note(top, true) +
+        '; ' + bot.label + ' the ' + (B.agg === 'sum' ? 'smallest' : cnt ? 'fewest' : 'lowest') + ', ' + bot.texts[0] + note(bot, false) + '.');
     });
   }
   // the report's own ranking charts on the tab (not filtered): their top and bottom, as the report computed them

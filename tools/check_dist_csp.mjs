@@ -149,6 +149,8 @@ try {
   } catch (e) { console.log('INFO  blob: PDF probe: ' + String(e.message || e).slice(0, 100) + ' (a download instead of a tab is normal in headless Chrome)'); }
 
   // ---- 5. the other pages
+  // the sample page is closed first: its own late requests (the /report retry 3 s after a 502) would be counted against the next page
+  await page.close();
   for (const p of ['/case-study', '/agent-demo', '/northledger-ai-data-analyst/']) {
     reqs.length = 0; failed.length = 0; pageErrs.length = 0; consoleMsgs.length = 0;
     const q = await newPage();

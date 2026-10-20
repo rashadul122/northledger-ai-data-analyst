@@ -9415,6 +9415,19 @@ def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[
             n_bad = int((fill & df[h].isna().to_numpy()).sum())
             if n_bad:
                 info["unread"][h] = n_bad
+    # a number that is a label (a ZIP code, a police district, a ward, a map coordinate) is read as the core reads it, a label to
+    # group by and never a quantity to add up (20 Oct 2026, live: NYC 311's headline was "incident_zip ... record high 839 million"
+    # and Chicago's "district moved by +53,586 a year"); a year stays a number, the loop reads it as the date
+    try:
+        from northledger.measure import _label_number
+        cols = list(df.columns)
+        for h in cols:
+            if info["kinds"].get(h) == "number" and re.search(r"code or key|coordinate", _label_number(h, df[h], cols)):
+                info["kinds"][h] = "text"
+                info["unread"].pop(h, None)
+                df[h] = df[h].map(lambda v: None if pd.isna(v) else ("%d" % v if float(v).is_integer() else str(v)))
+    except ImportError:                                        # the engine is always there in a run
+        pass
     for h, pr in (ctx.get("pct") or {}).items():
         if h in df.columns and info["kinds"].get(h) == "number":
             df[h] = np.asarray(pr["percent"], float)[pos] if len(pos) else df[h]
@@ -15466,11 +15479,21 @@ def _dashboard_visuals(rep: Dict[str, Any], plan: Any) -> None:
             if "df" not in full:
                 full["df"] = None
                 try:
+                    import pandas as pd
                     import nl_viz as _nvz
                     cx = _nvz.Ctx(rep, {})
                     if cx.frame is not None and len(cx.frame.columns):
                         df = cx.frame.rename(columns={c: str(cx.header(c)) for c in cx.frame.columns})
                         kinds = {str(cx.header(c)): ("date" if c == cx.date else "number" if c in cx.measures else "text") for c in cx.frame.columns}
+                        # a year the plan read as the date (date_from_year drops the column) is still a column by its own name: the
+                        # AI's queries name the file's "year" (20 Oct 2026, live: OWID's "per person against GDP" was refused for it)
+                        if cx.date is not None:
+                            dh = str(cx.header(cx.date))
+                            for y in [o.get("column") for o in plan.get("operations") or []
+                                      if isinstance(o, dict) and o.get("op") == "date_from_year"] if isinstance(plan, dict) else []:
+                                if isinstance(y, str) and y and y not in df.columns:
+                                    df[y] = pd.to_numeric(df[dh].astype(str).str[:4], errors="coerce")
+                                    kinds[y] = "number"
                         full["df"], full["kinds"] = df, kinds
                 except Exception:  # noqa: BLE001 - the analysis frame alone then
                     if os.environ.get("NL_BROWSER_STRICT"):

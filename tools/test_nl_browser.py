@@ -6646,6 +6646,25 @@ def test_a_semicolon_file_keeps_its_columns_under_an_ai_plan():
     assert [k["id"] for k in d["kpis"]] == ["q"], d["refused"]
 
 
+def test_a_zip_code_or_a_district_is_a_label_to_the_analyst_never_a_total():
+    """20 Oct 2026, live: NYC 311's analyst headline was "the total of incident_zip rose to 1.25 billion" and Chicago's "district
+    moved by +53,586 a year": the loop typed columns by their values, so in an event log with no amount the codes were added up.
+    The core's own rule (a name ending in zip, district, ward or code is a label) now holds in the loop too."""
+    import random
+    random.seed(5)
+    rows = ["created_date,incident_zip,police_district,agency"]
+    for i in range(1500):
+        rows.append("2024-%02d-%02d,%d,%d,%s" % (1 + i % 12, 1 + i % 28, random.choice([10001, 10453, 11201, 11368]),
+                                                random.randint(1, 25), random.choice(["NYPD", "DOT", "HPD"])))
+    rep = NB.run(("\n".join(rows) + "\n").encode(), "z.csv", "", {"incident_zip": "keep"}, None)
+    an = rep["analyst"]
+    sh = an.get("shape") or {}
+    words = json.dumps([i.get("text") for i in an.get("insights") or []]).lower()
+    assert sh.get("primary") not in ("incident_zip", "police_district"), sh
+    measured = {str(m.get("column") if isinstance(m, dict) else m) for m in sh.get("measures") or []}
+    assert not ({"incident_zip", "police_district"} & measured), sh
+    assert "incident_zip" not in words and "police_district" not in words, words[:300]
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

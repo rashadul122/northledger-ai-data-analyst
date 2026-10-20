@@ -319,9 +319,15 @@ def _where(R: Read, raw: Any, element: str) -> Optional[Dict[str, Any]]:
     if land is None:
         return None
     have = set(R.ctx.levels_all(land))
+    # "dog" or "Dogs" for the file's "Dog" (20 Oct 2026, live: Austin's "Dog outcomes" tile was refused): the case, then a plural s
+    low = {}
+    for h in have:
+        low.setdefault(h.lower(), h)
     vals = []
     for v in (raw.get("values") or [])[:WHERE_VALUES_MAX] if isinstance(raw.get("values"), list) else []:
         v = str(v).strip()
+        if v not in have:
+            v = low.get(v.lower()) or (low.get(v.lower()[:-1]) if v.lower().endswith("s") else None) or v
         if v in have and v not in vals:
             vals.append(v)
     if not vals:
@@ -386,6 +392,13 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
                 "unit_word": _unit(R, k.get("unit_word"), el, ai, land)}
         if agg == "change":
             item["vs"] = "year" if str(k.get("vs") or "") == "year" and R.grain != "year" else "previous"
+        # a file of records: the highest or lowest is a month's (a quarter's, a year's) total, never one row (20 Oct 2026, live: the
+        # Fremont Bridge's hourly counts had a tile "Busiest single reading" of 1,187,146 cyclists, a month's total)
+        if agg in ("peak", "low") and land is not None and not R.obs and \
+                re.search(r"(?i)\b(single|reading|readings|hour|hourly|minute|day|daily|observation)\b", item["label"]):
+            R.refuse(el, "its label named a single reading; the tile is the %s %s of a period" % (
+                "highest" if agg == "peak" else "lowest", "total" if c.is_flow(land) else "average"))
+            item["label"] = "%s %s" % ("Highest" if agg == "peak" else "Lowest", c.header(land))
         out["kpis"].append(item)
     raw_c = block.get("charts") if isinstance(block.get("charts"), list) else []
     lim = NV.run_limits(c)
@@ -435,16 +448,30 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         if any(c.is_flagged(a) for a in args):
             R.refuse(el, R_PERSONAL)
             continue
-        chart, lands, why = NV.validate_directive(c, {"kind": name, "columns": args}, lim)
-        if why:
-            R.refuse(el, why)
-            continue
+        # a line or area over time split by a category alone counts the rows of each (20 Oct 2026, live: Austin's "outcome mix over
+        # time" and NYC's "monthly requests by agency" named only the category and were refused as "not a number column")
+        cat_spec = None
+        if name in ("line_chart", "area_chart") and c.date is not None and len(args) == 1:
+            lc = c.landed(args[0])
+            if lc in c.columns and lc != c.date and not c.numeric(lc) and c.role_ok(lc, "category") == "" \
+                    and 2 <= len(c.levels_all(lc)) <= 60:
+                cat_spec = {"draw": DRAWN[name], "measure": None, "agg": "count", "by": lc}
+        if cat_spec is not None:
+            lands = [cat_spec["by"]]
+        else:
+            chart, lands, why = NV.validate_directive(c, {"kind": name, "columns": args}, lim)
+            if why:
+                R.refuse(el, why)
+                continue
         cid = _ident(ch.get("id"), "c", i, seen, R, el)
         item = {"id": cid, "chart": name, "title": R.words(ch.get("title"), "title", el, ai) or "",
                 "why": R.words(ch.get("why"), "why", el, ai) or ""}
         if name in DRAWN:
-            spec = _drawn_args(R, name, lands, el)
+            spec = _drawn_args(R, name, lands, el) if cat_spec is None else (
+                None if NB._looks_like_names(c.levels_all(cat_spec["by"]), c.header(cat_spec["by"])) else cat_spec)
             if spec is None:
+                if cat_spec is not None:
+                    R.refuse(el, "the values of %s look like people's names" % c.header(cat_spec["by"]))
                 continue
             item.update(spec)
             if ch.get("where") is not None:
@@ -670,6 +697,55 @@ def lead_measure(R: Read) -> Optional[str]:
     return (flows or ms)[0]
 
 
+def _indicator_design(R: Read, out: Dict[str, Any], k_rows: Dict[str, Any], pm: Optional[str],
+                      dims: List[str]) -> Optional[Dict[str, Any]]:
+    """The engine's design for an indicator table (rep.explore, engine/nl_explore.py: a census profile, each row one of 1,624
+    characteristics for one of 14 places): every row measures a different thing, so nothing is added across rows. Each chosen
+    characteristic is compared across the places, the total member (Canada) a bar of its own. 20 Oct 2026, live: the plain design added
+    C1_COUNT_TOTAL over every characteristic and every place, Canada included, into 6.4 billion. None for any other table."""
+    c, ex = R.ctx, R.rep.get("explore")
+    if not pm or not isinstance(ex, dict) or ex.get("kind") != "indicator_table":
+        return None
+    land_of = {c.header(x): x for x in c.columns}
+    ent, ind = land_of.get(str(ex.get("entity_column") or "")), land_of.get(str(ex.get("indicator_column") or ""))
+    if ent is None or ind is None or c.is_flagged(ent) or c.is_flagged(ind):
+        return None
+    levels = {}
+    for v in c.frame[ind].astype(str):
+        levels.setdefault(v.strip(), v)
+    out["kpis"] = [k_rows]
+    for j, iv in enumerate([x for x in ex.get("indicators") or [] if isinstance(x, dict)][:3]):
+        lv = levels.get(str(iv.get("label") or "").strip())
+        if lv is None:
+            continue
+        # one filter a chart: the total member (Canada) stays a bar of its own, beside the places it totals; no bar is added
+        wh = {"dim": ind, "values": [lv]}
+        out["charts"].append({"id": "ind_%d" % j, "chart": "bar_chart", "draw": "bar", "measure": pm, "agg": "sum", "by": ent,
+                              "where": wh, "title": "%s by %s" % (lv.strip(), str(ex.get("entity") or c.header(ent))),
+                              "why": NV.ENGINE_WHY + NV.REGISTRY["bar_chart"]["what"], "unit_word": c.unit(pm)})
+        out["questions"].append({"q": "Which %s has the highest %s?" % (str(ex.get("entity") or c.header(ent)), _lower_first(lv.strip())),
+                                 "answered_by": ["ind_%d" % j]})
+    if not out["charts"]:
+        return None
+    R.refuse("the totals of %s" % c.header(pm), "each row is a different %s, so adding %s across rows mixes unlike things; each "
+             "chart shows one %s across the %s" % (str(ex.get("indicator") or "measure"), c.header(pm),
+                                                   str(ex.get("indicator") or "measure"), _plural_word(str(ex.get("entity") or "rows"))))
+    # a code a place (DGUID beside GEO_NAME) filters nothing the place names do not
+    n_ent = len(c.levels_all(ent))
+    out["filters"] = [{"kind": "category", "dim": d} for d in dims if d not in (ind, ent) and len(c.levels_all(d)) != n_ent][:FILTER_CATS]
+    out["layout"] = _layout(None, out)
+    return out
+
+
+def _lower_first(w: str) -> str:
+    """"Average value" -> "average value" mid-sentence; "GDP" and "CO2" stay."""
+    return w[:1].lower() + w[1:] if w[1:2].islower() else w
+
+
+def _plural_word(w: str) -> str:
+    return w if w.endswith("s") else (w[:-1] + "ies" if w.endswith("y") and w[-2:-1] not in "aeiou" else w + "s")
+
+
 def default_design(R: Read) -> Dict[str, Any]:
     """The engine's own dashboard when no AI designed one: what each row counts and the headline measure, its line by
     month, and its split by the categories the engine reads, with the date range and up to 3 category filters."""
@@ -717,6 +793,9 @@ def default_design(R: Read) -> Dict[str, Any]:
                             "where": None, "label": c.header(m), "unit_word": c.unit(m)})
     dims = [d for d in c.dims if c.role_ok(d, "category") == "" and 2 <= len(c.levels_all(d)) <= 60
             and not NB._looks_like_names(c.levels_all(d), c.header(d))]
+    one = _indicator_design(R, out, k_rows, pm, dims)
+    if one is not None:
+        return one
     if split_col and split_col in dims:
         dims = [split_col] + [d for d in dims if d != split_col]
     has_date = c.date is not None
@@ -863,7 +942,13 @@ def make_cube(R: Read, design: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
         dim_rec, codes = [], {}
         for j, d in enumerate(dims):
             t = c.texts(d)
+            # the values a tile or chart filters on keep their own level first, however few rows they hold (20 Oct 2026: a
+            # census profile's characteristic, 14 rows of 22,736, was folded into "other" and its chart refused)
+            asked = [v for x in design["kpis"] + design["charts"] if x.get("where") and x["where"].get("dim") == d
+                     for v in x["where"].get("values") or []]
             by_rows = c.levels(d)
+            first = [(lv, k) for lv, k in by_rows if lv in asked]
+            by_rows = first + [(lv, k) for lv, k in by_rows if lv not in asked]
             keep: List[str] = []
             folded = hidden = 0
             for lv, _k in by_rows:

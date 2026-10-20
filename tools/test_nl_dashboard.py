@@ -761,6 +761,69 @@ def test_a_trend_that_names_the_files_own_date_draws_the_row_count():
     assert [c["id"] for c in d["charts"]] == ["trend"], d["refused"]
 
 
+def test_an_indicator_table_compares_one_characteristic_at_a_time():
+    """20 Oct 2026, live on the 2021 census profile (14 places x 1,624 characteristics): with no AI design the engine's own
+    dashboard added C1_COUNT_TOTAL over every characteristic and every place, Canada included, into 6.4 billion, and charted it
+    by DGUID. Each row measures a different thing: each chart is one characteristic by place, and a filtered value keeps its level."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "statcan-census-profile-2021-provinces.csv"), "rb").read()
+    d = NB.run(data, "c.csv", "", {"__plan__": {"goal": "read it", "kind": "other"}}, None)["dashboard"]
+    assert [k["id"] for k in d["kpis"]] == ["rows"], d["kpis"]
+    assert d["charts"] and all(c["id"].startswith("ind_") and c["where"]["column"] == "CHARACTERISTIC_NAME" for c in d["charts"]), \
+        [(c["id"], c.get("where")) for c in d["charts"]]
+    assert not any("counted in" in r["why"] for r in d["refused"]), d["refused"]
+    assert any(r["element"].startswith("the totals of") for r in d["refused"]), d["refused"]
+    assert all(f["column"] != "DGUID" for f in d["filters"]), d["filters"]
+    assert all(" has the highest " in q["q"] and " Average" not in q["q"] for q in d["questions"]), d["questions"]
+
+
+def test_a_visual_names_the_year_the_plan_read_as_the_date():
+    """20 Oct 2026, live on OWID: the plan's date_from_year dropped "year" for "date", and the AI's visual, written against the
+    file's own headers, asked for year and was refused. The year stays a column by its own name in the kept rows."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "owid-co2-panel.csv"), "rb").read()
+    sc = {"mark": "point", "encoding": {"x": {"field": "gdp_pc", "type": "quantitative"}, "y": {"field": "co2_pc", "type": "quantitative"}}}
+    plan = {"goal": "co2", "kind": "other", "operations": [{"op": "date_from_year", "column": "year"}], "dashboard": {
+        "kpis": [{"id": "n", "measure": "rows", "agg": "count", "label": "Country-years"}],
+        "visuals": [{"id": "pc", "title": "Per person against GDP", "spec": sc,
+                     "sql": "SELECT country, co2_per_capita AS co2_pc, gdp / population AS gdp_pc FROM kept_rows "
+                            "WHERE year = 2018 AND gdp IS NOT NULL AND population > 0"}]}}
+    d = NB.run(data, "owid.csv", "", {"__plan__": plan}, None)["dashboard"]
+    assert [(v["id"], v["rows_total"] > 100) for v in d.get("visuals") or []] == [("pc", True)], d["refused"]
+
+
+def test_a_peak_tile_on_records_never_claims_a_single_reading():
+    """20 Oct 2026, live on the Fremont Bridge's hourly counts: the AI labelled a peak tile "Busiest single reading" and it showed
+    1,187,146 cyclists, a month's total. On a file of records the peak is a period's; a label naming one reading is replaced."""
+    import datetime as _d
+    rows = ["Date,Total"]
+    t0 = _d.datetime(2024, 1, 1)
+    for h in range(24 * 120):
+        rows.append("%s,%d" % ((t0 + _d.timedelta(hours=h)).strftime("%Y-%m-%d %H:%M"), 50 + (h % 24) * 7))
+    plan = {"goal": "bikes", "kind": "other", "dashboard": {"kpis": [
+        {"id": "pk", "measure": "Total", "agg": "peak", "label": "Busiest single reading", "unit_word": "cyclists"},
+        {"id": "mo", "measure": "Total", "agg": "peak", "label": "Record month", "unit_word": "cyclists"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "b.csv", "", {"__plan__": plan}, None)["dashboard"]
+    lab = {k["id"]: k["label"] for k in d["kpis"]}
+    assert lab.get("pk") == "Highest Total" and lab.get("mo") == "Record month", (lab, d["refused"])
+    assert any("single reading" in r["why"] for r in d["refused"]), d["refused"]
+
+
+def test_a_trend_split_by_a_category_counts_and_a_filter_reads_dogs_as_dog():
+    """20 Oct 2026, live on Austin's animal shelter outcomes: "Outcome mix over time" named only animal_type and was refused as "not a
+    number column", and the "Dog outcomes" tile was refused because the AI wrote the value in another case. A line or area split by a
+    category alone counts the rows of each; a filter value matches the file's own level whatever its case, or a plural s."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "austin-animal-center-outcomes.csv"), "rb").read()
+    plan = {"goal": "outcomes", "kind": "other", "dashboard": {
+        "kpis": [{"id": "dogs", "measure": "rows", "agg": "count", "label": "Other outcomes", "where": {"column": "animal_type", "values": ["others"]}}],
+        "charts": [{"id": "mix", "chart": "area_chart", "args": ["animal_type"], "title": "Outcome mix over time"},
+                   {"id": "lines", "chart": "line_chart", "args": ["datetime", "animal_type"], "title": "Outcomes by animal type"}]}}
+    d = NB.run(data, "a.csv", "", {"__plan__": plan}, None)["dashboard"]
+    # ("Dog" itself stays out of print: seven animals in the withheld name column are called Dog, and no level that is a word of a
+    # withheld column is ever printed; "Other" is no animal's name)
+    assert [k["id"] for k in d["kpis"]] == ["dogs"] and [v.lower() for v in d["kpis"][0]["where"]["values"]] == ["other"], (d["kpis"], d["refused"])
+    got = {c["id"]: (c["draw"], c["agg"]) for c in d["charts"]}
+    assert got.get("mix") == ("area", "count") and got.get("lines") == ("line", "count"), (got, d["refused"])
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

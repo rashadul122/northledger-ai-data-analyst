@@ -637,6 +637,31 @@ def series_design(R: Read, pm: str) -> Dict[str, Any]:
     return out
 
 
+_MONEY_RX = re.compile(r"(?i)salar|wage|\bpay|revenue|sales|amount|price|cost|income|spend|earning|budget|fee|usd|cad|eur|gbp|\$")
+
+
+def _is_money(R: Read, m: Optional[str]) -> bool:
+    if not m:
+        return False
+    c = R.ctx
+    u = str(c.unit(m) or "")
+    return bool(_MONEY_RX.search(c.header(m)) or _MONEY_RX.search(R.name(m)) or u in ("$", "€", "£", "¥") or re.fullmatch(r"[A-Z]{3}", u))
+
+
+def lead_measure(R: Read) -> Optional[str]:
+    """The measure the engine's own design leads with when the report's headline is a count of rows: a money column first (its
+    header or its unit says so), then a flow, then the first measure (19 Oct 2026: Chicago's payroll led with Typical Hours)."""
+    c = R.ctx
+    ms = list(c.measures)
+    if not ms:
+        return None
+    money = [m for m in ms if _is_money(R, m)]
+    if money:
+        return money[0]
+    flows = [m for m in ms if c.is_flow(m)]
+    return (flows or ms)[0]
+
+
 def default_design(R: Read) -> Dict[str, Any]:
     """The engine's own dashboard when no AI designed one: what each row counts and the headline measure, its line by
     month, and its split by the categories the engine reads, with the date range and up to 3 category filters."""
@@ -644,10 +669,13 @@ def default_design(R: Read) -> Dict[str, Any]:
     plural, _sing = row_noun(rep)
     labels = (rep.get("summary") or {}).get("labels") or {}
     has, pm = c.primary_measure()
-    pm = (pm if has else None) or (c.measures[0] if c.measures else None)
+    pm = (pm if has else None) or lead_measure(R)
     if R.obs and pm and c.date is not None:
         return series_design(R, pm)
     fid = str((rep.get("primary_metric") or {}).get("finding_id") or "")
+    lead = lead_measure(R)
+    if lead and pm != lead and _is_money(R, lead) and not _is_money(R, pm):
+        pm, fid = lead, ""                     # money leads; the headline's split and labels belong to its own measure
     split = (c.claims.get(fid) or {}).get("kind_split") if fid else None
     out: Dict[str, Any] = {"audience": "Anyone who reads this file: the engine's own design from its columns, without the AI",
                            "questions": [], "kpis": [], "charts": [], "filters": [], "layout": []}

@@ -405,9 +405,15 @@
       out.push((hi === last ? 'The latest ' + g + ' is the highest in the range shown: ' : 'Highest: ') + fmt(hi.v, unit) + ' in ' + periodWord(hi.p) +
         (lo === last ? '; the latest is also the lowest.' : '. Lowest: ' + fmt(lo.v, unit) + ' in ' + periodWord(lo.p) + '.'));
       var tot = last.v - first.v;
-      out.push('From ' + periodWord(first.p) + ' to ' + periodWord(last.p) + ' it ' + (tot > 0 ? 'rose ' : tot < 0 ? 'fell ' : 'ended where it began, ') +
-        (tot ? fmtChange(Math.abs(tot), unit).replace(/^\+/, '') + (unit !== '%' && first.v ? ' (' + pctW(tot / Math.abs(first.v) * 100) + ')' : '') : '') +
-        ', over ' + pv.length + ' ' + gs + ' with a figure.');
+      // a first-to-last change smaller than the series' usual move from one period to the next is noise, and is said to be (19 Oct
+      // 2026: Amazon ratings "fell 0.13 from 2000 to 2023" beside the report's "no clear trend")
+      var moves = []; for (var q = 1; q < pv.length; q++) moves.push(Math.abs(pv[q].v - pv[q - 1].v));
+      moves.sort(function (a, b) { return a - b; });
+      var usual = moves.length ? moves[Math.floor(moves.length / 2)] : 0, small = usual > 0 && Math.abs(tot) < 2 * usual;
+      out.push('From ' + periodWord(first.p) + ' to ' + periodWord(last.p) + ' it ' + (tot > 0 ? (small ? 'ended ' : 'rose ') : tot < 0 ? (small ? 'ended ' : 'fell ') : 'ended where it began, ') +
+        (tot ? fmtChange(Math.abs(tot), unit).replace(/^\+/, '') + (small ? (tot > 0 ? ' higher' : ' lower') : '') + (unit !== '%' && first.v ? ' (' + pctW(tot / Math.abs(first.v) * 100) + ')' : '') : '') +
+        ', over ' + pv.length + ' ' + gs + ' with a figure' +
+        (small ? ': less than twice its usual move from one ' + g + ' to the next (' + fmtChange(usual, unit).replace(/^\+/, '') + '), so within its normal swing, not a clear change.' : '.'));
       var steps = [];
       for (var i = 1; i < pv.length; i++) steps.push({ p: pv[i].p, q: pv[i - 1].p, d: pv[i].v - pv[i - 1].v });
       var up = steps.reduce(function (m, s) { return !m || s.d > m.d ? s : m; }, null), dn = steps.reduce(function (m, s) { return !m || s.d < m.d ? s : m; }, null);

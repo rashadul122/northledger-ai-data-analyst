@@ -1759,7 +1759,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-20 01:46:16 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-20 02:24:00 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2506,7 +2506,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-20 01:46:16 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-20 02:24:00 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -15440,9 +15440,15 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       out.push((hi === last ? 'The latest ' + g + ' is the highest in the range shown: ' : 'Highest: ') + fmt(hi.v, unit) + ' in ' + periodWord(hi.p) +
         (lo === last ? '; the latest is also the lowest.' : '. Lowest: ' + fmt(lo.v, unit) + ' in ' + periodWord(lo.p) + '.'));
       var tot = last.v - first.v;
-      out.push('From ' + periodWord(first.p) + ' to ' + periodWord(last.p) + ' it ' + (tot > 0 ? 'rose ' : tot < 0 ? 'fell ' : 'ended where it began, ') +
-        (tot ? fmtChange(Math.abs(tot), unit).replace(/^\+/, '') + (unit !== '%' && first.v ? ' (' + pctW(tot / Math.abs(first.v) * 100) + ')' : '') : '') +
-        ', over ' + pv.length + ' ' + gs + ' with a figure.');
+      // a first-to-last change smaller than the series' usual move from one period to the next is noise, and is said to be (19 Oct
+      // 2026: Amazon ratings "fell 0.13 from 2000 to 2023" beside the report's "no clear trend")
+      var moves = []; for (var q = 1; q < pv.length; q++) moves.push(Math.abs(pv[q].v - pv[q - 1].v));
+      moves.sort(function (a, b) { return a - b; });
+      var usual = moves.length ? moves[Math.floor(moves.length / 2)] : 0, small = usual > 0 && Math.abs(tot) < 2 * usual;
+      out.push('From ' + periodWord(first.p) + ' to ' + periodWord(last.p) + ' it ' + (tot > 0 ? (small ? 'ended ' : 'rose ') : tot < 0 ? (small ? 'ended ' : 'fell ') : 'ended where it began, ') +
+        (tot ? fmtChange(Math.abs(tot), unit).replace(/^\+/, '') + (small ? (tot > 0 ? ' higher' : ' lower') : '') + (unit !== '%' && first.v ? ' (' + pctW(tot / Math.abs(first.v) * 100) + ')' : '') : '') +
+        ', over ' + pv.length + ' ' + gs + ' with a figure' +
+        (small ? ': less than twice its usual move from one ' + g + ' to the next (' + fmtChange(usual, unit).replace(/^\+/, '') + '), so within its normal swing, not a clear change.' : '.'));
       var steps = [];
       for (var i = 1; i < pv.length; i++) steps.push({ p: pv[i].p, q: pv[i - 1].p, d: pv[i].v - pv[i - 1].v });
       var up = steps.reduce(function (m, s) { return !m || s.d > m.d ? s : m; }, null), dn = steps.reduce(function (m, s) { return !m || s.d < m.d ? s : m; }, null);

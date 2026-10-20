@@ -596,6 +596,38 @@ def test_the_row_sample_reads_the_engines_kept_rows_only():
     assert sm.get("rows") and "Zelda" not in json.dumps(sm), sm
 
 
+def test_the_engines_design_leads_with_money_over_hours():
+    rows = ["Dept,Typical Hours,Annual Salary"] + ["D%d,%d,%d" % (i % 4, 30 + i % 10, 50000 + 37 * i) for i in range(200)]
+    # the salary is flagged by its name; the visitor's acknowledgement keeps it (the page sends keep for every flagged column)
+    d = NB.run(("\n".join(rows) + "\n").encode(), "pay.csv", "", {"annual_salary": "keep"}, "2026-10-19")["dashboard"]
+    meas = [k.get("measure") for k in d["kpis"] if k.get("measure")]
+    assert meas and meas[0] == "Annual Salary", meas
+
+
+def test_a_small_first_to_last_change_is_said_to_be_within_the_usual_swing():
+    """57-dashboard.js NLD.insights: noise is not called a fall (Node)."""
+    import subprocess
+    import tempfile
+    rnd, rows, v = random.Random(4), ["observation_date,IDX"], 4.0
+    for y in range(2000, 2024):
+        v = 4.0 + rnd.uniform(-0.2, 0.2)
+        rows.append("%d-01-01,%.3f" % (y, v))
+    d = NB.run(("\n".join(rows) + "\n").encode(), "idx.csv", "", None, "2026-10-19")["dashboard"]
+    js = ("global.window={NLU:{}};global.document={readyState:'complete',addEventListener(){}};require(process.argv[1]);"
+          "const D=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));process.stdout.write(JSON.stringify(window.NLD.insights(D,{})));")
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        json.dump(d, fh)
+    try:
+        r = subprocess.run(["node", "-e", js, os.path.join(SITE, "src", "js", "57-dashboard.js"), fh.name], capture_output=True, text=True, timeout=60)
+    finally:
+        os.unlink(fh.name)
+    said = [t for t in json.loads(r.stdout) if t.startswith("From ")]
+    assert said and ("within its normal swing" in said[0] or " rose " in said[0] or " fell " in said[0]), said
+    first, last = float(rows[1].split(",")[1]), float(rows[-1].split(",")[1])
+    if abs(last - first) < 0.15:
+        assert "within its normal swing" in said[0], said
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

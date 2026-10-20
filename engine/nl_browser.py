@@ -15343,6 +15343,9 @@ def _series_period_words(rep: Dict[str, Any]) -> None:
     before" on 2 rows; 19 Oct 2026). The numbers are not changed. The report stands without it."""
     try:
         import nl_structure as NS
+    except ImportError:                      # the structure layer is absent (a pack without it, a test that halts it): no rewrite
+        return
+    try:
         date = (rep.get("roles") or {}).get("date")
         csv_text = (rep.get("downloads") or {}).get("clean_csv") or ""
         if not date or not csv_text:

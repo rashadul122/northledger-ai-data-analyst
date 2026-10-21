@@ -579,13 +579,14 @@ def _unit(R: Read, u: Any, element: str, ai: bool, land: Optional[str]) -> str:
     return have
 
 
-_MONTH_LABEL = re.compile(r"^(?:\d{1,2}[-/.]\d{4}|\d{4}[-/.]\d{1,2}|[A-Za-z]{3,9}\.? \d{4})$")
+_MONTH_LABEL = re.compile(r"^(?:(?:0?[1-9]|1[0-2])[-/](?:19|20)\d{2}|(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])|"
+                          r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:19|20)\d{2})$", re.I)
 
 
 def _month_labels(c: Any, land: Optional[str]) -> bool:
     """A column of month labels ("05-2025", "2025-05", "May 2025") beside the file's date: the same time axis, never a category."""
-    if not land or land not in c.columns or land == c.date:
-        return False
+    if not land or land not in c.columns or land == c.date or c.numeric(land):
+        return False                                  # a number column (a balance of 1234.56) is never a month label
     t = c.texts(land)
     t = t[t != ""]
     return bool(len(t)) and float(t.head(2000).str.match(_MONTH_LABEL).mean()) >= 0.95

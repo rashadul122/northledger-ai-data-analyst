@@ -383,8 +383,8 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         land = None if rows else R.column(m, el, "measure")
         if not rows and land is None:
             continue
-        agg = ("peak" if str(k.get("agg") or "") == "peak" else "low") if land is None and has_date and \
-            str(k.get("agg") or "") in ("peak", "low") else "count" if land is None else _agg_for(R, land, k.get("agg"), el, has_date)
+        agg = str(k.get("agg")) if land is None and has_date and str(k.get("agg") or "") in ("peak", "low", "change") \
+            else "count" if land is None else _agg_for(R, land, k.get("agg"), el, has_date)
         if not agg:
             continue
         if land is not None and str(k.get("agg") or "") == "count":
@@ -1097,7 +1097,7 @@ def query_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], filt: Optional[Dict[str
     cells = [x for x in cube["cells"] if _cell_ok(cube, x, filt, kpi.get("where"))]
     month = None
     # a rows tile's highest or lowest period reads the rows period by period (57-dashboard.js NLD.kpi does the same)
-    if kpi["agg"] in SERIES_AGGS and (kpi.get("mkey") is not None or kpi["agg"] in ("peak", "low")):
+    if kpi["agg"] in SERIES_AGGS and (kpi.get("mkey") is not None or kpi["agg"] in ("peak", "low", "change")):
         return _series_kpi(cube, kpi, cells)
     if kpi["agg"] == "latest":
         ms = [x[0] for x in cells if x[0] >= 0]

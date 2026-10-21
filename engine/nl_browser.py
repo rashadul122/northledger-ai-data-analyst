@@ -78,10 +78,85 @@ from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 MAX_BYTES = 25_000_000          # "25 MB", the same figure the page states and enforces (build.py TRY_MAX_BYTES)
 MAX_ROWS = 200000
-# The engine's exact-duplicate rule does work proportional to rows x duplicate rows
-# (clean._rule_dedupe rebuilds set(dupes) once per row: reported to the engine's owner).
-# Above this product a browser tab would stall for minutes, so the file is refused plainly.
+# The engine's exact-duplicate rule did work proportional to rows x duplicate rows (clean._rule_dedupe rebuilt set(dupes)
+# once per row), so a file over this product was refused. 21 Oct 2026, live: UCI's Online Retail II (198,111 real sales lines,
+# about 1% repeated) was refused. _linear_dedupe installs the same rule with the set built once: the same quarantine and the
+# same messages, row for row, in one pass. The constant stays for the record; nothing is refused by it now.
 DEDUPE_BUDGET = 60_000_000
+
+
+def _linear_dedupe() -> None:
+    """clean._DISPATCH["dedupe"] replaced, in this process only, by the engine's own rule with set(dupes) built once (the core file
+    is unchanged, so the benchmark receipt's code hash still holds; the output is the same rows, keepers and messages)."""
+    from northledger import clean as _cl
+    if getattr(_cl._DISPATCH.get("dedupe"), "_linear", False):
+        return
+    import pandas as pd
+
+    def _rule_dedupe_linear(state: Any, rule: Any) -> None:
+        subset = rule.params.get("subset")
+        cols = list(subset) if subset else list(state.work.columns)
+        missing = [c for c in cols if c not in state.work.columns]
+        if missing:
+            raise KeyError("dedupe rule %r: unknown column(s) %s" % (rule.name, missing))
+        sub = state.work.loc[state.act, cols]
+        if sub.empty:
+            return
+        keys = [_cl._row_key(row) for row in sub.to_numpy(dtype=object)]
+        first_pos: Dict[Tuple[Any, ...], int] = {}
+        dupes: List[int] = []
+        positions = list(sub.index)
+        for key, pos in zip(keys, positions):
+            if key in first_pos:
+                dupes.append(int(pos))
+            else:
+                first_pos[key] = int(pos)
+        if not dupes:
+            return
+        mask = pd.Series(False, index=state.work.index)
+        mask.loc[dupes] = True
+        dupset = set(dupes)
+        msgs = {}
+        for key, pos in zip(keys, positions):
+            if int(pos) in dupset:
+                msgs[int(pos)] = ("exact duplicate of the row kept at input position %d%s"
+                                  % (first_pos[key], "" if subset is None else " (matched on %s)" % ", ".join(cols)))
+        if rule.severity == "flag":
+            state.note_flag("%s.duplicates" % rule.name, len(dupes))
+            return
+        state.quarantine(rule, mask, msgs)
+
+    _rule_dedupe_linear._linear = True  # type: ignore[attr-defined]
+    _cl._DISPATCH["dedupe"] = _rule_dedupe_linear
+
+
+_CODE_NAME = re.compile(r"(?:^|_)(?:\w*code|sku|invoice\w*|barcode)$|(?:^|_)(?:invoice|sku)(?:_|$)")
+
+
+def _code_columns_stay_text() -> None:
+    """clean.standard_rules wrapped, in this process only: a column named for a code (stock_code, StockCode, sku, invoice, barcode)
+    is never read as numbers. 21 Oct 2026, live on UCI's Online Retail II: StockCode, 92% digits, was read as numbers with size
+    suffixes, so 85163B (a wall clock) became 85,163 billion and 4,000 codes like it; Invoice lost its C-prefixed cancellations and
+    both became measures. Left as text they are labels; ZIP and postal codes stay as the core reads them (a numeric label)."""
+    from northledger import clean as _cl
+    if getattr(_cl.standard_rules, "_codes_text", False):
+        return
+    orig = _cl.standard_rules
+
+    def standard_rules(health: Any, *a: Any, **k: Any) -> Any:
+        return [r for r in orig(health, *a, **k)
+                if not (getattr(r, "kind", "") == "numeric" and _CODE_NAME.search(str(getattr(r, "column", "")).lower())
+                        and not re.search(r"zip|postal|postcode|post_code", str(getattr(r, "column", "")).lower()))]
+
+    standard_rules._codes_text = True  # type: ignore[attr-defined]
+    _cl.standard_rules = standard_rules
+
+
+try:                                  # every clean_table call in this process, the profile pass and Track E's included
+    _linear_dedupe()
+    _code_columns_stay_text()
+except ImportError:                   # the engine is imported later in a run; run() installs it then
+    pass
 ACCEPTED_SUFFIXES = (".csv", ".tsv", ".txt")
 DECISIONS = ("withhold", "code", "keep")
 STAGES = ("read", "profile", "decide", "clean", "analyze", "forecast", "story")
@@ -5814,6 +5889,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         con = _health.connect_read_only(eng.db_path)
         try:
             th = _health.score_table(con, res.table)
+            _linear_dedupe()
             cr = _clean.clean_table(con, res.table, health=th, as_of=as_of)
         finally:
             con.close()
@@ -13476,11 +13552,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
                           "inside an unquoted value) and try again. Nothing was sampled or cut.")
         rep["input"]["rows"], rep["input"]["columns"] = int(res.n_rows), int(res.n_cols)
         table = res.table
-        if int(res.n_rows) * _exact_duplicates(eng.db_path, table) > DEDUPE_BUDGET:
-            raise Refusal("This file holds so many exact duplicate rows that the engine's duplicate "
-                          "check would take minutes in a browser tab, so the demo stops here rather "
-                          "than freeze it. Remove the repeated rows and try again, or email me about "
-                          "the full audit.")
+        _linear_dedupe()          # the engine's duplicate rule in one pass (a file of repeated sales lines is read, not refused)
+        _code_columns_stay_text()
 
         # -- decide: every flagged column (the engine's scan, then the adapter's personal-column check), the
         # visitor's choice or withhold; a withheld column is then landed as codes no cleaning rule reads

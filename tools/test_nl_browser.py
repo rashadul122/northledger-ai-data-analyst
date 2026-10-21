@@ -524,10 +524,11 @@ def test_refusals_are_plain_and_never_sample():
     ok = NB.run(b"n,v\n" + b"".join(b"%d,%d\n" % (i, i % 97) for i in range(200000)), "rows.csv", "")
     _assert_contract(ok)
     assert ok["ok"] and ok["input"]["rows"] == 200000, (ok["error"], ok["input"])
-    # a file that is nearly all repeated rows is refused before the engine's duplicate check
+    # a file that is nearly all repeated rows is read (21 Oct 2026: the duplicate rule runs in one pass, _linear_dedupe), every
+    # repeat set aside as a duplicate; it was refused while the rule took rows x repeats
     many = NB.run(b"n\n" + b"1\n" * 20000, "dupes.csv", "")
     _assert_contract(many)
-    assert many["ok"] is False and "duplicate" in many["error"], many["error"]
+    assert many["ok"] and many["cleaning"]["rows_clean"] == 1 and many["cleaning"]["rows_quarantined"] == 19999, many.get("error")
     few = NB.run(b"n\n" + b"1\n" * 300, "dupes.csv", "")
     assert few["ok"], few["error"]
 
@@ -6676,6 +6677,25 @@ def test_a_rank_column_is_a_place_in_an_order_never_a_measure():
     measured = [m.get("column") if isinstance(m, dict) else m for m in (rep["analyst"].get("shape") or {}).get("measures") or []]
     assert "Rank" not in measured and "Total" in measured, measured
     assert NB._rank_like("Rank", range(1, 50)) and not NB._rank_like("Rank", [1, 2, 2, 3, 3, 3, 1, 2]) and not NB._rank_like("Score", range(1, 50))
+
+
+def test_a_real_retail_export_keeps_its_codes_as_codes_and_is_never_refused_for_its_repeats():
+    """21 Oct 2026, live on UCI's Online Retail II (198,111 real sales lines): the file was refused for its repeated lines (the core's
+    duplicate rule rebuilt a set once per row), and once read, StockCode (92% digits) was read as numbers with size suffixes (85163B,
+    a wall clock, became 85,163 billion) and Invoice lost its C-prefixed cancellations; both were measures. Codes stay text, the
+    repeats are set aside as duplicates in one pass, and the measures are the quantity and the price."""
+    f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "uci-online-retail-ii-excerpt.csv")
+    data = open(f, "rb").read()
+    rep = NB.run(data, "retail.csv", "", {"customer_id": "keep", "description": "keep"}, None)
+    assert rep["ok"], rep.get("error")
+    assert sorted(rep["roles"]["measures"]) == ["price", "quantity"], rep["roles"]
+    assert not [x for x in rep["cleaning"]["fixes"] if x["column"] in ("stockcode", "invoice")], rep["cleaning"]["fixes"]
+    words = json.dumps(rep["story"], ensure_ascii=False)
+    assert "85163000000000" not in words and "billion" not in words.lower(), words[:400]
+    assert rep["cleaning"]["rows_quarantined"] >= 28, rep["cleaning"]["rows_quarantined"]
+    # the faster duplicate rule is the engine's own, result for result
+    from northledger import clean as _cl
+    assert getattr(_cl._DISPATCH["dedupe"], "_linear", False) and getattr(_cl.standard_rules, "_codes_text", False)
 
 
 # every test above, the last one included (the list once stood above the last test, which never ran)

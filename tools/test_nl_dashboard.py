@@ -995,6 +995,20 @@ def test_owid_world_and_continent_rows_are_never_added_to_the_countries():
     assert 36000 < v["all"] < 39000 and v["w"] == v["all"], (v, d["refused"])
 
 
+def test_a_rows_change_tile_compares_two_periods_never_the_total():
+    """21 Oct 2026, live on Austin's shelter: "Outcomes, latest month vs a year earlier" showed 49,991, every row. A rows tile asked for
+    the change reads the latest period's rows against the same period a year earlier."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "austin-animal-center-outcomes.csv"), "rb").read()
+    plan = {"goal": "outcomes", "kind": "other", "dashboard": {"kpis": [
+        {"id": "c", "measure": "rows", "agg": "change", "vs": "year", "label": "Outcomes, latest month vs a year earlier"},
+        {"id": "n", "measure": "rows", "agg": "count", "label": "Outcomes"}]}}
+    d = NB.run(data, "a.csv", "", {"__plan__": plan}, None)["dashboard"]
+    import nl_dashboard as ND
+    k = {x["id"]: ND.query_kpi(d["cube"], x) for x in d["kpis"]}
+    assert k["c"]["base"] is not None and k["c"]["period"] and k["c"]["base_period"], k["c"]
+    assert abs(k["c"]["value"]) < k["n"]["value"] / 4, k
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

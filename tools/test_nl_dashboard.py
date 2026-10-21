@@ -873,8 +873,24 @@ def test_a_busiest_month_tile_reads_the_peak_month_of_rows():
     got = {k["id"]: ND.query_kpi(d["cube"], k) for k in d["kpis"]}
     assert got["b"]["value"] == got["p"]["value"] > 300 and got["b"]["value"] < got["n"]["value"], {k: v["value"] for k, v in got.items()}
     assert str(got["b"]["period"]).startswith("2023-07"), got["b"]
+    assert {k["id"]: k["label"] for k in d["kpis"]}["b"] == "Busiest month", d["kpis"]      # a year of data reads by month
     measured = {str(m.get("column") if isinstance(m, dict) else m) for m in (rep["analyst"].get("shape") or {}).get("measures") or []}
     assert not ({"beat", "community_area"} & measured), measured
+
+
+def test_a_busiest_month_tile_over_eleven_years_says_year():
+    """20 Oct 2026, live on Chicago crimes (2004-2015): "Busiest month" read the busiest year, 72,885 in 2014, because a tile reads the
+    charts' step over the whole range. The label names the step it reads; a peak over a year of data keeps "month" (the test above)."""
+    import random
+    import datetime as _d
+    random.seed(4)
+    rows = ["date,primary_type,location"] + ["%s,%s,%s" % ((_d.datetime(2004, 1, 1) + _d.timedelta(minutes=random.randrange(4000 * 1440))).strftime("%Y-%m-%d %H:%M"),
+                                                         random.choice(["THEFT", "BATTERY", "ASSAULT"]),
+                                                         random.choice(["STREET", "RESIDENCE", "SIDEWALK", "STORE"])) for _ in range(12000)]
+    plan = {"goal": "crime", "kind": "other", "dashboard": {"kpis": [{"id": "b", "measure": "rows", "agg": "peak", "label": "Busiest month"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "c.csv", "", {"__plan__": plan}, None)["dashboard"]
+    assert not d["cube"].get("series"), "the file must read as records"
+    assert d["kpis"][0]["label"] == "Busiest year" and len(str(d["defaults"]["kpis"]["b"]["period"])) == 4, (d["kpis"], d["defaults"])
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

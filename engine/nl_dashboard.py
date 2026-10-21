@@ -1695,6 +1695,16 @@ def build(rep: Dict[str, Any], ctx_in: Dict[str, Any]) -> Dict[str, Any]:
     layout = [[i for i in row if i in ids] for row in design["layout"]]
     layout = [r for r in layout if r]
     defaults = {"kpis": {k["id"]: query_kpi(cube, k) for k in kpis}}
+    # a peak, low or latest tile reads the charts' step over the whole range (a year for 11 years of records): a label naming another
+    # step names the one it reads (20 Oct 2026, live: Chicago's "Busiest month" showed 72,885 "in 2014", a year)
+    if not R.obs:
+        for k in kpis:
+            per = str((defaults["kpis"].get(k["id"]) or {}).get("period") or "")
+            if k["agg"] not in ("peak", "low", "latest") or not per:
+                continue
+            step = "year" if len(per) == 4 else "quarter" if "Q" in per else "month"
+            k["label"] = re.sub(r"(?i)\b(month|quarter|year)\b", lambda m: m.group(0) if m.group(0).lower() == step else
+                                (step if m.group(0).islower() else step.capitalize()), k["label"])
     dims_used = [c.header(d) for d in c.dims]
     if R.obs:
         ms = [R.name(m) for m in c.measures[:3]]

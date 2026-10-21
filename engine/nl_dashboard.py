@@ -727,7 +727,9 @@ def lead_measure(R: Read) -> Optional[str]:
     ms = list(c.measures)
     if not ms:
         return None
-    money = [m for m in ms if _is_money(R, m)]
+    # a money total (revenue, sales) leads before a money level (a price): what the business took, not what one unit cost (21 Oct 2026:
+    # a retail file's tiles led with the average price, the derived Revenue third)
+    money = sorted([m for m in ms if _is_money(R, m)], key=lambda m: not c.is_flow(m))
     if money:
         return money[0]
     flows = [m for m in ms if c.is_flow(m)]
@@ -795,7 +797,7 @@ def default_design(R: Read) -> Dict[str, Any]:
         return series_design(R, pm)
     fid = str((rep.get("primary_metric") or {}).get("finding_id") or "")
     lead = lead_measure(R)
-    if lead and pm != lead and _is_money(R, lead) and not _is_money(R, pm):
+    if lead and pm != lead and _is_money(R, lead) and (not _is_money(R, pm) or (c.is_flow(lead) and not c.is_flow(pm))):
         pm, fid = lead, ""                     # money leads; the headline's split and labels belong to its own measure
     split = (c.claims.get(fid) or {}).get("kind_split") if fid else None
     out: Dict[str, Any] = {"audience": "Anyone who reads this file: the engine's own design from its columns, without the AI",

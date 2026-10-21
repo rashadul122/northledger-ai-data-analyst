@@ -536,6 +536,8 @@ class Ctx:
         self.month = NB._months_of(self.frame[self.date]) if self.date else None
         self.dims = [str(x) for x in roles.get("dimensions") or [] if x in cols and x not in self.flag_land]
         self.measures = [str(x) for x in roles.get("measures") or [] if x in cols and x not in self.flag_land]
+        self._derived: Dict[str, str] = {}
+        self._add_revenue()
         self.plan_by = NS._plan_entries(self.plan, self.reading.landed if self.reading is not None else None) \
             if self.plan else {}
         try:
@@ -567,8 +569,29 @@ class Ctx:
         self.lim_detail: Dict[str, Any] = {}      # run_limits: the columns the chart limits read and count (limits)
 
     # -- names
+    def _add_revenue(self) -> None:
+        """Sales lines (a quantity and a unit price, no total among the measures) get a Revenue measure on the dashboard, quantity x
+        price row by row (21 Oct 2026, live on UCI's Online Retail II: without the AI the engine's dashboard led with the average price
+        and never showed what the business took). The dashboard only: the report's claims stay the engine's, on the file as it came."""
+        if self.frame is None or "revenue" in self.columns:
+            return
+        head = {m: str(self.reading.header(m) if self.reading is not None else m) for m in self.measures}
+        if any(NB._TOTAL_HEAD.search(h) for h in head.values()):
+            return
+        q = [m for m, h in head.items() if NB._QTY_HEAD.match(h.strip())]
+        p = [m for m, h in head.items() if NB._PRICE_HEAD.match(h.strip())]
+        if len(q) != 1 or len(p) != 1:
+            return
+        v = NB._numbers_of(self.frame[q[0]]) * NB._numbers_of(self.frame[p[0]])
+        self.frame = self.frame.assign(revenue=v.round(6).map(lambda x: "" if x != x else "%.10g" % x))
+        self.columns = list(self.frame.columns)
+        self.measures = ["revenue"] + self.measures
+        self._derived["revenue"] = NB.REVENUE_HEAD
+
     def header(self, land: str) -> str:
-        """A landed column as the visitor's file names it."""
+        """A landed column as the visitor's file names it (a measure the dashboard derived, by its own name)."""
+        if land in getattr(self, "_derived", {}):
+            return self._derived[land]
         return self.reading.header(land) if self.reading is not None else land
 
     def landed(self, name: Any) -> Optional[str]:

@@ -6698,6 +6698,26 @@ def test_a_real_retail_export_keeps_its_codes_as_codes_and_is_never_refused_for_
     assert getattr(_cl._DISPATCH["dedupe"], "_linear", False) and getattr(_cl.standard_rules, "_codes_text", False)
 
 
+def test_sales_lines_get_their_revenue_and_it_leads():
+    """21 Oct 2026, live on UCI's Online Retail II without the AI: the engine's dashboard led with the average price and the units, never
+    what the business took. A file of sales lines (a quantity and a unit price, no total) gets a Revenue measure on its dashboard,
+    quantity x price row by row, and it leads; the report's own claims stay the engine's, on the file as it came (adding the column to
+    the file moved the engine's headline off a confirmed price rise, so it is the dashboard's only)."""
+    f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "uci-online-retail-ii-excerpt.csv")
+    rep = NB.run(open(f, "rb").read(), "retail.csv", "", {"customer_id": "keep", "description": "keep"}, None)
+    assert sorted(rep["roles"]["measures"]) == ["price", "quantity"], rep["roles"]
+    d = rep["dashboard"]
+    labels = [(k.get("label"), k.get("agg")) for k in d["kpis"]]
+    assert labels[1] == ("Revenue", "sum"), labels
+    import nl_dashboard as ND
+    rev = ND.query_kpi(d["cube"], d["kpis"][1])["value"]
+    import pandas as pd
+    x = pd.read_csv(io.StringIO(rep["downloads"]["clean_csv"]))             # the rows the engine kept (repeats set aside)
+    q = next(c for c in x.columns if c.lower() == "quantity")
+    p = next(c for c in x.columns if c.lower() == "price")
+    assert abs(rev - float((pd.to_numeric(x[q], errors="coerce") * pd.to_numeric(x[p], errors="coerce")).sum())) < 0.05, rev
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

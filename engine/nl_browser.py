@@ -875,6 +875,12 @@ def _as_bytes(data: Any) -> bytes:
     raise Refusal("The file could not be read as bytes.")
 
 
+_QTY_HEAD = re.compile(r"^(?:quantity|qty|units[ _]sold|quantity[ _]ordered|quantity[ _]sold)$", re.I)
+_PRICE_HEAD = re.compile(r"^(?:price|unit[ _]?price|price[ _]each|price[ _]per[ _]unit|selling[ _]price)$", re.I)
+_TOTAL_HEAD = re.compile(r"(?i)revenue|sales|amount|total|turnover|value|line[ _]?total|subtotal|gross|net")
+REVENUE_HEAD = "Revenue"
+
+
 def blank_report(name: str = "", data: bytes = b"") -> Dict[str, Any]:
     """The contract's shape with nothing measured: what a refusal returns. Every v2 key is
     present with its empty value (null, [] or 0 counts), so a page reads one shape."""

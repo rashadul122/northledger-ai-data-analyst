@@ -973,6 +973,23 @@ def test_a_true_false_column_gives_a_share_tile():
     assert "b" in [c["id"] for c in d["charts"]], d["refused"]
 
 
+def test_owid_world_and_continent_rows_are_never_added_to_the_countries():
+    """20 Oct 2026, live: "Latest global emissions 88,498 million tonnes" (the world's 2024 figure is about 38,600): the tile added a year's
+    rows with World, the continents and the income groups among them. OWID's aggregates (blank iso_code) are set aside; a total is the
+    countries' total, and a filter to World reads it."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "owid-co2-panel.csv"), "rb").read()
+    plan = {"goal": "co2", "kind": "other", "operations": [{"op": "date_from_year", "column": "year"}],
+            "columns": [{"name": "co2", "semantic_type": "flow_amount", "role": "target", "unit": "million tonnes"},
+                        {"name": "country", "semantic_type": "entity", "role": "entity", "unit": ""}],
+            "dashboard": {"kpis": [{"id": "all", "measure": "co2", "agg": "latest", "label": "Latest global emissions"},
+                                   {"id": "w", "measure": "co2", "agg": "latest", "label": "World",
+                                    "where": {"column": "country", "values": ["World"]}}]}}
+    d = NB.run(data, "owid.csv", "", {"__plan__": plan}, None)["dashboard"]
+    import nl_dashboard as ND
+    v = {k["id"]: ND.query_kpi(d["cube"], k)["value"] for k in d["kpis"]}
+    assert 36000 < v["all"] < 39000 and v["w"] == v["all"], (v, d["refused"])
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

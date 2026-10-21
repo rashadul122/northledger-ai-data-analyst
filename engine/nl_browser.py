@@ -7801,6 +7801,30 @@ def _year_as_date(out: Dict[str, Any], have: Any) -> None:
         out["operations"] = list(ops) + [{"op": "date_from_year", "column": years[0]}]
 
 
+def _owid_countries_only(out: Dict[str, Any], have: Any) -> None:
+    """Our World in Data's CO2 file holds each country and, beside them, World, the continents and the income groups, all with a
+    blank iso_code: adding a year's rows counts every tonne three or four times (20 Oct 2026, live: "Latest global emissions 88,498
+    million tonnes" against the world's 38,599). The aggregates are set aside, so a total is the countries' total, and a tile or
+    chart the AI filtered to "World" reads that total (the countries' sum leaves out international aviation and shipping, which
+    OWID counts in World alone). Left as the plan reads it when the plan already filters on iso_code or country."""
+    hs = {str(h).lower(): str(h) for h in have}
+    if not {"country", "year", "iso_code", "co2"} <= set(hs):
+        return
+    ops = list(out.get("operations") or [])
+    if any(isinstance(o, dict) and (o.get("column") in (hs["iso_code"], hs["country"]) or
+                                    set(o.get("columns") or []) & {hs["iso_code"], hs["country"]}) for o in ops):
+        return
+    out["operations"] = [{"op": "exclude_blank", "column": hs["iso_code"]}] + ops
+    d = out.get("dashboard")
+    if not isinstance(d, dict):
+        return
+    for el in list(d.get("kpis") or []) + list(d.get("charts") or []):
+        w = el.get("where") if isinstance(el, dict) else None
+        if isinstance(w, dict) and str(w.get("column") or "").lower() == "country" and not w.get("exclude") and \
+                [str(v).strip().lower() for v in w.get("values") or []] == ["world"]:
+            el.pop("where", None)
+
+
 def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = None
                    ) -> Tuple[Dict[str, Any], List[str]]:
     """The plan cut down to what is valid, and the reasons for each part refused. With a statistical table's structure
@@ -7924,6 +7948,7 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
     if isinstance(plan.get("dashboard"), dict):
         out["dashboard"] = plan["dashboard"]
         _year_as_date(out, have)
+    _owid_countries_only(out, have)
     # the planner's what-ifs on a yearly or quarterly forecast (phase F; nl_period_forecast.what_if checks each again)
     if isinstance(plan.get("what_if"), list):
         out["what_if"] = [w for w in plan["what_if"][:3] if isinstance(w, dict)]

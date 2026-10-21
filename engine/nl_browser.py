@@ -3482,11 +3482,21 @@ def _download_frame(text: str, drop: Iterable[str]) -> Any:
 
 
 def _months_of(s: Any) -> Any:
+    """Each date's month, "YYYY-MM" (NaN where none reads). Each distinct value is read once and mapped back: the same months, value
+    for value (pandas infers the format from the first filled value, which stays first), about a tenth of the time on a sales file
+    whose lines share their invoice times (21 Oct 2026: 198,111 UCI lines formatted in full three times a run)."""
     import warnings
+    import numpy as np
     import pandas as pd
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return pd.to_datetime(s.where(s != ""), errors="coerce").dt.strftime("%Y-%m")
+        s2 = s.where(s != "")
+        codes, uniq = pd.factorize(s2)
+        if not len(uniq):
+            return pd.to_datetime(s2, errors="coerce").dt.strftime("%Y-%m")
+        m = pd.to_datetime(pd.Series(uniq), errors="coerce").dt.strftime("%Y-%m").to_numpy(dtype=object)
+        out = np.where(codes >= 0, m[np.maximum(codes, 0)], np.nan)
+        return pd.Series(out, index=s.index, dtype=object).where(lambda x: x.notna(), np.nan)
 
 
 def _numbers_of(s: Any) -> Any:
@@ -10400,17 +10410,35 @@ def _center(vals: Any, st: str) -> float:
     return float(np.mean(v))
 
 
+_BOOT_CHUNK = 2_000_000           # resampled values held at once (the draws come in the generator's own order, so the figures are the same)
+_BOOT_MEMO: Dict[Tuple[Any, ...], Tuple[float, float]] = {}
+
+
 def _boot_ci(vals: Any, st: str, seed: int = 20260925, B: int = 999) -> Tuple[float, float]:
+    """The 95% bootstrap interval of the mean (of the power mean on a log scale). The B x n resample indices are drawn in row chunks
+    from the one generator, in the order one (B, n) draw takes them, so the interval is the same to the bit; at 170,000 values the
+    single draw held 1.36 GB (21 Oct 2026, live on UCI's Online Retail II in the browser). A repeat of the same values, scale, seed
+    and B (the group-ranges chart checks itself against the compare analysis) is answered from the last result."""
+    import hashlib
     import numpy as np
     v = np.asarray(vals, float)
+    key = (hashlib.sha1(v.tobytes()).hexdigest(), len(v), st, int(seed), int(B))
+    if key in _BOOT_MEMO:
+        return _BOOT_MEMO[key]
+    n = len(v)
     rng = np.random.default_rng(seed)
-    idx = rng.integers(0, len(v), size=(B, len(v)))
-    if st == "log_scale":
-        e = np.power(10.0, v / 10.0)
-        m = 10.0 * np.log10(e[idx].mean(axis=1))
-    else:
-        m = v[idx].mean(axis=1)
-    return float(np.percentile(m, 2.5)), float(np.percentile(m, 97.5))
+    e = np.power(10.0, v / 10.0) if st == "log_scale" else v
+    step = max(1, _BOOT_CHUNK // max(n, 1))
+    means = np.empty(B)
+    for a in range(0, B, step):
+        b = min(B, a + step)
+        means[a:b] = e[rng.integers(0, n, size=(b - a, n))].mean(axis=1)
+    m = 10.0 * np.log10(means) if st == "log_scale" else means
+    out = (float(np.percentile(m, 2.5)), float(np.percentile(m, 97.5)))
+    if len(_BOOT_MEMO) > 256:
+        _BOOT_MEMO.clear()
+    _BOOT_MEMO[key] = out
+    return out
 
 
 def _a_compare(df, date, ent, cols, plan, layout, by=None) -> Dict[str, Any]:

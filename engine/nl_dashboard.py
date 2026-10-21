@@ -380,6 +380,10 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         kid = _ident(k.get("id"), "k", i, seen, R, el)
         m = k.get("measure")
         rows = m is None or str(m).strip().lower() in ("", "rows", "row", "count")
+        # a count named by an identifier is a count of the rows, one line a row (UCI live, 21 Oct 2026: "Invoice lines", measure
+        # Invoice, agg count, was refused as "Invoice is not a measure")
+        if not rows and str(k.get("agg") or "") == "count" and c.landed(m) in c.columns and c.role_ok(c.landed(m), "measure"):
+            rows = True
         land = None if rows else R.column(m, el, "measure")
         if not rows and land is None:
             continue

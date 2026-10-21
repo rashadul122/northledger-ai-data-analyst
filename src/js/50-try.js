@@ -1868,6 +1868,12 @@
           .then(function (dg) { return Array.from(new Uint8Array(dg)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join(''); }, function () { return ''; });
       } catch (e) { return Promise.resolve(''); }
     }
+    // a 502 worth one more try: the model's service failed on the way (upstream_timeout, upstream_unreachable, upstream_bad_response,
+    // upstream_incomplete, upstream_error); a 502 that is the worker's verdict (rejected_plan, rejected_report, report_unusable) is
+    // the answer, shown as it is (21 Oct 2026: the deploy gate caught a retried rejected_plan)
+    function upstream502(r) {
+      return r.clone().json().then(function (j) { return !!(j && typeof j.error === 'string' && /^upstream_/.test(j.error)); }, function () { return false; });
+    }
     function askPlan(feedback) {
       var ctrl = window.AbortController ? new AbortController() : null, late = false, why = '';
       var waited = (S.hashWait || Promise.resolve()).then(planKey);
@@ -1881,8 +1887,10 @@
             consent: 'dataset' }),                  // the visitor ticked "the AI reads my dataset" (askConsent): the worker keeps profile.sample
           credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
           .then(function (r) {
-            if (r.status === 502 && tries > 0 && !late) return new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postPlan(key, tries - 1); });
-            return r;
+            if (r.status !== 502 || tries <= 0 || late) return r;
+            return upstream502(r).then(function (again) {
+              return again ? new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postPlan(key, tries - 1); }) : r;
+            });
           });
       };
       return waited.then(function (key) { return postPlan(key, 1); })
@@ -2738,11 +2746,12 @@
             body: JSON.stringify({ objective: S.objective, results: pl, context_queries: T.contextQueries(rep) }),
             credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
             .then(function (r) {
-              if (r.status === 502 && tries > 0 && seq === S.seq) {
+              if (r.status !== 502 || tries <= 0 || seq !== S.seq) return r;
+              return upstream502(r).then(function (again) {
+                if (!again) return r;
                 aiStatus('write');
                 return new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postReport(tries - 1); });
-              }
-              return r;
+              });
             });
         };
         postReport(1)

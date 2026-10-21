@@ -2757,8 +2757,12 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
             and _REASON_LABEL["free_text"] in str(f.get("kind") or "")]
     values = _withheld_values(eng.db_path, res.table, [c for c in withheld if c not in free])
     free_values = _withheld_values(eng.db_path, res.table, free, dates=False)
+    # a column the visitor kept is theirs to see (owner, 21 Oct 2026: "nothing should be withheld; acknowledging that the AI reads
+    # the file is enough"): its values are printed like any other column's, so only a coded or withheld column's words are kept out
+    # of print (Austin's shelter: seven pets named Dog hid the animal type "Dog" from every chart)
     by = {str(f["column"]): _value_tokens(raw.get(str(f["column"]), ())) for f in flagged
           if _REASON_LABEL["free_text"] not in str(f.get("kind") or "")}
+    kept_cols = {str(f["column"]) for f in flagged if f.get("decision") == "keep"}
     codes = _neutralize_withheld(eng.db_path, res.table, withheld)
     # wave 5d: the columns that looked personal before the table was reshaped (and so never named a series) are listed with the flagged
     # ones, withheld; their values go to the scrubber and the token filter like any withheld column's (they are not in the landed table)
@@ -2771,8 +2775,11 @@ def _decide_and_guard(E: Any, eng: Any, res: Any, decisions: Any, aside: Optiona
     for header, label in sorted((kept or {}).items()):           # the visitor kept it: it names the series, and the report says it was flagged
         flagged.append({"column": _engine_slug(header), "kind": str(label), "decision": "keep"})
     sc = Scrubber(values + codes, free_values)
+    # every flagged column's words stay out of the theme words (a customer's name is no complaint theme: names_by, names_but); only a
+    # withheld or coded column's words stay out of print, so a kept column's values are labels like any other's
     sc.flag_tokens_by = by
-    sc.flag_tokens = frozenset().union(*by.values()) if by else frozenset()
+    held_by = [v for k, v in by.items() if k not in kept_cols]
+    sc.flag_tokens = frozenset().union(*held_by) if held_by else frozenset()
     return flagged, withheld, sc, released
 
 

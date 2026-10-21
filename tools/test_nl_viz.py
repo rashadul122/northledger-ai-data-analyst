@@ -1410,10 +1410,14 @@ def test_a_chart_never_prints_a_persons_name_as_a_level():
         assert why.get(("pareto", "stylist")) == "the values of stylist look like people's names", why
         assert why.get(("crosstab_heatmap", "stylist")) == "the values of stylist look like people's names", why
         assert why.get(("group_ranges", "price")) and why.get(("change_heatmap", "stylist")), why
-        # (d) a level holding a token of a flagged column's values ("Emily corner", a guest's first name)
-        assert "reads as personal data" in why.get(("crosstab_heatmap", "desk"), ""), why
+        # (d) a level holding a token of a withheld or coded column's values ("Emily corner", a guest's first name); a column the
+        # visitor kept is theirs to see (owner, 21 Oct 2026: nothing withheld once the AI notice is acknowledged), so its words print
         blob = json.dumps(_viz(rep)["charts"], ensure_ascii=False)
-        assert not [n for n in ("Sarah", "Emily", "Laura", "Diego") if n in blob], blob[:300]
+        if dec == "keep":
+            assert ("crosstab_heatmap", "desk") not in why, why
+        else:
+            assert "reads as personal data" in why.get(("crosstab_heatmap", "desk"), ""), why
+            assert not [n for n in ("Sarah", "Emily", "Laura", "Diego") if n in blob], blob[:300]
 
 
 def test_theme_words_are_read_in_any_script():

@@ -817,9 +817,14 @@ def test_a_trend_split_by_a_category_counts_and_a_filter_reads_dogs_as_dog():
         "charts": [{"id": "mix", "chart": "area_chart", "args": ["animal_type"], "title": "Outcome mix over time"},
                    {"id": "lines", "chart": "line_chart", "args": ["datetime", "animal_type"], "title": "Outcomes by animal type"}]}}
     d = NB.run(data, "a.csv", "", {"__plan__": plan}, None)["dashboard"]
-    # ("Dog" itself stays out of print: seven animals in the withheld name column are called Dog, and no level that is a word of a
-    # withheld column is ever printed; "Other" is no animal's name)
     assert [k["id"] for k in d["kpis"]] == ["dogs"] and [v.lower() for v in d["kpis"][0]["where"]["values"]] == ["other"], (d["kpis"], d["refused"])
+    # the name column kept, as the page keeps every flagged column (owner, 21 Oct 2026: nothing withheld): seven pets named Dog no
+    # longer hide the animal type "Dog"; withheld, they still do
+    plan["dashboard"]["kpis"][0]["where"]["values"] = ["dogs"]
+    kept = NB.run(data, "a.csv", "", {"name": "keep", "__plan__": plan}, None)["dashboard"]
+    assert [v.lower() for v in kept["kpis"][0]["where"]["values"]] == ["dog"], (kept["kpis"], kept["refused"])
+    held = NB.run(data, "a.csv", "", {"name": "withhold", "__plan__": plan}, None)["dashboard"]
+    assert not held["kpis"] or held["kpis"][0]["id"] != "dogs" or "Dog" not in held["kpis"][0]["where"]["values"], held["kpis"]
     got = {c["id"]: (c["draw"], c["agg"]) for c in d["charts"]}
     assert got.get("mix") == ("area", "count") and got.get("lines") == ("line", "count"), (got, d["refused"])
 

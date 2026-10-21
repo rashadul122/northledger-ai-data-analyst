@@ -7780,6 +7780,27 @@ def _published_units(cols: List[Dict[str, Any]], have: Any) -> None:
             c["unit"] = u
 
 
+def _year_as_date(out: Dict[str, Any], have: Any) -> None:
+    """A dashboard that asks for time (a latest, change, peak or low tile; a line or area chart) on a file whose one time column is a
+    "year" reads that year as the date, as the plan's own date_from_year does (20 Oct 2026, live: the same OWID file was planned with
+    the step once and without it the next time, and the second dashboard had no date, so every time tile was refused). Never when the
+    file has a column named for a date, a time or a month, or the plan already reads one; the step still refuses a column of non-years."""
+    ops = out.get("operations") or []
+    if any(isinstance(o, dict) and o.get("op") == "date_from_year" for o in ops):
+        return
+    names = [str(h) for h in have]
+    if any(re.search(r"(?i)date|time|month|period|quarter|week|day", h) for h in names):
+        return
+    years = [h for h in names if h.strip().lower() in ("year", "yr", "fiscal_year", "fiscal year")]
+    if len(years) != 1:
+        return
+    d = out.get("dashboard") or {}
+    wants = any(isinstance(k, dict) and str(k.get("agg") or "") in ("latest", "change", "peak", "low") for k in d.get("kpis") or []) or \
+        any(isinstance(c, dict) and str(c.get("chart") or "") in ("line_chart", "area_chart") for c in d.get("charts") or [])
+    if wants:
+        out["operations"] = list(ops) + [{"op": "date_from_year", "column": years[0]}]
+
+
 def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = None
                    ) -> Tuple[Dict[str, Any], List[str]]:
     """The plan cut down to what is valid, and the reasons for each part refused. With a statistical table's structure
@@ -7902,6 +7923,7 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
     # checks every element again against the rows the engine kept, and the block leaves rep.ai_plan once it is read
     if isinstance(plan.get("dashboard"), dict):
         out["dashboard"] = plan["dashboard"]
+        _year_as_date(out, have)
     # the planner's what-ifs on a yearly or quarterly forecast (phase F; nl_period_forecast.what_if checks each again)
     if isinstance(plan.get("what_if"), list):
         out["what_if"] = [w for w in plan["what_if"][:3] if isinstance(w, dict)]

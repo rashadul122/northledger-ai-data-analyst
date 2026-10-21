@@ -732,6 +732,16 @@ class Ctx:
         return len(f) >= THEME_MIN_TEXTS and (int(f.nunique()) > 300 or float(f.str.len().median()) > 60)
 
     # -- roles (spec.json "roles")
+    def code_number(self, land: str) -> bool:
+        """A column of numbers that are labels (a police district, a ZIP code, a ward, a beat, a community area): a category to
+        split by, never a measure (20 Oct 2026, live: Chicago's "Incidents by police district" was refused as no category)."""
+        try:
+            from northledger.measure import _label_number
+            h, v = str(self.header(land)), self.nums(land)
+            return bool(re.search(r"code or key", _label_number(h, v, [h])) or NB._area_code_like(h, v))
+        except Exception:  # noqa: BLE001 - a column that cannot be read stays as the plain rule reads it
+            return False
+
     def role_ok(self, land: str, role: str) -> str:
         """"" when the column can play the role, else why not (in words that name only an unflagged column)."""
         h = self.header(land)
@@ -749,7 +759,7 @@ class Ctx:
             if role == "category_or_rating" and self.rating_levels(land) is not None and \
                     (not st or st in RATING_TYPES):
                 return ""
-            if self.numeric(land) or land == self.date:
+            if land == self.date or (self.numeric(land) and not self.code_number(land)):
                 return "%s is not a category column" % h
             types = SEGMENT_TYPES if role == "segment" else CATEGORY_TYPES
             if st or pr:
@@ -764,6 +774,8 @@ class Ctx:
             if n > 300:
                 return ("%s has %s values; past 300, a column is a category only when the plan types it a category or an "
                         "entity" % (h, _count(n)))
+            if self.code_number(land) and n <= 300:
+                return ""
             return "%s is not a category the engine reads" % h
         if role == "text":
             return "" if self.free_text(land) else "%s is not a free-text column" % h

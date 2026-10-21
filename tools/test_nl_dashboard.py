@@ -912,6 +912,47 @@ def test_owid_co2_reads_in_the_publishers_million_tonnes():
     assert other[0]["unit"] == "kg"                        # not Our World in Data's file: the plan's unit stands
 
 
+def test_owid_planned_without_the_year_step_still_reads_its_years_and_never_sums_a_latest():
+    """20 Oct 2026, live: the AI planned the same OWID file without date_from_year; every time tile was refused for having no date,
+    and "Latest global emissions" showed every row's co2 added up (1,803,057 million tonnes). A dashboard asking for time on a file
+    whose one time column is "year" reads the year as the date; a latest or peak tile that still has no date is dropped, never summed."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "owid-co2-panel.csv"), "rb").read()
+    plan = {"goal": "co2", "kind": "other", "columns": [{"name": "co2", "semantic_type": "flow_amount", "role": "target", "unit": "tonnes"},
+                                                        {"name": "country", "semantic_type": "entity", "role": "entity", "unit": ""}],
+            "dashboard": {"kpis": [{"id": "w", "measure": "co2", "agg": "latest", "label": "Latest global emissions",
+                                    "where": {"column": "country", "values": ["World"]}}],
+                          "charts": [{"id": "t", "chart": "line_chart", "args": ["co2"], "title": "Emissions over time",
+                                      "where": {"column": "country", "values": ["World"]}}]}}
+    rep = NB.run(data, "owid.csv", "", {"__plan__": plan}, None)
+    d = rep["dashboard"]
+    import nl_dashboard as ND
+    k = {x["id"]: ND.query_kpi(d["cube"], x) for x in d["kpis"]}
+    assert "w" in k and 30000 < k["w"]["value"] < 45000 and str(k["w"]["period"]).startswith("2024"), (k, d["refused"])
+    assert [c["id"] for c in d["charts"]] == ["t"], d["refused"]
+    # no year column the plan can read: the latest tile goes rather than adding every row up
+    import io
+    import pandas as pd
+    f = pd.read_csv(io.BytesIO(data), usecols=["country", "co2"], nrows=3000).dropna()
+    d2 = NB.run(f.to_csv(index=False).encode(), "noyear.csv", "", {"__plan__": plan}, None)["dashboard"]
+    assert not any(x["id"] == "w" for x in d2["kpis"]), d2["kpis"]
+
+
+def test_a_police_district_number_is_a_category_on_the_dashboard():
+    """20 Oct 2026, live on Chicago crimes: "Incidents by police district" was refused, "district is not a category column", once district
+    was (rightly) no measure. A number that is a label (district, ZIP code, ward, beat, community area) is a category to split by."""
+    import random
+    random.seed(2)
+    rows = ["date,primary_type,district,amount"] + ["2024-%02d-%02d %02d:%02d,%s,%d,%d" % (
+        1 + i % 12, 1 + i % 28, i % 24, i % 60, random.choice(["THEFT", "BATTERY"]), random.randint(1, 25), random.randint(1, 900))
+        for i in range(2000)]
+    plan = {"goal": "crime", "kind": "other", "dashboard": {"charts": [
+        {"id": "d", "chart": "bar_chart", "args": ["district"], "title": "Incidents by police district"},
+        {"id": "a", "chart": "bar_chart", "args": ["amount"], "title": "Not a category"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "c.csv", "", {"__plan__": plan}, None)["dashboard"]
+    assert "d" in [c["id"] for c in d["charts"]], d["refused"]
+    assert "a" not in [c["id"] for c in d["charts"]], d["charts"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

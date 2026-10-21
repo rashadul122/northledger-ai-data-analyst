@@ -350,8 +350,10 @@ def _agg_for(R: Read, land: Optional[str], agg: Any, element: str, has_date: boo
         R.refuse(element, R_LEVEL_SUM % c.header(land))
         a = "average"
     if a in SERIES_AGGS and not has_date:
+        # a latest or a peak with no dates is no figure at all: the tile goes (20 Oct 2026, live: OWID's "Latest global emissions"
+        # showed every row's co2 added up, the world and its regions counted twice, under its own label)
         R.refuse(element, R_NO_DATE)
-        a = "sum" if flow else "average"
+        return ""
     return a
 
 
@@ -383,6 +385,8 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
             continue
         agg = ("peak" if str(k.get("agg") or "") == "peak" else "low") if land is None and has_date and \
             str(k.get("agg") or "") in ("peak", "low") else "count" if land is None else _agg_for(R, land, k.get("agg"), el, has_date)
+        if not agg:
+            continue
         if land is not None and str(k.get("agg") or "") == "count":
             agg = "count"
         wh = _where(R, k.get("where"), el) if k.get("where") is not None else None

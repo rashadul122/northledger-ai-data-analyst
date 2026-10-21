@@ -6738,13 +6738,14 @@ def test_a_correction_that_changes_only_the_dashboard_reuses_the_run():
     got = json.loads(NB.redesign_json(json.dumps(b)))
     step = copy.deepcopy(b)
     step["operations"] = [{"op": "exclude_blank", "column": "Customer ID"}]
-    assert json.loads(NB.redesign_json(json.dumps(step))) == {"rerun": True}
+    no = json.loads(NB.redesign_json(json.dumps(step)))
+    assert no["rerun"] is True and no["why"] == ["operations"], no            # and it says which part changed
     full = json.loads(json.dumps(NB.run(data, "r.csv", "", dict(dec, __plan__=copy.deepcopy(b)), None), default=str))
     assert got.get("redesigned") and got["dashboard"] == full["dashboard"], [k for k in full["dashboard"]
                                                                               if got["dashboard"].get(k) != full["dashboard"][k]]
     assert [k["id"] for k in got["dashboard"]["kpis"]] == ["u", "n"], got["dashboard"]["kpis"]
     NB.run(data, "r.csv", "", dec, None)                               # a run with no plan keeps nothing
-    assert json.loads(NB.redesign_json(json.dumps(b))) == {"rerun": True}
+    assert json.loads(NB.redesign_json(json.dumps(b)))["rerun"] is True
 
 
 # every test above, the last one included (the list once stood above the last test, which never ran)

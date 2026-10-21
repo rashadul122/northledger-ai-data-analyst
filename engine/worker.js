@@ -234,12 +234,17 @@ function decisionsKey(d) {
   Object.keys(d || {}).sort().forEach(function (x) { if (x !== '__plan__' && x !== '__plan_review__') k[x] = d[x]; });
   return JSON.stringify(k);
 }
+var declined = null;                          // why the last redesign ran the engine instead (the report carries it as redesign_declined)
 function redesigned(d) {
-  if (!d || !d.__plan__ || lastPlanned === null || decisionsKey(d) !== lastPlanned || !nl || !nl.redesign_json) return null;
+  declined = null;
+  if (!d || !d.__plan__ || !nl || !nl.redesign_json) return null;
+  if (lastPlanned === null || decisionsKey(d) !== lastPlanned) { declined = lastPlanned === null ? 'no planned run before' : 'other decisions'; return null; }
   try {
     var out = JSON.parse(String(nl.redesign_json(JSON.stringify(d.__plan__))));
-    return out && !out.rerun && out.dashboard ? out : null;
-  } catch (e) { return null; }
+    if (out && !out.rerun && out.dashboard) return out;
+    declined = out && out.why ? out.why : 'rerun';
+    return null;
+  } catch (e) { declined = 'error: ' + lastLine(e); return null; }
 }
 
 async function onRun(m) {
@@ -257,6 +262,7 @@ async function onRun(m) {
       var opts = {};
       Object.keys(first.options).forEach(function (k) { opts[k] = first.options[k]; });
       report = engine(m.id, opts, d, AFTER);
+      if (declined && report && typeof report === 'object' && d && d.__plan__) report.redesign_declined = declined;
     }
   }
   lastPlanned = d && d.__plan__ && report && report.ok ? decisionsKey(d) : null;

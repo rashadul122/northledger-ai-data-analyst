@@ -16002,8 +16002,15 @@ def redesign_json(plan_json: Any) -> str:
     except (TypeError, ValueError):
         return json.dumps({"rerun": True})
     L = _LAST_DASH
-    if not L or not isinstance(raw, dict) or _plan_base(raw) != L.get("base") or not isinstance(raw.get("dashboard"), dict):
-        return json.dumps({"rerun": True})
+    if not L or not isinstance(raw, dict) or not isinstance(raw.get("dashboard"), dict):
+        return json.dumps({"rerun": True, "why": "no run kept" if not L else "no dashboard in the plan"})
+    if _plan_base(raw) != L.get("base"):
+        # which parts of the plan the correction changed besides its dashboard (the report says, so the reuse can be widened later)
+        old_p = json.loads(L["base"]) if L.get("base") else {}
+        new_p = {k: v for k, v in raw.items() if k not in _PLAN_META}
+        diff = sorted(k for k in set(old_p) | set(new_p) if json.dumps(old_p.get(k), sort_keys=True, default=str)
+                      != json.dumps(new_p.get(k), sort_keys=True, default=str))
+        return json.dumps({"rerun": True, "why": diff[:12]})
     try:
         rep = json.loads(json.dumps(L["rep"]))
         plan = dict(L.get("ai_plan") or {}, dashboard=raw["dashboard"])

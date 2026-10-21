@@ -893,6 +893,25 @@ def test_a_busiest_month_tile_over_eleven_years_says_year():
     assert d["kpis"][0]["label"] == "Busiest year" and len(str(d["defaults"]["kpis"]["b"]["period"])) == 4, (d["kpis"], d["defaults"])
 
 
+def test_owid_co2_reads_in_the_publishers_million_tonnes():
+    """20 Oct 2026, live: OWID's co2 (million tonnes, by its codebook) was tiled "37,398 tonnes" because the AI wrote "tonnes", through
+    two prompt changes. The engine knows Our World in Data's CO2 file by its headers and uses the codebook's unit; per person stays
+    tonnes per person; another file's units are the plan's."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "owid-co2-panel.csv"), "rb").read()
+    plan = {"goal": "co2", "kind": "other", "operations": [{"op": "date_from_year", "column": "year"}],
+            "columns": [{"name": "co2", "semantic_type": "flow_amount", "role": "target", "unit": "tonnes"},
+                        {"name": "co2_per_capita", "semantic_type": "level", "role": "driver", "unit": "tonnes"}],
+            "dashboard": {"kpis": [{"id": "e", "measure": "co2", "agg": "latest", "label": "Latest emissions", "unit_word": "tonnes"},
+                                   {"id": "p", "measure": "co2_per_capita", "agg": "average", "label": "Per person", "unit_word": "tonnes"}]}}
+    d = NB.run(data, "owid.csv", "", {"__plan__": plan}, None)["dashboard"]
+    u = {k["id"]: k["unit_word"] for k in d["kpis"]}
+    assert u == {"e": "million tonnes", "p": "tonnes per person"}, (u, d["refused"])
+    assert NB._owid_unit("share_global_co2") == "%" and NB._owid_unit("gdp") == "" and NB._owid_unit("coal_co2") == "million tonnes"
+    other = [{"name": "co2", "unit": "kg"}]
+    NB._published_units(other, ["date", "co2", "region"])
+    assert other[0]["unit"] == "kg"                        # not Our World in Data's file: the plan's unit stands
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

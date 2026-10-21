@@ -7745,6 +7745,41 @@ def _clean_plan_review(raw: Any) -> Optional[Dict[str, Any]]:
             "at": str(raw.get("at") or "")[:40]}
 
 
+def _owid_unit(name: str) -> str:
+    """The unit Our World in Data's CO2 codebook publishes for a column of its owid-co2-data file, or "" (the codebook's own naming:
+    emissions in million tonnes, per person in tonnes, shares and growth rates in %, per GDP in kg per international-$)."""
+    n = name.lower()
+    if n.startswith("share_") or n.endswith("_prct") or n.endswith("_share") or "_share_" in n:
+        return "%"
+    if n.endswith("_per_capita"):
+        return "kWh per person" if n.startswith("energy") else "tonnes per person"
+    if n.endswith("_per_gdp"):
+        return "kg per dollar" if "co2" in n else ""
+    if n.endswith("_per_unit_energy"):
+        return "kg per kWh"
+    if n in ("population",):
+        return "people"
+    if n == "primary_energy_consumption":
+        return "TWh"
+    if n.startswith(("co2", "cumulative_", "consumption_co2", "trade_co2", "methane", "nitrous_oxide", "total_ghg", "ghg_")) or \
+            n.endswith("_co2") or n.endswith("_growth_abs"):
+        return "million tonnes"
+    return ""
+
+
+def _published_units(cols: List[Dict[str, Any]], have: Any) -> None:
+    """The publisher's own unit for the plan's columns of a file the engine knows by its headers, in place of the AI's guess
+    (20 Oct 2026, live: OWID's co2, in million tonnes, read "37,398 tonnes" through two prompt changes). Our World in Data's CO2
+    file: country, year, iso_code and co2 among the headers. Any other file is left as the plan reads it."""
+    hs = {str(h).lower() for h in have}
+    if not {"country", "year", "iso_code", "co2"} <= hs:
+        return
+    for c in cols:
+        u = _owid_unit(str(c.get("name") or ""))
+        if u:
+            c["unit"] = u
+
+
 def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = None
                    ) -> Tuple[Dict[str, Any], List[str]]:
     """The plan cut down to what is valid, and the reasons for each part refused. With a statistical table's structure
@@ -7780,6 +7815,7 @@ def _validate_plan(plan: Any, columns: List[str], S: Optional[Dict[str, Any]] = 
                 out["columns"][-1]["label"] = " ".join(c["label"].split())[:80]
             if isinstance(c.get("values"), list):     # a category's profile values, for its contract test
                 out["columns"][-1]["values"] = [str(x)[:60] for x in c["values"][:300]]
+    _published_units(out["columns"], have)
     ops = []
     for op in (plan.get("operations") or [])[:12]:
         if not isinstance(op, dict) or op.get("op") not in PLAN_OPS:

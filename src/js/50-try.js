@@ -1893,7 +1893,8 @@
             });
           });
       };
-      return waited.then(function (key) { return postPlan(key, 1); })
+      // the first plan only: a correction that fails leaves the plan already made, and the card says why (no second wait)
+      return waited.then(function (key) { return postPlan(key, feedback ? 0 : 1); })
         .then(function (r) {
           if (r.ok) return r.json();
           // the worker's reason word ({error}) picks the words the page says; it is never shown as it is

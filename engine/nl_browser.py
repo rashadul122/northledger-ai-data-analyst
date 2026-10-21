@@ -9400,6 +9400,18 @@ def _rank_like(name: Any, values: Any) -> bool:
     return len(v) >= 3 and bool((v == v.round()).all()) and float(v.min()) >= 1 and v.nunique() >= 0.8 * len(v)
 
 
+def _area_code_like(name: Any, values: Any) -> bool:
+    """A police beat or a community area number (Chicago's beat 1-2535, community_area 1-77): labels the core's code words do not
+    name ("area" alone is also a floor area, a quantity). 20 Oct 2026, live: once district was a label, Chicago's analyst moved on to
+    "community_area ... January 422% above July". The name ends in beat, or in community area, and it holds whole numbers."""
+    import pandas as pd
+    toks = [t for t in re.split(r"[^a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(name)).lower()) if t]
+    if not toks or not (toks[-1] == "beat" or toks[-2:] == ["community", "area"]):
+        return False
+    v = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    return len(v) >= 3 and bool((v == v.round()).all())
+
+
 def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[Dict[str, Any]]):
     """The rows the engine kept, as it read them: (frame, date column, entity column, why there is no date
     column, info). The frame is the engine's cleaned table (the rows behind downloads.clean_csv) under the
@@ -9435,7 +9447,7 @@ def _analysis_frame(ctx: Dict[str, Any], plan: Dict[str, Any], layout: Optional[
         cols = list(df.columns)
         for h in cols:
             if info["kinds"].get(h) == "number" and (re.search(r"code or key|coordinate", _label_number(h, df[h], cols))
-                                                     or _rank_like(h, df[h])):
+                                                     or _rank_like(h, df[h]) or _area_code_like(h, df[h])):
                 info["kinds"][h] = "text"
                 info["unread"].pop(h, None)
                 df[h] = df[h].map(lambda v: None if pd.isna(v) else ("%d" % v if float(v).is_integer() else str(v)))

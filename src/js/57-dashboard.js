@@ -146,7 +146,8 @@
   }
   NLD.kpi = function (D, K, F) {
     var cells = pick(D, F || {}, K.where), month = null, how = K.agg;
-    if ((how === 'latest' || how === 'change' || how === 'peak' || how === 'low') && K.mkey) return seriesKpi(D, K, cells);
+    // a rows tile's highest or lowest period reads the rows period by period (nl_dashboard.query_kpi does the same)
+    if ((how === 'latest' || how === 'change' || how === 'peak' || how === 'low') && (K.mkey || how === 'peak' || how === 'low')) return seriesKpi(D, K, cells);
     if (how === 'latest') {
       var last = -1; cells.forEach(function (c) { if (c[0] > last) last = c[0]; });
       cells = last < 0 ? [] : cells.filter(function (c) { return c[0] === last; });

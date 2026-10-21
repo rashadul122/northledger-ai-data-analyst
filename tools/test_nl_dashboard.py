@@ -852,6 +852,31 @@ def test_a_latest_total_is_never_labelled_an_average():
     assert lab == {"l": "Latest total home_score", "a": "Average home goals per match"}, (lab, d["refused"])
 
 
+def test_a_busiest_month_tile_reads_the_peak_month_of_rows():
+    """20 Oct 2026, live on Chicago crimes: "Busiest month" counted every row (119,887). A rows tile asked for the peak, or named for
+    the busiest period, reads the highest month's rows, and says when; the Ask analyst never reads a beat or community area as a total."""
+    import random
+    import datetime as _d
+    random.seed(9)
+    rows = ["date,primary_type,beat,community_area"]
+    for i in range(1200):
+        day = _d.date(2023, 1, 1) + _d.timedelta(days=random.randrange(365))
+        rows.append("%s,%s,%d,%d" % (day.isoformat(), random.choice(["THEFT", "BATTERY"]), random.randint(111, 2535), random.randint(1, 77)))
+    rows += ["2023-07-%02d,THEFT,%d,25" % (1 + i % 28, 1000 + i) for i in range(300)]      # July is the busiest month
+    plan = {"goal": "crime", "kind": "other", "dashboard": {"kpis": [
+        {"id": "b", "measure": "rows", "agg": "count", "label": "Busiest month"},
+        {"id": "p", "measure": "rows", "agg": "peak", "label": "Peak"},
+        {"id": "n", "measure": "rows", "agg": "count", "label": "Reported incidents"}]}}
+    rep = NB.run(("\n".join(rows) + "\n").encode(), "c.csv", "", {"__plan__": plan}, None)
+    d = rep["dashboard"]
+    import nl_dashboard as ND
+    got = {k["id"]: ND.query_kpi(d["cube"], k) for k in d["kpis"]}
+    assert got["b"]["value"] == got["p"]["value"] > 300 and got["b"]["value"] < got["n"]["value"], {k: v["value"] for k, v in got.items()}
+    assert str(got["b"]["period"]).startswith("2023-07"), got["b"]
+    measured = {str(m.get("column") if isinstance(m, dict) else m) for m in (rep["analyst"].get("shape") or {}).get("measures") or []}
+    assert not ({"beat", "community_area"} & measured), measured
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

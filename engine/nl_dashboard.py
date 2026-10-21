@@ -381,7 +381,8 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         land = None if rows else R.column(m, el, "measure")
         if not rows and land is None:
             continue
-        agg = "count" if land is None else _agg_for(R, land, k.get("agg"), el, has_date)
+        agg = ("peak" if str(k.get("agg") or "") == "peak" else "low") if land is None and has_date and \
+            str(k.get("agg") or "") in ("peak", "low") else "count" if land is None else _agg_for(R, land, k.get("agg"), el, has_date)
         if land is not None and str(k.get("agg") or "") == "count":
             agg = "count"
         wh = _where(R, k.get("where"), el) if k.get("where") is not None else None
@@ -390,6 +391,12 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         item = {"id": kid, "measure": land, "agg": agg, "where": wh,
                 "label": R.words(k.get("label"), "label", el, ai) or "",
                 "unit_word": _unit(R, k.get("unit_word"), el, ai, land)}
+        # a tile named for the busiest (highest, peak, record) period that adds up every row means the peak period (20 Oct 2026,
+        # live: Chicago's "Busiest month" showed 119,887, all the rows)
+        if agg in ("count", "sum") and has_date and re.search(r"(?i)\b(busiest|highest|peak|record|best|top)\s+(month|quarter|year|week|day|period)\b",
+                                                             item["label"]):
+            agg = item["agg"] = "peak"
+            R.refuse(el, "its label names the busiest period, so it reads the highest period, not the whole range")
         if agg == "change":
             item["vs"] = "year" if str(k.get("vs") or "") == "year" and R.grain != "year" else "previous"
         # a file of records: the highest or lowest is a month's (a quarter's, a year's) total, never one row (20 Oct 2026, live: the
@@ -1081,7 +1088,8 @@ def query_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], filt: Optional[Dict[str
     small = int(cube.get("small") or SMALL)
     cells = [x for x in cube["cells"] if _cell_ok(cube, x, filt, kpi.get("where"))]
     month = None
-    if kpi["agg"] in SERIES_AGGS and kpi.get("mkey") is not None:
+    # a rows tile's highest or lowest period reads the rows period by period (57-dashboard.js NLD.kpi does the same)
+    if kpi["agg"] in SERIES_AGGS and (kpi.get("mkey") is not None or kpi["agg"] in ("peak", "low")):
         return _series_kpi(cube, kpi, cells)
     if kpi["agg"] == "latest":
         ms = [x[0] for x in cells if x[0] >= 0]
@@ -1183,8 +1191,8 @@ def _series_kpi(cube: Dict[str, Any], kpi: Dict[str, Any], cells: List[List[Any]
     latest: the last period with a value; change: that value less the period before's (vs "year": the same period a year earlier),
     with pct its relative change; peak / low: the highest / lowest period in the range (the latest one on a tie)."""
     keys = [m["key"] for m in cube["measures"]]
-    j = keys.index(kpi["mkey"])
-    flow = bool(cube["measures"][j]["flow"])
+    j = keys.index(kpi["mkey"]) if kpi.get("mkey") is not None else None      # None: the rows, counted
+    flow = bool(cube["measures"][j]["flow"]) if j is not None else True
     grain = tile_grain(cube, cells)
     pv = period_values(cube, cells, j, flow, grain)
     if _partial_last(cube, pv, grain) and (kpi["agg"] in ("change", "peak", "low") or flow):

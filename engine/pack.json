@@ -7,8 +7,8 @@
  "snapshot_recipe": "sha256 of northledger/*.py (no git commit available); the same id build.py and northledger.loop.engine_snapshot() compute",
  "zip": {
   "file": "northledger-browser.zip",
-  "sha256": "d8457ed50e49cc63c01a81bbd74c9264253517730cd4e0b4b6948fbf7b3da63c",
-  "bytes": 1087700
+  "sha256": "b5f827d276e9320009e6d3dcfbdd475e4c09f9f96f7ffbd57c467175fe924c4f",
+  "bytes": 1087974
  },
  "files": [
   {
@@ -175,8 +175,8 @@
   },
   {
    "path": "nl_dashboard.py",
-   "sha256": "6dbe86174652b819c0254adf0bc6fb164cc71a32df25437472f4cd93cb18c720",
-   "bytes": 110668,
+   "sha256": "15da30f929941726708f2d6c2008370a7304314437c3696a28d10f3011e4c543",
+   "bytes": 111566,
    "source": "portfolio-website/engine/nl_dashboard.py"
   },
   {

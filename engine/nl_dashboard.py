@@ -465,7 +465,10 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         if name in ("line_chart", "area_chart", "grouped_bar", "small_multiples") and c.date is not None:
             # the time axis is the file's own date: naming it is "over time", never a measure (20 Oct 2026: NYC 311's and Chicago's
             # "requests per month" passed the date and were refused, so two daily files had no trend at all)
-            args = [a for a in args if c.landed(a) != c.date]
+            # and a second column of dates (Austin's monthyear beside its datetime, 21 Oct 2026: "Outcomes by month and year" was
+            # refused) is the same time axis, read at the file's own date
+            second = {k for k, v in ((R.rep.get("roles") or {}).get("excluded") or {}).items() if "second date" in str(v)}
+            args = [a for a in args if c.landed(a) != c.date and (c.landed(a) or a) not in second and not _month_labels(c, c.landed(a))]
         if any(c.is_flagged(a) for a in args):
             R.refuse(el, R_PERSONAL)
             continue
@@ -574,6 +577,18 @@ def _unit(R: Read, u: Any, element: str, ai: bool, land: Optional[str]) -> str:
         R.refuse(element, "its unit word \u201c%s\u201d was replaced by \u201c%s\u201d: one unit word for %s on the whole "
                           "dashboard" % (s, have or "none", R.ctx.header(land)))
     return have
+
+
+_MONTH_LABEL = re.compile(r"^(?:\d{1,2}[-/.]\d{4}|\d{4}[-/.]\d{1,2}|[A-Za-z]{3,9}\.? \d{4})$")
+
+
+def _month_labels(c: Any, land: Optional[str]) -> bool:
+    """A column of month labels ("05-2025", "2025-05", "May 2025") beside the file's date: the same time axis, never a category."""
+    if not land or land not in c.columns or land == c.date:
+        return False
+    t = c.texts(land)
+    t = t[t != ""]
+    return bool(len(t)) and float(t.head(2000).str.match(_MONTH_LABEL).mean()) >= 0.95
 
 
 def _drawn_args(R: Read, name: str, lands: List[str], el: str) -> Optional[Dict[str, Any]]:

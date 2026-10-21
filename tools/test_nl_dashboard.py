@@ -1009,6 +1009,19 @@ def test_a_rows_change_tile_compares_two_periods_never_the_total():
     assert abs(k["c"]["value"]) < k["n"]["value"] / 4, k
 
 
+def test_a_trend_naming_a_second_date_column_reads_the_files_date():
+    """21 Oct 2026, live on Austin's shelter: "Outcomes by month and year" named monthyear (month labels, "05-2025", beside datetime)
+    and outcome_type, and was refused as "not a number column". A second date column is the same time axis: the chart counts each
+    outcome type's rows over time."""
+    data = open(os.path.join(os.path.dirname(SITE), "corpus", "universal", "austin-animal-center-outcomes.csv"), "rb").read()
+    plan = {"goal": "outcomes", "kind": "other", "dashboard": {"charts": [
+        {"id": "m", "chart": "line_chart", "args": ["monthyear", "outcome_type"], "title": "Outcomes by month and year"}]}}
+    rep = NB.run(data, "a.csv", "", {"__plan__": plan}, None)
+    d = rep["dashboard"]
+    got = {c["id"]: (c["draw"], c["agg"]) for c in d["charts"]}
+    assert got.get("m") == ("line", "count"), (got, d["refused"])
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

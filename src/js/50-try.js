@@ -1873,10 +1873,19 @@
       var waited = (S.hashWait || Promise.resolve()).then(planKey);
       var timer = setTimeout(function () { late = true; if (ctrl) ctrl.abort(); }, feedback ? REPLAN_ABORT_MS : PLAN_ABORT_MS);
       S.planFail = '';
-      return waited.then(function (key) { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined,
-          consent: 'dataset' }),                  // the visitor ticked "the AI reads my dataset" (askConsent): the worker keeps profile.sample
-        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
+      // one more try after an upstream 502 (21 Oct 2026, live: UCI's retail file lost its AI design to one 502 and the engine designed
+      // the dashboard alone); a 503 is the day's cap and a 504 already waited out the model's time, so neither is tried again
+      var postPlan = function (key, tries) {
+        return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined,
+            consent: 'dataset' }),                  // the visitor ticked "the AI reads my dataset" (askConsent): the worker keeps profile.sample
+          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) {
+            if (r.status === 502 && tries > 0 && !late) return new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postPlan(key, tries - 1); });
+            return r;
+          });
+      };
+      return waited.then(function (key) { return postPlan(key, 1); })
         .then(function (r) {
           if (r.ok) return r.json();
           // the worker's reason word ({error}) picks the words the page says; it is never shown as it is

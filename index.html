@@ -1788,7 +1788,7 @@ table.tbl select { font: inherit; min-height: 34px; max-width: 100%; border: 1px
     <a class="btn btn-primary btn-sm cta" href="#book">Book<span class="cta-more">audit</span></a>
   </div>
 </header>
-<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-21 08:34:04 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
+<p class="fresh" data-fact-scope><span class="wrap-in">City data to <span data-fact="rentsafe_meta:meta.data_as_of">2026-09-21</span> (latest evaluation in the file) <span aria-hidden="true">&middot;</span> page rebuilt <span data-fact="site_build:display.built_at_label">2026-10-21 12:09:59 UTC</span>, by hand, no schedule <span aria-hidden="true">&middot;</span> <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed</span></p>
 
 <main id="main">
 <section class="hero" id="top" data-fact-scope aria-labelledby="hero-h">
@@ -2535,7 +2535,7 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       <div>
         <h3 id="r-tests">Build and tests</h3>
         <ul class="plain">
-          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-21 08:34:04 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
+          <li>This page: built <span data-fact="site_build:display.built_at_label">2026-10-21 12:09:59 UTC</span>; <span data-fact="site_build:display.build_checks_passed">48</span> build checks passed (<a href="data/site_build.json">site_build.json</a> lists each one and the source of every derived figure).</li>
           <li>Engine tests: <span data-fact="site_build:display.tests_total">779</span> tests in <span data-fact="site_build:display.tests_suites">54</span> suites, <span data-fact="site_build:display.tests_state">all green</span>, run <span data-fact="site_build:display.tests_ran_at">2026-09-28 16:36:55 UTC</span> on engine code <code><span data-fact="site_build:display.tests_snapshot">19ec81d19e0d</span></code> (<a href="data/engine_tests.json">engine_tests.json</a>).</li>
           <li id="r-timings">Timings: one recorded run, <a href="data/timings.json">timings.json</a>; stage verdicts, <a href="data/engine_scorecard.json">engine_scorecard.json</a>.</li>
           <li id="r-forecast">Forecast Lab: <a href="data/forecast_lab.json">forecast_lab.json</a>, reproduced by <code>build_forecast.py --check</code>; <span data-fact="forecast_lab:display.backtest_forecasts">288</span> scored forecasts from <span data-fact="forecast_lab:display.backtest_origins">24</span> origins, <span data-fact="forecast_lab:display.backtest_first_origin">Sep 2023</span> to <span data-fact="forecast_lab:display.backtest_last_origin">Aug 2025</span>.</li>
@@ -9503,10 +9503,19 @@ table &#x27;RentSafeTO Evaluation View&#x27;
       var waited = (S.hashWait || Promise.resolve()).then(planKey);
       var timer = setTimeout(function () { late = true; if (ctrl) ctrl.abort(); }, feedback ? REPLAN_ABORT_MS : PLAN_ABORT_MS);
       S.planFail = '';
-      return waited.then(function (key) { return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined,
-          consent: 'dataset' }),                  // the visitor ticked "the AI reads my dataset" (askConsent): the worker keeps profile.sample
-        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); })
+      // one more try after an upstream 502 (21 Oct 2026, live: UCI's retail file lost its AI design to one 502 and the engine designed
+      // the dashboard alone); a 503 is the day's cap and a 504 already waited out the model's time, so neither is tried again
+      var postPlan = function (key, tries) {
+        return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objective: S.objective, profile: T.planProfile(S.profile, S.flagged, S.decisions, S.landed), profile_hash: key || undefined, feedback: feedback || undefined,
+            consent: 'dataset' }),                  // the visitor ticked "the AI reads my dataset" (askConsent): the worker keeps profile.sample
+          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) {
+            if (r.status === 502 && tries > 0 && !late) return new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postPlan(key, tries - 1); });
+            return r;
+          });
+      };
+      return waited.then(function (key) { return postPlan(key, 1); })
         .then(function (r) {
           if (r.ok) return r.json();
           // the worker's reason word ({error}) picks the words the page says; it is never shown as it is

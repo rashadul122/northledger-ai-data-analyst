@@ -399,6 +399,13 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
             R.refuse(el, "its label named a single reading; the tile is the %s %s of a period" % (
                 "highest" if agg == "peak" else "lowest", "total" if c.is_flow(land) else "average"))
             item["label"] = "%s %s" % ("Highest" if agg == "peak" else "Lowest", c.header(land))
+        # a period's figure of a flow is its total: a label calling it an average says what the number is not (20 Oct 2026, live:
+        # football's "Latest month's average home goals" showed 1,334 goals, the month's total)
+        if agg in ("latest", "peak", "low") and land is not None and c.is_flow(land) and \
+                re.search(r"(?i)\b(average|avg|mean|per)\b", item["label"]):
+            R.refuse(el, "its label named an average; the tile is the %s total of %s" % (
+                {"latest": "latest period's", "peak": "highest period's", "low": "lowest period's"}[agg], c.header(land)))
+            item["label"] = "%s %s" % ({"latest": "Latest total", "peak": "Highest total", "low": "Lowest total"}[agg], c.header(land))
         out["kpis"].append(item)
     raw_c = block.get("charts") if isinstance(block.get("charts"), list) else []
     lim = NV.run_limits(c)
@@ -983,6 +990,12 @@ def make_cube(R: Read, design: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
     mrec = []
     for j, m in enumerate(meas):
         v = c.nums(m)
+        # a measure shown in "%" is on the percent scale, read as the engine reads a percentage everywhere (_pct_reading: bare
+        # values 95% of them between 0 and 1 are fractions). 20 Oct 2026, live: college majors' unemployment rate 0.0697 was tiled
+        # "0.07%" and the share of women 0.52 "0.52%"
+        if (c.unit(m) or R.units.get(m) or "") == "%":
+            t = c.texts(m)
+            v = NB._pct_reading(v, t, (t != "").values)["percent"].reindex(v.index)
         g["s%d" % j] = v.fillna(0.0).values
         g["c%d" % j] = v.notna().astype(int).values
         mrec.append({"key": "m%d" % j, "column": c.header(m), "land": m, "flow": bool(c.is_flow(m)),

@@ -824,6 +824,34 @@ def test_a_trend_split_by_a_category_counts_and_a_filter_reads_dogs_as_dog():
     assert got.get("mix") == ("area", "count") and got.get("lines") == ("line", "count"), (got, d["refused"])
 
 
+def test_a_fraction_shown_in_percent_is_on_the_percent_scale():
+    """20 Oct 2026, live on college majors: the AI tiled Unemployment_rate (0.0697 on average, a fraction) in "%", and the
+    dashboard printed "0.07%"; ShareWomen 0.52 became "0.52%". A measure in "%" is read as the engine reads a percentage
+    (fractions when 95% of the bare values lie between 0 and 1), so the tiles say 6.97% and 52%; a percent column stays as it is."""
+    f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "college-majors-earnings-ranked.csv")
+    plan = {"goal": "majors", "kind": "other", "dashboard": {"kpis": [
+        {"id": "u", "measure": "Unemployment_rate", "agg": "average", "label": "Average unemployment rate", "unit_word": "%"},
+        {"id": "w", "measure": "ShareWomen", "agg": "average", "label": "Average share women", "unit_word": "%"},
+        {"id": "m", "measure": "Median", "agg": "average", "label": "Average median earnings", "unit_word": "USD"}]}}
+    d = NB.run(open(f, "rb").read(), "c.csv", "", {"__plan__": plan}, None)["dashboard"]
+    import nl_dashboard as ND
+    v = {k["id"]: ND.query_kpi(d["cube"], k)["value"] for k in d["kpis"]}
+    assert 5 < v["u"] < 9 and 45 < v["w"] < 60 and 35000 < v["m"] < 45000, (v, d["refused"])
+
+
+def test_a_latest_total_is_never_labelled_an_average():
+    """20 Oct 2026, live on international football results: "Latest month's average home goals" showed 1,334 goals, the latest month's
+    total of a flow. A latest, peak or low tile of a flow labelled as an average is relabelled to the total it is; an average tile stays."""
+    f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "international-football-results.csv")
+    plan = {"goal": "goals", "kind": "other",
+            "columns": [{"name": "home_score", "semantic_type": "count", "role": "target", "unit": "goals"}], "dashboard": {"kpis": [
+        {"id": "l", "measure": "home_score", "agg": "latest", "label": "Latest month's average home goals", "unit_word": "goals"},
+        {"id": "a", "measure": "home_score", "agg": "average", "label": "Average home goals per match", "unit_word": "goals"}]}}
+    d = NB.run(open(f, "rb").read(), "f.csv", "", {"__plan__": plan}, None)["dashboard"]
+    lab = {k["id"]: k["label"] for k in d["kpis"]}
+    assert lab == {"l": "Latest total home_score", "a": "Average home goals per match"}, (lab, d["refused"])
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

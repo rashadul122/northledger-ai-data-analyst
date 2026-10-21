@@ -1026,13 +1026,17 @@ def test_a_count_tile_named_by_an_identifier_counts_the_rows():
     """21 Oct 2026, live on UCI's Online Retail II: the AI's "Invoice lines" tile (measure Invoice, agg count) was refused, "Invoice is not
     a measure". A count needs no measure: the tile counts the rows."""
     f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "uci-online-retail-ii-excerpt.csv")
-    plan = {"goal": "sales", "kind": "other", "columns": [{"name": "Invoice", "semantic_type": "identifier", "role": "key", "unit": ""}],
-            "dashboard": {"kpis": [{"id": "lines", "measure": "Invoice", "agg": "count", "label": "Invoice lines"}]}}
+    plan = {"goal": "sales", "kind": "other", "columns": [{"name": "Invoice", "semantic_type": "identifier", "role": "key", "unit": ""},
+                                                         {"name": "Customer ID", "semantic_type": "identifier", "role": "key", "unit": ""}],
+            "dashboard": {"kpis": [{"id": "lines", "measure": "Invoice", "agg": "count", "label": "Invoice lines"},
+                                   {"id": "cust", "measure": "Customer ID", "agg": "count", "label": "Customer lines"}]}}
     d = NB.run(open(f, "rb").read(), "retail.csv", "", {"customer_id": "keep", "description": "keep", "__plan__": plan}, None)["dashboard"]
     import nl_dashboard as ND
     k = {x["id"]: x for x in d["kpis"]}
     assert "lines" in k and k["lines"]["agg"] == "count" and k["lines"]["measure"] is None, (d["kpis"], d["refused"])
     assert ND.query_kpi(d["cube"], k["lines"])["value"] > 3000, ND.query_kpi(d["cube"], k["lines"])
+    # Customer ID has blanks: a count of rows would overstate it (live: 191,994 "customer lines"), so that tile is refused
+    assert "cust" not in k and any("overstate" in r["why"] for r in d["refused"]), (d["kpis"], d["refused"])
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

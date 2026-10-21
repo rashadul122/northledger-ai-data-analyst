@@ -380,9 +380,17 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         kid = _ident(k.get("id"), "k", i, seen, R, el)
         m = k.get("measure")
         rows = m is None or str(m).strip().lower() in ("", "rows", "row", "count")
-        # a count named by an identifier is a count of the rows, one line a row (UCI live, 21 Oct 2026: "Invoice lines", measure
-        # Invoice, agg count, was refused as "Invoice is not a measure")
-        if not rows and str(k.get("agg") or "") == "count" and c.landed(m) in c.columns and c.role_ok(c.landed(m), "measure"):
+        # a count named by an identifier is a count of the rows, one line a row, when every row has one (UCI live, 21 Oct 2026:
+        # "Invoice lines", measure Invoice, agg count, was refused as "Invoice is not a measure"); with blanks in it the count of the
+        # rows would overstate it ("Customer lines" read 191,994 with thousands of lines that have no customer), so the tile goes
+        if not rows and str(k.get("agg") or "") == "count" and c.landed(m) in c.columns:
+            # a count tile counts rows, whatever column it names; it stands only when that column is filled on every row, else the
+            # count of rows would overstate it (live: "Customer lines" read 191,994, thousands of lines having no customer)
+            blank = int((c.texts(c.landed(m)) == "").sum())
+            if blank:
+                R.refuse(el, "it counts %s, and %s rows have none, so the count of rows would overstate it" % (
+                    c.header(c.landed(m)), format(blank, ",")))
+                continue
             rows = True
         land = None if rows else R.column(m, el, "measure")
         if not rows and land is None:

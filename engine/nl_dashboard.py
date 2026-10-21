@@ -389,12 +389,15 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
             continue
         if land is not None and str(k.get("agg") or "") == "count":
             agg = "count"
+        share = land is not None and not c.numeric(land) and c.flag_share(land) is not None
+        if share:
+            agg = "average"                          # a true/false column: the share of rows that are true, in %
         wh = _where(R, k.get("where"), el) if k.get("where") is not None else None
         if k.get("where") is not None and wh is None:
             continue
         item = {"id": kid, "measure": land, "agg": agg, "where": wh,
                 "label": R.words(k.get("label"), "label", el, ai) or "",
-                "unit_word": _unit(R, k.get("unit_word"), el, ai, land)}
+                "unit_word": "%" if share else _unit(R, k.get("unit_word"), el, ai, land)}
         # a tile named for the busiest (highest, peak, record) period that adds up every row means the peak period (20 Oct 2026,
         # live: Chicago's "Busiest month" showed 119,887, all the rows)
         if agg in ("count", "sum") and has_date and re.search(r"(?i)\b(busiest|highest|peak|record|best|top)\s+(month|quarter|year|week|day|period)\b",
@@ -1000,17 +1003,18 @@ def make_cube(R: Read, design: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
         R.refuse("the column %s" % c.header(gone), R_CELLS)
     mrec = []
     for j, m in enumerate(meas):
-        v = c.nums(m)
+        fs = c.flag_share(m) if not c.numeric(m) else None
+        v = fs if fs is not None else c.nums(m)
         # a measure shown in "%" is on the percent scale, read as the engine reads a percentage everywhere (_pct_reading: bare
         # values 95% of them between 0 and 1 are fractions). 20 Oct 2026, live: college majors' unemployment rate 0.0697 was tiled
         # "0.07%" and the share of women 0.52 "0.52%"
-        if (c.unit(m) or R.units.get(m) or "") == "%":
+        if fs is None and (c.unit(m) or R.units.get(m) or "") == "%":
             t = c.texts(m)
             v = NB._pct_reading(v, t, (t != "").values)["percent"].reindex(v.index)
         g["s%d" % j] = v.fillna(0.0).values
         g["c%d" % j] = v.notna().astype(int).values
-        mrec.append({"key": "m%d" % j, "column": c.header(m), "land": m, "flow": bool(c.is_flow(m)),
-                     "unit": c.unit(m)})
+        mrec.append({"key": "m%d" % j, "column": c.header(m), "land": m, "flow": bool(c.is_flow(m)) and fs is None,
+                     "unit": "%" if fs is not None else c.unit(m)})
     g["n"] = 1
     agg = {"n": "sum"}
     for j in range(len(meas)):

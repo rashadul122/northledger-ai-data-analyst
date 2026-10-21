@@ -953,6 +953,26 @@ def test_a_police_district_number_is_a_category_on_the_dashboard():
     assert "a" not in [c["id"] for c in d["charts"]], d["charts"]
 
 
+def test_a_true_false_column_gives_a_share_tile():
+    """20 Oct 2026, live on Chicago crimes: "Share domestic" was refused, "domestic is not a number column". A true/false column as a
+    tile's measure is the share of rows that are true, in %, averaged; it stays a category to split a chart by."""
+    import random
+    random.seed(6)
+    rows = ["date,primary_type,domestic"] + ["2024-%02d-%02d %02d:%02d,%s,%s" % (1 + i % 12, 1 + i % 28, i % 24, i % 60,
+                                              random.choice(["THEFT", "BATTERY"]), "true" if i % 4 == 0 else "false") for i in range(2000)]
+    plan = {"goal": "crime", "kind": "other", "dashboard": {
+        "kpis": [{"id": "s", "measure": "domestic", "agg": "sum", "label": "Share domestic", "unit_word": "incidents"}],
+        "charts": [{"id": "b", "chart": "bar_chart", "args": ["domestic"], "title": "Incidents by domestic"}]}}
+    d = NB.run(("\n".join(rows) + "\n").encode(), "c.csv", "", {"__plan__": plan}, None)["dashboard"]
+    import nl_dashboard as ND
+    k = {x["id"]: x for x in d["kpis"]}
+    assert "s" in k and k["s"]["unit_word"] == "%" and k["s"]["agg"] == "average", (d["kpis"], d["refused"])
+    uniq = set(rows[1:])                                   # the engine reads an exact repeat of a row as one row
+    want = 100.0 * sum(r.endswith(",true") for r in uniq) / len(uniq)
+    assert abs(ND.query_kpi(d["cube"], k["s"])["value"] - want) < 0.05, (ND.query_kpi(d["cube"], k["s"]), want)
+    assert "b" in [c["id"] for c in d["charts"]], d["refused"]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

@@ -595,6 +595,19 @@ class Ctx:
         return any(k in self.withheld_land for k in (n, land, NB._engine_slug(n)) if k)
 
     # -- values
+    def flag_share(self, land: str) -> Any:
+        """A true/false column read as a share (100 where true, 0 where false, blank otherwise), or None when the column is not one:
+        every filled value is true/false, yes/no or y/n, both sides present (20 Oct 2026, live: Chicago's "Share domestic" tile was
+        refused, "domestic is not a number column"). A share is a level, averaged, in %; the column stays a category elsewhere."""
+        if land not in self.columns or land == self.date:
+            return None
+        t = self.texts(land).str.lower()
+        filled = t[t != ""]
+        yes, no = {"true", "yes", "y"}, {"false", "no", "n"}
+        if not len(filled) or not set(filled.unique()) <= yes | no or not (filled.isin(yes).any() and filled.isin(no).any()):
+            return None
+        return t.map(lambda v: 100.0 if v in yes else 0.0 if v in no else float("nan")).astype(float)
+
     def nums(self, land: str) -> Any:
         if land not in self._num:
             self._num[land] = NB._numbers_of(self.frame[land])
@@ -746,6 +759,8 @@ class Ctx:
         """"" when the column can play the role, else why not (in words that name only an unflagged column)."""
         h = self.header(land)
         st, pr = self.ptype(land), self.prole(land)
+        if role == "measure" and not self.numeric(land) and self.flag_share(land) is not None:
+            return ""                                     # a true/false column as a share of rows (flag_share), averaged
         if role in ("measure", "total", "units"):
             if not self.numeric(land) or (st and st not in MEASURE_TYPES):
                 return "%s is not a number column the engine reads" % h if not self.numeric(land) else \
@@ -774,8 +789,8 @@ class Ctx:
             if n > 300:
                 return ("%s has %s values; past 300, a column is a category only when the plan types it a category or an "
                         "entity" % (h, _count(n)))
-            if self.code_number(land) and n <= 300:
-                return ""
+            if (self.code_number(land) and n <= 300) or self.flag_share(land) is not None:
+                return ""                                 # a number code, or a true/false column (domestic, arrest)
             return "%s is not a category the engine reads" % h
         if role == "text":
             return "" if self.free_text(land) else "%s is not a free-text column" % h

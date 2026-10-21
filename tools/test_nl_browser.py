@@ -6718,6 +6718,35 @@ def test_sales_lines_get_their_revenue_and_it_leads():
     assert abs(rev - float((pd.to_numeric(x[q], errors="coerce") * pd.to_numeric(x[p], errors="coerce")).sum())) < 0.05, rev
 
 
+def test_a_correction_that_changes_only_the_dashboard_reuses_the_run():
+    """21 Oct 2026, live on UCI's Online Retail II in the browser: the AI's self-correction changed only tiles and charts, and the
+    engine ran the whole file a second time (102 of 540 seconds). redesign_json builds the dashboard again on the kept run, the same
+    dashboard a second run makes; a plan that changes a step, or no kept run, is answered {"rerun": true}."""
+    import copy
+    f = os.path.join(os.path.dirname(SITE), "corpus", "universal", "uci-online-retail-ii-excerpt.csv")
+    data = open(f, "rb").read()
+    cols = [{"name": "Quantity", "semantic_type": "count", "role": "target", "unit": "units"},
+            {"name": "Country", "semantic_type": "category", "role": "segment", "unit": ""}]
+    a = {"goal": "sales", "kind": "other", "columns": cols, "dashboard": {
+        "kpis": [{"id": "u", "measure": "Quantity", "agg": "sum", "label": "Units"}],
+        "charts": [{"id": "c", "chart": "bar_chart", "args": ["Country", "Quantity"], "title": "Units by country"}]}}
+    b = copy.deepcopy(a)
+    b["dashboard"]["kpis"].append({"id": "n", "measure": "rows", "agg": "count", "label": "Lines"})
+    b["changes"] = ["added a lines tile"]
+    dec = {"customer_id": "keep", "description": "keep"}
+    NB.run(data, "r.csv", "", dict(dec, __plan__=copy.deepcopy(a)), None)
+    got = json.loads(NB.redesign_json(json.dumps(b)))
+    step = copy.deepcopy(b)
+    step["operations"] = [{"op": "exclude_blank", "column": "Customer ID"}]
+    assert json.loads(NB.redesign_json(json.dumps(step))) == {"rerun": True}
+    full = json.loads(json.dumps(NB.run(data, "r.csv", "", dict(dec, __plan__=copy.deepcopy(b)), None), default=str))
+    assert got.get("redesigned") and got["dashboard"] == full["dashboard"], [k for k in full["dashboard"]
+                                                                              if got["dashboard"].get(k) != full["dashboard"][k]]
+    assert [k["id"] for k in got["dashboard"]["kpis"]] == ["u", "n"], got["dashboard"]["kpis"]
+    NB.run(data, "r.csv", "", dec, None)                               # a run with no plan keeps nothing
+    assert json.loads(NB.redesign_json(json.dumps(b))) == {"rerun": True}
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

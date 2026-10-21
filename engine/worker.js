@@ -224,6 +224,24 @@ function onProfile(m) {
   post({ type: 'profiled', id: m.id, profile: p, landed: p ? (out.landed || {}) : null });
 }
 
+// the decisions of the last run that had a plan, without the plan itself: the next run with the same decisions and a plan that
+// differs only in its dashboard (the AI's one self-correction, or a visitor's edit of tiles and charts) builds the dashboard again
+// on that run's rows (nl_browser.redesign_json) instead of running the whole engine a second time (21 Oct 2026: 102 of the UCI
+// retail journey's 540 seconds); anything else, or any doubt, runs the engine as before
+var lastPlanned = null;
+function decisionsKey(d) {
+  var k = {};
+  Object.keys(d || {}).sort().forEach(function (x) { if (x !== '__plan__' && x !== '__plan_review__') k[x] = d[x]; });
+  return JSON.stringify(k);
+}
+function redesigned(d) {
+  if (!d || !d.__plan__ || lastPlanned === null || decisionsKey(d) !== lastPlanned || !nl || !nl.redesign_json) return null;
+  try {
+    var out = JSON.parse(String(nl.redesign_json(JSON.stringify(d.__plan__))));
+    return out && !out.rerun && out.dashboard ? out : null;
+  } catch (e) { return null; }
+}
+
 async function onRun(m) {
   if (!booted || !file || !first) { fail(m.id, 'engine', 'There is no file to work on; pick it again.'); return; }
   var d = (m.options && m.options.decisions) || {}, report;
@@ -234,10 +252,14 @@ async function onRun(m) {
   if (!changed) {
     report = first.report;                                // every flagged column withheld: the run already made
   } else {
-    var opts = {};
-    Object.keys(first.options).forEach(function (k) { opts[k] = first.options[k]; });
-    report = engine(m.id, opts, d, AFTER);
+    report = redesigned(d);
+    if (!report) {
+      var opts = {};
+      Object.keys(first.options).forEach(function (k) { opts[k] = first.options[k]; });
+      report = engine(m.id, opts, d, AFTER);
+    }
   }
+  lastPlanned = d && d.__plan__ && report && report.ok ? decisionsKey(d) : null;
   timesOf(report, AFTER, m.id);
   post({ type: 'result', id: m.id, report: report });
 }

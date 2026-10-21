@@ -13265,6 +13265,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
 
         layout = None
         ai_plan = None
+        raw_plan = None
         goal_from_plan = False
         plan_review = None
         structure_inner = None                    # set only in the slice's own run (_run_slice)
@@ -14115,6 +14116,8 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         _data_note(rep, rowno_note)
         _remember_sentences(rep)
         rep["ok"] = True
+        _keep_for_redesign(rep, raw_plan, ai_plan, dict(r=r if not date_withheld else None, reading=reading, pub=pub, goal=goal,
+                                                        tokens=scrub.flag_tokens, tokens_by=scrub.flag_tokens_by, pins=dash_pins))
     except Refusal as exc:
         rep["error"] = str(exc)
     except Exception as exc:  # noqa: BLE001 - a plain refusal, never a traceback
@@ -15962,6 +15965,60 @@ def _sales(rep: Dict[str, Any], reading: Any, plan: Any, as_of: Any) -> Dict[str
             raise
         return {"version": "", "ok": False, "why": "the sales report could not be built for this file (%s)"
                 % type(exc).__name__, "fit": {"ok": False, "why": "", "missing": []}, "mapping": [], "cannot": []}
+
+
+# The last AI-planned run, kept for its one self-correction (redesign_json): when the corrected plan differs from the plan that ran
+# in its dashboard only, the dashboard is built again on this run's rows instead of running the whole engine a second time (21 Oct
+# 2026, live on UCI's Online Retail II in the browser: the second run took 102 of the journey's 540 seconds, the AI having changed
+# only tiles and charts). Replaced by every run; empty after a run with no plan.
+_LAST_DASH: Dict[str, Any] = {}
+_PLAN_META = ("dashboard", "changes")
+
+
+def _plan_base(raw: Any) -> str:
+    """The plan without its dashboard (and the AI's note of what it changed), as canonical JSON: two plans with one base run alike."""
+    if not isinstance(raw, dict):
+        return ""
+    return json.dumps({k: v for k, v in raw.items() if k not in _PLAN_META}, sort_keys=True, default=str)
+
+
+def _keep_for_redesign(rep: Dict[str, Any], raw_plan: Any, ai_plan: Any, objs: Dict[str, Any]) -> None:
+    _LAST_DASH.clear()
+    if not isinstance(raw_plan, dict) or not isinstance(rep.get("dashboard"), dict):
+        return
+    try:
+        _LAST_DASH.update(objs, base=_plan_base(raw_plan), rep=json.loads(json.dumps(rep, default=str)),
+                          ai_plan=json.loads(json.dumps(ai_plan, default=str)) if isinstance(ai_plan, dict) else None)
+    except Exception:  # noqa: BLE001 - the correction then runs the engine again, as before
+        _LAST_DASH.clear()
+
+
+def redesign_json(plan_json: Any) -> str:
+    """The report of the last run with its dashboard built again from a corrected plan (engine/worker.js {type: 'redesign'}), or
+    {"rerun": true} when the corrected plan changes anything but its dashboard (its steps, analyses, charts, columns or goal), when
+    no run is kept, or when the dashboard cannot be built: the page then runs the engine with the plan, as it always did."""
+    try:
+        raw = json.loads(plan_json) if isinstance(plan_json, str) else dict(plan_json or {})
+    except (TypeError, ValueError):
+        return json.dumps({"rerun": True})
+    L = _LAST_DASH
+    if not L or not isinstance(raw, dict) or _plan_base(raw) != L.get("base") or not isinstance(raw.get("dashboard"), dict):
+        return json.dumps({"rerun": True})
+    try:
+        rep = json.loads(json.dumps(L["rep"]))
+        plan = dict(L.get("ai_plan") or {}, dashboard=raw["dashboard"])
+        rep["dashboard"] = _dashboard(rep, L["r"], L["reading"], plan, L["pub"], L["goal"], L["tokens"], L["tokens_by"], L["pins"])
+        _dashboard_visuals(rep, plan)
+        dt, tt = rep.get("dashboard"), rep.get("title")
+        if isinstance(dt, dict) and dt.get("ok") and isinstance(tt, dict) and tt.get("title") and \
+                str(dt.get("title") or "").endswith(" dashboard"):
+            dt["title"] = str(tt["title"])[:90]
+        rep["redesigned"] = True
+        return json.dumps(rep, default=str)
+    except Exception:  # noqa: BLE001 - the page runs the engine again
+        if os.environ.get("NL_BROWSER_STRICT"):
+            raise
+        return json.dumps({"rerun": True})
 
 
 def sales_json(options_json: Any = None) -> str:

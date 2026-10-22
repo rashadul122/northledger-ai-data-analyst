@@ -503,11 +503,8 @@ def validate(R: Read, block: Dict[str, Any], ai: bool) -> Dict[str, Any]:
         item = {"id": cid, "chart": name, "title": R.words(ch.get("title"), "title", el, ai) or "",
                 "why": R.words(ch.get("why"), "why", el, ai) or ""}
         if name in DRAWN:
-            spec = _drawn_args(R, name, lands, el) if cat_spec is None else (
-                None if NB._looks_like_names(c.levels_all(cat_spec["by"]), c.header(cat_spec["by"])) else cat_spec)
+            spec = _drawn_args(R, name, lands, el) if cat_spec is None else cat_spec
             if spec is None:
-                if cat_spec is not None:
-                    R.refuse(el, "the values of %s look like people's names" % c.header(cat_spec["by"]))
                 continue
             item.update(spec)
             if ch.get("where") is not None:
@@ -626,9 +623,6 @@ def _drawn_args(R: Read, name: str, lands: List[str], el: str) -> Optional[Dict[
         return None
     if name == "area_chart" and measure is not None and not c.is_flow(measure):
         R.refuse(el, "an area chart stacks parts of a total; %s is averaged" % c.header(measure))
-        return None
-    if by is not None and NB._looks_like_names(c.levels_all(by), c.header(by)):
-        R.refuse(el, "the values of %s look like people's names" % c.header(by))
         return None
     agg = "count" if measure is None else ("sum" if c.is_flow(measure) else "average")
     return {"draw": DRAWN[name], "measure": measure, "agg": agg, "by": by}

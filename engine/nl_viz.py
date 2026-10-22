@@ -487,8 +487,8 @@ def _kept_categories(rep: Dict[str, Any], flagged: List[Dict[str, Any]]) -> set:
         vals = fr[c].replace("", None).dropna()
         if not (0 < vals.nunique() <= cap):
             continue
-        if NB._looks_like_names(sorted(set(vals.astype(str))), c):
-            continue                         # a few customers are still people: their names never become a group
+        # a kept column of people's names is a group like any other (owner, 21 Oct 2026: nothing the visitor kept is withheld once
+        # the AI notice is acknowledged): revenue by stylist, spend by customer
         out.add(c)
     return out
 
@@ -1128,10 +1128,11 @@ def _label_ok(ctx: Ctx, s: str, level: Optional[str] = None, names: Optional[Fro
 
 
 def _names_check(ctx: Ctx, land: str) -> None:
-    """A Pareto's or a crosstab's levels are the column's own values: a column whose values look like people's names
-    (nl_browser._looks_like_names, the adapter's person-name test) is refused."""
-    if land in ctx.columns and NB._looks_like_names(ctx.levels_all(land), ctx.header(land)):
-        raise Refused("the values of %s look like people's names" % ctx.header(land))
+    """A Pareto's or a crosstab's levels are the column's own values. A column of people's names the visitor did not withhold is
+    charted like any other (owner, 21 Oct 2026: acknowledging that the AI reads the file is enough; "revenue by stylist" had been
+    refused); a withheld or coded column is never among ctx.columns, so it never gets here."""
+    if land not in ctx.columns:
+        raise Refused("the column is not among the rows the engine kept")
 
 
 # ----------------------------------------------------------------------------- from the scenarios block

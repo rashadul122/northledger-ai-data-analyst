@@ -152,9 +152,34 @@ def _code_columns_stay_text() -> None:
     _cl.standard_rules = standard_rules
 
 
+# set by run() for the run's landing: True when the visitor kept a flagged column (the page keeps every one once the AI notice is
+# acknowledged); with no choice made (the scan, an engine default) emails and phone numbers are still coded as they land
+_KEEP_CONTACTS = [False]
+
+
+def _contacts_not_coded() -> None:
+    """intake.land_file wrapped, in this process only: when the visitor's choices keep a flagged column, an email or a phone column
+    lands as it is and is kept like every other column (owner, 21 Oct 2026: nothing is withheld once the visitor acknowledges that
+    the AI reads the file); otherwise the core codes it as it lands, as before (a withheld email's words, store names among them,
+    would else hide those names from every chart). The core file is unchanged."""
+    from northledger import intake as _in
+    if getattr(_in.land_file, "_contacts_kept", False):
+        return
+    orig = _in.land_file
+
+    def land_file(*a: Any, **k: Any) -> Any:
+        if _KEEP_CONTACTS[0]:
+            k["auto_redact"] = False
+        return orig(*a, **k)
+
+    land_file._contacts_kept = True  # type: ignore[attr-defined]
+    _in.land_file = land_file
+
+
 try:                                  # every clean_table call in this process, the profile pass and Track E's included
     _linear_dedupe()
     _code_columns_stay_text()
+    _contacts_not_coded()
 except ImportError:                   # the engine is imported later in a run; run() installs it then
     pass
 ACCEPTED_SUFFIXES = (".csv", ".tsv", ".txt")
@@ -13209,6 +13234,9 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         the sample passes its fixed date so its report does not age.
     """
     t_start = time.perf_counter()
+    # before the file lands: a run in which the visitor kept a flagged column lands emails and phone numbers as they are
+    _contacts_not_coded()
+    _KEEP_CONTACTS[0] = isinstance(decisions, dict) and any(v == "keep" for k, v in decisions.items() if not str(k).startswith("__"))
     # names the visitor looked up on the publisher's site (the page's "Look up on FRED": a series code sent, never data), for this run
     # and the slice runs inside it; a run without them (a new file) forgets the last file's
     if isinstance(decisions, dict) and "__names__" in decisions:
@@ -14131,6 +14159,7 @@ def run(csv_bytes: Any, name: str, objective: str = "", decisions: Optional[Dict
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
         _READ_SNAP["entry"] = None                # the cleaner's frames are not held past the run
+        _KEEP_CONTACTS[0] = False                 # a later landing outside a run (the profile pass) codes contacts again
         rep["timings"] = [{"stage": s, "seconds": round(float(timings[s]), 3)} for s in STAGES]
         _ensure_v2(rep)
     return rep

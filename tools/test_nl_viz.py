@@ -1348,8 +1348,10 @@ def test_final5_the_theme_chart_reads_a_kept_free_text_column_with_every_name_pr
                                            {"kind": "crosstab_heatmap", "columns": ["department", "customer_name"], "why": "x"}])
     rep = NB.run(data, "reviews_people.csv", "", {"__plan__": plan, "review_text": "keep", "customer_name": "keep"},
                  "2026-09-30")
-    assert [r["why"] for r in _viz(rep)["refused"]] == [_nv().R_PERSONAL] * 2 and \
-        not [c for c in _viz(rep)["charts"] if c["chosen_by"] == "ai"], _viz(rep)["refused"]
+    # kept, a name is no rating (the theme chart is refused) but it is a group (the crosstab is drawn: nothing kept is withheld)
+    ref = {r["chart"]: r["why"] for r in _viz(rep)["refused"]}
+    assert "theme_rating_heatmap" in ref and "crosstab_heatmap" not in ref, ref
+    assert [c["chart"] for c in _viz(rep)["charts"] if c["chosen_by"] == "ai"] == ["crosstab_heatmap"], _viz(rep)["charts"]
 
 
 def test_the_engine_never_picks_themes_or_a_pareto_of_an_untyped_text_column():
@@ -1406,10 +1408,14 @@ def test_a_chart_never_prints_a_persons_name_as_a_level():
         assert {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}.get("guest") == dec, rep["privacy"]
         assert "stylist" not in {f["column"] for f in rep["privacy"]["flagged"]}, "the check flagged stylist itself"
         why = {(r["chart"], r["columns"][0]): r["why"] for r in _viz(rep)["refused"]}
-        # (c) a column whose values look like people's names: never a Pareto's bars or a crosstab's rows
-        assert why.get(("pareto", "stylist")) == "the values of stylist look like people's names", why
-        assert why.get(("crosstab_heatmap", "stylist")) == "the values of stylist look like people's names", why
-        assert why.get(("group_ranges", "price")) and why.get(("change_heatmap", "stylist")), why
+        # (c) a column whose values look like people's names: charted when nothing is withheld (owner, 21 Oct 2026: "revenue by
+        # stylist" is an analysis, and the visitor acknowledged that the AI reads the file); with the guest column withheld or coded,
+        # the stylists' names that are also guests' names are still never printed, so those charts are refused
+        stylist_charts = [("pareto", "stylist"), ("crosstab_heatmap", "stylist")]
+        if dec == "keep":
+            assert not [k for k in stylist_charts if k in why], why
+        else:
+            assert all(why.get(k) for k in stylist_charts), why
         # (d) a level holding a token of a withheld or coded column's values ("Emily corner", a guest's first name); a column the
         # visitor kept is theirs to see (owner, 21 Oct 2026: nothing withheld once the AI notice is acknowledged), so its words print
         blob = json.dumps(_viz(rep)["charts"], ensure_ascii=False)

@@ -1801,11 +1801,11 @@
     }
 
     /* ---- the AI consent step (owner's decision, 18 Oct 2026: one box for the whole file, no column withheld) ---- */
-    // every flagged column kept (a column the engine coded as it arrived, an email or a phone number, stays coded: the core
-    // engine codes it before any choice is read)
+    // every flagged column kept, an email or a phone number included (owner, 21 Oct 2026: nothing is withheld once the visitor
+    // acknowledges that the AI reads the file; with a column kept the engine lands contacts as they are, nl_browser._KEEP_CONTACTS)
     function keepAll(flagged) {
       var d = {};
-      (flagged || []).forEach(function (f) { d[f.column] = String(f.kind || '').indexOf(CODED) >= 0 ? 'code' : 'keep'; });
+      (flagged || []).forEach(function (f) { d[f.column] = 'keep'; });
       return d;
     }
     // the one box (owner's decision, 18 Oct 2026): the visitor agrees, once, that the whole dataset is sent to the AI

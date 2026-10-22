@@ -590,12 +590,13 @@ def test_visitor_decisions_are_respected():
                "2026-01-10")
     assert rep["ok"], rep["error"]
     dec = {f["column"]: f["decision"] for f in rep["privacy"]["flagged"]}
-    # coded at landing: it cannot be un-coded, so "keep" leaves it coded
-    assert dec == {"customer_email": "code", "delivery_note": "keep"}, dec
+    # kept, an email lands as it is (owner, 21 Oct 2026: nothing is withheld once the AI notice is acknowledged); it was coded at
+    # landing before, so "keep" had left it coded
+    assert dec == {"customer_email": "keep", "delivery_note": "keep"}, dec
     hdr = _csv_header(rep["downloads"]["clean_csv"])
     assert "customer_email" in hdr and "delivery_note" in hdr, hdr
     raw = set(re.findall(r"buyer\d{4}@example\.com", data.decode()))
-    assert not any(v in rep["downloads"]["clean_csv"] for v in raw), "raw emails reached the download"
+    assert raw and any(v in rep["downloads"]["clean_csv"] for v in raw), "the kept emails did not reach the download"
     assert "leave at door" in rep["downloads"]["clean_csv"]
     rep2 = _run(data, "orders_with_email.csv", "", {"Customer_Email": "withhold", "delivery_note": "CODE"},
                 "2026-01-10")
@@ -6746,6 +6747,19 @@ def test_a_correction_that_changes_only_the_dashboard_reuses_the_run():
     assert [k["id"] for k in got["dashboard"]["kpis"]] == ["u", "n"], got["dashboard"]["kpis"]
     NB.run(data, "r.csv", "", dec, None)                               # a run with no plan keeps nothing
     assert json.loads(NB.redesign_json(json.dumps(b)))["rerun"] is True
+
+
+def test_a_kept_email_column_lands_as_it_is_and_an_unchosen_one_is_still_coded():
+    """21 Oct 2026, owner: nothing is withheld once the visitor acknowledges that the AI reads the file. The page keeps every flagged
+    column; with a column kept, an email column lands as it is (the core's auto_redact off for that run) and its addresses are the
+    visitor's to see. With no choice made (the scan, an engine default) emails are still coded as they land, as before."""
+    rows = ["order_id,customer_email,amount"] + ["%d,p%d@mail.example.com,%d" % (i, i % 40, 10 + i % 90) for i in range(300)]
+    data = ("\n".join(rows) + "\n").encode()
+    kept = NB.run(data, "orders.csv", "", {"customer_email": "keep"}, None)
+    assert kept["ok"], kept.get("error")
+    assert "@mail.example.com" in kept["downloads"]["clean_csv"], kept["downloads"]["clean_csv"][:300]
+    plain = NB.run(data, "orders.csv", "", None, None)
+    assert "@mail.example.com" not in plain["downloads"]["clean_csv"], plain["downloads"]["clean_csv"][:300]
 
 
 # every test above, the last one included (the list once stood above the last test, which never ran)

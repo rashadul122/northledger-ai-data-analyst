@@ -642,5 +642,24 @@ def test_a_flow_with_no_period_named_is_ranked_over_the_whole_file():
     q = ns.engine_sql(st, "Which region has the most revenue this quarter?")
     assert q and "-Q" in q, q
 
+
+def test_which_member_is_answered_by_the_members_when_the_ai_split_them_by_month():
+    """22 Oct 2026, live: "which stylist brings in the most revenue" got the AI's month x stylist query and the answer
+    "highest in 2025-06, Jonah (3,069)"; the engine ranks the members over the whole file instead."""
+    st = sales_state()
+    nb._LAST_ANALYST.clear(); nb._LAST_ANALYST.update(st)             # the sales run's frame, whatever ran since
+    q = "Which region brings in the most revenue?"
+    ai = [{"op": "sql", "args": {"sql": "SELECT substr(order_date,1,7) AS month, region, SUM(revenue) AS revenue FROM kept_rows "
+                                        "GROUP BY month, region ORDER BY revenue DESC"}}]
+    out = json.loads(nb.analyst_more_json(json.dumps(ai), "[]", q))
+    t = out["answer"]["text"]
+    assert not re.search(r"\b20\d\d-\d\d\b", t), t
+    d = raw()
+    top = d.groupby("region")["revenue"].sum().sort_values(ascending=False).index[0]
+    assert t.split(":", 1)[1].strip().startswith(top), (t, top)
+    # a question about one period is the AI's to read: no re-ranking
+    out2 = json.loads(nb.analyst_more_json(json.dumps(ai), "[]", "Which region brought in the most revenue in 2025?"))
+    assert re.search(r"\b20\d\d-\d\d\b", out2["answer"]["text"]), out2["answer"]["text"]
+
 if __name__ == "__main__":
     sys.exit(main())

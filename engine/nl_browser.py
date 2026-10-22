@@ -7568,6 +7568,53 @@ def analyst_ledger_json(block_json: str) -> str:
     return json.dumps(_na.ledger_for_ai(block if isinstance(block, dict) else {}), allow_nan=False, default=str)
 
 
+def _ranked_as_asked(question: str, ans: Any, out: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The answer to "which stylist brings in the most revenue" ranks stylists. When the AI's query split the members by a second label
+    (a month as well: "highest in 2025-06, Jonah (3,069)", 22 Oct 2026 live), the engine's own ranking of the members over the whole
+    file answers instead, and the AI's table stays among the steps. Only for a flow (a sum) with no period named: an average or a
+    level is not re-ranked, and a question about a period is the AI's to read."""
+    import nl_analyst as _na
+    import nl_explore as _nx
+    import nl_sql as _ns
+    if not isinstance(ans, dict) or not _LAST_ANALYST:
+        return None
+    st = dict(_LAST_ANALYST)
+    rq = _ns.read_question(st, question)
+    rk, m = rq.get("rank") or {}, rq.get("measure") or {}
+    by = rk.get("by")
+    if not by or rq.get("period") or m.get("kind") != "flow" or m.get("den") is not None:
+        return None
+    cols = [str(c) for c in ans.get("columns") or []]
+    if by not in cols:
+        return None
+    rows = ans.get("rows") or []
+    other = [i for i, c in enumerate(cols) if c != by and rows and (
+        re.search(r"(?i)\b(year|yr|month|ym|quarter|qtr|period|week|day|date)\b|_(year|month|quarter)$|^(year|month|quarter)_", c) or
+        all(_num_cell(r[i]) is None for r in rows if i < len(r) and r[i] not in ("", None)))]
+    if not other:
+        return None                                                    # members alone: the AI's answer is the ranking asked for
+    q = _ns.engine_sql(st, question)
+    if not q or "strftime" in q:
+        return None
+    run = _na.run_steps(st["df"], st["kinds"], [{"op": "sql", "args": {"sql": q}, "why": "the members ranked over the whole file"}],
+                        st.get("hint"), prior=[])
+    good = [x for x in run.get("steps") or [] if isinstance(x, dict) and x.get("ok")]
+    if not good:
+        return None
+    a2 = _nx.answer_of(question, good)
+    if not isinstance(a2, dict) or not a2.get("text"):
+        return None
+    out["steps"] = (out.get("steps") or []) + good
+    return a2
+
+
+def _num_cell(v: Any) -> Optional[float]:
+    try:
+        return float(str(v).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
 def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> str:
     """One AI round (docs/ai-analyst/PROTOCOL.md): the steps the worker's /analyst returned, run by
     nl_analyst.run_steps on the frame of the last run, after the block's steps so far (prior). Every step is checked
@@ -7599,6 +7646,7 @@ def analyst_more_json(steps_json: str, prior_json: str, question: str = "") -> s
         ans = _nx.answer_of(str(question or ""), out.get("steps") or [],
                             _LAST_EXPLORE if _LAST_EXPLORE.get("kind") == "indicator_table" else None,
                             rate_cols={str(c) for c, k in mk.items() if k == "rate"})
+        ans = _ranked_as_asked(str(question or ""), ans, out) or ans
         if ans is not None:
             if _LAST_NAMES:
                 for ins in out.get("insights") or []:     # the findings under the answer name it the same way

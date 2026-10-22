@@ -498,7 +498,8 @@ def test_a_ranking_by_a_ratio_is_said_by_the_ratio_and_a_period_question_is_no_r
     st = nb._LAST_ANALYST
     assert ns.read_question(st, "Which month had the most revenue?")["rank"] is None
     out = json.loads(nb.analyst_more_json(nb.analyst_plan_json("Which region has the highest gross margin?"), "[]", "q"))
-    assert out["answer"]["text"].startswith("gross margin pct: "), out["answer"]["text"]
+    # a ranking of the latest quarter names it (21 Oct 2026)
+    assert re.match(r"gross margin pct in \d{4}-Q[1-4]: ", out["answer"]["text"]), out["answer"]["text"]
 
 
 def test_one_series_is_asked_about_by_its_own_rows_never_quarters_hidden_as_small_cells():
@@ -606,6 +607,22 @@ def test_a_row_named_by_two_labels_is_named_by_both():
     sql = "SELECT substr(datetime,1,4) AS year, outcome_type, COUNT(*) AS dogs FROM kept_rows GROUP BY year, outcome_type"
     t = nx.answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql}, "table": {"columns": cols, "rows": rows}}])["text"]
     assert "2024, Adoption (3,460)" in t and "2024, Lost (1)" in t, t
+
+
+def test_the_latest_period_is_the_latest_complete_one():
+    """21 Oct 2026, live: a salon year ending on 1 Jan 2026 ranked its stylists on that one day (2026-Q1), unnamed in the answer."""
+    import pandas as pd
+    d = list(pd.date_range("2025-01-01", "2025-12-31", freq="D")) + [pd.Timestamp("2026-01-01")]
+    st = {"df": pd.DataFrame({"date": d, "v": [1.0] * len(d)}), "kinds": {"date": "date", "v": "number"}}
+    assert ns._latest_period(st, "Q") == "2025-Q4" and ns._latest_period(st, "M") == "2025-12", ns._latest_period(st, "Q")
+    st2 = {"df": pd.DataFrame({"date": d[:-1], "v": [1.0] * (len(d) - 1)}), "kinds": {"date": "date", "v": "number"}}
+    assert ns._latest_period(st2, "Q") == "2025-Q4"
+    nx = __import__("nl_explore")
+    sql = ("SELECT stylist, SUM(price) AS price FROM kept_rows WHERE strftime('%Y', date) || '-Q' || ((CAST(strftime('%m', date) AS "
+           "INTEGER) + 2) / 3) = '2025-Q4' GROUP BY stylist ORDER BY price DESC LIMIT 10")
+    t = nx.answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql},
+                            "table": {"columns": ["stylist", "price"], "rows": [["Rafael", 7000], ["Jonah", 6500]]}}])["text"]
+    assert "in 2025-Q4" in t and t.index("2025-Q4") < t.index("Rafael"), t
 
 if __name__ == "__main__":
     sys.exit(main())

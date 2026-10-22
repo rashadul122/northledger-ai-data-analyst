@@ -881,8 +881,14 @@ def _latest_period(state: Dict[str, Any], grain: str) -> Optional[str]:
     d = pd.to_datetime(df[date], errors="coerce").dropna()
     if not len(d):
         return None
-    x = d.max()
-    return {"Y": "%d" % x.year, "M": "%d-%02d" % (x.year, x.month), "Q": "%d-Q%d" % (x.year, (x.month + 2) // 3)}[grain]
+    lab = {"Y": lambda x: "%d" % x.year, "M": lambda x: "%d-%02d" % (x.year, x.month),
+           "Q": lambda x: "%d-Q%d" % (x.year, (x.month + 2) // 3)}[grain]
+    n = d.map(lab).value_counts().sort_index()
+    # the latest COMPLETE period: a last period with under a quarter of the usual rows is a stub (21 Oct 2026, live: a salon year
+    # ending on 1 Jan 2026 ranked its stylists on that one day, 2026-Q1, and printed it as the answer to "which stylist earns most")
+    if len(n) >= 3 and n.iloc[-1] < 0.25 * float(n.iloc[:-1].median()):
+        return str(n.index[-2])
+    return str(n.index[-1])
 
 
 # --------------------------------------------------------------------------------------------- the engine's own plan

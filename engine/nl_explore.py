@@ -1889,6 +1889,10 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
                     subject = cols[vi].replace("_", " ")
             top = ["%s (%s)" % (r[li], fmt(r[vi])) for r in rows[:3] if _num_or_none(r[vi]) is not None]
             low = o_col == vi and o_dir == "ASC"
+            # a ranking of one period says which (21 Oct 2026, live: "price: Rafael (277)" was 2026-Q1 alone, a single day)
+            one_p = re.search(r"strftime\([^)]*\)[^=\n]*=\s*'(\d{4}(?:-Q[1-4]|-\d{2})?)'", sql_t)
+            if one_p and one_p.group(1) not in str(subject):
+                subject = "%s in %s" % (subject, one_p.group(1))
             text = "%s%s: %s%s." % (_short(str(subject), 120), ", lowest first" if low else "", top[0],
                                     (", then " + " and ".join(top[1:])) if len(top) > 1 else "") \
                 if top else "%s rows; see the table." % format(len(rows), ",")

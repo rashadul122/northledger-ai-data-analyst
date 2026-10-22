@@ -282,7 +282,9 @@ def _connection(state: Dict[str, Any]) -> sqlite3.Connection:
     con = sqlite3.connect(":memory:", check_same_thread=False)
     cols = _cols(state)
     q = lambda c: '"%s"' % c.replace('"', '""')  # noqa: E731
-    ddl = ", ".join("%s %s" % (q(c), {"number": "REAL"}.get(kinds.get(c), "TEXT")) for c in cols)
+    # text compares without case (21 Oct 2026, live: the cleaner reads "Dog" as DOG and the AI's WHERE animal_type = 'Dog', written
+    # from the file's own spelling, matched none of 24,443 dogs)
+    ddl = ", ".join("%s %s" % (q(c), {"number": "REAL"}.get(kinds.get(c), "TEXT COLLATE NOCASE")) for c in cols)
     con.execute("CREATE TABLE %s (%s)" % (TABLE, ddl))
     data = []
     conv = []

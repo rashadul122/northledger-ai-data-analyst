@@ -588,5 +588,14 @@ def test_an_implicit_column_alias_is_the_querys_own_name():
     assert ns.check_sql("SELECT region r FROM kept_rows", cols)["ok"]
     assert not ns.check_sql("SELECT nope FROM kept_rows", cols)["ok"]
 
+
+def test_text_compares_without_case():
+    """21 Oct 2026, live: the cleaner reads "Dog" as DOG; the AI wrote WHERE animal_type = 'Dog' from the file's own spelling
+    and matched none of 24,443 dogs."""
+    import pandas as pd
+    st = {"df": pd.DataFrame({"animal_type": ["DOG"] * 30 + ["CAT"] * 20, "n": [1.0] * 50}), "kinds": {"animal_type": "text", "n": "number"}}
+    out = ns.run_sql(st, "SELECT COUNT(*) AS c FROM kept_rows WHERE animal_type = 'Dog'")
+    assert out["ok"] and out["rows"][0][0] == 30, out
+
 if __name__ == "__main__":
     sys.exit(main())

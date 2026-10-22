@@ -1182,6 +1182,15 @@ def test_a_balance_split_by_group_with_no_entity_column_is_averaged_not_a_crash(
     assert ch and all(s_.get("ok", True) for s_ in ch), [s_.get("refused") for s_ in ch]
 
 
+def test_a_birth_date_is_not_the_time_axis_beside_another_date():
+    """21 Oct 2026, live: with date_of_birth kept, Austin's outcomes were read by the animals' birth dates, not the outcome's datetime."""
+    df = pd.DataFrame({"date_of_birth": pd.to_datetime(["2019-05-01", "2020-01-01", "2018-03-03"] * 4),
+                       "datetime": pd.to_datetime(["2025-05-05", "2025-06-01", "2025-07-01"] * 4), "kind": ["a", "b", "c"] * 4})
+    kinds = {"date_of_birth": "date", "datetime": "date", "kind": "text"}
+    assert na.detect_date(df, kinds)[0] == "datetime"
+    assert na.detect_date(df[["date_of_birth", "kind"]], kinds)[0] == "date_of_birth"     # alone, it is still the file's date
+
+
 def main() -> int:
     tests = [
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)

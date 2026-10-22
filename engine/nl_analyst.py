@@ -515,6 +515,9 @@ _META_TIME = re.compile(
     r"(publish|upload|creat|updat|modif|scrap|retriev|download|fetch|ingest|import|timestamp|last_?seen)", re.I
 )
 
+_BIRTH = re.compile(r"(birth|\bdob\b|(^|_)dob($|_)|\bborn\b)", re.I)
+
+
 def detect_date(df, kinds: Dict[str, str]) -> Tuple[Optional[str], Any, str, str]:
     """(column, a datetime Series for every row, grain, how it was read). Dates the engine read are used as they
     are; else a whole-year number column; else a year column with a month column beside it; else a text column of
@@ -530,7 +533,12 @@ def detect_date(df, kinds: Dict[str, str]) -> Tuple[Optional[str], Any, str, str
         and _num(df[c]).dropna().between(1000, 2999).mean() >= 0.95
         for c in df.columns
     )
-    for c in df.columns:
+    # a birth date is what a row's subject has, not when the row happened: with another date beside it (an animal's date_of_birth
+    # beside the outcome's datetime, 21 Oct 2026 live: Austin was read by birth date once its date_of_birth was kept) it is not the axis
+    dated = [c for c in df.columns if kinds.get(c) == "date"]
+    born = [c for c in dated if _BIRTH.search(str(c))]
+    order = [c for c in dated if c not in born] + born
+    for c in order:
         if kinds.get(c) == "date":
             if has_year and _META_TIME.search(str(c)):
                 continue

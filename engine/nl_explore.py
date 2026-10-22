@@ -1922,8 +1922,13 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
             elif members:
                 hi = max(members, key=lambda x: x[1])
                 lo = min(members, key=lambda x: x[1])
-                text = "%s: highest in %s (%s), lowest in %s (%s)" % (
-                    _short(str(subject), 120), hi[0], fmt(hi[1]), lo[0], fmt(lo[1]))
+                # "highest in 2024" for periods; a member that is a person or a thing is not "in" (21 Oct 2026, live: "highest in Rafael")
+                if all(re.match(r"^\d{4}", str(lb)) for lb, _v in members):
+                    text = "%s: highest in %s (%s), lowest in %s (%s)" % (
+                        _short(str(subject), 120), hi[0], fmt(hi[1]), lo[0], fmt(lo[1]))
+                else:
+                    text = "%s: highest %s (%s); lowest %s (%s)" % (
+                        _short(str(subject), 120), hi[0], fmt(hi[1]), lo[0], fmt(lo[1]))
                 tv = next((v for lb, v in vals if str(lb) == str(tot)), None)
                 text += ("; %s as a whole: %s." % (tot, fmt(tv))) if tv is not None else "."
                 if len(members) == 2 and hi[1] != lo[1]:

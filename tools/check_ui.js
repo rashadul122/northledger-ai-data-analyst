@@ -5273,6 +5273,30 @@ check('ask-sql-answer-dark', DESK, async (ctx) => { await askSqlChecks(ctx, 'des
 // sample's report, then the example question planned by the engine (the worker's 'plan' message) and run by the analyst loop
 // ('more'). The answers must be the native engine's own sentences (made here with python), word for word; the SQL panel shows
 // the engine's query and its 12 quarters. Prints the measured browser time of the question.
+// an Ask question the AI's service fails once on the way (an upstream 502) is asked again, and the AI's checks answer it (21 Oct 2026,
+// live: a salon question lost its AI round to a 502 and fell back to the engine's own query); a 504 is not tried again
+check('ask-an-upstream-502-is-tried-once-more', DESK, async (ctx) => {
+  const base = salesReport(), rep = Object.assign({}, base, { __ledger: base.analyst.steps }), Q = 'Which region has the highest gross margin?';
+  const asked = [];
+  const reply = (b) => {
+    if (!b.steps_so_far) return { status: 503, json: { error: 'not_configured' } };
+    if (b.objective !== Q) return { status: 200, json: { steps: [], done: true } };          // the investigation: nothing to add
+    asked.push(b);
+    return asked.length === 1 ? { status: 502, json: { error: 'upstream_error' } } : { status: 200, json: { steps: rep.__plan } };
+  };
+  const p = await openTry(ctx, { stubReport: rep, proxy: 'set', proxyReply: reply });
+  await runReport(p);
+  await tryUntil(p, '#nla-askp form.nla-ask input');
+  await p.fill('#nla-askp form.nla-ask input', Q); await p.press('#nla-askp form.nla-ask input', 'Enter');
+  try { await p.waitForFunction(() => !!document.querySelector('#nla-thread li.nla-qa .nla-qa-a'), null, { timeout: 20000 }); } catch (e) {
+    throw new Error('no answer: status "' + (await p.evaluate(() => (document.querySelector('#nla-askp .nla-ask-status') || {}).textContent)) + '"; asked ' +
+      asked.length + '; AI calls ' + ctx.__ai.length + '; ' + (p.__errs[0] || ''));
+  }
+  const by = await p.textContent('#nla-thread li.nla-qa .nla-qa-by');
+  ok(asked.length === 2, 'the question went to the AI ' + asked.length + ' time(s), not twice (once more after the 502)');
+  ok(/The AI chose the checks/.test(by), 'the answer is not the AI\'s after the retry: ' + by);
+  ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
+});
 check('ask-sql-through-the-real-engine', DESK, async (ctx) => {
   const why = await cdnReachable();
   if (why) throw new Skip(why + ', so the real engine cannot load');

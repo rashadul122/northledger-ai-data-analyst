@@ -1874,6 +1874,18 @@
     function upstream502(r) {
       return r.clone().json().then(function (j) { return !!(j && typeof j.error === 'string' && /^upstream_/.test(j.error)); }, function () { return false; });
     }
+    // the AI analyst's rounds and questions, one more try after an upstream 502 as the plan has (21 Oct 2026, live: a salon question
+    // lost its AI round to a 502 and fell back to the engine's own query); a 504 or a 503 is the answer, as for the plan
+    function postAnalyst(body, signal, tries) {
+      return fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: body, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: signal || undefined })
+        .then(function (r) {
+          if (r.status !== 502 || !(tries > 0) || (signal && signal.aborted)) return r;
+          return upstream502(r).then(function (again) {
+            return again ? new Promise(function (res) { setTimeout(res, 3000); }).then(function () { return postAnalyst(body, signal, tries - 1); }) : r;
+          });
+        });
+    }
     function askPlan(feedback) {
       var ctrl = window.AbortController ? new AbortController() : null, late = false, why = '';
       var waited = (S.hashWait || Promise.resolve()).then(planKey);
@@ -2672,9 +2684,7 @@
           if (gotId !== id) return;
           S.onLedger = null;
           if (!steps || seq !== S.seq || finished) return done();
-          fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ objective: (goal || 'What does this file show?') + ' ' + brief, shape: b.shape, steps_so_far: steps, round: b.ai_rounds }),
-            credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
+          postAnalyst(JSON.stringify({ objective: (goal || 'What does this file show?') + ' ' + brief, shape: b.shape, steps_so_far: steps, round: b.ai_rounds }), null, 1)
             .then(function (res) { return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; }); })
             .then(function (x) {
               var j = x.j || {};
@@ -2847,10 +2857,7 @@
         if (!steps) return fail('The engine could not list its steps, so the question was not sent.');
         var ctrl = window.AbortController ? new AbortController() : null;
         var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, ASK_ABORT_MS);
-        fetch(String(CFG.ai_proxy_url).replace(/\/$/, '') + '/analyst', { method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: aiDone + 1 }),
-          credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+        postAnalyst(JSON.stringify({ objective: question, shape: b.shape, steps_so_far: steps, round: aiDone + 1 }), ctrl ? ctrl.signal : null, 1)
           .then(function (res) {
             return res.json().catch(function () { return null; }).then(function (j) { return { status: res.status, j: j }; });
           })

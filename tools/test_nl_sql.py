@@ -624,5 +624,14 @@ def test_the_latest_period_is_the_latest_complete_one():
                             "table": {"columns": ["stylist", "price"], "rows": [["Rafael", 7000], ["Jonah", 6500]]}}])["text"]
     assert "in 2025-Q4" in t and t.index("2025-Q4") < t.index("Rafael"), t
 
+
+def test_a_member_that_is_no_period_is_not_highest_in():
+    """21 Oct 2026, live: "revenue: highest in Rafael (28,627), lowest in Mei (24,495)"."""
+    nx = __import__("nl_explore")
+    sql = 'SELECT "stylist", SUM("price") AS revenue FROM kept_rows GROUP BY "stylist"'
+    rows = [["Mei", 24495], ["Rafael", 28627], ["Jonah", 27240]]
+    t = nx.answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql}, "table": {"columns": ["stylist", "revenue"], "rows": rows}}])["text"]
+    assert t == "revenue: highest Rafael (28,627); lowest Mei (24,495).", t
+
 if __name__ == "__main__":
     sys.exit(main())

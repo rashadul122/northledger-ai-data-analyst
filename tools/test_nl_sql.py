@@ -597,5 +597,15 @@ def test_text_compares_without_case():
     out = ns.run_sql(st, "SELECT COUNT(*) AS c FROM kept_rows WHERE animal_type = 'Dog'")
     assert out["ok"] and out["rows"][0][0] == 30, out
 
+
+def test_a_row_named_by_two_labels_is_named_by_both():
+    """21 Oct 2026, live: "dogs: highest in 2024 (3,460), lowest in 2024 (1)", the 1 a rare outcome of 2024, not 2024 as a whole."""
+    nx = __import__("nl_explore")
+    cols = ["year", "outcome_type", "dogs"]
+    rows = [["2023", "Adoption", 3100], ["2024", "Adoption", 3460], ["2024", "Lost", 1], ["2023", "Transfer", 900]]
+    sql = "SELECT substr(datetime,1,4) AS year, outcome_type, COUNT(*) AS dogs FROM kept_rows GROUP BY year, outcome_type"
+    t = nx.answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql}, "table": {"columns": cols, "rows": rows}}])["text"]
+    assert "2024, Adoption (3,460)" in t and "2024, Lost (1)" in t, t
+
 if __name__ == "__main__":
     sys.exit(main())

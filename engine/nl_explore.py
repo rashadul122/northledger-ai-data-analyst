@@ -1894,7 +1894,10 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
                 if top else "%s rows; see the table." % format(len(rows), ",")
         elif lab_i and num_i:
             li, vi = lab_i[0], num_i[0]
-            vals = [(r[li], _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
+            # a row named by two labels (a year and an outcome type) is named by both (21 Oct 2026, live: "dogs: highest in 2024 (3,460),
+            # lowest in 2024 (1)", the 1 a rare outcome of 2024, not 2024 as a whole)
+            lbl = (lambda r: ", ".join(str(r[i]) for i in lab_i)) if len(lab_i) > 1 else (lambda r: r[li])  # noqa: E731
+            vals = [(lbl(r), _num_or_none(r[vi])) for r in rows if _num_or_none(r[vi]) is not None]
             tot = (ix or {}).get("total")
             members = [(lb, v) for lb, v in vals if str(lb) != str(tot)]
             lim = re.search(r"\bLIMIT\s+(\d+)\s*$", sql_t, re.I)
@@ -1902,7 +1905,8 @@ def answer_of(question: str, steps: List[Dict[str, Any]], ix: Optional[Dict[str,
                 # the first rows of a longer list (the top readings of 2020, LIMIT 20): its last row is not the lowest of anything;
                 # the readings in the query's own order, with their period (18 Oct 2026, "lowest in Monroe, MI (25.4)")
                 pc = sorted(per_i)[0] if per_i else None
-                top = ["%s (%s%s)" % (r[li], fmt(r[vi]), (", %s" % r[pc]) if pc is not None else "") for r in rows[:3]
+                nm = [i for i in lab_i if i != pc] or [li]       # the period goes after the value, as before
+                top = ["%s (%s%s)" % (", ".join(str(r[i]) for i in nm), fmt(r[vi]), (", %s" % r[pc]) if pc is not None else "") for r in rows[:3]
                        if _num_or_none(r[vi]) is not None]
                 low = o_col == vi and o_dir == "ASC"
                 text = "%s, %s: %s%s." % (_short(str(subject), 120), "lowest" if low else "highest", top[0],

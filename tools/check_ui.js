@@ -2003,7 +2003,10 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   ok(emails.length > 10 && notes.length > 10, 'the fixture lost its personal values');
   ok(prof.columns.some((c) => c.name === 'staff_name') && prof.analysis_limits && prof.analysis_limits.length && 'time' in prof, 'the adapter profile lacks time, analysis_limits or the columns: ' + JSON.stringify(prof).slice(0, 300));
   rep.__profile = prof; rep.__results = true; rep.__contracts = rep.contracts; rep.__signals = rep.plan_signals || [];
-  rep.__landed = fixtureLanded('orders-private'); rep.__profileDecisions = { customer_email: 'code', notes: 'keep', staff_name: 'keep' };
+  rep.__landed = fixtureLanded('orders-private');
+  // the page keeps every flagged column after the box (owner, 21 Oct 2026), the email included; the AI profile is made outside
+  // a run, where an email is still coded as it arrives, so the fixture's profile (made under code) is the one the page gets
+  rep.__profileDecisions = { customer_email: 'keep', notes: 'keep', staff_name: 'keep' };
   // the web searches (final review, 30 Sep 2026): the adapter built only the item whose terms are all on its list; the
   // items naming the kept staff or a buyer, and the old free-text list, left nothing; the page sends exactly that list
   const cq = (rep.ai_plan || {}).context_queries;

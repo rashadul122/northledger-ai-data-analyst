@@ -1201,7 +1201,6 @@
       return base;
     });
   }
-  function arrived(f) { return !!f && String(f.kind || '').indexOf(CODED) >= 0; }
   function planSplit(profile, flagged, decisions, landedMap) {
     var fl = (flagged || []).filter(function (f) { return f && typeof f.column === 'string' && f.column; });
     var dec = decisions || {}, byName = {}, withheld = [], coded = [], lm = landedMap && typeof landedMap === 'object' ? landedMap : {};
@@ -1214,9 +1213,8 @@
         (!exact && fl.filter(function (x) { return x.column === land[i]; })[0]) || fl.filter(function (x) { return slug(x.column) === slug(c.name); })[0];
       var d = !f && !c.privacy_flag ? 'none' : String((f && dec[f.column]) || dec[c.name] || 'withhold');
       if (['withhold', 'code', 'keep', 'none'].indexOf(d) < 0) d = 'withhold';
-      // an email or phone column the engine coded as it arrived cannot be kept as it is: Keep reads as Code, as the
-      // adapter reads it (engine/nl_browser.py CODED_ON_ARRIVAL), whatever the decisions say
-      if (d === 'keep' && (arrived(f) || String(c.privacy_flag || '').indexOf(CODED) >= 0)) d = 'code';
+      // a kept email or phone column goes like any kept column (owner, 21 Oct 2026: nothing is withheld once the AI notice is
+      // acknowledged; with a column kept the engine lands contacts as they are, nl_browser._KEEP_CONTACTS)
       byName[c.name] = d;
       if (d === 'withhold') { add(withheld, c.name); if (f) add(withheld, f.column); }
       if (d === 'code') { add(coded, c.name); if (f) add(coded, f.column); }
@@ -1224,7 +1222,6 @@
     fl.forEach(function (f) {
       var d = String(dec[f.column] || 'withhold');
       if (d === 'withhold') add(withheld, f.column);
-      else if (d === 'keep' && arrived(f)) add(coded, f.column);
     });
     // every spelling of a flagged column's name: the file's own header beside the landed name ("Date Of Birth"
     // and date_of_birth), from the worker's map, so a withheld one is kept out under either
@@ -1232,7 +1229,7 @@
       var f = fl.filter(function (x) { return x.column === String(lm[h]); })[0];
       if (!f) return;
       var d = String(dec[f.column] || 'withhold');
-      if (d === 'code' || (d === 'keep' && arrived(f))) add(coded, h);
+      if (d === 'code') add(coded, h);
       else if (d !== 'keep') add(withheld, h);
     });
     return { byName: byName, withheld: withheld, coded: coded };

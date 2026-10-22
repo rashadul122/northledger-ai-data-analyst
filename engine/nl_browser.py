@@ -5982,7 +5982,7 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _profile_privacy(facts: List[Dict[str, Any]], flagged: Any, decisions: Any) -> Dict[str, Tuple[str, str]]:
+def _profile_privacy(facts: List[Dict[str, Any]], flagged: Any, decisions: Any, keep_contacts: bool = False) -> Dict[str, Tuple[str, str]]:
     """{column: (decision, why it was flagged)} for every column the engine's scan flagged, compared by the
     engine's landed name (review H1, 29 Sep 2026: a "Date Of Birth" header against the flag on date_of_birth
     let a withheld column through). flagged: {column: kind} from the scan (the page's worker), or {column:
@@ -6010,8 +6010,8 @@ def _profile_privacy(facts: List[Dict[str, Any]], flagged: Any, decisions: Any) 
         want = next((dec[k] for k in keys if k in dec), None) or str(d0 or "").strip().lower() or "withhold"
         if want not in DECISIONS:
             want = "withhold"
-        if want == "keep" and CODED_ON_ARRIVAL in kind:
-            want = "code"
+        if want == "keep" and CODED_ON_ARRIVAL in kind and not keep_contacts:
+            want = "code"                       # contacts kept: the profile pass landed them as they are (_KEEP_CONTACTS)
         out[f["header"]] = (want, kind)
     return out
 
@@ -6085,15 +6085,26 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
     got = _PROFILE_CACHE.get("value") if _PROFILE_CACHE.get("sha") == sha else None
     if got is not None and not _same_choices(got, decisions):
         got = None
+    # a kept column lands every contact as it is, as the run does (owner, 21 Oct 2026: nothing is withheld once the AI notice is
+    # acknowledged; the planner had still seen a kept email column as its name and counts only)
+    keep_contacts = isinstance(decisions, dict) and any(v == "keep" for k, v in decisions.items() if not str(k).startswith("__"))
+    if got is not None and keep_contacts and not got.get("contacts_kept"):
+        got = None                                  # a reading made with contacts coded cannot stand for one that keeps them
     if got is None:
-        got = _engine_profile_pass(data, name, decisions, as_of)
+        _contacts_not_coded()
+        _KEEP_CONTACTS[0] = keep_contacts
+        try:
+            got = _engine_profile_pass(data, name, decisions, as_of)
+        finally:
+            _KEEP_CONTACTS[0] = False
         if got.get("ok"):
+            got["contacts_kept"] = keep_contacts
             _PROFILE_CACHE.clear()
             _PROFILE_CACHE.update(sha=sha, value=got)
     if not got.get("ok"):
         return {"ok": False, "error": str(got.get("error") or "unreadable")}
     facts = got["facts"]
-    priv = _profile_privacy(facts, _merged_flags(got, flagged), decisions)
+    priv = _profile_privacy(facts, _merged_flags(got, flagged), decisions, keep_contacts)
     shown = [f for f in facts if (priv.get(f["header"]) or ("",))[0] != "withhold"]
     cols = []
     for f in shown[:max_cols]:

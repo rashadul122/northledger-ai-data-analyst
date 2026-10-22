@@ -6762,6 +6762,22 @@ def test_a_kept_email_column_lands_as_it_is_and_an_unchosen_one_is_still_coded()
     assert "@mail.example.com" not in plain["downloads"]["clean_csv"], plain["downloads"]["clean_csv"][:300]
 
 
+def test_the_planner_sees_a_kept_email_like_any_column_and_a_withheld_one_not_at_all():
+    """21 Oct 2026, owner: nothing is withheld once the AI notice is acknowledged. The planner's profile had still shown a kept email
+    column as its name and counts (it was profiled outside the run, where emails are coded as they land)."""
+    rows = ["order_id,customer_email,amount"] + ["%d,p%d@mail.example.com,%d" % (i, i % 40, 10 + i % 90) for i in range(300)]
+    data = ("\n".join(rows) + "\n").encode()
+    scan = NB.run(data, "orders.csv", "", None, None)
+    fl = [{"column": f["column"], "kind": f.get("kind")} for f in scan["privacy"]["flagged"]]
+    assert any(f["column"] == "customer_email" for f in fl), fl
+    kept = json.loads(NB.plan_profile_json(data, "orders.csv", json.dumps(fl), json.dumps({"customer_email": "keep"})))["profile"]
+    ce = [c for c in kept["columns"] if c["name"] == "customer_email"][0]
+    assert not ce.get("looks_personal") and "@mail.example.com" in json.dumps(ce), ce
+    held = json.loads(NB.plan_profile_json(data, "orders.csv", json.dumps(fl), json.dumps({"customer_email": "withhold"})))["profile"]
+    assert all(c["name"] != "customer_email" for c in held["columns"]) and "@mail.example.com" not in json.dumps(held), held["columns"]
+    assert NB._KEEP_CONTACTS[0] is False                           # the flag never outlives the pass
+
+
 # every test above, the last one included (the list once stood above the last test, which never ran)
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

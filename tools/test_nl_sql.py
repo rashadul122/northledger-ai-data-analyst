@@ -633,5 +633,14 @@ def test_a_member_that_is_no_period_is_not_highest_in():
     t = nx.answer_of("q", [{"op": "sql", "ok": True, "args": {"sql": sql}, "table": {"columns": ["stylist", "revenue"], "rows": rows}}])["text"]
     assert t == "revenue: highest Rafael (28,627); lowest Mei (24,495).", t
 
+
+def test_a_flow_with_no_period_named_is_ranked_over_the_whole_file():
+    """22 Oct 2026, live: the same revenue ranking was the year's when the AI answered and one quarter's when its call failed."""
+    st = sales_state()
+    whole = ns.engine_sql(st, "Which region has the most revenue?")
+    assert whole and "GROUP BY" in whole and "-Q" not in whole and "strftime" not in whole, whole
+    q = ns.engine_sql(st, "Which region has the most revenue this quarter?")
+    assert q and "-Q" in q, q
+
 if __name__ == "__main__":
     sys.exit(main())

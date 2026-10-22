@@ -775,8 +775,15 @@ def engine_sql(state: Dict[str, Any], question: str) -> Optional[str]:
     per = _period_cond(d, rq.get("period"))
     rk = rq.get("rank")
     if rk and rk.get("by") is not None:
-        # one period, the members ranked: the named period, else the latest one in the file
-        if per is None or str(rq.get("period") or "").startswith("since:"):
+        # one period, the members ranked: the named period, else the latest one in the file. A flow (revenue, units) with no period
+        # named is ranked over the whole file, as the AI's own query ranks it (22 Oct 2026, live: "which stylist brings in the most
+        # revenue" was answered over the year when the AI answered and over one quarter when its call failed); "now", "latest" and
+        # the like still read the latest complete period, and a level (a population) is always read at one period
+        flow = m["kind"] != "ratio" and m["den"] is None
+        recent = re.search(r"\b(now|currently|current|latest|today|this|last|recent|recently)\b", " " + question.lower() + " ")
+        if per is None and flow and not recent:
+            pass
+        elif per is None or str(rq.get("period") or "").startswith("since:"):
             latest = _latest_period(state, rq["grain"])
             per = ("%s = %s" % (pe, _lit(latest))) if latest else per
         if per:

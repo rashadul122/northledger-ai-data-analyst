@@ -1884,12 +1884,12 @@ check('try-plan-profile-keeps-the-privacy-promise', DESK, async (ctx) => {
   await p.waitForFunction(() => /asked it to correct itself/.test(document.getElementById('try-plan-card').textContent), null, { timeout: 20000 });
   const bodies = ctx.__reqs.filter((r) => r.url === PROXY_URL + 'plan' && r.method === 'POST').map((r) => r.body);
   ok(bodies.length === 2, bodies.length + ' /plan requests (want 2: the plan and its one correction)');
-  // after the acknowledgement (owner's decisions, 18 and 19 Oct 2026) every flagged column goes like any other, except a column the
-  // engine coded as it arrived (an email): its name, type and counts only, and never one of its values
+  // after the acknowledgement (owner's decisions, 18, 19 and 21 Oct 2026) every flagged column goes like any other, an email the engine
+  // coded as it arrived included (nothing is withheld once the visitor acknowledges)
   // (Mystery: flagged by the adapter but not in the page's list, so no decision covers it: the page's second layer withholds it)
-  const coded = ['ann@example.com', 'bo@example.com', 'Zed Quill'];
+  const held = ['Zed Quill'];
   bodies.forEach((B, i) => {
-    ok(!coded.some((v) => B.indexOf(v) >= 0), '/plan ' + (i + 1) + ' carries a value of the coded column: ' + JSON.stringify(coded.filter((v) => B.indexOf(v) >= 0)));
+    ok(!held.some((v) => B.indexOf(v) >= 0), '/plan ' + (i + 1) + ' carries a value of the column no decision covers: ' + JSON.stringify(held.filter((v) => B.indexOf(v) >= 0)));
     ok(JSON.parse(B).consent === 'dataset', '/plan ' + (i + 1) + ' does not say the visitor acknowledged');
   });
   const pr = JSON.parse(bodies[0]).profile, col = (n) => pr.columns.filter((c) => c.name === n)[0];
@@ -1897,7 +1897,7 @@ check('try-plan-profile-keeps-the-privacy-promise', DESK, async (ctx) => {
   ok(pr.name === '[your file]' && !bodies.some((B) => /orders\.csv|sample-messy/.test(B)), 'the /plan body carries the file\'s name: ' + JSON.stringify(pr.name));
   ok(JSON.stringify(pr.columns.map((c) => c.name)) === JSON.stringify(['order_date', 'amount', 'customer_email', 'Notes', 'Staff Name', 'visit_date']), 'the columns sent: ' + JSON.stringify(pr.columns.map((c) => c.name)));
   const ce = col('customer_email');
-  ok(Object.keys(ce).every((k) => PERSONAL_KEEP_UI.indexOf(k) >= 0) && ce.looks_personal === true && ce.distinct === 60, 'the coded column goes with more than its name, type and counts: ' + JSON.stringify(ce));
+  ok(ce.looks_personal === false && !('privacy_flag' in ce) && JSON.stringify(ce.values) === JSON.stringify(['ann@example.com', 'bo@example.com']), 'the kept email does not go like any kept column: ' + JSON.stringify(ce));
   ok(!namesIn(bodies.join(' '), ['Mystery']).length, 'the column no decision covers was named');
   ['Notes', 'Staff Name', 'visit_date'].forEach((n) => {
     const c = col(n);
@@ -2031,7 +2031,9 @@ check('try-real-adapter-profile-and-data-tests-keep-the-privacy-promise', DESK, 
   });
   ok(JSON.parse(bodies[0]).profile.columns.some((c) => c.name === 'notes' && !c.looks_personal), 'the acknowledged notes column was not sent like any other');
   const pr = JSON.parse(bodies[0]).profile, ce = pr.columns.filter((c) => c.name === 'customer_email')[0], sn = pr.columns.filter((c) => c.name === 'staff_name')[0];
-  ok(ce && ce.looks_personal === true && Object.keys(ce).every((k) => PERSONAL_KEEP_UI.indexOf(k) >= 0), 'the coded email goes with more than its name, type and counts: ' + JSON.stringify(ce));
+  // kept after the box, the email goes like any kept column (owner, 21 Oct 2026: nothing withheld); this fixture's profile was made
+  // with it coded, so its values are codes and never the addresses
+  ok(ce && ce.looks_personal === false && !('privacy_flag' in ce), 'the kept email does not go like any kept column: ' + JSON.stringify(ce));
   ok(sn && !('privacy_flag' in sn), 'the kept staff_name still goes as flagged: ' + JSON.stringify(sn));
   const k = rep.contracts, sent = bodies[1] ? JSON.parse(bodies[1]).feedback.signals : [];
   const asked = (t) => (t.signal || t.misread) && sent.some((x) => x.kind === 'contract_failed' && x.column === t.column);
@@ -2696,7 +2698,8 @@ check('try-gallery-pdf-and-link-use-the-entry-s-own-question', DESK, async (ctx)
   ok(!p.__errs.length, 'page error: ' + p.__errs[0]);
 }, { acceptDownloads: true });
 
-// a column coded as it arrived (an email or phone number) cannot be kept: the plan's profile reads Keep as Code
+// a column coded as it arrived (an email or phone number) is kept when the visitor keeps it (owner, 21 Oct 2026: nothing withheld once the
+// AI notice is acknowledged; until 21 Oct the plan's profile read Keep as Code); Code still sends its name, type and counts only
 check('try-plan-profile-honours-coded-as-it-arrived', DESK, async (ctx) => {
   const p = await openTry(ctx, {});
   const got = await p.evaluate(() => {
@@ -2704,11 +2707,14 @@ check('try-plan-profile-honours-coded-as-it-arrived', DESK, async (ctx) => {
       { name: 'order_date', filled: 10, distinct: 10, numeric_share: 0, date_share: 1, looks_personal: false },
       { name: 'customer_email', filled: 10, distinct: 8, numeric_share: 0, date_share: 0, top_values: ['a@example.org'], values: ['a@example.org'], looks_personal: true, privacy_flag: 'email; coded as it arrived' }] };
     const fl = [{ column: 'customer_email', kind: 'email; coded as it arrived' }];
-    return { out: window.NLTry.planProfile(prof, fl, { customer_email: 'keep' }), wh: window.NLTry.planWithheld(prof, fl, { customer_email: 'keep' }) };
+    return { out: window.NLTry.planProfile(prof, fl, { customer_email: 'keep' }), wh: window.NLTry.planWithheld(prof, fl, { customer_email: 'keep' }),
+      code: window.NLTry.planProfile(prof, fl, { customer_email: 'code' }) };
   });
   const col = got.out.columns.filter((c) => c.name === 'customer_email')[0];
-  ok(col && col.looks_personal === true && !('values' in col) && !('top_values' in col), 'a column coded as it arrived went as kept, values included: ' + JSON.stringify(col));
-  ok(!got.wh.length, 'it is withheld instead of coded: ' + JSON.stringify(got.wh));
+  ok(col && col.looks_personal === false && JSON.stringify(col.values) === '["a@example.org"]' && !('privacy_flag' in col), 'a kept email column did not go as kept: ' + JSON.stringify(col));
+  ok(!got.wh.length, 'a kept column is withheld: ' + JSON.stringify(got.wh));
+  const cc = got.code.columns.filter((c) => c.name === 'customer_email')[0];
+  ok(cc && cc.looks_personal === true && !('values' in cc) && !('top_values' in cc), 'a coded email column went with its values: ' + JSON.stringify(cc));
 });
 
 // a category the engine read as a category, not personal data (privacy.released; the lead's amendment AM1, WAVE 4): the

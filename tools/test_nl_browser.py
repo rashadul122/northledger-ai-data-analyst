@@ -6776,6 +6776,14 @@ def test_the_planner_sees_a_kept_email_like_any_column_and_a_withheld_one_not_at
     held = json.loads(NB.plan_profile_json(data, "orders.csv", json.dumps(fl), json.dumps({"customer_email": "withhold"})))["profile"]
     assert all(c["name"] != "customer_email" for c in held["columns"]) and "@mail.example.com" not in json.dumps(held), held["columns"]
     assert NB._KEEP_CONTACTS[0] is False                           # the flag never outlives the pass
+    # 22 Oct 2026, live: 394 distinct salon emails list no values, and the rows sample labelled every one "[email address]"
+    rows = ["order_id,customer_email,amount"] + ["%d,c%d@mail.example.com,%d" % (i, i, 10 + i % 90) for i in range(600)]
+    data = ("\n".join(rows) + "\n").encode()
+    fl = [{"column": f["column"], "kind": f.get("kind")} for f in NB.run(data, "o.csv", "", None, None)["privacy"]["flagged"]]
+    kept = json.loads(NB.plan_profile_json(data, "o.csv", json.dumps(fl), json.dumps({"customer_email": "keep"})))["profile"]
+    assert "@mail.example.com" in json.dumps(kept["sample"]), kept["sample"]["rows"][:2]
+    coded = json.loads(NB.plan_profile_json(data, "o.csv", json.dumps(fl), json.dumps({"customer_email": "code"})))["profile"]
+    assert "@mail.example.com" not in json.dumps(coded), [c for c in coded["columns"] if c["name"] == "customer_email"]
 
 
 # every test above, the last one included (the list once stood above the last test, which never ran)

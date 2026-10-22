@@ -5941,7 +5941,11 @@ def _engine_profile_pass(data: bytes, name: str, decisions: Any = None, as_of: O
         out = {"ok": True, "facts": facts, "rows": R.n, "flagged": flagged, "colmap": colmap, "released": released,
                "viz_stats": _nv.profile_stats(R, facts), "columns": int(res.n_cols)}
         try:
-            out["sample_rows"] = _sample_rows(R, hidden, lambda t: public_text(_scrub.clean(t), res.table, name))
+            # a column the visitor kept goes as it is (owner, 21 Oct 2026: nothing withheld once the AI notice is acknowledged), its
+            # emails and phone numbers included; every other cell still goes through the email and phone labels
+            kept_c = {str(f["column"]) for f in flagged if isinstance(f, dict) and f.get("decision") == "keep"}
+            out["sample_rows"] = _sample_rows(R, hidden, lambda t: public_text(_scrub.clean(t), res.table, name),
+                                              kept=kept_c, pub_kept=lambda t: _scrub.clean(t))
         except Exception:  # noqa: BLE001 - no sample, the planner reads the column summaries
             if os.environ.get("NL_BROWSER_STRICT"):
                 raise
@@ -6211,7 +6215,7 @@ def profile_for_ai(data: Any, name: str = "", max_cols: int = 120, flagged: Any 
     return out
 
 
-def _sample_rows(R: Any, hidden: Any, pub: Any) -> Dict[str, Any]:
+def _sample_rows(R: Any, hidden: Any, pub: Any, kept: Any = (), pub_kept: Any = None) -> Dict[str, Any]:
     """{columns: [file headers], rows: [[cell text]], of} from the engine's reading under the visitor's decisions: never a
     withheld or coded column (hidden), every cell through the run's scrub (pub: a withheld value, an email, a phone number or a
     person's name the engine found, wherever it stands, is replaced as in every text that leaves; 19 Oct 2026 review: the first
@@ -6233,6 +6237,7 @@ def _sample_rows(R: Any, hidden: Any, pub: Any) -> Dict[str, Any]:
     if not cols or not n:
         return {}
     kinds = {c: R.kind(c) for c in cols}
+    kept_s = {str(k) for k in (kept or ())}
 
     def cell(i: int, c: str) -> str:
         if kinds[c] in ("number", "date"):
@@ -6251,7 +6256,8 @@ def _sample_rows(R: Any, hidden: Any, pub: Any) -> Dict[str, Any]:
             return ("%d" % f) if f == int(f) and abs(f) < 1e15 else ("%.6g" % f)
         v = T.iloc[i][c]
         t = "" if v is None or (isinstance(v, float) and v != v) else str(v)
-        return pub(t)[:SAMPLE_CELL] if t else ""
+        f = pub_kept if (pub_kept is not None and (c in kept_s or R.header(c) in kept_s)) else pub
+        return f(t)[:SAMPLE_CELL] if t else ""
     k = min(SAMPLE_ROWS, n)
     idx = sorted({int(round(i * (n - 1) / max(1, k - 1))) for i in range(k)}) if k > 1 else [0]
     rows = [[cell(i, c) for c in cols] for i in idx]
